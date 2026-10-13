@@ -285,6 +285,33 @@ impl AgentsService {
                 self.owned_absent_branch(task).await?;
             }
         }
+        // Every command-bearing worktree must pass consent before even a branch-only deletion.
+        let snapshot = if selected.iter().any(|task| {
+            task.worktree_path
+                .as_ref()
+                .is_some_and(|path| selected_paths.contains(path))
+        }) {
+            self.projects
+                .teardown_snapshot(&p.project_id)
+                .await
+                .map_err(project_trust_failure)?
+        } else {
+            None
+        };
+        for task in &selected {
+            if task
+                .worktree_path
+                .as_ref()
+                .is_some_and(|v| selected_paths.contains(v))
+            {
+                let (project, _, _) = self.owned_worktree(task).await?;
+                if snapshot.as_ref().is_some_and(|s| {
+                    s.canonical_path() != project.path || s.project_id() != task.project_id
+                }) {
+                    return Err(AgentsError::UnsafeWorktree.into());
+                }
+            }
+        }
         for task in selected {
             if !task
                 .worktree_path
@@ -302,7 +329,7 @@ impl AgentsService {
             // Stop only the closed task's resources before removing its working directory.
             let (project, path, branch) = self.owned_worktree(&task).await?;
             self.quiesce(&task).await?;
-            self.teardown_commands(&task, &project).await?;
+            self.teardown_commands(&task, &snapshot).await?;
             self.owned_worktree(&task).await?;
             if self.get(&task.id).await?.state != AgentState::Closed {
                 return Err(AgentsError::StateChanged {

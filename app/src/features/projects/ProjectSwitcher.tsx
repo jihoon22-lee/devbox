@@ -7,10 +7,17 @@ import { Button, ConfirmDialog, Dialog, useToasts } from "../../ui";
 import { projectKey, useTerminalLayout } from "../terminal/store";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { ProjectCard } from "./ProjectCard";
-import { PROJECT_KEYS, ProjectDataBoundary, recordProjectRemoval, useProjectData } from "./ProjectData";
+import {
+  isRegisteredProject,
+  PROJECT_KEYS,
+  ProjectDataBoundary,
+  recordProjectRemoval,
+  useProjectData,
+} from "./ProjectData";
 import { ProjectError } from "./ProjectError";
 import s from "./Projects.module.css";
 import { useCurrentProject } from "./store";
+import { useProjectTrust } from "./useProjectTrust";
 export function ProjectTitle({ onOpen }: { onOpen: () => void }) {
   return (
     <ProjectDataBoundary>
@@ -50,7 +57,15 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
   const favorite = useRpcMutation("projects.set_favorite");
   const launch = useRpcMutation("projects.launch");
   const summary = useRpcQuery("projects.summary", {}, { enabled: true, staleTime: 0 });
-  const pending = remove.isPending || favorite.isPending || launch.isPending;
+  const trust = useProjectTrust(JSON.stringify(list.data?.items.map((project) => project.id) ?? []));
+  const pending = remove.isPending || favorite.isPending || launch.isPending || trust.pending;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const locked = useRef(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -90,30 +105,33 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
     useCurrentProject.getState().set(project.id);
     onOpenChange(false);
   };
-  const runLaunch = (project: Project) => {
+  const runLaunch = async (project: Project) => {
     if (locked.current) return;
     locked.current = true;
-    launch.mutate(
-      { id: project.id },
-      {
-        onSuccess: (result) => {
-          useTerminalLayout.getState().openLaunched(projectKey(project.id), result.terminalIds, result.rev);
-          useCurrentProject.getState().set(project.id);
-          useToasts
-            .getState()
-            .push({ tone: "ok", title: `터미널 ${result.terminals}개 · 에이전트 ${result.agents}개를 시작했습니다` });
-          // Refresh errors cannot turn an acknowledged launch into a retry.
-          void qc.invalidateQueries({ queryKey: ["terminal.list"] });
-          void qc.invalidateQueries({ queryKey: ["agents.list"] });
-          void qc.invalidateQueries({ queryKey: ["projects.summary"] });
-          onOpenChange(false);
-          onLaunched?.();
-        },
-        onSettled: () => {
-          locked.current = false;
-        },
-      },
-    );
+    try {
+      if (
+        !(await trust.ensure({ id: project.id, operation: "launch", agentId: null, worktrees: [], worktree: null })) ||
+        !mounted.current ||
+        !isRegisteredProject(qc, project.id)
+      )
+        return;
+      const result = await launch.mutateAsync({ id: project.id });
+      if (!mounted.current) return;
+      useTerminalLayout.getState().openLaunched(projectKey(project.id), result.terminalIds, result.rev);
+      useCurrentProject.getState().set(project.id);
+      useToasts
+        .getState()
+        .push({ tone: "ok", title: `터미널 ${result.terminals}개 · 에이전트 ${result.agents}개를 시작했습니다` });
+      void qc.invalidateQueries({ queryKey: ["terminal.list"] });
+      void qc.invalidateQueries({ queryKey: ["agents.list"] });
+      void qc.invalidateQueries({ queryKey: ["projects.summary"] });
+      onOpenChange(false);
+      onLaunched?.();
+    } catch {
+      // Typed errors remain visible; a new click starts a fresh trust preview.
+    } finally {
+      locked.current = false;
+    }
   };
   const toggleFavorite = (project: Project) => {
     if (locked.current) return;
@@ -154,7 +172,10 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
       <Dialog
         open
         onOpenChange={(open) => {
-          if (!locked.current) onOpenChange(open);
+          if (!launch.isPending && !remove.isPending && !favorite.isPending) {
+            trust.cancel();
+            onOpenChange(open);
+          }
         }}
         title="프로젝트"
         width={620}
@@ -170,6 +191,7 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
       >
         {favorite.error && <ProjectError error={favorite.error} />}
         {launch.error && <ProjectError error={launch.error} />}
+        {trust.notice && <p role="alert">{trust.notice}</p>}
         {summary.error && <ProjectError error={summary.error} retry={() => void summary.refetch()} />}
         {remove.error && <ProjectError error={remove.error} />}
         {launch.isPending && <p role="status">시작 구성을 실행하는 중…</p>}
@@ -247,7 +269,7 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
                 if (!locked.current && confirmPolicy("projects.remove") === "always") setConfirm(project);
               }}
               favorite={() => toggleFavorite(project)}
-              launch={() => runLaunch(project)}
+              launch={() => void runLaunch(project)}
             />
           ))}
         </div>
@@ -257,6 +279,7 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
           </p>
         )}
       </Dialog>
+      {trust.dialog}
       <AddProjectDialog open={adding} onOpenChange={setAdding} />
       <ConfirmDialog
         open={confirm !== null}

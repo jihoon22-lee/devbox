@@ -308,6 +308,23 @@ domain_error! {
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",
         ListChanged = "agents.list_changed",
+        ProjectTrustRequired { id: String } = "agents.project_trust_required",
+    }
+}
+
+pub(crate) fn project_trust_failure(
+    error: devbox_protocol::Fail<devbox_projects::ProjectsError>,
+) -> devbox_protocol::Fail<AgentsError> {
+    match error {
+        devbox_protocol::Fail::Domain(devbox_projects::ProjectsError::TrustRequired { id }) => {
+            AgentsError::ProjectTrustRequired { id }.into()
+        }
+        devbox_protocol::Fail::Domain(devbox_projects::ProjectsError::NotFound { id }) => {
+            AgentsError::ProjectNotFound { id }.into()
+        }
+        other => devbox_protocol::Fail::Internal(format!(
+            "project configuration authorization: {other:?}"
+        )),
     }
 }
 

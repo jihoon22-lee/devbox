@@ -9,7 +9,7 @@ import { useCurrentProject } from "./store";
 import { ProjectWire, projects } from "./test-wire";
 
 test("cards show actual summary and launch once before selecting and navigating", async () => {
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   const navigate = vi.fn();
   const close = vi.fn();
   useCurrentProject.getState().set(undefined);
@@ -67,7 +67,7 @@ function Reopen() {
   );
 }
 test("summary is open-only, visible config is cached for 30 seconds and unknown Git state stays unknown", async () => {
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <RpcProvider client={wire.client}>
       <Reopen />
@@ -111,7 +111,7 @@ test("summary is open-only, visible config is cached for 30 seconds and unknown 
 });
 
 test("favorite waits for authoritative revision, sorts first and preserves current selection", async () => {
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   useCurrentProject.getState().set("a");
   render(
     <RpcProvider client={wire.client}>

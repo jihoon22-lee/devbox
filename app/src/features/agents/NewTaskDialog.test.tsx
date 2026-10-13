@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useCurrentProject } from "../projects/store";
 import { ProjectWire, projects } from "../projects/test-wire";
+import { trustPreview } from "../projects/trust-fixtures";
 import { NewTaskDialog } from "./NewTaskDialog";
 import { profiles, task } from "./test-fixtures";
 
@@ -10,13 +11,13 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
 });
 
-async function dialog(items = projects, saved = "claude") {
+async function dialog(items = projects, saved = "claude", trustRequired = false) {
   localStorage.setItem("devbox.lastProfile", saved);
   useCurrentProject.getState().set("a");
-  const wire = new ProjectWire(),
+  const wire = new ProjectWire({ trustNotRequired: !trustRequired }),
     created = vi.fn(),
     changed = vi.fn();
-  render(
+  const view = render(
     <RpcProvider client={wire.client}>
       <NewTaskDialog open onOpenChange={changed} onCreated={created} />
     </RpcProvider>,
@@ -35,7 +36,7 @@ async function dialog(items = projects, saved = "claude") {
       }),
     );
   }
-  return { wire, created, changed };
+  return { wire, created, changed, view };
 }
 
 test("snapshots chosen profile, project, template, branch and worktree; guards IME and rapid duplicate submits", async () => {
@@ -139,4 +140,127 @@ test("a removed project is revalidated on refreshed lists and blocks stale creat
   expect(await screen.findByText("에이전트 작업을 만들 프로젝트를 선택해 주세요.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
   expect(wire.requests("agents.create")).toHaveLength(0);
+});
+
+test("trust cancellation executes nothing and preview includes all commands and paths", async () => {
+  const { wire } = await dialog(projects, "claude", true);
+  await userEvent.type(screen.getByLabelText("제목"), "Trust commands");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  await act(async () =>
+    wire.reply(
+      "projects.trust_preview",
+      trustPreview("a", {
+        config: {
+          agent: { copy: [], setup: ["setup first", "setup second"], test: "test full", teardown: ["teardown full"] },
+          launch: {
+            services: [],
+            terminals: [{ name: "shell", command: "terminal full" }],
+            agents: [{ tool: "codex", worktree: true, prompt: "launch full prompt" }],
+          },
+        },
+      }),
+    ),
+  );
+  expect(await screen.findByRole("dialog", { name: "프로젝트 명령 실행 승인" })).toBeInTheDocument();
+  for (const text of [
+    "setup first",
+    "setup second",
+    "test full",
+    "teardown full",
+    "terminal full",
+    "launch full prompt",
+    "/fixture/devbox",
+    "/fixture/devbox/.devbox/devbox.toml",
+    "/fixture/devbox-agents/new",
+  ])
+    expect(screen.getByText(text)).toBeInTheDocument();
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "승인 취소" }));
+  expect(wire.requests("projects.trust_approve")).toHaveLength(0);
+  expect(wire.requests("agents.create")).toHaveLength(0);
+});
+
+test("stale approval shows changed preview and requires another explicit approval", async () => {
+  const { wire } = await dialog(projects, "claude", true);
+  await userEvent.type(screen.getByLabelText("제목"), "Frozen title");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  await act(async () => wire.reply("projects.trust_preview", trustPreview()));
+  await userEvent.click(await screen.findByRole("button", { name: "명령 실행 승인" }));
+  await waitFor(() => expect(wire.requests("projects.trust_approve")).toHaveLength(1));
+  expect(wire.request("projects.trust_approve").params).toEqual({
+    id: "a",
+    expectedCanonicalPath: "/fixture/devbox",
+    expectedDigest: "digest-first",
+    expectedScopeVersion: 1,
+  });
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("projects.trust_approve").id,
+      error: { code: "projects.trust_preview_stale" },
+    }),
+  );
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(2));
+  await act(async () =>
+    wire.reply(
+      "projects.trust_preview",
+      trustPreview("a", {
+        digest: "digest-second",
+        config: {
+          agent: { copy: [], setup: ["changed setup"], test: null, teardown: [] },
+          launch: { services: [], terminals: [], agents: [] },
+        },
+      }),
+    ),
+  );
+  expect(await screen.findByText("changed setup")).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("바뀌었습니다");
+  expect(wire.requests("projects.trust_approve")).toHaveLength(1);
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "명령 실행 승인" }));
+  await waitFor(() => expect(wire.requests("projects.trust_approve")).toHaveLength(2));
+  expect(wire.request("projects.trust_approve", -1).params).toMatchObject({ expectedDigest: "digest-second" });
+  await act(async () => wire.reply("projects.trust_approve", { rev: "2" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ title: "Frozen title" });
+});
+
+test("cancel during approval and a late acknowledgement never creates a task", async () => {
+  const { wire } = await dialog(projects, "claude", true);
+  await userEvent.type(screen.getByLabelText("제목"), "Cancel pending approval");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  await act(async () => wire.reply("projects.trust_preview", trustPreview()));
+  await userEvent.click(await screen.findByRole("button", { name: "명령 실행 승인" }));
+  await waitFor(() => expect(wire.requests("projects.trust_approve")).toHaveLength(1));
+  await userEvent.click(screen.getByRole("button", { name: "승인 취소" }));
+  await act(async () => wire.reply("projects.trust_approve", { rev: "2" }));
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  expect(screen.queryByRole("dialog", { name: "프로젝트 명령 실행 승인" })).toBeNull();
+});
+
+test("unmount cancels a pending preview before its late approval-free reply", async () => {
+  const { wire, view } = await dialog(projects, "claude", true);
+  await userEvent.type(screen.getByLabelText("제목"), "Close preview");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  view.unmount();
+  await act(async () => wire.reply("projects.trust_preview", trustPreview("a", { requiresApproval: false })));
+  expect(wire.requests("agents.create")).toHaveLength(0);
+});
+
+test("removing the target while preview is pending cancels the frozen creation", async () => {
+  const { wire } = await dialog(projects, "claude", true);
+  await userEvent.type(screen.getByLabelText("제목"), "Removed during trust");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  const sub = wire.sent.find((message) => message.topic === "projects.changed")!;
+  await act(async () => wire.deliver({ type: "event", subId: sub.id, rev: "2", payload: { rev: "2" } }));
+  await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(2));
+  await act(async () => wire.reply("projects.list", { rev: "2", items: [projects[1]] }));
+  await act(async () => wire.reply("projects.trust_preview", trustPreview("a", { requiresApproval: false })));
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  expect(screen.queryByRole("dialog", { name: "프로젝트 명령 실행 승인" })).toBeNull();
 });

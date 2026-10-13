@@ -2444,7 +2444,9 @@ git add app && git commit -m "feat(app): add the agent grid, notification center
 
 ### Task 20: 프로젝트 전환기 카드·시작 구성·clone
 
-구현·별도 검토 완료. 실제 `ProjectConfig.launch`는 기본 빈 배열 객체이므로 실행 대상이 있을 때만 버튼을 표시한다. 외부 열기는 현재 Ready 연결의 검증된 배포판을 사용하며, VS Code는 공식 CLI wrapper와 동등한 실행 파일·인자 호출, Windows Terminal 시작 폴더는 UNC로 변환한다. 프론트71·순수 Rust8 고유79개와 타입 검사 통과, 메뉴 종료 포커스 회귀 수정 후 Astra 재검토 PASS. E2E는 1개 작성·수집만 확인했고 실제 실행·Windows 검증은 Task24에 수행한다.
+> **2026-10-13 사용자 승인 보정:** 새 작업·시작 구성·테스트·폐기/정리는 공통 프로젝트 신뢰 확인을 사용한다(01-design §7). 실행 경로와 setup/test/teardown·시작 명령, 시작 에이전트의 도구와 지시문을 보여 주고 정확히 본 설정 digest만 승인한다. 확인 중 설정이 바뀌면 새 내용을 다시 보여 준다. 취소하면 실행하지 않는다. 파괴적 동작은 신뢰 승인 뒤 기존 Git 상태 확인 절차도 다시 거치며, 등록·clone만으로 승인하거나 실행하지 않는다. 화면 확인과 별개로 데몬이 모든 실행 경로를 검사한다.
+
+기존 Task 20 범위 구현·별도 검토 완료. 신뢰 확인 추가 범위도 구현·독립 검토·관련 회귀와 영향 E2E를 완료했다(2026-10-14). 최종 SHA Windows 영향 재수용은 별도다. 실제 `ProjectConfig.launch`는 기본 빈 배열 객체이므로 실행 대상이 있을 때만 버튼을 표시한다. 외부 열기는 현재 Ready 연결의 검증된 배포판을 사용하며, VS Code는 공식 CLI wrapper와 동등한 실행 파일·인자 호출, Windows Terminal 시작 폴더는 UNC로 변환한다. 프론트71·순수 Rust8 고유79개와 타입 검사 통과, 메뉴 종료 포커스 회귀 수정 후 Astra 재검토 PASS. 기존 Task 20 완료 당시에는 E2E 1개를 작성·수집했으며, 이후 실제 영향 E2E 실행 결과는 PROGRESS에 기록했다.
 
 **Files:**
 - Modify: `app/src/features/projects/ProjectSwitcher.tsx`, `AddProjectDialog.tsx`

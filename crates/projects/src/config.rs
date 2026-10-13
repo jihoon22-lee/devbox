@@ -73,6 +73,8 @@ pub enum ConfigError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("project configuration exceeds {limit} bytes")]
+    TooLarge { limit: usize },
 }
 
 fn io(path: &Path, source: std::io::Error) -> ConfigError {
@@ -120,17 +122,42 @@ pub fn parse(text: &str) -> Result<ProjectConfig, ConfigError> {
 }
 
 pub fn load(project: &Path) -> Result<ProjectConfig, ConfigError> {
+    read_config(project).map(|(_, config)| config)
+}
+
+pub const CONFIG_MAX_BYTES: usize = 256 * 1024;
+
+/// Digest callers and parsers consume this same bounded descriptor read.
+pub(crate) fn read_config(project: &Path) -> Result<(Vec<u8>, ProjectConfig), ConfigError> {
     let path = project.join(".devbox/devbox.toml");
     check_ancestors(&path)?;
-    let read = || -> std::io::Result<String> {
+    let read = || -> std::io::Result<Vec<u8>> {
         use std::io::Read;
-        let mut text = String::new();
-        open_regular(&path)?.read_to_string(&mut text)?;
-        Ok(text)
+        let mut bytes = Vec::new();
+        open_regular(&path)?
+            .take((CONFIG_MAX_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        Ok(bytes)
     };
     match read() {
-        Ok(text) => parse(&text),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ProjectConfig::default()),
+        Ok(bytes) => {
+            if bytes.len() > CONFIG_MAX_BYTES {
+                return Err(ConfigError::TooLarge {
+                    limit: CONFIG_MAX_BYTES,
+                });
+            }
+            let text = std::str::from_utf8(&bytes).map_err(|error| {
+                io(
+                    &path,
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error),
+                )
+            })?;
+            let config = parse(text)?;
+            Ok((bytes, config))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok((Vec::new(), ProjectConfig::default()))
+        }
         Err(error) => Err(io(&path, error)),
     }
 }

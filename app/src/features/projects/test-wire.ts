@@ -1,6 +1,8 @@
 import { RpcClient, type Transport, type TransportState } from "../../rpc/client";
 import { decodeFrame, jsonFrame } from "../../rpc/frame";
+import { trustPreview } from "./trust-fixtures";
 export class ProjectWire implements Transport {
+  constructor(private options: { trustNotRequired?: boolean } = {}) {}
   sent: Record<string, unknown>[] = [];
   frames = new Set<(frame: Uint8Array) => void>();
   states = new Set<(state: TransportState) => void>();
@@ -26,6 +28,14 @@ export class ProjectWire implements Transport {
   send(frame: Uint8Array) {
     const msg = JSON.parse(new TextDecoder().decode(decodeFrame(frame).body));
     this.sent.push(msg);
+    if (msg.method === "projects.trust_preview" && this.options.trustNotRequired)
+      queueMicrotask(() =>
+        this.deliver({
+          type: "response",
+          id: msg.id,
+          result: trustPreview(msg.params.id, { requiresApproval: false }),
+        }),
+      );
     if (msg.type === "hello")
       queueMicrotask(() => this.deliver({ type: "welcome", protocol: 1, version: "1.0.0-dev", daemonId: "projects" }));
     if (msg.type === "subscribe")

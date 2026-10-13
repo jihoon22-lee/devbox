@@ -18,7 +18,7 @@ async function setup(path: string) {
   useLayout.setState({ listCollapsed: false, bottomOpen: false });
   window.history.replaceState({}, "", path);
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   const view = render(
     <RpcProvider client={wire.client}>
       <TooltipProvider>

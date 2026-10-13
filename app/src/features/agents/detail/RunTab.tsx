@@ -4,6 +4,7 @@ import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Button, EmptyState, Tooltip } from "../../../ui";
+import { useProjectTrust } from "../../projects/useProjectTrust";
 import { TerminalView } from "../../terminal/TerminalView";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
@@ -18,11 +19,22 @@ export const useAgentRuns = create<{
 export function RunTab({ task }: { task: AgentTask }) {
   const id = useAgentRuns((state) => state.terminals[task.id]);
   const test = useRpcMutation("agents.test");
+  const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const pending = useRef(false);
   const run = async () => {
     if (pending.current) return;
     pending.current = true;
     try {
+      if (
+        !(await trust.ensure({
+          id: task.projectId,
+          operation: "test",
+          agentId: task.id,
+          worktrees: [],
+          worktree: null,
+        }))
+      )
+        return;
       const result = await test.mutateAsync({ id: task.id });
       useAgentRuns.getState().set(task.id, result.terminalId);
     } catch {
@@ -42,6 +54,8 @@ export function RunTab({ task }: { task: AgentTask }) {
     );
   return (
     <>
+      {trust.dialog}
+      {trust.notice && <p role="alert">{trust.notice}</p>}
       <QueryError query={config} />
       {test.error && (
         <p role="alert">
@@ -57,7 +71,10 @@ export function RunTab({ task }: { task: AgentTask }) {
               content={hasTest ? "설정한 테스트를 실행합니다" : ".devbox/devbox.toml의 [agent] test를 설정하세요"}
             >
               <span>
-                <Button disabled={!hasTest || state !== "ready" || test.isPending} onClick={() => void run()}>
+                <Button
+                  disabled={!hasTest || state !== "ready" || test.isPending || trust.pending}
+                  onClick={() => void run()}
+                >
                   테스트 실행
                 </Button>
               </span>

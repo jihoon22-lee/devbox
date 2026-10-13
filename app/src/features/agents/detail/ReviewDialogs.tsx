@@ -18,6 +18,7 @@ export function ReviewDialogs({
 }) {
   return (
     <>
+      {review.trustNotice && <p role="alert">{review.trustNotice}</p>}
       {edit && (
         <EditReview
           key={`${task.id}:${edit.kind}`}
@@ -48,6 +49,7 @@ export function ReviewDialogs({
           <Button onClick={() => void review.retry()}>다시 확인</Button>
         )}
       </ConfirmDialog>
+      {review.trustDialog}
     </>
   );
 }

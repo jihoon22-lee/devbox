@@ -22,7 +22,7 @@ const patch = (text: string) => ({
 });
 const commits = (subject: string) => ({ items: [{ sha: "abc123", subject, author: "fixture", timeMs: 1 }] });
 async function setup(kind: "merge" | "discard") {
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <RpcProvider client={wire.client}>
       <TooltipProvider>

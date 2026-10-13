@@ -33,7 +33,7 @@ test("launch opens its exact sessions through Shell navigation and fences a stal
   useCurrentProject.getState().set(undefined);
   window.history.replaceState({}, "", "/agents?gateway=ws%3A%2F%2Ffixture&renderer=dom");
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <RpcProvider client={wire.client}>
       <CacheProbe />

@@ -4,6 +4,7 @@ import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Banner, Button, Menu, Tooltip } from "../../../ui";
+import { useProjectTrust } from "../../projects/useProjectTrust";
 import { openPopout } from "../../terminal/popout";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
@@ -31,6 +32,7 @@ export function AgentActions({
     abort = useRpcMutation("agents.rebase_abort"),
     send = useRpcMutation("agents.send"),
     test = useRpcMutation("agents.test");
+  const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const config = useRpcQuery("projects.config", { id: task.projectId }, { enabled: task.state !== "closed" });
   const commits = useRpcQuery("agents.commits", { id: task.id }, { enabled: false });
   const apply = useAgentResult(),
@@ -54,7 +56,7 @@ export function AgentActions({
     send.isPending ||
     test.isPending ||
     destructive.busy;
-  const blocked = preparing || busy || state !== "ready";
+  const blocked = preparing || busy || trust.pending || state !== "ready";
   const run = async (operation: () => Promise<void>) => {
     if (guard.current || blocked) return;
     guard.current = true;
@@ -82,6 +84,16 @@ export function AgentActions({
     });
   const runTest = () =>
     run(async () => {
+      if (
+        !(await trust.ensure({
+          id: task.projectId,
+          operation: "test",
+          agentId: task.id,
+          worktrees: [],
+          worktree: null,
+        }))
+      )
+        return;
       const result = await test.mutateAsync({ id: task.id });
       onTest?.(result.terminalId);
     });
@@ -175,6 +187,8 @@ export function AgentActions({
           </Tooltip>
         )}
       </div>
+      {trust.dialog}
+      {trust.notice && <Banner tone="danger">{trust.notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
       {conflict && (
         <Banner

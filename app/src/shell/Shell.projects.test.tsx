@@ -10,7 +10,7 @@ import { Shell } from "./Shell";
 
 test("title, Ctrl+Shift+O and registry open the project switcher", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <RpcProvider client={wire.client}>
       <TooltipProvider>
@@ -38,7 +38,7 @@ test("title, Ctrl+Shift+O and registry open the project switcher", async () => {
 test("launch selects project, navigates to terminal preserving search and keeps success after refresh failure", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   window.history.replaceState({}, "", "/agents?gateway=ws%3A%2F%2Ffixture&renderer=dom");
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <RpcProvider client={wire.client}>
       <TooltipProvider>

@@ -219,6 +219,9 @@ impl AgentsService {
         }
         AgentProfiles { items }
     }
+    pub fn cleanup_after_close_enabled(&self) -> bool {
+        self.cleanup_after_close
+    }
     pub async fn get(&self, id: &str) -> Result<AgentTask> {
         let missing = id.to_owned();
         let id = id.to_owned();
@@ -232,6 +235,20 @@ impl AgentsService {
         Ok(task)
     }
     pub async fn create(self: &Arc<Self>, p: CreateAgentTask) -> Result<AgentTask> {
+        let snapshot = self
+            .projects
+            .setup_snapshot(&p.project_id)
+            .await
+            .map_err(project_trust_failure)?;
+        self.create_with_snapshot(p, snapshot).await
+    }
+
+    /// Composite launch supplies the same approved configuration as its terminals.
+    pub async fn create_with_snapshot(
+        self: &Arc<Self>,
+        p: CreateAgentTask,
+        snapshot: devbox_projects::trust::SetupSnapshot,
+    ) -> Result<AgentTask> {
         crate::limits::input(&p.prompt)?;
         let title = crate::plan::checked_title(&p.title)?.to_owned();
         let _reservation = self.reservations.lock().await;
@@ -248,9 +265,9 @@ impl AgentsService {
                 id: p.profile.clone(),
             }
         })?;
-        // Reject malformed project commands/copy configuration before reserving work.
-        devbox_projects::config::load(Path::new(&project.path))
-            .map_err(|e| Fail::Internal(format!("agent config: {e}")))?;
+        if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
+            return Err(AgentsError::UnsafeWorktree.into());
+        }
         let base = match p.base_branch {
             Some(b) => b,
             None => devbox_git::current_branch(Path::new(&project.path))
@@ -376,7 +393,9 @@ impl AgentsService {
                     let svc = svc.clone();
                     let _entered = handle.enter();
                     background.spawn(async move {
-                        if let Err(error) = svc.prepare(&task, &profile, &prep_project).await {
+                        if let Err(error) =
+                            svc.prepare(&task, &profile, &prep_project, &snapshot).await
+                        {
                             tracing::error!(?error,agent=%task.id,"agent preparation failed");
                             let _ = svc.preparation_failed(&task.id, &error).await;
                         }

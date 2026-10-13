@@ -3093,6 +3093,8 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): detect wait
 
 ### Task 11: 프로젝트 설정 파일과 시작 구성
 
+> **2026-10-13 사용자 승인 보정:** PR #640 보안 검토에 따라 01-design §7의 저장소 명령 신뢰 확인을 S1에 추가한다. projects가 경로·전체 설정 digest의 영속 승인과 불변 실행 snapshot을 소유한다. 직접 `agents.create/test/discard/cleanup`, 복합 `projects.launch`, 자동 정리의 실행 경로까지 적용하며, 기존 프로젝트는 자동 승인하지 않는다. 설정 변경·승인 경합·직접 RPC 우회·준비 도중 변경·정리 자원 보존을 실패 회귀부터 확인한다. 아래 초기 예제의 무조건적인 `config::load` 실행은 이 계약에 맞춰 보완한다.
+
 **Files:**
 - Modify: `crates/projects/src/config.rs`(Task 8의 최소 `[agent]`에 `[launch]`·`raw_*`·`parse`·`load`를 더한다)
 - Modify: `crates/projects/src/lib.rs`(메서드 `projects.config`·`projects.summary`·`projects.launch`·`projects.clone`), `crates/projects/Cargo.toml`(`toml`)

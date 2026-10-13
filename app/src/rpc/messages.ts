@@ -60,6 +60,22 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "파일을 읽을 수 있는지와 크기를 확인한 뒤 다시 검토하세요.",
   },
   "agents.list_changed": { title: "목록을 읽는 동안 작업이 바뀌었습니다.", action: "목록을 다시 확인해 주세요." },
+  "agents.project_trust_required": {
+    title: "프로젝트 명령 실행 승인이 필요합니다.",
+    action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
+  },
+  "projects.trust_required": {
+    title: "프로젝트 명령 실행 승인이 필요합니다.",
+    action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
+  },
+  "projects.trust_preview_stale": {
+    title: "프로젝트 경로나 설정이 바뀌었습니다.",
+    action: "최신 명령 내용을 확인하고 다시 승인해 주세요.",
+  },
+  "projects.trust_context_invalid": {
+    title: "명령 실행 위치를 확인할 수 없습니다.",
+    action: "프로젝트와 작업 폴더를 다시 선택해 주세요.",
+  },
   "projects.in_use": {
     title: "프로젝트에 에이전트 작업이나 터미널이 남아 있습니다.",
     action: "열린 작업과 터미널을 끝내고 남은 작업 폴더와 브랜치를 정리한 뒤 다시 시도하세요.",

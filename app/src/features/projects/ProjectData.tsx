@@ -1,9 +1,16 @@
 import { type QueryClient, skipToken, useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext } from "react";
+import type { Methods } from "../../rpc/gen/rpc";
 import { compareRev, useRpcQuery, useTopicInvalidation } from "../../rpc/query";
-export const PROJECT_KEYS = [["projects.list", {}], ["projects.summary", {}], ["projects.config"]];
+export const PROJECT_KEYS = [["projects.list", {}], ["projects.summary", {}], ["projects.config"]] as const;
 const REMOVED_KEY = ["projects.removed"];
 type RemovedProjects = Record<string, string>;
+/** Read immediately before execution; query observers may not have rendered a removal yet. */
+export function isRegisteredProject(qc: QueryClient, id: string) {
+  const list = qc.getQueryData<Methods["projects.list"]["result"]>(PROJECT_KEYS[0]);
+  const removed = qc.getQueryData<RemovedProjects>(REMOVED_KEY)?.[id];
+  return !!list?.items.some((project) => project.id === id) && (!removed || compareRev(list.rev, removed) > 0);
+}
 const Context = createContext<ReturnType<typeof useProjectList> | null>(null);
 /** Session cache survives popup unmounts and resets with the RPC daemon identity. */
 export function recordProjectRemoval(qc: QueryClient, id: string, rev: string) {

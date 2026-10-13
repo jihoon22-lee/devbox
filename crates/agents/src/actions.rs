@@ -208,6 +208,11 @@ impl AgentsService {
         let task = self.get(&p.id).await?;
         open(&task)?;
         let (project, wt, branch) = self.owned_worktree(&task).await?;
+        let cleanup_snapshot = if self.cleanup_after_close {
+            self.authorize_teardown(&task, &project).await?
+        } else {
+            None
+        };
         let repo = Path::new(&project.path);
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
@@ -251,7 +256,7 @@ impl AgentsService {
         self.close_record(&task.id, CloseHow::Merged, None, closed_head, usage, review)
             .await?;
         if self.cleanup_after_close {
-            self.cleanup_closed(&task.id).await;
+            self.cleanup_closed(&task.id, &cleanup_snapshot).await;
         }
         self.get(&task.id).await
     }
@@ -260,6 +265,11 @@ impl AgentsService {
         let task = self.get(&p.id).await?;
         open(&task)?;
         let (project, wt, branch) = self.owned_worktree(&task).await?;
+        let cleanup_snapshot = if self.cleanup_after_close {
+            self.authorize_teardown(&task, &project).await?
+        } else {
+            None
+        };
         let repo = Path::new(&project.path);
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
@@ -307,7 +317,7 @@ impl AgentsService {
         )
         .await?;
         if self.cleanup_after_close {
-            self.cleanup_closed(&task.id).await;
+            self.cleanup_closed(&task.id, &cleanup_snapshot).await;
         }
         self.get(&task.id).await
     }
@@ -377,9 +387,10 @@ impl AgentsService {
             .await?;
         self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
             .await?;
+        let snapshot = self.authorize_teardown(&task, &project).await?;
         self.quiesce(&task).await?;
         let usage = self.closure_usage(&task.id).await;
-        self.teardown_commands(&task, &project).await?;
+        self.teardown_commands(&task, &snapshot).await?;
         // Hooks and teardown may have committed. Destructive removal still uses the confirmed state.
         self.owned_worktree(&task).await?;
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
@@ -437,10 +448,20 @@ impl AgentsService {
         } else {
             Path::new(&project.path).to_owned()
         };
-        let command = devbox_projects::config::load(Path::new(&project.path))
-            .internal("test config")?
+        let snapshot = self
+            .projects
+            .test_snapshot(&task.project_id)
+            .await
+            .map_err(project_trust_failure)?
+            .ok_or(AgentsError::InvalidInput)?;
+        if snapshot.canonical_path() != project.path {
+            return Err(AgentsError::UnsafeWorktree.into());
+        }
+        let command = snapshot
+            .config()
             .agent
             .test
+            .clone()
             .ok_or(AgentsError::InvalidInput)?;
         let session = self
             .terminal

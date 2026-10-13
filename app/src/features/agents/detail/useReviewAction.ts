@@ -5,6 +5,7 @@ import type { MergeKind, Methods } from "../../../rpc/gen/rpc";
 import { messageFor } from "../../../rpc/messages";
 import { confirmPolicy, useRpcMutation, useRpcQuery } from "../../../rpc/query";
 import { useToasts } from "../../../ui";
+import { isProjectTrustError, useProjectTrust } from "../../projects/useProjectTrust";
 import type { AgentTask } from "../model";
 import { useAgentResult } from "./data";
 import { openAgentPr } from "./links";
@@ -17,6 +18,7 @@ type Intent =
   | { kind: "discard" };
 type Snapshot = { intent: Intent; changes?: Changes; check?: Check };
 export function useReviewAction(task: AgentTask, onConflict: (files: string[]) => void) {
+  const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const changes = useRpcQuery("agents.changes", { id: task.id }, { enabled: false });
   const check = useRpcQuery("agents.discard_check", { id: task.id }, { enabled: false });
   const merge = useRpcMutation("agents.merge"),
@@ -40,13 +42,30 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
     return () => {
       version.current++;
     };
-  }, [task.id]);
+  }, [task.id, task.projectId, task.state === "closed"]);
   const errorText = (error: RpcError) => {
     const message = messageFor(error.code, error.detail);
     return `${message.title} ${message.action ?? ""}${error.diagnosticId ? ` · 진단 ${error.diagnosticId}` : ""}`;
   };
   const refresh = async (intent: Intent, stamp: number) => {
     setLoading(true);
+    if (
+      !(await trust.ensure({
+        id: task.projectId,
+        operation: intent.kind,
+        agentId: task.id,
+        worktrees: [],
+        worktree: null,
+      }))
+    ) {
+      if (stamp === version.current) {
+        setLoading(false);
+        if (snapshot) setNotice("프로젝트 명령 실행 승인을 완료한 뒤 다시 확인하세요.");
+      }
+      return false;
+    }
+    if (stamp !== version.current) return false;
+    setSnapshot({ intent });
     const keys = [
       ["agents.changes", { id: task.id }],
       ["agents.commits", { id: task.id }],
@@ -93,7 +112,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
     if (confirmPolicy(method) !== "always") throw new Error("Review action requires confirmation");
     mismatch.current = false;
     setNotice("");
-    setSnapshot({ intent });
+    setLoading(true);
     await refresh(intent, version.current);
   };
   const confirm = async () => {
@@ -142,7 +161,17 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       if (stamp !== version.current) return;
       const failure = error instanceof RpcError ? error : new RpcError("internal");
       setNotice(errorText(failure));
-      if (failure.code === "agents.state_changed") {
+      if (isProjectTrustError(failure)) {
+        // The old Git snapshot cannot survive a changed command definition.
+        // Only an explicit recheck may obtain approval and a fresh Git snapshot.
+        setSnapshot({ intent });
+        mismatch.current = true;
+        await Promise.all(
+          ["agents.changes", "agents.commits", "agents.patch", "agents.discard_check"].map((method) =>
+            qc.invalidateQueries({ queryKey: [method, { id: task.id }], refetchType: "none" }),
+          ),
+        );
+      } else if (failure.code === "agents.state_changed") {
         // Remove the old snapshot while refreshing. No mutation is retried here.
         setSnapshot({ intent });
         mismatch.current = true;
@@ -159,6 +188,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
   const cancel = () => {
     if (guard.current) return;
     version.current++;
+    trust.cancel();
     mismatch.current = false;
     setSnapshot(undefined);
     setLoading(false);
@@ -185,12 +215,14 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
         : "현재 상태 확인 중…";
   return {
     snapshot,
+    trustDialog: trust.dialog,
+    trustNotice: trust.notice,
     open,
     confirm,
     cancel,
     label,
     body: `${task.title}\n${body}${notice ? `\n${notice}` : ""}`,
-    busy: merge.isPending || pr.isPending || discard.isPending,
+    busy: merge.isPending || pr.isPending || discard.isPending || loading || trust.pending,
     blocked: loading || !snapshot || (!snapshot.check && !snapshot.changes),
     loading,
     notice,

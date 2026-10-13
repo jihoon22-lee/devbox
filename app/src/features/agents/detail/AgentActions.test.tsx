@@ -3,12 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { TooltipProvider, useToasts } from "../../../ui";
 import { ProjectWire } from "../../projects/test-wire";
+import { trustPreview } from "../../projects/trust-fixtures";
 import { task } from "../test-fixtures";
 import { AgentActions } from "./AgentActions";
 
 const changes = { base: "main", ahead: 1, behind: 0, headOid: "h1", baseOid: "b1", files: [] };
-async function setup(inline = false) {
-  const wire = new ProjectWire();
+async function setup(inline = false, trustRequired = false) {
+  const wire = new ProjectWire({ trustNotRequired: !trustRequired });
   const item = { ...task("a1", "idle"), ...(inline ? { worktreePath: null, branch: null } : {}) };
   render(
     <TooltipProvider>
@@ -147,7 +148,7 @@ test("rebase conflict offers resolution instruction and abort; review and config
   await waitFor(() => expect(wire.requests("agents.test")).toHaveLength(1));
 });
 test("lost session resumes; closed tasks provide no actions", async () => {
-  const wire = new ProjectWire(),
+  const wire = new ProjectWire({ trustNotRequired: true }),
     resumed = vi.fn();
   const view = render(
     <RpcProvider client={wire.client}>
@@ -170,4 +171,43 @@ test("lost session resumes; closed tasks provide no actions", async () => {
     </RpcProvider>,
   );
   expect(screen.queryAllByRole("button")).toHaveLength(0);
+});
+
+test("trust denial discards old Git confirmation and explicitly rechecks trust before fresh Git", async () => {
+  const wire = await setup(false, true);
+  await userEvent.click(screen.getByRole("button", { name: "병합" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "병합 커밋" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  expect(wire.requests("agents.changes")).toHaveLength(0);
+  await act(async () => wire.reply("projects.trust_preview", trustPreview("a", { approved: true })));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  await act(async () => wire.reply("agents.changes", changes));
+  await userEvent.click(await screen.findByRole("button", { name: "main에 병합" }));
+  await waitFor(() => expect(wire.requests("agents.merge")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("agents.merge").id,
+      error: { code: "agents.project_trust_required", detail: { id: "a" } },
+    }),
+  );
+  expect(screen.getByRole("button", { name: "main에 병합" })).toBeDisabled();
+  expect(wire.requests("agents.changes")).toHaveLength(1);
+  expect(wire.requests("projects.trust_preview")).toHaveLength(1);
+  await userEvent.click(await screen.findByRole("button", { name: "다시 확인" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(2));
+  await act(async () => wire.reply("projects.trust_preview", trustPreview("a", { digest: "changed-definition" })));
+  expect(wire.requests("agents.changes")).toHaveLength(1);
+  await userEvent.click(await screen.findByRole("button", { name: "명령 실행 승인" }));
+  await waitFor(() => expect(wire.requests("projects.trust_approve")).toHaveLength(1));
+  await act(async () => wire.reply("projects.trust_approve", { rev: "2" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(2));
+  await act(async () => wire.reply("agents.changes", { ...changes, headOid: "fresh-head", baseOid: "fresh-base" }));
+  expect(wire.requests("agents.merge")).toHaveLength(1);
+  await waitFor(() => expect(screen.getByRole("button", { name: "main에 병합" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "main에 병합" }));
+  await waitFor(() => expect(wire.requests("agents.merge")).toHaveLength(2));
+  expect(wire.request("agents.merge", -1).params).toMatchObject({
+    expect: { headOid: "fresh-head", baseOid: "fresh-base" },
+  });
 });

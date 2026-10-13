@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useCurrentProject } from "../projects/store";
 import { ProjectWire } from "../projects/test-wire";
+import { trustPreview } from "../projects/trust-fixtures";
 import { AgentsSettings } from "./AgentsSettings";
 
 const info = {
@@ -13,8 +14,8 @@ const info = {
   dataDir: "/fixture/data",
   configPath: "/fixture/xdg/devbox/config.toml",
 };
-async function setup(project?: string) {
-  const wire = new ProjectWire();
+async function setup(project?: string, trustRequired = false) {
+  const wire = new ProjectWire({ trustNotRequired: !trustRequired });
   useCurrentProject.getState().set(project);
   const view = render(
     <RpcProvider client={wire.client}>
@@ -69,7 +70,11 @@ test("selected cleanup always confirms concrete targets, focuses cancel and bloc
   );
   await userEvent.click(await screen.findByRole("checkbox", { name: "/fixture/owned" }));
   await userEvent.click(screen.getByRole("button", { name: "선택 항목 정리" }));
-  const dialog = screen.getByRole("dialog");
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(2));
+  await act(async () =>
+    wire.reply("agents.cleanup_candidates", { worktrees: ["/fixture/owned"], branches: ["devbox/closed"] }),
+  );
+  const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText("/fixture/owned")).toBeInTheDocument();
   expect(within(dialog).getByRole("button", { name: "취소" })).toHaveFocus();
   expect(wire.requests("agents.cleanup")).toHaveLength(0);
@@ -92,9 +97,12 @@ test("changing project removes old cleanup confirmation and selections", async (
   await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: ["/fixture/first"], branches: [] }));
   await userEvent.click(await screen.findByRole("checkbox", { name: "/fixture/first" }));
   await userEvent.click(screen.getByRole("button", { name: "선택 항목 정리" }));
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(2));
+  await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: ["/fixture/first"], branches: [] }));
+  await screen.findByRole("dialog");
   await act(async () => useCurrentProject.getState().set("second"));
   expect(screen.queryByRole("dialog")).toBeNull();
-  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(2));
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(3));
   expect(wire.request("agents.cleanup_candidates", -1).params).toEqual({ projectId: "second" });
   await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: ["/fixture/second"], branches: [] }));
   fireEvent.click(screen.getByRole("button", { name: "선택 항목 정리" }));
@@ -115,4 +123,49 @@ test("refresh typed errors provide a retryable Korean diagnostic without claimin
   expect(await screen.findByText(/셸 환경을 다시 읽지 못했습니다/)).toBeInTheDocument();
   expect(screen.queryByText(/데몬을 다시 시작합니다/)).toBeNull();
   expect(screen.getByRole("button", { name: "셸 환경 다시 읽기" })).toBeEnabled();
+});
+
+test("cleanup approval precedes fresh candidates and a changed selected folder cancels deletion", async () => {
+  const { wire } = await setup("owned", true);
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(1));
+  await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: ["/fixture/owned"], branches: [] }));
+  await userEvent.click(await screen.findByRole("checkbox", { name: "/fixture/owned" }));
+  await userEvent.click(screen.getByRole("button", { name: "선택 항목 정리" }));
+  await waitFor(() => expect(wire.requests("projects.trust_preview")).toHaveLength(1));
+  expect(wire.request("projects.trust_preview").params).toEqual({
+    id: "owned",
+    operation: "cleanup",
+    agentId: null,
+    worktrees: ["/fixture/owned"],
+    worktree: null,
+  });
+  expect(wire.requests("agents.cleanup_candidates")).toHaveLength(1);
+  await act(async () => wire.reply("projects.trust_preview", trustPreview("owned")));
+  await userEvent.click(await screen.findByRole("button", { name: "명령 실행 승인" }));
+  await waitFor(() => expect(wire.requests("projects.trust_approve")).toHaveLength(1));
+  await act(async () => wire.reply("projects.trust_approve", { rev: "2" }));
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(2));
+  await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: [], branches: [] }));
+  expect(await screen.findByText(/정리 후보가 바뀌었습니다/)).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(wire.requests("agents.cleanup")).toHaveLength(0);
+});
+
+test("branch-only cleanup skips command approval and confirms the refreshed selection", async () => {
+  const { wire } = await setup("owned", true);
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(1));
+  await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: [], branches: ["devbox/closed"] }));
+  await userEvent.click(await screen.findByRole("checkbox", { name: "devbox/closed" }));
+  await userEvent.click(screen.getByRole("button", { name: "선택 항목 정리" }));
+  await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(2));
+  expect(wire.requests("projects.trust_preview")).toHaveLength(0);
+  await act(async () => wire.reply("agents.cleanup_candidates", { worktrees: [], branches: ["devbox/closed"] }));
+  const dialog = await screen.findByRole("dialog", { name: "선택 항목 정리" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "정리" }));
+  await waitFor(() => expect(wire.requests("agents.cleanup")).toHaveLength(1));
+  expect(wire.request("agents.cleanup").params).toEqual({
+    projectId: "owned",
+    worktrees: [],
+    branches: ["devbox/closed"],
+  });
 });

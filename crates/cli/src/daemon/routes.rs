@@ -46,6 +46,12 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<projects::ProjectsConfig, _, _>(
             |s, _, p| async move { s.projects.config(p).await },
         )
+        .register::<projects::ProjectsTrustPreview, _, _>(|s, _, p| async move {
+            super::trust::preview(s, p).await
+        })
+        .register::<projects::ProjectsTrustApprove, _, _>(|s, _, p| async move {
+            s.projects.trust_approve(p).await
+        })
         .register::<projects::ProjectsSummary, _, _>(|s, _, p| async move {
             super::launch::summary(s, p).await
         })

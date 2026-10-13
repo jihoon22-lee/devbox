@@ -8,6 +8,7 @@ mod socket;
 pub mod state;
 mod streams;
 mod system;
+mod trust;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
 use state::Services;

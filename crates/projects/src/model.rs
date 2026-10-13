@@ -165,5 +165,66 @@ domain_error! {
         UnsafePromptPath { path: String } = "projects.unsafe_prompt_path",
         PromptLimitExceeded { max_files: u32, max_bytes: u32 } = "projects.prompt_limit_exceeded",
         PromptInvalidEncoding { name: String } = "projects.prompt_invalid_encoding",
+        TrustRequired { id: String } = "projects.trust_required",
+        TrustPreviewStale { id: String } = "projects.trust_preview_stale",
+        TrustContextInvalid = "projects.trust_context_invalid",
     }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustOperation {
+    Create,
+    Test,
+    Launch,
+    Discard,
+    Merge,
+    Pr,
+    Cleanup,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustPreviewParams {
+    pub id: String,
+    pub operation: TrustOperation,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub worktrees: Vec<String>,
+    #[serde(default)]
+    pub worktree: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustApprove {
+    pub id: String,
+    pub expected_canonical_path: String,
+    pub expected_digest: String,
+    pub expected_scope_version: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustPreview {
+    pub status: TrustPreviewStatus,
+    pub project_id: String,
+    pub project_name: String,
+    pub canonical_path: String,
+    pub config_path: String,
+    pub digest: Option<String>,
+    pub scope_version: u32,
+    pub approved: bool,
+    pub requires_approval: bool,
+    pub config: Option<crate::config::ProjectConfig>,
+    pub execution_directories: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustPreviewStatus {
+    NotRequired,
+    ApprovalRequired,
+    Approved,
 }

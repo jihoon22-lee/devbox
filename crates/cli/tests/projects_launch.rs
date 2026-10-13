@@ -32,6 +32,7 @@ async fn launch_creates_configured_terminals_and_inline_agent_and_summary_counts
     d.launch();
     let c = d.client().await;
     let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
     let result = call(&c, "projects.launch", json!({"id":p})).await;
     assert_eq!(result["terminals"], 2);
     assert_eq!(result["agents"], 1);
@@ -131,6 +132,7 @@ async fn partial_launch_failure_reports_counts_and_preserves_created_terminal() 
     d.launch();
     let c = d.client().await;
     let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
     let error = c
         .raw_call("projects.launch", json!({"id":p}), None)
         .await
@@ -164,6 +166,7 @@ async fn launch_validates_every_profile_and_config_before_creating_resources() {
     d.launch();
     let c = d.client().await;
     let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
     let error = c
         .raw_call("projects.launch", json!({"id":p}), None)
         .await
@@ -201,6 +204,7 @@ async fn launch_honors_worktree_and_repeated_launch_uses_distinct_branches() {
     d.launch();
     let c = d.client().await;
     let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
     for _ in 0..2 {
         let result = call(&c, "projects.launch", json!({"id":p})).await;
         assert!(

@@ -48,10 +48,9 @@ impl AgentsService {
         task: &AgentTask,
         profile: &ToolProfile,
         project: &devbox_projects::Project,
+        config: &devbox_projects::trust::SetupSnapshot,
     ) -> Result<()> {
         let repo = Path::new(&project.path);
-        let config =
-            devbox_projects::config::load(repo).map_err(|e| internal("agent config", e))?;
         if let (Some(path), Some(branch)) = (&task.worktree_path, &task.branch) {
             if let Err(error) =
                 devbox_git::mutate::worktree_add(repo, Path::new(path), branch, &task.base_branch)
@@ -82,7 +81,7 @@ impl AgentsService {
             }
             self.record_resources(&task.id, crate::tracker::Resources::Owned)
                 .await?;
-            devbox_projects::config::copy_files(repo, Path::new(path), &config.agent.copy)
+            devbox_projects::config::copy_files(repo, Path::new(path), config.copy())
                 .map_err(|e| internal("agent copy", e))?;
         }
         let agents_dir = self.paths.data_dir.join("agents");
@@ -132,7 +131,7 @@ impl AgentsService {
             phase_file: phase.to_string_lossy().into_owned(),
             port: task.port,
             workdir: task.workdir.clone(),
-            setup: config.agent.setup,
+            setup: config.setup().to_vec(),
             tool_command: profile.command.clone(),
             hooks: profile.hooks,
             claude_settings: settings,

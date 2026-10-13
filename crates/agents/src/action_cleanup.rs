@@ -31,14 +31,37 @@ impl AgentsService {
     pub(crate) async fn teardown_commands(
         &self,
         task: &AgentTask,
-        project: &devbox_projects::Project,
+        config: &Option<devbox_projects::trust::AuthorizedConfig>,
     ) -> Result<()> {
-        let config =
-            devbox_projects::config::load(Path::new(&project.path)).internal("teardown config")?;
-        for command in config.agent.teardown {
-            bounded_command("bash", &["-lc", &command], Some(Path::new(&task.workdir))).await?;
+        let Some(config) = config else {
+            return Ok(());
+        };
+        if config.project_id() != task.project_id {
+            return Err(AgentsError::UnsafeWorktree.into());
+        }
+        for command in &config.config().agent.teardown {
+            bounded_command("bash", &["-lc", command], Some(Path::new(&task.workdir))).await?;
         }
         Ok(())
+    }
+
+    pub(crate) async fn authorize_teardown(
+        &self,
+        task: &AgentTask,
+        project: &devbox_projects::Project,
+    ) -> Result<Option<devbox_projects::trust::AuthorizedConfig>> {
+        let snapshot = self
+            .projects
+            .teardown_snapshot(&task.project_id)
+            .await
+            .map_err(project_trust_failure)?;
+        if snapshot
+            .as_ref()
+            .is_some_and(|s| s.canonical_path() != project.path)
+        {
+            return Err(AgentsError::UnsafeWorktree.into());
+        }
+        Ok(snapshot)
     }
     pub(crate) async fn record_cleanup_error(&self, id: &str, error: &Fail<AgentsError>) {
         tracing::error!(?error, agent = id, "closed task cleanup retained resources");
@@ -59,17 +82,30 @@ impl AgentsService {
             })
             .await;
     }
-    pub(crate) async fn cleanup_closed(&self, id: &str) {
-        if let Err(error) = self.cleanup_closed_inner(id).await {
+    pub(crate) async fn cleanup_closed(
+        &self,
+        id: &str,
+        snapshot: &Option<devbox_projects::trust::AuthorizedConfig>,
+    ) {
+        if let Err(error) = self.cleanup_closed_inner(id, snapshot).await {
             self.record_cleanup_error(id, &error).await;
         }
     }
-    async fn cleanup_closed_inner(&self, id: &str) -> Result<()> {
+    async fn cleanup_closed_inner(
+        &self,
+        id: &str,
+        snapshot: &Option<devbox_projects::trust::AuthorizedConfig>,
+    ) -> Result<()> {
         let task = self.get(id).await?;
         let (project, wt, branch) = self.owned_worktree(&task).await?;
+        if snapshot.as_ref().is_some_and(|s| {
+            s.project_id() != task.project_id || s.canonical_path() != project.path
+        }) {
+            return Err(AgentsError::UnsafeWorktree.into());
+        }
         // Stop only the task's own resources, then inspect again before any removal.
         self.quiesce(&task).await?;
-        self.teardown_commands(&task, &project).await?;
+        self.teardown_commands(&task, snapshot).await?;
         self.owned_worktree(&task).await?;
         if task.closed_head_oid.as_deref()
             != Some(

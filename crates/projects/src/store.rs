@@ -10,6 +10,37 @@ CREATE TABLE projects_projects (
   added_ms INTEGER NOT NULL
 );";
 
+pub const MIGRATION_2: &str = "
+CREATE TABLE projects_command_trust (
+  project_id TEXT PRIMARY KEY REFERENCES projects_projects(id) ON DELETE CASCADE,
+  canonical_path TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  scope_version INTEGER NOT NULL,
+  approved_ms INTEGER NOT NULL
+);";
+
+pub(crate) fn approved(
+    tx: &Transaction,
+    id: &str,
+    path: &str,
+    digest: &str,
+    scope: u32,
+) -> rusqlite::Result<bool> {
+    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects_command_trust WHERE project_id=?1 AND canonical_path=?2 AND digest=?3 AND scope_version=?4)", params![id,path,digest,scope], |row| row.get(0))
+}
+
+pub(crate) fn approve(
+    tx: &Transaction,
+    id: &str,
+    path: &str,
+    digest: &str,
+    scope: u32,
+    at: i64,
+) -> rusqlite::Result<()> {
+    tx.execute("INSERT INTO projects_command_trust(project_id,canonical_path,digest,scope_version,approved_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(project_id) DO UPDATE SET canonical_path=excluded.canonical_path,digest=excluded.digest,scope_version=excluded.scope_version,approved_ms=excluded.approved_ms", params![id,path,digest,scope,at])?;
+    Ok(())
+}
+
 pub fn all(tx: &Transaction) -> rusqlite::Result<Vec<Project>> {
     let mut stmt = tx.prepare("SELECT id, name, path, favorite, added_ms FROM projects_projects ORDER BY favorite DESC, name, path, id")?;
     let rows = stmt.query_map([], |r| {

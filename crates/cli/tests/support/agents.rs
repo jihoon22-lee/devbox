@@ -66,11 +66,25 @@ impl TestDaemon {
         profile: &str,
         worktree: bool,
     ) -> String {
+        self.approve_project(client, project).await;
         let body = client.raw_call("agents.create", json!({"projectId":project,"title":"Fix login","profile":profile,"worktree":worktree,"prompt":"fix it"}), None).await.expect("create fixture agent");
         serde_json::from_str::<Value>(&body).expect("task")["id"]
             .as_str()
             .expect("id")
             .into()
+    }
+
+    /// Explicitly consent to commands belonging to this test's owned repository.
+    /// Trust-denial regressions call raw RPC instead of this convenience helper.
+    pub async fn approve_project(&self, client: &Client, project: &str) {
+        let raw=client.raw_call("projects.trust_preview",json!({"id":project,"operation":"create","agentId":null,"worktrees":[],"worktree":true}),None).await.expect("owned fixture preview");
+        let preview: Value = serde_json::from_str(&raw).expect("preview");
+        assert!(
+            Path::new(preview["canonicalPath"].as_str().expect("path"))
+                .starts_with(self.home.path()),
+            "only consent to fixture commands"
+        );
+        client.raw_call("projects.trust_approve",json!({"id":project,"expectedCanonicalPath":preview["canonicalPath"],"expectedDigest":preview["digest"],"expectedScopeVersion":preview["scopeVersion"]}),None).await.expect("explicit owned-fixture command consent");
     }
     pub async fn wait_for(
         &self,

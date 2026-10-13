@@ -3,11 +3,12 @@ mod actions;
 #[cfg(target_os = "linux")]
 mod clone_target;
 mod cloning;
-mod copy_target;
 pub mod config;
+mod copy_target;
 pub mod model;
 mod prompts;
 mod store;
+pub mod trust;
 
 use devbox_core::{Db, Hub, Migration, current_rev, expand_home};
 use devbox_protocol::{Done, Exporter, Fail, Internal, method, topic};
@@ -15,11 +16,18 @@ pub use model::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    domain: "projects",
-    version: 1,
-    sql: store::MIGRATION_1,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        domain: "projects",
+        version: 1,
+        sql: store::MIGRATION_1,
+    },
+    Migration {
+        domain: "projects",
+        version: 2,
+        sql: store::MIGRATION_2,
+    },
+];
 
 method!(pub ProjectsList = "projects.list", query, ListProjects => ProjectList, ProjectsError);
 method!(pub ProjectsAdd = "projects.add", mutation, AddProject => Project, ProjectsError);
@@ -31,6 +39,8 @@ method!(pub ProjectsLaunch = "projects.launch", mutation, LaunchProject => Launc
 method!(pub ProjectsClone = "projects.clone", mutation, CloneProject => Project, ProjectsError);
 method!(pub ProjectsSetFavorite = "projects.set_favorite", mutation, SetFavorite => Done, ProjectsError);
 method!(pub ProjectsPrompts = "projects.prompts", query, ProjectPrompts => PromptList, ProjectsError);
+method!(pub ProjectsTrustPreview = "projects.trust_preview", query, TrustPreviewParams => TrustPreview, ProjectsError);
+method!(pub ProjectsTrustApprove = "projects.trust_approve", mutation, TrustApprove => devbox_protocol::Done, ProjectsError);
 topic!(pub ProjectsChangedTopic = "projects.changed", ProjectsChanged);
 
 pub fn export<X: Exporter>(x: &mut X) {
@@ -44,6 +54,8 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<ProjectsClone>();
     x.method::<ProjectsSetFavorite>();
     x.method::<ProjectsPrompts>();
+    x.method::<ProjectsTrustPreview>();
+    x.method::<ProjectsTrustApprove>();
     x.topic::<ProjectsChangedTopic>();
 }
 
@@ -251,3 +263,5 @@ impl ProjectsService {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trust_tests;

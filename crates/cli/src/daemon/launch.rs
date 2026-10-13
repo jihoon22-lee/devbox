@@ -2,7 +2,7 @@
 use super::state::Services;
 use devbox_agents::{CreateAgentTask, state::AgentState};
 use devbox_projects::*;
-use devbox_protocol::{Fail, Internal};
+use devbox_protocol::Fail;
 use devbox_terminal::{CreateSession, ListSessions};
 use futures::{StreamExt, stream};
 use std::{path::Path, sync::Arc};
@@ -38,15 +38,11 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         .ok_or_else(|| ProjectsError::NotFound {
             id: params.id.clone(),
         })?;
-    let project_path = project.path.clone();
-    let config = tokio::task::spawn_blocking(move || {
-        devbox_projects::config::load(Path::new(&project_path))
-    })
-    .await
-    .internal("read project launch configuration")?
-    .map_err(|error| ProjectsError::ConfigurationInvalid {
-        message: error.to_string(),
-    })?;
+    let snapshot = s.projects.launch_snapshot(&project.id).await?;
+    if snapshot.preparation().canonical_path() != project.path {
+        return Err(ProjectsError::PathInvalid { path: project.path }.into());
+    }
+    let config = snapshot.launch().clone();
     // Preflight the whole configuration before the first terminal or agent is reserved.
     if !tokio::fs::metadata(&project.path)
         .await
@@ -55,7 +51,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         return Err(ProjectsError::PathInvalid { path: project.path }.into());
     }
     let profiles = s.agents.profiles();
-    for agent in &config.launch.agents {
+    for agent in &config.agents {
         if !profiles
             .items
             .iter()
@@ -68,7 +64,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         }
     }
     let mut result = LaunchResult::default();
-    let base = if config.launch.agents.is_empty() {
+    let base = if config.agents.is_empty() {
         None
     } else {
         let repo = Path::new(&project.path);
@@ -89,7 +85,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
                 "agent preflight",
             )
         })?;
-        if config.launch.agents.iter().any(|agent| agent.worktree) {
+        if config.agents.iter().any(|agent| agent.worktree) {
             devbox_git::run::resolve(repo, &branch)
                 .await
                 .map_err(|error| {
@@ -102,7 +98,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         }
         Some(branch)
     };
-    for (index, terminal) in config.launch.terminals.into_iter().enumerate() {
+    for (index, terminal) in config.terminals.into_iter().enumerate() {
         let created = s
             .terminal
             .create(CreateSession {
@@ -117,17 +113,20 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         result.terminal_ids.push(created.id);
         result.terminals += 1;
     }
-    for (index, agent) in config.launch.agents.into_iter().enumerate() {
+    for (index, agent) in config.agents.into_iter().enumerate() {
         // Existing agents.create owns branch/slug collision handling and preparation lifecycle.
         s.agents
-            .create(CreateAgentTask {
-                project_id: project.id.clone(),
-                title: format!("시작 구성 {}", index + 1),
-                profile: agent.tool,
-                base_branch: base.clone(),
-                worktree: agent.worktree,
-                prompt: agent.prompt.unwrap_or_default(),
-            })
+            .create_with_snapshot(
+                CreateAgentTask {
+                    project_id: project.id.clone(),
+                    title: format!("시작 구성 {}", index + 1),
+                    profile: agent.tool,
+                    base_branch: base.clone(),
+                    worktree: agent.worktree,
+                    prompt: agent.prompt.unwrap_or_default(),
+                },
+                snapshot.preparation().clone(),
+            )
             .await
             .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
         result.agents += 1;

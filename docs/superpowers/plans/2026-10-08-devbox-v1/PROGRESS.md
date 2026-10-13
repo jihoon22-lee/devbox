@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 구현 및 브랜치 전체 독립 재검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | PR #640 코드 리뷰 보완 및 승인된 프로젝트 신뢰 확인 구현·별도 검토 → 영향 검증·필수 CI 3개·최종 SHA 자동 리뷰 → squash 머지 |
+| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 Git/터미널/에이전트 보완과 영향 E2E 통과, 최종 후속 SHA의 CI·Windows 영향 재수용·자동 리뷰 진행 예정 |
+| 다음 할 일 | 최종 후속 SHA push → 필수 CI 3개·Windows 설치본 영향 재수용·최종 SHA 자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640 필수 CI 3개 PASS, 별도 E2E 정리 실패 및 자동 리뷰 지적 보완·승인된 신뢰 확인 추가 작업 중. 후속 최종 SHA 검증은 아직 |
-| 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 후속 최종 SHA의 원격 CI·설치본 검증은 아직 |
+| 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -242,6 +242,10 @@ PR #640 후속 Git 보완: source 복사 FD 재검증, clone 전송 deadline 10�
 PR #640 터미널 출력 보완: history 조회와 attach 사이 출력 누락을 결정적 RED로 재현하고 같은 tmux 명령 큐의 불변 버퍼 캡처로 첫 화면과 연결했다. 읽기 전용 크기 조회 뒤 다른 client의 크기 변경·정상 닫기가 끼어 번호행272가 사라지는 지원 경합도 각각 실제 RED로 확인했다. 세션별 초기화/resize/close 순서, 취소와 분리된 초기화·resize 확인, 제한 시간 정리와 미해결 peer 보존을 적용했다. 최초의 조기 응답 assertion·관리 설정 밖 WAIT hook 가설은 제품 결함 증거가 아니어서 철회하고 실제 번호행 실패와 구분했다. 원시 바이트 검사만으로 놓친 xterm 첫 화면 지우기의49행 손실과 연결 중 화면 성장의20행 손실도 실제 사용 중인 xterm6 파서로 RED를 확인했다. history를 스크롤백에 옮기고 첫 지우기에서만 현재 viewport 내용을 보존하도록 수정해 이후 일반 지우기·분할 CSI·재연결은 정상 처리한다. Rust 고유23개 중 마지막 수정 후 직접14개와 동일 경로 재사용9개를 구분했으며, 최종 terminal Clippy/fmt PASS 및 Rust11파일 독립 검토 PASS. 실제 xterm4+기존 TerminalView15=19개·타입 검사·화면4파일 독립 검토 PASS. 실제 제품 스트림 readonly/writable/reflow와 현재 TS helper의70행 화면 재생4개 모두 누락0·중복0·scrollback2000 PASS. 보강한 실제 화면 검색/데몬 재시작 E2E1개4.5초 PASS(감독17.341초, cgroup peak1,434,337,280byte). 나머지 E2E/전체 runner는 반복하지 않았다. 근거: terminal-continuity-frozen.json·initial-history-evidence.json·xterm-history-evidence.json·terminal-history-e2e.log. Windows 영향 재수용은 새 최종 SHA에서 수행할 예정이다.
 
 PR #640 에이전트 후속 보완: 추가 지시 전 provisional 상태를 저장해 동기 hook을 보존하고, 미전송은 해당 실행 세대·상태에서만 보상하며 전달 여부가 불명확하면 이를 명시한다. 강제 폐기는 ignored 파일까지 실제 내용·권한·링크와 Git index를 확인한 snapshot을 다시 검사한다. 파일 2GiB·전체 8GiB·개수/깊이·기한을 제한하고 FIFO 교체의 무기한 열기와 깊은 트리의 스택 소진도 각각 RED→GREEN으로 보완했다. 닫힌 작업의 확인 당시 base/head와 변경·커밋 목록은 DB에 보존하며 Git 객체가 없으면 패치 조회 불가를 알린다. 자동 정리 기본값, 부분 Git 통계 진단, 직렬화된 입력/이력 상한, 768KiB 목록 페이지와 일관된 revision 조회, 에이전트 터미널의 일반 종료 차단을 적용했다. 독립 검토에서 발견한 감시 루프의 첫 페이지만 조회하는 누락도 실제 뒤 페이지 Running→Waiting→Running 회귀로 수정했다. CLI49·agents85·프론트14·Git9·terminal6 고유163개 PASS(최신 화면9·scanner3·watch9 등 겹치는 후속 검사는 중복 합산하지 않음), 대상4crate Clippy·타입·TS 생성·소유 파일 포맷·Biome PASS. 전체 fmt는 이전 projects/lib 모듈 정렬 한 건 FAIL로 남겼으며 이어지는 신뢰 확인 변경에서 처리한다. 기존 테스트의 변경 이벤트/진단 필드 기대값 및 비동기 요청 대기 실패도 수정해 좁게 재검증했다. 원래 실패와 실제 실행 명령·출력, 검사별 재사용 범위는 agent7-verification-evidence.json·agent7-retained-verification-tool-output.json·agent7-source-freeze.json에 보존한다. 별도 scanner 로그 확보용 중복 검사가 한 번 완료된 절차 이탈도 기록했다. Windows 영향 재수용과 승인된 신뢰 확인 구현은 아직이다.
+
+PR #640 승인된 신뢰 확인 추가(2026-10-14): 프로젝트 정규 경로·전체 설정 bytes의 SHA256·실행 범위 버전1에 묶인 영속 승인과 전체 명령/실행 위치 미리보기를 구현했다. 기존 프로젝트는 무승인이며 같은 안전 FD에서 최대256KiB를 읽어 digest와 설정을 만든다. 경로·내용·범위 버전이 달라진 승인 요청은 stale로 거부한다. S1에서 실행하지 않는 raw task/service/schedule은 digest에 포함하되 승인 실행 범위에 넣지 않으며 S2 확장 시 버전 상승·재승인을 요구한다. 불변 설정과 제한된 준비/시작 snapshot을 create→prepare·복합 launch·test·teardown에 전달하고, merge/PR의 정리는 Git 변경 전에 확보한 Some/None snapshot을 재사용한다. 일괄 정리는 프로젝트 snapshot 한 번과 모든 대상 소유권 확인을 첫 종료/삭제 전에 마친다. 실제 명령을 실행하지 않는 inline 종료·브랜치 정리·자동 정리를 끈 merge/PR은 잘못된 설정에도 불필요하게 막히지 않으며, 이 안내가 실행 권한을 부여하지는 않는다. 화면은 취소·언마운트·대상 제거 뒤 늦은 응답을 거부하고 설정 변경 시 새 내용을 다시 승인받는다. 파괴적 동작은 승인 후 Git 상태를 새로 조회하고 재확인한다. 실제 create/launch 미승인 실행, merge 중 설정 재읽기, 무명령 preview 오류, 제거된 대상의 늦은 생성, 기존 NotFound 오류 호환 회귀를 각각 RED→GREEN으로 확인했다. 관련 고유123개(Rust66·프론트57, 새 회귀26 포함), 영향 Clippy·타입·TS 생성·포맷·변경 Biome PASS 및 소스47개·설계3개 Astra 독립 검토 PASS. 이전 projects/lib 모듈 정렬 FAIL도 해결했다. 초기 UI44PASS/1FAIL·Shell10PASS/2FAIL 및 fixture 실패는 전체 PASS로 바꾸지 않고 후속 통과와 재사용 범위를 분리했다. 근거는 trust-evidence.json·trust-source-freeze.json과 trust-*.log다. 최종 SHA Windows 영향 재수용은 아직이다.
+
+신뢰 확인 영향 E2E: 시작 구성의 승인 취소→자원0→설정 변경 stale→명시적 재승인→터미널 탭 흐름은3.7초 PASS. 에이전트 생성→입력 대기→추가 지시→검토→병합 검사는 세션이 모두 닫힌 소유 tmux 서버의 `list-panes: no current target` 정리 오류로 실패했다. 정확한 빈 서버 응답만 허용하고 해당 소유 서버 종료는 계속 수행하며 다른 조회/종료 오류는 보존하도록 수정했다. helper RED1→관련8개 GREEN 및 두 파일 독립 검토 PASS, 실패했던 실제 에이전트 E2E만 재실행해4.0초 PASS(감독5.874초, cgroup peak920,928,256byte). 통과한 시작 구성과 다른 E2E는 반복하지 않았다. 원래 실패 trace·로그는 trust-first-e2e-test-results·trust-affected-e2e.log, 수정 근거는 empty-tmux-{red,green}.log·trust-agent-e2e-recheck.log에 보존한다.
 
 ## 6. 세션 기록
 
