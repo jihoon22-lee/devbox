@@ -83,7 +83,7 @@ impl Index {
     }
 
     pub(super) fn publish(mut self) -> Result<(), GitError> {
-        if !self.owns_lock() || read_index(&self.index)? != self.original {
+        if !self.unchanged()? {
             return Err(GitError::StateChanged);
         }
         let Some(private) = read_index(&self.private)? else {
@@ -101,6 +101,10 @@ impl Index {
         fs::rename(&self.lock, &self.index)
             .map_err(|error| run::internal(error, "publish squash index"))?;
         Ok(())
+    }
+
+    fn unchanged(&self) -> Result<bool, GitError> {
+        Ok(self.owns_lock() && read_index(&self.index)? == self.original)
     }
 
     fn owns_lock(&self) -> bool {
@@ -160,8 +164,13 @@ pub(super) async fn squash(
     if baseline(dir, base_branch).await? != original {
         return Err(GitError::StateChanged);
     }
+    let mut mutation_failed = false;
     let result = async {
         if let Err(error) = index.git(dir, &["merge", "--squash", source_oid]).await {
+            mutation_failed = true;
+            if !index.unchanged()? {
+                return Err(GitError::StateChanged);
+            }
             return failed_merge(dir, base_branch, original, error, Some(&index))
                 .await
                 .map(|_| ());
@@ -208,9 +217,15 @@ pub(super) async fn squash(
             }
             1 => match index.git(dir, &["commit", "-m", message]).await {
                 Ok(_) => Ok(()),
-                Err(error) => failed_merge(dir, base_branch, original, error, Some(&index))
-                    .await
-                    .map(|_| ()),
+                Err(error) => {
+                    mutation_failed = true;
+                    if !index.unchanged()? {
+                        return Err(GitError::StateChanged);
+                    }
+                    failed_merge(dir, base_branch, original, error, Some(&index))
+                        .await
+                        .map(|_| ())
+                }
             },
             _ => Err(GitError::Failed {
                 op: "inspect squash index".into(),
@@ -219,6 +234,31 @@ pub(super) async fn squash(
         }
     }
     .await;
-    index.publish()?;
-    result
+    match result {
+        Ok(()) => index.publish(),
+        Err(error) => {
+            // A rejected validation must not stage the private patch. Restore
+            // only while the original base and our shared-index ownership hold.
+            if !index.unchanged()? {
+                return Err(GitError::StateChanged);
+            }
+            let base_unchanged = current_branch(dir).await?.as_deref() == Some(base_branch)
+                && run::resolve(dir, "HEAD").await? == original;
+            if mutation_failed {
+                // A legitimate failing Git hook may have moved HEAD. Preserve
+                // its staged index as before; never reset that changed checkout.
+                if !base_unchanged {
+                    index.publish()?;
+                }
+                return Err(error);
+            }
+            if base_unchanged {
+                failed_merge(dir, base_branch, original, error, Some(&index))
+                    .await
+                    .map(|_| ())
+            } else {
+                Err(error)
+            }
+        }
+    }
 }
