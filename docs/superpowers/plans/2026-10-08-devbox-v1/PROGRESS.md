@@ -12,10 +12,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 Git/터미널/에이전트 보완과 영향 E2E 통과, 최종 후속 SHA의 CI·Windows 영향 재수용·자동 리뷰 진행 예정 |
-| 다음 할 일 | 최종 후속 SHA push → 필수 CI 3개·Windows 설치본 영향 재수용·최종 SHA 자동 리뷰 → squash 머지 |
+| 단계 | S0 및 후속 #639 완료. S1 기능·수용 계측 도구 및 승인된 신뢰 확인 구현·독립 검토 완료. PR 후속 보완·신뢰 확인 영향 E2E와 7c9dabff CI·Windows 영향 재수용 통과. 같은 SHA 자동 리뷰 추가 6건의 수정·별도 검토 진행 중 |
+| 다음 할 일 | 추가 리뷰 6건 회귀·수정·별도 검토 → 후속 최종 SHA 필수 CI·Windows 영향 재수용·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 후속 최종 SHA의 원격 CI·설치본 검증은 아직 |
+| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–24 및 통합 보완 완료, `105494c3` push·Windows CI/설치본 영향 재검증 PASS. PR #640의 이전 필수 CI 3개 PASS. 후속 지적·신뢰 확인 구현, 독립 검토 및 영향 검증 완료. 7c9dabff CI·설치본 검증 통과, 자동 리뷰 추가 6건 처리 중 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -250,6 +250,10 @@ PR #640 승인된 신뢰 확인 추가(2026-10-14): 프로젝트 정규 경로·
 후속 CI `ca761e47`의 Frontend·전체 E2E는 PASS였으나 Linux Rust는 생성 타입 계약 테스트 한 건에서 FAIL이었다([run38424217215](https://github.com/jihoon22-lee/devbox/actions/runs/38424217215)). 실제 생성 타입에는 이미 `discardFingerprint?: string`이 있었고 xtask의 기대 문자열만 이전 형태였다. 해당 필드를 기대값에 추가하되 head/base/unmerged 필수 확인은 유지했다. 직접1개 재검증 PASS(2.911초 감독), 한 줄 독립 검토 PASS이며 제품·생성물은 변경하지 않았다. 원본 실패는 ca761e47-ci-failed.log, 후속은 export-contract-green.log에 보존한다. 새 최종 SHA의 필수 CI·자동 리뷰와 Windows 설치본 확인은 다시 수행한다.
 
 이어진 CI `bb3dfa75`는 Rust 테스트·Clippy와 Frontend·전체 E2E를 통과했으나 화면 용어 검사에서 내부 template 변수 `${generation}`을 표시 문구로 오인해 FAIL이었다([run38425549168](https://github.com/jihoon22-lee/devbox/actions/runs/38425549168)). 제품 코드를 바꾸지 않고 검사기가 같은 따옴표·이스케이프를 읽고, backtick의 실제 변수 보간만 제외하도록 보완했다. 실제 금지 문구·따옴표를 포함한 식·이스케이프된 보간은 계속 검출한다. 기존 단위 검사에 보간/표시 문자열 사례7개를 추가해 오탐과 기존 누락의 RED, 이스케이프 경계 RED 뒤 최종 PASS를 확인했고 실제 전체 소스 용어 검사도 PASS였다. `.github`+`scripts`는1,432줄로 제한1,500줄 이내다. 원본 bb3dfa75-ci-failed.log와 banned-template-*·banned-current-final-green.log에 근거를 보존하며 새 최종 SHA 검증을 계속한다.
+
+후속 SHA `7c9dabff`의 [CI38427615490](https://github.com/jihoon22-lee/devbox/actions/runs/38427615490)·[Windows38427615562](https://github.com/jihoon22-lee/devbox/actions/runs/38427615562)는 모두 PASS였다. 해당 설치본의 실제 Windows 신뢰 확인은 승인 취소 시 자원0, setup 승인 실행, 설정 변경 후 직접 test/discard 거부·기존 작업 보존, 승인 중 설정 변경 시 stale 표시와 새 명령 재승인, test-v3 및 teardown-v4 실행·작업 폴더 제거를 확인했다. 기본 canvas xterm의300줄 기록은 reload 재연결과 다른 크기의 실제 분리 창에서도 모두 보존됐다. SC10 단일 byte 왕복200회(예열10회 별도, 화면 그리기 제외)는 p50 1.9ms/p95 2.8ms, 정확히100,000,000byte 출력 중 별도 분리 창 ping939회 p95 14ms·입력 복구102.5ms로 PASS였다. 이번 hook은 소유 Native Smoke fixture이며 실제 Claude/Codex 수용과 혼동하지 않는다. 트레이 종료 UIAutomation 시도는 대상을 특정하지 못해 미완료였고 등록된 제품 quit_app 명령으로 정상 종료해 앱/WebView·bridge 종료를 확인했다. 이전105 트레이 실기와 구분한다. 설치본·프로필·설정·WSL unit/data/bin/socket은 부재 사전검사와 소유 ID/hash 확인 후 정리, 기존 DevboxSuite0.9 보존. 근거 `windows-final-7c9dabff/acceptance.json`·receipt·원본 CDP·자원 기록·cleanup 파일. 같은 SHA 코드/보안 리뷰도 완료됐으나 신규 코드 지적6건(자동 정리 브랜치/예약 해제, 터미널 제목 상한, 변경 내용별 봤음 무효화, 실패 rebase 소유권, dirty PR 거부, S1 서비스 전용 시작 비활성화)이 도착해 후속 수정 중이며 최종 수용 완료·머지로 보고하지 않는다.
+
+PR #640 추가 터미널 제목 상한: 공개/내부 생성과 이름 변경의 상태 변경 전에 Unicode scalar256자 상한을 검사하고, 허용된 원문은 자르거나 바꾸지 않는다. 자동 cwd/zellij 제목에도 같은 검사와 typed `terminal.title_too_long{limit:256}`·한국어 안내를 적용했다. 기존 무제한 create/rename의 RED2와 기존 정상1을 확인한 뒤 Rust8·메시지2 PASS, 생성기·해당 crate Clippy·fmt·변경 Biome PASS 및 최종6파일 독립 검토 PASS. 근거 `windows-final-7c9dabff/terminal-title-frozen.json`과 원본 실패/후속 로그. 새 SHA Windows 검증은 아직이다.
 
 ## 6. 세션 기록
 

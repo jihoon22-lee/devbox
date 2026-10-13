@@ -13,4 +13,5 @@ test("agent errors use actual generated file details and terminal codes", () => 
   expect(messageFor("agents.conflict", { files: ["app.tsx"] }).action).toContain("app.tsx");
   expect(messageFor("agents.conflict", { files: [1, null] }).action).not.toContain("null");
   expect(messageFor("terminal.cwd_invalid").action).toContain("WSL");
+  expect(messageFor("terminal.title_too_long", { limit: 256 }).action).toContain("256");
 });

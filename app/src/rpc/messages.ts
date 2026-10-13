@@ -28,6 +28,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "시험용 스트림을 열 수 없습니다.",
     action: "시험 인스턴스의 연결 상태를 확인해 주세요.",
   },
+  "terminal.title_too_long": { title: "터미널 제목이 너무 깁니다.", action: "제목을 256자 이내로 줄여 주세요." },
   "terminal.invalid_size": { title: "터미널 크기가 올바르지 않습니다.", action: "가로와 세로를 확인해 주세요." },
   "terminal.stream_unavailable": { title: "터미널 스트림을 열 수 없습니다.", action: "다시 연결해 주세요." },
   "terminal.not_found": { title: "터미널을 찾을 수 없습니다.", action: "목록을 새로 확인해 주세요." },

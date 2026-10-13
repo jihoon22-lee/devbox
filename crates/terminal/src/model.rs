@@ -3,6 +3,9 @@ use devbox_protocol::domain_error;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// Maximum Unicode scalar values stored in a terminal title.
+pub const MAX_TITLE_CHARS: usize = 256;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionKind {
@@ -86,6 +89,7 @@ pub struct ResizeStream {
 }
 domain_error! {
     pub enum TerminalError {
+        TitleTooLong { limit: u16 } = "terminal.title_too_long",
         InvalidSize { cols: u16, rows: u16 } = "terminal.invalid_size",
         StreamUnavailable {} = "terminal.stream_unavailable",
         NotFound { id: String } = "terminal.not_found",

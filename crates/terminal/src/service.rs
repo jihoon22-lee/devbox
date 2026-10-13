@@ -32,6 +32,15 @@ fn changed(hub: &Hub, rev: u64) {
 fn tmux_error(error: TmuxError) -> Fail<TerminalError> {
     Fail::Internal(format!("terminal tmux: {error}"))
 }
+fn validate_title(title: &str) -> Result<()> {
+    if title.chars().take(MAX_TITLE_CHARS + 1).count() > MAX_TITLE_CHARS {
+        return Err(TerminalError::TitleTooLong {
+            limit: MAX_TITLE_CHARS as u16,
+        }
+        .into());
+    }
+    Ok(())
+}
 async fn canonical_cwd(path: PathBuf) -> Result<String> {
     let original = path.to_string_lossy().into_owned();
     if !path.is_absolute() {
@@ -231,6 +240,7 @@ impl TerminalService {
         command: String,
         env: &[(String, String)],
     ) -> Result<TerminalSession> {
+        validate_title(&title)?;
         let _guard = self.mutations.lock().await;
         let cwd = canonical_cwd(cwd).await?;
         if let Some(id) = &project_id
@@ -315,6 +325,7 @@ impl TerminalService {
         }
     }
     pub async fn rename(&self, params: RenameSession) -> Result<Done> {
+        validate_title(&params.title)?;
         let _guard = self.mutations.lock().await;
         let hub = self.hub.clone();
         let (_, rev) = self
