@@ -22,8 +22,25 @@ impl AgentsService {
         if task.tool_exited || task.state == AgentState::Closed {
             return Ok(false);
         }
-        let Some(Phase::Ended(event)) = self.tool_phase(&task).await? else {
-            return Ok(false);
+        let event = match self.tool_phase(&task).await? {
+            Some(Phase::Ended(event)) => event,
+            Some(Phase::Tool) if task.state == AgentState::Preparing => {
+                let sessions = self
+                    .terminal
+                    .tmux()
+                    .list()
+                    .await
+                    .internal("recover live tool session")?;
+                if !task
+                    .terminal_id
+                    .as_ref()
+                    .is_some_and(|id| sessions.iter().any(|s| &s.name == id))
+                {
+                    return Ok(false);
+                }
+                AgentEvent::SetupOk
+            }
+            _ => return Ok(false),
         };
         self.update(id, move |current| apply_event(current, &event, now_ms()))
             .await?;

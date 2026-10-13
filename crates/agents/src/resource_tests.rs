@@ -5,6 +5,9 @@ use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 #[path = "resource_checkout_fixture.rs"]
 mod checkout_fixture;
 
+#[path = "tool_recovery_tests.rs"]
+mod tool_recovery_tests;
+
 #[path = "resume_review_tests.rs"]
 mod resume_review_tests;
 
