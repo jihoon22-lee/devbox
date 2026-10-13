@@ -123,22 +123,17 @@ impl AgentsService {
         let head = devbox_git::run::resolve(repo, &branch)
             .await
             .map_err(git_failure)?;
-        self.check_expect(
-            &task,
-            repo,
-            &wt,
-            &branch,
-            &ReviewExpect {
-                head_oid: head,
-                base_oid: None,
-                unmerged_commits: None,
-                discard_fingerprint: None,
-            },
-        )
-        .await?;
         let base = devbox_git::run::resolve(repo, &task.base_branch)
             .await
             .map_err(git_failure)?;
+        let expected = ReviewExpect {
+            head_oid: head,
+            base_oid: Some(base.clone()),
+            unmerged_commits: None,
+            discard_fingerprint: None,
+        };
+        self.check_expect(&task, repo, &wt, &branch, &expected)
+            .await?;
         for marker in [
             "MERGE_HEAD",
             "rebase-merge",
@@ -156,6 +151,30 @@ impl AgentsService {
             if Path::new(marker_path.trim()).exists() {
                 return Err(AgentsError::OperationInProgress.into());
             }
+        }
+        self.quiesce(&task).await?;
+        self.update(id, |task| {
+            let exited = !task.tool_exited;
+            task.tool_exited = true;
+            let changed = apply_event(task, &AgentEvent::UserReview, now_ms());
+            if exited && !changed {
+                task.activity_seq = task.activity_seq.wrapping_add(1);
+                task.updated_ms = now_ms();
+            }
+            exited || changed
+        })
+        .await?;
+        self.owned_worktree(&task).await?;
+        self.check_expect(&task, repo, &wt, &branch, &expected)
+            .await?;
+        if !devbox_git::status(&wt).await.map_err(git_failure)?.clean {
+            return Err(AgentsError::WorktreeDirty {
+                files: self.dirty_paths(&wt).await?,
+            }
+            .into());
+        }
+        if !rebase_markers_absent(&wt).await? {
+            return Err(AgentsError::OperationInProgress.into());
         }
         self.mark_rebase(id, true).await?;
         let result = devbox_git::mutate::rebase_onto(&wt, &base).await;
@@ -301,13 +320,26 @@ impl AgentsService {
             Some(&branch),
         )
         .await;
-        let closed_head = match merged {
-            Ok(outcome) => outcome.source_sha,
+        let outcome = match merged {
+            Ok(outcome) => outcome,
             Err(error) => return Err(self.mutation_failure(&task, repo, error).await),
         };
         let usage = self.closure_usage(&task.id).await;
-        self.close_record(&task.id, CloseHow::Merged, None, closed_head, usage, review)
-            .await?;
+        if let Err(error) = self
+            .close_record(
+                &task.id,
+                CloseHow::Merged,
+                None,
+                outcome.source_sha.clone(),
+                usage,
+                review,
+            )
+            .await
+        {
+            tracing::error!(?error, agent = %task.id, merged_base = %outcome.sha, source_head = %outcome.source_sha,
+                "Git merge applied; task closure persistence pending; refresh review before retry");
+            return Err(error);
+        }
         if self.cleanup_after_close {
             self.cleanup_closed_after_quiesce(&task.id, &cleanup_snapshot)
                 .await;

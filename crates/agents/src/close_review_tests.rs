@@ -1,6 +1,9 @@
 use super::*;
 use std::process::{Child, Stdio};
 
+#[path = "rebase_review_tests.rs"]
+mod rebase_review_tests;
+
 #[test]
 fn review_close_without_git_cleanup_stops_owned_terminal_and_scope() {
     cases(&["merge", "pr"]);
@@ -27,6 +30,10 @@ fn review_close_rechecks_confirmed_state_after_quiesce() {
 }
 
 async fn close_case(mode: &str) {
+    if mode.starts_with("rebase") {
+        rebase_review_tests::case(mode).await;
+        return;
+    }
     let (mut fixture, task, wt) = action_fixture().await;
     let svc = Arc::get_mut(&mut fixture.svc).expect("owned service");
     svc.cleanup_after_close = false;
@@ -269,7 +276,15 @@ esac
         std::env::split_paths(&std::env::var_os("PATH").expect("PATH")),
     ))
     .expect("owned PATH");
-    let test = if modes[0].ends_with("ended") {
+    let test = if modes[0].starts_with("rebase") {
+        if modes[0].ends_with("fails") {
+            "rebase_review_tests::rebase_stop_failure_blocks_git_mutation"
+        } else if modes[0].contains("-late-") {
+            "rebase_review_tests::rebase_revalidates_committed_head_and_dirty_content_after_stop"
+        } else {
+            "rebase_review_tests::rebase_stops_owned_scope_and_retains_review_for_success_and_conflict"
+        }
+    } else if modes[0].ends_with("ended") {
         "review_close_recovers_already_ended_owned_terminal_and_scope"
     } else if modes[0].contains("-late-") {
         "review_close_rechecks_confirmed_state_after_quiesce"

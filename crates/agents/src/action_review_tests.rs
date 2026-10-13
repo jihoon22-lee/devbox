@@ -4,6 +4,10 @@ use devbox_protocol::Fail;
 
 #[path = "close_review_tests.rs"]
 mod close_review_tests;
+#[path = "manual_cleanup_tests.rs"]
+mod manual_cleanup_tests;
+#[path = "merge_retry_tests.rs"]
+mod merge_retry_tests;
 
 async fn action_fixture() -> (Fixture, AgentTask, PathBuf) {
     let mut fixture = Fixture::new().await;

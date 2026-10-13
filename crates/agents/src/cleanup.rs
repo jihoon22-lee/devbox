@@ -320,9 +320,16 @@ impl AgentsService {
             {
                 let current = self.get(&task.id).await?;
                 let (project, branch) = self.owned_absent_branch(&current).await?;
-                devbox_git::mutate::delete_branch(Path::new(&project.path), &branch, false)
-                    .await
-                    .map_err(git_failure)?;
+                devbox_git::mutate::delete_branch_at(
+                    Path::new(&project.path),
+                    &branch,
+                    current
+                        .closed_head_oid
+                        .as_deref()
+                        .ok_or(AgentsError::UnsafeWorktree)?,
+                )
+                .await
+                .map_err(git_failure)?;
                 self.record_resources(&task.id, Resources::Planned).await?;
                 continue;
             }
@@ -381,9 +388,15 @@ impl AgentsService {
                 .await
                 .map_err(git_failure)?;
             if selected_branches.contains(&branch) {
-                devbox_git::mutate::delete_branch(Path::new(&project.path), &branch, false)
-                    .await
-                    .map_err(git_failure)?;
+                devbox_git::mutate::delete_branch_at(
+                    Path::new(&project.path),
+                    &branch,
+                    task.closed_head_oid
+                        .as_deref()
+                        .ok_or(AgentsError::UnsafeWorktree)?,
+                )
+                .await
+                .map_err(git_failure)?;
                 self.record_resources(&task.id, Resources::Planned).await?;
             }
         }

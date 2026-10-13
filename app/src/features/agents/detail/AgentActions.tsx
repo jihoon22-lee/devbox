@@ -227,12 +227,15 @@ export function AgentActions({
               </>
             ) : (
               <Button disabled={blocked} onClick={() => void reflect()}>
-                기준 반영으로 에이전트에게 맡기기
+                기준 반영 실행
               </Button>
             )
           }
         >
-          충돌 파일 {conflict.length}개 · {conflict.join(", ")} · 에이전트에게 해결을 맡길까요?
+          충돌 파일 {conflict.length}개 · {conflict.join(", ")} ·{" "}
+          {rebaseConflict && (!sessionAlive || task.toolExited)
+            ? "에이전트를 정지했습니다. 작업 폴더에서 충돌을 해결하고 git rebase --continue를 마친 뒤 재개하거나, 되돌리기를 선택하세요."
+            : "변경 내용을 확인해 충돌을 해결하세요."}
         </Banner>
       )}
       <ReviewDialogs task={task} edit={edit} setEdit={setEdit} review={destructive} />
