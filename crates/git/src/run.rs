@@ -8,6 +8,169 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 pub async fn output(dir: &Path, args: &[&str]) -> Result<(i32, String, String), GitError> {
     execute(command(dir, args), TIMEOUT).await
 }
+
+/// Run a clone inside a pinned Linux directory without reopening a replaceable target.
+#[cfg(target_os = "linux")]
+pub async fn clone_output(
+    dir: &std::fs::File,
+    args: &[&str],
+) -> Result<(i32, String, String), GitError> {
+    let ssh = if let Some(command) = std::env::var_os("GIT_SSH_COMMAND") {
+        command
+            .into_string()
+            .map_err(|_| GitError::InvalidEncoding)?
+    } else if let Some(program) = std::env::var_os("GIT_SSH") {
+        let program = program
+            .into_string()
+            .map_err(|_| GitError::InvalidEncoding)?;
+        format!("'{}'", program.replace('\'', "'\\''"))
+    } else {
+        let (code, output, _) = execute(
+            clone_command(dir, &["config", "--get", "core.sshCommand"]),
+            TIMEOUT,
+        )
+        .await?;
+        match code {
+            0 => output.trim_end_matches('\n').to_owned(),
+            1 => "ssh".into(),
+            _ => return Err(GitError::Internal),
+        }
+    };
+    let mut command = clone_command(dir, args);
+    // Keep configured identities, wrappers, and SSH config. User helper commands are
+    // trusted configuration; stdin, askpass, batch mode, output, and time stay bounded.
+    command.env("GIT_SSH_COMMAND", ssh_with_batch(&ssh)?);
+    execute(command, TIMEOUT).await
+}
+
+#[cfg(target_os = "linux")]
+fn ssh_with_batch(command: &str) -> Result<String, GitError> {
+    let command = command.trim_start();
+    let mut cursor = 0;
+    let mut env_wrapper = false;
+    let executable_end = loop {
+        let remainder = command[cursor..].trim_start();
+        cursor = command.len() - remainder.len();
+        let end = shell_word_end(remainder)?;
+        let word = &remainder[..end];
+        cursor += end;
+        if environment_assignment(word) {
+            continue;
+        }
+        let literal = word
+            .strip_prefix('\'')
+            .and_then(|word| word.strip_suffix('\''))
+            .or_else(|| {
+                word.strip_prefix('"')
+                    .and_then(|word| word.strip_suffix('"'))
+            })
+            .unwrap_or(word);
+        if Path::new(literal)
+            .file_name()
+            .is_some_and(|name| name == "env")
+        {
+            env_wrapper = true;
+            continue;
+        }
+        if env_wrapper {
+            match literal {
+                "--" | "-i" | "--ignore-environment" => continue,
+                "-u" | "--unset" | "-C" | "--chdir" => {
+                    let value = command[cursor..].trim_start();
+                    cursor = command.len() - value.len() + shell_word_end(value)?;
+                    continue;
+                }
+                word if word.starts_with("--unset=") || word.starts_with("--chdir=") => continue,
+                _ => (),
+            }
+        }
+        break cursor;
+    };
+    // OpenSSH uses the first value. Preserve environment prefixes and the exact
+    // remaining arguments (including shell-expanded identity paths), then place
+    // enforced options immediately after the actual executable.
+    Ok(format!(
+        "{} -oBatchMode=yes -oStrictHostKeyChecking=yes{}",
+        &command[..executable_end],
+        &command[executable_end..]
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn environment_assignment(word: &str) -> bool {
+    let word = word
+        .strip_prefix('\'')
+        .and_then(|word| word.strip_suffix('\''))
+        .or_else(|| {
+            word.strip_prefix('"')
+                .and_then(|word| word.strip_suffix('"'))
+        })
+        .unwrap_or(word);
+    word.split_once('=').is_some_and(|(name, _)| {
+        !name.is_empty()
+            && name.bytes().enumerate().all(|(index, byte)| {
+                byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
+            })
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn shell_word_end(command: &str) -> Result<usize, GitError> {
+    let mut quote = None;
+    let mut escaped = false;
+    let mut end = command.len();
+    for (index, character) in command.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some('\'') => {
+                if character == '\'' {
+                    quote = None;
+                }
+            }
+            Some('"') => match character {
+                '"' => quote = None,
+                '\\' => escaped = true,
+                _ => (),
+            },
+            None => match character {
+                '\'' | '"' => quote = Some(character),
+                '\\' => escaped = true,
+                character if character.is_whitespace() => {
+                    end = index;
+                    break;
+                }
+                _ => (),
+            },
+            _ => unreachable!(),
+        }
+    }
+    if end == 0 || quote.is_some() || escaped {
+        return Err(GitError::InvalidInput);
+    }
+    Ok(end)
+}
+
+#[cfg(target_os = "linux")]
+fn clone_command(dir: &std::fs::File, args: &[&str]) -> Command {
+    use std::os::fd::AsRawFd;
+    let mut command = command(Path::new("."), args);
+    command
+        .current_dir(format!(
+            "/proc/{}/fd/{}",
+            std::process::id(),
+            dir.as_raw_fd()
+        ))
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS", "")
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        .env("GCM_INTERACTIVE", "Never")
+        .env("GCM_GUI_PROMPT", "false")
+        .env_remove("GIT_SSH");
+    command
+}
 pub(crate) fn command(dir: &Path, args: &[&str]) -> Command {
     let mut command = Command::new("git");
     command
@@ -215,6 +378,83 @@ async fn read_bounded(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    async fn effective_ssh_options(command: &str) {
+        let ssh = ssh_with_batch(command).unwrap();
+        let mut process = Command::new("sh");
+        process
+            .args(["-c", &format!("{ssh} -G fixture.invalid")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        let (code, output, _) = execute(process, TIMEOUT).await.unwrap();
+        assert_eq!(code, 0, "SSH environment prefix broke command execution");
+        assert!(output.lines().any(|line| line == "batchmode yes"));
+        assert!(
+            output
+                .lines()
+                .any(|line| line == "stricthostkeychecking true")
+        );
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clone_ssh_keeps_assignment_prefix_before_executable() {
+        effective_ssh_options("SSH_AUTH_SOCK='/tmp/fixture socket' ssh -F /dev/null -i '/tmp/fixture identity' -oBatchMode=no -oStrictHostKeyChecking=no").await;
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clone_ssh_keeps_env_wrapper_before_executable() {
+        effective_ssh_options("env SSH_AUTH_SOCK='/tmp/fixture socket' ssh -F /dev/null -i '/tmp/fixture identity' -oBatchMode=no -oStrictHostKeyChecking=no").await;
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clone_batch_options_override_conflicting_ssh_options_without_network() {
+        let ssh =
+            ssh_with_batch("ssh -F /dev/null -oBatchMode=no -oStrictHostKeyChecking=no").unwrap();
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", &format!("{ssh} -G fixture.invalid")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        let (code, output, _) = execute(command, TIMEOUT).await.unwrap();
+        assert_eq!(code, 0);
+        assert!(
+            output.lines().any(|line| line == "batchmode yes"),
+            "effective batch mode was not enabled"
+        );
+        assert!(
+            output
+                .lines()
+                .any(|line| line == "stricthostkeychecking true"),
+            "effective strict host key checking was not enabled"
+        );
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn clone_credential_environment_cannot_launch_interactive_helpers() {
+        let fixture = tempfile::tempdir().unwrap();
+        let directory = std::fs::File::open(fixture.path()).unwrap();
+        let command = clone_command(&directory, &["clone", "--", "fixture", "."]);
+        let variables: std::collections::HashMap<_, _> = command.as_std().get_envs().collect();
+        for key in ["GIT_ASKPASS", "SSH_ASKPASS"] {
+            assert_eq!(
+                variables[std::ffi::OsStr::new(key)],
+                Some(std::ffi::OsStr::new(""))
+            );
+        }
+        assert_eq!(
+            variables[std::ffi::OsStr::new("SSH_ASKPASS_REQUIRE")],
+            Some(std::ffi::OsStr::new("never"))
+        );
+        assert_eq!(variables[std::ffi::OsStr::new("GIT_SSH")], None);
+        assert_eq!(
+            variables[std::ffi::OsStr::new("GCM_INTERACTIVE")],
+            Some(std::ffi::OsStr::new("Never"))
+        );
+    }
     #[cfg(unix)]
     fn fixture(script: &str) -> Command {
         let mut command = Command::new("python3");

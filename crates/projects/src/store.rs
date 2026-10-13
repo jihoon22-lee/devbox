@@ -11,7 +11,7 @@ CREATE TABLE projects_projects (
 );";
 
 pub fn all(tx: &Transaction) -> rusqlite::Result<Vec<Project>> {
-    let mut stmt = tx.prepare("SELECT id, name, path, favorite, added_ms FROM projects_projects ORDER BY favorite DESC, name")?;
+    let mut stmt = tx.prepare("SELECT id, name, path, favorite, added_ms FROM projects_projects ORDER BY favorite DESC, name, path, id")?;
     let rows = stmt.query_map([], |r| {
         Ok(Project {
             id: r.get(0)?,
@@ -59,4 +59,11 @@ pub fn get(tx: &Transaction, id: &str) -> rusqlite::Result<Option<Project>> {
         },
     )
     .optional()
+}
+
+pub fn set_favorite(tx: &Transaction, id: &str, favorite: bool) -> rusqlite::Result<usize> {
+    tx.execute(
+        "UPDATE projects_projects SET favorite=?2 WHERE id=?1",
+        params![id, favorite],
+    )
 }

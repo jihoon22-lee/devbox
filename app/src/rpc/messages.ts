@@ -106,6 +106,30 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "projects.not_directory": (d) => ({ title: `폴더가 아닙니다: ${path(d)}` }),
   "projects.already_exists": (d) => ({ title: `이미 등록한 프로젝트입니다: ${path(d)}` }),
   "projects.not_found": { title: "프로젝트를 찾을 수 없습니다.", action: "목록을 다시 확인해 주세요." },
+  "projects.configuration_invalid": {
+    title: "프로젝트 설정을 읽을 수 없습니다.",
+    action: ".devbox/devbox.toml의 내용을 확인해 주세요.",
+  },
+  "projects.launch_profile_not_found": {
+    title: "시작 구성의 에이전트 도구를 찾을 수 없습니다.",
+    action: "프로젝트 시작 구성과 도구 프로필을 확인해 주세요.",
+  },
+  "projects.launch_failed": {
+    title: "시작 구성을 일부 실행하지 못했습니다.",
+    action: "이미 만든 터미널과 에이전트 작업을 확인한 뒤 다시 시도해 주세요.",
+  },
+  "projects.clone_invalid_url": { title: "저장소 주소가 올바르지 않습니다." },
+  "projects.clone_target_exists": (d) => ({ title: `복제 대상 폴더가 이미 있습니다: ${path(d)}` }),
+  "projects.clone_failed": {
+    title: "저장소를 복제하지 못했습니다.",
+    action: "저장소 주소와 대상 폴더를 확인해 주세요. 남아 있는 파일은 보존했습니다.",
+  },
+  "projects.unsafe_prompt_path": { title: "지시문 템플릿 경로를 안전하게 읽을 수 없습니다." },
+  "projects.prompt_limit_exceeded": {
+    title: "지시문 템플릿이 허용 크기를 넘었습니다.",
+    action: "파일은 50개 이내, 각 파일은 64 KiB 이내로 줄여 주세요.",
+  },
+  "projects.prompt_invalid_encoding": { title: "지시문 템플릿은 UTF-8 형식이어야 합니다." },
 };
 export function messageFor(code: ErrorCode, detail?: unknown): Message {
   if (code === "connection_lost")

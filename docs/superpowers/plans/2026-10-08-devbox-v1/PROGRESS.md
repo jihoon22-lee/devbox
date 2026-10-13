@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S0 및 후속 #639 완료. S1 Task 1–10 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
-| 다음 할 일 | S1 Task 11 프로젝트 설정·시작 구성 — launch/summary/clone/favorite/prompts API와 설정 해석 구현 |
+| 단계 | S0 및 후속 #639 완료. S1 Task 1–11 구현·별도 검토 완료, S0b 범위 Windows 조기 스모크 및 Task 8 실제 Claude/Codex hook 확인 완료. S1 PR 최종 CI·자동 리뷰까지 계속 진행 |
+| 다음 할 일 | S1 Task 12 MCP 서버 — stdio JSON-RPC·읽기 도구·명시적 쓰기 설정 구현 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal` — `origin/main@fb6bc69d`에서 진행, Task 1–2 및 bridge/setup 수정 완료, 조기 스모크용 7eca14c5 push. 후속 실기 기록은 로컬 문서 커밋 |
 | 마지막 갱신 | 2026-10-13 · Codex 실행 세션 |
@@ -201,6 +201,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | 2026-10-13 | 04 Task 10 출력 대기·자원·통계 | OutputWaiting도 input 출처로 기록, 오래된 질문 제목 기반 감지 | 최초 provenance RED(input≠output) 뒤 출처 분리·2초 quiet·실제 S0a 하단 선택지/확인 안내 패턴·원래 줄 순서·정규식 시작 검증. 작업/binding/활동 순번을 DB에서 재대조해 같은 상태·같은 시각의 새 지시도 보호. Git 통계 동시4, 이름 있는 scope 속성·launch/InvocationID로 CPU baseline 관리, 값 없음과 0 구분 | agents 단위71 PASS 뒤 마지막 수정의 usage10/provenance1 PASS, 새 CLI metrics2/watch1 및 기존 agents/actions/safety/Codex18 PASS. 자원 provider7·대기/상태 각5는 해당 단위 묶음에 포함. gen-ts PASS. 실제 scope 측정·Windows 실행은 Task24 별도 |
 | 2026-10-13 | 04 Task 10 정확한 세션 토큰·닫힌 기록 | 토큰 없음·로그 재조회로 종료 기록 변화 가능 | Claude 정확한 세션 파일+cwd/sessionId, 같은 message.id의 항목별 최댓값 합산. 비ASCII 경로는 bounded 정확 파일명 탐색으로 처리하며 모호하면 거절. Codex 검증된 primary binding만 읽고 cache_write 포함, reasoning 중복 합산 없음. 128MiB/4MiB·잘림·오버플로 보고, 닫을 때 값/값 없음/truncated 고정 | CLI에서 더 최신 같은 cwd 보조 세션999 대신 primary9 확인. 로그 재작성·재시작 뒤 frozen 값/없음/잘림 불변, inline/worktree 폐기·병합 정리 경로 검증. 실제 사용자 transcript/auth를 fixture로 사용하지 않음; 기존 소유 S0a 화면 형태와 Task8 필드 형태만 synthetic 검증에 반영 |
 | 2026-10-13 | 04 Task 10 별도 검토 보완 | 실행 중 지시 뒤 stale 승인 재감지·inline scope 누락·병합 뒤 토큰 오류로 open 기록 잔존 | 독립 검토가 세 실패 재현. 같은 상태 입력도 unchanged 화면 억제하되 최초 session binding 감지 유지, Git 소유 상태와 inline 실행 세션 구분. 모든 닫기 경로는 optional usage 실패를 진단하고 unavailable snapshot으로 고정하여 성공한 병합/PR 기록을 보존 | 검토 회귀2·watch8·프로필 삭제 후 병합/PR2·metrics3/watch1 재검증 PASS, 독립 재검토·diff check·완료 Biome CI 85 files PASS. 좁은 실패·영향 검사만 재실행했으며 전체 check/clippy/build/E2E·실제 도구 재실행은 아직 하지 않음 |
+| 2026-10-13 | 04 Task 11 프로젝트 설정·시작 구성 | `[launch]`·6개 프로젝트 API 확장 | 설정 조회는 기본값+오류, mutation은 엄격한 오류. summary는 Git 동시4·항목별 null/오류·닫힌 작업 제외. 시작 전 설정·프로필 검증, worktree 설정 반영, 부분 실패 자원과 수용 개수 보존. prompts는 파일명 stem·50개/64KiB 명시 오류·descriptor 읽기, favorite는 커밋 후 이벤트 | 최초 projects18·launch5·router1·기존 agent setup/resume/teardown3, gen-ts·messages1·typecheck PASS. 복제 보완 후 projects22·CLI11 PASS. 서비스 시작은 S2 계약대로 유보. 테스트 모듈 위치 정리도 동작 변화 없음으로 별도 확인 |
+| 2026-10-13 | 04 Task 11 별도 검토 | clone 대상 예약 뒤 경로 재개방·credential.helper 제거·launch 배열 역직렬화 | 실제 RPC에서 대상 symlink 교체 시 외부 fixture 쓰기·비밀번호 URL의 Git config 저장을 재현. launch/항목 위치 기반 배열도 수용되어 엄격한 table 검사가 필요. 합성 helper로 기존 HTTPS 인증 차단 확인 | clone RPC 2개·설정 구조 1개 RED→GREEN. projects22·CLI review/auth/launch11 PASS. SSH 충돌 옵션·할당/env 접두부도 RED 후 보완: 최종 Git4·auth RPC3 PASS(실제 로컬 clone 6조합). 독립 최종 재검토·diff check·완료 Biome CI 85 files PASS. 네트워크·실제 인증정보 없이 소유 fixture로 검증했으며 Windows·전체 S1 검사는 Task24에 수행 |
 
 ## 6. 세션 기록
 

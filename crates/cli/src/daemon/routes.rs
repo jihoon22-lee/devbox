@@ -39,6 +39,24 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         )
         .register::<projects::ProjectsScan, _, _>(
             |s, _, p| async move { s.projects.scan(p).await },
+        )
+        .register::<projects::ProjectsConfig, _, _>(
+            |s, _, p| async move { s.projects.config(p).await },
+        )
+        .register::<projects::ProjectsSummary, _, _>(
+            |s, _, p| async move { super::launch::summary(s, p).await },
+        )
+        .register::<projects::ProjectsLaunch, _, _>(
+            |s, _, p| async move { super::launch::launch(s, p).await },
+        )
+        .register::<projects::ProjectsClone, _, _>(
+            |s, _, p| async move { s.projects.clone_repository(p).await },
+        )
+        .register::<projects::ProjectsSetFavorite, _, _>(
+            |s, _, p| async move { s.projects.set_favorite(p).await },
+        )
+        .register::<projects::ProjectsPrompts, _, _>(
+            |s, _, p| async move { s.projects.prompts(p).await },
         );
     let router = router
         .register::<devbox_terminal::TerminalAttach, _, _>(|s, ctx, p| async move {

@@ -4,6 +4,7 @@
 export type AddProject = { path: string, };
 export type AgentChanges = { base: string, ahead: number, behind: number, headOid: string, baseOid: string, files: Array<FileChange>, };
 export type AgentCommits = { items: Array<Commit>, };
+export type AgentConfig = { copy: Array<string>, setup: Array<string>, teardown: Array<string>, test: string | null, };
 export type AgentEventParams = { agentId: string, source: HookSource, payload: string, code: number | null, };
 export type AgentGitStat = { id: string, changedFiles: number, ahead: number, behind: number, };
 export type AgentGitStats = { items: Array<AgentGitStat>, };
@@ -28,6 +29,7 @@ export type Check = { id: string, status: Status, message: string, fix: string |
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
 export type CleanupCandidates = { projectId: string, };
 export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, };
+export type CloneProject = { url: string, dir: string | null, };
 export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
@@ -46,8 +48,14 @@ export type FileChange = { path: string, oldPath: string | null, status: ChangeS
 export type FollowUp = { atMs: number, text: string, };
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
+export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
+export type LaunchAgent = { tool: string, worktree: boolean, prompt: string | null, };
+export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTerminal>, agents: Array<LaunchAgent>, };
+export type LaunchProject = { id: string, };
+export type LaunchResult = { terminals: number, agents: number, };
+export type LaunchTerminal = { name: string, command: string | null, };
 export type ListAgents = { includeClosedHours: number | null, };
 export type ListProjects = Record<symbol, never>;
 export type ListSessions = { projectId: string | null, };
@@ -57,9 +65,19 @@ export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type Project = { id: string, name: string, path: string, favorite: boolean, addedMs: number, };
+export type ProjectAgentCounts = { open: number, attention: number, };
+export type ProjectConfig = { agent: AgentConfig, launch: LaunchConfig, };
+export type ProjectConfigIssue = { message: string, };
+export type ProjectConfigResult = { config: ProjectConfig, error?: ProjectConfigIssue, };
 export type ProjectList = { rev: string, items: Array<Project>, };
+export type ProjectPrompt = { name: string, body: string, };
+export type ProjectPrompts = { id: string, };
+export type ProjectSummary = { id: string, branch?: string, dirty: boolean | null, ahead: number | null, behind: number | null, terminals: number, agents: ProjectAgentCounts, error?: ProjectSummaryIssue, };
+export type ProjectSummaryIssue = { message: string, };
+export type ProjectSummaryList = { items: Array<ProjectSummary>, };
 export type ProjectsChanged = { rev: string, };
-export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } };
+export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } };
+export type PromptList = { items: Array<ProjectPrompt>, };
 export type RebaseResult = "done" | "conflict";
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
@@ -70,8 +88,10 @@ export type ScanResult = { candidates: Array<Candidate>, };
 export type SendToAgent = { id: string, text: string, };
 export type SessionKind = "shell" | "agent";
 export type SessionList = { rev: string, items: Array<TerminalSession>, };
+export type SetFavorite = { id: string, favorite: boolean, };
 export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
+export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } };
@@ -108,9 +128,15 @@ export interface Methods {
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
+  "projects.clone": { kind: "mutation"; confirm: "none"; params: CloneProject; result: Project; error: ProjectsError };
+  "projects.config": { kind: "query"; confirm: "none"; params: GetProjectConfig; result: ProjectConfigResult; error: ProjectsError };
+  "projects.launch": { kind: "mutation"; confirm: "none"; params: LaunchProject; result: LaunchResult; error: ProjectsError };
   "projects.list": { kind: "query"; confirm: "none"; params: ListProjects; result: ProjectList; error: ProjectsError };
+  "projects.prompts": { kind: "query"; confirm: "none"; params: ProjectPrompts; result: PromptList; error: ProjectsError };
   "projects.remove": { kind: "mutation"; confirm: "always"; params: RemoveProject; result: Done; error: ProjectsError };
   "projects.scan": { kind: "query"; confirm: "none"; params: ScanProjects; result: ScanResult; error: ProjectsError };
+  "projects.set_favorite": { kind: "mutation"; confirm: "none"; params: SetFavorite; result: Done; error: ProjectsError };
+  "projects.summary": { kind: "query"; confirm: "none"; params: SummaryProjects; result: ProjectSummaryList; error: ProjectsError };
   "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
@@ -157,9 +183,15 @@ export const METHOD_INFO = {
   "agents.usage": { kind: "query", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
+  "projects.clone": { kind: "mutation", confirm: "none" },
+  "projects.config": { kind: "query", confirm: "none" },
+  "projects.launch": { kind: "mutation", confirm: "none" },
   "projects.list": { kind: "query", confirm: "none" },
+  "projects.prompts": { kind: "query", confirm: "none" },
   "projects.remove": { kind: "mutation", confirm: "always" },
   "projects.scan": { kind: "query", confirm: "none" },
+  "projects.set_favorite": { kind: "mutation", confirm: "none" },
+  "projects.summary": { kind: "query", confirm: "none" },
   "system.doctor": { kind: "query", confirm: "none" },
   "system.info": { kind: "query", confirm: "none" },
   "system.ping": { kind: "query", confirm: "none" },
@@ -204,9 +236,18 @@ export const RPC_ERROR_CODES = [
   "method_not_found",
   "not_found",
   "projects.already_exists",
+  "projects.clone_failed",
+  "projects.clone_invalid_url",
+  "projects.clone_target_exists",
+  "projects.configuration_invalid",
+  "projects.launch_failed",
+  "projects.launch_profile_not_found",
   "projects.not_directory",
   "projects.not_found",
   "projects.path_invalid",
+  "projects.prompt_invalid_encoding",
+  "projects.prompt_limit_exceeded",
+  "projects.unsafe_prompt_path",
   "secrets_locked",
   "system.unavailable",
   "terminal.cwd_invalid",

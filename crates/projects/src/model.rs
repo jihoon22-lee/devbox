@@ -53,11 +53,113 @@ pub struct ProjectsChanged {
     pub rev: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct GetProjectConfig {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectConfigIssue {
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectConfigResult {
+    pub config: crate::config::ProjectConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error: Option<ProjectConfigIssue>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct SummaryProjects {}
+
+#[derive(Debug, Default, Deserialize, Serialize, TS)]
+pub struct ProjectAgentCounts {
+    pub open: u32,
+    pub attention: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectSummaryIssue {
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectSummary {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub branch: Option<String>,
+    pub dirty: Option<bool>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub terminals: u32,
+    pub agents: ProjectAgentCounts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub error: Option<ProjectSummaryIssue>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectSummaryList {
+    pub items: Vec<ProjectSummary>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct LaunchProject {
+    pub id: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, TS)]
+pub struct LaunchResult {
+    pub terminals: u32,
+    pub agents: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct CloneProject {
+    pub url: String,
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct SetFavorite {
+    pub id: String,
+    pub favorite: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectPrompts {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct ProjectPrompt {
+    pub name: String,
+    pub body: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+pub struct PromptList {
+    pub items: Vec<ProjectPrompt>,
+}
+
 domain_error! {
     pub enum ProjectsError {
         PathInvalid { path: String } = "projects.path_invalid",
         NotDirectory { path: String } = "projects.not_directory",
         AlreadyExists { path: String } = "projects.already_exists",
         NotFound { id: String } = "projects.not_found",
+        ConfigurationInvalid { message: String } = "projects.configuration_invalid",
+        LaunchProfileNotFound { id: String } = "projects.launch_profile_not_found",
+        LaunchFailed { terminals: u32, agents: u32, message: String } = "projects.launch_failed",
+        CloneInvalidUrl = "projects.clone_invalid_url",
+        CloneTargetExists { path: String } = "projects.clone_target_exists",
+        CloneFailed { path: String, message: String } = "projects.clone_failed",
+        UnsafePromptPath { path: String } = "projects.unsafe_prompt_path",
+        PromptLimitExceeded { max_files: u32, max_bytes: u32 } = "projects.prompt_limit_exceeded",
+        PromptInvalidEncoding { name: String } = "projects.prompt_invalid_encoding",
     }
 }

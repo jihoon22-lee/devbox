@@ -3099,14 +3099,14 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): detect wait
 - Produces:
   - `ProjectConfig { agent: AgentConfig { copy, setup, teardown, test? }, launch: LaunchConfig { services, terminals: [{ name, command? }], agents: [{ tool, worktree, prompt? }] }, raw_tasks, raw_services, raw_schedules }`. 작업 관련 절은 S2가 해석한다(`toml::Value` 보관).
   - `projects.config{ id }`(query) → `{ config, error? }`. 파일이 없으면 기본값이다. 문법 오류면 `error: { message }`이고 기본값으로 동작한다.
-  - `projects.summary{}`(query) → `{ items: [{ id, branch?, dirty, ahead, behind, terminals, agents: { open, attention } }] }`. 전환기 카드용이며, 각 프로젝트 `git status`를 동시에 4개씩 돈다.
+  - `projects.summary{}`(query) → `{ items: [{ id, branch?, dirty, ahead, behind, terminals, agents: { open, attention } }] }`. 전환기 카드용이며, 각 프로젝트 `git status`를 동시에 4개씩 돈다. 측정할 수 없는 Git 값은 `null`과 항목별 `error`로 표시하며 다른 카드 결과는 보존한다. 일반 디렉터리도 유효한 프로젝트다.
   - `projects.launch{ id }`(mutation) → `LaunchResult { terminals: u32, agents: u32 }`(시작한 개수)
     - `[launch].terminals` → 터미널 세션들
-    - `[launch].agents` → worktree 없는 에이전트 작업들(`agents.create` 내부 호출)
+    - `[launch].agents` → `worktree` 설정을 따르는 에이전트 작업들(`agents.create` 내부 호출, 기본값 `false`). 전체 설정·프로필을 먼저 검증한다. 실행 중 실패하면 이미 생성된 자원은 보존하고 `projects.launch_failed`에 성공한 개수를 담는다. 에이전트 개수는 비동기 준비가 수용된 작업 수이며 이후 준비 실패는 작업 상태로 보고한다.
     - services는 S2에서 연결하고, 지금은 건너뛰며 `warnings`에 "실행은 S2"를 넣지 않고 조용히 무시한다.
-  - `projects.clone{ url, dir? }`(mutation): `git clone`(기본 대상 `~/projects/<repo 이름>`) 후 등록한다.
+  - `projects.clone{ url, dir? }`(mutation): `git clone`(기본 대상 `~/projects/<repo 이름>`) 후 등록한다. 기존 대상은 덮어쓰지 않으며 예약한 디렉터리 descriptor를 고정해 복제하고, DB 등록 시 같은 inode인지 확인한다. 실패한 복제 자원은 보존한다. 인증정보가 포함된 URL은 실행 전에 거절하며 기존 credential helper·SSH identity 설정은 비대화형으로 사용한다.
   - `projects.set_favorite{ id, favorite }`(mutation): S0b의 `favorite` 칸을 바꾼다. 목록은 즐겨찾기 먼저 정렬한다.
-  - `projects.prompts{ id }`(query) → `{ items: [{ name, body }] }`: `.devbox/prompts/*.md`(파일 50개·각 64 KiB 상한, 이름순). 새 에이전트 작업의 지시문 템플릿이다. 변수(`{{title}}`·`{{branch}}`·`{{project}}`) 치환은 화면에서 한다.
+  - `projects.prompts{ id }`(query) → `{ items: [{ name, body }] }`: `.devbox/prompts/*.md`(파일 50개·각 64 KiB 상한, 이름순, `name`은 확장자 없는 파일명). 상한 초과·잘못된 인코딩·심볼릭 링크는 명시적 오류다. 새 에이전트 작업의 지시문 템플릿이다. 변수(`{{title}}`·`{{branch}}`·`{{project}}`) 치환은 화면에서 한다.
   - 의존 방향:
     - projects → (terminal, agents)를 직접 부르지 않는다. `launch`는 데몬 라우트가 projects 설정을 읽고 terminal·agents 서비스를 부르는 조립 함수다(`cli/src/daemon/launch.rs`).
     - `summary`도 데몬 조립 함수다. 순환 의존을 피하려고 이렇게 나눈다.
@@ -3146,7 +3146,7 @@ agents = [{ tool = "claude", worktree = false }]
     #[test]
     fn unknown_top_level_keys_are_errors_with_a_message() {
         let e = parse("[agnet]\nsetup = []\n").unwrap_err();
-        assert!(e.contains("agnet"), "{e}");
+        assert!(e.to_string().contains("agnet"), "{e}");
     }
 
     #[test]
@@ -3159,66 +3159,16 @@ agents = [{ tool = "claude", worktree = false }]
 
 - [ ] **Step 2: 구현**
 
+Task 8의 `ConfigError`·엄격한 `parse`/`load`·안전한 파일 복사 경계를 유지하며 `LaunchConfig`·`LaunchTerminal`·`LaunchAgent`와 raw 절을 추가한다.
+
 ```rust
-// crates/projects/src/config.rs (테스트 위)
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
-#[serde(default, deny_unknown_fields)]
-pub struct AgentConfig { pub copy: Vec<String>, pub setup: Vec<String>, pub teardown: Vec<String>, pub test: Option<String> }
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchTerminal { pub name: String, #[serde(default)] pub command: Option<String> }
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchAgent { pub tool: String, #[serde(default)] pub worktree: bool, #[serde(default)] pub prompt: Option<String> }
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
-#[serde(default, deny_unknown_fields)]
-pub struct LaunchConfig { pub services: Vec<String>, pub terminals: Vec<LaunchTerminal>, pub agents: Vec<LaunchAgent> }
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
-#[serde(default, deny_unknown_fields)]
-pub struct ProjectConfig {
-    pub agent: AgentConfig,
-    pub launch: LaunchConfig,
-    #[serde(rename = "task", skip_serializing)]
-    #[ts(skip)]
-    pub raw_tasks: Vec<toml::Value>,
-    #[serde(rename = "service", skip_serializing)]
-    #[ts(skip)]
-    pub raw_services: Vec<toml::Value>,
-    #[serde(rename = "schedule", skip_serializing)]
-    #[ts(skip)]
-    pub raw_schedules: Vec<toml::Value>,
-}
-
-pub fn parse(text: &str) -> Result<ProjectConfig, String> {
-    let c: ProjectConfig = toml::from_str(text).map_err(|e| e.to_string())?;
-    for p in &c.agent.copy {
-        let path = std::path::Path::new(p);
-        if path.is_absolute() || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-            return Err(format!("[agent].copy 경로는 프로젝트 안의 상대 경로여야 합니다: {p}"));
-        }
-    }
-    Ok(c)
-}
-
-pub fn load(project_path: &std::path::Path) -> (ProjectConfig, Option<String>) {
-    match std::fs::read_to_string(project_path.join(".devbox/devbox.toml")) {
-        Ok(text) => match parse(&text) {
-            Ok(c) => (c, None),
-            Err(e) => (ProjectConfig::default(), Some(e)),
-        },
-        Err(_) => (ProjectConfig::default(), None),
-    }
-}
+pub fn parse(text: &str) -> Result<ProjectConfig, ConfigError>;
+pub fn load(project: &std::path::Path) -> Result<ProjectConfig, ConfigError>;
 ```
 
-Task 8에서 임시로 둔 `[agent]` 읽기를 이 `load`로 바꾼다. 데몬 조립 함수 `launch`·`summary`를 `cli/src/daemon/launch.rs`에 두고 라우터에 등록한다.
+파일이 없을 때만 기본값이다. `projects.config` 화면 조회는 오류를 `{ config: 기본값, error }`로 바꾸지만, 에이전트 생성·시작 구성 등 mutation은 오류를 반환하고 실행을 중단한다. raw 절은 TOML로 보존하고 RPC 직렬화·TS 생성에서 제외한다. 설정·프롬프트 읽기는 디렉터리 descriptor를 따라 열어 심볼릭 링크 교체가 프로젝트 밖 읽기로 이어지지 않도록 한다.
+
+데몬 조립 함수 `launch`·`summary`를 `cli/src/daemon/launch.rs`에 두고 라우터에 등록한다. 즐겨찾기는 커밋 직후 목록 변경 이벤트를 발행한다.
 
 - [ ] **Step 3: 통합 테스트·커밋**
 
