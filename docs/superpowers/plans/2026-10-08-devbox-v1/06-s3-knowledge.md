@@ -68,7 +68,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S3 전체를 한 
 | U | Task 7 | 로컬 커밋·인계 |
 | V | Task 8–9 | 로컬 커밋·인계 |
 | W | Task 10–11 | 로컬 커밋·인계 |
-| 마무리 | Task 12 | **S3 PR 열기** → 필수 CI 3개·최종 SHA 자동 코드·보안 리뷰 완료 → squash 머지 |
+| 마무리 | Task 12 | **S3 PR 열기** → 필수 CI 3개·자동 리뷰 3회 상한 판정(CONVENTIONS §8) → squash 머지 |
 
 ---
 
@@ -410,8 +410,8 @@ git add docs && git commit -m "docs(plan): detail S3 against the S2 code"
 ### Task 12: S3 완료
 
 - [ ] **Step 1: 규모 통계:** `bash scripts/loc.sh 120000` 결과를 PR 본문에 쓴다. 넘으면 단순화 후보를 PROGRESS §2에 적어 사용자에게 알리고 계속 진행한다(01-design SC8, 기다리지 않음).
-- [ ] **Step 2: 에이전트 설치본 검증( 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge`로 받는다.
-  에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. 기존 v1 설치본 또는 `devbox@prod` 데이터가 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
+- [ ] **Step 2: 에이전트 설치본 검증( 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge --channel accept`로 받는다.
+  에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. 설치본은 `accept` 채널(S2 Task 15c)만 쓰고 `windows-acceptance` 잠금 안에서 진행한다. prod 설치본·`devbox@prod`는 바꾸지 않고 설치 전후 읽기 전용 비교로 불변을 기록한다. 소유 표식 없는 `accept` 채널 자원이 이미 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
   1. 노트를 쓰고 1초 뒤 자동 저장, 앱을 닫았다 열어도 그대로
   2. VS Code에서 같은 노트를 고치면 devbox가 비교를 보여 주고 덮어쓰지 않는다.
   3. 노트 이름을 바꾸면 다른 노트의 링크가 따라 바뀐다.
@@ -425,5 +425,5 @@ git add docs && git commit -m "docs(plan): detail S3 against the S2 code"
 - [ ] **Step 3: 상태 갱신·PR**
 
 - PR 전에는 상태 줄을 직접 편집해 `구현 완료·최종 검증 결과 기록·PR 수용 대기`로 적는다. `sed` 패턴으로 완료를 추정하지 않는다. 하위 프로젝트 끝 브랜치 전체 검토와 최종 상세 검증·Biome CI를 마치고, 결과·미실행 항목을 PROGRESS와 PR 본문에 남긴다.
-- 00-roadmap §3에 따라 push·PR은 한 번 진행한다. 필수 CI `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`와 최종 SHA 자동 코드·보안 리뷰 완료 뒤 squash 머지한다.
+- 00-roadmap §3에 따라 push·PR은 한 번 진행한다. 필수 CI `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`와 자동 리뷰 3회 상한 판정(CONVENTIONS §8: 1–3회 지적 처리, 4회째부터 차단 기준만 수정·나머지는 PROGRESS §8 후속 목록) 뒤 squash 머지한다.
 - 실제 머지를 확인한 뒤 상태 줄을 직접 `완료(S3 PR 머지)`로 고치고 PROGRESS의 S3 행·PR 표·현재 위치(다음: S4-1)를 갱신한다. PR 전 수용 대기를 완료로 기록하지 않는다.

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획(과제 수준) · Task 1 미착수 · S1 #640 머지로 시작 조건 충족. `v1/s2-runs` 준비 완료, 현재 문서 커밋은 S1 결과 인계만 포함
+- 상태: 계획(과제 수준) · Task 1 미착수 · S1 #640 머지로 시작 조건 충족. `v1/s2-runs` 준비 완료. 2026-10-14 착수 전 보강: 저장소 명령 신뢰 범위 2(Task 2·4·5·6·12·13·15), 수용 전용 설치 채널(Task 15c), Windows 수용 잠금(Task 15b), 자동 리뷰 3회 상한(Task 16), S1 이월 확인(Task 1)
 - 상세화 수준: 과제·파일·인터페이스·핵심 테스트까지 적었다. **Task 1에서 실제 S0b·S1 코드에 맞춰 단계별 코드까지 상세화한 뒤 실행한다.**
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -25,7 +25,7 @@ S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실�
 
 **Tech Stack:** S1 스택 + `cron`(이식한 v0.9.0 `cron.rs`), `chrono-tz`, `chacha20poly1305`, `zeroize`, `notify`(inotify, toml 감시), `@tanstack/react-virtual`.
 
-**Spec:** [01-design.md](01-design.md) §2.1 실행·§4.3·§4.4·§6.3·§7·§9 `runtime`·`observe`·`secrets`·§9.1-10, [09-s0a-results.md](09-s0a-results.md)(R10 interop 판정)
+**Spec:** [01-design.md](01-design.md) §2.1 실행·§4.3·§4.4·§6.3·§7(특히 "저장소 명령 신뢰 확인"과 "실행 범위 버전 2")·§9 `runtime`·`observe`·`secrets`·§9.1-10·§10 설치 채널·§11 수용 검증, [09-s0a-results.md](09-s0a-results.md)(R10 interop 판정)
 
 ## Global Constraints
 
@@ -36,6 +36,8 @@ S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실�
 - 실행 결과의 원장은 `runs/<runId>.exit` 파일이다. transient unit은 끝나면 정리되므로 unit 상태를 결과로 쓰지 않는다.
 - 비밀 평문은 DB·로그·파일·프로세스 인자·MCP 응답·RPC 결과에 나가지 않는다. 실행에는 `systemd-run --setenv`가 아니라 래퍼의 표준 입력으로 넘긴다. 이유: 인자는 `ps`·`systemctl show`에 보인다.
 - 로그 줄 형식은 `<RFC3339 밀리초>\t<o|e|s>\t<줄>`이다(`s` = devbox 표시 줄). 64 MiB를 넘으면 앞을 자르고 표시 줄을 남긴다.
+- **저장소 명령 신뢰(01-design §7 실행 범위 버전 2):** task/service/schedule 실행, `agents.test`, MCP `devbox_run_task`, 예약 실행은 S1의 `ProjectsService` 신뢰 확인(`devbox_projects::trust`)을 거쳐 승인된 불변 snapshot의 정의만 실행한다. `SCOPE_VERSION`을 2로 올리되 범위 1 정의만 있는 설정의 기존 승인은 유효하게 둔다. 직접 RPC·MCP·내부 호출도 데몬이 강제하고, 승인은 화면 확인 대화상자에서만 만든다. "이 PC에만" 정의는 승인 대상이 아니다.
+- **수용 설치본:** Task 15c 이후 Windows 설치본 스모크는 `accept` 채널만 쓰고 prod 설치본·`devbox@prod`를 바꾸지 않는다(불변 확인용 읽기 전용 비교만). 스모크는 `windows-acceptance` 잠금으로 한 번에 하나다(00-roadmap §2.2).
 - 사용자 서비스·Docker·방화벽·네트워크를 테스트 때문에 바꾸지 않는다. Docker 관련 테스트는 `docker` CLI가 없거나 데몬이 꺼져 있으면 건너뛰고, 컨테이너를 만들거나 지우지 않는다(목록·로그 읽기만, 시작·중지는 단위 테스트에서 명령 조립만 검사).
 
 ## Review Focus
@@ -49,6 +51,10 @@ S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실�
 | 일광 절약 시간 전환 날의 예약 | 없는 시각은 건너뛰고 겹치는 시각은 한 번만(이식한 `cron.rs` 테스트) | Task 5 |
 | "재시작 안 함" 서비스가 죽음, `::1`에서만 수신하는 개발 서버(AR-F02) | 다시 띄우지 않음. `::1` 수신도 "준비됨" | Task 4·8 |
 | 작업을 만든 직후 목록 조회만 실패(AR-F04) | 대화상자는 수정 모드, 다시 저장해도 새로 만들지 않음 | Task 13 |
+| 승인 뒤 누군가 `.devbox/devbox.toml`의 task 명령을 바꿈 | 수동 시작·MCP 실행은 `projects.trust_required`로 거절, 예약은 실행하지 않고 `skipped(trust)`·알림 1회, 실행 중인 서비스는 그대로 | Task 2·4·5·15 |
+| 화면에서 정의를 프로젝트 파일에 저장 | 저장 직전 바이트가 승인 digest와 같으면 승인이 새 digest로 함께 갱신돼 S1 setup/launch 재승인이 뜨지 않음. 밖에서 먼저 고쳤으면 갱신하지 않음 | Task 2 |
+| S1에서 승인했고 task/service/schedule이 없는 프로젝트 | 범위 2가 되어도 다시 묻지 않음 | Task 2 |
+| 사용자가 prod 설치본을 쓰는 중에 수용 스모크 | `accept` 채널만 설치·제거, prod 앱·`devbox@prod`·공유 바이너리·unit 템플릿 불변 | Task 15c·16 |
 
 ---
 
@@ -64,8 +70,8 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 
 | O | Task 2–6 | 로컬 커밋·인계 |
 | P | Task 7–10 | 로컬 커밋·인계 |
 | Q | Task 11–12 | 로컬 커밋·인계 |
-| R | Task 13–15b | 로컬 커밋·인계 |
-| 마무리 | Task 16 | **S2 PR 열기** → 필수 CI 3개·최종 SHA 자동 코드·보안 리뷰 완료 → squash 머지 |
+| R | Task 13–15c | 로컬 커밋·인계 |
+| 마무리 | Task 16 | **S2 PR 열기** → 필수 CI 3개·자동 리뷰 3회 상한 판정(CONVENTIONS §8) → squash 머지 |
 
 ---
 
@@ -78,7 +84,13 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 
   - `method!`·`Router`·`Ctx::open_stream`·`Db`·`Hub`·`TestDaemon` 보조 함수
   - 화면 쪽 `useRpcQuery`·`SectionLayout`·`useBottomTabs`·`TerminalView`
   - `09-s0a-results.md`의 R10(interop) 판정과 S1 실사용에서 나온 수정 사항
-- [ ] **Step 2:** Task 2–16 각각을 `writing-plans` 형식(실패 테스트 코드 → 실패 확인 → 구현 코드 → 통과 → 커밋)으로 펼친다. 아래 "핵심 테스트"와 [00-roadmap §7](00-roadmap.md) 추적표에서 S2에 걸린 시험(AR-F02·F04·F14·F15)과 입력값을 그대로 포함한다.
+  - S1 신뢰 확인의 실제 이름: `devbox_projects::trust::{SCOPE_VERSION, AuthorizedConfig, SetupSnapshot, LaunchSnapshot}`, `ProjectsService::{authorized_config, trust_preview, trust_approve}`, `TrustOperation`, `ProjectsError::{TrustRequired, TrustPreviewStale}`(`projects.trust_required`·`projects.trust_preview_stale`), 저장 표 `projects_command_trust`, 판정 함수 `has_executable`·`operation_exec`(`crates/projects/src/trust.rs`)
+- [ ] **Step 1b: S1 이월 확인(2026-10-14 검토).** `PROGRESS.md` §5 맨 앞의 "S2 착수 요약"을 기준으로 다음을 이 문서에 반영하거나 결과를 PROGRESS에 적는다.
+  - 파일 분할 계획: S2가 고치는 `crates/agents/src/actions.rs`(571줄)·`crates/projects/src/config.rs`(563줄)·`crates/agents/src/service.rs`(598줄)는 600줄 상한에 가깝다. Task 2·15 상세화에서 먼저 나눌 모듈을 정한다(동작 변경 없는 이동은 별도 커밋).
+  - 신뢰 범위 2의 판정 함수와 `TrustOperation` 추가 값(예: `Run`)을 Task 2·4·5·15에 같은 이름으로 적는다.
+  - Codex 실제 worktree 실행(S1에서 PASS 근거 없음): 사용자 Codex 설정을 바꾸지 않고, `test-<난수>` 인스턴스와 `/home/jihoon/projects/` 아래 소유 임시 저장소에서 worktree 작업 1개를 만들어 도구 없는 PONG 지시만 보낸다. 폴더 신뢰 화면이 뜨는지, 뜨면 devbox가 입력 대기로 보여 주는지 기록하고 소유 저장소·worktree·branch·unit을 정리한다. 막히면 PROGRESS §2에 적고 S2는 계속한다.
+  - CI E2E의 원인 미확정 tmux 3.4 서버 종료(S1 c68c923e)는 PROGRESS §2 미결 항목이다. Task 15b에서 E2E 실패 산출물에 tmux 버전·서버 로그를 남기도록 한다.
+- [ ] **Step 2:** Task 2–16(15b·15c 포함) 각각을 `writing-plans` 형식(실패 테스트 코드 → 실패 확인 → 구현 코드 → 통과 → 커밋)으로 펼친다. 아래 "핵심 테스트"와 [00-roadmap §7](00-roadmap.md) 추적표에서 S2에 걸린 시험(AR-F02·F04·F14·F15)과 입력값을 그대로 포함한다.
 - [ ] **Step 3:** `09-s0a-results.md`의 R10·DPAPI 실험 결과로 Task 11의 키 풀기 경로를 정한다. 데몬 interop 성공 여부와 무관하게 Windows 앱의 `secrets.unlock` fallback을 구현·시험한다. 데몬 직접 해제는 지원 환경에서만 사용한다(키 방식은 Q1에서 DPAPI로 확정).
 - [ ] **Step 4:** 커밋·PR(문서만).
 
@@ -107,13 +119,18 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
   - `runtime.list{ projectId }` → `{ rev, defs, runs: 최근 실행 요약 }`
   - `runtime.define{ projectId, def, saveTo: project|thisPc }`(mutation): 프로젝트 파일에 쓰면 `toml_edit`로 해당 표만 바꾸고 주석·순서를 보존한다.
   - `runtime.undefine{ projectId, id }`(mutation, always)
-- 프로젝트 `.devbox/devbox.toml` 변경 감시(`notify`, 300ms 디바운스) → `runtime.changed`
+- 프로젝트 `.devbox/devbox.toml` 변경 감시(`notify`, 300ms 디바운스) → `runtime.changed`. 다시 읽은 설정의 승인 상태(승인됨·낡음·필요 없음)를 `runtime.list` 결과에 함께 싣는다.
+- 신뢰 범위 2(01-design §7):
+  - `SCOPE_VERSION = 2`. 설정의 실행 정의 최소 범위를 계산해, task/service/schedule이 없으면 범위 1 이상 승인을, 있으면 범위 2 승인을 요구한다. 승인 미리보기에 task/service/schedule의 명령·작업 폴더·환경 변수 이름과 값·대상·의존 순서·비밀 이름을 더한다(비밀 값은 없음).
+  - `runtime.define`/`undefine`이 프로젝트 파일에 쓸 때: 쓰기 직전 바이트의 digest가 현재 승인과 같으면 쓴 바이트의 digest로 승인을 같은 DB 쓰기에서 갱신한다. 다르면 갱신하지 않는다. `saveTo: thisPc`는 승인과 무관하다.
 
 **핵심 테스트:**
 - `merge_prefers_project_file_and_reports_shadowed`
 - `rejects_dependency_cycles_with_the_cycle_path`(`a → b → a`의 경로를 오류에 담음)
 - `define_into_project_file_preserves_comments`(주석과 다른 표가 그대로)
-- `watch_reloads_on_external_edit`(파일을 고치면 `runtime.changed` 수신)
+- `watch_reloads_on_external_edit`(파일을 고치면 `runtime.changed` 수신, 승인 상태가 낡음으로 바뀜)
+- `scope_one_approval_stays_valid_without_run_definitions`·`run_definitions_require_scope_two_approval`
+- `define_into_approved_file_refreshes_the_approval`·`define_after_external_edit_keeps_the_approval_stale`
 
 ---
 
@@ -168,7 +185,8 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - 데몬이 시작할 때 맞춘다: `systemctl --user list-units 'devbox-<i>-run-*' --output=json` + `.exit` 파일 → 상태를 갱신한다.
 - 서비스 재시작은 `systemctl show -p NRestarts,ActiveState,Result`를 실행 이벤트 때와 10초 간격(서비스가 있을 때만)으로 읽어 `restarts`를 갱신한다.
 - 한도 초과(`Result=start-limit-hit`)는 `failed`이고 `notify.raise`(Task 14)를 한 번 부른다.
-- 시작 구성의 `services`(S1에서 무시하던 것)를 이제 `projects.launch`에서 시작한다.
+- 시작 구성의 `services`(S1에서 무시하던 것)를 이제 `projects.launch`에서 시작한다. 시작 구성 전체가 같은 승인 snapshot을 쓴다(S1 규칙).
+- `runtime.start`·`runtime.restart`·의존 작업 시작은 unit을 만들기 전에 신뢰를 확인하고 승인 snapshot의 정의로 `unit_args`를 만든다. 승인이 없거나 낡으면 자원을 만들지 않고 `projects.trust_required`를 돌려준다. systemd `Restart=`의 자동 재시작은 확인하지 않는다(이미 만든 unit).
 
 **핵심 테스트(L2, 실제 systemd user):**
 - `task_runs_to_completion_and_reports_exit`
@@ -177,6 +195,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - `restart_no_service_is_not_restarted_after_exit`: `restart = "no"` 서비스가 `exit 1` → 10초 뒤 `NRestarts=0`, 상태 `Failed`(AR-F02b 입력)
 - `daemon_restart_reconciles_finished_and_running_runs`: 실행 중 데몬 재시작 + 그사이 끝난 작업
 - `depends_on_runs_in_order_and_stops_on_failure`
+- `start_requires_current_trust_and_creates_no_unit_when_stale`: 승인 뒤 명령을 바꾸면 거절·unit 없음, 재승인 뒤 새 명령으로 시작
 - `dependent_service_waits_for_readiness_then_times_out`: 앞 서비스가 `ports_hint` 포트를 3초 뒤에 열면 뒤 서비스는 그 뒤에 시작. 포트를 열지 않으면 `ready_timeout_sec`(시험에서 2초) 뒤 뒤 서비스를 시작하지 않고 `runtime.not_ready{ id }`로 실패
 - 단위: `unit_args_for_service_with_restart_policy`(인자 배열 전체 비교. `RestartSteps=5`·`RestartMaxDelaySec=30s` 포함)
 - systemd user 세션을 CI에서 못 쓰면(S0a 판정) L2 중 systemd 시험은 `#[ignore = "needs systemd user"]` + WSL 로컬 필수로 둔다(00-roadmap 실행 규칙).
@@ -195,6 +214,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
   - `last_fired`(DB)와 지금 사이의 예약 시각이 있으면 `missed` 정책을 따른다.
   - `RunOnce`면 한 번 실행하고, `Skip`이면 "건너뜀"을 기록한다.
 - 예약 실행이 실패하면 알림 `{ kind: "schedule_failed", projectId, task, runId }`
+- 예약은 무인 실행이라 실행 시점마다 신뢰를 확인한다. 승인이 없거나 낡았으면 실행하지 않고 `skipped(trust)`를 기록하고 알림 `{ kind: "schedule_trust_required", projectId, task }`를 승인이 바뀔 때까지 한 번만 띄운다. 놓친 예약(`RunOnce`)도 같다.
 - 메서드 `runtime.schedules{ projectId }` → `{ items: [{ id, cron, next, last: { at, result } }] }`
 
 **핵심 테스트:**
@@ -202,6 +222,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - `missed_run_once_fires_exactly_once_after_downtime`
 - `missed_skip_records_without_running`
 - `scheduler_recomputes_when_definitions_change`(가짜 시계)
+- `stale_trust_skips_scheduled_run_and_notifies_once`(가짜 시계, 두 번째 예약 시각에도 알림 추가 없음)
 
 ---
 
@@ -218,7 +239,9 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
   - `compose.yaml`/`docker-compose.yml`이 있으면 `docker compose up`(서비스)
 - 메서드 `runtime.detect{ projectId }`(query)
 
-**핵심 테스트:** 각 파일 종류의 fixture 폴더로 제안 목록 비교. 이미 정의된 ID는 제외.
+- 제안은 파일을 읽기만 하고 실행하지 않는다. `just --summary`처럼 도구를 부르는 감지는 저장소 내용을 실행할 수 있으므로 쓰지 않고 `justfile`을 직접 읽는다. 제안을 추가할 때 명령을 보여 주고 `runtime.define`으로 저장한다(프로젝트 파일이면 Task 2 승인 규칙).
+
+**핵심 테스트:** 각 파일 종류의 fixture 폴더로 제안 목록 비교. 이미 정의된 ID는 제외. 감지가 어떤 프로세스도 띄우지 않는다.
 
 ```bash
 # 묶음 O 끝
@@ -371,7 +394,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - 실행:
   - `powershell.exe -NoProfile -Command "Set-Location '<windows_dir>'; <command>"`를 래퍼 안에서 실행한다.
   - interop이 안 되는 환경(R10)이면 Windows 앱에 위임한다. 앱 명령 `run_windows`가 출력을 브리지로 돌려준다.
-- 화면 표시: "Windows에서 실행 · 자식 프로세스 종료는 보장하지 않음"
+- 화면 표시: "Windows에서 실행 · 자식 프로세스 종료는 보장하지 않음". 신뢰 미리보기에도 대상(Windows)과 실행 폴더를 보인다.
 
 **핵심 테스트:**
 - `sync_copies_changed_tracked_files_and_keeps_extra_target_files`(임시 폴더 두 개로)
@@ -404,6 +427,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
   - 줄의 `file:line`은 링크다. S2에서는 외부 편집기, S4부터는 편집기로 연다.
 - 위쪽 칩: 포트(누르면 브라우저로 열기), CPU·메모리, 경과 시간
 - `DefineDialog`: 명령·작업 폴더·환경 변수(`KeyValueEditor`)·비밀 참조·재시작 정책·[프로젝트 파일에 저장 | 이 PC에만]
+- 신뢰: 시작·재시작에서 `projects.trust_required`를 받으면 S1의 신뢰 확인 대화상자(같은 표시 전용 제어 문자 변환)를 task/service/schedule 항목까지 넓혀 띄운다. 승인 뒤 같은 동작을 한 번 다시 시도한다. 목록 행에는 "설정이 바뀌어 다음 시작에 재승인 필요"를 보인다.
 - `model.ts`의 `ansiToSpans(text)`: SGR 16·256·truecolor·굵게·밑줄. 그 밖의 제어열은 지운다.
 
 - 생성과 조회 실패의 분리(01-design §8.6 규칙 2, AR-F04): `DefineDialog`는 `runtime.define` 응답으로 바로 "수정" 모드(생성된 ID)로 바뀐다. 이어지는 `runtime.list` 조회가 실패하면 목록 위 오류 배너 + [다시 불러오기]만 보이고 대화상자는 수정 모드를 유지한다. 저장을 다시 눌러도 같은 `clientRequestId`를 쓴다.
@@ -414,6 +438,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - `LogView`의 따라가기·멈춤 상태 기계 단위(`follow`·`userScrolled`·`newLines`)
 - `define_success_then_list_failure_keeps_edit_mode_and_does_not_create_twice`: 가짜 클라이언트에서 `runtime.define` 성공 + `runtime.list` 실패 → 대화상자 제목 "작업 수정", [저장] 다시 누름 → `runtime.define` 호출 두 번의 `clientRequestId`가 같음
 - `open_run_detail_follows_restart`: 상세를 연 채 `runtime.changed`(rev 증가) + 새 PID → 상세의 PID가 새 값
+- `start_with_stale_trust_shows_preview_then_retries_once`(가짜 클라이언트)
 - E2E `runs.spec.ts`(2개)
   - `echo` 작업을 정의 → 시작 → 로그에 줄 → 종료 코드 표시
   - 서비스(`python3 -m http.server $DEVBOX_PORT`) 시작 → 포트 칩 → 중지 → 되돌리기 토스트
@@ -458,11 +483,13 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
   - `devbox_runs`(읽기)
   - `devbox_logs{ runId, lines ≤ 500 }`(읽기, 비밀 값 가림)
   - `devbox_problems`(읽기)
-  - `devbox_run_task{ projectId, id }`(쓰기, `[mcp] write = true`일 때만)
+  - `devbox_run_task{ projectId, id }`(쓰기, `[mcp] write = true`일 때만). 신뢰 승인이 없거나 낡으면 실행하지 않고 `projects.trust_required`를 돌려준다. MCP로 승인을 만들거나 미리보기를 승인할 수 없다.
+- `agents.test`는 S1처럼 `TrustOperation::Test` snapshot의 `[agent] test`만 runtime으로 실행한다.
 
 **핵심 테스트:**
 - `mcp_logs_never_include_secret_values`: 비밀을 출력하는 작업의 로그를 MCP로 읽으면 값이 `****`로 가려짐
 - `agents_test_runs_in_the_agent_worktree`(L2)
+- `mcp_run_task_requires_trust_and_cannot_approve`
 - `SecretsSettings` 단위(값 입력 후 입력란 비움, 목록에 값이 나오지 않음)
 
 ```bash
@@ -494,12 +521,14 @@ S2 다음에는 S3(기록)과 S5(개발 도구)를 한 세션이 두 트랙으�
 
 **검사 잠금·자원(사용자 결정 2026-10-13):**
 - `scripts/verify-resources.py`에 `--wait`를 추가한다. 기본은 Git common-dir 비차단 잠금 경합 시 exit 75를 유지하고, 대기 모드는 최대 60분 기다린 뒤 exit 75와 "검사 대기 초과"를 보고한다. 이 결과는 검사 실패와 구분해 다시 시도한다.
+- 잠금 이름을 받는 `--lock <name>`을 더한다. 기본은 지금의 검사 잠금이고, `windows-acceptance`는 Windows 설치본 스모크 전체(다운로드 확인→설치→검증→제거·정리) 동안 잡는다(00-roadmap §2.2·§3.6). 두 잠금은 서로 독립이다.
+- E2E가 실패하면 산출물에 tmux 버전과 해당 시험 tmux 서버의 종료 상태·로그를 남긴다(S1 c68c923e의 원인 미확정 서버 종료 추적, PROGRESS §2).
 - S3·S5 동시 진행의 전체 검사(`scripts/check.sh`)·E2E는 대기 모드로 한 번에 하나만 실행한다. `scripts`는 동시 진행 중 수정할 수 없는 공유 파일이므로 옵션과 호출 경로를 S2에서 끝낸다.
 - 트랙별 좁은 검사는 잠금 없이 실행하되 트랙당 Cargo jobs 2·Rust test threads 2·Vitest workers 2(합 4), CPU 4·nice +10, 지원 cgroup high 6GiB/max 8GiB·swap 1GiB를 지킨다.
 - 트랙 2는 `CARGO_TARGET_DIR=$HOME/.cache/targets/devbox-s5`를 쓰고 S5 머지 뒤 정리한다. wsl-resource-guard 개입 또는 `killed:*` 등 메모리 압박 시 한 트랙을 잠시 멈춘다.
 
 **핵심 테스트:**
-- 잠금 회귀: 기본 경합 즉시 exit 75, `--wait` 잠금 해제 후 명령 실행, 기한 초과 exit 75·대기 초과 문구·자식 미실행, 서로 다른 worktree가 같은 common-dir 잠금을 공유함을 짧은 fixture 기한으로 확인한다. 기존 CPU·nice·cgroup 제한도 유지되는지 확인한다.
+- 잠금 회귀: `--lock windows-acceptance`와 검사 잠금이 서로 막지 않음, 기본 경합 즉시 exit 75, `--wait` 잠금 해제 후 명령 실행, 기한 초과 exit 75·대기 초과 문구·자식 미실행, 서로 다른 worktree가 같은 common-dir 잠금을 공유함을 짧은 fixture 기한으로 확인한다. 기존 CPU·nice·cgroup 제한도 유지되는지 확인한다.
 - `ensure_domain_recreates_only_that_domain`: `notes_x`·`api_y` 테이블에 행을 넣고 `api` 버전만 올림 → `api` 호출은 `true`이고 `api_y`가 비어 있음, `notes` 호출은 `false`이고 `notes_x` 행이 그대로
 - `ensure_domain_is_idempotent`: 같은 버전으로 두 번 부르면 두 번째는 `false`
 - `CodeView.test.tsx`: 텍스트 표시, `language="json"` 로드 뒤 구문 강조 요소가 생김, 편집하면 `onChange`가 새 텍스트로 불림, `readOnly`면 편집 안 됨
@@ -512,17 +541,45 @@ git add -A && git commit -m "feat(core): add a per-domain index database and a s
 
 ---
 
+### Task 15c: 수용 전용 설치 채널 (사용자 결정 2026-10-14)
+
+S2 머지 뒤 사용자가 새 빌드를 prod로 쓰기 시작하면, 01-design §11의 "기존 v1 설치본·`devbox@prod`가 있으면 멈춰 묻기" 때문에 이후 모든 설치본 스모크가 멈춘다. S3·S5 두 트랙이 같은 prod 자원에 설치하면 서로 덮어쓴다. 그래서 에이전트 수용 검증 전용 `accept` 채널을 만든다(01-design §6.1·§10·§11).
+
+**Files:**
+- Modify: `app/src-tauri/src/core/connection.rs`(`INSTANCE`), `app/src-tauri/src/core/deploy.rs`·`app/src-tauri/src/platform/deploy.rs`·`supervisor.rs`(배치 경로), `crates/cli/src/setup.rs`(unit 템플릿·바이너리 경로)
+- Create: `app/src-tauri/tauri.accept.conf.json`(Tauri 설정 덮어쓰기)
+- Modify: `.github/workflows/windows.yml`(PR·수동 실행에서 `devbox-setup-accept` 산출물 추가, 태그 릴리스는 prod만), `scripts/dogfood.py`·`scripts/dogfood.sh`(채널 선택, 기본 prod), `scripts/win-package.ps1`(채널별 self-check)
+
+**Interfaces:**
+- 채널은 빌드할 때 정한다(예: `DEVBOX_APP_CHANNEL=accept` 컴파일 시 환경 변수). 릴리스 빌드 기본은 prod, 디버그는 지금처럼 dev다. 실행 중 바꾸는 설정은 두지 않는다.
+- `accept` 채널이 prod와 달라야 하는 것: Windows identifier `io.github.jihoon22lee.devbox.accept`·제품 이름·설치 폴더·`%LOCALAPPDATA%` 앱 데이터·프로토콜 `devbox-accept://`·자동 시작 항목·단일 인스턴스 키·토스트 AUMID, WSL 인스턴스 `accept`·채널 전용 바이너리 경로·unit 템플릿 이름. prod의 `~/.local/share/devbox/bin/devbox`와 `devbox@.service`를 쓰거나 지우지 않는다.
+- 같은 PC에서 prod와 `accept`가 동시에 실행돼도 된다. 전역 단축키는 OS 전역이라 prod가 먼저 잡았으면 `accept` 등록이 실패하고, 그 항목만 미실행으로 기록한다.
+- 에이전트 hook이 부르는 CLI 경로도 채널 전용 바이너리를 가리킨다.
+- `scripts/dogfood.sh <브랜치> [--channel accept]`: 수용 스모크는 `accept`를 받는다. 사용자 dogfood는 기본 prod 그대로다.
+
+**핵심 테스트:**
+- 단위: 채널별 identifier·인스턴스·바이너리 경로·unit 템플릿 이름 표(prod·accept·dev)
+- `accept_setup_leaves_prod_binary_and_template_untouched`(임시 HOME에 prod 바이너리·템플릿을 먼저 두고 `accept` setup → prod 파일 바이트·mtime 불변)
+- Windows CI: 두 NSIS 모두 self-check, receipt에 채널 기록
+- 실제 확인은 Task 16 스모크에서 한다. 사용자 prod 자원이 있으면 해시·unit 상태를 설치 전후로 읽기 전용 비교해 불변을 확인한다. 없으면 "비교 대상 없음"으로 기록하고 위 단위 시험이 근거다.
+
+```bash
+git add -A && git commit -m "feat(windows): add an isolated acceptance install channel"
+```
+
+---
+
 ### Task 16: S2 완료 — 전환점 확인
 
 **Files:**
 - Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치, 다음은 S3·S5 동시 시작), `scripts/loc.sh` 실행 결과를 PR 본문에 기록
 
 - [ ] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
-- [ ] **Step 2: 에이전트 설치본 검증(10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
-  에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. 기존 v1 설치본 또는 `devbox@prod` 데이터가 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
+- [ ] **Step 2: 에이전트 설치본 검증(12개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs --channel accept`로 받고, `verify-resources.py --wait --lock windows-acceptance` 안에서 진행한다(Task 15b·15c).
+  에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. prod 설치본·`devbox@prod`는 사용자 자원이라 바꾸지 않고, 설치 전후 해시·unit 상태를 읽기 전용으로 비교해 불변을 기록한다. 소유 표식 없는 `accept` 채널 자원이 이미 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
   1. 실제 프로젝트의 `pnpm dev`를 서비스로 정의 → 시작 → 로그 실시간 → 포트 칩으로 브라우저 열기
   2. 서비스를 일부러 죽여 자동 재시작, 한도 초과 시 Windows 알림 1회
-  3. 앱을 닫았다 다시 열어도 서비스가 계속 돌고 로그가 이어진다.
+  3. 앱을 닫았다 다시 열어도 서비스가 계속 돌고 로그가 이어진다. 로그 여러 개를 분리 창까지 동시에 따라가도 브리지 재연결이 0이다(S1에서 브리지 송신 큐 16칸 포화가 재연결로 이어진 사례가 있음).
   4. 예약 작업이 정해진 시각에 돌고, 실패하면 알림
   5. 빌드 오류가 문제 탭에 file:line으로 보이고 누르면 연다.
   6. 비밀 하나를 넣고 그 비밀을 쓰는 작업을 실행 → 동작하고, 로그·설정 화면에 값이 없다. 데몬 Windows 호출이 실패하는 경우에도 Windows 앱 DPAPI 해제·`secrets.unlock` fallback으로 실행되는지 반드시 확인한다.
@@ -530,9 +587,11 @@ git add -A && git commit -m "feat(core): add a per-domain index database and a s
   8. 소유 fixture의 컨테이너 목록·로그 보기. 재시작 등 Docker 조작은 일회성 hosted CI 또는 독립 VM에서만 확인하고 로컬 기존 Docker·서비스·공유 네트워크는 변경하지 않는다.
   9. 에이전트 상세의 [테스트 실행]이 실행 로그로 보이고, 실패 로그를 에이전트에게 보낸다.
   10. 시작 구성 실행으로 서비스·터미널·에이전트가 한 번에 뜬다.
+  11. 신뢰 범위 2: 승인 전 시작은 자원 0, 승인 뒤 시작, 설정을 밖에서 바꾸면 수동 시작 거절·예약 `skipped(trust)`·알림 1회, 화면에서 정의 저장은 재승인 없이 이어짐.
+  12. `accept` 채널 격리: 설치·제거 전후 prod 설치본·`devbox@prod`·공유 바이너리·unit 템플릿 불변.
 - [ ] **Step 3: 전환 안내:** S2 머지 뒤 "에이전트·실행·터미널은 새 빌드로 옮겨 써도 된다"고 선택적 조기 사용만 안내하고 기다리지 않는다. 실사용은 기능 완성 뒤가 기본이다. 사용자가 옮기면 날짜를 PROGRESS에 적고, 알려 준 문제는 PROGRESS §2에 기록해 진행 중인 브랜치에서 고친다.
 - [ ] **Step 4: 상태 갱신·PR**
 
 - PR 전에는 상태 줄을 직접 편집해 `구현 완료·최종 검증 결과 기록·PR 수용 대기`로 적는다. `sed` 패턴으로 완료를 추정하지 않는다. 하위 프로젝트 끝 브랜치 전체 검토와 최종 상세 검증·Biome CI를 마치고, 결과·미실행 항목을 PROGRESS와 PR 본문에 남긴다.
-- 00-roadmap §3에 따라 push·PR은 한 번 진행한다. 필수 CI `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`와 최종 SHA 자동 코드·보안 리뷰 완료 뒤 squash 머지한다.
+- 00-roadmap §3에 따라 push·PR은 한 번 진행한다. 필수 CI `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`와 자동 리뷰 3회 상한 판정(CONVENTIONS §8: 1–3회 지적 처리, 4회째부터 차단 기준만 수정·나머지는 PROGRESS §8 후속 목록) 뒤 squash 머지한다. 회차 수·지적 수·판정·이월 항목을 PR 본문에 남긴다.
 - 실제 머지를 확인한 뒤 상태 줄을 직접 `완료(S2 PR 머지)`로 고치고 PROGRESS의 S2 행·PR 표·현재 위치(다음: 트랙 1 S3 Task 1·트랙 2 S5-1)를 갱신한다. PR 전 수용 대기를 완료로 기록하지 않는다.

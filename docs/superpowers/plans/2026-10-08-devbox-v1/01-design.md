@@ -457,7 +457,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 
 | 기능 | 구현 |
 |---|---|
-| 식별자·폴더 | identifier `io.github.jihoon22lee.devbox`(v0.9.0의 `com.devbox.v08.*`와 겹치지 않음). 설치는 NSIS 사용자 단위 기본 폴더, 앱 데이터는 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\` |
+| 식별자·폴더 | identifier `io.github.jihoon22lee.devbox`(v0.9.0의 `com.devbox.v08.*`와 겹치지 않음). 설치는 NSIS 사용자 단위 기본 폴더, 앱 데이터는 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\`. 수용 검증용 `accept` 채널(S2 Task 15c)은 identifier `io.github.jihoon22lee.devbox.accept`와 별도 이름·폴더·프로토콜(`devbox-accept://`)·자동 시작 항목을 쓰고 WSL 인스턴스 `accept`에 붙는다. 실사용 채널(prod)과 동시에 설치·실행돼도 서로의 자원을 바꾸지 않는다 |
 | 창 | 메인 창 + 분리 창(터미널·에이전트 상세·에이전트 격자·노트·요청) + 빠른 캡처 창 + 명령 팔레트 오버레이. 기본 크기는 작업 영역의 80%(최대 1600×1000, 최소 1180×760), 최소 960×600 |
 | WebView2 | 브라우저 가속키를 끈다(`AreBrowserAcceleratorKeysEnabled=false`: Ctrl+P 인쇄, F5 새로고침, Ctrl+± 확대 차단). 확대는 앱 UI 배율로 처리 |
 | 트레이 | 열기·빠른 캡처·활동 일시중지·실행 요약(에이전트 n, 서비스 n)·종료. 처음 창을 닫으면 "트레이에서 계속 실행됩니다"라고 알림 |
@@ -574,6 +574,16 @@ agents = [{ tool = "claude", worktree = false }]
 **저장소 명령 신뢰 확인(2026-10-13 S1 추가 승인)**
 
 프로젝트 등록·clone은 저장소 명령 실행을 승인하지 않는다. `[agent]`의 setup·test·teardown과 `[launch]`의 터미널 명령·에이전트 도구/지시문을 실행하기 전에 경로와 내용을 보여 주고 명시적으로 승인받는다. 승인은 프로젝트의 정규 경로와 `.devbox/devbox.toml`의 전체 내용 digest, 실행 범위 버전에 묶어 데몬 DB에 저장하며, 내용이나 경로·실행 범위가 바뀌면 다시 승인받는다. S1은 실행 범위 버전 1이며, 전체 설정에 S1 실행 정의가 없을 때는 승인이 필요 없다. 아직 실행하지 않는 task/service/schedule 정의는 S1 실행 정의로 세지 않지만 전체 내용 digest에는 포함한다. S2에서 실행 의미를 추가할 때는 명령 미리보기를 확장하고 실행 범위 버전을 올려 재승인받는다.
+
+**실행 범위 버전 2(S2, 2026-10-14 계획 보강).** S2는 `[[task]]`·`[[service]]`·`[[schedule]]`의 명령·실행 위치·환경 변수·대상(Linux/Windows)·의존 순서·쓰는 비밀 이름을 실행 정의에 더하고 `SCOPE_VERSION`을 2로 올린다.
+- 승인이 필요한지는 설정에 들어 있는 실행 정의의 최소 범위로 정한다. 범위 1 정의만 있는 설정은 범위 1 이상 승인이면 그대로 유효하고, task/service/schedule 정의가 하나라도 있으면 범위 2 승인이 필요하다. 그래서 S1에서 승인한 프로젝트는 task/service/schedule을 쓰기 전까지 다시 묻지 않는다.
+- 데몬은 실행 시작(수동·의존 순서·시작 구성의 서비스·`agents.test`·MCP `devbox_run_task`·예약 실행) 전에 승인을 확인하고 승인된 불변 snapshot의 정의만 실행한다. 비밀은 이름만 미리보기에 보이고 값은 보이지 않는다.
+- 예약은 무인 실행이다. 실행 시점에 승인이 없거나 낡았으면 실행하지 않고 `skipped(trust)` 결과를 남기고 알림을 한 번 띄운다. 사용자가 다시 승인하면 다음 예약부터 실행한다. 놓친 예약 처리(`missed=RunOnce`)도 같은 확인을 거친다.
+- systemd `Restart=`에 따른 재시작은 처음 승인된 snapshot으로 만든 unit을 다시 띄우는 것이라 다시 확인하지 않는다. 사용자의 수동 재시작·다음 시작은 현재 설정과 승인을 다시 확인한다. 설정이 바뀌면 실행 중인 것은 그대로 두고 화면에 "설정이 바뀌어 다음 시작에 재승인 필요"를 보인다.
+- "이 PC에만" 정의(DB)는 사용자가 devbox 화면에서 직접 입력한 것이라 저장소 내용이 아니므로 승인 대상이 아니다. 자동 감지 제안은 실행하지 않고, 사용자가 추가할 때 명령을 보여 준다.
+- devbox가 `runtime.define`/`undefine`으로 `.devbox/devbox.toml`을 직접 고치면 digest가 바뀐다. 쓰기 직전에 읽은 바이트가 현재 승인된 digest와 같을 때만, 쓴 결과 바이트의 digest로 승인을 같은 DB 쓰기에서 갱신한다(사용자가 화면에서 입력한 정의만 더해졌기 때문). 쓰기 직전 바이트가 승인과 다르면(밖에서 고침) 갱신하지 않고 기존 재승인 흐름을 따른다.
+- MCP와 직접 RPC는 승인을 만들 수 없다. 승인은 화면의 확인 대화상자에서만 한다(S1과 같다).
+- 이 승인은 정의된 명령에 대한 동의이며, 그 명령이 부르는 `package.json` 스크립트·Makefile 내용까지 승인하는 것은 아니다(S1의 Git hook 한계와 같은 범위).
 
 확인 화면뿐 아니라 직접 RPC와 내부 호출에서도 데몬이 승인을 강제한다. digest 계산과 해석은 한 번 읽은 동일한 바이트를 사용하고, 한 작업은 승인된 불변 설정 snapshot만 실행한다. 복합 시작 구성의 터미널과 에이전트도 같은 snapshot을 사용한다. 저장소 명령을 실행하는 경로에서는 자원 생성·종료·삭제 전에 신뢰를 확인하며, 변경된 teardown이 승인되지 않았다면 작업 폴더와 브랜치를 보존하고 오류를 남긴다. 승인은 명령 정의에 대한 동의이며 worktree·systemd scope나 외부 스크립트의 sandbox를 의미하지 않는다.
 
@@ -931,6 +941,7 @@ agents = [{ tool = "claude", worktree = false }]
   - WSL에서 `pnpm dev`: Vite(1450, strictPort) + `devbox daemon --instance dev` + dev-gateway(1451).
   - Windows 껍데기를 확인할 때만 `scripts/win-dev.ps1`(UNC 경로에서 `pnpm tauri dev`, 인스턴스 `dev`)을 쓴다.
   - 직접 써 보기(dogfood) 설치 파일은 기본으로 CI(`windows.yml`) 산출물을 `scripts/dogfood.sh`로 받는다. Windows 쪽 Rust·MSVC·pnpm을 설치했다면 `scripts/win-build.ps1`로 로컬에서 만들 수도 있다.
+- **설치 채널(S2 Task 15c):** `prod`(실사용, 릴리스 자산)와 `accept`(에이전트의 설치본 수용 검증 전용) 두 가지다. 채널은 빌드할 때 정한다. `windows.yml`은 PR·수동 실행에서 두 채널의 NSIS를 함께 만들고(`devbox-setup`·`devbox-setup-accept` 산출물), 태그 릴리스에는 prod만 올린다. `accept` 채널은 prod와 Windows identifier·설치/데이터 폴더·프로토콜·자동 시작·단일 인스턴스 키가 다르고, WSL 쪽도 인스턴스 `accept`와 채널 전용 바이너리 경로·unit 템플릿을 써서 prod의 `~/.local/share/devbox/bin/devbox`·`devbox@.service`를 바꾸지 않는다. 전역 단축키는 OS 전역이라 prod가 실행 중이면 `accept`의 등록이 실패할 수 있다. 이때 단축키 항목만 미실행으로 기록한다.
 
 ## 11. 검증과 개발 방식
 
@@ -969,7 +980,8 @@ agents = [{ tool = "claude", worktree = false }]
 - Windows 설치본 스모크는 에이전트가 WSL에서 PowerShell을 **절대 경로로 호출**해 CI 설치본을 설치·실행·제거한다(사용자 승인 2026-10-13). 실제 앱 실행과 배포 빌드는 Windows에서만 한다. `scripts/dogfood.sh`처럼 해당 브랜치 최종 SHA의 `windows.yml` 산출물을 받고 저장소·workflow·run·source SHA와 설치 파일 SHA256을 확인한 것만 사용한다. 출처·해시를 PROGRESS와 PR 본문에 기록한다.
 - S1부터 하위 프로젝트마다 PR 전에 1회 실행한다. 최종 로컬 검증·브랜치 전체 검토 뒤 한 번 push하고 `windows.yml`을 workflow dispatch하여 해당 SHA의 산출물을 확보한 뒤 스모크·PR 순서로 진행한다. S1에서는 가능하면 Task 2 직후에도 그 시점 SHA의 산출물로 S0b 범위를 먼저 시도하되 최종 SHA 검증을 대체하지 않는다. 조기 스모크에 필요한 그 시점 SHA push·workflow dispatch는 00 §2.2의 예외로 허용하며 일반 묶음별 push를 재개하지 않는다. 실행할 수 없으면 조기 시도만 미실행 사유를 기록한다.
 - 공통 S0b 범위: 첫 실행 배포판 선택, WSL 바이너리 배치, setup, `wsl.exe` 브리지, ping·projects 목록·추가, 창 닫기 뒤 Job 정리. 각 S가 추가한 Windows 기능을 함께 확인한다. S1은 알림·트레이·전역 단축키·분리 창이며 창 닫기와 앱 완전 종료의 Job 수명을 구분한다.
-- 설치 전 v1 설치본이나 `devbox@prod` 데이터가 이미 있으면 사용자의 실사용으로 보고 **제거하지 말고 멈춰서 묻는다**. v0.9.0 앱(`com.devbox.*`, DevboxSuite)과 기존 devbox 데이터는 건드리지 않는다. 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 제거한다. 기존 자원과 소유 자원을 설치 전후 비교해 식별한다.
+- S2 Task 15c부터 스모크는 `accept` 채널 설치본만 쓴다(사용자 결정 2026-10-14). prod 설치본·`devbox@prod`는 사용자의 실사용 자원이라 바꾸지 않고(불변 확인용 읽기 전용 해시·상태 비교만 한다), 있어도 멈추지 않는다. `accept` 채널 자원이 소유 표식 없이 이미 있을 때만 **제거하지 말고 멈춰서 묻는다**. Task 15c 전 스모크(prod 채널)는 기존 규칙대로 v1 설치본이나 `devbox@prod` 데이터가 있으면 멈춰서 묻는다. v0.9.0 앱(`com.devbox.*`, DevboxSuite)과 기존 devbox 데이터는 건드리지 않는다. 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 제거한다. 기존 자원과 소유 자원을 설치 전후 비교해 식별한다.
+- 설치본 스모크는 `windows-acceptance` 공통 잠금(S2 Task 15b)을 잡고 한 번에 하나만 한다.
 - UAC 승인 창·재부팅·사용자 클릭이 필요하면 멈추고 보고한다. 앱·데몬 로그, `systemctl --user` unit 상태, 진단 정보와 필요시 스크린샷으로 근거를 남긴다. UI 자동 조작이 필요하면 tauri-driver/WebDriver 등 가능한 방법을 검토하고 쓸 수 없으면 **그 항목만 미실행**으로 기록한다.
 - 결과는 PROGRESS와 PR 본문에 **PASS·FAIL·미실행**으로 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다. 사용자에게 중간 확인 목록을 넘기거나 실사용을 기다리지 않는다. R1 30분 유휴 유지와 R2 WSL shutdown 뒤 재연결(걸린 시간 기록)은 **S6 공개 직전 사용자 확인**으로 남기며 그전까지 미실행이다(07 S6-6).
 
