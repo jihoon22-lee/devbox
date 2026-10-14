@@ -203,7 +203,7 @@ async fn bridge_once(
             result=&mut drive=>return (result,ready),
             event=incoming.recv()=>match event{
                 Some(Event::Ready)=>{
-                    let opened={let mut state=conn.state();state.active_distro=Some(distro.into());state.writer=Some(writer.clone());state.open=true;state.bump();let frames=state.mux.reopen_all();frames.into_iter().try_for_each(|f|state.enqueue(f))};
+                    let opened={let mut state=conn.state();state.active_distro=Some(distro.into());state.writer=Some(writer.clone());state.open=true;state.bump();state.enqueue_reopens()};
                     if let Err(e)=opened{bridge_cancel.cancel();let _=drive.await;return (Err(ShellError::Invalid(e.to_string())),ready);}
                     ready=true;conn.gate(app,generation,"ready",None,None);conn.broadcast(app);
                 }

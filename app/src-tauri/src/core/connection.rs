@@ -56,6 +56,36 @@ mod tests {
         assert!(c.writer.is_none());
     }
     #[test]
+    fn reconnect_reopens_more_windows_than_writer_slots_before_renderer_frames() {
+        let mut state = State::<()>::default();
+        for number in 0..17 {
+            state
+                .attach(format!("window-{number}"), format!("lease-{number}"), ())
+                .unwrap();
+        }
+        let expected = state.mux.reopen_all();
+        let (writer, mut writes) = mpsc::channel(16);
+        state.writer = Some(writer);
+        state.open = true;
+        state
+            .enqueue_reopens()
+            .expect("all existing windows reopen");
+        assert!(state.open);
+        assert!(!state.cancel.is_cancelled());
+        let mut splitter = FrameSplitter::default();
+        let mut frames = Vec::new();
+        while let Ok(bytes) = writes.try_recv() {
+            frames.extend(splitter.push(&bytes).unwrap());
+        }
+        assert_eq!(frames, expected);
+        assert_eq!(frames.len(), 17);
+        state
+            .send("window-0", "lease-0", vec![5, 0, 0, 0, 1, 0, 0, 0, 0])
+            .unwrap();
+        let renderer = writes.try_recv().unwrap();
+        assert_eq!(splitter.push(&renderer).unwrap().len(), 1);
+    }
+    #[test]
     fn send_rejects_multiple_or_incomplete_frames() {
         let mut c = State::<()>::default();
         c.attach("main".into(), "lease".into(), ()).unwrap();
@@ -222,6 +252,15 @@ impl<C> State<C> {
             .outbound(&label.to_owned(), &mut frame)
             .map_err(|e| IpcError::new(e.to_string()))?;
         self.enqueue(frame)
+    }
+    pub fn enqueue_reopens(&mut self) -> Result<(), IpcError> {
+        // The bridge writes bytes, so existing small control frames can share
+        // one queue slot without changing their wire order or framing.
+        let bytes = self.mux.reopen_all().concat();
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        self.enqueue(bytes)
     }
     pub fn enqueue(&mut self, frame: Vec<u8>) -> Result<(), IpcError> {
         if self.open
