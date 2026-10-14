@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 f4954583의 필수 CI·Windows 수용·코드/보안 리뷰 완료. 추가 4건 중 두 기존 계약 보정만 구현하고 입력 원자성·일반 Git 필터 정책 확대는 기각했다. 최종 통합 검토·수용을 진행 중이며 아직 머지하지 않았다 |
-| 다음 할 일 | 최종 SHA 필수 CI·변경 경로 Windows 수용·자동 리뷰 완료 → 원계획 기준 최종 지적 판정 → squash 머지 |
+| 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 14e6fc69의 필수 CI·Windows 수용·코드/보안 리뷰 완료. 마지막 코드 리뷰 중 기준 ref 사전 검증과 기존 rebase 충돌 UI 복원만 좁게 보완하며, 등록 제거 후 닫힌 패치 보존은 기존 정책대로 기각했다. 아직 머지하지 않았다 |
+| 다음 할 일 | 기준 ref 입력 검증 → 기존 충돌 UI 복원 최소 보완·검토 → 최종 SHA 수용·리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -373,6 +373,12 @@ inline 폐기 4265712823 최소 보완: quiesce 뒤 HEAD·base·미병합 수를
 보안 리뷰 f495 4265752629(일반 Git mutation의 inherited filter 차단/내용별 승인)는 S1 수정 요구로 기각한다. 명시적 merge 등은 상속 필터를 실행할 수 있으며 그 내용은 현재 .devbox 신뢰 승인에 포함되지 않는다. merge 확인이 필터 내용 실행을 별도로 승인했다는 의미도 아니다. 초기 clone/worktree의 암묵 checkout 격리는 이 경로를 보호하지 않는다. 다만 기존 일반 Git hook 정책 판정(4262962225/4263067816), 7e780bb4의 일반 Git 설정·동작 보존 범위, 01 §7의 실행 정의/digest 승인과 일관되게 이 제한을 유지한다. 모든 mutation의 필터 차단은 LFS·required·암호화 변환 의미를 바꾸고, 내용별 승인은 새 정책이므로 추정으로 추가하지 않는다. 독립 범위 검토도 실제 위험과 신규 정책 요구를 구분해 기각에 동의했다. f495 코드 리뷰 01:05:26 UTC·보안 리뷰 01:13:06 UTC 모두 완료, 최종 4건 중 위 두 최소 보정만 구현한다.
 
 Claude hook 실행 결속 4265712829: CLI가 기존 DEVBOX_AGENT_LAUNCH를 optional launchId로 전달하고, Claude 이벤트는 누락·빈 값 또는 현재 binding 불일치면 상태·rev·topic을 바꾸지 않는다. 비교와 apply_event는 기존 DB 쓰기 transaction 안에서 함께 수행하며 actions lock을 넓히지 않는다. Setup/Exit와 Codex의 기존 결속 방식은 유지한다. 실제 resume 후 이전 launch ENV의 실제 CLI SessionStart가 새 세션을 덮는 causal RED를 확인했고, stale/missing/empty 거부와 current 수용 GREEN 및 직접 영향 Rust 고유 20개 PASS. raw-Claude fixture는 소유 DB의 실제 launch를 전달하며 가짜 토큰/누락 binding 허용은 두지 않았다. 생성 타입·소유 포맷 PASS, helper 첫 compile/module-order 포맷 실패와 해결 근거는 `claude-launch-final-followup`에 보존한다. 최종 영향 agents/cli all-target Clippy·workspace fmt·생성 타입·frontend typecheck PASS(14.552초, cgroup peak 1,086,803,968byte). 에이전트 E2E 3/3 PASS(17.1초; supervisor 17.883초, peak 1,441,214,464byte). 독립 통합 검토에서 inline 3개+Claude 13개인 최종 소스 16개의 동결 해시 일치와 미검토 변경 0개, Claude 근거 34개·자원 결과 17개 및 기각 두 건의 정확한 한계 표현을 확인했다. 최종 Biome 결과와 검토 기록은 `two-contracts-final-*`에 보존한다.
+
+최종 후보 14e6fc69 수용: CI 38495564328·Windows 38495564327 필수 검사와 E2E PASS. 출처/SHA256을 확인한 설치본에서 현재 launch ID가 실린 실제 소유 Claude CLI hook이 inline 작업의 세션·입력 대기 상태로 반영됐고, live scope의 CPU 4·memory high 6GiB/max 8GiB·swap 1GiB 설정을 실제 property로 확인했다. 지시 1회 전달·delivered 이력, inline 확인 폐기의 닫힌 지시/커밋/변경 기록 고정과 원본 브랜치·HEAD·refs·추적 파일 보존 PASS. 세션·프로젝트 제거와 Windows 등록 프로세스 12개 종료·포트 종료, 소유 Windows 설치/프로필/데이터·WSL 자원·해시 확인 다운로드 정리 PASS; v0.9 및 기존 빈 디렉터리 inode 보존. `windows-final-14e6fc69/acceptance.json`은 f495의 변경 없는 15경로·worktree 폐기 함수 부분 재사용, 로컬 fault injection과 R1/R2/DND 등 미실행을 분리한다. 169.378초는 검증 잠금 keeper 계측이며 전체 native 메모리 수치로 보고하지 않는다. 소스 재사용 15경로·함수 부분 2,209byte와 수용 증거 27개 해시의 독립 검토 PASS(`independent-acceptance-review.json`). 이 후보의 보안 리뷰는 01:35:19 UTC 추가 지적 없이, 코드 리뷰는 01:48:31 UTC 아래 3건을 남기고 완료됐다. 이 결과만 담은 작업 사본은 00 §3대로 다음 브랜치 문서 커밋으로 인계해 검증한 소스 SHA를 유지한다.
+
+14e6 코드 리뷰 판정: 4265934262는 생성 전 기준 ref의 commit 해석 가능 여부 검증과 detached 상태에서 생략한 기준을 명시하도록 요구하는 최소 입력 보정만 수용한다. 04b:1776의 “비우면 현재 브랜치” UI 계약과 종료/검토 가능한 입력의 완결성을 지킨다. 04:2494 구현 예시에는 main fallback이 있으므로 계획 전체를 위반했다고 과장하지 않으며, 명시한 유효 ref를 detached에서 사용하는 것과 기존 ref 종류는 유지한다. 4265934270은 이미 4262016002 판정·a792 Windows 수용에서 명시 검증한 “프로젝트 등록 제거 후 고정 목록은 유지하고 patch는 review_unavailable”라는 동일 제한이므로 기각한다. 저장소 identity 영속 보관/등록 제거 차단 정책을 추가하지 않는다. 4265934279는 04 Task6/9 및 04b:2124–26의 기존 충돌 안내·조작 UI가 평범한 이동/remount로 사라지는 부분만 수용한다. 기존 소유 Git의 현재 rebase 상태를 조회해 제어를 복원하며 새 DB journal·자동 복구·영속 banner cache는 제외한다. 독립 범위 검토에서 수용·기각·부분 수용을 구분했고, 현재 증상과 수정 비용을 확인한 뒤 해당 최소 범위만 구현한다.
+
+기준 ref 4265934262 최소 보완: DB 예약 전에 선택한 기준을 기존 Git resolve로 commit인지 검증하며, 기준 생략 시 현재 브랜치가 없는 detached HEAD는 기존 InvalidInput으로 거절한다. 명시한 유효 branch/ref/commit과 detached의 명시 기준은 허용하고 ref를 새로 제한하거나 생성 이후 기준을 고정하는 체계는 추가하지 않는다. 입력 해석 실패만 InvalidInput이며 다른 Git 실패는 기존 진단을 보존한다. 잘못된 inline/worktree 기준과 detached 생략의 causal RED 3건 뒤 새 4 tests/6 cases·기존 partial-create 영향 1개, 고유 5개 및 소유 포맷 PASS. 양성 fixture의 tmux has-session 판정 오류는 교정 후 3양성 경우 PASS로 구분 보존했다. 제품은 service 6줄 추가(598줄)에 한정된다. `base-ref-final-followup`의 소스 3개·동결 근거 12개·자원 결과 6개의 독립 검토 및 전체 Biome 275파일 PASS.
 
 ## 6. 세션 기록
 

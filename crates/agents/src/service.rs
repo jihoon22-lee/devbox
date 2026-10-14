@@ -273,8 +273,14 @@ impl AgentsService {
             None => devbox_git::current_branch(Path::new(&project.path))
                 .await
                 .map_err(git_failure)?
-                .unwrap_or_else(|| "main".into()),
+                .ok_or(AgentsError::InvalidInput)?,
         };
+        devbox_git::run::resolve(Path::new(&project.path), &base)
+            .await
+            .map_err(|error| match error {
+                devbox_git::GitError::Failed { .. } => AgentsError::InvalidInput.into(),
+                other => git_failure(other),
+            })?;
         let mut taken: HashSet<String> = devbox_git::branches(Path::new(&project.path))
             .await
             .map_err(git_failure)?

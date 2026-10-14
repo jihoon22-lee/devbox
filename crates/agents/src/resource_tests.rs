@@ -69,6 +69,9 @@ async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
     assert_eq!(ids.len(), 32, "pagination may not impose a task-count cap");
 }
 
+#[path = "base_ref_tests.rs"]
+mod base_ref_tests;
+
 struct TestEnv(PathBuf);
 #[tokio::test]
 async fn output_watcher_observes_waiting_and_resumed_tasks_beyond_the_first_rpc_page() {
