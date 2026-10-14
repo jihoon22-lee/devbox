@@ -126,6 +126,9 @@ pub struct AgentProfiles {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentEventParams {
     pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub launch_id: Option<String>,
     pub source: crate::hooks::HookSource,
     pub payload: String,
     pub code: Option<i32>,

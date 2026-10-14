@@ -411,6 +411,12 @@ impl AgentsService {
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
+        self.update_bound(id, None, f).await
+    }
+    async fn update_bound<F>(&self, id: &str, launch: Option<String>, f: F) -> Result<Done>
+    where
+        F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
+    {
         let id = id.to_owned();
         let hub = self.hub.clone();
         let result = self
@@ -420,6 +426,14 @@ impl AgentsService {
                     let Some(mut task) = store::get(tx, &id)? else {
                         return Ok(Err(Some(AgentsError::NotFound { id })));
                     };
+                    if let Some(launch) = launch
+                        && store::binding(tx, &id)?
+                            .and_then(|b| b.launch_id)
+                            .as_deref()
+                            != Some(launch.as_str())
+                    {
+                        return Ok(Err(None));
+                    }
                     let previous_state = task.state;
                     if !f(&mut task) {
                         return Ok(Err(None));
@@ -469,6 +483,16 @@ impl AgentsService {
                 rev: self.db.rev().to_string(),
             });
         }
+        let launch = if p.source == crate::hooks::HookSource::Claude {
+            let Some(launch) = p.launch_id.filter(|id| !id.is_empty()) else {
+                return Ok(Done {
+                    rev: self.db.rev().to_string(),
+                });
+            };
+            Some(launch)
+        } else {
+            None
+        };
         let events = if p.source == crate::hooks::HookSource::Codex {
             let Some(candidate) = crate::hooks::parse_codex_candidate(&p.payload) else {
                 return Ok(Done {
@@ -497,7 +521,7 @@ impl AgentsService {
                 crate::limits::identity(session_id)?;
             }
         }
-        self.update(&p.agent_id, move |t| {
+        self.update_bound(&p.agent_id, launch, move |t| {
             let mut changed = false;
             for event in events {
                 changed |= apply_event(t, &event, now_ms())

@@ -143,7 +143,7 @@ impl Fixture {
         .expect("owned fixture");
     }
     async fn complete(&self, thread: &str, turn: &str) -> Result<Done> {
-        self.svc.event(AgentEventParams { agent_id:"a".into(),source:HookSource::Codex,payload:serde_json::json!({"type":"agent-turn-complete","thread-id":thread,"turn-id":turn,"cwd":self.workdir,"last-assistant-message":"done"}).to_string(),code:None }).await
+        self.svc.event(AgentEventParams { agent_id:"a".into(),launch_id:None,source:HookSource::Codex,payload:serde_json::json!({"type":"agent-turn-complete","thread-id":thread,"turn-id":turn,"cwd":self.workdir,"last-assistant-message":"done"}).to_string(),code:None }).await
     }
     async fn state(&self) -> AgentState {
         self.svc.get("a").await.expect("owned fixture").state
@@ -508,6 +508,8 @@ async fn terminal_observation_transaction_rejects_newer_activity_and_launch() {
     );
 }
 
+#[path = "hook_launch_tests.rs"]
+mod hook_launch_tests;
 #[path = "hook_limits_tests.rs"]
 mod hook_limits_tests;
 

@@ -6,6 +6,32 @@ use std::{
     time::{Duration, Instant},
 };
 impl TestDaemon {
+    /// Read only this fixture's persisted launch, never bypass hook correlation.
+    pub async fn agent_launch(&self, id: &str) -> String {
+        let migrations = devbox_projects::MIGRATIONS
+            .iter()
+            .chain(devbox_terminal::MIGRATIONS)
+            .chain(devbox_agents::MIGRATIONS)
+            .copied()
+            .collect::<Vec<_>>();
+        let db = devbox_core::Db::open(
+            &self.paths.db_path,
+            &self.paths.backups_dir,
+            env!("CARGO_PKG_VERSION"),
+            &migrations,
+        )
+        .expect("owned DB");
+        let id = id.to_owned();
+        db.read(move |connection| {
+            connection.query_row(
+                "SELECT json_extract(body,'$.launch_id') FROM agents_runtime WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+        })
+        .await
+        .expect("owned launch")
+    }
     pub fn start_with_env(env: &[(&str, &str)]) -> Self {
         let mut daemon = Self::fixture();
         daemon

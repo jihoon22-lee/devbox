@@ -5,6 +5,9 @@ async fn near_full(f: &Fixture, preparing: bool) -> AgentTask {
     f.svc
         .db
         .write(move |tx| {
+            let mut binding = store::binding(tx, "a")?.expect("owned binding");
+            binding.launch_id = Some(uuid::Uuid::new_v4().simple().to_string());
+            store::put_binding(tx, "a", &binding)?;
             let mut task = store::get(tx, "a")?.expect("owned task");
             task.state = if preparing {
                 AgentState::Preparing
@@ -27,9 +30,16 @@ async fn near_full(f: &Fixture, preparing: bool) -> AgentTask {
         .0
 }
 async fn claude(f: &Fixture, payload: serde_json::Value) -> Result<Done> {
+    let launch = f
+        .svc
+        .launch_binding("a")
+        .await
+        .expect("owned binding")
+        .launch_id;
     f.svc
         .event(AgentEventParams {
             agent_id: "a".into(),
+            launch_id: launch,
             source: HookSource::Claude,
             payload: payload.to_string(),
             code: None,
@@ -154,6 +164,7 @@ async fn verified_codex_large_attention_preserves_identity_turn_and_near_full_hi
         .event(AgentEventParams {
             agent_id: "a".into(),
             source: HookSource::Codex,
+            launch_id: None,
             payload: payload.to_string(),
             code: None,
         })

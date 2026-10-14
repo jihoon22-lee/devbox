@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 f4954583의 필수 CI와 Windows 변경 경로 수용 완료. 완료된 코드 리뷰 3건 중 inline 폐기 재검증·Claude hook 실행 ID 결속만 최소 수용하고, 대용량 입력 원자성 확대는 기각했다. 마지막 2건 보완 중이며 아직 머지하지 않았다 |
-| 다음 할 일 | inline 폐기·Claude hook 최소 보완과 직접 회귀·별도 검토 → 최종 SHA 필수 수용·자동 리뷰 완료 → squash 머지 |
+| 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 f4954583의 필수 CI·Windows 수용·코드/보안 리뷰 완료. 추가 4건 중 두 기존 계약 보정만 구현하고 입력 원자성·일반 Git 필터 정책 확대는 기각했다. 최종 통합 검토·수용을 진행 중이며 아직 머지하지 않았다 |
+| 다음 할 일 | 최종 SHA 필수 CI·변경 경로 Windows 수용·자동 리뷰 완료 → 원계획 기준 최종 지적 판정 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -369,6 +369,10 @@ a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및
 f495 코드 리뷰 3건 판정: 4265712823은 inline 폐기에서 quiesce 뒤 HEAD/base/미병합 수 재확인과 종료 시점 기록 고정의 누락으로, 01 §5.2·§9.1.12·§9.2에 맞는 최소 순서 보정만 수용한다. 4265712829는 재개 이전 Claude hook이 현재 실행을 바꿀 수 있어 기존 DEVBOX_AGENT_LAUNCH를 전달하고 DB 쓰기 안에서 현재 binding과 비교하는 범위만 수용한다. actions lock 확대나 새 복구 체계는 추가하지 않는다. 4265712833의 대용량 붙여넣기 전체 사전 수락/새 입력 흐름 제어는 기각한다. 01 §9.1.11은 전송 실패 시 남은 입력 폐기·알림을 명시하고 현재 sendRaw 실패는 연결 reset·stream 종료·재연결 중 입력 전송 안 됨 표시로 이어진다. 이미 전달된 prefix는 되돌리지 않으며 붙여넣기 원자성을 보장하지 않는 한계는 유지한다. 독립 검토도 두 최소 수용·한 기각의 범위 판단에 동의했다.
 
 inline 폐기 4265712823 최소 보완: quiesce 뒤 HEAD·base·미병합 수를 다시 읽어 최초 확인값과 다르면 기존 StateChanged로 거절하고 닫지 않는다. baseOid가 생략된 요청도 종료 중 기준 ref 변경을 거부한다. 검토 기록은 재검사 이후 고정한다. 소유 stop harness가 종료 중 HEAD commit/기준 ref를 바꾸는 인과 RED 2건 뒤 신규 정상·변경 회귀와 기존 quiesce 영향까지 3 tests/7 scenarios 및 포맷 PASS. 제품 변경은 actions의 기존 inline 경로에 한정하며 별도 복구·저장 체계를 추가하지 않았다. `inline-discard-final-followup`에 원본 실패·최종 결과·자원·소스 동결을 보존한다. 소스 3개·근거 6개 해시와 자원 결과 독립 검토 및 전체 Biome 275파일 PASS.
+
+보안 리뷰 f495 4265752629(일반 Git mutation의 inherited filter 차단/내용별 승인)는 S1 수정 요구로 기각한다. 명시적 merge 등은 상속 필터를 실행할 수 있으며 그 내용은 현재 .devbox 신뢰 승인에 포함되지 않는다. merge 확인이 필터 내용 실행을 별도로 승인했다는 의미도 아니다. 초기 clone/worktree의 암묵 checkout 격리는 이 경로를 보호하지 않는다. 다만 기존 일반 Git hook 정책 판정(4262962225/4263067816), 7e780bb4의 일반 Git 설정·동작 보존 범위, 01 §7의 실행 정의/digest 승인과 일관되게 이 제한을 유지한다. 모든 mutation의 필터 차단은 LFS·required·암호화 변환 의미를 바꾸고, 내용별 승인은 새 정책이므로 추정으로 추가하지 않는다. 독립 범위 검토도 실제 위험과 신규 정책 요구를 구분해 기각에 동의했다. f495 코드 리뷰 01:05:26 UTC·보안 리뷰 01:13:06 UTC 모두 완료, 최종 4건 중 위 두 최소 보정만 구현한다.
+
+Claude hook 실행 결속 4265712829: CLI가 기존 DEVBOX_AGENT_LAUNCH를 optional launchId로 전달하고, Claude 이벤트는 누락·빈 값 또는 현재 binding 불일치면 상태·rev·topic을 바꾸지 않는다. 비교와 apply_event는 기존 DB 쓰기 transaction 안에서 함께 수행하며 actions lock을 넓히지 않는다. Setup/Exit와 Codex의 기존 결속 방식은 유지한다. 실제 resume 후 이전 launch ENV의 실제 CLI SessionStart가 새 세션을 덮는 causal RED를 확인했고, stale/missing/empty 거부와 current 수용 GREEN 및 직접 영향 Rust 고유 20개 PASS. raw-Claude fixture는 소유 DB의 실제 launch를 전달하며 가짜 토큰/누락 binding 허용은 두지 않았다. 생성 타입·소유 포맷 PASS, helper 첫 compile/module-order 포맷 실패와 해결 근거는 `claude-launch-final-followup`에 보존한다. 최종 영향 agents/cli all-target Clippy·workspace fmt·생성 타입·frontend typecheck PASS(14.552초, cgroup peak 1,086,803,968byte). 에이전트 E2E 3/3 PASS(17.1초; supervisor 17.883초, peak 1,441,214,464byte). 독립 통합 검토에서 inline 3개+Claude 13개인 최종 소스 16개의 동결 해시 일치와 미검토 변경 0개, Claude 근거 34개·자원 결과 17개 및 기각 두 건의 정확한 한계 표현을 확인했다. 최종 Biome 결과와 검토 기록은 `two-contracts-final-*`에 보존한다.
 
 ## 6. 세션 기록
 

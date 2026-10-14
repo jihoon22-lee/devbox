@@ -133,7 +133,7 @@ async fn exact_primary_thread_and_current_turn_gate_completion_over_rpc() {
     // 250 ms lifecycle tick and daemon scheduling to cross that boundary.
     d.wait_for(&client, &id, "running", Duration::from_secs(5))
         .await;
-    client.raw_call("agents.event",json!({"agentId":id,"source":"claude","payload":"{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"}),None).await.expect("new turn waiting");
+    client.raw_call("agents.event",json!({"agentId":id,"launchId":d.agent_launch(&id).await,"source":"claude","payload":"{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"}),None).await.expect("new turn waiting");
     notify(&client, &id, cwd, "primary", "one").await;
     d.wait_for(&client, &id, "waiting", Duration::from_secs(2))
         .await;

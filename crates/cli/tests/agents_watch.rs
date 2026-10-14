@@ -37,7 +37,7 @@ while read -r answer; do :; done
         let task = d.wait_for(&c, id, "waiting", Duration::from_secs(12)).await;
         assert_eq!(task["attention"]["kind"], "output");
     }
-    c.raw_call("agents.event", json!({"agentId":hooked,"source":"claude","payload":"{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"}), None).await.expect("owned fixture");
+    c.raw_call("agents.event", json!({"agentId":hooked,"launchId":d.agent_launch(&hooked).await,"source":"claude","payload":"{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"}), None).await.expect("owned fixture");
     for id in [&auto, &hooked] {
         std::fs::write(d.home.path().join(format!("go-{id}")), "go").expect("owned fixture");
     }

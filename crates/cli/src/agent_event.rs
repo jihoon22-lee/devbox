@@ -40,6 +40,7 @@ pub async fn run(source: HookSource, code: Option<i32>, payload: Option<String>)
                 .await?;
         let params = AgentEventParams {
             agent_id,
+            launch_id: std::env::var("DEVBOX_AGENT_LAUNCH").ok(),
             source,
             payload,
             code,

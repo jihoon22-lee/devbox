@@ -82,7 +82,7 @@ async fn launch_creates_configured_terminals_and_inline_agent_and_summary_counts
     assert_eq!(item["dirty"], true);
     assert_eq!(item["terminals"], 3);
     assert_eq!(item["agents"], json!({"open":1,"attention":0}));
-    call(&c, "agents.event", json!({"agentId":id,"source":"claude","payload": "{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"})).await;
+    call(&c, "agents.event", json!({"agentId":id,"launchId":d.agent_launch(id).await,"source":"claude","payload": "{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"})).await;
     let summary = call(&c, "projects.summary", json!({})).await;
     assert_eq!(
         summary["items"][0]["agents"],

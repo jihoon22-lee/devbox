@@ -69,7 +69,7 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
             .ends_with("app-agents/fix-login")
     );
     let started = std::time::Instant::now();
-    client.raw_call("agents.event", json!({"agentId":id,"source":"claude","payload":"{\"hook_event_name\":\"Notification\",\"notification_type\":\"permission_prompt\",\"message\":\"needs Bash\"}"}), None).await.expect("same-state hook");
+    client.raw_call("agents.event", json!({"agentId":id,"launchId":d.agent_launch(&id).await,"source":"claude","payload":"{\"hook_event_name\":\"Notification\",\"notification_type\":\"permission_prompt\",\"message\":\"needs Bash\"}"}), None).await.expect("same-state hook");
     support::bounded(events.next_event())
         .await
         .expect("same-state event");
