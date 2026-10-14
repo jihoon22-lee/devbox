@@ -5,7 +5,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–12 기능 구현·독립 검토 완료. Task 24 및 PR #640 후속 보완의 검증·수용 상태는 [PROGRESS.md](PROGRESS.md)를 따른다.
+- 상태: Task 1–12 완료 · S1 PR #640 squash 머지(2026-10-14, `c475e511`). 최종 검증·자동 리뷰 한정 예외·미실행 항목은 [PROGRESS.md](PROGRESS.md)를 따른다.
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)
