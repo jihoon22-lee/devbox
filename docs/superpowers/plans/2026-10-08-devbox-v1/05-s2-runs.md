@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료([04b](04b-s1-app.md) 상태 줄)
+- 상태: 계획(과제 수준) · Task 1 미착수 · S1 #640 머지로 시작 조건 충족. `v1/s2-runs` 준비 완료, 현재 문서 커밋은 S1 결과 인계만 포함
 - 상세화 수준: 과제·파일·인터페이스·핵심 테스트까지 적었다. **Task 1에서 실제 S0b·S1 코드에 맞춰 단계별 코드까지 상세화한 뒤 실행한다.**
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.

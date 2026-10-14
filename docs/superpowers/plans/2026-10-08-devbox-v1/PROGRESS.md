@@ -12,16 +12,17 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 14e6fc69의 필수 CI·Windows 수용·코드/보안 리뷰 완료. 마지막 코드 리뷰 중 기준 ref 사전 검증과 기존 rebase 충돌 UI 복원만 좁게 보완했다. 등록 제거 후 닫힌 패치 보존은 기존 정책대로 기각했다. 아직 머지하지 않았다 |
-| 다음 할 일 | 두 최소 보완·별도 검토 완료 → 최종 SHA CI·Windows 영향 수용·자동 리뷰 → squash 머지 |
+| 단계 | S1 Task 1–24와 승인된 보완 완료, PR #640 squash 머지(`c475e511`). 최종 소스 `c28e4cab`의 필수 CI·E2E·Windows 영향 수용·별도 검토 완료. 최신 자동 리뷰는 한도 소진에 따른 이번 PR 한정 사용자 승인으로 생략했으며 PASS로 보고하지 않음 |
+| 다음 할 일 | S2 Task 1 상세화부터 시작(아직 미착수). 이번 커밋은 S1 최종 결과 인계 문서만 포함 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
+| 작업 중인 브랜치·worktree | `v1/s2-runs` · `../devbox-wt/v1-s2-runs`, 기반 `origin/main@c475e511`. S2 구현·push·PR 미착수 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-14 | PR #640 최신 자동 리뷰 한도 소진 | 사용자 | 이번 PR의 최종 SHA `c28e4cab` 자동 코드/보안 리뷰만 생략하고 머지·정리하도록 명시 승인. 필수 CI·Windows 실기·별도 검토 완료, 보호 규칙 유지. 향후 PR에는 예외를 적용하지 않음 |
 | 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push(`aa5c6785`), main에는 S0b PR과 함께 |
 | 2026-10-08 | PR 47개 → 하위 프로젝트당 1개(7개)로 줄임 | 사용자 | 해결(00-roadmap §3) |
 | 2026-10-08 | S2 뒤 S3·S5를 동시에 진행할지 | 사용자 | 해결: 동시 진행. 한 세션이 하위 에이전트로 트랙 1(S3→S4)·트랙 2(S5)를 함께 돌림, 사용자가 세션을 더 띄우지 않음(00-roadmap §3.6) |
@@ -42,7 +43,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | P0 | 00-roadmap §2 | 완료 | 2026-10-08 | 2026-10-08 | — |
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
-| S1 | 04-s1-agents-terminal · 04b-s1-app | PR 열림 | 2026-10-13 | | 완료·검증 결과 보고 |
+| S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 대기 | | | 완료·검증 결과 보고 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
@@ -56,7 +57,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | PR | 브랜치 | 범위 | 상태 | PR 번호 | 머지 |
 |---|---|---|---|---|---|
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
-| S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | PR 열림 | #640 | |
+| S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16 | 대기 | | |
 | S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
@@ -86,7 +87,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | L | Task 17–19 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.6h |
 | S1 | M | Task 20–21 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.2h |
 | S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.1h |
-| S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 작업 중 | 2026-10-13 | | |
+| S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 대기 | | | |
 | S2 | O | Task 2–6 |  | 대기 | | | |
 | S2 | P | Task 7–10 |  | 대기 | | | |
@@ -396,6 +397,12 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 
 재연결 4266263013: 기존 Ready loop를 동일 동작 helper로 추출한 상태에서 17창·16칸 큐 회귀가 실제 큐 포화로 실패했다. 이후 기존 ChannelOpen 프레임의 concat 배치를 한 큐 항목으로 전달하며 byte stream의 frame 경계와 순서를 유지했다. connection5(신규17프레임 복원·후속 송신 포함)와 bridge5 PASS. 같은 명령의 마지막 포맷 검사는 새 테스트 줄바꿈으로 실패했고 whitespace만 교정한 별도 포맷 검사 PASS와 구분 보존했다. `reopen-batch-final-followup`의 동결 소스2개·추출 patch·원본 RED/GREEN/자원 로그를 남긴다. portable core 검증이며 Windows supervisor의 실제 실행은 새 최종 SHA 수용에서 확인한다. 두 과제의 소스4개·동결근거13개·자원원본6개와 최종 CLI/portable-app all-target Clippy(4.77초)·Biome276(0.818초)의 추가 원본2개 독립 검토 PASS(`launch-reopen-final-independent-review.json`). 각 과제의 판단·근거를 구분했으며 변경 없는 frontend/RPC 타입 검사는 동일 입력의 이전 결과를 재사용한다.
 
+최종 후보 c28e4cab 수용: CI38504012525의 Frontend/Linux Rust/E2E와 Windows38504012540 필수 검사 모두 첫 실행 PASS. 출처/SHA256을 확인한 설치본에서 detached HEAD·main 부재·terminal1+inline agent1 시작 구성은 projects.launch_failed(0/0)로 거절됐고 목록 revision2·작업/예약/터미널 DB0·setup 미실행을 유지했다. 실제 Windows renderer17개(main1+숨긴 소유 popout16)의 각 클라이언트가 production gate_retry 뒤 ready→reconnecting→ready로 바뀌고 같은 새 소유 데몬에 RPC를 완료했다. gate revision5→28과 바이너리 해시·dataDir·instance 일치를 확인했다. 이 재시도는 setup/데몬까지 재시작하므로 PID가 같을 것이라는 초기 helper 가정1건을 교정해 보존했다. 17개를 동시에 화면에 표시한 검증이나 WSL shutdown/R1/R2 검증으로 주장하지 않는다. 프로젝트/세션/작업 비움, 이전/현재 bridge 합계 등록 Windows PID33개와 port 종료, 소유 Windows/WSL/download 정리 및 v0.9·원래 빈 디렉터리 inode 보존 PASS. keeper222.059초와 실제 daemon/tmux/Windows 제한 증거는 구분하며 이번에는 agent scope를 만들지 않았다. `windows-final-c28e4cab/acceptance.json`의 64증거 해시·34개 원본 창 기록·이전 수용 해시·동일9경로 재사용의 독립 검토 PASS(`independent-acceptance-review.json`). 이전 c68의 원인 미확정 tmux 종료와 재실행 성공 기록은 그대로 유지한다.
+
+자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
+
+c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.
@@ -411,6 +418,8 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 | 2026-10-13 | Codex | S1 Task 1 credit·공정 송신 구현, 별도 검토의 스트림 폐기/late buffer 누수 수정 및 재검토 통과 | `v1/s1-agents-terminal` 로컬 Task 1 완료. 직접 회귀·TS 생성/typecheck·Biome 검증 후 과제 커밋, 다음 Task 2·조기 Windows 스모크. S1 전체 검증/PR은 아직 |
 | 2026-10-13 | Codex | S1 Task 2 화면 스트림·수명 회귀 구현 및 독립 검토 통과 | Task1 `f1f4e445` 뒤 Task2 과제 커밋. 묶음 F 로컬 완료, 다음 승인된 조기 Windows 스모크. 일반 묶음 push/PR 없음, 스모크용 SHA push·workflow만 예외 |
 | 2026-10-13 | Codex | Task2 뒤 승인된 Windows 조기 스모크에서 bridge/setup 결함 발견·회귀/독립검토 후 수정. 새 CI 설치본으로 실행한 S0b 범위 PASS, 소유 자원 정리 | `v1/s1-agents-terminal` Task1 `f1f4e445`, Task2 `9e21bc6a`, 수정/실기 source `7eca14c5`(원격 일치), 후속 실기 기록 로컬 커밋. 다음 Task3 tmux 미착수(읽기 전용 준비만). S1 전체 검사·브랜치 전체 검토·최종 Windows 실기·PR/머지 미실행 |
+
+| 2026-10-14 | Codex | S1 최종 소스 c28e4cab의 필수 CI·E2E·Windows 수용·별도 검토 완료. 자동 리뷰 한도 소진을 정정 보고하고 이번 PR 한정 생략 승인 후 #640 squash 머지 | main c475e511의 tree가 최종 검증 소스와 동일함을 확인. 최종 결과 작업 사본을 00 §3에 따라 S2 준비 브랜치에 보존. S2 Task1 상세화·구현은 미착수 |
 
 ## 7. 착수 준비 검토
 
@@ -437,3 +446,5 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 | 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
 
 다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 이 준비 검토 당시의 S0b 사용자 확인 gate는 2026-10-13 결정으로 대체하며, 설계 변경이 필요한 실패는 별도로 보고한다.
+
+S1 머지 인계(2026-10-14 12:32 KST): PR #640은 보호 규칙을 유지한 squash로 `c475e5113be014b4064d4e231da85cb34887dcb9`에 머지됐다. 원본 main은 원격과 동기화했고 검증 소스 `c28e4cabd5aaf82e2b6a528b1b933d809f0c593b`와 tree가 동일하다. S1 검증용 Windows/WSL 자원은 소유권·해시 확인 후 이미 정리됐으며 v0.9·사용자 자료·공유 cache는 보존했다. S1 결과를 S2 문서 커밋에 보존한 뒤 clean·squash tree 동일성 확인 → worktree 제거 → prune → 로컬 브랜치 → 원격 브랜치 삭제를 완료했다. `scripts/sweep.sh`는 공유 cache 보존을 알리는 정리 유보(no-op)로 끝났으며 cache를 삭제하지 않았다. 인계 문서 변경의 Biome276도 PASS다. S2에서는 새 기능을 구현하거나 push/PR을 만들지 않았다.
