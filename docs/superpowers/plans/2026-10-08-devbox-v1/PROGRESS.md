@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 Task 1–24·신뢰 확인 및 앞선 리뷰 보완 구현·독립 검토 완료. PR #640 최종 후보 3cfcb0fc의 필수 CI·E2E·Windows 설치본 수용과 자동 코드·보안 리뷰가 완료됐다. 코드 리뷰의 추가 4건(폐기 branch OID 경쟁, 폐기 후 DB 실패 복구, 지시문 전송 후 저장 실패, 원격 OSC 7 경로)을 검증·보완 중이며 아직 머지하지 않았다 |
-| 다음 할 일 | 추가 4건 타당성 확인 → 과제별 실패 회귀·수정·별도 검토 → 새 최종 SHA 수용·자동 리뷰 → squash 머지 |
+| 단계 | S1 Task 1–24·신뢰 확인 및 앞선 리뷰 보완 구현·독립 검토 완료. PR #640 최종 후보 3cfcb0fc의 필수 CI·E2E·Windows 설치본 수용과 자동 코드·보안 리뷰가 완료됐다. 추가 리뷰 4건은 원계획에 맞는 최소 수정과 직접 회귀를 완료했다. 새 최종 SHA의 통합 검토·수용 절차를 진행 중이며 아직 머지하지 않았다 |
+| 다음 할 일 | 새 최종 SHA의 CI·Windows 영향 경로 수용·자동 리뷰 → 원계획 기준 지적 판정 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -358,6 +358,12 @@ a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및
 
 폐기 branch 경쟁 보완(4265254669): worktree 제거 뒤 branch 삭제를 확인된 head OID의 원자적 비교·삭제로 바꿨다. 소유 Git wrapper가 실제 worktree 제거 직후 해당 fixture branch를 새 host commit으로 옮겨, 기존 강제 삭제가 새 tip을 지우는 RED를 확인했다. 수정 후 새 ref/commit 보존, 원래 확인한 head/base/commit count의 ClosedDiscarded 기록과 cleanup_error·Owned 예약 유지 GREEN이다. 새 회귀 1개와 기존 정상 폐기·stale 확인·다른 worktree branch 3개, 소유 fmt PASS. 원본 `discard-cas-followup`의 RED/GREEN·자원·3파일 동결 근거에 보존한다. DB 저장 실패 복구는 별도 후속 과제다.
 
+원격 OSC 7 경로 보완(4265254688): file URI의 호스트가 비어 있거나 localhost 또는 데몬 OS 호스트명과 일치할 때만 로컬 cwd로 사용한다. Linux /proc의 호스트명을 제한된 크기로 읽어 선택적 system.info 필드로 전달하며 생성 RPC 타입을 갱신했다. 늦은 호스트 정보에는 마지막 OSC 후보만 재검증하고 교체·폐기된 terminal/client의 콜백은 무시한다. 실제 새 탭·분할 생성 인자 오류 등 프론트 8개와 프로토콜 1개 RED 뒤 프론트 고유 29개·프로토콜/OS helper/실제 소유 데몬 RPC 3개 PASS. 정적 검사 초기 2건은 수정했고 최종 영향 25개·타입·생성·변경 Biome·Rustfmt PASS. 원본 실패와 최종 근거는 `osc-host-followup`에 보존한다. 동결 소스 11개·로그/자원 해시·자원 JSON 15개 독립 검토와 전체 Biome 275파일 PASS. 새 SHA의 Windows 실기는 나머지 후속 수정 뒤 수행한다.
+
+폐기 저장 실패 지적(4265254675)은 원계획 Task 9의 “기록 고정 → 닫힘 → 정리” 및 부분 실패 cleanupError 계약에 맞춰 부분 수용한다. 검토 중 시도한 별도 영속 intent·재시작 복구·다중 갱신 보호 확장은 S1 요구에 비해 과하므로 기각하고 미커밋 초안을 artifact로 보존한 뒤 제거했다. 최종 수정은 기존 승인·세션 종료·teardown·확인 상태 재검사 뒤, Git 삭제 전에 Closed와 검토 기록을 저장하도록 폐기 함수만 재정렬한다. 저장 실패면 Git 자원을 보존하고, 이후 정리 실패면 Closed·Owned 예약·cleanupError를 유지한다. 자동 재시작 복구나 dirty/미병합 잔여 자원의 자동 삭제는 보장하지 않으며, 자원 예약 해제 저장 실패는 해제가 지연될 수 있다. 새 DB 실패 회귀 2개·기존 branch CAS·정상 RPC 폐기까지 고유 4개와 포맷·전체 Biome 275파일 PASS. 동결 소스 3개·검증 파일·자원 결과의 최종 독립 검토 PASS. 근거는 `discard-durable-followup/minimal-*`이며 기각한 초안의 검증과 구분한다.
+
+지시문 전송 후 저장 실패(4265254681)는 기존 DeliveryUnknown 계약으로 수용했다. 실제 paste 성공 또는 전송 여부 불명 이후 finish 저장 실패와 최종 조회 실패를 일반 재시도 오류 대신 agents.delivery_unknown으로 반환한다. 전송 전 실패의 기존 보상 처리는 유지한다. 화면은 이 오류에서 제출 당시와 같은 draft revision만 비우며 새 편집과 다른 작업의 입력은 보존한다. 본문은 paste 전에 저장된 follow-up에 남으며 별도 재전송·idempotency·복구 체계는 추가하지 않는다. 실제 tmux paste 1회 뒤 실패하는 DB 인과 회귀 3개 RED→GREEN, 기존 전송 영향 5개와 Compose 6개·타입·형식 검사 PASS. 원본 실패와 최종 근거는 `send-persistence-followup`에 보존한다. 영향받은 agents/cli/protocol all-target Clippy·workspace fmt·생성 타입 검사 PASS(10.482초), 실제 데몬 에이전트·터미널 E2E 5/5 PASS(28.5초; supervisor 29.554초, cgroup peak 1,694,425,088byte). 통과한 무관한 E2E는 반복하지 않았다. 전체 변경 소스 19개가 과제별 동결 해시와 일치하고 미검토 소스 변경은 0개임을 확인한 통합 독립 검토 PASS(`four-findings-final-independent-review.json`), 최종 Biome 275파일 PASS. 미공개 두 커밋의 이메일 메타데이터만 사용자 지정 noreply로 바로잡았으며 각 source tree·메시지·시각은 동일하다.
+
 ## 6. 세션 기록
 
 세션이 끝날 때 한 줄을 덧붙인다. 오래된 줄은 지우지 않는다.
@@ -399,7 +405,3 @@ a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및
 | 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
 
 다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 이 준비 검토 당시의 S0b 사용자 확인 gate는 2026-10-13 결정으로 대체하며, 설계 변경이 필요한 실패는 별도로 보고한다.
-
-원격 OSC 7 경로 보완(4265254688): file URI의 호스트가 비어 있거나 localhost 또는 데몬 OS 호스트명과 일치할 때만 로컬 cwd로 사용한다. Linux /proc의 호스트명을 제한된 크기로 읽어 선택적 system.info 필드로 전달하며 생성 RPC 타입을 갱신했다. 늦은 호스트 정보에는 마지막 OSC 후보만 재검증하고 교체·폐기된 terminal/client의 콜백은 무시한다. 실제 새 탭·분할 생성 인자 오류 등 프론트 8개와 프로토콜 1개 RED 뒤 프론트 고유 29개·프로토콜/OS helper/실제 소유 데몬 RPC 3개 PASS. 정적 검사 초기 2건은 수정했고 최종 영향 25개·타입·생성·변경 Biome·Rustfmt PASS. 원본 실패와 최종 근거는 `osc-host-followup`에 보존한다. 동결 소스 11개·로그/자원 해시·자원 JSON 15개 독립 검토와 전체 Biome 275파일 PASS. 새 SHA의 Windows 실기는 나머지 후속 수정 뒤 수행한다.
-
-폐기 저장 실패 지적(4265254675)은 원계획 Task 9의 “기록 고정 → 닫힘 → 정리” 및 부분 실패 cleanupError 계약에 맞춰 부분 수용한다. 검토 중 시도한 별도 영속 intent·재시작 복구·다중 갱신 보호 확장은 S1 요구에 비해 과하므로 기각하고 미커밋 초안을 artifact로 보존한 뒤 제거했다. 최종 수정은 기존 승인·세션 종료·teardown·확인 상태 재검사 뒤, Git 삭제 전에 Closed와 검토 기록을 저장하도록 폐기 함수만 재정렬한다. 저장 실패면 Git 자원을 보존하고, 이후 정리 실패면 Closed·Owned 예약·cleanupError를 유지한다. 자동 재시작 복구나 dirty/미병합 잔여 자원의 자동 삭제는 보장하지 않으며, 자원 예약 해제 저장 실패는 해제가 지연될 수 있다. 새 DB 실패 회귀 2개·기존 branch CAS·정상 RPC 폐기까지 고유 4개와 포맷·전체 Biome 275파일 PASS. 동결 소스 3개·검증 파일·자원 결과의 최종 독립 검토 PASS. 근거는 `discard-durable-followup/minimal-*`이며 기각한 초안의 검증과 구분한다.

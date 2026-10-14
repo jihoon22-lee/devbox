@@ -309,10 +309,11 @@ fn tmux_failure_wrapper(d: &mut TestDaemon, operation: &str) {
     std::fs::create_dir(&bin).expect("owned wrapper directory");
     let wrapper = bin.join("tmux");
     let marker = d.home.path().join("fail-tmux");
+    let count = d.home.path().join("paste-count");
     // Only this fixture daemon sees the wrapper; the real owned tmux server remains unchanged.
     std::fs::write(&wrapper, format!(
-        "#!/bin/sh\nif [ -f {} ]; then\n for arg in \"$@\"; do\n  if [ \"$arg\" = '{}' ]; then cat >/dev/null; exit 1; fi\n done\nfi\nexec /usr/bin/tmux \"$@\"\n",
-        devbox_core::sh_quote(marker.to_str().expect("marker")), operation,
+        "#!/bin/sh\nfor arg in \"$@\"; do if [ \"$arg\" = paste-buffer ]; then printf x >>{}; fi; done\nif [ -f {} ]; then\n for arg in \"$@\"; do\n  if [ \"$arg\" = '{}' ]; then cat >/dev/null; exit 1; fi\n done\nfi\nexec /usr/bin/tmux \"$@\"\n",
+        devbox_core::sh_quote(count.to_str().expect("counter")), devbox_core::sh_quote(marker.to_str().expect("marker")), operation,
     )).expect("owned wrapper");
     std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755))
         .expect("wrapper permissions");
@@ -451,4 +452,83 @@ async fn accumulated_history_limit_rejects_before_paste_and_preserves_the_full_h
         "rejected input cannot truncate previously accepted history"
     );
     assert_eq!(after["state"], "idle");
+}
+
+fn send_persistence_db(d: &TestDaemon) -> devbox_core::Db {
+    let migrations = [
+        devbox_projects::MIGRATIONS,
+        devbox_terminal::MIGRATIONS,
+        devbox_agents::MIGRATIONS,
+    ]
+    .concat();
+    devbox_core::Db::open(
+        &d.paths.db_path,
+        &d.paths.backups_dir,
+        devbox_cli::VERSION,
+        &migrations,
+    )
+    .expect("owned DB")
+}
+async fn send_finish_failure(ambiguous_paste: bool) {
+    let mut d = fixture(Some(false));
+    tmux_failure_wrapper(&mut d, "send-keys");
+    let (_, client, _, id, _) = start(&mut d).await;
+    let db = send_persistence_db(&d);
+    db.write(|tx| tx.execute_batch("CREATE TRIGGER fail_send_finish BEFORE UPDATE ON agents_tasks WHEN json_extract(NEW.body,'$.followUps[#-1].delivery') IN ('delivered','unknown') BEGIN SELECT RAISE(FAIL,'fixture finish failure'); END"))
+        .await.expect("owned DB trigger");
+    if ambiguous_paste {
+        std::fs::write(d.home.path().join("fail-tmux"), "owned failure").expect("marker");
+    }
+    let result = client
+        .raw_call(
+            "agents.send",
+            json!({"id":id,"text":"private-body-sentinel"}),
+            None,
+        )
+        .await;
+    assert_eq!(
+        std::fs::read_to_string(d.home.path().join("paste-count")).expect("actual paste count"),
+        "x"
+    );
+    let task = call(&client, "agents.get", json!({"id":id})).await;
+    assert_eq!(task["followUps"][0]["delivery"], "pending");
+    assert_eq!(task["followUps"][0]["text"], "private-body-sentinel");
+    assert!(
+        format!("{result:?}").contains("agents.delivery_unknown"),
+        "paste happened before finish DB failure: {result:?}"
+    );
+}
+#[tokio::test]
+async fn successful_paste_then_finish_db_failure_reports_delivery_unknown() {
+    send_finish_failure(false).await;
+}
+#[tokio::test]
+async fn ambiguous_paste_then_finish_db_failure_still_reports_delivery_unknown() {
+    send_finish_failure(true).await;
+}
+#[tokio::test]
+async fn successful_paste_then_final_get_failure_reports_delivery_unknown() {
+    let mut d = fixture(Some(false));
+    tmux_failure_wrapper(&mut d, "send-keys");
+    let (_, client, _, id, _) = start(&mut d).await;
+    let db = send_persistence_db(&d);
+    db.write(|tx| tx.execute_batch("CREATE TRIGGER fail_send_result AFTER UPDATE ON agents_tasks WHEN json_extract(NEW.body,'$.followUps[#-1].delivery')='delivered' AND json_extract(NEW.body,'$.state')!='fixture-final-get-failure' BEGIN UPDATE agents_tasks SET body=json_set(NEW.body,'$.state','fixture-final-get-failure') WHERE id=NEW.id; END"))
+        .await.expect("owned post-commit read failure");
+    let result = client
+        .raw_call(
+            "agents.send",
+            json!({"id":id,"text":"private-body-sentinel"}),
+            None,
+        )
+        .await;
+    assert_eq!(
+        std::fs::read_to_string(d.home.path().join("paste-count")).expect("actual paste count"),
+        "x"
+    );
+    let row = db.read(move |tx| tx.query_row("SELECT json_extract(body,'$.followUps[0].delivery'),json_extract(body,'$.followUps[0].text') FROM agents_tasks WHERE id=?1",[id],|row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?)))).await.expect("durable sent instruction");
+    assert_eq!(row, ("delivered".into(), "private-body-sentinel".into()));
+    assert!(
+        format!("{result:?}").contains("agents.delivery_unknown"),
+        "read failure cannot mean failed delivery: {result:?}"
+    );
 }

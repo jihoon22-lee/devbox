@@ -8,6 +8,11 @@ use crate::{
 };
 use devbox_protocol::{Fail, Internal};
 use devbox_terminal::tmux::PasteDelivery;
+fn after_delivery_failure(id: &str, error: Fail<AgentsError>) -> Fail<AgentsError> {
+    // Keep the original diagnostic without logging the instruction body.
+    tracing::warn!(agent_id = id, error = ?error, "agent instruction delivery needs verification");
+    AgentsError::DeliveryUnknown.into()
+}
 struct Reservation {
     instruction: String,
     launch: Option<String>,
@@ -53,32 +58,37 @@ impl AgentsService {
             .paste_with_delivery(session, &p.text, true)
             .await
         {
-            Ok(()) => {
-                self.finish_instruction(&p.id, reservation, Some(InstructionDelivery::Delivered))
-                    .await?
-            }
+            Ok(()) => self
+                .finish_instruction(&p.id, reservation, Some(InstructionDelivery::Delivered))
+                .await
+                .map_err(|error| after_delivery_failure(&p.id, error))?,
             Err(failure) => {
                 let unsent = failure.delivery == PasteDelivery::Unsent;
-                self.finish_instruction(
-                    &p.id,
-                    reservation,
-                    if unsent {
-                        None
-                    } else {
-                        Some(InstructionDelivery::Unknown)
-                    },
-                )
-                .await?;
+                let completion = self
+                    .finish_instruction(
+                        &p.id,
+                        reservation,
+                        if unsent {
+                            None
+                        } else {
+                            Some(InstructionDelivery::Unknown)
+                        },
+                    )
+                    .await;
                 if !unsent {
+                    completion.map_err(|error| after_delivery_failure(&p.id, error))?;
                     return Err(AgentsError::DeliveryUnknown.into());
                 }
+                completion?;
                 return Err(Fail::Internal(format!(
                     "send agent instruction before delivery: {:?}",
                     failure.error
                 )));
             }
         }
-        self.get(&p.id).await
+        self.get(&p.id)
+            .await
+            .map_err(|error| after_delivery_failure(&p.id, error))
     }
     async fn reserve_instruction(
         &self,

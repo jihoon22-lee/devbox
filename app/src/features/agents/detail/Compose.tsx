@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { RpcError } from "../../../rpc/client";
 import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
@@ -57,7 +58,16 @@ export function Compose({
         const task = await send.mutateAsync({ id: capturedId, text: value.trim() });
         result(task);
         if (useDrafts.getState().revisions[capturedId] === revision) useDrafts.getState().set(capturedId, "");
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof RpcError &&
+          error.code === "agents.delivery_unknown" &&
+          useDrafts.getState().revisions[capturedId] === revision
+        ) {
+          // The instruction is already reserved in history and may be delivered.
+          // Consume this submission while preserving any later edit revision.
+          useDrafts.getState().set(capturedId, "");
+        }
         /* The typed mutation error remains beside the draft. */
       } finally {
         pending.current = false;
