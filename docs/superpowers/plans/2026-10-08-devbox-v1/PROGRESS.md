@@ -12,8 +12,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 Task 1–24·신뢰 확인 및 앞선 리뷰 보완 구현·독립 검토 완료. PR #640 최종 후보 3cfcb0fc의 필수 CI·E2E·Windows 설치본 수용과 자동 코드·보안 리뷰가 완료됐다. 추가 리뷰 4건은 원계획에 맞는 최소 수정과 직접 회귀를 완료했다. 새 최종 SHA의 통합 검토·수용 절차를 진행 중이며 아직 머지하지 않았다 |
-| 다음 할 일 | 새 최종 SHA의 CI·Windows 영향 경로 수용·자동 리뷰 → 원계획 기준 지적 판정 → squash 머지 |
+| 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 f4954583의 필수 CI와 Windows 변경 경로 수용 완료. 완료된 코드 리뷰 3건 중 inline 폐기 재검증·Claude hook 실행 ID 결속만 최소 수용하고, 대용량 입력 원자성 확대는 기각했다. 마지막 2건 보완 중이며 아직 머지하지 않았다 |
+| 다음 할 일 | inline 폐기·Claude hook 최소 보완과 직접 회귀·별도 검토 → 최종 SHA 필수 수용·자동 리뷰 완료 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -363,6 +363,12 @@ a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및
 폐기 저장 실패 지적(4265254675)은 원계획 Task 9의 “기록 고정 → 닫힘 → 정리” 및 부분 실패 cleanupError 계약에 맞춰 부분 수용한다. 검토 중 시도한 별도 영속 intent·재시작 복구·다중 갱신 보호 확장은 S1 요구에 비해 과하므로 기각하고 미커밋 초안을 artifact로 보존한 뒤 제거했다. 최종 수정은 기존 승인·세션 종료·teardown·확인 상태 재검사 뒤, Git 삭제 전에 Closed와 검토 기록을 저장하도록 폐기 함수만 재정렬한다. 저장 실패면 Git 자원을 보존하고, 이후 정리 실패면 Closed·Owned 예약·cleanupError를 유지한다. 자동 재시작 복구나 dirty/미병합 잔여 자원의 자동 삭제는 보장하지 않으며, 자원 예약 해제 저장 실패는 해제가 지연될 수 있다. 새 DB 실패 회귀 2개·기존 branch CAS·정상 RPC 폐기까지 고유 4개와 포맷·전체 Biome 275파일 PASS. 동결 소스 3개·검증 파일·자원 결과의 최종 독립 검토 PASS. 근거는 `discard-durable-followup/minimal-*`이며 기각한 초안의 검증과 구분한다.
 
 지시문 전송 후 저장 실패(4265254681)는 기존 DeliveryUnknown 계약으로 수용했다. 실제 paste 성공 또는 전송 여부 불명 이후 finish 저장 실패와 최종 조회 실패를 일반 재시도 오류 대신 agents.delivery_unknown으로 반환한다. 전송 전 실패의 기존 보상 처리는 유지한다. 화면은 이 오류에서 제출 당시와 같은 draft revision만 비우며 새 편집과 다른 작업의 입력은 보존한다. 본문은 paste 전에 저장된 follow-up에 남으며 별도 재전송·idempotency·복구 체계는 추가하지 않는다. 실제 tmux paste 1회 뒤 실패하는 DB 인과 회귀 3개 RED→GREEN, 기존 전송 영향 5개와 Compose 6개·타입·형식 검사 PASS. 원본 실패와 최종 근거는 `send-persistence-followup`에 보존한다. 영향받은 agents/cli/protocol all-target Clippy·workspace fmt·생성 타입 검사 PASS(10.482초), 실제 데몬 에이전트·터미널 E2E 5/5 PASS(28.5초; supervisor 29.554초, cgroup peak 1,694,425,088byte). 통과한 무관한 E2E는 반복하지 않았다. 전체 변경 소스 19개가 과제별 동결 해시와 일치하고 미검토 소스 변경은 0개임을 확인한 통합 독립 검토 PASS(`four-findings-final-independent-review.json`), 최종 Biome 275파일 PASS. 미공개 두 커밋의 이메일 메타데이터만 사용자 지정 noreply로 바로잡았으며 각 source tree·메시지·시각은 동일하다.
+
+후보 f4954583 수용: CI 38492634311·Windows 38492634312의 필수 검사와 E2E PASS. 검증된 설치본에서 실제 Compose 지시 1회 수신·delivered 이력·draft 비움, OS 호스트명 Main, tmux DCS passthrough OSC의 로컬 경로 새 탭 상속과 원격 호스트 경로의 분할 cwd 오인 방지를 확인했다. 일반 확인 폐기에서 ClosedDiscarded·추가 지시·고정 커밋/변경 목록 유지 및 worktree/branch 제거·승인 teardown PASS. 소유 터미널 4개·프로젝트 제거, Windows 등록 프로세스 12개 종료, 소유 설치/프로필/데이터·WSL 자원·해시 확인 다운로드 정리 PASS; v0.9와 기존 빈 디렉터리 inode 보존. 초기 trust RPC 인자 오기, tmux가 소비한 unwrapped OSC, 숫자 closedCommits를 배열로 본 helper 오류는 보존하고 교정된 assertion으로 확인했으며 폐기는 1회만 실행했다. `windows-final-f4954583/acceptance.json`은 3cf의 동일 입력 재사용·로컬 fault injection·미실행 항목을 분리하며 357.16초 자원 결과는 native 전체가 아닌 잠금 keeper 계측이다.
+
+f495 코드 리뷰 3건 판정: 4265712823은 inline 폐기에서 quiesce 뒤 HEAD/base/미병합 수 재확인과 종료 시점 기록 고정의 누락으로, 01 §5.2·§9.1.12·§9.2에 맞는 최소 순서 보정만 수용한다. 4265712829는 재개 이전 Claude hook이 현재 실행을 바꿀 수 있어 기존 DEVBOX_AGENT_LAUNCH를 전달하고 DB 쓰기 안에서 현재 binding과 비교하는 범위만 수용한다. actions lock 확대나 새 복구 체계는 추가하지 않는다. 4265712833의 대용량 붙여넣기 전체 사전 수락/새 입력 흐름 제어는 기각한다. 01 §9.1.11은 전송 실패 시 남은 입력 폐기·알림을 명시하고 현재 sendRaw 실패는 연결 reset·stream 종료·재연결 중 입력 전송 안 됨 표시로 이어진다. 이미 전달된 prefix는 되돌리지 않으며 붙여넣기 원자성을 보장하지 않는 한계는 유지한다. 독립 검토도 두 최소 수용·한 기각의 범위 판단에 동의했다.
+
+inline 폐기 4265712823 최소 보완: quiesce 뒤 HEAD·base·미병합 수를 다시 읽어 최초 확인값과 다르면 기존 StateChanged로 거절하고 닫지 않는다. baseOid가 생략된 요청도 종료 중 기준 ref 변경을 거부한다. 검토 기록은 재검사 이후 고정한다. 소유 stop harness가 종료 중 HEAD commit/기준 ref를 바꾸는 인과 RED 2건 뒤 신규 정상·변경 회귀와 기존 quiesce 영향까지 3 tests/7 scenarios 및 포맷 PASS. 제품 변경은 actions의 기존 inline 경로에 한정하며 별도 복구·저장 체계를 추가하지 않았다. `inline-discard-final-followup`에 원본 실패·최종 결과·자원·소스 동결을 보존한다. 소스 3개·근거 6개 해시와 자원 결과 독립 검토 및 전체 Biome 275파일 PASS.
 
 ## 6. 세션 기록
 

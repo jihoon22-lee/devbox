@@ -1,6 +1,9 @@
 use super::*;
 use std::process::{Child, Stdio};
 
+#[path = "inline_discard_tests.rs"]
+mod inline_discard_tests;
+
 #[path = "rebase_review_tests.rs"]
 mod rebase_review_tests;
 
@@ -39,6 +42,10 @@ fn review_close_rechecks_confirmed_state_after_quiesce() {
 }
 
 async fn close_case(mode: &str) {
+    if mode.starts_with("inline-discard") {
+        inline_discard_tests::case(mode).await;
+        return;
+    }
     if mode.starts_with("teardown-") {
         teardown_preflight_tests::case(mode).await;
         return;
@@ -270,6 +277,8 @@ case "$2" in
     *late-head) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
       printf 'late committed edit\n' > "$wt/tracked"
       git -C "$wt" add tracked && git -C "$wt" commit -qm 'late fixture commit';;
+    *late-base) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
+      git -C "$wt" update-ref refs/heads/main refs/heads/agent/review;;
     *late-dirty) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
       printf 'late uncommitted edit\n' > "$wt/tracked";;
    esac;;
@@ -334,7 +343,13 @@ os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
         .expect("owned transparent bash argv receipt");
         fs::set_permissions(bash, fs::Permissions::from_mode(0o700)).expect("wrapper mode");
     }
-    let test = if modes[0].starts_with("teardown-") {
+    let test = if modes[0].starts_with("inline-discard") {
+        if modes[0].contains("-late-") {
+            "inline_discard_tests::inline_discard_rechecks_head_and_optional_base_after_quiesce"
+        } else {
+            "inline_discard_tests::inline_discard_freezes_confirmed_review_after_quiesce"
+        }
+    } else if modes[0].starts_with("teardown-") {
         if modes[0].starts_with("teardown-cleanup-") && modes[0].ends_with("fails")
             || modes[0].starts_with("teardown-runner-")
         {

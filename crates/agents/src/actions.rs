@@ -459,8 +459,26 @@ impl AgentsService {
                 }
                 .into());
             }
-            let review = self.capture_review(&task, &repo, &head, &base).await?;
             self.quiesce(&task).await?;
+            let current_head = devbox_git::run::resolve(&repo, "HEAD")
+                .await
+                .map_err(git_failure)?;
+            let current_base = devbox_git::run::resolve(&repo, &task.base_branch)
+                .await
+                .map_err(git_failure)?;
+            let current_commits =
+                devbox_git::mutate::unmerged_count(&repo, &current_head, &current_base)
+                    .await
+                    .map_err(git_failure)?;
+            if current_head != head || current_base != base || current_commits != commits {
+                return Err(AgentsError::StateChanged {
+                    head: current_head,
+                    base: current_base,
+                    unmerged: current_commits,
+                }
+                .into());
+            }
+            let review = self.capture_review(&task, &repo, &head, &base).await?;
             let usage = self.closure_usage(&task.id).await;
             self.close_record(
                 &task.id,
