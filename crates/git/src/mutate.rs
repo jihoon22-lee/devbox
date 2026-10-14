@@ -432,6 +432,28 @@ pub async fn merge_into_at(
             _ => unreachable!(),
         };
         if let Err(error) = result {
+            if current_branch(dir).await?.as_deref() != Some(base_branch)
+                || resolve(dir, "HEAD").await? != original
+            {
+                return Err(GitError::StateChanged);
+            }
+            // Admission failures may leave another process's staging intact.
+            // Roll back only when Git recorded this exact confirmed merge.
+            let merge_head = git(
+                dir,
+                &[
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-path",
+                    "MERGE_HEAD",
+                ],
+            )
+            .await
+            .ok()
+            .and_then(|path| std::fs::read_to_string(path.trim_end_matches('\n')).ok());
+            if merge_head.as_deref() != Some(&format!("{source_oid}\n")) {
+                return Err(error);
+            }
             return failed_merge(dir, base_branch, &original, error, None).await;
         }
     }
