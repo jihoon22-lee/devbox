@@ -7,6 +7,7 @@ export const AGENT_KEYS = [
   ["agents.git_stats", {}],
   ["agents.get"],
   ["agents.changes"],
+  ["agents.rebase_status"],
   ["agents.commits"],
   ["agents.patch"],
   ["agents.usage"],

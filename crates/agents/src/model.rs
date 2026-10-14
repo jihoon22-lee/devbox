@@ -278,6 +278,11 @@ pub struct AgentRebase {
     pub files: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct AgentRebaseStatus {
+    pub owned: bool,
+    pub files: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTest {
     pub terminal_id: String,

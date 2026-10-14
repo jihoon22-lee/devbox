@@ -19,6 +19,10 @@ async function setup(inline = false, trustRequired = false) {
     </TooltipProvider>,
   );
   await waitFor(() => expect(wire.client.state).toBe("ready"));
+  if (!inline) {
+    await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+    await act(async () => wire.reply("agents.rebase_status", { owned: false, files: [] }));
+  }
   return wire;
 }
 test("discard freezes displayed head/count and cancel receives focus", async () => {
@@ -125,6 +129,8 @@ test("rebase conflict offers resolution instruction and abort; review and config
   await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
   await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(2));
+  await act(async () => wire.reply("agents.rebase_status", { owned: true, files: ["a.txt"] }));
   await userEvent.click(await screen.findByRole("button", { name: "해결 지시 보내기" }));
   await waitFor(() => expect(wire.requests("agents.send")).toHaveLength(1));
   expect(wire.request("agents.send").params).toMatchObject({
@@ -135,6 +141,8 @@ test("rebase conflict offers resolution instruction and abort; review and config
   await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(2));
   await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(4));
+  await act(async () => wire.reply("agents.rebase_status", { owned: true, files: ["a.txt"] }));
   await userEvent.click(await screen.findByRole("button", { name: "되돌리기" }));
   await waitFor(() => expect(wire.requests("agents.rebase_abort")).toHaveLength(1));
   await act(async () => wire.reply("agents.rebase_abort", task("a1")));

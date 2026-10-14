@@ -39,6 +39,7 @@ method!(pub AgentsResume = "agents.resume", mutation, GetAgent => AgentTask, Age
 method!(pub AgentsReview = "agents.review", mutation, GetAgent => AgentTask, AgentsError);
 method!(pub AgentsRebase = "agents.rebase", mutation, GetAgent => AgentRebase, AgentsError);
 method!(pub AgentsRebaseAbort = "agents.rebase_abort", mutation, GetAgent => AgentTask, AgentsError);
+method!(pub AgentsRebaseStatus = "agents.rebase_status", query, GetAgent => AgentRebaseStatus, AgentsError);
 method!(pub AgentsMerge = "agents.merge", mutation(always), MergeAgent => AgentTask, AgentsError);
 method!(pub AgentsPr = "agents.pr", mutation(always), PrAgent => AgentTask, AgentsError);
 method!(pub AgentsDiscardCheck = "agents.discard_check", query, GetAgent => DiscardCheck, AgentsError);
@@ -65,6 +66,7 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.method::<AgentsReview>();
     e.method::<AgentsRebase>();
     e.method::<AgentsRebaseAbort>();
+    e.method::<AgentsRebaseStatus>();
     e.method::<AgentsMerge>();
     e.method::<AgentsPr>();
     e.method::<AgentsDiscardCheck>();

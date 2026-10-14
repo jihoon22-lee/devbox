@@ -9,6 +9,7 @@ import { openPopout } from "../../terminal/popout";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
 import { useAgentRefresh, useAgentResult } from "./data";
+import { QueryError } from "./QueryError";
 import { type EditIntent, ReviewDialogs } from "./ReviewDialogs";
 import { useReviewAction } from "./useReviewAction";
 export function AgentActions({
@@ -35,18 +36,28 @@ export function AgentActions({
   const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const config = useRpcQuery("projects.config", { id: task.projectId }, { enabled: task.state !== "closed" });
   const commits = useRpcQuery("agents.commits", { id: task.id }, { enabled: false });
+  const rebaseStatus = useRpcQuery(
+    "agents.rebase_status",
+    { id: task.id },
+    {
+      enabled: !!task.worktreePath && task.state !== "closed",
+      staleTime: 0,
+      refetchOnWindowFocus: "always",
+    },
+  );
   const apply = useAgentResult(),
     refresh = useAgentRefresh();
   const { state } = useRpcSession();
-  const [conflict, setConflict] = useState<string[]>();
-  const [rebaseConflict, setRebaseConflict] = useState(false);
+  const [preflightConflict, setConflict] = useState<string[]>();
+  const rebaseConflict =
+    rebaseStatus.isFetchedAfterMount && !rebaseStatus.isFetching && !rebaseStatus.error && rebaseStatus.data?.owned;
+  const conflict = rebaseConflict ? rebaseStatus.data?.files : preflightConflict;
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [edit, setEdit] = useState<EditIntent>();
   const guard = useRef(false);
   const destructive = useReviewAction(task, (files) => {
     setConflict(files);
-    setRebaseConflict(false);
   });
   const busy =
     resume.isPending ||
@@ -77,9 +88,8 @@ export function AgentActions({
   };
   const reflect = () =>
     run(async () => {
-      const result = await rebase.mutateAsync({ id: task.id });
-      setConflict(result.result === "conflict" ? result.files : undefined);
-      setRebaseConflict(result.result === "conflict");
+      await rebase.mutateAsync({ id: task.id });
+      setConflict(undefined);
       refresh();
     });
   const runTest = () =>
@@ -190,6 +200,7 @@ export function AgentActions({
       {trust.dialog}
       {trust.notice && <Banner tone="danger">{trust.notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
+      <QueryError query={rebaseStatus} />
       {conflict && (
         <Banner
           tone="warn"
@@ -218,7 +229,6 @@ export function AgentActions({
                     void run(async () => {
                       apply(await abort.mutateAsync({ id: task.id }));
                       setConflict(undefined);
-                      setRebaseConflict(false);
                     })
                   }
                 >

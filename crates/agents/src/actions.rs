@@ -214,31 +214,7 @@ impl AgentsService {
         let task = self.get(id).await?;
         open(&task)?;
         let (_, wt, branch) = self.owned_worktree(&task).await?;
-        let key = id.to_owned();
-        let binding = self
-            .db
-            .read(move |tx| crate::store::binding(tx, &key))
-            .await
-            .internal("read owned rebase")?;
-        if !binding.is_some_and(|b| b.owned_rebase) {
-            return Err(AgentsError::OperationInProgress.into());
-        }
-        // Only abort a rebase whose recorded branch is the task's branch.
-        let mut owned = false;
-        for marker in ["rebase-merge", "rebase-apply"] {
-            let path = devbox_git::run::git(
-                &wt,
-                &["rev-parse", "--path-format=absolute", "--git-path", marker],
-            )
-            .await
-            .map_err(git_failure)?;
-            if std::fs::read_to_string(Path::new(path.trim()).join("head-name"))
-                .is_ok_and(|v| v.trim() == format!("refs/heads/{branch}"))
-            {
-                owned = true;
-            }
-        }
-        if !owned {
+        if !self.has_owned_rebase(&task, &wt, &branch).await? {
             return Err(AgentsError::OperationInProgress.into());
         }
         devbox_git::mutate::rebase_abort(&wt)

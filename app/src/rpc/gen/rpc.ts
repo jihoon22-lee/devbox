@@ -12,6 +12,7 @@ export type AgentGitStats = { items: Array<AgentGitStat>, failures: Array<AgentG
 export type AgentPatch = { patch: string, truncated: boolean, };
 export type AgentProfiles = { items: Array<ToolProfile>, };
 export type AgentRebase = { result: RebaseResult, files: Array<string>, };
+export type AgentRebaseStatus = { owned: boolean, files: Array<string>, };
 export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes: number | null, };
 export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
@@ -129,6 +130,7 @@ export interface Methods {
   "agents.profiles": { kind: "query"; confirm: "none"; params: PingParams; result: AgentProfiles; error: AgentsError };
   "agents.rebase": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentRebase; error: AgentsError };
   "agents.rebase_abort": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
+  "agents.rebase_status": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentRebaseStatus; error: AgentsError };
   "agents.resources": { kind: "query"; confirm: "none"; params: PingParams; result: AgentResources; error: AgentsError };
   "agents.resume": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
   "agents.review": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
@@ -187,6 +189,7 @@ export const METHOD_INFO = {
   "agents.profiles": { kind: "query", confirm: "none" },
   "agents.rebase": { kind: "mutation", confirm: "none" },
   "agents.rebase_abort": { kind: "mutation", confirm: "none" },
+  "agents.rebase_status": { kind: "query", confirm: "none" },
   "agents.resources": { kind: "query", confirm: "none" },
   "agents.resume": { kind: "mutation", confirm: "none" },
   "agents.review": { kind: "mutation", confirm: "none" },

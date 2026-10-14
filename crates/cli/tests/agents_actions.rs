@@ -216,7 +216,44 @@ async fn rebase_conflicts_are_owned_and_abort_restores_the_agent_branch() {
     let conflict = call(&c, "agents.rebase", json!({"id":id})).await;
     assert_eq!(conflict["result"], "conflict");
     assert_eq!(conflict["files"][0], "agent.txt");
+    drop(c);
+    d.restart();
+    let c = d.client().await;
+    let recovered = call(&c, "agents.rebase_status", json!({"id":id})).await;
+    assert_eq!(recovered, json!({"owned":true,"files":["agent.txt"]}));
+    let marker = d
+        .environment("git")
+        .arg("-C")
+        .arg(wt)
+        .args([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "rebase-merge",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .expect("owned marker");
+    assert!(marker.status.success());
+    let head_name = std::path::Path::new(std::str::from_utf8(&marker.stdout).expect("path").trim())
+        .join("head-name");
+    let original = std::fs::read_to_string(&head_name).expect("owned branch marker");
+    std::fs::write(&head_name, "refs/heads/foreign\n").expect("mismatched fixture marker");
+    assert_eq!(
+        call(&c, "agents.rebase_status", json!({"id":id})).await["owned"],
+        false
+    );
+    let rejected = c
+        .raw_call("agents.rebase_abort", json!({"id":id}), None)
+        .await
+        .expect_err("same ownership rule rejects foreign branch");
+    assert!(format!("{rejected:?}").contains("agents.operation_in_progress"));
+    std::fs::write(&head_name, original).expect("restore owned marker");
     call(&c, "agents.rebase_abort", json!({"id":id})).await;
+    assert_eq!(
+        call(&c, "agents.rebase_status", json!({"id":id})).await["owned"],
+        false
+    );
     assert_eq!(
         std::fs::read_to_string(wt.join("agent.txt")).expect("owned fixture"),
         "change\n"
@@ -256,12 +293,34 @@ async fn rebase_conflicts_are_owned_and_abort_restores_the_agent_branch() {
         .output()
         .expect("owned fixture");
     assert!(!external.status.success());
+    assert_eq!(
+        call(&c, "agents.rebase_status", json!({"id":id})).await["owned"],
+        false
+    );
     let error = c
         .raw_call("agents.rebase_abort", json!({"id":id}), None)
         .await
         .expect_err("fixture operation must fail");
     assert!(format!("{error:?}").contains("agents.operation_in_progress"));
     d.git(wt, &["rebase", "--abort"]);
+    let conflict = call(&c, "agents.rebase", json!({"id":id})).await;
+    assert_eq!(conflict["result"], "conflict");
+    assert_eq!(
+        call(&c, "agents.rebase_status", json!({"id":id})).await["owned"],
+        true
+    );
+    std::fs::write(wt.join("agent.txt"), "resolved change\n").expect("resolve owned conflict");
+    d.git(wt, &["add", "agent.txt"]);
+    assert_eq!(
+        call(&c, "agents.rebase_status", json!({"id":id})).await,
+        json!({"owned":true,"files":[]})
+    );
+    d.git(wt, &["-c", "core.editor=true", "rebase", "--continue"]);
+    // Git completed externally, while the previous owned-rebase DB flag remains.
+    assert_eq!(
+        call(&c, "agents.rebase_status", json!({"id":id})).await,
+        json!({"owned":false,"files":[]})
+    );
 }
 
 #[tokio::test]

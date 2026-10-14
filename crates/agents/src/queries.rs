@@ -3,7 +3,7 @@ use crate::{
     model::*,
     service::{AgentsService, Result},
 };
-use devbox_protocol::Fail;
+use devbox_protocol::{Fail, Internal};
 use std::path::{Path, PathBuf};
 
 const PATCH_LIMIT: usize = 1024 * 1024;
@@ -21,6 +21,53 @@ fn bounded_patch(mut patch: String) -> AgentPatch {
 }
 
 impl AgentsService {
+    pub(crate) async fn has_owned_rebase(
+        &self,
+        task: &AgentTask,
+        worktree: &Path,
+        branch: &str,
+    ) -> Result<bool> {
+        let key = task.id.clone();
+        let binding = self
+            .db
+            .read(move |tx| crate::store::binding(tx, &key))
+            .await
+            .internal("read owned rebase")?;
+        if !binding.is_some_and(|b| b.owned_rebase) {
+            return Ok(false);
+        }
+        // Reuse abort's ownership rule: the recorded branch must be this task's.
+        for marker in ["rebase-merge", "rebase-apply"] {
+            let path = devbox_git::run::git(
+                worktree,
+                &["rev-parse", "--path-format=absolute", "--git-path", marker],
+            )
+            .await
+            .map_err(git_failure)?;
+            if std::fs::read_to_string(Path::new(path.trim()).join("head-name"))
+                .is_ok_and(|v| v.trim() == format!("refs/heads/{branch}"))
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+    pub async fn rebase_status(&self, id: &str) -> Result<AgentRebaseStatus> {
+        let task = self.get(id).await?;
+        if task.state == AgentState::Closed || task.worktree_path.is_none() {
+            return Ok(AgentRebaseStatus {
+                owned: false,
+                files: vec![],
+            });
+        }
+        let (_, worktree, branch) = self.owned_worktree(&task).await?;
+        let owned = self.has_owned_rebase(&task, &worktree, &branch).await?;
+        let files = devbox_git::status(&worktree)
+            .await
+            .map_err(git_failure)?
+            .conflicted;
+        Ok(AgentRebaseStatus { owned, files })
+    }
     pub(crate) async fn query_directory(&self, task: &AgentTask) -> Result<PathBuf> {
         let project = self
             .projects

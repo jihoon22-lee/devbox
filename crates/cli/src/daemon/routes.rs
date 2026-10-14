@@ -125,6 +125,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsRebaseAbort, _, _>(|s, _, p| async move {
             s.agents.rebase_abort(&p.id).await
         })
+        .register::<devbox_agents::AgentsRebaseStatus, _, _>(|s, _, p| async move {
+            s.agents.rebase_status(&p.id).await
+        })
         .register::<devbox_agents::AgentsMerge, _, _>(
             |s, _, p| async move { s.agents.merge(p).await },
         )
