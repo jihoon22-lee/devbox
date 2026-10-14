@@ -498,28 +498,7 @@ impl AgentsService {
             .map_err(git_failure)?;
         self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
             .await?;
-        devbox_git::mutate::worktree_remove(repo, &wt, true)
-            .await
-            .map_err(git_failure)?;
-        if let Err(error) =
-            devbox_git::mutate::delete_branch_at(repo, &branch, &p.expect.head_oid).await
-        {
-            // Removal completed; retain an accurate closed record and a reviewable branch cleanup failure.
-            self.close_record(
-                &task.id,
-                CloseHow::Discarded,
-                None,
-                p.expect.head_oid.clone(),
-                usage,
-                review,
-            )
-            .await?;
-            self.record_cleanup_error(&task.id, &git_failure(error))
-                .await;
-            return self.get(&task.id).await;
-        }
-        self.record_resources(&task.id, crate::tracker::Resources::Planned)
-            .await?;
+        // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
             &task.id,
             CloseHow::Discarded,
@@ -529,6 +508,22 @@ impl AgentsService {
             review,
         )
         .await?;
+        let cleanup: Result<()> = async {
+            devbox_git::mutate::worktree_remove(repo, &wt, true)
+                .await
+                .map_err(git_failure)?;
+            devbox_git::mutate::delete_branch_at(repo, &branch, &p.expect.head_oid)
+                .await
+                .map_err(git_failure)?;
+            self.record_resources(&task.id, crate::tracker::Resources::Planned)
+                .await?;
+            Ok(())
+        }
+        .await;
+        if let Err(error) = cleanup {
+            // Closed records retain their ownership and report partial cleanup.
+            self.record_cleanup_error(&task.id, &error).await;
+        }
         self.get(&task.id).await
     }
     pub async fn test(&self, id: &str) -> Result<AgentTest> {
