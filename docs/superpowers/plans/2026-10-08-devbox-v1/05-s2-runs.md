@@ -52,7 +52,7 @@ S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실�
 | "재시작 안 함" 서비스가 죽음, `::1`에서만 수신하는 개발 서버(AR-F02) | 다시 띄우지 않음. `::1` 수신도 "준비됨" | Task 4·8 |
 | 작업을 만든 직후 목록 조회만 실패(AR-F04) | 대화상자는 수정 모드, 다시 저장해도 새로 만들지 않음 | Task 13 |
 | 승인 뒤 누군가 `.devbox/devbox.toml`의 task 명령을 바꿈 | 수동 시작·MCP 실행은 `projects.trust_required`로 거절, 예약은 실행하지 않고 `skipped(trust)`·알림 1회, 실행 중인 서비스는 그대로 | Task 2·4·5·15 |
-| 화면에서 정의를 프로젝트 파일에 저장 | 저장 직전 바이트가 승인 digest와 같으면 승인이 새 digest로 함께 갱신돼 S1 setup/launch 재승인이 뜨지 않음. 밖에서 먼저 고쳤으면 갱신하지 않음 | Task 2 |
+| 화면에서 정의를 프로젝트 파일에 저장 | 저장 직전 바이트가 승인됐거나 실행 정의가 없어 승인이 필요 없었으면 새 digest 승인이 함께 기록돼 재승인이 뜨지 않음(첫 작업 저장 포함). 밖에서 먼저 고쳤으면 기록하지 않음 | Task 2 |
 | S1에서 승인했고 task/service/schedule이 없는 프로젝트 | 범위 2가 되어도 다시 묻지 않음 | Task 2 |
 | 사용자가 prod 설치본을 쓰는 중에 수용 스모크 | `accept` 채널만 설치·제거, prod 앱·`devbox@prod`·공유 바이너리·unit 템플릿 불변 | Task 15c·16 |
 
@@ -92,7 +92,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 
   - CI E2E의 원인 미확정 tmux 3.4 서버 종료(S1 c68c923e)는 PROGRESS §2 미결 항목이다. Task 15b에서 E2E 실패 산출물에 tmux 버전·서버 로그를 남기도록 한다.
 - [ ] **Step 2:** Task 2–16(15b·15c 포함) 각각을 `writing-plans` 형식(실패 테스트 코드 → 실패 확인 → 구현 코드 → 통과 → 커밋)으로 펼친다. 아래 "핵심 테스트"와 [00-roadmap §7](00-roadmap.md) 추적표에서 S2에 걸린 시험(AR-F02·F04·F14·F15)과 입력값을 그대로 포함한다.
 - [ ] **Step 3:** `09-s0a-results.md`의 R10·DPAPI 실험 결과로 Task 11의 키 풀기 경로를 정한다. 데몬 interop 성공 여부와 무관하게 Windows 앱의 `secrets.unlock` fallback을 구현·시험한다. 데몬 직접 해제는 지원 환경에서만 사용한다(키 방식은 Q1에서 DPAPI로 확정).
-- [ ] **Step 4:** 커밋·PR(문서만).
+- [ ] **Step 4:** 커밋(PR 없음). PR은 Task 16에서 한 번만 연다. 자동 리뷰 회차(3회 상한)는 PR을 연 뒤의 push마다 세므로, 상세화·중간 과제에서 PR을 열면 회차를 미리 써 버린다.
 
 ```bash
 git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
@@ -122,7 +122,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - 프로젝트 `.devbox/devbox.toml` 변경 감시(`notify`, 300ms 디바운스) → `runtime.changed`. 다시 읽은 설정의 승인 상태(승인됨·낡음·필요 없음)를 `runtime.list` 결과에 함께 싣는다.
 - 신뢰 범위 2(01-design §7):
   - `SCOPE_VERSION = 2`. 설정의 실행 정의 최소 범위를 계산해, task/service/schedule이 없으면 범위 1 이상 승인을, 있으면 범위 2 승인을 요구한다. 승인 미리보기에 task/service/schedule의 명령·작업 폴더·환경 변수 이름과 값·대상·의존 순서·비밀 이름을 더한다(비밀 값은 없음).
-  - `runtime.define`/`undefine`이 프로젝트 파일에 쓸 때: 쓰기 직전 바이트의 digest가 현재 승인과 같으면 쓴 바이트의 digest로 승인을 같은 DB 쓰기에서 갱신한다. 다르면 갱신하지 않는다. `saveTo: thisPc`는 승인과 무관하다.
+  - `runtime.define`/`undefine`이 프로젝트 파일에 쓸 때: 쓰기 직전 바이트가 유효한 상태(필요한 범위로 승인됨, 또는 실행 정의가 없어 승인 불필요)였으면 쓴 바이트의 digest로 현재 `SCOPE_VERSION`(2) 승인을 같은 DB 쓰기에서 기록한다. 승인이 필요한데 승인과 다른 바이트였으면(밖에서 고침) 기록하지 않는다. `saveTo: thisPc`는 승인과 무관하다.
 
 **핵심 테스트:**
 - `merge_prefers_project_file_and_reports_shadowed`
@@ -130,7 +130,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 - `define_into_project_file_preserves_comments`(주석과 다른 표가 그대로)
 - `watch_reloads_on_external_edit`(파일을 고치면 `runtime.changed` 수신, 승인 상태가 낡음으로 바뀜)
 - `scope_one_approval_stays_valid_without_run_definitions`·`run_definitions_require_scope_two_approval`
-- `define_into_approved_file_refreshes_the_approval`·`define_after_external_edit_keeps_the_approval_stale`
+- `define_into_approved_file_refreshes_the_approval`·`define_after_external_edit_keeps_the_approval_stale`·`first_define_into_file_without_run_definitions_needs_no_prompt`
 
 ---
 

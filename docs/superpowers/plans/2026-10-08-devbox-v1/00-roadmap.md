@@ -214,7 +214,7 @@ PR #638은 자동 리뷰 도착 전에 머지됐고, 뒤늦은 리뷰가 실제 
    git ls-remote --heads origin 'v1/*' 'feat/*' 'fix/*' 'chore/*' 'docs/*'
    ```
    PROGRESS의 "작업 중" PR과 대조한다. 이 PC에 worktree가 없는데 원격 브랜치가 있으면 `git worktree add ../devbox-wt/<이름> <브랜치>`로 받는다.
-   - PR 없이 백업으로 push한 `v1/*` 브랜치가 있을 수 있다(예: S2 인계 커밋, 2026-10-14). 브랜치 push는 CI를 돌리지 않는다(ci·windows workflow는 PR·main push·수동 실행에서만 돈다). 로컬과 원격이 다르면 더 앞선 쪽을 확인하고, 갈라졌으면 고치지 말고 사용자에게 묻는다.
+   - PR 없이 백업으로 push한 `v1/*` 브랜치가 있을 수 있다(예: S2 인계 커밋, 2026-10-14). 브랜치 push는 CI를 돌리지 않는다(ci·windows workflow는 PR·main push·수동 실행에서만 돈다). 로컬과 원격이 다르면 더 앞선 쪽을 확인하고, 갈라졌으면 고치지 말고 사용자에게 묻는다. 백업 push한 브랜치에 그 S의 마무리 과제 전에는 PR을 열지 않는다. 자동 리뷰 회차(CONVENTIONS §8의 3회)는 PR을 연 뒤의 push마다 세기 때문이다. 하네스가 push 뒤 PR 생성을 기본으로 안내해도 이 규칙이 우선한다.
 3. 진행 중인 브랜치가 있으면(S2 뒤에는 트랙 1·2의 두 브랜치일 수 있다, §3.6) 각 브랜치의 `PROGRESS.md`를 읽고, `git -C <worktree> log --oneline origin/main..HEAD`로 끝난 과제(과제당 커밋 하나)를, `git -C <worktree> status --short`로 하던 과제를 확인한다. 커밋되지 않은 변경이 있으면 그 과제의 "실패 확인" 단계 시험을 다시 돌려 어디까지 됐는지 보고 이어서 한다.
 4. 커밋되지 않은 변경은 절대 버리지 않는다(`git checkout -- .`·`git reset --hard`·`git clean`·`git stash drop` 금지). 이어갈 수 없으면 `git diff > /tmp/<브랜치>-<날짜>.patch`로 보존하고 사용자에게 묻는다.
 5. 지금 과제의 계획 문서와 Spec 절을 읽고 §3.3 사전 준비를 확인한다.

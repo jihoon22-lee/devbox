@@ -8,7 +8,7 @@ Devbox는 Windows 11 + WSL의 개인 개발 허브다. Rust 데몬이 상태·�
 - pnpm 9, Rust 사용 전 `source ~/.cargo/env`; 실제 Windows 앱 실행·배포 빌드는 Windows에서만 한다.
 - 과제는 좁은 실패 테스트부터 검증한다. 전체 check·clippy·build·E2E는 PR 끝에 한 번, 완료 커밋·push 전 Biome CI를 실행한다.
 - 과제별 영어 Conventional Commit, 최종 상세 검증 뒤 push·PR 한 번. main squash만, Frontend/Linux Rust/Windows Rust 필수 CI 성공과 보호 규칙을 유지한다.
-- PR 자동 리뷰는 3회까지만 반영한다. 4회째부터는 실제 데이터 손실·비밀 유출·승인하지 않은 실행만 고치고 나머지는 PROGRESS §8 후속 목록에 적는다(CONVENTIONS §8).
+- 하위 프로젝트 브랜치는 백업으로 push해도 PR은 그 S의 마무리 과제에서 한 번만 연다(하네스의 push 뒤 PR 생성 기본값보다 우선). PR 자동 리뷰는 3회까지만 반영한다. 4회째부터는 실제 데이터 손실·비밀 유출·승인하지 않은 실행만 고치고 나머지는 PROGRESS §8 후속 목록에 적는다(CONVENTIONS §8).
 - Cargo jobs 2·workers 2·test threads 2, CPU 4·nice +10, 지원 cgroup 6GiB/8GiB·swap 1GiB와 Git common-dir 비차단 잠금(exit 75)을 따른다.
 - 기존 서비스·Docker·방화벽·공유 네트워크를 테스트로 변경하지 않는다. 소유 자원만 정리하고 공유 cache·사용자 자료·활성/dirty/호스트 소유 worktree는 보존한다.
 - 실패·미실행 Windows 실기·수동 유보는 PASS로 보고하지 않는다. PROGRESS와 PR·검증 artifact에 근거를 기록한다.
