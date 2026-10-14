@@ -405,3 +405,39 @@ async fn summary_counts_live_terminals_beyond_the_first_rpc_page() {
     let summary = call(&c, "projects.summary", json!({})).await;
     assert_eq!(summary["items"][0]["terminals"], 1);
 }
+
+#[tokio::test]
+async fn launch_rejects_missing_inline_base_before_creating_configured_terminal() {
+    let (mut d, repo) = fixture(
+        "[launch]\nterminals=[{name='must not start',command='sleep 600'}]\nagents=[{tool='fake',worktree=false}]\n",
+    );
+    d.git(Path::new(&repo), &["checkout", "--detach", "HEAD"]);
+    d.git(Path::new(&repo), &["branch", "-D", "main"]);
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let before = call(&c, "terminal.list", json!({})).await;
+    let error = c
+        .raw_call("projects.launch", json!({"id":p}), None)
+        .await
+        .expect_err("missing inline base must fail full preflight");
+    let devbox_cli::client::ClientError::Rpc {
+        code,
+        detail: Some(detail),
+        ..
+    } = error
+    else {
+        panic!("expected typed launch error")
+    };
+    assert_eq!(code, "projects.launch_failed");
+    let detail: Value = serde_json::from_str(detail.get()).expect("detail");
+    assert_eq!(
+        detail["terminals"], 0,
+        "inline base must be checked before first terminal"
+    );
+    assert_eq!(detail["agents"], 0);
+    assert_eq!(call(&c, "terminal.list", json!({})).await, before);
+    assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+    assert!(!d.paths.data_dir.join("agents").exists());
+}

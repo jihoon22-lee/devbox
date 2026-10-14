@@ -13,7 +13,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S1 Task 1–24・승인된 신뢰 확인 및 리뷰 보완 구현 완료. 후보 14e6fc69의 필수 CI·Windows 수용·코드/보안 리뷰 완료. 마지막 코드 리뷰 중 기준 ref 사전 검증과 기존 rebase 충돌 UI 복원만 좁게 보완했다. 등록 제거 후 닫힌 패치 보존은 기존 정책대로 기각했다. 아직 머지하지 않았다 |
-| 다음 할 일 | 일반 병합 최소 보완·별도 검토 완료 → 최종 SHA CI·Windows 영향 수용·자동 리뷰 → squash 머지 |
+| 다음 할 일 | 두 최소 보완·별도 검토 완료 → 최종 SHA CI·Windows 영향 수용·자동 리뷰 → squash 머지 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s1-agents-terminal` · `../devbox-wt/v1-s1-agents-terminal`, 기반 `origin/main@fb6bc69d`. PR #640 하나에서 후속 수용 진행, 아직 머지하지 않음 |
 | 마지막 갱신 | 2026-10-14 · Codex 실행 세션 |
@@ -387,6 +387,14 @@ Claude hook 실행 결속 4265712829: CLI가 기존 DEVBOX_AGENT_LAUNCH를 optio
 99631162 코드 리뷰 4266136912 판정: 일반 merge가 Git 실행 직전 외부 staged 편집 때문에 시작되지 못했는데 failed_merge가 무조건 reset --merge를 실행해 그 편집을 지울 수 있는 결함은 수용한다. 04:1723–29의 normal merge 실패는 merge --abort이며 squash만 reset인 원래 방향과 사용자 자료 보존 계약에 맞춰, 원래 branch/HEAD와 확인 source에 일치하는 현재 MERGE_HEAD가 확인될 때만 기존 일반 병합 복구를 허용하는 최소 보정으로 한정한다. marker 없음·불일치·판독 불확실에는 reset을 생략하고 원래 실패를 유지한다. 소유 충돌은 기존 파일목록·base 복구를 보존하며 private-index squash는 바꾸지 않는다. 리뷰가 제안한 일반 index 잠금·전체 mutation 직렬화는 추가하지 않는다. 일치 marker는 실제 병합 시작 근거이며 이후 외부 index 쓰기까지 배제하는 원자성 증명은 아니라는 한계를 구분한다. 별도 범위 판정도 최소 보정 수용이며, 인과 회귀부터 진행하므로 아직 머지하지 않는다.
 
 일반 merge 4266136912 최소 보완: 마지막 baseline 검사 뒤 소유 wrapper가 관련 없는 추적 파일에 외부 편집을 stage한 인과 회귀에서 기존 reset이 내용을 삭제하는 RED를 확인했다. normal caller 22줄에만 원래 branch/HEAD와 현재 MERGE_HEAD의 확인 source OID 일치 검사를 추가했다. marker 없음·불일치·조회/읽기 불확실은 원래 merge 오류를 반환해 staged/working 편집을 보존하고, 공용 failed_merge와 private-index squash는 그대로 둔다. 신규1·실제 conflict 원래 base/clean 복구·실패 squash·hook HEAD 변경3, 고유4 PASS 및 소유 포맷 PASS. 소스2개와 원본 RED/GREEN/자원 근거는 `normal-merge-cleanup-followup/source-freeze.json`에 동결했다. 소스2개·동결근거8개·자원원본4개 및 최종 git/agents/cli all-target Clippy·Biome276의 추가 자원원본2개 독립 검토 PASS(`normal-merge-cleanup-followup/independent-review.json`). 변경 없는 프론트/RPC 타입·E2E는 직전99631162의 같은 입력 검사 재사용으로 구분한다. 전체 index 동시성 원자성은 이 변경의 보장이 아니다.
+
+최종 후보 c68c923e 수용: CI38501610350의 Frontend/Linux Rust와 Windows38501610352 필수 검사 PASS. E2E 최초8/9 중 terminal split은 tmux3.4의 실제 서버 unexpected exit로 실패했다. trace상 attach EOF/server exit가 fixture teardown보다 약5초 앞이며 normal merge 변경과 독립이다. 종료 원인(crash/signal 등)은 미확정이고 테스트를 수정/삭제하거나 timeout을 늘리지 않았다. 같은 SHA의 실패 job을 한 번 재실행해9/9 PASS(50.5초, supervisor51.667초)했으며, 첫 실패를 원인 수정 완료나 PASS로 바꾸지 않는다. `windows-final-c68c923e/ci-e2e-failed.log`·trace·`e2e-failure-adjudication.json`·`ci-e2e-rerun.log`에 구분 보존한다. 출처/SHA256 확인 설치본의 실제 일반 merge 충돌은 agents.conflict와README를 반환하고 canonical원래HEAD/main/clean·sourceHEAD/clean·양쪽내용과MERGE_HEAD부재를 확인했다. 확인 폐기1commit/승인teardown/소유WTbranch제거·프로젝트세션empty, Windows등록12PID/port종료·소유WSLWindowsdownload정리·v0.9원래빈디렉터리보존 PASS. prior996동일10경로 재사용과late-staging로컬인과회귀·R1/R2/DND/새실제모델미실행을구분한다. reuse준비의run→run.rs경로assert실패1건은설치전교정근거로보존했고native중오류는없다. keeper153.415초는aggregate메모리계측이아니며actualscope/daemon/Windows한도는별도증거다. `acceptance.json`의 31근거 해시·이전 수용 해시·동일10경로·원본 실패/재실행의 독립 검토는 한정 포함 PASS(`independent-acceptance-review.json`)다. 보안 리뷰는 02:41:08 UTC 추가 지적 없이 완료됐고 코드 리뷰는 02:50:21 UTC 아래 2건을 남기고 완료돼 아직 머지하지 않았다. 결과작업사본은다음브랜치로인계한다.
+
+c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에서도 선택한 기준 ref를 터미널 생성 전에 해석하는 최소 조건 보정으로 수용한다. 04 Task11의 전체 사전 검증을 복원하며 기존 detached→유효 main 선택 정책이나 terminal-only 동작은 바꾸지 않는다. 4266263013은 Ready에서 열린 창마다 재연결 프레임을 16칸 큐에 동기 삽입해 17번째부터 브리지를 취소하는 기존 재연결 결함으로 수용한다. 계획에 16창 상한은 없다. 새 대기열·창 수 제한·큐 용량 변경 없이 작은 ChannelOpen wire 프레임들을 기존 바이트 writer의 한 배치로 묶는다. 기존 mutex와 reopen→ready 순서, 일반 renderer 단일 프레임 검증과 큐 포화 실패 정책을 유지한다. 두 최소 범위 모두 별도 판단을 거쳤다.
+
+시작 구성 4266263003: detached HEAD에서 main이 없고 terminal1+inline agent1인 실제 launch의 RED(terminal1 선생성)를 재현했다. worktree 조건을 제거해 모든 agent의 기준을 사전 resolve하도록 보정한 뒤 신규 거절1·기존 정상 inline/worktree/부분 launch3, 고유4 및 포맷 PASS. 소스2개와 근거는 `launch-base-final-followup/source-freeze.json`에 동결했다.
+
+재연결 4266263013: 기존 Ready loop를 동일 동작 helper로 추출한 상태에서 17창·16칸 큐 회귀가 실제 큐 포화로 실패했다. 이후 기존 ChannelOpen 프레임의 concat 배치를 한 큐 항목으로 전달하며 byte stream의 frame 경계와 순서를 유지했다. connection5(신규17프레임 복원·후속 송신 포함)와 bridge5 PASS. 같은 명령의 마지막 포맷 검사는 새 테스트 줄바꿈으로 실패했고 whitespace만 교정한 별도 포맷 검사 PASS와 구분 보존했다. `reopen-batch-final-followup`의 동결 소스2개·추출 patch·원본 RED/GREEN/자원 로그를 남긴다. portable core 검증이며 Windows supervisor의 실제 실행은 새 최종 SHA 수용에서 확인한다. 두 과제의 소스4개·동결근거13개·자원원본6개와 최종 CLI/portable-app all-target Clippy(4.77초)·Biome276(0.818초)의 추가 원본2개 독립 검토 PASS(`launch-reopen-final-independent-review.json`). 각 과제의 판단·근거를 구분했으며 변경 없는 frontend/RPC 타입 검사는 동일 입력의 이전 결과를 재사용한다.
 
 ## 6. 세션 기록
 

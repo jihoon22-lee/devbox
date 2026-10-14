@@ -93,17 +93,15 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
                 "agent preflight",
             )
         })?;
-        if config.agents.iter().any(|agent| agent.worktree) {
-            devbox_git::run::resolve(repo, &branch)
-                .await
-                .map_err(|error| {
-                    launch_failure(
-                        devbox_agents::model::git_failure(error),
-                        &result,
-                        "worktree preflight",
-                    )
-                })?;
-        }
+        devbox_git::run::resolve(repo, &branch)
+            .await
+            .map_err(|error| {
+                launch_failure(
+                    devbox_agents::model::git_failure(error),
+                    &result,
+                    "agent preflight",
+                )
+            })?;
         Some(branch)
     };
     for (index, terminal) in config.terminals.into_iter().enumerate() {
