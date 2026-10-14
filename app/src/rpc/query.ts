@@ -1,9 +1,11 @@
 import { hashKey, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { readAgentList } from "./agentPages";
 import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
 import { useRpc, useRpcSession } from "./RpcProvider";
-import { invalidateIfNewer, shareByRevision } from "./revisions";
+import { invalidateIfNewer, shareByRevision, shareTerminalLive } from "./revisions";
+import { readTerminalList } from "./terminalPages";
 
 export { compareRev, invalidateIfNewer, setIfNewer } from "./revisions";
 
@@ -12,7 +14,13 @@ type MutationMethod = { [M in keyof Methods]: Methods[M]["kind"] extends "mutati
 export function useRpcQuery<M extends QueryMethod>(
   method: M,
   params: Methods[M]["params"],
-  opts: { enabled?: boolean } = {},
+  opts: {
+    enabled?: boolean;
+    staleTime?: number;
+    refetchInterval?: number | false;
+    refetchIntervalInBackground?: boolean;
+    refetchOnWindowFocus?: boolean | "always";
+  } = {},
 ) {
   const { client, state, generation } = useRpcSession();
   return useQuery<Methods[M]["result"], RpcError>({
@@ -21,9 +29,20 @@ export function useRpcQuery<M extends QueryMethod>(
     // Local RPC readiness is independent of the browser's internet connection.
     networkMode: "always",
     retry: false,
+    ...(opts.staleTime === undefined ? {} : { staleTime: opts.staleTime }),
+    refetchInterval: opts.refetchInterval,
+    refetchIntervalInBackground: opts.refetchIntervalInBackground,
+    ...(opts.refetchOnWindowFocus === undefined ? {} : { refetchOnWindowFocus: opts.refetchOnWindowFocus }),
     meta: { generation },
-    structuralSharing: shareByRevision,
-    queryFn: ({ signal }) => client.call(method, params, { signal }),
+    structuralSharing: method === "terminal.list" ? shareTerminalLive : shareByRevision,
+    queryFn: ({ signal }) =>
+      method === "agents.list"
+        ? (readAgentList(client, params as Methods["agents.list"]["params"], signal) as Promise<Methods[M]["result"]>)
+        : method === "terminal.list"
+          ? (readTerminalList(client, params as Methods["terminal.list"]["params"], signal) as Promise<
+              Methods[M]["result"]
+            >)
+          : client.call(method, params, { signal }),
   });
 }
 export function useRpcMutation<M extends MutationMethod>(method: M) {

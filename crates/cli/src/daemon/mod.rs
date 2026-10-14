@@ -1,8 +1,15 @@
+mod debug;
 mod dedupe;
+mod hostname;
+mod launch;
+mod outbox;
 pub mod routes;
 pub mod server;
 mod socket;
 pub mod state;
+mod streams;
+mod system;
+mod trust;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
 use state::Services;
@@ -17,10 +24,22 @@ fn now_ms() -> i64 {
 }
 
 fn migrations() -> Vec<devbox_core::Migration> {
-    devbox_projects::MIGRATIONS.to_vec()
+    [
+        devbox_projects::MIGRATIONS,
+        devbox_terminal::MIGRATIONS,
+        devbox_agents::MIGRATIONS,
+    ]
+    .concat()
 }
 
 pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
+    build_services_with_runtime(paths, system::Runtime::new(false))
+}
+
+fn build_services_with_runtime(
+    paths: Paths,
+    runtime: system::Runtime,
+) -> anyhow::Result<Arc<Services>> {
     paths.ensure_dirs()?;
     let config = Config::load(&paths)?;
     let db = Db::open(
@@ -30,13 +49,41 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         &migrations(),
     )?;
     let hub = Arc::new(Hub::new());
-    let projects = devbox_projects::ProjectsService::new(
+    let projects = Arc::new(devbox_projects::ProjectsService::new(
         db.clone(),
         hub.clone(),
         paths.home.clone(),
         config.projects.roots.clone(),
-    );
+    ));
+    let terminal = Arc::new(devbox_terminal::TerminalService::new(
+        db.clone(),
+        hub.clone(),
+        paths.clone(),
+        projects.clone(),
+        config.terminal,
+    ));
+    let profiles = devbox_agents::profile::configured(&config.agents)?;
+    let executable = std::env::current_exe()?;
+    let devbox_bin = executable
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("executable path is not UTF-8"))?
+        .to_owned();
+    let use_scope = std::env::var_os("DEVBOX_NO_SCOPE").is_none();
+    let agents = Arc::new(devbox_agents::AgentsService::new(
+        db.clone(),
+        hub.clone(),
+        paths.clone(),
+        projects.clone(),
+        terminal.clone(),
+        profiles,
+        devbox_agents::AgentRuntime {
+            devbox_bin,
+            use_scope,
+            cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
+        },
+    ));
     Ok(Arc::new(Services {
+        runtime,
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
         started: Instant::now(),
@@ -45,6 +92,8 @@ pub fn build_services(paths: Paths) -> anyhow::Result<Arc<Services>> {
         db,
         hub,
         projects,
+        terminal,
+        agents,
     }))
 }
 
@@ -74,10 +123,11 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     paths.ensure_dirs()?;
     let _guard = log::init_logging(&paths, foreground)?;
     log::install_panic_hook(&paths, crate::VERSION);
-    let services = build_services(paths.clone())?;
+    let runtime = system::Runtime::new(!foreground);
+    let shutdown = runtime.shutdown.clone();
+    let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
-    let shutdown = tokio_util::sync::CancellationToken::new();
     let s2 = shutdown.clone();
     tokio::spawn(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
@@ -87,5 +137,8 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     });
     server::serve(socket.listener, services, shutdown).await?;
     tracing::info!("daemon stopped");
+    if runtime.restart_requested() {
+        anyhow::bail!("intentional daemon restart after environment refresh");
+    }
     Ok(())
 }

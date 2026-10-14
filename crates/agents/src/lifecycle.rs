@@ -1,0 +1,224 @@
+use crate::{
+    model::*,
+    service::{AgentsService, Result, apply_event, changed, now_ms},
+    state::{AgentEvent, AgentState},
+    store,
+    tracker::{self, Binding},
+};
+use devbox_protocol::{Fail, Internal};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Instant,
+};
+impl AgentsService {
+    pub(crate) async fn refresh_binding(&self, task: &AgentTask, retry: bool) -> Result<Binding> {
+        // Completion candidates and resume must always verify current metadata;
+        // only the background lifecycle fallback supplies polling state.
+        self.refresh_binding_inner(task, retry, None)
+            .await?
+            .ok_or_else(|| {
+                AgentsError::SessionMetadata {
+                    diagnostic: tracker::Diagnostic::Missing,
+                }
+                .into()
+            })
+    }
+
+    async fn refresh_binding_inner(
+        &self,
+        task: &AgentTask,
+        retry: bool,
+        mut poll: Option<&mut tracker::Poll>,
+    ) -> Result<Option<Binding>> {
+        let id = task.id.clone();
+        let old = self
+            .db
+            .read(move |tx| store::binding(tx, &id))
+            .await
+            .internal("read agent binding")?
+            .unwrap_or_else(|| Binding::new(task.created_ms));
+        let root = self.paths.home.join(".codex/sessions");
+        let mut last = tracker::Diagnostic::Missing;
+        for attempt in 0..if retry { 3 } else { 1 } {
+            let (root, workdir, binding) = (root.clone(), task.workdir.clone(), old.clone());
+            let polling = poll.as_deref_mut().map(std::mem::take);
+            let (polling, result) = tokio::task::spawn_blocking(move || match polling {
+                Some(mut state) => {
+                    let result = state.refresh(Instant::now(), &root, &workdir, &binding);
+                    (Some(state), result)
+                }
+                None => (None, tracker::refresh(&root, &workdir, &binding).map(Some)),
+            })
+            .await
+            .internal("read Codex metadata")?;
+            if let (Some(target), Some(state)) = (poll.as_deref_mut(), polling) {
+                *target = state;
+            }
+            match result {
+                Ok(None) => return Ok(None),
+                Ok(Some(binding)) => {
+                    let id = task.id.clone();
+                    let saved = binding.clone();
+                    let hub = self.hub.clone();
+                    let _ = self
+                        .db
+                        .write_checked_with_commit(
+                            move |tx| {
+                                let Some(mut current) = store::get(tx, &id)? else {
+                                    return Ok(Err(()));
+                                };
+                                if current.state == AgentState::Closed {
+                                    return Ok(Err(()));
+                                }
+                                let previous_state = current.state;
+                                let current_binding = store::binding(tx, &id)?;
+                                // A poll started before resume must not replace the new launch or ownership.
+                                if current_binding.as_ref().is_some_and(|b| {
+                                    b.launch_ms != saved.launch_ms || b.launch_id != saved.launch_id
+                                }) {
+                                    return Ok(Err(()));
+                                }
+                                let mut saved = saved;
+                                if let Some(binding) = &current_binding {
+                                    saved.resources = binding.resources.clone();
+                                    saved.owned_rebase = binding.owned_rebase;
+                                }
+                                if current_binding.as_ref().and_then(|b| b.turn_started_ms)
+                                    > saved.turn_started_ms
+                                {
+                                    return Ok(Err(()));
+                                }
+                                let previous =
+                                    current_binding.as_ref().and_then(|b| b.turn_id.clone());
+                                if current_binding.as_ref() == Some(&saved)
+                                    && current.session_id == saved.thread_id
+                                {
+                                    return Ok(Err(()));
+                                }
+                                store::put_binding(tx, &id, &saved)?;
+                                let mut changed = false;
+                                if let Some(session) = &saved.thread_id {
+                                    changed |= apply_event(
+                                        &mut current,
+                                        &AgentEvent::SessionStarted {
+                                            session_id: session.clone(),
+                                        },
+                                        now_ms(),
+                                    );
+                                }
+                                if !retry && previous != saved.turn_id {
+                                    changed |= apply_event(
+                                        &mut current,
+                                        &AgentEvent::PromptSubmitted,
+                                        now_ms(),
+                                    );
+                                }
+                                if changed {
+                                    store::put(tx, &current)?;
+                                }
+                                Ok(Ok((current, changed, previous_state)))
+                            },
+                            move |(current, did_change, previous), rev| {
+                                if *did_change {
+                                    changed(&hub, current, rev, current.state != *previous)
+                                }
+                            },
+                        )
+                        .await
+                        .internal("save Codex binding")?;
+                    return Ok(Some(binding));
+                }
+                Err(d) => last = d,
+            }
+            if attempt < 2 && retry {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+        Err(AgentsError::SessionMetadata { diagnostic: last }.into())
+    }
+    pub async fn reconcile(&self) -> Result<()> {
+        let sessions = self
+            .terminal
+            .tmux()
+            .list()
+            .await
+            .map_err(|e| Fail::Internal(format!("agent reconcile tmux: {e}")))?;
+        for task in self.all_tasks(None).await? {
+            if self.recover_tool_exit(&task.id).await? {
+                continue;
+            }
+            if matches!(
+                task.state,
+                AgentState::Preparing
+                    | AgentState::Running
+                    | AgentState::Waiting
+                    | AgentState::Idle
+            ) && !task
+                .terminal_id
+                .as_ref()
+                .is_some_and(|id| sessions.iter().any(|s| &s.name == id))
+            {
+                if task.state == AgentState::Preparing {
+                    self.reconcile_resources(&task).await?;
+                }
+                self.update(&task.id, |t| {
+                    apply_event(t, &AgentEvent::SessionLost, now_ms())
+                })
+                .await?;
+            }
+        }
+        Ok(())
+    }
+    pub async fn initialize(self: &Arc<Self>) -> Result<()> {
+        self.reconcile().await?;
+        crate::watch::spawn(self).internal("compile output waiting patterns")?;
+        let svc = self.clone();
+        self.background.spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
+            let mut polls: HashMap<String, tracker::Poll> = HashMap::new();
+            loop {
+                tokio::select! {
+                    _=svc.stop.cancelled()=>break,
+                    _=interval.tick()=>{}
+                }
+                let Ok(tasks) = svc.all_tasks(None).await else {
+                    continue;
+                };
+                let mut active = HashSet::new();
+                for task in tasks {
+                    if !task.tool_exited && svc.recover_tool_exit(&task.id).await.unwrap_or(false) {
+                        continue;
+                    }
+                    let codex = crate::profile::resolve(&svc.profiles, &task.profile)
+                        .is_some_and(|p| p.hooks == crate::profile::Hooks::Codex);
+                    if codex
+                        && !task.tool_exited
+                        && matches!(
+                            task.state,
+                            AgentState::Running | AgentState::Waiting | AgentState::Idle
+                        )
+                    {
+                        active.insert(task.id.clone());
+                        let poll = polls.entry(task.id.clone()).or_default();
+                        if poll.due(Instant::now())
+                            && let Err(error) = svc.refresh_binding_inner(&task, false, Some(poll)).await
+                        {
+                            // A successful read whose DB publication failed must be
+                            // retried even if its file stayed unchanged.
+                            poll.invalidate();
+                            tracing::debug!(?error,agent=%task.id,"Codex lifecycle metadata pending");
+                        }
+                    }
+                }
+                polls.retain(|id, _| active.contains(id));
+            }
+        });
+        Ok(())
+    }
+    pub async fn shutdown(&self) {
+        self.stop.cancel();
+        self.background.close();
+        self.background.wait().await;
+    }
+}

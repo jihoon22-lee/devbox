@@ -23,6 +23,18 @@ class ScaffoldScripts(unittest.TestCase):
             self.assertEqual(subprocess.run(['bash', str(script)], capture_output=True).returncode, 0)
             (root / 'app/src/View.test.tsx').write_text('const label = "Workbench";\n')
             self.assertEqual(subprocess.run(['bash', str(script)], capture_output=True).returncode, 0)
+            for text, expected in [
+                ('const identity = `${target}:${generation}:${state}`;', 0),
+                ('const label = `generation ${count}`;', 1),
+                ('const label = `${"generation"}`;', 1),
+                ('const label = "it\\\"s generation";', 1),
+                ('const label = "${generation}";', 1),
+                (r'const label = `\${generation}`;', 1),
+                (r'const identity = `\\${generation}`;', 0),
+            ]:
+                with self.subTest(text=text):
+                    source.write_text(text + '\n')
+                    self.assertEqual(subprocess.run(['bash', str(script)], capture_output=True).returncode, expected)
 
     def test_sweep_never_removes_external_cache(self):
         with tempfile.TemporaryDirectory() as directory:

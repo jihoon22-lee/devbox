@@ -9,6 +9,7 @@ export interface Binding {
   scope: Scope;
   label: string;
   run: () => void;
+  enabled?: () => boolean;
 }
 export function matches(e: KeyboardEvent, b: Binding): boolean {
   return (
@@ -30,11 +31,15 @@ export function allowedWhileFocused(b: Binding, focus: "terminal" | "editor" | n
 export function useKeymap(bindings: Binding[]): void {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      if (
+        event.defaultPrevented ||
+        document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
+      )
+        return;
       const focused = document.activeElement?.closest("[data-keyscope]")?.getAttribute("data-keyscope");
       const scope = focused === "terminal" || focused === "editor" ? focused : null;
       for (const binding of bindings)
-        if (matches(event, binding) && allowedWhileFocused(binding, scope)) {
+        if (matches(event, binding) && allowedWhileFocused(binding, scope) && (binding.enabled?.() ?? true)) {
           event.preventDefault();
           event.stopPropagation();
           binding.run();

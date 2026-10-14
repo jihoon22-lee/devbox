@@ -112,6 +112,12 @@ pub fn render_units() -> Vec<(&'static str, String)> {
                 "{MARKER}[Unit]\nDescription=devbox daemon (%i)\nRequires=devbox@%i.socket\nAfter=devbox@%i.socket\n\n[Service]\nType=notify\nEnvironmentFile=-%h/.config/devbox/%i/env\nEnvironment=DEVBOX_INSTANCE=%i\nExecStart=%h/.local/share/devbox/bin/devbox daemon\nRestart=on-failure\nRestartSec=1\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n"
             ),
         ),
+        (
+            "devbox-tmux@.service",
+            format!(
+                "{MARKER}[Unit]\nDescription=devbox tmux server (%i)\n\n[Service]\nType=exec\nEnvironmentFile=-%h/.config/devbox/%i/env\nUnsetEnvironment=TMUX TMUX_TMPDIR\nExecStart=/usr/bin/env tmux -D -L devbox-%i -f %h/.config/devbox/%i/tmux.conf\nExecStop=/usr/bin/env tmux -L devbox-%i kill-server\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
+            ),
+        ),
     ]
 }
 fn unit_quote(path: &Path) -> Result<String, String> {
@@ -127,11 +133,11 @@ fn unit_quote(path: &Path) -> Result<String, String> {
             .replace('%', "%%")
     ))
 }
-// ListenStream's parser consumes the raw rvalue rather than a shell-style word.
-fn socket_path(path: &Path) -> Result<String, String> {
-    let value = path.to_str().ok_or("socket path is not UTF-8")?;
+// EnvironmentFile and ListenStream consume raw rvalues, not shell-style words.
+fn raw_unit_path(path: &Path) -> Result<String, String> {
+    let value = path.to_str().ok_or("unit path is not UTF-8")?;
     if value.chars().any(char::is_control) {
-        return Err("socket path contains control characters".into());
+        return Err("unit path contains control characters".into());
     }
     Ok(value.replace('%', "%%"))
 }
@@ -144,7 +150,7 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
     let body = (|| -> Result<String, String> {
         let mut body = format!(
             "{MARKER}[Service]\nEnvironmentFile=\nEnvironmentFile={}\nExecStart=\nExecStart=:{} daemon\n",
-            unit_quote(&paths.instance_config_dir.join("env"))?,
+            raw_unit_path(&paths.instance_config_dir.join("env"))?,
             unit_quote(&paths.bin_dir.join("devbox"))?
         );
         for (key, path) in [
@@ -188,14 +194,24 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
         }
         Ok(body)
     })();
+    let body = body?;
+    let environment = body
+        .lines()
+        .filter(|line| line.starts_with("Environment="))
+        .collect::<Vec<_>>()
+        .join("\n");
     units.push((
         format!("devbox@{}.service.d/paths.conf", paths.instance.as_str()),
-        body?,
+        body,
     ));
-    let socket = socket_path(&paths.socket)?;
+    let socket = raw_unit_path(&paths.socket)?;
     units.push((
         format!("devbox@{}.socket.d/paths.conf", paths.instance.as_str()),
         format!("{MARKER}[Socket]\nListenStream=\nListenStream={socket}\n"),
+    ));
+    units.push((
+        format!("devbox-tmux@{}.service.d/paths.conf", paths.instance.as_str()),
+        format!("{MARKER}[Service]\nEnvironmentFile=\nEnvironmentFile={}\nExecStart=\nExecStart=:/usr/bin/env tmux -D -L devbox-%i -f {}\n{environment}\n", raw_unit_path(&paths.instance_config_dir.join("env"))?, unit_quote(&paths.instance_config_dir.join("tmux.conf"))?),
     ));
     Ok(units)
 }
@@ -277,6 +293,17 @@ impl Runner for OsRunner {
         command(cmd, args).await.map(|out| out.stdout)
     }
 }
+pub(crate) async fn refresh_env(paths: &devbox_core::Paths) -> Result<(), String> {
+    refresh_with(paths, &OsRunner).await
+}
+async fn refresh_with(paths: &devbox_core::Paths, runner: &impl Runner) -> Result<(), String> {
+    let raw = runner.run("bash", &["-lc", "env -0"]).await?;
+    let text = capture_env(&raw);
+    if env_path(&text).is_none() {
+        return Err("captured PATH has no absolute entry".into());
+    }
+    publish(&paths.instance_config_dir.join("env"), &text, false).map_err(|e| e.to_string())
+}
 async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> SetupReport {
     let mut report = SetupReport { steps: vec![] };
     if let Err(message) = instance_units(paths) {
@@ -289,19 +316,14 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
     }
     for id in ["env", "units", "reload", "enable", "restart"] {
         let result: Result<(), String> = match id {
-            "env" => match runner.run("bash", &["-lc", "env -0"]).await {
-                Ok(out) => {
-                    let text = capture_env(&out);
-                    if env_path(&text).is_none() {
-                        Err("captured PATH has no absolute entry".into())
-                    } else {
-                        publish(&paths.instance_config_dir.join("env"), &text, false)
-                            .map_err(|e| e.to_string())
-                    }
-                }
-                Err(e) => Err(e),
-            },
+            "env" => refresh_with(paths, runner).await,
             "units" => instance_units(paths).and_then(|units| {
+                publish(
+                    &paths.instance_config_dir.join("tmux.conf"),
+                    devbox_terminal::TMUX_CONF,
+                    true,
+                )
+                .map_err(|error| error.to_string())?;
                 units
                     .iter()
                     .try_for_each(|(name, body)| {
@@ -326,6 +348,7 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                         "--now",
                         &format!("devbox@{}.socket", paths.instance.as_str()),
                         &format!("devbox@{}.service", paths.instance.as_str()),
+                        &format!("devbox-tmux@{}.service", paths.instance.as_str()),
                     ],
                 )
                 .await

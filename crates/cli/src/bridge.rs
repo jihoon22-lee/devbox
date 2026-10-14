@@ -1,7 +1,7 @@
 //! Raw stdio transport; protocol bytes are never interpreted here.
 use std::io::{Read, Write};
-use std::os::fd::AsFd;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::fd::{AsFd, AsRawFd, FromRawFd};
+use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, unix::AsyncFd};
@@ -46,37 +46,146 @@ async fn connect(paths: &devbox_core::Paths) -> anyhow::Result<UnixStream> {
     }
 }
 
-// Tokio's blocking stdio workers outlive cancelled futures. Readiness keeps
-// both pipe directions cancellable, even when stdout is full at stdin EOF.
-fn readiness(fd: i32, file: std::fs::File) -> std::io::Result<Option<AsyncFd<std::fs::File>>> {
-    let path = format!("/proc/self/fd/{fd}");
-    // Regular files and /dev/null cannot be registered with epoll. Their finite
-    // IO needs no background stdio worker and retains the inherited offset.
-    if file.metadata()?.is_file() || std::fs::read_link(&path)? == std::path::Path::new("/dev/null")
-    {
-        Ok(None)
-    } else {
-        // Reopen the pipe with its own open-file description. O_NONBLOCK
-        // never changes flags inherited by the parent, even on SIGKILL.
-        let pipe = std::fs::OpenOptions::new()
-            .read(fd == 0)
-            .write(fd == 1)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)?;
-        AsyncFd::new(pipe).map(Some)
+// Tokio's blocking stdio workers outlive cancelled futures. All pollable IO
+// below is nonblocking without changing an inherited open-file description.
+struct ReadyStdio {
+    fd: AsyncFd<std::fs::File>,
+    staging: Option<StagingPipe>,
+}
+struct StagingPipe {
+    read: std::fs::File,
+    write: std::fs::File,
+}
+impl StagingPipe {
+    #[allow(unsafe_code)]
+    fn new() -> std::io::Result<Self> {
+        let mut fds = [0; 2];
+        // SAFETY: pipe2 initializes two owned descriptors on success.
+        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: transfer each freshly created descriptor exactly once.
+        Ok(unsafe {
+            Self {
+                read: std::fs::File::from_raw_fd(fds[0]),
+                write: std::fs::File::from_raw_fd(fds[1]),
+            }
+        })
     }
 }
-async fn write_output(
-    output: &Option<AsyncFd<std::fs::File>>,
-    mut bytes: &[u8],
-) -> std::io::Result<()> {
-    while !bytes.is_empty() {
-        let n = if let Some(output) = output {
-            let mut ready = output.writable().await?;
-            match ready.try_io(|fd| fd.get_ref().write(bytes)) {
-                Ok(result) => result?,
+#[allow(unsafe_code)]
+fn splice_pipe(from: &std::fs::File, to: &std::fs::File, len: usize) -> std::io::Result<usize> {
+    loop {
+        // SAFETY: both live descriptors are pipes; null offsets are required
+        // for pipes. SPLICE_F_NONBLOCK applies to both pipe operations even
+        // when the inherited descriptor itself is blocking.
+        let n = unsafe {
+            libc::splice(
+                from.as_raw_fd(),
+                std::ptr::null_mut(),
+                to.as_raw_fd(),
+                std::ptr::null_mut(),
+                len,
+                libc::SPLICE_F_NONBLOCK,
+            )
+        };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+fn readiness(fd: i32, file: std::fs::File) -> std::io::Result<Option<ReadyStdio>> {
+    let path = format!("/proc/self/fd/{fd}");
+    let metadata = file.metadata()?;
+    // Finite regular-file/null IO retains the inherited offset.
+    if metadata.is_file() || std::fs::read_link(&path)? == std::path::Path::new("/dev/null") {
+        return Ok(None);
+    }
+    match std::fs::OpenOptions::new()
+        .read(fd == 0)
+        .write(fd == 1)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(pipe) => Ok(Some(ReadyStdio {
+            fd: AsyncFd::new(pipe)?,
+            staging: None,
+        })),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                && metadata.file_type().is_fifo() =>
+        {
+            // Windows wsl.exe supplies root-owned 0600 pipes. Their inherited
+            // handles are usable, but reopening /proc/self/fd fails with EACCES.
+            // Splice via an owned pipe gives per-call nonblocking IO; no chmod,
+            // privilege change, or F_SETFL on the inherited handle is needed.
+            Ok(Some(ReadyStdio {
+                fd: AsyncFd::new(file)?,
+                staging: Some(StagingPipe::new()?),
+            }))
+        }
+        Err(error) => Err(error),
+    }
+}
+impl ReadyStdio {
+    async fn read(&self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            let mut ready = self.fd.readable().await?;
+            match ready.try_io(|fd| {
+                if let Some(staging) = &self.staging {
+                    let n = splice_pipe(fd.get_ref(), &staging.write, bytes.len())?;
+                    // Only this operation consumes staging; exactly n bytes
+                    // are now present and its descriptor is nonblocking too.
+                    (&staging.read).read_exact(&mut bytes[..n])?;
+                    Ok(n)
+                } else {
+                    fd.get_ref().read(bytes)
+                }
+            }) {
+                Ok(result) => return result,
                 Err(_) => continue,
             }
+        }
+    }
+    async fn write(&self, bytes: &[u8]) -> std::io::Result<usize> {
+        if let Some(staging) = &self.staging {
+            // A successful call always drains staging before returning; a
+            // cancelled call is followed by bridge shutdown and owned-fd drop.
+            let count = (&staging.write).write(bytes)?;
+            let mut left = count;
+            while left > 0 {
+                let mut ready = self.fd.writable().await?;
+                match ready.try_io(|fd| splice_pipe(&staging.read, fd.get_ref(), left)) {
+                    Ok(result) => {
+                        let n = result?;
+                        if n == 0 {
+                            return Err(std::io::ErrorKind::WriteZero.into());
+                        }
+                        left -= n;
+                    }
+                    Err(_) => continue,
+                }
+            }
+            Ok(count)
+        } else {
+            loop {
+                let mut ready = self.fd.writable().await?;
+                match ready.try_io(|fd| fd.get_ref().write(bytes)) {
+                    Ok(result) => return result,
+                    Err(_) => continue,
+                }
+            }
+        }
+    }
+}
+async fn write_output(output: &Option<ReadyStdio>, mut bytes: &[u8]) -> std::io::Result<()> {
+    while !bytes.is_empty() {
+        let n = if let Some(output) = output {
+            output.write(bytes).await?
         } else {
             std::io::stdout().lock().write(bytes)?
         };
@@ -113,11 +222,7 @@ pub async fn run() -> anyhow::Result<()> {
         let mut buf = [0; 64 * 1024];
         loop {
             let n = if let Some(input) = &input {
-                let mut ready = input.readable().await?;
-                match ready.try_io(|fd| fd.get_ref().read(&mut buf)) {
-                    Ok(result) => result?,
-                    Err(_) => continue,
-                }
+                input.read(&mut buf).await?
             } else {
                 std::io::stdin().lock().read(&mut buf)?
             };

@@ -1,11 +1,11 @@
 # S1 에이전트·터미널·프로젝트 (2/2: 화면·Windows 통합) Implementation Plan
 
-> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 계획한 기능을 완성한 뒤 사용자가 진행하며 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 아래 과거 예제의 묶음별 전체 검사/push·rebase·사용자 확인 목록 전달은 적용하지 않는다.
+> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 기능 완성 뒤가 기본이며 S2 뒤 선택적 조기 사용이 가능하다. 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 최종 SHA의 자동 코드·보안 리뷰 완료를 확인한다. Windows 설치본 스모크는 01-design §11에 따라 에이전트가 수행한다.
 
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 계획 · 미착수 · 시작 조건: [04-s1-agents-terminal](04-s1-agents-terminal.md) 묶음 F–J push(같은 S1 브랜치에서 이어감)
+- 상태: Task 13–23 기능과 Task 24 수용 테스트·계측 도구 구현·독립 검토 완료. PR #640 후속 보완의 검증·수용 상태는 [PROGRESS.md](PROGRESS.md)를 따른다.
 
 **Goal:** S1 데몬 기능을 화면에 올린다.
 - 터미널 섹션: 탭·분할·하단 패널·분리 창
@@ -52,16 +52,16 @@
 ## 작업 묶음
 
 S1 전체가 브랜치 `v1/s1-agents-terminal` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s1-agents-terminal`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 진행 기록과 세션 인계 지점이다. 과제별 좁은 검사·별도 검토·커밋 뒤 `PROGRESS.md`의 묶음 행과 현재 위치를 갱신한다. 묶음별 전체 검사·push는 하지 않는다. S1 끝에 브랜치 전체 검토와 통합 검증을 마치고 한 번 push·PR한다(00-roadmap §3).
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| K | Task 13–16 | push |
-| L | Task 17–19 | push |
-| M | Task 20–21 | push |
-| N | Task 22–23 | push |
-| 마무리 | Task 24 | **S1 PR 열기** → CI 통과 → squash 머지 → 완료·검증 결과 보고 |
+| K | Task 13–16 | 로컬 기록·인계 |
+| L | Task 17–19 | 로컬 기록·인계 |
+| M | Task 20–21 | 로컬 기록·인계 |
+| N | Task 22–23 | 로컬 기록·인계 |
+| 마무리 | Task 24 | 브랜치 전체 검토·최종 검증 → push·설치본 스모크 → PR·필수 CI·최종 SHA 리뷰 → squash 머지 |
 
 ---
 
@@ -89,6 +89,8 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
   - `BottomPanel`: 탭 `터미널`만(S2가 로그·문제를 더함). 내용은 등록식 `registerBottomTab({ id, label, render })`
   - `buildRouter({ frame, pages, settings, popouts })`: 섹션별 화면을 받는다. `/popout/*` 경로는 프레임 없이 그린다.
   - 단축키: Ctrl+Shift+B(목록 접기), Ctrl+\`(하단 패널)
+
+**현재 구현 계약:** 아래 예제는 인터페이스 설명이며 실제 변경은 기존 S0b 보호 동작을 유지한다. 라우터 호출·명령 등록은 `Shell.tsx`에 있고 `App.tsx`의 연결 준비는 유지한다. `Frame`의 연결 배너와 확정 경로 기반 오류 경계를 보존하며, `ToastHost`는 분리 창에도 보이도록 `Shell`에 한 번 둔다. 저장된 배치는 허용된 값만 검증·보정해 병합하고 저장소 접근 실패에도 동작한다. 자동 접기는 전체 프레임의 경계 진입 때 적용하며 같은 크기에서 사용자가 다시 여는 동작을 허용한다. 크기 조절은 UI 배율을 반영하고 취소·unmount에서 포인터 처리를 정리한다. 되돌리기는 항목을 먼저 제거한 뒤 한 번 실행하며 만료한 항목은 실행하지 않는다. 하단 탭의 이전 등록 해제가 같은 ID의 새 등록을 지우지 않아야 한다. 앱 배율 초기화는 터미널·편집기 포커스에서 가져가지 않고, Ctrl+Z는 입력 요소의 기본 되돌리기를 보존한다.
 
 - [ ] **Step 1: 실패하는 테스트**
 
@@ -550,6 +552,8 @@ git add app/src && git commit -m "feat(app): add tabs, split panes, menus, toast
 
 ### Task 14: 순서 보장 전송과 터미널 연결 컨트롤러
 
+실제 구현 계약: 송신 상한 256개/8 MiB는 실행 중 호출을 포함한다. 기존 Tauri attachment lease·header·revision·backoff 보호를 유지하며 같은 lease 재연결도 이전 송신기를 폐기한다. `input`은 UTF-8 문자열과 raw `Uint8Array`를 받는다. 정상 EOF 뒤 100ms 후 한 번 재attach하여 삭제 여부를 확인하고, 반복 EOF는 lost로 유지한다. 새 ready/open만 재확인 기회를 갱신한다. 아래 예제보다 실제 구현·회귀 테스트를 우선한다.
+
 **Files:**
 - Create: `app/src/rpc/orderedSender.ts`, `app/src/features/terminal/link.ts`
 - Modify: `app/src/rpc/transport-tauri.ts`
@@ -573,7 +577,7 @@ git add app/src && git commit -m "feat(app): add tabs, split panes, menus, toast
     - 세션이 사라지면(`terminal.not_found`) `ended`.
     - `dispose()`
 
-- [ ] **Step 1: 실패하는 테스트 — 순서 송신(이식)**
+- [x] **Step 1: 실패하는 테스트 — 순서 송신(이식)**
 
 ```ts
 // app/src/rpc/orderedSender.test.ts — v0.9.0 orderedInput.test.ts에서 이식
@@ -650,7 +654,7 @@ test("disposal discards waiting writes and ignores late completion", async () =>
 });
 ```
 
-- [ ] **Step 2: 실패하는 테스트 — 터미널 연결**
+- [x] **Step 2: 실패하는 테스트 — 터미널 연결**
 
 ```ts
 // app/src/features/terminal/link.test.ts
@@ -763,9 +767,9 @@ test("read-only links never send input and a missing session ends the link", asy
 
 `RpcError` 생성자 모양(`new RpcError(code, detail?)`)은 S0b Task 17을 따른다. 다르면 테스트를 그 모양에 맞춘다.
 
-- [ ] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/orderedSender.test.ts src/features/terminal/link.test.ts`
+- [x] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/orderedSender.test.ts src/features/terminal/link.test.ts`
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 ```ts
 // app/src/rpc/orderedSender.ts
@@ -941,7 +945,7 @@ export class TerminalLink {
 }
 ```
 
-- [ ] **Step 5: 통과·커밋**
+- [x] **Step 5: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/rpc src/features/terminal && pnpm --filter app typecheck
@@ -951,6 +955,8 @@ git add app/src && git commit -m "feat(app): keep Tauri sends ordered and link t
 ---
 
 ### Task 15: TerminalView
+
+실제 구현 보정: xterm 6의 기본 DOM 렌더러를 사용하며 WebGL 실패·context loss 때 복귀한다. D2Coding 1.4.0/OFL을 번들하고 글꼴 대기는 1.5초로 제한, 늦은 로딩 뒤 셀을 다시 측정한다. 읽기 전용·축소 화면은 typed attach 응답의 실제 cols/rows를 초기 ANSI 재생 전에 적용하며 입력·fit·상위 resize를 막는다. `RpcClient.openStream`의 선택적 `onOpened`가 이 순서를 보장하고 콜백 실패는 연결을 정리한다. scale·콜백 변경은 재attach하지 않는다. Windows opener는 single-instance 뒤 등록하며 main/popout 창에 HTTP(S)만 허용한다. 아래 예제보다 실제 코드·회귀 테스트를 우선한다.
 
 **Files:**
 - Create: `app/src/features/terminal/TerminalView.tsx`, `TerminalView.module.css`, `app/src/features/terminal/theme.ts`, `app/src/features/terminal/keys.ts`, `app/src/features/terminal/osc.ts`
@@ -974,7 +980,7 @@ git add app/src && git commit -m "feat(app): keep Tauri sends ordered and link t
     - 선택이 있을 때 Ctrl+C는 복사(선택이 없으면 셸로 SIGINT)
   - `parseOsc7(data) -> string | null`(`file://host/path` → 디코딩한 경로)
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 ```ts
 // app/src/features/terminal/keys.test.ts
@@ -1008,9 +1014,9 @@ test("OSC 7 file URLs become decoded paths", () => {
 });
 ```
 
-- [ ] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal`
+- [x] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal`
 
-- [ ] **Step 3: 구현 — 순수 부분**
+- [x] **Step 3: 구현 — 순수 부분**
 
 ```ts
 // app/src/features/terminal/keys.ts
@@ -1069,7 +1075,7 @@ export function terminalTheme(): ITheme {
 
 `tokens.css`의 다크·라이트 두 벌에 `--term-*` 18개를 추가한다(다크는 One Dark 계열, 라이트는 One Light 계열 값). 편집기·diff 색도 같은 파일의 토큰에서 만든다(01-design §8.3 "테마 모듈은 하나").
 
-- [ ] **Step 4: 구현 — 컴포넌트**
+- [x] **Step 4: 구현 — 컴포넌트**
 
 ```tsx
 // app/src/features/terminal/TerminalView.tsx
@@ -1209,7 +1215,7 @@ export function TerminalView({ id, readOnly = false, scale, onCwd, onBell, onTit
 .overlay { position: absolute; inset: 0; display: flex; gap: var(--space-3); align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg-0) 70%, transparent); color: var(--fg); font-size: var(--text-sm); }
 ```
 
-- [ ] **Step 5: 통과·커밋**
+- [x] **Step 5: 통과·커밋**
 
 ```bash
 pnpm --filter app add @xterm/xterm@^6 @xterm/addon-fit @xterm/addon-webgl @xterm/addon-unicode11 @xterm/addon-search @xterm/addon-web-links @tauri-apps/plugin-opener
@@ -1220,6 +1226,8 @@ git add app && git commit -m "feat(app): render tmux sessions with xterm, search
 ---
 
 ### Task 16: 터미널 섹션·하단 패널 터미널·분리 창·E2E
+
+실제 구현 보정: Shell에 화면·하단 탭·명령을 등록한다. `terminal.list(null)`의 모든 프로젝트 결과는 화면에서 프로젝트 없음으로 필터링한다. 생성 뒤 같은 리비전의 가상 캐시를 쓰지 않고 이전 조회를 취소·비활성 프로젝트까지 재조회하며, 조회 실패를 생성 실패로 바꾸지 않는다. 하단 세션은 StrictMode·프로젝트 전환 중 생성 중복과 종료 뒤 자동 재생성을 막고 명시적으로 다시 시도한다. 메뉴의 `afterClose`로 포커스 정리 뒤 대화상자를 열고 취소 시 버튼으로 돌아온다. 목록 선택의 명시적 포커스 요청은 현재 칸에만 전달하고 직접 포커스가 바뀌면 폐기한다. 분리 창은 안전한 고유 이름으로 재사용한다. E2E 2개는 작성·수집만 확인했으며 실제 실행은 Task24다. fixture는 자식 종료 뒤 자기 tmux 서버만 정리한다.
 
 **Files:**
 - Create: `app/src/features/terminal/TerminalPage.tsx`, `SessionList.tsx`, `PaneTree.tsx`, `store.ts`, `popout.ts`, `BottomTerminal.tsx`
@@ -1248,7 +1256,7 @@ git add app && git commit -m "feat(app): render tmux sessions with xterm, search
   - `openPopout(kind: "terminal"|"agent"|"agents-grid", id?)`: Tauri면 `WebviewWindow`, 브라우저면 `window.open`. 같은 대상 창이 있으면 앞으로 가져온다.
   - 분리 창 경로: `/popout/terminal/$id`
 
-- [ ] **Step 1: 실패하는 테스트(배치 함수)**
+- [x] **Step 1: 실패하는 테스트(배치 함수)**
 
 ```ts
 // app/src/features/terminal/store.test.ts
@@ -1281,9 +1289,9 @@ test("opening a session already shown focuses its tab instead of duplicating", (
 });
 ```
 
-- [ ] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal/store.test.ts`
+- [x] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/features/terminal/store.test.ts`
 
-- [ ] **Step 3: 구현 — 배치 함수와 저장**
+- [x] **Step 3: 구현 — 배치 함수와 저장**
 
 ```ts
 // app/src/features/terminal/store.ts
@@ -1357,7 +1365,7 @@ export const useTerminalLayout = create<Store>()(
 );
 ```
 
-- [ ] **Step 4: 구현 — 화면**
+- [x] **Step 4: 구현 — 화면**
 
 ```tsx
 // app/src/features/terminal/TerminalPage.tsx (요점)
@@ -1493,7 +1501,7 @@ export function BottomTerminal() {
 - `useBottomTabs.getState().register({ id: "terminal", label: "터미널", render: () => <BottomTerminal/> })`
 - 명령 등록: "새 터미널"·"하단 패널 열고 닫기"·"터미널을 새 창으로"
 
-- [ ] **Step 5: E2E**
+- [x] **Step 5: E2E**
 
 ```ts
 // app/e2e/terminal.spec.ts
@@ -1532,18 +1540,20 @@ test("split right opens a second live pane in the same tab", async ({ page }) =>
 
 xterm은 WebGL 렌더러를 쓰면 DOM에 글자가 없다. E2E에서는 `?renderer=dom` 쿼리가 있으면 WebGL을 불러오지 않게 하고(`TerminalView`의 `loadAddon(new WebglAddon())` 앞에서 검사), 위 테스트의 `goto`에 `&renderer=dom`을 붙인다. 접근성 트리(`screenReaderMode`) 대신 DOM 렌더러의 `.xterm-rows`를 `toContainText`로 읽는다.
 
-- [ ] **Step 6: 통과·커밋·묶음 K 끝**
+- [x] **Step 6: 통과·커밋·묶음 K 끝**
 
 ```bash
-pnpm --filter app exec vitest run src/features/terminal && pnpm --filter app exec playwright test e2e/terminal.spec.ts
+pnpm --filter app exec vitest run src/features/terminal
+# E2E e2e/terminal.spec.ts는 S1 PR 끝 통합 검증에서 실행한다.
 git add app .github && git commit -m "feat(app): add the terminal section with tabs, splits, bottom panel and pop-out windows"
-# 묶음 K 끝: PROGRESS.md의 묶음 K 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 K 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
 
 ### Task 17: 에이전트 목록·새 작업·이동 단축키·배지
+
+실제 구현 보정: Shell의 공유 `AgentDataProvider`가 목록·구독과 가시 시간 갱신을 소유한다. 통계·자원 조회는 보이는 화면에서만 실행하며 새 작업은 개별 `agents.get` 캐시와 선택을 유지하고 목록 리비전을 만들어 내지 않는다. 중첩 Dialog/Select의 모듈별 포커스 스택 충돌은 구현이 같은 Radix 패치 두 개를 pnpm override로 통일해 해결했다. 토큰은 도구별 중첩 의미가 다르므로 `TokenMetrics`로 입력·출력·캐시 읽기·쓰기를 각각 표시한다([Codex 원시 입력·캐시 관계](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs)). Task18은 `AgentPreview`를 상세 화면으로 교체하고 Task19는 보류한 격자 전환을 연결한다.
 
 **Files:**
 - Create: `app/src/features/agents/{AgentsPage,AgentList,AgentRow,NewTaskDialog,model,hooks}.tsx|ts`
@@ -1567,7 +1577,7 @@ pnpm check && git push origin v1/s1-agents-terminal
   - 활동 막대 배지: 에이전트 섹션에 `attentionCount`. 실패가 있으면 위험 색
   - 상태 표시줄: "에이전트 n(입력 대기 m)" 클릭하면 `/agents`
 
-- [ ] **Step 1: 실패하는 테스트 — 순수 함수**
+- [x] **Step 1: 실패하는 테스트 — 순수 함수**
 
 ```ts
 // app/src/features/agents/model.test.ts
@@ -1610,7 +1620,7 @@ test("templates substitute known variables and keep unknown ones", () => {
 });
 ```
 
-- [ ] **Step 2: 실패하는 테스트 — 새 작업 대화상자**
+- [x] **Step 2: 실패하는 테스트 — 새 작업 대화상자**
 
 ```tsx
 // app/src/features/agents/NewTaskDialog.test.tsx
@@ -1653,9 +1663,9 @@ test("creates a task with the chosen profile, template text and worktree", async
 });
 ```
 
-- [ ] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/features/agents`
+- [x] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/features/agents`
 
-- [ ] **Step 4: 구현 — model.ts**
+- [x] **Step 4: 구현 — model.ts**
 
 ```ts
 // app/src/features/agents/model.ts
@@ -1717,7 +1727,7 @@ export const STATE_LABEL: Record<AgentTask["state"], string> = {
 
 `i64` 필드(`createdMs` 등)는 ts-rs가 `bigint`로 내보낼 수 있다. S0b 생성기 설정(`#[ts(type = "number")]` 또는 전역 `bigint → number`)을 따르고, 위 코드는 `Number(...)`로 감싸 두 경우 모두 동작하게 한다.
 
-- [ ] **Step 5: 구현 — 화면**
+- [x] **Step 5: 구현 — 화면**
 
 ```tsx
 // app/src/features/agents/AgentsPage.tsx (요점)
@@ -1806,7 +1816,7 @@ export function useAgentsData() {
 - `"terminal.tmux_failed": (d) => ({ title: "tmux 명령이 실패했습니다.", action: reason(d) })`
 - `"git.not_repo": { title: "Git 저장소가 아닙니다." }`
 
-- [ ] **Step 6: 통과·커밋**
+- [x] **Step 6: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/features/agents && pnpm --filter app typecheck
@@ -1816,6 +1826,8 @@ git add app/src && git commit -m "feat(app): list agent tasks by urgency and cre
 ---
 
 ### Task 18: 에이전트 상세 — 머리줄·동작·탭·지시 작성
+
+실제 구현 보정: 목록과 상세는 동일한 에이전트 데이터를 공유하고, 분리 창은 별도 관찰자 하나를 사용한다. 세션 조회 전·오류 상태와 확인된 종료를 구분한다. diff는 hunk 길이·Git C-quoted UTF-8 경로·바이너리·메타데이터·절단을 처리하며 파일별 선택 범위를 격리한다. IME 전송은 최종 DOM 값을 한 번 보내고, 작업별 초안 revision으로 화면을 떠난 뒤 완료와 새 초안 보존을 함께 처리한다. 병합·PR·폐기는 표시한 확인 상태를 고정한다. 상태 불일치 시 해당 작업의 변경·커밋·patch 캐시를 함께 무효화하고 활성 조회가 모두 성공해야 새 확인을 허용한다. 실패는 명시적 재조회, 실행은 두 번째 확인을 요구한다. 머리줄은 Task17의 원시 `TokenMetrics`를 재사용한다. 아래 예제보다 실제 typed API와 회귀 테스트를 우선한다.
 
 **Files:**
 - Create: `app/src/features/agents/detail/{AgentDetail,AgentHeader,AgentActions,ChangesTab,CommitsTab,RunTab,Compose,seen,quote}.tsx|ts`
@@ -1839,7 +1851,7 @@ git add app/src && git commit -m "feat(app): list agent tasks by urgency and cre
     - worktree 없는 작업은 [기준 반영]·[병합▾]·[PR]을 숨기고, 폐기 대신 [세션 끝내기]다.
     - 닫힌 작업은 버튼이 없다.
 
-- [ ] **Step 1: 실패하는 테스트 — diff 해석**
+- [x] **Step 1: 실패하는 테스트 — diff 해석**
 
 ```ts
 // app/src/ui/diff.test.ts
@@ -1879,7 +1891,7 @@ test("new files from /dev/null and binary files", () => {
 });
 ```
 
-- [ ] **Step 2: 실패하는 테스트 — 지시 작성(IME)과 폐기 확인**
+- [x] **Step 2: 실패하는 테스트 — 지시 작성(IME)과 폐기 확인**
 
 ```tsx
 // app/src/features/agents/detail/Compose.test.tsx
@@ -1962,9 +1974,9 @@ test("a lost session offers resume instead of instructing", () => {
 
 `app/src/test/fakeClient.ts`로 S0b `ProjectSwitcher.test.tsx`의 `fakeClient`를 옮겨 공용으로 쓴다(그 테스트도 이 파일을 쓰게 바꾼다). 옮길 때 값이 `RpcError`이면 reject하도록 한 줄을 더한다: `call: vi.fn((method: string) => calls[method] instanceof RpcError ? Promise.reject(calls[method]) : Promise.resolve(calls[method]))`.
 
-- [ ] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/ui/diff.test.ts src/features/agents/detail`
+- [x] **Step 3: 실패 확인** — `pnpm --filter app exec vitest run src/ui/diff.test.ts src/features/agents/detail`
 
-- [ ] **Step 4: 구현 — diff.ts**
+- [x] **Step 4: 구현 — diff.ts**
 
 ```ts
 // app/src/ui/diff.ts
@@ -2018,7 +2030,7 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
 
 새 파일 diff(`@@ -0,0 +1 @@`)는 `n`이 1부터 시작하므로 위 규칙 그대로 맞는다.
 
-- [ ] **Step 5: 구현 — Compose·동작·탭**
+- [x] **Step 5: 구현 — Compose·동작·탭**
 
 ```tsx
 // app/src/features/agents/detail/Compose.tsx
@@ -2133,7 +2145,7 @@ export function quoteForPrompt(path: string, r: { side: "old" | "new"; from: num
 
 `agents.changed` 이벤트가 오면 `agents.get{id}`·`agents.changes{id}`·`agents.commits{id}`를 무효화한다(`useTopicInvalidation`).
 
-- [ ] **Step 6: 통과·커밋**
+- [x] **Step 6: 통과·커밋**
 
 ```bash
 pnpm --filter app exec vitest run src/ui src/features/agents && pnpm --filter app typecheck
@@ -2143,6 +2155,8 @@ git add app/src && git commit -m "feat(app): review, instruct, rebase, merge and
 ---
 
 ### Task 19: 격자 보기·알림 센터·에이전트 E2E
+
+실제 구현 보정: 격자는 닫힌 작업을 제외하고 실제 터미널 크기를 유지한 읽기 전용 미리보기를 칸 너비/1000으로 축소한다. 격자 분리 창은 별도 상세 창을 열어 격자 경로를 유지한다. 알림 소유권은 경로 대신 Tauri 창 레이블 또는 브라우저 최초 창 정체성으로 고정하며, 분리 창에서 전역 이동을 해도 구독하지 않는다. 알림 저장은 최근 100개·읽음 수 재계산·허용된 내부 이동과 다중 창의 최신 저장값을 사용하고, 쓰기 거부 시 메모리 기록을 보존한다. Task22 전에는 제목 배지만 갱신한다. E2E는 실제 `Stack`의 소유 HOME/XDG/Git/tmux fixture와 기존 `RpcClient`의 Unix 소켓 준비 경로를 사용하며 화면은 게이트웨이를 통과한다. hook 호출→목록 2초와 생성 전체 10초는 별도로 기록한다. 세 시나리오는 수집만 확인했고 실행은 Task24에서 한다. 아래 예제보다 실제 코드와 회귀 테스트를 우선한다.
 
 **Files:**
 - Create: `app/src/features/agents/AgentGrid.tsx`, `app/src/features/notifications/{store,NotificationCenter,AttentionBridge}.tsx|ts`
@@ -2167,7 +2181,7 @@ git add app/src && git commit -m "feat(app): review, instruct, rebase, merge and
     - [새 창으로]는 `openPopout("agents-grid")`
   - 분리 창: `/popout/agent/$id`(상세 전체), `/popout/agents-grid`
 
-- [ ] **Step 1: 실패하는 테스트(알림 묶기)**
+- [x] **Step 1: 실패하는 테스트(알림 묶기)**
 
 ```ts
 // app/src/features/notifications/store.test.ts
@@ -2195,7 +2209,7 @@ test("keeps at most 100 notifications", () => {
 });
 ```
 
-- [ ] **Step 2: 구현**
+- [x] **Step 2: 구현**
 
 ```ts
 // app/src/features/notifications/store.ts
@@ -2293,7 +2307,7 @@ export function AttentionBridge() {
 
 `AttentionBridge`는 `App.tsx`에서 `!location.pathname.startsWith("/popout/")`일 때만 렌더한다.
 
-- [ ] **Step 3: E2E 준비**
+- [x] **Step 3: E2E 준비**
 
 `app/e2e/support.ts`의 `makeEnv()`에 다음을 추가한다.
 - `projects/gamma`를 실제 git 저장소로 만든다(`git init -b main`, 파일 하나 커밋, `user.name/email`은 저장소 로컬 설정).
@@ -2310,7 +2324,7 @@ hooks = "none"
 - `<home>/fake-tool.sh`는 04 Task 9의 `COMMITTING_TOOL` 앞에 권한 요청 단계를 더한 스크립트다(`SessionStart` → `Notification(permission_prompt, "needs Bash")` → `read` → 파일 커밋 → `Stop` → `sleep 600`).
 - `startDaemon`의 env에 `DEVBOX_NO_SCOPE: "1"`을 더한다.
 
-- [ ] **Step 4: E2E**
+- [x] **Step 4: E2E**
 
 ```ts
 // app/e2e/agents.spec.ts
@@ -2417,18 +2431,22 @@ test.describe("with a task waiting for input", () => {
 ```
 - SC3의 2초 기준은 hook 이벤트 수신부터 목록 반영까지다. 위 시험은 전체 생성 흐름(worktree·tmux·bash 시작 포함)을 10초로 잡고, hook → 목록 구간은 데몬 통합 시험(04 Task 8)에서 잰다(Task 24에서 수치 기록).
 
-- [ ] **Step 5: 통과·커밋·묶음 L 끝**
+- [x] **Step 5: 통과·커밋·묶음 L 끝**
 
 ```bash
-pnpm --filter app exec vitest run src/features && pnpm --filter app exec playwright test e2e/agents.spec.ts
+pnpm --filter app exec vitest run src/features
+# E2E e2e/agents.spec.ts는 S1 PR 끝 통합 검증에서 실행한다.
 git add app && git commit -m "feat(app): add the agent grid, notification center and agent end-to-end journeys"
-# 묶음 L 끝: PROGRESS.md의 묶음 L 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 L 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
 
 ### Task 20: 프로젝트 전환기 카드·시작 구성·clone
+
+> **2026-10-13 사용자 승인 보정:** 새 작업·시작 구성·테스트·폐기/정리는 공통 프로젝트 신뢰 확인을 사용한다(01-design §7). 실행 경로와 setup/test/teardown·시작 명령, 시작 에이전트의 도구와 지시문을 보여 주고 정확히 본 설정 digest만 승인한다. 확인 중 설정이 바뀌면 새 내용을 다시 보여 준다. 취소하면 실행하지 않는다. 파괴적 동작은 신뢰 승인 뒤 기존 Git 상태 확인 절차도 다시 거치며, 등록·clone만으로 승인하거나 실행하지 않는다. 화면 확인과 별개로 데몬이 모든 실행 경로를 검사한다.
+
+기존 Task 20 범위 구현·별도 검토 완료. 신뢰 확인 추가 범위도 구현·독립 검토·관련 회귀와 영향 E2E를 완료했다(2026-10-14). 최종 SHA Windows 영향 재수용은 별도다. 실제 `ProjectConfig.launch`는 기본 빈 배열 객체이므로 실행 대상이 있을 때만 버튼을 표시한다. 외부 열기는 현재 Ready 연결의 검증된 배포판을 사용하며, VS Code는 공식 CLI wrapper와 동등한 실행 파일·인자 호출, Windows Terminal 시작 폴더는 UNC로 변환한다. 프론트71·순수 Rust8 고유79개와 타입 검사 통과, 메뉴 종료 포커스 회귀 수정 후 Astra 재검토 PASS. 기존 Task 20 완료 당시에는 E2E 1개를 작성·수집했으며, 이후 실제 영향 E2E 실행 결과는 PROGRESS에 기록했다.
 
 **Files:**
 - Modify: `app/src/features/projects/ProjectSwitcher.tsx`, `AddProjectDialog.tsx`
@@ -2441,12 +2459,12 @@ pnpm check && git push origin v1/s1-agents-terminal
   - 전환기 행 = `ProjectCard`: 이름·경로·브랜치·변경 여부·앞섬/뒤처짐·터미널 수·열린 에이전트(입력 대기 수)
     - 카드 오른쪽 [시작 구성 실행]은 `[launch]`가 있을 때만 보인다.
     - 설정 파일 오류가 있으면 카드에 경고 아이콘 + 툴팁으로 오류 문구를 보인다.
-  - [시작 구성 실행]: `projects.launch` 뒤 그 프로젝트로 전환하고 터미널 섹션으로 이동한다. 결과 토스트는 "터미널 n개 · 에이전트 m개를 시작했습니다"다.
+  - [시작 구성 실행]: `projects.launch`가 반환한 정확한 `terminalIds`를 해당 프로젝트의 기존 배치에 탭으로 추가한 뒤 터미널 섹션으로 이동한다. 응답 `rev`보다 오래된 목록은 새 탭을 제거하지 못하며, 일시적인 프로젝트별 보호 상태는 최신 목록 확인 뒤 해제한다. 결과 토스트는 "터미널 n개 · 에이전트 m개를 시작했습니다"다.
   - 카드의 별 버튼은 즐겨찾기(`projects.set_favorite`)다. 즐겨찾기가 위로 온다.
   - 카드 메뉴의 외부 열기: [VS Code로 열기](`code --remote wsl+<배포판> <경로>`) · [탐색기로 열기](`\\wsl.localhost\<배포판>\<경로>`) · [Windows Terminal로 열기](`wt.exe -p <배포판> -d <경로>`). Tauri 명령 `open_external({ kind, path })`가 Windows 쪽에서 실행하고, 브라우저 개발 화면에서는 메뉴를 숨긴다.
   - 프로젝트 추가 대화상자에 [Git 주소로 가져오기] 탭: URL + 대상 폴더(기본 `~/projects/<이름>`) → `projects.clone`(진행 중 표시, 실패 시 git 메시지)
 
-- [ ] **Step 1: 실패하는 테스트(카드 정보와 시작 구성)**
+- [x] **Step 1: 실패하는 테스트(카드 정보와 시작 구성)**
 
 ```tsx
 // app/src/features/projects/ProjectSwitcher.test.tsx 에 추가
@@ -2455,7 +2473,7 @@ test("cards show git and agent summary and run the launch profile", async () => 
     "projects.list": { rev: "3", items: [{ id: "a", name: "devbox", path: "/home/u/projects/devbox", favorite: false, addedMs: 1 }] },
     "projects.summary": { items: [{ id: "a", branch: "main", dirty: true, ahead: 2, behind: 0, terminals: 3, agents: { open: 2, attention: 1 } }] },
     "projects.config": { config: { agent: {}, launch: { services: [], terminals: [{ name: "shell" }], agents: [] } }, error: null },
-    "projects.launch": { terminals: 1, agents: 0 },
+    "projects.launch": { terminals: 1, agents: 0, terminalIds: ["t1"], rev: "2" },
   });
   render(<RpcProvider client={client}><ProjectSwitcher open onOpenChange={() => {}} /></RpcProvider>);
   expect(await screen.findByText("main")).toBeInTheDocument();
@@ -2468,14 +2486,14 @@ test("cards show git and agent summary and run the launch profile", async () => 
 });
 ```
 
-`projects.launch`의 결과 타입은 04 Task 11의 `LaunchResult { terminals, agents }`다.
+`projects.launch`의 결과 타입은 04 Task 11의 `LaunchResult { terminals, agents, terminalIds, rev }`다.
 
-- [ ] **Step 2: 구현** — 위 Interfaces대로 `ProjectCard`를 만들고 `ProjectSwitcher`의 행을 바꾼다.
+- [x] **Step 2: 구현** — 위 Interfaces대로 `ProjectCard`를 만들고 `ProjectSwitcher`의 행을 바꾼다.
   - `projects.summary`는 전환기가 열릴 때만 조회한다(`enabled: open`).
   - `projects.config`는 카드가 보일 때 프로젝트마다 조회한다(`enabled: open`, 결과는 30초 캐시).
   - `AddProjectDialog`에 `Tabs`(폴더에서 · Git 주소로)를 두고, 두 번째 탭은 `projects.clone`을 부른다.
 
-- [ ] **Step 3: E2E(시작 구성)**
+- [x] **Step 3: E2E 작성·수집(시작 구성, 실행은 Task24)**
 
 ```ts
 // app/e2e/launch.spec.ts
@@ -2498,16 +2516,19 @@ test("launch profile opens its terminals in one action", async ({ page }) => {
 
 `gamma`가 아직 등록되지 않았으면 이 시험의 `beforeAll`에서 `rpc("projects.add", { path })`로 등록한다(Task 19의 `support.ts` 보조 함수).
 
-- [ ] **Step 4: 통과·커밋**
+- [x] **Step 4: 통과·커밋**
 
 ```bash
-pnpm --filter app exec vitest run src/features/projects && pnpm --filter app exec playwright test e2e/launch.spec.ts
+pnpm --filter app exec vitest run src/features/projects
+# E2E e2e/launch.spec.ts는 S1 PR 끝 통합 검증에서 실행한다.
 git add app && git commit -m "feat(app): show project cards with git and agent summary and run launch profiles"
 ```
 
 ---
 
 ### Task 21: 설정 — 에이전트·셸 환경 다시 읽기
+
+구현·별도 검토 완료. 실제 점검 필드는 `message`/`fix`이며 도구는 데몬 PATH, hook은 실제 실행 권한으로 검사한다. `system.refresh_env`는 setup의 캡처·환경 기록만 재사용한다. 관리형 데몬은 기존 작업 drain 후 nonzero를 반환해 `Restart=on-failure`로 재시작하며 foreground/test는 종료하지 않는다. `system.info.configPath`로 설정 위치를 전달한다. 설정5탭·실시간 환경설정과 저장 실패 보존·숫자 직접 입력 회귀를 포함해 Rust41·프론트53 고유94개 통과 및 Astra 재검토 PASS. 소유 fixture RPC는 검증했으나 실제 managed systemd 재시작·Windows 실기는 Task24에 수행한다.
 
 **Files:**
 - Modify: `crates/cli/src/doctor.rs`(도구 점검 추가), `crates/protocol/src/system.rs`(`system.refresh_env` 선언), `crates/cli/src/daemon/routes.rs`(등록)
@@ -2536,7 +2557,7 @@ git add app && git commit -m "feat(app): show project cards with git and agent s
   - 설정 › 일반 탭: 테마(시스템·다크·라이트), UI 배율(90–150%), 터미널 글꼴 크기, 시작 섹션
   - `openSettings(tab: "general"|"agents"|"shortcuts"|"diagnostics"|"about")`(`app/src/features/settings/open.ts`): `useSettingsUi`(Zustand)에 탭을 두고 `/settings`로 이동한다. Task 17의 [연결 확인] 배너 버튼을 `openSettings("agents")`로 바꾼다.
 
-- [ ] **Step 1: 실패하는 테스트(Rust, doctor)**
+- [x] **Step 1: 실패하는 테스트(Rust, doctor)**
 
 ```rust
 // crates/cli/src/doctor.rs 의 tests에 추가
@@ -2553,7 +2574,7 @@ fn missing_agent_tools_are_warnings_not_errors() {
 
 S0b `Probe` 트레잇에 `fn which(&self, name: &str) -> bool`이 없으면 추가한다. 실제 구현은 `which::which(name).is_ok()`이고, `FakeProbe`는 `which` 목록으로 답한다.
 
-- [ ] **Step 2: 실패하는 테스트(화면)**
+- [x] **Step 2: 실패하는 테스트(화면)**
 
 ```tsx
 // app/src/features/settings/AgentsSettings.test.tsx
@@ -2581,19 +2602,20 @@ test("shows tool checks and refreshes the shell environment", async () => {
 
 S0b의 `Check` 필드 이름(`id`·`status`·`title`·`detail`)이 다르면 그 이름에 맞춘다.
 
-- [ ] **Step 3: 구현·통과·커밋·묶음 M 끝**
+- [x] **Step 3: 구현·통과·커밋·묶음 M 끝**
 
 ```bash
 cargo test -p devbox-cli doctor && cargo run -q -p xtask -- gen-ts
 pnpm --filter app exec vitest run src/features/settings && pnpm --filter app typecheck
 git add crates xtask app && git commit -m "feat(settings): check agent tools and reload the shell environment"
-# 묶음 M 끝: PROGRESS.md의 묶음 M 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 M 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
 
 ### Task 22: Windows 알림·딥 링크·작업 표시줄 배지 (`crates/win`)
+
+구현·독립 검토 완료. 순수 기능은 `core/notify.rs`, Windows 연결은 `platform/notify.rs`로 나눴다. 초기 링크를 화면 준비까지 보존하고 순번·확인 응답으로 오래된 스냅샷과 중복 이동을 막는다. 알림은 고정된 메인 창 소유권과 현재 상세 화면을 사용하며 격자의 잔존 선택 ID로 숨기지 않는다. XML 제어 문자·긴 태그와 COM/GDI 자원 수명을 보완했다. 순수 Rust6·프론트21 및 독립 Shell 회귀1 통과. Windows package에 `devbox-win` test/clippy를 추가했으며 기존 workflow의 모든 비문서 변경 gate가 새 crate를 포함한다. 플러그인 JS IPC를 사용하지 않아 capabilities 추가는 필요 없다. 실제 Windows 컴파일·설치본 알림·배지 검증은 Task24에 수행한다.
 
 **Files:**
 - Create: `crates/win/Cargo.toml`, `crates/win/src/lib.rs`, `crates/win/src/toast.rs`, `crates/win/src/taskbar.rs`
@@ -2619,7 +2641,7 @@ pnpm check && git push origin v1/s1-agents-terminal
   - 딥 링크: `devbox://agents/<id>` → 기존 인스턴스가 `devbox://navigate` 이벤트(`{ to: "/agents", search: { id } }`)를 메인 창에 보내고 창을 앞으로 가져온다.
   - 개발 실행(설치 안 된 AUMID)에서는 토스트가 실패할 수 있다. 실패하면 깜빡임만 하고, 한 번만 로그에 남긴다.
 
-- [ ] **Step 1: 실패하는 테스트(플랫폼 무관)**
+- [x] **Step 1: 실패하는 테스트(플랫폼 무관)**
 
 ```rust
 // crates/win/src/toast.rs 끝
@@ -2662,7 +2684,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 구현 — 플랫폼 무관 부분**
+- [x] **Step 2: 구현 — 플랫폼 무관 부분**
 
 ```rust
 // crates/win/src/toast.rs (테스트 위)
@@ -2727,7 +2749,7 @@ windows = { version = "0.62", features = ["Data_Xml_Dom", "UI_Notifications", "W
 
 AUMID는 설치본의 바로가기에 Tauri NSIS가 넣는 identifier(`io.github.jihoon22lee.devbox`)를 쓴다. S0a·S0b 실사용에서 실제 값을 확인하고 다르면 상수를 고친다.
 
-- [ ] **Step 3: 구현 — Tauri 연결**
+- [x] **Step 3: 구현 — Tauri 연결**
 
 ```rust
 // app/src-tauri/src/notify.rs
@@ -2808,7 +2830,7 @@ fn log_once(msg: &str) {
 - `native.ts`의 `nativeAttention`은 `visible: document.visibilityState === "visible" && 현재 경로가 /agents?id=<id>`를 함께 넘긴다.
 - `App.tsx`는 `listen("devbox://navigate", e => router.navigate(e.payload))`를 메인 창에서만 등록한다.
 
-- [ ] **Step 4: 통과·커밋**
+- [x] **Step 4: 통과·커밋**
 
 ```bash
 cargo test -p devbox-win
@@ -2820,6 +2842,8 @@ Windows 쪽 컴파일과 시험은 PR의 Windows 워크플로(`crates/win/**` �
 ---
 
 ### Task 23: 트레이·전역 단축키·자동 시작·닫기 동작
+
+구현·별도 재검토 완료. 실제 구현은 `core/{shortcuts,preferences,intents}`와 `platform/{shortcuts,preferences,intents,tray}`로 분리했다. 첫 실행과 종료 확인은 연결 게이트 밖에서 요청을 보존하며, 작업 수 미확인·끊김을 0으로 취급하지 않는다. 단축키는 OS 등록·설정 저장 실패를 복구하고 복구 실패 후 실제 등록 상태로 재시도한다. 이미 열린 팔레트 호출은 소비하여 닫은 뒤 재열리지 않는다. 프론트72·순수 Rust44 고유116개와 타입 검사 통과, Astra 재검토 PASS. 실제 Windows 컴파일·트레이·단축키·자동 시작·Job 수명은 Task24에서 검증한다.
 
 **Files:**
 - Create: `app/src-tauri/src/tray.rs`, `app/src-tauri/src/shortcuts.rs`
@@ -2849,7 +2873,7 @@ Windows 쪽 컴파일과 시험은 PR의 Windows 워크플로(`crates/win/**` �
     - 답을 앱 설정에 기록한다(다시 묻지 않음). 설정 › 일반에서 바꿀 수 있다.
   - 첫 실행 화면은 게이트가 `ready`가 된 뒤 한 번만 보인다. 자동 시작과 `instanceIdleTimeout` 안내를 담는다. 트레이가 브리지를 붙잡고 있어 WSL이 유휴로 꺼지지 않는다는 설명이다(01-design §14 R1).
 
-- [ ] **Step 1: 실패하는 테스트**
+- [x] **Step 1: 실패하는 테스트**
 
 ```rust
 // app/src-tauri/src/shortcuts.rs 끝
@@ -2890,7 +2914,7 @@ test("asks once about autostart with it on by default", async () => {
 });
 ```
 
-- [ ] **Step 2: 구현 요점**
+- [x] **Step 2: 구현 요점**
 
 ```rust
 // app/src-tauri/src/shortcuts.rs (테스트 위)
@@ -2942,23 +2966,22 @@ pub fn register(app: &tauri::AppHandle, status: &std::sync::Mutex<Vec<(String, S
 - `App.tsx`는 `listen("devbox://palette", () => setPalette(true))`를 등록한다.
 - 설정 › 단축키는 앱 단축키 표(레지스트리에서 생성, 읽기 전용)와 전역 단축키(팔레트 입력란 + 상태)를 보인다. 변경하면 `set_palette_shortcut` → 재등록이고, 결과를 표시한다.
 
-- [ ] **Step 3: 통과·커밋·묶음 N 끝**
+- [x] **Step 3: 통과·커밋·묶음 N 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/shell/FirstRun.test.tsx && pnpm --filter app typecheck
 git add app && git commit -m "feat(app): add tray, global palette shortcut, autostart and close-to-tray"
-# 묶음 N 끝: PROGRESS.md의 묶음 N 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 N 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
-Windows 워크플로가 통과하면 머지한다. Rust Windows 코드의 실제 동작은 Task 24의 확인 목록에서 본다.
+Task 24에서 브랜치 전체 검토·최종 검증·Windows 설치본 스모크를 완료하고 필수 CI 3개와 최종 SHA 자동 코드·보안 리뷰 완료 뒤 squash 머지한다.
 
 ---
 
-### Task 24: S1 완료 — 성공 기준 측정·규모 통계·확인 목록
+### Task 24: S1 완료 — 성공 기준 측정·규모 통계·에이전트 수용 검증
 
 **Files:**
-- Create: `crates/cli/tests/survival.rs`(SC4), `crates/cli/tests/terminal_latency.rs`(SC10), `scripts/loc.sh`(SC8)
+- Create: `crates/cli/tests/survival.rs`(SC4), `crates/cli/tests/terminal_latency.rs`(SC10 부분 진단), `app/acceptance/`(SC10 Windows 전체 경로 계측), `scripts/loc.sh`(SC8)
 - Modify: `crates/cli/tests/agents.rs`(SC3 시간 측정 출력)
 - Modify: `04-s1-agents-terminal.md`·`04b-s1-app.md`(상태 줄), `PROGRESS.md`(S1 완료·PR 행·현재 위치)
 
@@ -2970,135 +2993,33 @@ Windows 워크플로가 통과하면 머지한다. Rust Windows 코드의 실제
 
 - [ ] **Step 1: SC4 통합 시험**
 
-```rust
-// crates/cli/tests/survival.rs
-mod support;
-use std::time::Duration;
-use support::TestDaemon;
-
-#[tokio::test]
-async fn sessions_and_agent_tasks_survive_a_daemon_restart() {
-    let mut d = TestDaemon::start_with_env(&[("DEVBOX_NO_SCOPE", "1")]);
-    d.write_config("[[agents.profiles]]\nid = \"sleepy\"\nlabel = \"S\"\ncommand = \"sleep 600\"\nhooks = \"none\"\n");
-    let repo = d.git_repo("projects/keep");
-    let c = d.client().await;
-    let term: serde_json::Value = serde_json::from_str(&c.raw_call("terminal.create", serde_json::json!({ "cwd": d.home.path(), "command": "bash --norc" }), None).await.unwrap()).unwrap();
-    let p = d.add_project(&c, &repo).await;
-    let agent = d.create_agent(&c, &p, "sleepy", true).await;
-    d.wait_for(&c, &agent, "running", Duration::from_secs(10)).await;
-
-    d.restart();
-    let c = d.client().await;
-    let list: serde_json::Value = serde_json::from_str(&c.raw_call("terminal.list", serde_json::json!({}), None).await.unwrap()).unwrap();
-    assert!(list["items"].as_array().unwrap().iter().any(|s| s["id"] == term["id"] && s["alive"] == true));
-    let a: serde_json::Value = serde_json::from_str(&c.raw_call("agents.get", serde_json::json!({ "id": agent }), None).await.unwrap()).unwrap();
-    assert_eq!(a["state"], "running", "a live tmux session must not be marked lost");
-}
-```
-
-`TestDaemon::restart`는 데몬 프로세스만 다시 띄우고 tmux 서버(`-L devbox-<test 인스턴스>`)는 그대로 둔다. S0b 구현이 tmux까지 끄면 Drop에서만 끄도록 고친다.
+`crates/cli/tests/survival.rs`의 실제 구현은 에이전트 작업·worktree와 일반 터미널을 생성하고, 출력 기록을 만든 뒤 연결을 닫고 데몬만 재시작한다. `terminal.list`의 alive·에이전트 상태/동일 자원·재attach 기록·재시작 뒤 실제 새 입력 응답까지 검증한다. 기존 `terminal_sessions.rs`의 메타데이터 회귀와 `agents.rs`의 idle 유지/session_lost 구분도 보존한다. 일반 fixture는 `DEVBOX_NO_SCOPE=1`을 명시하며 실제 systemd/Windows 수용 검증을 대신하지 않는다.
 
 - [ ] **Step 2: SC3 측정**
 
-04 Task 8의 `agent_task_goes_from_preparing_to_waiting_to_idle_via_hooks`에 다음을 추가한다.
-1. `agents.changed`를 구독한다.
-2. 가짜 도구가 `Notification`을 보내기 직전 시각(밀리초)을 테스트 HOME 안의 `hook-sent.ts` 파일에 쓰게 한다.
-3. 이벤트 수신 시각과의 차이를 `eprintln!("SC3 hook→event {ms}ms")`로 남긴다.
-4. `assert!(ms < 2000)`.
-
-Windows 알림까지의 구간은 확인 목록 3번에서 본다.
+`crates/cli/tests/agents.rs`의 fixture 도구가 대기/턴 종료 hook CLI 실행 직전에 나노초 시각을 소유 HOME에 기록한다. 테스트는 `agents.changed`를 먼저 구독하고 실제 이벤트 수신 시각과의 차이를 출력하며 각각 2초 미만을 요구한다. 초기 lifecycle 이벤트와 대기/idle 이벤트를 소유 gate로 구분한다. 화면 목록 구간은 기존 `app/e2e/agents.spec.ts`에서 측정하며 실제 도구 hook과 Windows 토스트는 Step 4에서 별도로 확인한다.
 
 - [ ] **Step 2b: SC10 터미널 반응 측정 (IR-6)**
 
-데몬·PTY·tmux를 거친 입력 왕복과, 한 터미널이 출력을 쏟는 동안 다른 연결의 응답 지연을 잰다. 브리지 구간은 S0a 결과(`09-s0a-results.md`)의 64B p95를 더해 판정한다.
+SC10의 판정은 입력 **1바이트**를 보낸 프론트 클라이언트부터 같은 바이트 수신까지 전체 경로를 직접 잰 값만 사용한다. 브리지와 Linux PTY의 백분위를 더하지 않는다. `crates/cli/tests/terminal_latency.rs`는 daemon→PTY→tmux의 부분 경로 진단으로 명시되며 Windows 전체 기준 PASS가 아니다.
 
-```rust
-// crates/cli/tests/terminal_latency.rs
-mod support;
-use std::time::{Duration, Instant};
-use support::TestDaemon;
+Windows 설치본의 두 소유 native popout에서 `app/acceptance/terminal-probe.ts`를 별도 번들로 주입하고, 기존 생산 `RpcClient`를 사용한다. `performance.now()`로 frontend→Tauri→Windows wsl.exe bridge→daemon PTY→tmux→return의 200개 샘플(추가 warm-up 10개, 화면 그리기 제외)을 잰다. p50 10ms·p95 25ms 이하를 판정한다. 프론트/제품에 debug API를 추가하거나 같은 창의 Tauri 연결을 교체하지 않는다.
 
-fn pct(v: &mut Vec<f64>, p: f64) -> f64 {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    v[((v.len() as f64 - 1.0) * p).round() as usize]
-}
+같은 도구의 unpaced 100,000,000바이트 출력 fixture와 다른 창의 ping 클라이언트를 동시에 실행한다. 출력 중 시작한 최소 20개 ping(출력 종료 뒤 도착한 응답도 포함)의 p95 100ms 이하와 완료 직후 그 터미널 1바이트 echo 1000ms 이하를 검증한다. 동시 sample 부족은 실패/근거 부족이며 출력 생산자를 늦춰 PASS를 만들지 않는다. 원시 샘플·source SHA·설치본 출처/해시·창/인스턴스·미실행/FAIL을 기록한다. CDP 주입·호출·소유 정리는 [app/acceptance/README.md](../../../../app/acceptance/README.md)를 따른다.
 
-#[tokio::test]
-async fn input_echo_p95_and_ping_during_flood_meet_sc10() {
-    let d = TestDaemon::start();
-    let c = d.client().await;
-    let s: serde_json::Value = serde_json::from_str(
-        &c.raw_call("terminal.create", serde_json::json!({ "cwd": d.home.path(), "command": "sh -c 'stty raw -echo; cat'" }), None).await.unwrap(),
-    ).unwrap();
-    let a = c.open_stream("terminal.attach", serde_json::json!({ "id": s["id"], "cols": 120, "rows": 40, "readOnly": false })).await.unwrap();
-    a.credit(1 << 22).await;
-    let _ = a.read_available(Duration::from_millis(500)).await;
-
-    let marks = ["가", "나", "다", "라"];
-    let mut echo = Vec::new();
-    for i in 0..200 {
-        let m = marks[i % marks.len()].as_bytes();
-        let t0 = Instant::now();
-        a.write(m).await;
-        a.read_until(m, Duration::from_secs(1)).await;
-        echo.push(t0.elapsed().as_secs_f64() * 1000.0);
-        a.credit(1 << 16).await;
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let (p50, p95) = (pct(&mut echo.clone(), 0.5), pct(&mut echo, 0.95));
-    eprintln!("SC10 echo p50={p50:.2}ms p95={p95:.2}ms (브리지 제외)");
-
-    // 다른 세션이 100MB를 출력하는 동안, 그 출력을 읽는 화면이 느려도(신용을 조금만 줌) 다른 연결의 ping은 막히지 않아야 한다.
-    let f: serde_json::Value = serde_json::from_str(
-        &c.raw_call("terminal.create", serde_json::json!({ "cwd": d.home.path(), "command": "sh -c 'yes x | head -c 100000000; sleep 60'" }), None).await.unwrap(),
-    ).unwrap();
-    let flood = c.open_stream("terminal.attach", serde_json::json!({ "id": f["id"], "cols": 120, "rows": 40, "readOnly": true })).await.unwrap();
-    flood.credit(1 << 18).await;
-    let other = d.client().await;
-    let mut ping = Vec::new();
-    for _ in 0..100 {
-        let t0 = Instant::now();
-        other.raw_call("system.ping", serde_json::json!({}), None).await.unwrap();
-        ping.push(t0.elapsed().as_secs_f64() * 1000.0);
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    let ping95 = pct(&mut ping, 0.95);
-    eprintln!("SC10 ping during flood p95={ping95:.2}ms");
-
-    assert!(p50 <= 10.0 && p95 <= 25.0, "echo p50={p50} p95={p95}");
-    assert!(ping95 <= 100.0, "ping p95 during flood={ping95}");
-}
-```
-
-판정이 실패하면 시험을 느슨하게 고치지 않는다. 원인(PTY 읽기 크기, 송신 큐 공정성, tmux 다시 그리기)을 찾아 04 Task 1·4를 고친다.
+판정이 실패하면 시험을 느슨하게 고치지 않는다. 실제 경로의 PTY 읽기·송신 공정성·tmux 갱신 원인을 찾아 고친다.
 
 - [ ] **Step 3: 규모 통계**
 
-```bash
-# scripts/loc.sh
-#!/usr/bin/env bash
-# 제품 코드 줄 수(SC8 관찰용, 게이트 아님). 테스트·생성 파일·E2E는 뺀다.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-budget=${1:-60000}
-rust=0
-while IFS= read -r f; do
-  # 파일 끝의 #[cfg(test)] 모듈부터는 세지 않는다.
-  n=$(awk '/^#\[cfg\(test\)\]/{exit} {c++} END{print c+0}' "$f")
-  rust=$((rust + n))
-done < <(git ls-files 'crates/*.rs' 'app/src-tauri/src/*.rs' 'xtask/*.rs' | grep -v -e '/tests/' -e '/benches/')
-ts=$(git ls-files 'app/src/*.ts' 'app/src/*.tsx' | grep -v -e '\.test\.' -e '/gen/' -e '^app/src/test/' | xargs -r cat | wc -l)
-total=$((rust + ts))
-echo "rust=$rust ts=$ts total=$total budget=$budget"
-if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝트 전에 단순화를 검토하세요"; fi
-```
+`bash scripts/loc.sh 60000`는 `xtask/loc.py`로 추적된 Rust/TS 제품 코드 줄 수를 집계한다. 테스트·생성 파일·E2E·수용 도구는 제외한다. Rust 문자열/raw 문자열/문자/주석을 가린 뒤 `cfg(test)`·`cfg(all(test,...))` 등의 테스트 전용 item만 제거하며 파일의 앞/중간 테스트 뒤 제품 코드와 `cfg(any(windows,test))` 제품 코드는 보존한다. `xtask/tests/test_loc.py`가 실제 setup/taskbar/store 배치와 합성 fixture를 검증한다. 예산은 관찰값이며 gate가 아니다. S3 끝에는 120000, S6 끝에는 200000으로 관찰한다. PR 본문에는 `.github`+`scripts` 전체 파일 줄 수와 workflow 개수도 별도로 기록한다.
 
-`bash scripts/loc.sh 60000` 결과를 PR 본문에 적는다. S3 끝에는 `120000`, S6 끝에는 `200000`을 인자로 준다.
+- [ ] **Step 4: 에이전트 실제 WSL·Windows 설치본 스모크**
 
-- [ ] **Step 4: 확인 목록(사용자, 10개)**
-  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
+01-design §11의 수용 검증 정책 전체를 적용한다. 고유 `test-<난수>` 인스턴스와 실제 user systemd에서 `DEVBOX_NO_SCOPE` 없이 `systemd-run --user --scope` 경로를 검증한다. 실제 claude·codex hook을 각각 1회 발생시켜 agents 상태 반영을 확인한다. 데몬 재시작 세션 유지와 tmux 서버 종료 시 SIGHUP 정책(01 §4.3)을 각각 확인하고, SIGHUP 무시 프로세스의 scope는 작업 종료 시 명시적으로 멈춘다. 시험이 만든 자원만 정리한다. Step 1의 scope 우회 시험은 이 실제 경로를 대체하지 않는다.
 
-사용자는 WSL에서 `bash scripts/dogfood.sh v1/s1-agents-terminal`로 설치 파일을 받아 설치한 뒤 확인한다(브랜치를 push해 두면 스크립트가 그 커밋의 `windows.yml` 실행을 찾거나 새로 시작한다. Windows 쪽 빌드 도구가 있으면 `scripts/win-build.ps1`도 된다).
+Windows는 에이전트가 WSL에서 절대 경로 PowerShell로 최종 SHA의 `windows.yml` CI 설치본을 설치·실행·제거한다. `scripts/dogfood.sh`와 같은 저장소·workflow·run·source SHA·SHA256 검증 뒤 실행한다. 기존 v1 설치본 또는 `devbox@prod` 데이터 발견 시 제거하지 않고 멈춰 묻는다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 devbox 데이터는 보존하고 스모크 소유 설치·데이터·unit·소켓만 정리한다. UAC·재부팅·사용자 클릭이 필요하면 중단 보고한다.
+
+S0b 범위(첫 실행 배포판 선택·WSL 바이너리 배치·setup·wsl.exe 브리지·ping·projects 목록/추가·창 닫기 뒤 Job 정리)와 아래 S1 범위를 확인한다. S1 트레이 창 닫기와 앱 완전 종료의 Job 수명을 구분한다. 앱·데몬 로그·systemctl unit 상태·진단·필요시 스크린샷을 근거로 삼고 UI 자동화(tauri-driver/WebDriver 등)가 불가능한 항목만 미실행으로 남긴다. PROGRESS·PR에 출처와 PASS·FAIL·미실행을 구분하며 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다. 사용자에게 확인 목록을 전달하거나 중간 실사용을 기다리지 않는다.
 
 1. 새 에이전트 작업(Claude Code, 작업 폴더 켬)을 만들면 1번의 [시작]으로 작업 폴더·세션·도구 실행까지 이어진다.
 2. Claude가 권한을 물으면 2초 안에 목록 "입력 대기"에 메시지가 보인다.
@@ -3106,21 +3027,15 @@ if [ "$total" -gt "$budget" ]; then echo "예산 초과: 다음 하위 프로젝
 4. 작성란에서 한글로 지시를 쓰고 Ctrl+Enter → 에이전트가 받아 진행한다(조합 중 글자 누락 없음).
 5. 에이전트 두 개를 동시에 돌리고 격자 보기에서 둘 다 실시간으로 보인다.
 6. 변경 탭에서 줄을 인용해 지시하고, squash 병합 → 기준 체크아웃에 반영되고 작업 폴더가 정리된다.
-7. 앱 창을 닫았다(트레이) 다시 열어도 터미널·에이전트 세션이 그대로다. `systemctl --user restart devbox@prod`를 해도 그대로다.
+7. 앱 창을 닫았다(트레이) 다시 열어도 터미널·에이전트 세션이 그대로다. 이번 스모크가 만든 인스턴스의 데몬만 `systemctl --user restart devbox@test-<난수>`로 재시작해도 그대로다. 설치본이 prod에만 연결한다면 사전 확인으로 기존 prod 부재와 이번 스모크의 소유를 입증한 prod만 대상으로 한다.
 8. 터미널 탭·분할을 만들고 하나를 새 창으로 띄운다. 새 창을 닫아도 세션은 목록에 남는다.
 9. 트레이 상주 중 Ctrl+Alt+Space로 팔레트가 뜬다(개발 빌드면 Ctrl+Alt+Shift+Space).
 10. 프로젝트 전환기 카드에서 [시작 구성 실행]으로 터미널들이 한 번에 열린다.
 
-- [ ] **Step 5: 상태 갱신·PR**
+- [ ] **Step 5: 브랜치 전체 검토·상태 갱신·PR**
 
-```bash
-git add crates scripts && git commit -m "test: measure S1 success criteria and add a code size report"
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: S0b 완료.*/- 상태: 완료(S1 PR 머지)/' docs/superpowers/plans/2026-10-08-devbox-v1/04-s1-agents-terminal.md
-sed -i 's/^- 상태: 계획 · 미착수 · 시작 조건: \[04-s1-agents-terminal\].*/- 상태: 완료(S1 PR 머지, 확인 목록 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/04b-s1-app.md
-git add docs && git commit -m "docs(plan): mark S1 complete"
-git push origin v1/s1-agents-terminal && gh pr create --base main --head v1/s1-agents-terminal --title "feat: agents, terminal and projects (S1)" --body "S1 에이전트·터미널·프로젝트 전체(04·04b Task 1–24). SC3(hook→목록 n ms)·SC4(데몬 재시작 유지)·SC10(입력 왕복 p50/p95, 출력 폭주 중 ping) 수치, 규모 통계(rust=…, ts=…). 완료·검증 결과를 보고하며 중간 실사용 확인을 요청하지 않는다.
+S1 브랜치 전체를 별도 검토하고 결과를 PROGRESS에 기록한다. 과제별 좁은 검사 뒤 PR 끝 통합 검증을 한 번 모아 수행하고 실패·영향 범위만 재검사한다. 완료 커밋·push 전 Biome CI를 실행한다. `04`·`04b` 머리 상태 줄은 현재 내용을 확인해 **직접 편집**한다(sed 패턴 사용 금지). 머지 전에는 "구현 완료 · PR 수용 검증 중"처럼 실제 상태를 쓰고 PROGRESS에 구현 완료와 PR 수용 완료를 구분한다.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-```
+영어 Conventional Commit과 지정된 사용자 이메일로 커밋한다. 최종 검증 뒤 S1 브랜치를 한 번 push하고 `windows.yml` workflow dispatch로 받은 그 SHA의 Windows CI 산출물로 Step 4 스모크를 마친 뒤 PR을 한 번 연다(00-roadmap §3). PR 본문에는 SC3·SC4·SC10 측정값·규모 통계·브랜치 전체 검토 결과와 Windows 출처·SHA256·PASS/FAIL/미실행을 기록한다. 멀티라인 본문은 파일에 작성해 `gh pr create --body-file`로 전달한다.
 
-CI가 통과하면 `gh pr merge --squash v1/s1-agents-terminal`, worktree·브랜치 정리. 사용자에게 S1 완료·측정값을 간결히 보고하고 **기다리지 않고** S2를 시작한다.
+최종 SHA의 `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 성공과 자동 코드·보안 리뷰 완료를 확인하고 지적을 처리한 뒤 squash 머지한다. 실제 머지 확인 후 상태 줄과 PROGRESS를 갱신하고 00 §3 정리 순서로 소유 worktree·브랜치를 정리한다. S1 완료·측정값·미실행 항목을 간결히 보고하고 사용자 실사용을 기다리지 않고 S2를 시작한다.

@@ -1,5 +1,5 @@
 use crate::model::Project;
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 
 pub const MIGRATION_1: &str = "
 CREATE TABLE projects_projects (
@@ -10,8 +10,39 @@ CREATE TABLE projects_projects (
   added_ms INTEGER NOT NULL
 );";
 
+pub const MIGRATION_2: &str = "
+CREATE TABLE projects_command_trust (
+  project_id TEXT PRIMARY KEY REFERENCES projects_projects(id) ON DELETE CASCADE,
+  canonical_path TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  scope_version INTEGER NOT NULL,
+  approved_ms INTEGER NOT NULL
+);";
+
+pub(crate) fn approved(
+    tx: &Transaction,
+    id: &str,
+    path: &str,
+    digest: &str,
+    scope: u32,
+) -> rusqlite::Result<bool> {
+    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects_command_trust WHERE project_id=?1 AND canonical_path=?2 AND digest=?3 AND scope_version=?4)", params![id,path,digest,scope], |row| row.get(0))
+}
+
+pub(crate) fn approve(
+    tx: &Transaction,
+    id: &str,
+    path: &str,
+    digest: &str,
+    scope: u32,
+    at: i64,
+) -> rusqlite::Result<()> {
+    tx.execute("INSERT INTO projects_command_trust(project_id,canonical_path,digest,scope_version,approved_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(project_id) DO UPDATE SET canonical_path=excluded.canonical_path,digest=excluded.digest,scope_version=excluded.scope_version,approved_ms=excluded.approved_ms", params![id,path,digest,scope,at])?;
+    Ok(())
+}
+
 pub fn all(tx: &Transaction) -> rusqlite::Result<Vec<Project>> {
-    let mut stmt = tx.prepare("SELECT id, name, path, favorite, added_ms FROM projects_projects ORDER BY favorite DESC, name")?;
+    let mut stmt = tx.prepare("SELECT id, name, path, favorite, added_ms FROM projects_projects ORDER BY favorite DESC, name, path, id")?;
     let rows = stmt.query_map([], |r| {
         Ok(Project {
             id: r.get(0)?,
@@ -42,4 +73,63 @@ pub fn exists_path(tx: &Transaction, path: &str) -> rusqlite::Result<bool> {
 
 pub fn delete(tx: &Transaction, id: &str) -> rusqlite::Result<usize> {
     tx.execute("DELETE FROM projects_projects WHERE id = ?1", [id])
+}
+
+/// Optional domains share this database, but projects does not depend on their crates.
+/// Check reservations in the same writer transaction as deletion. Creation must
+/// check the project in its own reservation transaction to fence concurrent removal.
+pub fn has_dependents(tx: &Transaction, id: &str) -> rusqlite::Result<bool> {
+    let has_table = |name: &str| -> rusqlite::Result<bool> {
+        tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+            [name],
+            |row| row.get(0),
+        )
+    };
+    if has_table("terminal_sessions")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM terminal_sessions WHERE project_id=?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(true);
+    }
+    if !has_table("agents_tasks")? {
+        return Ok(false);
+    }
+    // Closed inline history has no owned Git resources. Planned means the
+    // resource reservation was released after both worktree and branch cleanup.
+    let resources = if has_table("agents_runtime")? {
+        "NOT EXISTS(SELECT 1 FROM agents_runtime r WHERE r.id=t.id AND json_extract(r.body,'$.resources')='Planned')"
+    } else {
+        "1"
+    };
+    tx.query_row(&format!(
+        "SELECT EXISTS(SELECT 1 FROM agents_tasks t WHERE project_id=?1 AND (state!='closed' OR (json_extract(body,'$.worktreePath') IS NOT NULL AND ({resources}))))"
+    ), [id], |row| row.get(0))
+}
+
+pub fn get(tx: &Transaction, id: &str) -> rusqlite::Result<Option<Project>> {
+    tx.query_row(
+        "SELECT id, name, path, favorite, added_ms FROM projects_projects WHERE id=?1",
+        [id],
+        |row| {
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                favorite: row.get::<_, i64>(3)? != 0,
+                added_ms: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+}
+
+pub fn set_favorite(tx: &Transaction, id: &str, favorite: bool) -> rusqlite::Result<usize> {
+    tx.execute(
+        "UPDATE projects_projects SET favorite=?2 WHERE id=?1",
+        params![id, favorite],
+    )
 }

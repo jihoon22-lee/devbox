@@ -1,10 +1,18 @@
+export { Badge } from "./Badge";
 export { Banner } from "./Banner";
 export { Button } from "./Button";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { Dialog } from "./Dialog";
+export { DiffView } from "./DiffView";
 export { EmptyState } from "./EmptyState";
 export { ErrorState } from "./ErrorState";
 export { IconButton } from "./IconButton";
 export { Kbd } from "./Kbd";
+export { Menu, type MenuItem } from "./Menu";
+export { Select, type SelectOption } from "./Select";
+export { SplitPane } from "./SplitPane";
 export { StatusDot } from "./StatusDot";
+export { type TabItem, Tabs } from "./Tabs";
+export { TextArea } from "./TextArea";
+export { ToastHost, type ToastInput, useToasts } from "./Toast";
 export { Tooltip, TooltipProvider } from "./Tooltip";

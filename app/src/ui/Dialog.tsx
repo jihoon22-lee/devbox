@@ -10,6 +10,7 @@ export function Dialog(props: {
   children?: ReactNode;
   footer?: ReactNode;
   width?: number;
+  contentId?: string;
   onOpenAutoFocus?: ComponentPropsWithoutRef<typeof D.Content>["onOpenAutoFocus"];
 }) {
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -18,6 +19,7 @@ export function Dialog(props: {
       <D.Portal>
         <D.Overlay data-dialog-overlay="" className={s.overlay} />
         <D.Content
+          {...(props.contentId ? { id: props.contentId } : {})}
           className={s.content}
           style={{ width: props.width ?? 480 }}
           onOpenAutoFocus={(event) => {

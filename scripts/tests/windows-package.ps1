@@ -48,6 +48,7 @@ try {
     Set-Content (Join-Path $release 'Devbox-setup.exe') 'never executed'
     & $copy -Verify
     if ($env:CARGO_TARGET_DIR -ne 'fixture-original-target' -or !($global:DevboxTestcalls -match 'test .*--locked') -or !($global:DevboxTestcalls -match 'tauri build -- --locked')) { throw 'Build contract failed' }
+    if (!($global:DevboxTestcalls -contains 'cargo test -p devbox-win --locked') -or !($global:DevboxTestcalls -contains 'cargo clippy -p devbox-win --all-targets --locked -- -D warnings')) { throw 'Windows notifications crate verification missing' }
     foreach ($failure in @('pnpm', 'cargo')) { $global:DevboxTestfailure = $failure; Reject { & $copy -Verify } }
     $global:DevboxTestfailure = ''; $global:DevboxTestexitCode = 3
     Reject { & $copy }

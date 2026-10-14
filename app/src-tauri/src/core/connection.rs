@@ -2,6 +2,26 @@
 mod tests {
     use super::*;
     #[test]
+    fn external_distro_requires_ready_current_bridge_and_clears_on_close() {
+        let mut c = State::<()> {
+            active_distro: Some("Debian".into()),
+            ..Default::default()
+        };
+        assert!(c.ready_distro().is_err());
+        c.open = true;
+        assert!(c.ready_distro().is_err());
+        c.gate.state = "ready";
+        assert_eq!(c.ready_distro().unwrap(), "Debian");
+        c.generation = 2;
+        assert!(!c.close_generation(1));
+        assert_eq!(c.ready_distro().unwrap(), "Debian");
+        c.cancel.cancel();
+        assert!(c.ready_distro().is_err());
+        assert!(c.close_generation(2));
+        assert!(c.active_distro.is_none());
+        assert!(c.ready_distro().is_err());
+    }
+    #[test]
     fn stale_lease_cannot_detach_or_send_and_new_bridge_survives_old_cleanup() {
         let mut c = State::<()>::default();
         c.attach("main".into(), "old-lease".into(), ()).unwrap();
@@ -34,6 +54,36 @@ mod tests {
         );
         assert!(!c.open);
         assert!(c.writer.is_none());
+    }
+    #[test]
+    fn reconnect_reopens_more_windows_than_writer_slots_before_renderer_frames() {
+        let mut state = State::<()>::default();
+        for number in 0..17 {
+            state
+                .attach(format!("window-{number}"), format!("lease-{number}"), ())
+                .unwrap();
+        }
+        let expected = state.mux.reopen_all();
+        let (writer, mut writes) = mpsc::channel(16);
+        state.writer = Some(writer);
+        state.open = true;
+        state
+            .enqueue_reopens()
+            .expect("all existing windows reopen");
+        assert!(state.open);
+        assert!(!state.cancel.is_cancelled());
+        let mut splitter = FrameSplitter::default();
+        let mut frames = Vec::new();
+        while let Ok(bytes) = writes.try_recv() {
+            frames.extend(splitter.push(&bytes).unwrap());
+        }
+        assert_eq!(frames, expected);
+        assert_eq!(frames.len(), 17);
+        state
+            .send("window-0", "lease-0", vec![5, 0, 0, 0, 1, 0, 0, 0, 0])
+            .unwrap();
+        let renderer = writes.try_recv().unwrap();
+        assert_eq!(splitter.push(&renderer).unwrap().len(), 1);
     }
     #[test]
     fn send_rejects_multiple_or_incomplete_frames() {
@@ -100,6 +150,8 @@ pub struct State<C> {
     pub revision: u64,
     pub generation: u64,
     pub open: bool,
+    /// Assigned only after this generation's validated distro reaches bridge Ready.
+    pub active_distro: Option<String>,
     pub mux: Mux<String>,
     pub channels: HashMap<String, Lease<C>>,
     pub writer: Option<mpsc::Sender<Vec<u8>>>,
@@ -118,6 +170,7 @@ impl<C> Default for State<C> {
             revision: 0,
             generation: 0,
             open: false,
+            active_distro: None,
             mux: Mux::new(),
             channels: HashMap::new(),
             writer: None,
@@ -126,6 +179,14 @@ impl<C> Default for State<C> {
     }
 }
 impl<C> State<C> {
+    pub fn ready_distro(&self) -> Result<&str, IpcError> {
+        if !self.open || self.gate.state != "ready" || self.cancel.is_cancelled() {
+            return Err(IpcError::new("연결이 준비되지 않았습니다"));
+        }
+        self.active_distro
+            .as_deref()
+            .ok_or_else(|| IpcError::new("연결된 배포판이 없습니다"))
+    }
     pub fn bump(&mut self) {
         self.revision = self.revision.checked_add(1).expect("revision exhausted");
     }
@@ -192,6 +253,15 @@ impl<C> State<C> {
             .map_err(|e| IpcError::new(e.to_string()))?;
         self.enqueue(frame)
     }
+    pub fn enqueue_reopens(&mut self) -> Result<(), IpcError> {
+        // The bridge writes bytes, so existing small control frames can share
+        // one queue slot without changing their wire order or framing.
+        let bytes = self.mux.reopen_all().concat();
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        self.enqueue(bytes)
+    }
     pub fn enqueue(&mut self, frame: Vec<u8>) -> Result<(), IpcError> {
         if self.open
             && self
@@ -202,6 +272,7 @@ impl<C> State<C> {
             return Ok(());
         }
         self.open = false;
+        self.active_distro = None;
         self.writer = None;
         self.cancel.cancel();
         self.bump();
@@ -215,6 +286,7 @@ impl<C> State<C> {
         }
         self.writer = None;
         self.open = false;
+        self.active_distro = None;
         self.bump();
         true
     }

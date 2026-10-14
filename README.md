@@ -27,4 +27,6 @@ WSL 바이너리를 빌드하고 소유한 Windows 작업 폴더에서 Tauri를 
 PR의 Windows CI 설치 파일을 `bash scripts/dogfood.sh`로 받는다. 정확한 커밋·실행·파일 해시를 확인하고
 Windows Downloads 아래 새 폴더에 저장하며, 설치는 자동 실행하지 않는다.
 
+Claude Code MCP 등록 예시: `claude mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`.
+
 필수 도구·상세 명령·검증 범위는 [앱 개발 안내](app/README.md)를 따른다.

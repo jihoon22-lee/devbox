@@ -147,7 +147,13 @@ mod tests {
         names.topic::<Changed>();
         assert_eq!(
             names.methods,
-            ["system.ping", "system.info", "system.doctor", "test.undo"]
+            [
+                "system.ping",
+                "system.info",
+                "system.doctor",
+                "system.refresh_env",
+                "test.undo"
+            ]
         );
         assert_eq!(names.topics, ["test.changed"]);
         let config = ts_rs::Config::new().with_large_int("number");

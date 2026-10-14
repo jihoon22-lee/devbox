@@ -230,6 +230,17 @@ mod tests {
     }
 
     #[test]
+    fn agent_confirmation_requests_require_the_reviewed_fields() {
+        let mut exporter = TsExporter::new();
+        devbox_agents::export(&mut exporter);
+        exporter.visit::<devbox_agents::ReviewExpect>();
+        let out = exporter.render().expect("agent declarations render");
+        assert!(out.contains("export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };"));
+        assert!(out.contains("expect: ReviewExpect & { baseOid: string }"));
+        assert!(out.contains("expect: ReviewExpect & { unmergedCommits: number }"));
+    }
+
+    #[test]
     fn output_is_deterministic() {
         let mut first = TsExporter::new();
         first.method::<devbox_protocol::system::Ping>();

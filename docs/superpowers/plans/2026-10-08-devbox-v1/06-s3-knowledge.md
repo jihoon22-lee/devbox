@@ -31,7 +31,7 @@
 
 - S0b–S2의 Global Constraints를 따른다.
 - 작업 위치: S3 전체가 브랜치 `v1/s3-knowledge`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s3-knowledge` 하나다. Task 1(상세화)이 이 브랜치의 첫 커밋이다. PR은 Task 12에서 한 번 연다(00-roadmap §3).
-- **S5와 동시에 진행한다**(사용자 결정 2026-10-08). 같은 실행 세션이 트랙 2(`v1/s5-tools`)를 하위 에이전트로 동시에 진행한다. 이 문서는 트랙 1이다. 공유 파일·잠금 파일·생성 파일·rebase 규칙은 00-roadmap §3.6을 따른다. S3에서 S5 기능(API·변환 도구)을 쓰거나 고치지 않는다. 두 쪽을 잇는 기능(API 응답을 노트에 붙이기 등)은 S6-1b다.
+- **S5와 동시에 진행한다**(사용자 결정 2026-10-08). 같은 실행 세션이 트랙 2(`v1/s5-tools`)를 하위 에이전트로 동시에 진행한다. 이 문서는 트랙 1이다. 공유 파일·잠금 파일·생성 파일·main 반영·squash 머지 규칙은 00-roadmap §3.6을 따른다. S3에서 S5 기능(API·변환 도구)을 쓰거나 고치지 않는다. 두 쪽을 잇는 기능(API 응답을 노트에 붙이기 등)은 S6-1b다.
 - 문서 쓰기·삭제는 등록한 프로젝트(에이전트 작업 폴더 포함)·vault·devbox 데이터 폴더 안에서만 한다. `realpath`로 확인하고 `O_NOFOLLOW`로 연다(01-design §12).
 - 원자적 교체는 `renameat2(RENAME_EXCHANGE)`, 새 파일은 `RENAME_NOREPLACE`를 쓴다. mode·EOL·BOM을 보존하고, symlink는 realpath 대상에 쓴다(01-design §9.1-2).
 - 이진·비 UTF-8·크기 초과(노트 2 MiB, 코드 5 MiB) 파일은 읽기 전용으로 연다.
@@ -57,18 +57,18 @@
 ## 작업 묶음
 
 S3 전체가 브랜치 `v1/s3-knowledge` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s3-knowledge`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 커밋·세션 인계 지점이다. 과제별 좁은 검증과 별도 검토 뒤 `PROGRESS.md` 묶음 행·현재 위치를 갱신한다. 묶음별 push와 전체 검사는 하지 않는다. 하위 프로젝트 끝에 브랜치 전체 검토 결과를 PROGRESS에 남기고 최종 상세 검증·Biome CI 뒤 push·PR을 한 번 진행한다(00-roadmap §3).
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S3 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
 | 상세화 | Task 1 | 커밋(이 브랜치의 첫 커밋) |
-| S | Task 2–3 | push |
-| T | Task 4–6 | push |
-| U | Task 7 | push |
-| V | Task 8–9 | push |
-| W | Task 10–11 | push |
-| 마무리 | Task 12 | **S3 PR 열기** → CI 통과 → rebase 머지 → 확인 목록을 사용자에게 보냄(기다리지 않음) |
+| S | Task 2–3 | 로컬 커밋·인계 |
+| T | Task 4–6 | 로컬 커밋·인계 |
+| U | Task 7 | 로컬 커밋·인계 |
+| V | Task 8–9 | 로컬 커밋·인계 |
+| W | Task 10–11 | 로컬 커밋·인계 |
+| 마무리 | Task 12 | **S3 PR 열기** → 필수 CI 3개·최종 SHA 자동 코드·보안 리뷰 완료 → squash 머지 |
 
 ---
 
@@ -248,8 +248,7 @@ git add docs && git commit -m "docs(plan): detail S3 against the S2 code"
 
 ```bash
 # 묶음 T 끝
-# 묶음 T 끝: PROGRESS.md의 묶음 T 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s3-knowledge
+# 묶음 T 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 T 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -331,12 +330,11 @@ pnpm check && git push origin v1/s3-knowledge
 - `missing_or_broken_rules_drop_titles`(플랫폼 독립, Linux CI)
 - 이식: `input_ticks_share_the_low_32_bit_domain_across_uptime_wrap`(플랫폼 독립)
 - `offline_buffer_caps_at_1000_and_counts_drops`(플랫폼 독립 버퍼 타입)
-- Windows 훅 동작은 Task 12 확인 목록
+- Windows 훅 동작은 Task 12 에이전트 설치본 검증
 
 ```bash
 # 묶음 V 끝
-# 묶음 V 끝: PROGRESS.md의 묶음 V 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s3-knowledge
+# 묶음 V 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 V 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -404,8 +402,7 @@ pnpm check && git push origin v1/s3-knowledge
 
 ```bash
 # 묶음 W 끝
-# 묶음 W 끝: PROGRESS.md의 묶음 W 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s3-knowledge
+# 묶음 W 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 W 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -413,8 +410,8 @@ pnpm check && git push origin v1/s3-knowledge
 ### Task 12: S3 완료
 
 - [ ] **Step 1: 규모 통계:** `bash scripts/loc.sh 120000` 결과를 PR 본문에 쓴다. 넘으면 단순화 후보를 PROGRESS §2에 적어 사용자에게 알리고 계속 진행한다(01-design SC8, 기다리지 않음).
-- [ ] **Step 2: 확인 목록(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge`로 받는다.
-  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
+- [ ] **Step 2: 에이전트 설치본 검증( 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s3-knowledge`로 받는다.
+  에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. 기존 v1 설치본 또는 `devbox@prod` 데이터가 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
   1. 노트를 쓰고 1초 뒤 자동 저장, 앱을 닫았다 열어도 그대로
   2. VS Code에서 같은 노트를 고치면 devbox가 비교를 보여 주고 덮어쓰지 않는다.
   3. 노트 이름을 바꾸면 다른 노트의 링크가 따라 바뀐다.
@@ -427,11 +424,6 @@ pnpm check && git push origin v1/s3-knowledge
   10. 노트 일부를 골라 에이전트 작업을 만든다.
 - [ ] **Step 3: 상태 갱신·PR**
 
-```bash
-sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S2 완료.*/- 상태: 완료(S3 PR 머지, 확인 목록 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/06-s3-knowledge.md
-# PROGRESS.md: S3 행·PR 표의 S3 행·현재 위치(다음: S4-1)를 고친다
-git add docs && git commit -m "docs(plan): mark S3 complete"
-git push origin v1/s3-knowledge && gh pr create --base main --head v1/s3-knowledge --title "feat: notes, activity and search (S3)" --body "S3 기록 전체(Task 1–12), 규모 통계. 확인 목록 10개는 머지 뒤 사용자에게 보낸다.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-```
+- PR 전에는 상태 줄을 직접 편집해 `구현 완료·최종 검증 결과 기록·PR 수용 대기`로 적는다. `sed` 패턴으로 완료를 추정하지 않는다. 하위 프로젝트 끝 브랜치 전체 검토와 최종 상세 검증·Biome CI를 마치고, 결과·미실행 항목을 PROGRESS와 PR 본문에 남긴다.
+- 00-roadmap §3에 따라 push·PR은 한 번 진행한다. 필수 CI `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`와 최종 SHA 자동 코드·보안 리뷰 완료 뒤 squash 머지한다.
+- 실제 머지를 확인한 뒤 상태 줄을 직접 `완료(S3 PR 머지)`로 고치고 PROGRESS의 S3 행·PR 표·현재 위치(다음: S4-1)를 갱신한다. PR 전 수용 대기를 완료로 기록하지 않는다.

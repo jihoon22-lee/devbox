@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub struct Services {
+    pub(super) runtime: super::system::Runtime,
     pub version: &'static str,
     pub daemon_id: String,
     pub paths: Paths,
@@ -11,5 +12,7 @@ pub struct Services {
     pub started_ms: i64,
     pub db: Db,
     pub hub: Arc<Hub>,
-    pub projects: ProjectsService,
+    pub projects: Arc<ProjectsService>,
+    pub terminal: Arc<devbox_terminal::TerminalService>,
+    pub agents: Arc<devbox_agents::AgentsService>,
 }

@@ -4,7 +4,7 @@ use windows::core::Interface;
 
 use crate::core::geometry::{initial_size, minimum_size};
 
-pub fn configure_main(app: &AppHandle) -> tauri::Result<()> {
+pub fn configure_main(app: &AppHandle, focus: bool, minimized: bool) -> tauri::Result<()> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| tauri::Error::Io(std::io::Error::other("main window is missing")))?;
@@ -27,10 +27,19 @@ pub fn configure_main(app: &AppHandle) -> tauri::Result<()> {
             area.position.y + ((area.size.height.saturating_sub(height + frame.1)) / 2) as i32,
         ))?;
     }
-    disable_browser_accelerators_and_show(&window)
+    disable_browser_accelerators_and_show(
+        &window,
+        focus,
+        crate::core::intents::reveal_on_start(minimized, focus)
+            || !super::tray::available(app, "main"),
+    )
 }
 
-fn disable_browser_accelerators_and_show(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+fn disable_browser_accelerators_and_show(
+    window: &tauri::WebviewWindow,
+    focus: bool,
+    reveal: bool,
+) -> tauri::Result<()> {
     let ready_window = window.clone();
     // with_webview dispatches onto the UI thread; waiting for it here can deadlock.
     // Only reveal the window after the actual COM operation succeeds.
@@ -49,9 +58,13 @@ fn disable_browser_accelerators_and_show(window: &tauri::WebviewWindow) -> tauri
             ready_window.app_handle().exit(1);
             return;
         }
-        if let Err(error) = ready_window.show() {
+        if reveal && let Err(error) = ready_window.show() {
             eprintln!("Cannot show main window: {error}");
             ready_window.app_handle().exit(1);
+            return;
+        }
+        if focus {
+            focus_main(ready_window.app_handle());
         }
     })
 }

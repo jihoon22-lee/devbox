@@ -1,0 +1,443 @@
+mod support;
+use devbox_cli::client::Client;
+use serde_json::{Value, json};
+use std::{path::Path, time::Duration};
+use support::TestDaemon;
+
+async fn call(c: &Client, method: &str, params: Value) -> Value {
+    serde_json::from_str(
+        &c.raw_call(method, params, None)
+            .await
+            .expect("owned fixture"),
+    )
+    .expect("owned fixture")
+}
+
+fn fixture(config: &str) -> (TestDaemon, String) {
+    let d = TestDaemon::fixture();
+    d.write_config(
+        "[[agents.profiles]]\nid='fake'\nlabel='Fake'\ncommand='sleep 600'\nhooks='none'\n",
+    );
+    let repo = d.git_repo("projects/web");
+    std::fs::create_dir_all(Path::new(&repo).join(".devbox")).expect("owned fixture");
+    std::fs::write(Path::new(&repo).join(".devbox/devbox.toml"), config).expect("owned fixture");
+    (d, repo)
+}
+
+#[tokio::test]
+async fn launch_creates_configured_terminals_and_inline_agent_and_summary_counts() {
+    let (mut d, repo) = fixture(
+        "[launch]\nservices=['future-service']\nterminals=[{name='a'},{name='b',command='sleep 600'}]\nagents=[{tool='fake',prompt='initial instruction'}]\n",
+    );
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let result = call(&c, "projects.launch", json!({"id":p})).await;
+    assert_eq!(result["terminals"], 2);
+    assert_eq!(result["agents"], 1);
+    assert_eq!(result["terminalIds"].as_array().map(Vec::len), Some(2));
+    let launch_rev = result["rev"]
+        .as_str()
+        .expect("launch revision")
+        .parse::<u64>()
+        .expect("owned fixture");
+    assert!(launch_rev > 0);
+    let agents = call(&c, "agents.list", json!({})).await;
+    let task = &agents["items"][0];
+    assert!(task["worktreePath"].is_null());
+    assert_eq!(task["prompt"], "initial instruction");
+    let id = task["id"].as_str().expect("owned fixture");
+    d.wait_for(&c, id, "running", Duration::from_secs(10)).await;
+    let terms = call(&c, "terminal.list", json!({"projectId":p})).await;
+    assert!(
+        terms["rev"]
+            .as_str()
+            .expect("owned fixture")
+            .parse::<u64>()
+            .expect("owned fixture")
+            >= launch_rev
+    );
+    for id in result["terminalIds"].as_array().expect("owned fixture") {
+        assert!(
+            terms["items"]
+                .as_array()
+                .expect("owned fixture")
+                .iter()
+                .any(|item| item["id"] == *id && item["kind"] == "shell")
+        );
+    }
+    assert_eq!(terms["items"].as_array().expect("owned fixture").len(), 3);
+    assert!(
+        terms["items"]
+            .as_array()
+            .expect("owned fixture")
+            .iter()
+            .any(|t| t["title"] == "b")
+    );
+    let summary = call(&c, "projects.summary", json!({})).await;
+    let item = &summary["items"][0];
+    assert_eq!(item["id"], p);
+    assert_eq!(item["branch"], "main");
+    assert_eq!(item["dirty"], true);
+    assert_eq!(item["terminals"], 3);
+    assert_eq!(item["agents"], json!({"open":1,"attention":0}));
+    call(&c, "agents.event", json!({"agentId":id,"launchId":d.agent_launch(id).await,"source":"claude","payload": "{\"hook_event_name\":\"PermissionRequest\",\"tool_name\":\"Bash\"}"})).await;
+    let summary = call(&c, "projects.summary", json!({})).await;
+    assert_eq!(
+        summary["items"][0]["agents"],
+        json!({"open":1,"attention":1})
+    );
+    let check = call(&c, "agents.discard_check", json!({"id":id})).await;
+    call(&c, "agents.discard", json!({"id":id,"expect":{"headOid":check["headOid"],"unmergedCommits":check["unmergedCommits"],"discardFingerprint":check["fingerprint"]}})).await;
+    let summary = call(&c, "projects.summary", json!({})).await;
+    assert_eq!(
+        summary["items"][0]["agents"],
+        json!({"open":0,"attention":0})
+    );
+    assert_eq!(summary["items"][0]["terminals"], 2);
+}
+
+#[tokio::test]
+async fn partial_launch_failure_reports_counts_and_preserves_created_terminal() {
+    use std::os::unix::fs::PermissionsExt;
+    let (mut d, repo) = fixture(
+        "[launch]\nterminals=[{name='retained',command='sleep 600'}]\nagents=[{tool='fake'}]\n",
+    );
+    let bin = d.home.path().join("bin");
+    std::fs::create_dir(&bin).expect("owned fixture");
+    let counter = d.home.path().join("branch-queries");
+    let git = bin.join("git");
+    let real_git = std::process::Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .expect("owned fixture");
+    let real_git = String::from_utf8(real_git.stdout).expect("owned fixture");
+    // Preflight succeeds; agents.create's later branch query fails after a terminal was created.
+    let script = format!(
+        "#!/bin/bash\nfor arg in \"$@\"; do\nif [[ $arg == for-each-ref ]]; then\n n=0\n [[ -f {counter} ]] && read -r n < {counter}\n n=$((n+1))\n echo \"$n\" > {counter}\n if [[ $n -gt 1 ]]; then echo private-fixture-marker >&2; exit 1; fi\nfi\ndone\nexec {git} \"$@\"\n",
+        counter = devbox_core::sh_quote(counter.to_str().expect("owned fixture")),
+        git = devbox_core::sh_quote(real_git.trim())
+    );
+    std::fs::write(&git, script).expect("owned fixture");
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o700)).expect("owned fixture");
+    d.extra_env.push((
+        "PATH".into(),
+        format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").expect("owned fixture")
+        ),
+    ));
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let error = c
+        .raw_call("projects.launch", json!({"id":p}), None)
+        .await
+        .expect_err("fixture operation must fail");
+    let debug = format!("{error:?}");
+    let devbox_cli::client::ClientError::Rpc {
+        code,
+        detail: Some(detail),
+        ..
+    } = error
+    else {
+        panic!("{debug}")
+    };
+    assert_eq!(code, "projects.launch_failed");
+    let detail: Value = serde_json::from_str(detail.get()).expect("owned fixture");
+    assert_eq!(detail["terminals"], 1);
+    assert_eq!(detail["agents"], 0);
+    assert!(!debug.contains("private-fixture-marker"));
+    let terms = call(&c, "terminal.list", json!({"projectId":p})).await;
+    assert_eq!(terms["items"].as_array().expect("owned fixture").len(), 1);
+    assert_eq!(terms["items"][0]["title"], "retained");
+    assert_eq!(terms["items"][0]["alive"], true);
+    assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+}
+
+#[tokio::test]
+async fn launch_validates_every_profile_and_config_before_creating_resources() {
+    let (mut d, repo) = fixture(
+        "[launch]\nterminals=[{name='must not start'}]\nagents=[{tool='fake'},{tool='missing'}]\n",
+    );
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let error = c
+        .raw_call("projects.launch", json!({"id":p}), None)
+        .await
+        .expect_err("fixture operation must fail");
+    assert!(format!("{error:?}").contains("projects.launch_profile_not_found"));
+    assert_eq!(
+        call(&c, "terminal.list", json!({})).await["items"],
+        json!([])
+    );
+    assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+    std::fs::write(
+        Path::new(&repo).join(".devbox/devbox.toml"),
+        "[agnet]\nsetup=['touch should-not-run']\n",
+    )
+    .expect("owned fixture");
+    let cfg = call(&c, "projects.config", json!({"id":p})).await;
+    assert!(
+        cfg["error"]["message"]
+            .as_str()
+            .expect("owned fixture")
+            .contains("agnet")
+    );
+    assert_eq!(cfg["config"]["launch"]["terminals"], json!([]));
+    let error = c
+        .raw_call("projects.launch", json!({"id":p}), None)
+        .await
+        .expect_err("fixture operation must fail");
+    assert!(format!("{error:?}").contains("projects.configuration_invalid"));
+    assert!(!Path::new(&repo).join("should-not-run").exists());
+}
+
+#[tokio::test]
+async fn launch_preflights_later_titles_and_prompts_without_reserving_resources() {
+    let cases = [
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}},{{name='second',command={}}}]\n",
+                serde_json::to_string(&"x".repeat(65_537)).expect("owned command")
+            ),
+            "terminal.command_too_long",
+        ),
+        (
+            "[launch]\nterminals=[{name='first'},{name='second',command=\"echo\\u0000bad\"}]\n"
+                .into(),
+            "terminal.command_invalid",
+        ),
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}},{{name={}}}]\n",
+                serde_json::to_string(&"가".repeat(257)).expect("owned title")
+            ),
+            "terminal.title_too_long",
+        ),
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}}]\nagents=[{{tool='fake'}},{{tool='fake',prompt={}}}]\n",
+                serde_json::to_string(&"x".repeat(65_537)).expect("owned prompt")
+            ),
+            "agents.input_too_large",
+        ),
+        (
+            format!(
+                "[launch]\nterminals=[{{name='first'}}]\nagents=[{{tool='fake',prompt={}}}]\n",
+                serde_json::to_string(&"가".repeat(21_846)).expect("owned prompt")
+            ),
+            "agents.input_too_large",
+        ),
+    ];
+    for (config, expected_code) in cases {
+        let (mut d, repo) = fixture(&config);
+        d.launch();
+        let c = d.client().await;
+        let p = d.add_project(&c, &repo).await;
+        d.approve_project(&c, &p).await;
+        let before = call(&c, "terminal.list", json!({})).await;
+        for _ in 0..2 {
+            let error = c
+                .raw_call("projects.launch", json!({"id":p}), None)
+                .await
+                .expect_err("invalid later entry must fail before any reservation");
+            let devbox_cli::client::ClientError::Rpc {
+                code,
+                detail: Some(detail),
+                ..
+            } = error
+            else {
+                panic!("expected a typed launch failure")
+            };
+            assert_eq!(code, "projects.launch_failed");
+            let detail: Value = serde_json::from_str(detail.get()).expect("launch detail");
+            assert_eq!(detail["terminals"], 0, "preflight must precede terminals");
+            assert_eq!(detail["agents"], 0, "preflight must precede agents");
+            assert!(
+                detail["message"]
+                    .as_str()
+                    .expect("public code")
+                    .contains(expected_code)
+            );
+            assert_eq!(call(&c, "terminal.list", json!({})).await, before);
+            assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+        }
+    }
+}
+
+#[tokio::test]
+async fn launch_admits_exact_title_character_and_prompt_byte_limits() {
+    let title = "가".repeat(256);
+    let prompt = format!("{}x", "가".repeat(21_845));
+    assert_eq!(prompt.len(), 65_536);
+    let config = format!(
+        "[launch]\nterminals=[{{name={}}}]\nagents=[{{tool='fake',prompt={}}}]\n",
+        serde_json::to_string(&title).expect("owned title"),
+        serde_json::to_string(&prompt).expect("owned prompt")
+    );
+    let (mut d, repo) = fixture(&config);
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let result = call(&c, "projects.launch", json!({"id":p})).await;
+    assert_eq!(result["terminals"], 1);
+    assert_eq!(result["agents"], 1);
+    let terminals = call(&c, "terminal.list", json!({})).await;
+    assert!(
+        terminals["items"]
+            .as_array()
+            .expect("terminals")
+            .iter()
+            .any(|t| t["title"] == title)
+    );
+    let tasks = call(&c, "agents.list", json!({})).await;
+    assert_eq!(tasks["items"][0]["prompt"], prompt);
+}
+
+#[tokio::test]
+async fn launch_honors_worktree_and_repeated_launch_uses_distinct_branches() {
+    let (mut d, repo) = fixture("[launch]\nagents=[{tool='fake',worktree=true}]\n");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    for _ in 0..2 {
+        let result = call(&c, "projects.launch", json!({"id":p})).await;
+        assert!(
+            result["rev"]
+                .as_str()
+                .expect("launch revision")
+                .parse::<u64>()
+                .expect("numeric revision")
+                > 0
+        );
+        assert_eq!(
+            result,
+            json!({"terminals":0,"agents":1,"terminalIds":[],"rev":result["rev"]})
+        );
+    }
+    let tasks = call(&c, "agents.list", json!({})).await;
+    let tasks = tasks["items"].as_array().expect("owned fixture");
+    assert_eq!(tasks.len(), 2);
+    assert_ne!(tasks[0]["branch"], tasks[1]["branch"]);
+    for task in tasks {
+        assert!(task["worktreePath"].is_string());
+        d.wait_for(
+            &c,
+            task["id"].as_str().expect("owned fixture"),
+            "running",
+            Duration::from_secs(10),
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn summary_handles_plain_and_unavailable_projects_independently() {
+    let mut d = TestDaemon::fixture();
+    let repo = d.git_repo("projects/git");
+    let plain = d.home.path().join("projects/plain");
+    std::fs::create_dir_all(&plain).expect("owned fixture");
+    d.launch();
+    let c = d.client().await;
+    let git = d.add_project(&c, &repo).await;
+    let nongit = d
+        .add_project(&c, plain.to_str().expect("owned fixture"))
+        .await;
+    std::fs::remove_dir(&plain).expect("owned fixture");
+    let summary = call(&c, "projects.summary", json!({})).await;
+    let items = summary["items"].as_array().expect("owned fixture");
+    let git_item = items
+        .iter()
+        .find(|i| i["id"] == git)
+        .expect("owned fixture");
+    assert_eq!(git_item["branch"], "main");
+    assert_eq!(git_item["dirty"], false);
+    let missing = items
+        .iter()
+        .find(|i| i["id"] == nongit)
+        .expect("owned fixture");
+    assert!(missing["dirty"].is_null());
+    assert!(missing["error"].is_object());
+    std::fs::create_dir(&plain).expect("owned fixture");
+    let summary = call(&c, "projects.summary", json!({})).await;
+    let plain = summary["items"]
+        .as_array()
+        .expect("owned fixture")
+        .iter()
+        .find(|i| i["id"] == nongit)
+        .expect("owned fixture");
+    assert!(plain["branch"].is_null());
+    assert_eq!(plain["dirty"], false);
+    assert_eq!(plain["ahead"], 0);
+    assert!(plain["error"].is_null());
+}
+
+#[tokio::test]
+async fn summary_counts_live_terminals_beyond_the_first_rpc_page() {
+    let (mut d, repo) = fixture("[launch]\nterminals=[{name='live',command='sleep 60'}]\n");
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    call(&c, "projects.launch", json!({"id":p})).await;
+    // Older ended metadata pushes the live terminal beyond the first bounded page.
+    let status = std::process::Command::new("python3").args(["-c", "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); c.executemany(\"INSERT INTO terminal_sessions VALUES(?,?,'ended','/tmp','shell','true',0)\", [(f'ended{i:04}', sys.argv[2]) for i in range(260)]); c.commit(); c.close()"])
+        .arg(&d.paths.db_path).arg(&p).status().expect("owned fixture seed");
+    assert!(status.success());
+    let page = call(&c, "terminal.list", json!({"projectId":p})).await;
+    assert_eq!(page["items"].as_array().expect("first page").len(), 256);
+    assert!(page["nextAfterId"].is_string());
+    assert!(
+        page["items"]
+            .as_array()
+            .expect("ended page")
+            .iter()
+            .all(|s| s["alive"] == false)
+    );
+    let summary = call(&c, "projects.summary", json!({})).await;
+    assert_eq!(summary["items"][0]["terminals"], 1);
+}
+
+#[tokio::test]
+async fn launch_rejects_missing_inline_base_before_creating_configured_terminal() {
+    let (mut d, repo) = fixture(
+        "[launch]\nterminals=[{name='must not start',command='sleep 600'}]\nagents=[{tool='fake',worktree=false}]\n",
+    );
+    d.git(Path::new(&repo), &["checkout", "--detach", "HEAD"]);
+    d.git(Path::new(&repo), &["branch", "-D", "main"]);
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let before = call(&c, "terminal.list", json!({})).await;
+    let error = c
+        .raw_call("projects.launch", json!({"id":p}), None)
+        .await
+        .expect_err("missing inline base must fail full preflight");
+    let devbox_cli::client::ClientError::Rpc {
+        code,
+        detail: Some(detail),
+        ..
+    } = error
+    else {
+        panic!("expected typed launch error")
+    };
+    assert_eq!(code, "projects.launch_failed");
+    let detail: Value = serde_json::from_str(detail.get()).expect("detail");
+    assert_eq!(
+        detail["terminals"], 0,
+        "inline base must be checked before first terminal"
+    );
+    assert_eq!(detail["agents"], 0);
+    assert_eq!(call(&c, "terminal.list", json!({})).await, before);
+    assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+    assert!(!d.paths.data_dir.join("agents").exists());
+}

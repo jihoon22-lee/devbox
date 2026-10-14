@@ -1,0 +1,35 @@
+.layout {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.list {
+  min-width: 0;
+  overflow: auto;
+  background: var(--bg-0);
+  border-right: 1px solid var(--border);
+}
+.handle {
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--border);
+}
+.handle:hover,
+.handle:focus-visible {
+  background: var(--accent);
+}
+.body {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (forced-colors: active) {
+  .handle {
+    background: CanvasText;
+  }
+}
+
+.list[aria-hidden="true"] {
+  visibility: hidden;
+}

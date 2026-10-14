@@ -56,6 +56,21 @@
   display: flex;
   gap: var(--space-2);
 }
+.cloneForm {
+  display: grid;
+  gap: var(--space-3);
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+.warning {
+  display: inline-flex;
+  color: var(--warn);
+}
 
 .nameCell {
   flex: 1;

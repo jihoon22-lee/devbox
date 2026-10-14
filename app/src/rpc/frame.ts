@@ -5,7 +5,8 @@ export interface Frame {
   channel: number;
   body: Uint8Array;
 }
-const LIMITS = [16 * 1024 * 1024, 65541, 4096] as const;
+export const MAX_STREAM_CHUNK = 64 * 1024;
+const LIMITS = [16 * 1024 * 1024, MAX_STREAM_CHUNK + 5, 4096] as const;
 function validate(kind: number, channel: number, size: number): asserts kind is FrameKind {
   if (!Number.isInteger(kind) || kind < 0 || kind > 2) throw new Error("Unknown frame kind");
   if (!Number.isInteger(channel) || channel < 0 || channel > 0xffffffff) throw new Error("Invalid channel");
@@ -35,4 +36,27 @@ export function jsonFrame(msg: unknown, kind: FrameKind = FRAME.json): Uint8Arra
   const json = JSON.stringify(msg);
   if (json === undefined) throw new Error("JSON payload required");
   return encodeFrame({ kind, channel: 0, body: new TextEncoder().encode(json) });
+}
+
+export function parseStreamFrame(body: Uint8Array): { streamId: number; flags: number; data: Uint8Array } {
+  const flags = body[4];
+  if (body.length < 5 || body.length > MAX_STREAM_CHUNK + 5 || flags === undefined || flags > 1) {
+    throw new Error("Invalid stream frame");
+  }
+  return {
+    streamId: new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(0, true),
+    flags,
+    data: body.subarray(5),
+  };
+}
+export function streamFrame(streamId: number, flags: number, data: Uint8Array): Uint8Array {
+  if (!Number.isInteger(streamId) || streamId < 0 || streamId > 0xffffffff || ![0, 1].includes(flags)) {
+    throw new Error("Invalid stream header");
+  }
+  if (data.length > MAX_STREAM_CHUNK) throw new Error("Stream chunk exceeds limit");
+  const body = new Uint8Array(5 + data.length);
+  new DataView(body.buffer).setUint32(0, streamId, true);
+  body[4] = flags;
+  body.set(data, 5);
+  return encodeFrame({ kind: FRAME.stream, channel: 0, body });
 }

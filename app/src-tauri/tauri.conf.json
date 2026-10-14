@@ -13,6 +13,7 @@
     "windows": [{ "label": "main", "title": "devbox", "width": 1440, "height": 900, "minWidth": 960, "minHeight": 600, "visible": false }],
     "security": { "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost" }
   },
+  "plugins": { "deep-link": { "desktop": { "schemes": ["devbox"] } } },
   "bundle": {
     "active": true,
     "targets": ["nsis"],

@@ -1,0 +1,45 @@
+.wrap {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--term-bg);
+}
+.viewport {
+  position: absolute;
+  inset: 0;
+}
+.term {
+  position: absolute;
+  inset: 4px 0 0 6px;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-0) 70%, transparent);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+.search {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.search input {
+  min-width: 0;
+  width: 160px;
+  background: var(--bg-0);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}

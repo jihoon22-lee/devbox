@@ -13,3 +13,7 @@ pub use router::{Ctx, DispatchError, Router};
 pub use ts_rs;
 
 pub const PROTOCOL_VERSION: u32 = 1;
+
+pub mod stream;
+pub use stream::StreamOpened;
+pub mod debug;

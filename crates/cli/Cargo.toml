@@ -10,9 +10,12 @@ name = "devbox"
 path = "src/main.rs"
 
 [dependencies]
+devbox-agents.workspace = true
+devbox-git.workspace = true
 devbox-core.workspace = true
 devbox-protocol.workspace = true
 devbox-projects.workspace = true
+devbox-terminal.workspace = true
 devbox-mux.workspace = true
 anyhow.workspace = true
 bytes.workspace = true
@@ -31,6 +34,7 @@ libc.workspace = true
 axum.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite.workspace = true
 tempfile.workspace = true
 

@@ -1,11 +1,11 @@
 # S1 에이전트·터미널·프로젝트 (1/2: 데몬) Implementation Plan
 
-> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 계획한 기능을 완성한 뒤 사용자가 진행하며 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 아래 과거 예제의 묶음별 전체 검사/push·rebase·사용자 확인 목록 전달은 적용하지 않는다.
+> 운영 기준(2026-10-13): 00-roadmap §2.2·§3과 CONVENTIONS를 우선한다. S0b 머지 뒤 착수하며 사용자 실기 확인은 시작 조건이 아니다. 필요한 개발·회귀·CI 검증은 에이전트가 직접 수행한다. 미구현 기능은 해당 구현 단계에서 검증하며 사용자 실기 항목으로 넘기지 않는다. 중간 설치·사용자 실기 요청을 개발·머지 gate로 두지 않는다. 실사용은 기능 완성 뒤가 기본이며 S2 뒤 선택적 조기 사용이 가능하다. 공개 릴리스의 명시 승인은 별도다. 과제별 좁은 검사·커밋 후 PR 끝 통합 검증·push, 필수 CI 3개 성공 확인 후 squash 머지한다. 최종 SHA의 자동 코드·보안 리뷰 완료를 확인한다. Windows 설치본 스모크는 01-design §11에 따라 에이전트가 수행한다.
 
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: 착수 준비 완료 · 구현 미착수 · S0b PR #638 머지(`820576c9`)·자동 검증 확인. `v1/s1-agents-terminal`에서 Task 1부터 진행
+- 상태: Task 1–12 기능 구현·독립 검토 완료. Task 24 및 PR #640 후속 보완의 검증·수용 상태는 [PROGRESS.md](PROGRESS.md)를 따른다.
 
 **Goal:** 데몬이 다음을 제공하게 한다.
 - tmux 기반 터미널 세션과 바이트 스트림(흐름 제어 포함)
@@ -54,16 +54,16 @@
 ## 작업 묶음
 
 S1 전체가 브랜치 `v1/s1-agents-terminal` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s1-agents-terminal`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 진행 기록과 세션 인계 지점이다. 과제별 좁은 검사·별도 검토·커밋 뒤 `PROGRESS.md`의 묶음 행과 현재 위치를 갱신한다. 묶음별 전체 검사·push는 하지 않는다. S1 끝에 브랜치 전체 검토와 통합 검증을 마치고 한 번 push·PR한다(00-roadmap §3).
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
-| F | Task 1–2 | push |
-| G | Task 3–4 | push |
-| H | Task 5–6 | push |
-| I | Task 7–10 | push |
-| J | Task 11–12 | push |
+| F | Task 1–2 | 로컬 기록·인계 |
+| G | Task 3–4 | 로컬 기록·인계 |
+| H | Task 5–6 | 로컬 기록·인계 |
+| I | Task 7–10 | 로컬 기록·인계 |
+| J | Task 11–12 | 로컬 기록·인계 |
 
 ---
 
@@ -73,23 +73,26 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S1 전체를 한 
 - Create: `crates/protocol/src/stream.rs`
 - Modify: `crates/protocol/src/router.rs`(`Ctx`에 `streams`), `crates/protocol/src/lib.rs`
 - Create: `crates/cli/src/daemon/outbox.rs`, `crates/cli/src/daemon/streams.rs`
-- Modify: `crates/cli/src/daemon/server.rs`(mpsc → `Outbox`, 종류 1·`StreamCredit` 처리, `ChannelClose` 시 스트림 정리)
+- Modify: `crates/cli/src/daemon/server.rs`(`mpsc::Sender<Outgoing>` → `Outbox`, 기존 세대·flush ACK·dedupe 보존, 종류 1·`StreamCredit` 처리, `ChannelClose` 시 스트림 정리)
 - Test: `crates/protocol/src/stream.rs`(단위), `crates/cli/tests/streams.rs`(통합, 시험용 `debug.echo` 스트림 메서드)
 
 **Interfaces:**
 - Produces:
   - 상수 `STREAM_WINDOW = 256 KiB`, `FLAG_FIN = 1`
   - `stream_frame(channel, stream, flags, data) -> Frame`, `parse_stream(&[u8]) -> Option<(u32, u8, &[u8])>`
-  - `trait StreamSink { fn push(&self, Frame) -> bool }`
-  - `Credit`: `add(u32)`, `async take(n)`
-  - `StreamTx`: `id`, `async write(&[u8]) -> Result<(), StreamError>`, `finish()`, `closed() -> CancellationToken`
+  - `StreamSink::push(&self, Frame)`은 object-safe boxed future로 `bool`을 돌려준다. bounded 큐가 가득 차면 async backpressure로 기다린다(아래 예제의 sync API는 구현 시 보정).
+  - `Credit`: `add(u32)`는 256KiB로 포화, `async take(n, closed)`는 최대 n 중 가용 바이트 수를 예약해 반환한다. 작은 credit에도 부분 송신이 진행된다.
+  - `StreamTx`: `id`, `async write(&[u8]) -> Result<(), StreamError>`, `async finish()`, `closed() -> CancellationToken`
   - `StreamEnds { id, tx: StreamTx, input: mpsc::Receiver<Bytes> }`
   - `trait StreamOpener { fn open(&self) -> Result<StreamEnds, StreamError> }`
   - `Ctx::open_stream()`
+  - `Control::StreamClose { stream }`: 해당 채널 소유 스트림만 완전 종료한다. 입력 FIN은 half-close로 남긴다. Rust `ClientStream` Drop과 화면 `openStream().end()`는 이 제어를 보낸다.
   - 스트림 ID는 데몬 전체에서 유일하다(`AtomicU32`). 터미널·LSP·로그 서비스가 ID로 상태를 찾는다.
   - 시험용 메서드 `debug.echo`(stream): instance가 `test-*`일 때만 라우터에 등록한다.
 
-- [ ] **Step 1: 실패하는 단위 테스트**
+**구현 보정(2026-10-13):** 아래 최초 예제는 설계 골격이며 실제 구현은 `crates/protocol/src/stream.rs`·`crates/cli/src/daemon/{outbox,streams}.rs`를 따른다. 동기 큐 push를 비동기로 바꿔 작은 조각이 많아도 연결을 끊지 않으며, bounded Outbox는 JSON admission 여유를 둔다. `finish().await`는 대기 중인 쓰기를 끝내고 이미 큐에 넣은 데이터 뒤 FIN을 보낸다. 채널 generation과 스트림 closed는 분리한다. Rust 클라이언트 수신 버퍼는 작은 조각을 합쳐 바이트 창 안의 정상 데이터를 프레임 개수 때문에 거부하지 않는다. 계획과 실제 차이·검증은 PROGRESS §5에 기록한다.
+
+- [x] **Step 1: 실패하는 단위 테스트**
 
 ```rust
 // crates/protocol/src/stream.rs 끝
@@ -141,9 +144,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p devbox-protocol stream`
+- [x] **Step 2: 실패 확인** — `cargo test -p devbox-protocol stream`
 
-- [ ] **Step 3: 구현 — protocol::stream**
+- [x] **Step 3: 구현 — protocol::stream**
 
 ```rust
 // crates/protocol/src/stream.rs (테스트 위)
@@ -286,7 +289,7 @@ impl std::fmt::Debug for Ctx {
 
 S0b 테스트의 `Ctx { channel, cancel }` 생성 코드에 `streams: None`을 추가한다. `lib.rs`에 `pub mod stream;`을 추가한다.
 
-- [ ] **Step 4: 실패하는 통합 테스트(공정성·신용·채널 닫힘)**
+- [x] **Step 4: 실패하는 통합 테스트(공정성·신용·채널 닫힘)**
 
 ```rust
 // crates/cli/tests/streams.rs
@@ -331,6 +334,7 @@ fn _uses(_: Client) {}
 - `credit(n)`
 - `write(bytes)`
 - `wait_end(timeout) -> bool`
+- `finish_input()`은 입력 FIN을 보내는 half-close이며, 핸들 Drop은 `StreamClose`로 서버 생산자·등록을 정리한다(다른 스트림·RPC 유지).
 
 동작:
 - 종류 1 프레임은 스트림 ID별 버퍼에 쌓는다. 응답보다 먼저 온 조각은 ID별로 보관했다가 등록 시 넘긴다.
@@ -374,7 +378,7 @@ pub async fn echo(ctx: devbox_protocol::Ctx, p: EchoParams) -> Result<StreamOpen
 
 `StreamOpened`은 `protocol`로 옮겨 모든 스트림 메서드의 결과로 함께 쓴다(`devbox_protocol::StreamOpened`).
 
-- [ ] **Step 5: 구현 — Outbox와 스트림 등록**
+- [x] **Step 5: 구현 — Outbox와 스트림 등록**
 
 ```rust
 // crates/cli/src/daemon/outbox.rs
@@ -541,16 +545,19 @@ impl StreamOpener for Opener {
 ```
 
 `server.rs`를 이렇게 바꾼다.
-- `mpsc::Sender<Frame>` 대신 `Arc<Outbox>`를 쓰고, 쓰기 작업은 `while let Some(f) = outbox.next().await { sink.send(f).await }`로 돈다.
-- `json_frame`을 보낼 때 `outbox.push(...)`를 쓴다. 구독 전달 작업도 `push`가 false면 끝낸다.
+- 현재 서버(2026-10-13 확인)는 `mpsc::Sender<Outgoing>`이며 `Outgoing { frame, generation, flushed }`를 보낸다. 위 `Frame` 전용 Outbox 예제는 공정 송신 골격이다. 실제 구현에서는 이 envelope를 큐에 보존하고, 스트림 송신도 해당 채널 세대에 묶는다. 단순 `Frame` 큐로 대체하지 않는다.
+- writer는 취소된 `generation`을 버리고 `sink.send(frame).await` 성공 후에만 `flushed` ACK를 보낸다. Hello 버전·프로토콜 불일치 시 Welcome flush ACK를 최대 2초 기다린 뒤 연결을 닫는 기존 계약을 유지한다.
+- ChannelOpen으로 같은 채널 번호를 재사용하거나 ChannelClose·연결 종료 시 이전 세대를 취소한다. 이전 응답·구독·스트림이 새 세대로 새지 않도록 큐와 스트림 등록을 함께 정리한다. 기존 inflight 요청 취소·구독 중단도 보존한다.
+- `Dedupe::dispatch`·tracker 종료 대기와 요청 ID 중복 검사를 유지한다. inflight ID 제거는 응답 enqueue 뒤에 하여 같은 ID의 새 응답이 이전 응답을 앞지르지 않게 한다.
+- `json_frame`·구독 송신은 세대와 선택적 flush ACK를 포함해 Outbox로 보낸다. 큐 종료 시 구독 전달도 끝낸다. 기존 서버 회귀 테스트를 유지하고 Hello flush·채널 재사용/취소·dedupe와 새 공정 송신의 교차 동작을 좁은 회귀 시험으로 확인한다.
 - 종류 1을 받으면 `parse_stream`으로 `streams.input(id, flags & FLAG_FIN != 0, data)`를 부른다.
-- `Control::StreamCredit { stream, bytes }`는 `streams.credit(stream, bytes)`로 넘긴다.
+- `Control::StreamCredit { stream, bytes }`는 채널 소유권을 확인해 신용을 더한다. `StreamClose { stream }`은 같은 소유권 검사 뒤 해당 스트림만 정리한다.
 - `close_channel`은 `streams.close_channel(ch)`도 부른다. 연결이 끝나면 `streams.close_all()` + `outbox.close()`.
 - 요청을 처리할 때 `Ctx { channel, cancel, streams: Some(streams.opener(ch, outbox.clone())) }`를 만든다.
 
 라우터의 메서드 종류가 `stream`인 경우도 `add`로 등록한다(핸들러가 `ctx.open_stream()`을 부른다).
 
-- [ ] **Step 6: 통과·커밋**
+- [x] **Step 6: 통과·커밋**
 
 ```bash
 cargo test -p devbox-protocol stream && cargo test -p devbox-cli --test streams && cargo test -p devbox-cli
@@ -574,8 +581,11 @@ git add crates && git commit -m "feat(daemon): add flow-controlled byte streams 
     - `ack()`를 불러야 그만큼 신용을 돌려준다(xterm `write` 콜백에서 부른다).
     - 응답보다 먼저 온 조각은 보관했다가 넘긴다(ID당 최대 256 KiB).
     - 연결이 끊기면 모든 스트림에 `onEnd()`를 호출한다.
+    - `end()`는 입력 half-close가 아닌 로컬 dispose다. `StreamClose`를 보내고 핸들러를 제거하며 `onEnd()`를 한 번만 호출한다. 이전 연결의 write/end/ack는 새 연결을 건드리지 않는다.
 
-- [ ] **Step 1: 실패하는 테스트**
+**구현 보정(2026-10-13):** 실제 수명·버퍼 처리는 `app/src/rpc/client-streams.ts`로 분리했다. 아래 최초 예제와 달리 early FIN을 보존하고 작은 조각은 페이지로 합친다. ID당 256KiB·총 4MiB·64ID로 early 상태를 제한하고 마지막 open 뒤 미사용 ID를 `StreamClose`로 정리한다. ACK/onEnd는 한 번만 실행하며 이전 연결의 핸들은 아무것도 보내지 않는다. 응답 후 promise 재개 전 연결 종료 및 동기 콜백 재진입도 검증한다. 검증 결과는 PROGRESS §5를 따른다.
+
+- [x] **Step 1: 실패하는 테스트**
 
 ```ts
 // app/src/rpc/stream.test.ts
@@ -646,9 +656,9 @@ test("a dropped connection ends open streams", async () => {
 
 `debug.echo`는 테스트 인스턴스에서만 등록되지만 생성 타입에는 있으므로 TS에서 이름을 쓸 수 있다.
 
-- [ ] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/stream.test.ts`
+- [x] **Step 2: 실패 확인** — `pnpm --filter app exec vitest run src/rpc/stream.test.ts`
 
-- [ ] **Step 3: 구현(client.ts에 추가)**
+- [x] **Step 3: 구현(client.ts에 추가)**
 
 ```ts
 // app/src/rpc/client.ts — 클래스 필드와 메서드 추가
@@ -670,7 +680,7 @@ async openStream<M extends StreamMethod>(method: M, params: Methods[M]["params"]
     streamId: id,
     write: (bytes: Uint8Array) => this.transport.send(streamFrame(id, 0, bytes)),
     end: () => {
-      this.transport.send(streamFrame(id, 1, new Uint8Array()));
+      this.transport.send(jsonFrame({ type: "streamClose", stream: id }, FRAME.control));
       this.streams.delete(id);
     },
   };
@@ -696,14 +706,15 @@ private deliverChunk(id: number, flags: number, data: Uint8Array) {
 - `onClosed()`에서 모든 스트림 핸들러에 `onEnd()`를 부르고 비운다(`early`도 비운다).
 - `frame.ts`에 `streamFrame(id, flags, data)`를 추가한다. 형식은 `encodeFrame({kind: FRAME.stream, channel: 0, body: [u32 id LE, u8 flags, data]})`.
 
-- [ ] **Step 4: 통과·커밋·묶음 F 끝**
+- [x] **Step 4: 통과·커밋·묶음 F 끝**
 
 ```bash
 pnpm --filter app exec vitest run src/rpc && pnpm --filter app typecheck && cargo run -q -p xtask -- gen-ts --check
 git add app crates && git commit -m "feat(app): consume flow-controlled streams in the RPC client"
-# 묶음 F 끝: PROGRESS.md의 묶음 F 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 F 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
+
+S1 Task 2 직후 가능하면 01-design §11의 Windows 설치본 스모크를 S0b 범위로 먼저 시도한다. 이 시점의 커밋 산출물임을 기록하고, 최종 SHA의 PR 전 스모크를 대체하지 않는다. 조기 스모크용 그 시점 SHA push·windows.yml workflow dispatch는 00 §2.2의 예외로 허용한다. 일반 묶음별 push는 하지 않으며 실행할 수 없으면 조기 시도만 미실행 사유를 남긴다.
 
 ---
 
@@ -1234,7 +1245,7 @@ pub async fn attach(tmux: &Tmux, atts: &Attachments, id: &str, cols: u16, rows: 
         }
         let _ = child.kill();
         atts2.0.lock().expect("attachments").remove(&stream_id);
-        tx.finish();
+        tx.finish().await;
     });
     Ok(())
 }
@@ -1263,8 +1274,7 @@ method!(pub TerminalResize = "terminal.resize", mutation, ResizeStream => devbox
 ```bash
 cargo test -p devbox-cli --test terminal_attach && cargo test --workspace && cargo run -q -p xtask -- gen-ts
 git add crates xtask app/src/rpc/gen && git commit -m "feat(terminal): stream tmux attach clients through a PTY with prefilled history"
-# 묶음 G 끝: PROGRESS.md의 묶음 G 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 G 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -1786,8 +1796,7 @@ pub async fn merged_agent_branches(repo: &Path, base: &str) -> Result<Vec<String
 ```bash
 cargo test -p devbox-git
 git add crates && git commit -m "feat(git): add worktree, merge, rebase, pull request and cleanup operations"
-# 묶음 H 끝: PROGRESS.md의 묶음 H 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 H 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
@@ -2214,7 +2223,11 @@ git add crates && git commit -m "feat(agents): add the agent task model, state m
 
 ### Task 8: 에이전트 작업 생성·시작 스크립트·hook 이벤트
 
+브랜치 통합 검토 보정: 도구 종료와 tmux 세션 존재를 구분하는 `toolExited`를 저장한다. 도구가 종료되면 출력 화면을 남기는 입력 폐기 대기로 전환하고 [재개]로 다시 실행한다. 실행 가능한 로그인 셸을 남기지 않아 지시 전송과 종료가 경합해도 지시문이 셸 명령으로 실행되지 않는다. 실제 구현은 실행별 식별자와 비공개 상태 파일을 사용해 이전 실행의 setup/exit 이벤트를 거절하고, hook 전달 실패 뒤에도 종료를 복구한다. 아래 최초 예제보다 `start.rs`·`tool_lifecycle.rs`의 현재 계약을 우선한다.
+
 **S0a 실제 source 계약 보정(필수, 아래 요점 코드보다 우선).** Codex notify의 `DEVBOX_AGENT_ID`와 cwd만으로 작업을 연결하지 않는다. 실제 주 대화와 자동 제목 생성이 같은 환경 ID로 서로 다른 `thread-id`·`turn-id`의 완료를 보냈다. session tracker가 정확한 thread의 rollout metadata `source=cli`·`thread_source=user`, 작업 launch 경계와 workdir를 확인한 뒤 최초 주 thread를 바인딩한다. cwd의 가장 최신 파일 또는 첫 notify를 선택하지 않는다. metadata 누락·모호함은 상태를 바꾸지 않고 기한·횟수 제한 재시도 뒤 typed diagnostic으로 보고한다. 이미 알려진 주 thread의 resume은 같은 ID를 검증한다. 주 thread lifecycle metadata로 현재 turn을 추적하고 완료 후보는 주 thread **및 현재 turn** 모두 일치해야 한다. 보조 제목 완료와 새 running/waiting 뒤 도착한 이전 turn 완료는 무시한다. Task 8의 parser는 후보 해석만 하며, service 적용 전에 이 gate를 구현한다. 토큰 조회도 검증된 정확한 주 thread 파일만 읽는다. S0a는 metadata 관찰까지 했으며 완성된 바인딩 구현을 측정한 것은 아니다.
+
+실제 0.162.1 계약 보정: `task_started.started_at`은 Unix 초 정수일 수 있으므로 현재 turn의 시각은 이벤트 봉투의 RFC3339 `timestamp`로 검증한다. 보조 세션의 `session_meta.source`는 객체형일 수 있다. `source="cli"`·`thread_source="user"`인 후보만 엄격히 해석하고 다른 출처 때문에 주 세션 검색 전체를 실패시키지 않는다. known-thread 재탐색은 기존 세션의 날짜 폴더도 확인한다.
 
 필수 회귀: 주 thread 현재 turn 완료 → idle, 같은 ENV/cwd의 자동 제목 완료 → 상태 불변, 이전 완료 후 새 turn의 running/waiting → 지연된 이전 완료 무시, 새 turn 현재 완료 → idle, known-thread resume 일치/불일치, metadata 누락·모호함의 bounded retry/진단과 상태 불변. 임시 rollout fixture로 시험하고 사용자 세션 자료를 fixture로 쓰지 않는다. S1 구현에서 실제 lifecycle 계약과 실패 경계를 검증한다(이 계획 코드는 미컴파일).
 
@@ -2316,7 +2329,7 @@ mod tests {
         assert!(s.contains("systemd-run --user --scope --quiet --unit 'devbox-prod-agent-a1' --"));
         assert!(s.contains("claude --settings '/d/agents/a1/claude.json' \"$(cat '/d/agents/a1/prompt.md')\""));
         assert!(s.contains("'/b/devbox' agent event --from exit --code \"$code\""));
-        assert!(s.trim_end().ends_with("exec bash -l"));
+        assert!(s.trim_end().ends_with("hold_terminal"));
     }
 
     #[test]
@@ -2415,6 +2428,7 @@ pub struct StartPlan {
 pub fn render_start_script(p: &StartPlan) -> String {
     let dv = sh_quote(&p.devbox);
     let mut s = String::from("#!/usr/bin/env bash\n# devbox 에이전트 시작 스크립트(자동 생성)\n");
+    s.push_str("hold_terminal() { while IFS= read -r discarded; do :; done; exit 0; }\n");
     s.push_str(&format!("cd {} || exit 1\n", sh_quote(&p.workdir)));
     if p.setup.is_empty() {
         s.push_str(&format!("{dv} agent event --from setup --code 0\n"));
@@ -2425,7 +2439,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
         }
         s.push_str(")\n");
         s.push_str(&format!("setup=$?\n{dv} agent event --from setup --code \"$setup\"\n"));
-        s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; exec bash -l; fi\n");
+        s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; hold_terminal; fi\n");
     }
     let mut tool = p.tool_command.clone();
     match p.hooks {
@@ -2454,7 +2468,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
     } else {
         s.push_str(&format!("{tool}\n"));
     }
-    s.push_str(&format!("code=$?\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code). 이 셸은 그대로 쓸 수 있습니다.\"\nexec bash -l\n"));
+    s.push_str(&format!("code=$?\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code). 재개 버튼으로 다시 시작하세요.\"\nhold_terminal\n"));
     s
 }
 ```
@@ -2618,8 +2632,9 @@ async fn agent_task_goes_from_preparing_to_waiting_to_idle_via_hooks() {
 ```
 
 - 이 시험은 Task 9의 `agents.send`도 쓴다. Task 9를 마친 뒤 통과시킨다. Task 8에서는 `waiting`까지만 확인하는 형태로 먼저 둔다.
-- `TestDaemon`에 다음을 추가한다.
+- 아래 시험 헬퍼는 2026-10-13 현재 코드에 없다. **이 Task 8에서** `TestDaemon`에 다음을 추가한다(Task 1에서 선행 구현하지 않는다).
   - `start_with_env`. `start`·`start_with_env` 모두 데몬을 띄우기 전에 임시 HOME에 `.gitconfig`를 쓴다: `[user] name = devbox-test`, `email = test@devbox.invalid`, `[init] defaultBranch = main`. 임시 HOME이라 사용자의 `~/.gitconfig`가 보이지 않으므로, 이것이 없으면 데몬의 squash 병합·rebase 커밋이 "Please tell me who you are"로 실패한다(로컬·CI 모두)
+  - `add_project(client, path)`와 `create_agent(client, project, profile, worktree)`(해당 RPC 호출 헬퍼)
   - `write_config(text)`(`~/.config/devbox/config.toml`)
   - `git_repo(rel)`(`git init -q -b main` + 첫 커밋. 기준 브랜치 이름을 시험이 `main`으로 가정한다)
   - `wait_for(client, id, state, timeout)`(`agents.get` 폴링)
@@ -2644,8 +2659,8 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): create agen
 **Interfaces:**
 - Consumes: Task 6 `mutate::*`, Task 3 `Tmux::paste`, Task 8 서비스
 - Produces(메서드):
-  - `agents.send{ id, text }`(mutation): 세션이 있으면 bracketed paste + Enter. 기록을 남기고 `UserInstructed`를 적용한다. 세션이 없으면 `agents.session_missing`(화면이 [재개]를 권한다).
-  - `agents.resume{ id }`(mutation): 새 시작 스크립트(`resume_session`)로 tmux 세션을 다시 만든다. Codex 세션 ID가 없으면 Task 8의 source/launch/workdir 검증 tracker로 바인딩한다. 가장 최근 cwd 파일로 대체하지 않으며, 확인 불가 시 bounded retry 뒤 typed diagnostic으로 재개를 중단한다.
+  - `agents.send{ id, text }`(mutation): 살아 있는 도구에만 bracketed paste + Enter를 전달하고 기록·`UserInstructed`를 적용한다. 세션이 없거나 도구가 종료된 보존 화면이면 전송을 거절하고 화면이 [재개]를 권한다. `review` 상태 자체는 도구 종료를 뜻하지 않는다.
+  - `agents.resume{ id }`(mutation): 새 시작 스크립트(`resume_session`)로 tmux 세션을 다시 만든다. 기존 세션은 해당 실행이 종료된 보존 화면임을 확인했을 때만 교체하며 살아 있는 도구는 교체하지 않는다. Codex 세션 ID가 없으면 Task 8의 source/launch/workdir 검증 tracker로 바인딩한다. 가장 최근 cwd 파일로 대체하지 않으며, 확인 불가 시 bounded retry 뒤 typed diagnostic으로 재개를 중단한다.
   - `agents.review{ id }`(mutation) → `review`
   - `agents.rebase{ id }`(mutation) → `{ result: "done" | "conflict", files }`. 충돌 시 rebase를 진행 중으로 둔다.
   - `agents.rebase_abort{ id }`(mutation)
@@ -2656,15 +2671,18 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): create agen
   - `agents.pr{ id, title?, body?, expect: ReviewExpect }`(mutation, always) → `closed(pullRequest)`, `prUrl`
   - `agents.discard_check{ id }`(query) → `{ unmergedCommits: u32, dirtyFiles: u32, headOid: String }`
   - `agents.discard{ id, expect: ReviewExpect }`(mutation, always): `headOid`·`unmergedCommits`가 확인 때와 다르면 `agents.state_changed`. 같으면 세션 종료, scope 정지, teardown, worktree 강제 제거, 브랜치 삭제 → `closed(discarded)`
+    - worktree 없는 작업은 Task 18의 "세션 끝내기"다. 현재 프로젝트 HEAD·미병합 개수를 재확인한 뒤 소유 세션·scope만 종료한다. 프로젝트 checkout·브랜치·수정 파일을 보존하고 teardown은 실행하지 않는다. 원래 기준 브랜치와 다른 브랜치를 checkout한 경우도 새 확인 정보가 일치하면 종료할 수 있다.
+    - 이미 사라진 scope는 정확한 소유 unit의 `LoadState=not-found`를 확인하면 정리 완료로 취급한다. 실제 정지 실패·버스 오류는 보존하며, 부분 정리 실패는 닫힌 기록의 `cleanupError`에 남긴다.
   - `ReviewExpect { headOid: String, baseOid?: String, unmergedCommits?: u32 }`: 사용자가 확인 대화상자에서 본 상태(01-design §5.2). 병합은 `baseOid`, 폐기는 `unmergedCommits`가 필수다.
   - `agents.test{ id }`(mutation): `[agent] test` 명령을 같은 작업 폴더의 새 터미널 세션에서 실행한다. 반환은 터미널 ID다(S2가 runtime으로 바꾼다).
   - `agents.cleanup_candidates{ projectId }`(query) → `{ worktrees: [path], branches: [name] }`
   - `agents.cleanup{ projectId, worktrees, branches }`(mutation, always)
+    - 이름 패턴만으로 소유권을 추정하지 않는다. 닫힌 작업의 저장된 소유 상태·닫을 당시 OID·Git 등록 상태를 재검사하며 활성·dirty·locked·미병합·다른 작업에서 재사용한 자원을 보존한다. worktree가 이미 제거된 소유 브랜치도 확인 후 정리할 수 있으며 삭제 뒤 소유 상태를 해제한다.
   - 검토 화면용 조회(모두 query, 작업 폴더가 없으면 프로젝트 체크아웃 기준):
     - `agents.changes{ id }` → `{ base, ahead, behind, headOid, baseOid, files: FileChange[] }`(`changed_files(workdir, base)` + `ahead_behind` + `rev_parse`). 검토 화면은 이 `headOid`·`baseOid`를 병합·PR 확인의 `expect`로 쓴다
     - `agents.patch{ id, path }` → `{ patch }`(`file_patch`, 1 MiB 넘으면 앞부분만 + `truncated: true`)
     - `agents.commits{ id }` → `{ items: Commit[] }`(`log_range(workdir, base)`)
-  - 닫힐 때 기록 고정: 토큰(Task 10의 `usage`), 커밋 목록 수, `closedMs`
+  - 닫힐 때 기록 고정: 토큰(Task 10의 `usage`), 커밋 목록 수(`closedCommits`), 실제 처리한 source OID(`closedHeadOid`), `closedMs`. 병합·PR 성공 뒤 정리에 실패해도 닫힌 상태와 `cleanupError`를 함께 보존한다.
 
 - [ ] **Step 1: 실패하는 통합 테스트**
 
@@ -2975,17 +2993,20 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): instruct, r
 - Produces:
   - `watch::spawn(service)`: 2초마다 동작한다.
     - 대상: `running`·`waiting` 중 프로필에 `waiting_patterns`가 있는 작업(Codex·사용자 정의)
-    - `capture_tail(15)`이 패턴과 맞으면 `OutputWaiting`, `waiting(출처=출력)`인데 더는 맞지 않으면 `OutputResumed`를 적용한다.
+    - `capture_tail(15)`의 마지막 비어 있지 않은 6줄을 원래 순서로 검사한다. 화면이 2초 동안 변하지 않고 패턴과 맞으면 `OutputWaiting`, `waiting(출처=출력)`인데 더는 맞지 않으면 `OutputResumed`를 적용한다.
+    - 실제 S0a Codex 승인 화면은 질문 제목이 마지막 6줄 밖에 있으므로 하단의 거절 선택지와 확인 안내 조합을 사용한다. 정규식은 시작 시 검증·컴파일한다. 지시 뒤 그대로 남은 승인 화면은 새 출력 전까지 재사용하지 않는다.
     - hook으로 들어온 `waiting`은 건드리지 않는다(`attention.kind == "output"`일 때만 되돌림).
-  - `usage::tokens_for(home, task, hooks: Hooks) -> Option<Tokens>`. Task 9 `close()`의 `t.tokens = None;` 줄을 이 함수 호출로 바꾼다:
-    - Claude: `~/.claude/projects/<workdir 변환>/<sessionId>.jsonl`의 `assistant` 기록을 `message.id` 기준으로 중복 없이 합산
+    - DB에서 작업·세션 binding·활동 순번을 다시 대조한다. 같은 상태·같은 밀리초에 들어온 새 지시나 hook도 이전 화면 관찰을 무효화한다.
+  - `usage::tokens_for(home, task, hooks, binding) -> AgentUsage { tokens, truncated }`. Task 9의 모든 닫기 경로에서 값·값 없음·잘림 여부를 고정한다:
+    - Claude: `~/.claude/projects/<workdir 변환>/<sessionId>.jsonl`의 `assistant` 기록을 `message.id` 기준으로 중복 없이 합산한다. 같은 메시지의 부분 사용량 갱신은 항목별 최댓값을 사용한다. 디렉터리 인코딩이 다르면 최대 2,048개 프로젝트 디렉터리에서 정확한 세션 파일명만 찾고 cwd·sessionId를 재검증하며, 모호하면 값을 쓰지 않는다.
     - Codex: Task 8 tracker가 검증한 정확한 주 thread rollout의 마지막 `token_count.total_token_usage`(cwd만 같은 다른 파일은 제외)
-    - 파일 128MiB·줄 4MiB 상한(이식)
+    - 파일 128MiB·줄 4MiB 상한(Claude 후보 합계도 128MiB). 읽기 실패·잘린 줄·잘못된 기록·오버플로를 `truncated`에 반영하고 값 없음과 측정된 0을 구분한다.
+    - 폐기는 세션 종료 뒤, teardown·폴더 제거 전에 읽는다. 닫힌 작업은 파일이 바뀌거나 데몬이 재시작돼도 다시 읽지 않는다. 보조 사용량 조회 실패가 성공한 병합·PR의 닫힌 기록을 막지 않도록 진단을 남기고 값 없음으로 고정한다.
   - 메서드 `agents.usage{ id }`(query) → `{ tokens?, truncated }`
   - 메서드 `agents.git_stats{}`(query) → `{ items: [{ id, changedFiles, ahead, behind }] }`: 열린 작업마다 `changed_files`의 개수와 `ahead_behind`를 4개씩 동시에 계산한다. 목록 행의 "변경 n · 뒤처짐 m"에 쓴다. 화면은 `agents.changed` 이벤트와 10초 간격 폴링으로 갱신한다.
   - 메서드 `agents.resources{}`(query) → `{ items: [{ id, cpuPercent, memoryBytes }] }`
-    - 살아 있는 작업의 scope를 `systemctl --user show -p CPUUsageNSec -p MemoryCurrent --value`로 읽는다.
-    - CPU%는 이전 표본과의 차로 계산한다(서비스 메모리에 마지막 표본 보관).
+    - 살아 있는 소유 세션의 scope를 `systemctl --user show`의 이름 있는 `CPUUsageNSec`·`MemoryCurrent`·`InvocationID` 속성으로 읽는다. worktree 없는 작업도 포함한다.
+    - CPU%는 이전 표본과의 차로 계산한다(서비스 메모리에 마지막 표본 보관). 재개 launch·InvocationID 변경과 카운터 초기화를 구분한다. 첫 표본과 읽을 수 없는 수치는 null이며 scope 미사용 환경은 빈 목록이다.
     - 화면이 보일 때 3초 간격으로 부른다(이벤트 원천 없음, 01-design §5.5).
 
 - [ ] **Step 1: 실패하는 테스트(토큰)**
@@ -2999,24 +3020,25 @@ mod tests {
 
     #[test]
     fn claude_sums_unique_assistant_messages() {
-        let lines = r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":7}}}
-{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5}}}
+        let lines = r#"{"type":"assistant","sessionId":"s","cwd":"/w/app","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":7}}}
+{"type":"assistant","sessionId":"s","cwd":"/w/app","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":5}}}
 {"type":"user","message":{"id":"u"}}
-{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":2}}}
+{"type":"assistant","sessionId":"s","cwd":"/w/app","message":{"id":"m2","usage":{"input_tokens":1,"output_tokens":2}}}
 "#;
-        let t = claude_totals(Cursor::new(lines)).unwrap();
+        let t = claude_read(Cursor::new(lines), "s", "/w/app").tokens.unwrap();
         assert_eq!((t.input, t.output, t.cache_read, t.cache_write), (11, 7, 100, 7));
     }
 
     #[test]
-    fn codex_takes_the_last_total_for_the_matching_cwd() {
-        let lines = r#"{"type":"session_meta","payload":{"cwd":"/w/app-agents/x","id":"s"}}
+    fn codex_takes_the_last_total_for_the_exact_primary_session() {
+        let lines = r#"{"type":"session_meta","payload":{"cwd":"/w/app-agents/x","id":"s","source":"cli","thread_source":"user"}}
 {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"output_tokens":1,"cached_input_tokens":2}}}}
 {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"output_tokens":3,"cached_input_tokens":4}}}}
 "#;
-        let t = codex_session(Cursor::new(lines), std::path::Path::new("/w/app-agents/x")).unwrap();
+        let t = codex_read(Cursor::new(lines), "s", "/w/app-agents/x").tokens.unwrap();
         assert_eq!((t.input, t.output, t.cache_read), (9, 3, 4));
-        assert!(codex_session(Cursor::new(lines), std::path::Path::new("/w/other")).is_none());
+        assert!(codex_read(Cursor::new(lines), "s", "/w/other").tokens.is_none());
+        assert!(codex_read(Cursor::new(lines), "other", "/w/app-agents/x").tokens.is_none());
     }
 
     #[test]
@@ -3034,13 +3056,15 @@ mod tests {
 - `claude_read`
 - `codex_read`
 
-반환 타입은 `crate::model::Tokens`로 바꾸고, 세션 수 집계는 뺀다. `tokens_for`는 프로필 hooks 종류로 Claude/Codex를 고르고, 파일을 찾지 못하면 `None`이다.
+반환 타입은 `crate::model::AgentUsage`로 바꾸고, 세션 수 집계는 뺀다. `tokens_for`는 프로필 hooks 종류로 Claude/Codex를 고르며 정확한 세션 파일을 찾지 못하면 `tokens: None`이다. 잘림 여부는 별도로 보존한다.
 
 `watch.rs`:
 
 ```rust
 pub fn matches_waiting(patterns: &[regex::Regex], tail: &str) -> bool {
-    let last = tail.lines().rev().filter(|l| !l.trim().is_empty()).take(6).collect::<Vec<_>>().join("\n");
+    let mut lines = tail.lines().rev().filter(|l| !l.trim().is_empty()).take(6).collect::<Vec<_>>();
+    lines.reverse();
+    let last = lines.join("\n");
     patterns.iter().any(|p| p.is_match(&last))
 }
 
@@ -3062,13 +3086,14 @@ mod tests {
 ```bash
 cargo test -p devbox-agents && cargo test -p devbox-cli && cargo run -q -p xtask -- gen-ts
 git add crates xtask app/src/rpc/gen && git commit -m "feat(agents): detect waiting from output, measure resources and pin token usage"
-# 묶음 I 끝: PROGRESS.md의 묶음 I 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s1-agents-terminal
+# 묶음 I 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 ---
 
 ### Task 11: 프로젝트 설정 파일과 시작 구성
+
+> **2026-10-13 사용자 승인 보정:** PR #640 보안 검토에 따라 01-design §7의 저장소 명령 신뢰 확인을 S1에 추가한다. projects가 경로·전체 설정 digest의 영속 승인과 불변 실행 snapshot을 소유한다. 직접 `agents.create/test/discard/cleanup`, 복합 `projects.launch`, 자동 정리의 실행 경로까지 적용하며, 기존 프로젝트는 자동 승인하지 않는다. 설정 변경·승인 경합·직접 RPC 우회·준비 도중 변경·정리 자원 보존을 실패 회귀부터 확인한다. 아래 초기 예제의 무조건적인 `config::load` 실행은 이 계약에 맞춰 보완한다.
 
 **Files:**
 - Modify: `crates/projects/src/config.rs`(Task 8의 최소 `[agent]`에 `[launch]`·`raw_*`·`parse`·`load`를 더한다)
@@ -3079,14 +3104,14 @@ pnpm check && git push origin v1/s1-agents-terminal
 - Produces:
   - `ProjectConfig { agent: AgentConfig { copy, setup, teardown, test? }, launch: LaunchConfig { services, terminals: [{ name, command? }], agents: [{ tool, worktree, prompt? }] }, raw_tasks, raw_services, raw_schedules }`. 작업 관련 절은 S2가 해석한다(`toml::Value` 보관).
   - `projects.config{ id }`(query) → `{ config, error? }`. 파일이 없으면 기본값이다. 문법 오류면 `error: { message }`이고 기본값으로 동작한다.
-  - `projects.summary{}`(query) → `{ items: [{ id, branch?, dirty, ahead, behind, terminals, agents: { open, attention } }] }`. 전환기 카드용이며, 각 프로젝트 `git status`를 동시에 4개씩 돈다.
-  - `projects.launch{ id }`(mutation) → `LaunchResult { terminals: u32, agents: u32 }`(시작한 개수)
+  - `projects.summary{}`(query) → `{ items: [{ id, branch?, dirty, ahead, behind, terminals, agents: { open, attention } }] }`. 전환기 카드용이며, 각 프로젝트 `git status`를 동시에 4개씩 돈다. 측정할 수 없는 Git 값은 `null`과 항목별 `error`로 표시하며 다른 카드 결과는 보존한다. 일반 디렉터리도 유효한 프로젝트다.
+  - `projects.launch{ id }`(mutation) → `LaunchResult { terminals: u32, agents: u32, terminalIds: string[], rev: string }`(시작한 개수·정확한 새 터미널 ID·완료 시점 revision)
     - `[launch].terminals` → 터미널 세션들
-    - `[launch].agents` → worktree 없는 에이전트 작업들(`agents.create` 내부 호출)
+    - `[launch].agents` → `worktree` 설정을 따르는 에이전트 작업들(`agents.create` 내부 호출, 기본값 `false`). 전체 설정·프로필을 먼저 검증한다. 실행 중 실패하면 이미 생성된 자원은 보존하고 `projects.launch_failed`에 성공한 개수를 담는다. 에이전트 개수는 비동기 준비가 수용된 작업 수이며 이후 준비 실패는 작업 상태로 보고한다.
     - services는 S2에서 연결하고, 지금은 건너뛰며 `warnings`에 "실행은 S2"를 넣지 않고 조용히 무시한다.
-  - `projects.clone{ url, dir? }`(mutation): `git clone`(기본 대상 `~/projects/<repo 이름>`) 후 등록한다.
+  - `projects.clone{ url, dir? }`(mutation): `git clone`(기본 대상 `~/projects/<repo 이름>`) 후 등록한다. 기존 대상은 덮어쓰지 않으며 예약한 디렉터리 descriptor를 고정해 복제하고, DB 등록 시 같은 inode인지 확인한다. 실패한 복제 자원은 보존한다. 인증정보가 포함된 URL은 실행 전에 거절하며 기존 credential helper·SSH identity 설정은 비대화형으로 사용한다.
   - `projects.set_favorite{ id, favorite }`(mutation): S0b의 `favorite` 칸을 바꾼다. 목록은 즐겨찾기 먼저 정렬한다.
-  - `projects.prompts{ id }`(query) → `{ items: [{ name, body }] }`: `.devbox/prompts/*.md`(파일 50개·각 64 KiB 상한, 이름순). 새 에이전트 작업의 지시문 템플릿이다. 변수(`{{title}}`·`{{branch}}`·`{{project}}`) 치환은 화면에서 한다.
+  - `projects.prompts{ id }`(query) → `{ items: [{ name, body }] }`: `.devbox/prompts/*.md`(파일 50개·각 64 KiB 상한, 이름순, `name`은 확장자 없는 파일명). 상한 초과·잘못된 인코딩·심볼릭 링크는 명시적 오류다. 새 에이전트 작업의 지시문 템플릿이다. 변수(`{{title}}`·`{{branch}}`·`{{project}}`) 치환은 화면에서 한다.
   - 의존 방향:
     - projects → (terminal, agents)를 직접 부르지 않는다. `launch`는 데몬 라우트가 projects 설정을 읽고 terminal·agents 서비스를 부르는 조립 함수다(`cli/src/daemon/launch.rs`).
     - `summary`도 데몬 조립 함수다. 순환 의존을 피하려고 이렇게 나눈다.
@@ -3126,7 +3151,7 @@ agents = [{ tool = "claude", worktree = false }]
     #[test]
     fn unknown_top_level_keys_are_errors_with_a_message() {
         let e = parse("[agnet]\nsetup = []\n").unwrap_err();
-        assert!(e.contains("agnet"), "{e}");
+        assert!(e.to_string().contains("agnet"), "{e}");
     }
 
     #[test]
@@ -3139,66 +3164,16 @@ agents = [{ tool = "claude", worktree = false }]
 
 - [ ] **Step 2: 구현**
 
+Task 8의 `ConfigError`·엄격한 `parse`/`load`·안전한 파일 복사 경계를 유지하며 `LaunchConfig`·`LaunchTerminal`·`LaunchAgent`와 raw 절을 추가한다.
+
 ```rust
-// crates/projects/src/config.rs (테스트 위)
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
-#[serde(default, deny_unknown_fields)]
-pub struct AgentConfig { pub copy: Vec<String>, pub setup: Vec<String>, pub teardown: Vec<String>, pub test: Option<String> }
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchTerminal { pub name: String, #[serde(default)] pub command: Option<String> }
-
-#[derive(Debug, Clone, Deserialize, Serialize, TS)]
-#[serde(deny_unknown_fields)]
-pub struct LaunchAgent { pub tool: String, #[serde(default)] pub worktree: bool, #[serde(default)] pub prompt: Option<String> }
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
-#[serde(default, deny_unknown_fields)]
-pub struct LaunchConfig { pub services: Vec<String>, pub terminals: Vec<LaunchTerminal>, pub agents: Vec<LaunchAgent> }
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, TS)]
-#[serde(default, deny_unknown_fields)]
-pub struct ProjectConfig {
-    pub agent: AgentConfig,
-    pub launch: LaunchConfig,
-    #[serde(rename = "task", skip_serializing)]
-    #[ts(skip)]
-    pub raw_tasks: Vec<toml::Value>,
-    #[serde(rename = "service", skip_serializing)]
-    #[ts(skip)]
-    pub raw_services: Vec<toml::Value>,
-    #[serde(rename = "schedule", skip_serializing)]
-    #[ts(skip)]
-    pub raw_schedules: Vec<toml::Value>,
-}
-
-pub fn parse(text: &str) -> Result<ProjectConfig, String> {
-    let c: ProjectConfig = toml::from_str(text).map_err(|e| e.to_string())?;
-    for p in &c.agent.copy {
-        let path = std::path::Path::new(p);
-        if path.is_absolute() || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-            return Err(format!("[agent].copy 경로는 프로젝트 안의 상대 경로여야 합니다: {p}"));
-        }
-    }
-    Ok(c)
-}
-
-pub fn load(project_path: &std::path::Path) -> (ProjectConfig, Option<String>) {
-    match std::fs::read_to_string(project_path.join(".devbox/devbox.toml")) {
-        Ok(text) => match parse(&text) {
-            Ok(c) => (c, None),
-            Err(e) => (ProjectConfig::default(), Some(e)),
-        },
-        Err(_) => (ProjectConfig::default(), None),
-    }
-}
+pub fn parse(text: &str) -> Result<ProjectConfig, ConfigError>;
+pub fn load(project: &std::path::Path) -> Result<ProjectConfig, ConfigError>;
 ```
 
-Task 8에서 임시로 둔 `[agent]` 읽기를 이 `load`로 바꾼다. 데몬 조립 함수 `launch`·`summary`를 `cli/src/daemon/launch.rs`에 두고 라우터에 등록한다.
+파일이 없을 때만 기본값이다. `projects.config` 화면 조회는 오류를 `{ config: 기본값, error }`로 바꾸지만, 에이전트 생성·시작 구성 등 mutation은 오류를 반환하고 실행을 중단한다. raw 절은 TOML로 보존하고 RPC 직렬화·TS 생성에서 제외한다. 설정·프롬프트 읽기는 디렉터리 descriptor를 따라 열어 심볼릭 링크 교체가 프로젝트 밖 읽기로 이어지지 않도록 한다.
+
+데몬 조립 함수 `launch`·`summary`를 `cli/src/daemon/launch.rs`에 두고 라우터에 등록한다. 즐겨찾기는 커밋 직후 목록 변경 이벤트를 발행한다.
 
 - [ ] **Step 3: 통합 테스트·커밋**
 
@@ -3244,7 +3219,7 @@ git add crates xtask app/src/rpc/gen && git commit -m "feat(projects): read .dev
     - `devbox_projects`(읽기): 프로젝트 목록
     - `devbox_agents`(읽기): 열린 에이전트 작업과 상태·주의 메시지
     - `devbox_agent_send`(쓰기): `[mcp] write = true`일 때만 목록에 나온다. 다른 에이전트 작업에 지시를 보낸다.
-  - 결과는 `content: [{ type: "text", text: <JSON 문자열> }]`이다. 오류는 `isError: true`와 한국어 문구다.
+  - 결과는 `content: [{ type: "text", text: <JSON 문자열> }]`이다. 도구 실행 오류는 `isError: true`와 한국어 문구다. 존재하지 않는 도구·잘못된 인자는 JSON-RPC `-32602` 오류로 구별한다.
   - S2·S3이 실행·로그·노트 도구를 덧붙인다(같은 표에 행 추가).
 
 - [ ] **Step 1: 실패하는 테스트**
@@ -3278,57 +3253,28 @@ fn mcp_lists_read_tools_and_calls_projects() {
     let r = call(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"devbox_projects","arguments":{}}}));
     assert_eq!(r["result"]["content"][0]["type"], "text");
     let _ = child.kill();
+    let _ = child.wait();
 }
 ```
 
 - [ ] **Step 2: 구현 요점**
 
-```rust
-// crates/cli/src/mcp.rs (요점)
-pub async fn run() -> anyhow::Result<()> {
-    let paths = crate::paths()?;
-    let config = devbox_core::Config::load(&paths)?;
-    let client = crate::client::Client::connect(&paths.socket, devbox_protocol::message::ClientKind::Mcp, paths.instance.as_str()).await?;
-    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut lines = tokio::io::AsyncBufReadExt::lines(stdin);
-    let mut stdout = tokio::io::stdout();
-    while let Some(line) = lines.next_line().await? {
-        let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
-        let Some(id) = msg.get("id").cloned() else { continue }; // 알림은 응답하지 않는다
-        let result = match msg["method"].as_str().unwrap_or("") {
-            "initialize" => Ok(serde_json::json!({
-                "protocolVersion": msg["params"]["protocolVersion"].as_str().unwrap_or("2025-06-18"),
-                "capabilities": { "tools": {} },
-                "serverInfo": { "name": "devbox", "version": crate::VERSION }
-            })),
-            "tools/list" => Ok(serde_json::json!({ "tools": tools(config.mcp.write) })),
-            "tools/call" => call_tool(&client, &config, &msg["params"]).await,
-            other => Err(format!("unknown method {other}")),
-        };
-        let reply = match result {
-            Ok(r) => serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": r }),
-            Err(e) => serde_json::json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": e } }),
-        };
-        use tokio::io::AsyncWriteExt;
-        stdout.write_all(format!("{reply}\n").as_bytes()).await?;
-        stdout.flush().await?;
-    }
-    Ok(())
-}
-```
+외부 JSON-RPC 봉투·요청 ID·도구 schema·결과·오류는 명시적 타입을 사용한다. `RawValue`는 ID와 중계 JSON에만 사용하며 현재 CONVENTIONS의 경계 규칙을 따른다. 정수·문자열 ID를 그대로 돌려주고 `null` ID는 잘못된 요청으로 거절한다. ID가 없는 알림에는 응답하지 않으며 `tools/call` 같은 요청 전용 기능을 실행하지 않는다.
 
-- `tools(write)`는 이름·설명(한국어)·`inputSchema`(JSON Schema)를 가진 목록이다.
-- `call_tool`은 도구 이름으로 `projects.list`·`agents.list`·`agents.send`를 부른다. 결과 JSON을 `content[0].text`에 담고, RPC 오류는 `messageFor`와 같은 뜻의 한국어로 `isError: true`를 붙인다.
-- MCP는 외부 JSON-RPC 프로토콜이라 `serde_json::Value`를 쓴다(RPC 경계 규칙의 예외. 데몬 RPC 경계가 아님).
+- `[mcp] write`는 기본 `false`다. 공유·로컬 설정을 병합하기 전에 각 파일의 `mcp` 절이 table이고 알려진 키만 갖는지 검사한다. `mcp = [true]` 같은 위치 기반 배열이 쓰기를 켜서는 안 된다.
+- 초기화·도구 목록은 데몬 연결 없이 제공한다. 실제 도구 호출 때 `ClientKind::Mcp`로 연결하며 연결·RPC에 제한 시간을 둔다. 수용 여부가 불분명한 지시는 자동 재전송하지 않는다.
+- stdio는 한 줄당 메시지 하나이며 입력 크기와 대기열을 제한한다. 잘못된 JSON·요청·메서드·입력값을 구별하고, 잘못된 한 줄 뒤에도 다음 요청을 처리한다. EOF에서 종료하고 stdout에는 프로토콜 응답만 쓴다.
+- `tools(write)`는 이름·한국어 설명·객체형 `inputSchema` 목록이다. 표준 `_meta` 입력을 허용한다.
+- `call_tool`은 `projects.list`·`agents.list`·`agents.send`를 호출한다. 열린 작업은 `Closed`를 명시적으로 제외하며, 쓰기 도구의 직접 호출에서도 설정을 검사한다. 성공은 JSON 문자열을 `content[0].text`에 넣고, 실행 오류는 한국어 문구와 `isError: true`로 반환한다. 존재하지 않는 도구는 [도구 오류 규격](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#error-handling)에 따라 `-32602`로 반환한다.
+- 요청 ID와 알림의 구분은 [MCP 2025-06-18 기본 규격](https://modelcontextprotocol.io/specification/2025-06-18/basic)을 따른다. `protocolVersion` 응답은 위 인터페이스대로 클라이언트 값을 유지한다.
 - Claude Code 등록 예시를 `README.md`의 "개발" 절에 한 줄로 적는다: `claude mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`.
 
 - [ ] **Step 3: 통과·커밋·묶음 J 끝**
 
 ```bash
-cargo test -p devbox-cli --test mcp && pnpm check
+cargo test -p devbox-cli --test mcp
 git add crates README.md && git commit -m "feat(cli): expose projects and agents to coding agents over MCP"
-# 묶음 J 끝: PROGRESS.md의 묶음 J 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-git push origin v1/s1-agents-terminal
+# 묶음 J 끝: 좁은 검사·별도 검토 뒤 PROGRESS.md의 묶음 행과 현재 위치를 갱신한다. 전체 검사·push는 S1 끝에 한 번(00-roadmap §3).
 ```
 
 화면과 Windows 통합은 [04b-s1-app](04b-s1-app.md)으로 이어진다.

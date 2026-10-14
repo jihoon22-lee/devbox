@@ -113,6 +113,7 @@ pub enum Control {
     ChannelOpen,
     ChannelClose,
     StreamCredit { stream: u32, bytes: u32 },
+    StreamClose { stream: u32 },
 }
 
 // A present JSON null is a payload; absence is the optional envelope field.
@@ -350,5 +351,15 @@ mod contract_tests {
         assert!(server.contains("diagnosticId?: string"), "{server}");
         assert!(server.contains("rev: string"), "{server}");
         assert!(error.contains("detail?: unknown"), "{error}");
+    }
+    #[test]
+    fn stream_close_control_round_trips_with_explicit_wire_name() {
+        let close = Control::StreamClose { stream: 19 };
+        let frame = control_frame(7, &close);
+        assert_eq!(
+            std::str::from_utf8(&frame.body).expect("JSON"),
+            r#"{"type":"streamClose","stream":19}"#
+        );
+        assert_eq!(parse_json::<Control>(&frame).expect("close control"), close);
     }
 }

@@ -47,6 +47,9 @@ impl Connection {
                 return;
             }
             s.bump();
+            if state != "ready" {
+                s.active_distro = None;
+            }
             s.gate = GateStatus {
                 state,
                 detail,

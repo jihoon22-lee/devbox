@@ -1,4 +1,5 @@
 import { type QueryClient, type QueryKey, replaceEqualDeep } from "@tanstack/react-query";
+import type { Methods } from "./gen/rpc";
 
 export function compareRev(a: string, b: string): number {
   const x = BigInt(a),
@@ -16,6 +17,23 @@ export function shareByRevision(old: unknown, incoming: unknown): unknown {
     after = revOf(incoming);
   if (before !== undefined && after !== undefined && compareRev(after, before) <= 0) return old;
   return replaceEqualDeep(old, incoming);
+}
+/** tmux observations can change independently of terminal row revisions. */
+export function shareTerminalLive(old: unknown, incoming: unknown): unknown {
+  const before = revOf(old),
+    after = revOf(incoming);
+  if (before === undefined || after === undefined || compareRev(after, before) !== 0)
+    return shareByRevision(old, incoming);
+  const cached = old as Methods["terminal.list"]["result"];
+  const observed = incoming as Methods["terminal.list"]["result"];
+  const live = new Map(observed.items.map((session) => [session.id, session]));
+  return replaceEqualDeep(old, {
+    ...cached,
+    items: cached.items.map((session) => {
+      const current = live.get(session.id);
+      return current ? { ...session, alive: current.alive, command: current.command } : session;
+    }),
+  });
 }
 export function setIfNewer(qc: QueryClient, key: QueryKey, data: unknown): void {
   qc.setQueryData(key, (old: unknown) => shareByRevision(old, data));

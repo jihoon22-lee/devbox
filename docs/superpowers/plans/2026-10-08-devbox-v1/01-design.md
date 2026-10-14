@@ -1,6 +1,6 @@
 # Devbox v1 설계 (설계 원장)
 
-- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](08-review-record.md)) · S0b 구현 중
+- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](08-review-record.md)) · S0b 및 후속 #639 완료, S1 선행 정합화
 - 작성: 2026-10-07 · 기준 원격 `main@72ff50c7`(v0.9.0 공개본). 이 PC의 로컬 main은 그 위에 원격에 없는 커밋 2개(끝난 계획 정리·의존성 보안 업데이트)가 더 있다
 - 입력:
   - 본질 기준 전면 리뷰(2026-10-07). 결론은 이 문서 §0·§2·§3에 흡수했고, 원본 보고서(`~/projects/devbox-review-2026-10-07/`)는 2026-10-08에 지웠다.
@@ -68,8 +68,8 @@
 |---|---|---|
 | SC1 | 첫 설치: WSL(systemd 켜진 배포판)이 있는 계정에서 devbox 흔적을 지운 뒤, setup 실행 → 첫 화면까지 사용자가 할 일은 배포판 확인 1번 이하 | 수동 1회 |
 | SC2 | 트레이 상주 중 전역 단축키 → 명령 팔레트 표시 300ms 이내. 콜드 스타트 → 첫 화면 데이터 표시 3초 이내(WSL 실행 중), 10초 이내(WSL 정지 상태) | 앱 계측 로그 |
-| SC3 | 새 에이전트 작업: 제목 입력 + 도구 선택 + 시작 1번으로 worktree 준비·세션 생성·도구 실행까지. 입력 대기·턴 종료가 2초 안에 에이전트 목록과 Windows 알림에 반영 | L3 + 수동 |
-| SC4 | 앱 창 닫기·데몬 재시작·앱 업데이트 뒤에도 에이전트·터미널 세션과 서비스가 유지 (WSL 종료·PC 재부팅은 제외. 재부팅 뒤에는 에이전트 "재개"로 이어감) | L2 + 수동 |
+| SC3 | 새 에이전트 작업: 제목 입력 + 도구 선택 + 시작 1번으로 worktree 준비·세션 생성·도구 실행까지. 입력 대기·턴 종료가 2초 안에 에이전트 목록과 Windows 알림에 반영 | L3 + 에이전트 실제 hook·Windows 설치본 스모크(§11, 04b Task 24) |
+| SC4 | 앱 창 닫기·데몬 재시작·앱 업데이트 뒤에도 에이전트·터미널 세션과 서비스가 유지 (WSL 종료·PC 재부팅은 제외. 재부팅 뒤에는 에이전트 "재개"로 이어감) | L2 + 에이전트 실제 user systemd·Windows 설치본 스모크(§11, 04b Task 24) |
 | SC5 | 사용자에게 보이는 오류는 모두 정해진 코드와 "원인 + 다음 행동" 문구로 끝난다. `internal`은 진단 ID와 함께만 나온다 | 생성 타입의 전수 검사(컴파일 오류) |
 | SC6 | 개발 루프: 화면 코드 변경 → 실제 데몬에 연결된 브라우저 화면 반영 2초 이내. 데몬 코드 변경 → 재시작·재연결 15초 이내 | 개발 스크립트 |
 | SC7 | 검증 비용: PR CI 15분 이내, 로컬 전체 테스트(L3 포함) 10분 이내, 릴리스 워크플로 40분 이내. `.github` + `scripts` 합계 1,500줄 이하, 워크플로 3개 이하. flaky 테스트는 발견한 PR에서 고치거나 지운다(재시도 래퍼 금지) | CI 기록, 줄 수 |
@@ -357,7 +357,7 @@ set -g allow-passthrough on
 - **프레임:** `u32 LE 길이`(뒤따르는 바이트 수, 0 금지) + `u8 종류` + `u32 채널` + 본문.
   - 종류 0 JSON 메시지: 평소 1MiB 이하, 하드 상한 16MiB. 큰 결과는 페이지나 스트림으로 보낸다.
   - 종류 1 스트림 조각: `u32 스트림 ID` + `u8 플래그(FIN)` + 최대 64KiB.
-  - 종류 2 제어: `ChannelOpen`, `ChannelClose`, `StreamCredit{stream, bytes}`.
+  - 종류 2 제어: `ChannelOpen`, `ChannelClose`, `StreamCredit{stream, bytes}`, `StreamClose{stream}`.
   - 잘못된 프레임을 받으면 그 연결을 끊는다.
 - **채널:**
   - 창(또는 WebSocket·CLI 연결) 하나가 채널 하나다.
@@ -367,6 +367,7 @@ set -g allow-passthrough on
   - 스트림마다 신용 창(256KiB)을 둔다. 화면은 실제로 소비한 뒤(xterm `write` 콜백 등) `StreamCredit`를 보낸다.
   - 신용이 바닥나면 생산자가 멈춘다. 터미널은 PTY 읽기를 멈추고(tmux가 다시 그림), 로그 tail은 파일 오프셋에서 기다린다. SSE·WebSocket은 상한까지 쌓은 뒤 버리고 `dropped n`을 표시한다. LSP는 그 세션을 끊는다.
   - 데몬 송신기는 채널별 큐를 라운드로빈으로 돌리고, JSON 응답을 스트림보다 먼저 보낸다.
+  - 입력 FIN은 입력만 닫고 남은 출력을 받을 수 있다. 클라이언트가 스트림을 폐기할 때는 `StreamClose{stream}`으로 해당 채널 소유 스트림만 취소·해제한다. 신용 대기 중인 생산자도 끝내되 다른 스트림과 RPC는 유지한다(S1 Task 1 누수 회귀 보정).
 - **메시지(JSON):**
   - `Hello{version, client, instance}` → `Welcome{version, daemonId}`
   - `Request{id, method, params, clientRequestId?}` → `Response{id, result}` 또는 `Response{id, error, diagnosticId?}`
@@ -568,6 +569,17 @@ services = ["web"]
 terminals = [{ name = "shell" }]
 agents = [{ tool = "claude", worktree = false }]
 ```
+
+
+**저장소 명령 신뢰 확인(2026-10-13 S1 추가 승인)**
+
+프로젝트 등록·clone은 저장소 명령 실행을 승인하지 않는다. `[agent]`의 setup·test·teardown과 `[launch]`의 터미널 명령·에이전트 도구/지시문을 실행하기 전에 경로와 내용을 보여 주고 명시적으로 승인받는다. 승인은 프로젝트의 정규 경로와 `.devbox/devbox.toml`의 전체 내용 digest, 실행 범위 버전에 묶어 데몬 DB에 저장하며, 내용이나 경로·실행 범위가 바뀌면 다시 승인받는다. S1은 실행 범위 버전 1이며, 전체 설정에 S1 실행 정의가 없을 때는 승인이 필요 없다. 아직 실행하지 않는 task/service/schedule 정의는 S1 실행 정의로 세지 않지만 전체 내용 digest에는 포함한다. S2에서 실행 의미를 추가할 때는 명령 미리보기를 확장하고 실행 범위 버전을 올려 재승인받는다.
+
+확인 화면뿐 아니라 직접 RPC와 내부 호출에서도 데몬이 승인을 강제한다. digest 계산과 해석은 한 번 읽은 동일한 바이트를 사용하고, 한 작업은 승인된 불변 설정 snapshot만 실행한다. 복합 시작 구성의 터미널과 에이전트도 같은 snapshot을 사용한다. 저장소 명령을 실행하는 경로에서는 자원 생성·종료·삭제 전에 신뢰를 확인하며, 변경된 teardown이 승인되지 않았다면 작업 폴더와 브랜치를 보존하고 오류를 남긴다. 승인은 명령 정의에 대한 동의이며 worktree·systemd scope나 외부 스크립트의 sandbox를 의미하지 않는다.
+
+이 승인은 `.devbox/devbox.toml`에 정의된 실행 명령에 적용된다. 사용자가 확인한 PR·병합·rebase는 기존 Git hook 설정을 따르며, hook 내용은 이 승인에 포함되지 않는다. 저장소 전체에 대한 실행 차단이나 sandbox를 제공하지 않는다. 복제·작업 폴더 생성 중 암묵 실행되는 checkout hook은 별도로 차단한다.
+
+화면의 사전 조회는 데몬의 실제 동작 분기에 따라 승인 필요 여부를 안내한다. 자동 정리를 끈 병합/PR, inline 세션 종료, 브랜치만 정리하는 경우처럼 `.devbox/devbox.toml`에 정의된 명령이 실행되지 않으면 승인 창을 생략한다. 이 안내는 실행 권한을 부여하지 않으며, 실제 mutation은 현재 상태를 다시 검사하고 필요한 승인 snapshot을 확보한다.
 
 ## 8. 화면
 
@@ -930,14 +942,14 @@ agents = [{ tool = "claude", worktree = false }]
 | L2 | 데몬 통합: `DEVBOX_INSTANCE=test-<난수>`로 실제 git·tmux·systemd user에서 데몬을 띄워 RPC 시나리오 실행 | Linux(WSL·CI) | 매 PR |
 | L3 | 화면 E2E: Playwright(Chromium) + dev-gateway + 실제 데몬. 섹션당 대표 여정 3–5개, 전체 40개 이하, 병렬 | Linux | 매 PR 전부 |
 | L4 | Windows: `crates/win` 단위 테스트, 앱 빌드, self-check | Windows CI | 태그, 수동 실행, `app/src-tauri/**`·`crates/win/**`를 바꾼 PR |
-| L5 | 사용자 실사용(dogfood) | 사용자 PC | S마다. 완료 조건의 수동 항목은 10개 이하이고 사용자가 1회 확인 |
+| L5 | 에이전트 Windows CI 설치본 스모크 | Windows(WSL에서 절대 경로 PowerShell 호출) | S1부터 하위 프로젝트마다 PR 전 1회. 사용자 실사용은 기능 완성 뒤 기본, S2 뒤 선택적 조기 사용 |
 
 - CI의 systemd user 세션: GitHub Ubuntu 러너에서 `sudo loginctl enable-linger $USER`와 `XDG_RUNTIME_DIR`을 설정한다. S0a에서 확인하고, 안 되면 systemd에 의존하는 L2 시나리오만 WSL 로컬 필수로 옮긴다.
 - **flaky 테스트:** 발견한 PR에서 고치거나 지운다. 재시도 래퍼·격리 목록은 만들지 않는다.
 - **PR 규칙:**
-  - 하위 프로젝트 하나가 브랜치 하나·PR 하나다. 그 안의 작업 묶음은 push만 하는 중간 지점이다(00-roadmap §3).
-  - 필수 CI(Linux: fmt·clippy·test·L2·biome·vitest·tsc·`gen-ts --check`·금지어·L3)가 통과하면 rebase 머지한다(하위 프로젝트 하나 = PR 하나, 00-roadmap §3). 보호 규칙의 필수 검사는 이 job들을 모은 `ci-ok` 하나다(IR-1). L4 Windows 워크플로는 필수 검사가 아니다.
-  - 진행 상태의 원장은 PR과 각 계획 문서 머리의 "상태" 줄이다. 체크박스는 작업 보조일 뿐이다.
+  - 하위 프로젝트 하나가 브랜치 하나·PR 하나다. 그 안의 작업 묶음은 로컬 기록·인계 지점이며 묶음별 push는 하지 않는다(00-roadmap §3).
+  - PR 전 하위 프로젝트 브랜치 전체를 별도 검토하고 PROGRESS에 결과를 남긴다. 최종 SHA의 `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 필수 CI와 자동 코드·보안 리뷰 완료를 확인한 뒤 squash 머지한다(00-roadmap §3).
+  - 진행 상태의 유일한 원장은 PROGRESS.md다. PR과 각 계획 문서 머리의 "상태" 줄은 이에 맞춘다. 체크박스는 작업 보조일 뿐이다.
 - **에이전트 작업 규칙(새 AGENTS.md, S0b 첫 과제):**
   - 한 장 이내로 쓴다.
   - 로직은 실패 테스트부터 작성한다.
@@ -947,9 +959,19 @@ agents = [{ tool = "claude", worktree = false }]
   - RPC 경계에 `serde_json::Value`를 쓰지 않는다. `Result<T, String>`은 §5.3의 허용 범위에서만 쓴다.
   - 하위 프로젝트마다 브랜치·worktree 하나를 쓰고, PR은 하위 프로젝트 끝에 한 번 연다(00-roadmap §3).
 - **자원:**
-  - `CARGO_BUILD_JOBS=4`로 둔다.
+  - Cargo jobs 2·Rust test threads 2·Vitest workers 2, CPU 4개·nice +10과 지원 cgroup 6/8GiB·swap 1GiB를 적용한다(CONVENTIONS §5).
   - `scripts/sweep.sh`(오래된 incremental 결과물 + `cargo sweep`)를 각 하위 프로젝트 완료 때와 target-dir이 150 GiB를 넘을 때 돌린다(00-roadmap §3 자원).
   - 무거운 검증은 한 번에 하나만 돌린다.
+
+### 실제 WSL·Windows 수용 검증
+
+- SC3·SC4는 S0b 수용 시험처럼 고유 `DEVBOX_INSTANCE=test-<난수>`와 실제 user systemd에서 에이전트가 확인한다. `DEVBOX_NO_SCOPE` 없이 실제 `systemd-run --user --scope`를 거친다. 데몬 재시작 시 세션 유지와 tmux 종료 시 PTY 소실·SIGHUP 동작을 구분해 검증한다. §4.3에 따라 SIGHUP을 무시하는 프로세스는 남을 수 있으므로 작업 종료 시 scope를 명시적으로 멈추고 소유 자원만 정리한다. 실제 claude·codex hook을 각각 1회 발생시켜 `agents` 상태 반영을 확인한다. 가짜 hook·scope 우회 시험은 이 수용 검증을 대신하지 않는다.
+- Windows 설치본 스모크는 에이전트가 WSL에서 PowerShell을 **절대 경로로 호출**해 CI 설치본을 설치·실행·제거한다(사용자 승인 2026-10-13). 실제 앱 실행과 배포 빌드는 Windows에서만 한다. `scripts/dogfood.sh`처럼 해당 브랜치 최종 SHA의 `windows.yml` 산출물을 받고 저장소·workflow·run·source SHA와 설치 파일 SHA256을 확인한 것만 사용한다. 출처·해시를 PROGRESS와 PR 본문에 기록한다.
+- S1부터 하위 프로젝트마다 PR 전에 1회 실행한다. 최종 로컬 검증·브랜치 전체 검토 뒤 한 번 push하고 `windows.yml`을 workflow dispatch하여 해당 SHA의 산출물을 확보한 뒤 스모크·PR 순서로 진행한다. S1에서는 가능하면 Task 2 직후에도 그 시점 SHA의 산출물로 S0b 범위를 먼저 시도하되 최종 SHA 검증을 대체하지 않는다. 조기 스모크에 필요한 그 시점 SHA push·workflow dispatch는 00 §2.2의 예외로 허용하며 일반 묶음별 push를 재개하지 않는다. 실행할 수 없으면 조기 시도만 미실행 사유를 기록한다.
+- 공통 S0b 범위: 첫 실행 배포판 선택, WSL 바이너리 배치, setup, `wsl.exe` 브리지, ping·projects 목록·추가, 창 닫기 뒤 Job 정리. 각 S가 추가한 Windows 기능을 함께 확인한다. S1은 알림·트레이·전역 단축키·분리 창이며 창 닫기와 앱 완전 종료의 Job 수명을 구분한다.
+- 설치 전 v1 설치본이나 `devbox@prod` 데이터가 이미 있으면 사용자의 실사용으로 보고 **제거하지 말고 멈춰서 묻는다**. v0.9.0 앱(`com.devbox.*`, DevboxSuite)과 기존 devbox 데이터는 건드리지 않는다. 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 제거한다. 기존 자원과 소유 자원을 설치 전후 비교해 식별한다.
+- UAC 승인 창·재부팅·사용자 클릭이 필요하면 멈추고 보고한다. 앱·데몬 로그, `systemctl --user` unit 상태, 진단 정보와 필요시 스크린샷으로 근거를 남긴다. UI 자동 조작이 필요하면 tauri-driver/WebDriver 등 가능한 방법을 검토하고 쓸 수 없으면 **그 항목만 미실행**으로 기록한다.
+- 결과는 PROGRESS와 PR 본문에 **PASS·FAIL·미실행**으로 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다. 사용자에게 중간 확인 목록을 넘기거나 실사용을 기다리지 않는다. R1 30분 유휴 유지와 R2 WSL shutdown 뒤 재연결(걸린 시간 기록)은 **S6 공개 직전 사용자 확인**으로 남기며 그전까지 미실행이다(07 S6-6).
 
 ## 12. 보안 범위 (ADR 0016 유지)
 
@@ -981,12 +1003,12 @@ agents = [{ tool = "claude", worktree = false }]
 
 | ID | 위험 | 대응 | 확인 시점 |
 |---|---|---|---|
-| R1 | WSL 배포판 유휴 종료(연결 없으면 15초)로 데몬·tmux가 멈춤 | 트레이 앱이 브리지 연결 유지, 자동 시작 기본 켬, 종료 시 경고, `instanceIdleTimeout=-1` 선택 안내. 합격 기준: 앱이 연결된 상태로 30분 유휴 뒤에도 WSL·데몬 유지(설치 창을 열고 연결 유지; 트레이 동작은 S1) | S0b S0 확인 7 |
-| R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | socket activation은 S0a 완료, shutdown 복귀는 S0b S0 확인 4·8 |
+| R1 | WSL 배포판 유휴 종료(연결 없으면 15초)로 데몬·tmux가 멈춤 | 트레이 앱이 브리지 연결 유지, 자동 시작 기본 켬, 종료 시 경고, `instanceIdleTimeout=-1` 선택 안내. 합격 기준: 앱이 연결된 상태로 30분 유휴 뒤에도 WSL·데몬 유지(설치 창을 열고 연결 유지; 트레이 동작은 S1) | S6 공개 직전 사용자 확인(그전 미실행) |
+| R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | socket activation은 S0a 완료, shutdown 복귀·걸린 시간은 S6 공개 직전 사용자 확인(그전 미실행) |
 | R3 | `wsl.exe` stdio 브리지의 지연·처리량·바이너리 안전성 | `cat` echo 실측은 목표의 수십 배(p50 0.16ms, 77–93 MiB/s, 바이너리 일치). S0a에서는 실제 bridge + 데몬 경로로 한 번만 확인. 미달이면 WSL localhost TCP + 토큰으로 전환 | S0a |
 | R4 | Tauri Windows 빌드가 Windows에서만 가능 | 화면은 브라우저 + dev-gateway로 개발. 껍데기 변경은 드묾 | S0b |
 | R5 | Claude Code·Codex의 hook·인자·로그 형식 변경 | `agents/adapters/{claude,codex}`로 격리, hook이 없으면 tmux 출력 활동으로 대체 감지 | S0a·S1 |
-| R6 | 재구축이 기능 동등에 이르기 전에 멈춤 | 사용 빈도 순서. 각 S 끝의 빌드가 단독으로 쓸 만해야 함. **전환점:** S2가 끝나면 에이전트·실행·터미널은 새 빌드로 옮기고 나머지는 v0.9.0을 씀 | 매 S |
+| R6 | 재구축이 기능 동등에 이르기 전에 멈춤 | 사용 빈도 순서. 각 S 끝의 빌드가 단독으로 쓸 만해야 함. **전환점:** S2 뒤 에이전트·실행·터미널의 선택적 조기 사용을 안내하되 기다리지 않음. 기능 완성 뒤 실사용이 기본 | 매 S |
 | R7 | WSL 안 LSP 메모리 | 지연 시작, 세션 0개부터 15분 유휴 종료, 메모리 표시 | S4 |
 | R8 | 다시 비대해짐 | SC8 예산 점검, "구조 먼저" 규칙 | 매 S |
 | R9 | 같은 체크아웃에서 여러 에이전트 세션이 동시에 작업 | 하위 프로젝트마다 전용 worktree와 브랜치, 원본 체크아웃은 main | 상시 |
@@ -1000,7 +1022,7 @@ agents = [{ tool = "claude", worktree = false }]
 
 | ID | 이름 | 완료 기준 요약 |
 |---|---|---|
-| S0a | 구조 확인 실험 | R3·R5(hook 획득)·R10·socket activation 자동 기준 측정, R1 유휴·R2 shutdown 복귀는 S0b S0 확인 유보, 결과를 ADR 0017 초안에 기록. 실패 항목은 대체 경로로 설계 갱신 |
+| S0a | 구조 확인 실험 | R3·R5(hook 획득)·R10·socket activation 자동 기준 측정, R1 유휴·R2 shutdown 복귀·걸린 시간은 S6 공개 직전 사용자 확인(그전 미실행), 결과를 ADR 0017 초안에 기록. 실패 항목은 대체 경로로 설계 갱신 |
 | S0b | 걷는 뼈대 | 저장소 초기화(옛 코드·CI·지침 교체) · protocol·mux·core·cli(daemon·bridge·dev-gateway·setup) · `gen-ts` · 화면 골격(프레임·라우팅·RPC 클라이언트·연결 배너·오류 문구·팔레트 최소) · Windows 껍데기 최소(창·브리지·mux) · `system.ping`과 `projects.list/add`가 브라우저와 Tauri 양쪽에서 E2E 통과 · CI · 새 AGENTS.md·ADR 0017 |
 | S1 | 에이전트·터미널·프로젝트 | 에이전트 전 과정(생성·준비 → 실행 → 입력 대기 알림 → 변경·커밋 검토 → 기준 반영 → 병합·PR·폐기·정리·재개), 격자 보기, 터미널 세션 유지·분리 창, 프로젝트 전환기·시작 구성(터미널·에이전트), 트레이·전역 단축키·알림, MCP 기본 도구, 이 섹션에 필요한 디자인 시스템 컴포넌트, SC3·SC4 |
 | S2 | 실행·관찰 | 작업·서비스·예약·로그(소스 병합)·포트·프로세스·컨테이너·문제·WSL 상태, `.devbox/devbox.toml`, Windows 대상 실행, 비밀, 시작 구성(서비스), MCP 실행·로그 도구. **전환점** |

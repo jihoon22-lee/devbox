@@ -4,6 +4,7 @@ set -uo pipefail
 failures=()
 run() { "$@" || failures+=("$*"); }
 run python3 -m unittest discover -s scripts/tests
+run python3 -m unittest discover -s xtask/tests
 run cargo fmt --all --check
 run cargo fmt --manifest-path app/src-tauri/Cargo.toml --check
 run cargo test --manifest-path app/src-tauri/Cargo.toml --locked --lib core:: -- --test-threads="${RUST_TEST_THREADS:-2}"

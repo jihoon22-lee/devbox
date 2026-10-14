@@ -1,0 +1,44 @@
+.view {
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.header {
+  color: var(--fg-muted);
+  background: var(--bg-2);
+  padding: 4px 8px;
+}
+.line {
+  display: flex;
+  min-width: max-content;
+  white-space: pre;
+}
+.line[data-kind="add"] {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.line[data-kind="del"] {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.line[data-kind="meta"] {
+  color: var(--fg-muted);
+}
+.number {
+  width: 48px;
+  flex: 0 0 48px;
+  text-align: right;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+button.number {
+  cursor: pointer;
+}
+button.number:hover {
+  background: var(--bg-3);
+}
+.marker {
+  width: 20px;
+  text-align: center;
+}

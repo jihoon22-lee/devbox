@@ -10,10 +10,26 @@ use tokio_util::sync::CancellationToken;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Ctx {
     pub channel: u32,
     pub cancel: CancellationToken,
+    pub streams: Option<Arc<dyn crate::stream::StreamOpener>>,
+}
+impl std::fmt::Debug for Ctx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Ctx")
+            .field("channel", &self.channel)
+            .finish()
+    }
+}
+impl Ctx {
+    pub fn open_stream(&self) -> Result<crate::stream::StreamEnds, crate::stream::StreamError> {
+        self.streams
+            .as_ref()
+            .ok_or(crate::stream::StreamError::Unsupported)?
+            .open()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +188,7 @@ mod tests {
     fn ctx() -> Ctx {
         Ctx {
             channel: 0,
+            streams: None,
             cancel: tokio_util::sync::CancellationToken::new(),
         }
     }

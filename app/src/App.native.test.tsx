@@ -12,6 +12,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "main" }) }));
 vi.mock("./shell/Shell", () => ({ Shell: () => <p>연결된 앱 화면</p> }));
 test("native StrictMode waits for Rust configuration and sends actual prod app Hello", async () => {
   Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });

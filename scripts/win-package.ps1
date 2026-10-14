@@ -29,6 +29,8 @@ try {
         Run pnpm @('--filter', 'app', 'build')
         Run cargo @('fmt', '--manifest-path', 'app/src-tauri/Cargo.toml', '--check')
         Run cargo @('clippy', '--manifest-path', 'app/src-tauri/Cargo.toml', '--all-targets', '--locked', '--', '-D', 'warnings')
+        Run cargo @('test', '-p', 'devbox-win', '--locked')
+        Run cargo @('clippy', '-p', 'devbox-win', '--all-targets', '--locked', '--', '-D', 'warnings')
         Run cargo @('test', '--manifest-path', 'app/src-tauri/Cargo.toml', '--locked', '--lib')
     }
     Run pnpm @('--filter', 'app', 'tauri', $Mode, '--', '--locked')

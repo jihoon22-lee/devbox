@@ -22,11 +22,16 @@ pub struct DaemonInfo {
     pub pid: u32,
     pub started_ms: i64,
     pub data_dir: String,
+    pub config_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub hostname: Option<String>,
 }
 
 domain_error! {
     pub enum SystemError {
         Unavailable = "system.unavailable",
+        EnvRefreshFailed = "system.env_refresh_failed",
     }
 }
 
@@ -53,8 +58,41 @@ pub struct DoctorReport {
 }
 method!(pub Doctor = "system.doctor", query, PingParams => DoctorReport, SystemError);
 
+#[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
+pub struct RefreshEnvResult {
+    pub restarting: bool,
+}
+method!(pub RefreshEnv = "system.refresh_env", mutation, PingParams => RefreshEnvResult, SystemError);
+
 pub fn export<X: Exporter>(x: &mut X) {
     x.method::<Ping>();
     x.method::<Info>();
     x.method::<Doctor>();
+    x.method::<RefreshEnv>();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DaemonInfo;
+    use ts_rs::TS;
+    #[test]
+    fn daemon_hostname_metadata_roundtrips_and_remains_optional() {
+        let legacy = serde_json::json!({"version":"test", "instance":"test", "pid":1,
+            "startedMs":1, "dataDir":"/fixture", "configPath":"/fixture/config"});
+        let old: DaemonInfo = serde_json::from_value(legacy.clone()).expect("old daemon metadata");
+        assert_eq!(
+            serde_json::to_value(old).expect("old metadata serialize"),
+            legacy
+        );
+        let mut with_host = legacy;
+        with_host["hostname"] = "local-wsl".into();
+        let info: DaemonInfo =
+            serde_json::from_value(with_host.clone()).expect("hostname metadata");
+        assert_eq!(
+            serde_json::to_value(info).expect("hostname roundtrip"),
+            with_host
+        );
+        let config = ts_rs::Config::new().with_large_int("number");
+        assert!(DaemonInfo::decl(&config).contains("hostname?: string"));
+    }
 }

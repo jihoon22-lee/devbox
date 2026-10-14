@@ -9,7 +9,7 @@
 - 대상: 실시간 로그(여러 소스 병합), 포트·프로세스·컨테이너, 문제(file:line), WSL 자원
 - 함께 하는 일: 비밀 값 주입, Windows 대상 실행, 시작 구성의 서비스, MCP 실행·로그 도구
 
-S2가 끝나면 **전환점**이다. 일상의 에이전트·실행·터미널(A·B·C)을 새 빌드로 옮긴다.
+S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실행·터미널(A·B·C)을 새 빌드로 옮겨 써도 된다고 안내하며 기다리지 않는다. 기능 완성 뒤 실사용이 기본이다.
 
 **Architecture:**
 - `crates/runtime`:
@@ -55,17 +55,17 @@ S2가 끝나면 **전환점**이다. 일상의 에이전트·실행·터미널(A
 ## 작업 묶음
 
 S2 전체가 브랜치 `v1/s2-runs` 하나, PR 하나다(00-roadmap §3). 작업 위치는 worktree `../devbox-wt/v1-s2-runs`다.
-묶음은 그 안의 중간 지점이다. 묶음이 끝나면 로컬 검사(`pnpm check`, 그 시점에 없으면 있는 검사만) → `PROGRESS.md` 묶음 행 갱신 커밋 → push 한다. PR·CI는 없다. 세션 인계 지점이 된다.
+묶음은 로컬 커밋·세션 인계 지점이다. 과제별 좁은 검증과 별도 검토 뒤 `PROGRESS.md` 묶음 행·현재 위치를 갱신한다. 묶음별 push와 전체 검사는 하지 않는다. 하위 프로젝트 끝에 브랜치 전체 검토 결과를 PROGRESS에 남기고 최종 상세 검증·Biome CI 뒤 push·PR을 한 번 진행한다(00-roadmap §3).
 PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 번 검사한다.
 
 | 묶음 | 과제 | 끝나면 |
 |---|---|---|
 | 상세화 | Task 1 | 커밋(이 브랜치의 첫 커밋) |
-| O | Task 2–6 | push |
-| P | Task 7–10 | push |
-| Q | Task 11–12 | push |
-| R | Task 13–15b | push |
-| 마무리 | Task 16 | **S2 PR 열기** → CI 통과 → rebase 머지 → 확인 목록을 사용자에게 보냄(기다리지 않음) |
+| O | Task 2–6 | 로컬 커밋·인계 |
+| P | Task 7–10 | 로컬 커밋·인계 |
+| Q | Task 11–12 | 로컬 커밋·인계 |
+| R | Task 13–15b | 로컬 커밋·인계 |
+| 마무리 | Task 16 | **S2 PR 열기** → 필수 CI 3개·최종 SHA 자동 코드·보안 리뷰 완료 → squash 머지 |
 
 ---
 
@@ -79,7 +79,7 @@ PR은 마지막 묶음이 끝난 뒤 한 번 열고, 그 CI가 S2 전체를 한 
   - 화면 쪽 `useRpcQuery`·`SectionLayout`·`useBottomTabs`·`TerminalView`
   - `09-s0a-results.md`의 R10(interop) 판정과 S1 실사용에서 나온 수정 사항
 - [ ] **Step 2:** Task 2–16 각각을 `writing-plans` 형식(실패 테스트 코드 → 실패 확인 → 구현 코드 → 통과 → 커밋)으로 펼친다. 아래 "핵심 테스트"와 [00-roadmap §7](00-roadmap.md) 추적표에서 S2에 걸린 시험(AR-F02·F04·F14·F15)과 입력값을 그대로 포함한다.
-- [ ] **Step 3:** `09-s0a-results.md`의 R10·DPAPI 실험 결과로 Task 11의 키 풀기 경로를 정한다. 데몬 interop이 되면 데몬이 직접 풀고, 안 되면 `secrets.unlock` 경로만 쓴다(키 방식은 Q1에서 DPAPI로 확정).
+- [ ] **Step 3:** `09-s0a-results.md`의 R10·DPAPI 실험 결과로 Task 11의 키 풀기 경로를 정한다. 데몬 interop 성공 여부와 무관하게 Windows 앱의 `secrets.unlock` fallback을 구현·시험한다. 데몬 직접 해제는 지원 환경에서만 사용한다(키 방식은 Q1에서 DPAPI로 확정).
 - [ ] **Step 4:** 커밋·PR(문서만).
 
 ```bash
@@ -222,8 +222,7 @@ git add docs && git commit -m "docs(plan): detail S2 against the S1 code"
 
 ```bash
 # 묶음 O 끝
-# 묶음 O 끝: PROGRESS.md의 묶음 O 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s2-runs
+# 묶음 O 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 O 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -312,8 +311,7 @@ pnpm check && git push origin v1/s2-runs
 
 ```bash
 # 묶음 P 끝
-# 묶음 P 끝: PROGRESS.md의 묶음 P 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s2-runs
+# 묶음 P 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 P 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -330,7 +328,7 @@ pnpm check && git push origin v1/s2-runs
   - AAD는 `secret_id | key_id`
 - `DpapiKeyStore`(Q1 확정, 구현은 이것 하나):
   - `create() -> (Key, SealedBlob)`: 32바이트 무작위 키를 만들고, interop `powershell.exe -NoProfile -NonInteractive`의 표준 입출력으로 DPAPI(CurrentUser) 봉인해 `keys/data.key.dpapi`에 둔다. `key_id`(키 지문)를 DB에 기록한다.
-  - `unseal() -> Result<Key, SecretsError>`: 같은 경로로 푼다. R10이 실패한 환경에서는 호출하지 않고, Windows 앱이 풀어 `secrets.unlock{ key }`로 전달한다.
+  - `unseal() -> Result<Key, SecretsError>`: 같은 경로로 푼다. 데몬의 Windows 호출이 불가능하면 Windows 앱이 풀어 `secrets.unlock{ key }`로 전달한다.
   - `key_id`가 다르면 `secrets.key_mismatch`다.
   - 테스트는 키 저장소를 거치지 않고 `SecretsService::with_key(key)`로 열린 키를 주입한다(트레잇을 두지 않는다).
 - 메서드:
@@ -354,7 +352,8 @@ pnpm check && git push origin v1/s2-runs
 - `run_with_secret_hides_value_from_argv_unit_properties_logs_and_rpc`: `systemctl --user show <unit> -p Environment`·`/proc/<pid>/cmdline`·로그 파일·`runtime.runs` 결과에서 값 문자열을 검색해 없음을 확인
 - `missing_secret_blocks_the_run_with_names`
 - `recovery_string_restores_the_same_key_id`
-- DPAPI 구현은 Windows·interop이 필요하다. 플랫폼 독립인 blob 입출력 조립만 단위 테스트하고, 실제 왕복은 Task 16 확인 목록에서 본다.
+- `windows_app_unlocks_when_daemon_interop_is_unavailable`: 데몬 Windows 호출 실패를 주입 → 잠금 상태 유지 → Windows 앱 DPAPI 해제·`secrets.unlock` → 동일 key_id로 비밀을 쓰는 실행 성공, 로그·RPC 응답에는 키·비밀이 없음. fallback은 필수 핵심 회귀 테스트다. R10 성공은 한 로그인 세션에 한정되므로 이를 생략하는 근거가 아니다.
+- DPAPI blob 입출력 조립을 단위 검증하고, 직접 해제와 Windows 앱 fallback의 실제 왕복은 Task 16 에이전트 설치본 스모크에서 모두 확인한다.
 
 ---
 
@@ -377,12 +376,11 @@ pnpm check && git push origin v1/s2-runs
 **핵심 테스트:**
 - `sync_copies_changed_tracked_files_and_keeps_extra_target_files`(임시 폴더 두 개로)
 - `windows_command_is_quoted_for_powershell`(작은따옴표 이스케이프)
-- 실제 실행은 Task 16 확인 목록
+- 실제 실행은 Task 16 에이전트 설치본 검증
 
 ```bash
 # 묶음 Q 끝
-# 묶음 Q 끝: PROGRESS.md의 묶음 Q 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s2-runs
+# 묶음 Q 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 Q 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -473,13 +471,14 @@ git add -A && git commit -m "feat(runs): add secrets settings, agent test runs a
 
 ---
 
-### Task 15b: S3·S5 동시 진행 준비 — 공용 색인 DB와 코드 보기
+### Task 15b: S3·S5 동시 진행 준비 — 공용 색인 DB·코드 보기·검사 대기
 
 S2 다음에는 S3(기록)과 S5(개발 도구)를 한 세션이 두 트랙으로 동시에 진행한다(사용자 결정 2026-10-08, 00-roadmap §3.6). 두 쪽이 다 쓰는 바탕을 여기서 먼저 만든다. 그래야 두 브랜치가 같은 것을 따로 만들거나 서로를 기다리지 않는다.
 
 **Files:**
 - Create: `crates/core/src/index_db.rs`
 - Create: `app/src/ui/code/{CodeView.tsx,theme.ts,languages.ts}` · Test: `app/src/ui/code/CodeView.test.tsx`
+- Modify: `scripts/verify-resources.py`(검사 잠금 대기 옵션) 및 해당 회귀 테스트
 - Modify: `crates/core/src/lib.rs`, `app/package.json`(`@codemirror/state`·`view`·`language`·`language-data`·`commands`·`search`), `.gitattributes`
 
 **Interfaces:**
@@ -491,9 +490,16 @@ S2 다음에는 S3(기록)과 S5(개발 도구)를 한 세션이 두 트랙으�
   - `languages.ts`의 `loadLanguage(nameOrFileName)`이 `@codemirror/language-data`에서 언어를 지연 로드한다.
   - `theme.ts`는 01-design §8.3의 토큰으로 편집기 색을 만드는 **유일한** 모듈이다.
   - 쓰는 곳: S3 `EditorHost`(노트), S4 코드 편집기, S5 요청·응답 본문.
-- `.gitattributes`에 `Cargo.lock merge=lockfile`, `pnpm-lock.yaml merge=lockfile`, `app/src/rpc/gen/rpc.ts merge=lockfile`를 더한다. 각 clone에서 `git config merge.lockfile.driver true`가 필요하다(00-roadmap §3.3). rebase 중 충돌하면 위쪽(main) 판을 남기고, rebase가 끝난 뒤 한 번에 다시 만든다(00-roadmap §3.6).
+- `.gitattributes`에 `Cargo.lock merge=lockfile`, `pnpm-lock.yaml merge=lockfile`, `app/src/rpc/gen/rpc.ts merge=lockfile`를 더한다. 각 clone에서 `git config merge.lockfile.driver true`가 필요하다(00-roadmap §3.3). main 반영 중 충돌하면 main 판을 기준으로 실제 의존성·RPC 선언에 맞춰 다시 만들고, 최종 결과를 검증한다(00-roadmap §3.6).
+
+**검사 잠금·자원(사용자 결정 2026-10-13):**
+- `scripts/verify-resources.py`에 `--wait`를 추가한다. 기본은 Git common-dir 비차단 잠금 경합 시 exit 75를 유지하고, 대기 모드는 최대 60분 기다린 뒤 exit 75와 "검사 대기 초과"를 보고한다. 이 결과는 검사 실패와 구분해 다시 시도한다.
+- S3·S5 동시 진행의 전체 검사(`scripts/check.sh`)·E2E는 대기 모드로 한 번에 하나만 실행한다. `scripts`는 동시 진행 중 수정할 수 없는 공유 파일이므로 옵션과 호출 경로를 S2에서 끝낸다.
+- 트랙별 좁은 검사는 잠금 없이 실행하되 트랙당 Cargo jobs 2·Rust test threads 2·Vitest workers 2(합 4), CPU 4·nice +10, 지원 cgroup high 6GiB/max 8GiB·swap 1GiB를 지킨다.
+- 트랙 2는 `CARGO_TARGET_DIR=$HOME/.cache/targets/devbox-s5`를 쓰고 S5 머지 뒤 정리한다. wsl-resource-guard 개입 또는 `killed:*` 등 메모리 압박 시 한 트랙을 잠시 멈춘다.
 
 **핵심 테스트:**
+- 잠금 회귀: 기본 경합 즉시 exit 75, `--wait` 잠금 해제 후 명령 실행, 기한 초과 exit 75·대기 초과 문구·자식 미실행, 서로 다른 worktree가 같은 common-dir 잠금을 공유함을 짧은 fixture 기한으로 확인한다. 기존 CPU·nice·cgroup 제한도 유지되는지 확인한다.
 - `ensure_domain_recreates_only_that_domain`: `notes_x`·`api_y` 테이블에 행을 넣고 `api` 버전만 올림 → `api` 호출은 `true`이고 `api_y`가 비어 있음, `notes` 호출은 `false`이고 `notes_x` 행이 그대로
 - `ensure_domain_is_idempotent`: 같은 버전으로 두 번 부르면 두 번째는 `false`
 - `CodeView.test.tsx`: 텍스트 표시, `language="json"` 로드 뒤 구문 강조 요소가 생김, 편집하면 `onChange`가 새 텍스트로 불림, `readOnly`면 편집 안 됨
@@ -501,8 +507,7 @@ S2 다음에는 S3(기록)과 S5(개발 도구)를 한 세션이 두 트랙으�
 ```bash
 git config merge.lockfile.driver true
 git add -A && git commit -m "feat(core): add a per-domain index database and a shared code view"
-# 묶음 R 끝: PROGRESS.md의 묶음 R 행과 현재 위치를 고쳐 커밋한 뒤 push한다. PR·CI는 없다(00-roadmap §3)
-pnpm check && git push origin v1/s2-runs
+# 묶음 R 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 R 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
 
 ---
@@ -513,26 +518,21 @@ pnpm check && git push origin v1/s2-runs
 - Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치, 다음은 S3·S5 동시 시작), `scripts/loc.sh` 실행 결과를 PR 본문에 기록
 
 - [ ] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
-- [ ] **Step 2: 확인 목록(사용자, 10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
-  이 목록은 **머지를 막지 않는다**(00-roadmap §2.2). PR CI가 통과하면 바로 머지하고, 설치 파일 받는 법(`bash scripts/dogfood.sh <브랜치>`)과 이 목록을 사용자에게 보낸 뒤 다음 하위 프로젝트로 간다. 사용자가 써 보다 문제를 알리면 PROGRESS §2에 적고 그때 진행 중인 브랜치에서 고친다.
+- [ ] **Step 2: 에이전트 설치본 검증(10개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs`로 받는다.
+  에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. 기존 v1 설치본 또는 `devbox@prod` 데이터가 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
   1. 실제 프로젝트의 `pnpm dev`를 서비스로 정의 → 시작 → 로그 실시간 → 포트 칩으로 브라우저 열기
   2. 서비스를 일부러 죽여 자동 재시작, 한도 초과 시 Windows 알림 1회
   3. 앱을 닫았다 다시 열어도 서비스가 계속 돌고 로그가 이어진다.
   4. 예약 작업이 정해진 시각에 돌고, 실패하면 알림
   5. 빌드 오류가 문제 탭에 file:line으로 보이고 누르면 연다.
-  6. 비밀 하나를 넣고 그 비밀을 쓰는 작업을 실행 → 동작하고, 로그·설정 화면에 값이 없다.
+  6. 비밀 하나를 넣고 그 비밀을 쓰는 작업을 실행 → 동작하고, 로그·설정 화면에 값이 없다. 데몬 Windows 호출이 실패하는 경우에도 Windows 앱 DPAPI 해제·`secrets.unlock` fallback으로 실행되는지 반드시 확인한다.
   7. `target = "windows"` 작업이 `C:\dev\<프로젝트>`로 동기화 뒤 PowerShell로 돈다.
-  8. 컨테이너 목록·로그 보기, 컨테이너 재시작
+  8. 소유 fixture의 컨테이너 목록·로그 보기. 재시작 등 Docker 조작은 일회성 hosted CI 또는 독립 VM에서만 확인하고 로컬 기존 Docker·서비스·공유 네트워크는 변경하지 않는다.
   9. 에이전트 상세의 [테스트 실행]이 실행 로그로 보이고, 실패 로그를 에이전트에게 보낸다.
   10. 시작 구성 실행으로 서비스·터미널·에이전트가 한 번에 뜬다.
-- [ ] **Step 3: 전환 안내:** 사용자에게 "이제 에이전트·실행·터미널(A·B·C)을 새 빌드로 옮겨 써도 된다. v0.9.0은 기록·편집·도구(E·D·F·G)에만 쓰면 된다"고 알린다. 기다리지 않는다. 사용자가 옮겼다고 하면 그 날짜를 PROGRESS에 적는다.
+- [ ] **Step 3: 전환 안내:** S2 머지 뒤 "에이전트·실행·터미널은 새 빌드로 옮겨 써도 된다"고 선택적 조기 사용만 안내하고 기다리지 않는다. 실사용은 기능 완성 뒤가 기본이다. 사용자가 옮기면 날짜를 PROGRESS에 적고, 알려 준 문제는 PROGRESS §2에 기록해 진행 중인 브랜치에서 고친다.
 - [ ] **Step 4: 상태 갱신·PR**
 
-```bash
-sed -i 's/^- 상태: 계획(과제 수준) · 미착수 · 시작 조건: S1 완료.*/- 상태: 완료(S2 PR 머지, 확인 목록·전환 안내 전달)/' docs/superpowers/plans/2026-10-08-devbox-v1/05-s2-runs.md
-# PROGRESS.md: S2 행 완료일, PR 표의 S2 행, 현재 위치(다음: 트랙 1 S3 Task 1과 트랙 2 S5-1을 동시에 시작, 00-roadmap §3.6)를 고친다
-git add docs && git commit -m "docs(plan): mark S2 complete"
-git push origin v1/s2-runs && gh pr create --base main --head v1/s2-runs --title "feat: runs and observation (S2)" --body "S2 실행·관찰 전체(Task 1–16), SC9 측정. 확인 목록 10개와 전환 안내는 머지 뒤 사용자에게 보낸다.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-```
+- PR 전에는 상태 줄을 직접 편집해 `구현 완료·최종 검증 결과 기록·PR 수용 대기`로 적는다. `sed` 패턴으로 완료를 추정하지 않는다. 하위 프로젝트 끝 브랜치 전체 검토와 최종 상세 검증·Biome CI를 마치고, 결과·미실행 항목을 PROGRESS와 PR 본문에 남긴다.
+- 00-roadmap §3에 따라 push·PR은 한 번 진행한다. 필수 CI `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`와 최종 SHA 자동 코드·보안 리뷰 완료 뒤 squash 머지한다.
+- 실제 머지를 확인한 뒤 상태 줄을 직접 `완료(S2 PR 머지)`로 고치고 PROGRESS의 S2 행·PR 표·현재 위치(다음: 트랙 1 S3 Task 1·트랙 2 S5-1)를 갱신한다. PR 전 수용 대기를 완료로 기록하지 않는다.

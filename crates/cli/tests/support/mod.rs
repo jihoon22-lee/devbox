@@ -5,6 +5,7 @@ use devbox_protocol::message::ClientKind;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
+mod agents;
 
 pub struct ChildGuard(pub Child);
 impl Drop for ChildGuard {
@@ -19,10 +20,13 @@ pub struct TestDaemon {
     pub socket: PathBuf,
     pub paths: Paths,
     pub child: Option<ChildGuard>,
+    pub extra_env: Vec<(String, String)>,
+    pub foreground: bool,
 }
 impl TestDaemon {
     pub fn fixture() -> Self {
         let home = tempfile::tempdir().expect("create fixture directory");
+        std::fs::write(home.path().join(".gitconfig"), "[user]\nname = devbox-test\nemail = test@devbox.invalid\n[init]\ndefaultBranch = main\n").expect("write fixture Git identity");
         let instance = format!("test-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
         let runtime = home.path().join("run");
         std::fs::create_dir_all(&runtime).expect("create fixture directory");
@@ -50,11 +54,16 @@ impl TestDaemon {
             socket: paths.socket.clone(),
             paths,
             child: None,
+            extra_env: vec![("DEVBOX_NO_SCOPE".into(), "1".into())],
+            foreground: true,
         }
     }
     pub fn command(&self) -> Command {
         let mut command = self.environment(env!("CARGO_BIN_EXE_devbox"));
-        command.args(["daemon", "--foreground"]);
+        command.arg("daemon");
+        if self.foreground {
+            command.arg("--foreground");
+        }
         command
     }
     pub fn environment(&self, program: &str) -> Command {
@@ -69,7 +78,10 @@ impl TestDaemon {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(
-                std::fs::File::create(self.home.path().join("stderr.log"))
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(self.home.path().join("stderr.log"))
                     .expect("create fixture file"),
             );
         for key in [
@@ -81,9 +93,13 @@ impl TestDaemon {
             "LISTEN_FDNAMES",
             "NOTIFY_SOCKET",
             "RUST_LOG",
+            "TMUX",
+            "TMUX_TMPDIR",
+            "DEVBOX_NO_SCOPE",
         ] {
             command.env_remove(key);
         }
+        command.envs(self.extra_env.iter().map(|(k, v)| (k, v)));
         command
     }
     pub fn start() -> Self {
@@ -147,5 +163,12 @@ pub fn exits(mut child: ChildGuard) -> std::process::ExitStatus {
         }
         assert!(Instant::now() < deadline, "child exit deadline");
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+impl Drop for TestDaemon {
+    fn drop(&mut self) {
+        self.stop();
+        self.kill_tmux_server();
     }
 }
