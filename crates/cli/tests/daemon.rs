@@ -186,3 +186,24 @@ async fn disconnect_closes_subscriptions_and_calls_promptly_and_restart_recovers
         devbox_cli::VERSION
     );
 }
+
+#[tokio::test]
+async fn system_info_reports_daemon_os_hostname_when_available() {
+    let d = TestDaemon::start();
+    let c = d.client().await;
+    let info = c
+        .call::<devbox_protocol::system::Info>(&PingParams {})
+        .await
+        .expect("daemon metadata");
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        info.hostname.as_deref(),
+        Some(
+            std::fs::read_to_string("/proc/sys/kernel/hostname")
+                .expect("OS hostname")
+                .trim()
+        )
+    );
+    #[cfg(not(target_os = "linux"))]
+    assert!(info.hostname.is_none());
+}

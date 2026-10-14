@@ -1,5 +1,6 @@
 mod debug;
 mod dedupe;
+mod hostname;
 mod launch;
 mod outbox;
 pub mod routes;

@@ -13,10 +13,10 @@ import { setTerminalFont, storedFontSize, usePreferences } from "../settings/pre
 import { preserveInitialHistory } from "./initial-history";
 import { terminalKey } from "./keys";
 import { type LinkState, TerminalLink } from "./link";
-import { parseOsc7 } from "./osc";
 import { TerminalSearch } from "./TerminalSearch";
 import s from "./TerminalView.module.css";
 import { terminalTheme } from "./theme";
+import { useOsc7 } from "./useOsc7";
 
 const FONT = '"Cascadia Mono", "D2Coding", monospace';
 const DEFAULT_SIZE = 13;
@@ -43,6 +43,7 @@ export function TerminalView({
   focusRequest,
 }: TerminalViewProps) {
   const client = useRpc();
+  const registerOsc7 = useOsc7(client, id, onCwd);
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<LinkState>("connecting");
   const [searching, setSearching] = useState(false);
@@ -126,11 +127,7 @@ export function TerminalView({
       term.onTitleChange((title) => {
         if (!disposed) callbacks.current.onTitle?.(title);
       }),
-      term.parser.registerOscHandler(7, (data) => {
-        const path = parseOsc7(data);
-        if (!disposed && path !== null) callbacks.current.onCwd?.(path);
-        return true;
-      }),
+      registerOsc7(term.parser),
     ];
     term.attachCustomKeyEventHandler((event) => {
       if (disposed) return false;
@@ -249,7 +246,7 @@ export function TerminalView({
       })
       .catch(() => warn("터미널 글꼴을 적용하지 못했습니다"));
     return cleanup;
-  }, [client, id, preview]);
+  }, [client, id, preview, registerOsc7]);
   useEffect(() => {
     // Selection is an explicit intent. Changing callbacks/autoFocus or opening
     // search must not pull focus away from its controls on an existing view.

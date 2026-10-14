@@ -16,6 +16,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         })
         .register::<Info, _, _>(|s, _, _| async move {
             Ok(DaemonInfo {
+                hostname: super::hostname::local_hostname().await,
                 version: s.version.into(),
                 instance: s.paths.instance.as_str().into(),
                 pid: std::process::id(),

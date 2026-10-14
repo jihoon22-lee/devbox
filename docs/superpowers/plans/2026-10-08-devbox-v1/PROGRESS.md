@@ -399,3 +399,5 @@ a93de69d 수용 결과: CI 38478608236·Windows 38478608196의 필수 검사 및
 | 03b Task 24 | 실제 main 보호 규칙은 기존 필수 검사 3개이며 `ci-ok` 전환은 아직 이루어지지 않았다 | S0b 최종 수용 시 새 CI와 현재 지침의 Windows 검증 요건을 함께 확인한다. 이번에는 보호 규칙을 변경하지 않았다 |
 
 다음 실행 순서는 S0a 측정 도구 보완 → 브리지 → systemd/socket activation·실행 수명 → tmux/PTY → systemd 내부 interop·DPAPI → hook 실험 → 결과·ADR 초안·소유 자원 정리다. S0a 합격 뒤에만 S0b로 간다. 이 준비 검토 당시의 S0b 사용자 확인 gate는 2026-10-13 결정으로 대체하며, 설계 변경이 필요한 실패는 별도로 보고한다.
+
+원격 OSC 7 경로 보완(4265254688): file URI의 호스트가 비어 있거나 localhost 또는 데몬 OS 호스트명과 일치할 때만 로컬 cwd로 사용한다. Linux /proc의 호스트명을 제한된 크기로 읽어 선택적 system.info 필드로 전달하며 생성 RPC 타입을 갱신했다. 늦은 호스트 정보에는 마지막 OSC 후보만 재검증하고 교체·폐기된 terminal/client의 콜백은 무시한다. 실제 새 탭·분할 생성 인자 오류 등 프론트 8개와 프로토콜 1개 RED 뒤 프론트 고유 29개·프로토콜/OS helper/실제 소유 데몬 RPC 3개 PASS. 정적 검사 초기 2건은 수정했고 최종 영향 25개·타입·생성·변경 Biome·Rustfmt PASS. 원본 실패와 최종 근거는 `osc-host-followup`에 보존한다. 동결 소스 11개·로그/자원 해시·자원 JSON 15개 독립 검토와 전체 Biome 275파일 PASS. 새 SHA의 Windows 실기는 나머지 후속 수정 뒤 수행한다.

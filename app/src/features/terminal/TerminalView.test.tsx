@@ -17,13 +17,15 @@ const mock = vi.hoisted(() => ({
   webgl: [] as any[],
   callbacks: [] as (() => void)[],
   client: {},
+  metadata: { data: undefined as { hostname?: string } | undefined, isSuccess: false, isError: false },
+  create: vi.fn(async () => ({ id: "s2" })),
   openError: false,
   webglError: false,
 }));
 vi.mock("../../rpc/RpcProvider", () => ({ useRpc: () => mock.client }));
 vi.mock("../../rpc/query", () => ({
   useRpcMutation: () => ({ isPending: false }),
-  useRpcQuery: () => ({ data: { items: [] } }),
+  useRpcQuery: (method: string) => (method === "system.info" ? mock.metadata : { data: { items: [] } }),
   confirmPolicy: () => "always",
 }));
 vi.mock("./useSessions", () => {
@@ -39,7 +41,7 @@ vi.mock("./useSessions", () => {
   }));
   return {
     useSessions: () => ({ data: { rev: "1", items }, items, isError: false, isFetching: false }),
-    useCreateSession: () => vi.fn(),
+    useCreateSession: () => mock.create,
   };
 });
 vi.mock("./link", () => ({
@@ -209,6 +211,8 @@ test("directly focusing another pane supersedes an old selection request when it
 });
 beforeEach(() => {
   for (const list of [mock.terms, mock.links, mock.fits, mock.searches, mock.webgl, mock.callbacks]) list.length = 0;
+  mock.metadata = { data: { hostname: "local-wsl" }, isSuccess: true, isError: false };
+  mock.create.mockClear();
   mock.openError = false;
   mock.webglError = false;
   for (const item of useToasts.getState().items) useToasts.getState().dismiss(item.id);
@@ -443,4 +447,103 @@ test("readable old font storage cannot override the live or newly opened font af
   await flush();
   expect(mock.terms.at(-1).options.fontSize).toBe(22);
   expect(localStorage.getItem("devbox.terminalFont")).toBe("13");
+});
+
+test.each(["KeyT", "KeyE"])("remote OSC cannot choose a local new tab/split cwd (%s)", async (code) => {
+  useCurrentProject.getState().set(undefined);
+  useTerminalLayout.setState({ byProject: { none: openTab(emptyLayout(), "s1") } });
+  useTerminalFocus.setState({ byProject: { none: "s1" }, cwd: {}, bells: {} });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <TooltipProvider>
+        <TerminalPage />
+      </TooltipProvider>
+    </QueryClientProvider>,
+  );
+  await flush();
+  act(() => {
+    mock.terms[0].events.osc("file://local-wsl/local/safe");
+    mock.terms[0].events.osc("file://remote-host/remote-but-existing-local");
+  });
+  fireEvent.keyDown(window, { code, ctrlKey: true, shiftKey: true });
+  await flush();
+  expect(mock.create).toHaveBeenCalledWith({
+    projectId: null,
+    cwd: "/local/safe",
+    title: null,
+    command: null,
+    attachZellij: null,
+  });
+});
+test("pending local OSC uses arriving hostname and the latest callback without remount", async () => {
+  mock.metadata = { data: undefined, isSuccess: false, isError: false };
+  const first = vi.fn(),
+    next = vi.fn();
+  const view = render(<TerminalView id="pending" onCwd={first} />);
+  await flush();
+  act(() => mock.terms[0].events.osc("file://local-wsl/first%20prompt"));
+  expect(first).not.toHaveBeenCalled();
+  view.rerender(<TerminalView id="pending" onCwd={next} />);
+  mock.metadata = { data: { hostname: "LOCAL-WSL." }, isSuccess: true, isError: false };
+  view.rerender(<TerminalView id="pending" onCwd={next} />);
+  await flush();
+  expect(first).not.toHaveBeenCalled();
+  expect(next).toHaveBeenCalledExactlyOnceWith("/first prompt");
+  expect(mock.terms).toHaveLength(1);
+  expect(mock.links).toHaveLength(1);
+});
+test.each(["file://remote-host/new", "not a URL"])(
+  "latest invalid or remote candidate supersedes pending local OSC (%s)",
+  async (candidate) => {
+    mock.metadata = { data: undefined, isSuccess: false, isError: false };
+    const cwd = vi.fn();
+    const view = render(<TerminalView id="latest" onCwd={cwd} />);
+    await flush();
+    act(() => {
+      mock.terms[0].events.osc("file://local-wsl/old");
+      mock.terms[0].events.osc(candidate);
+    });
+    expect(cwd).not.toHaveBeenCalled();
+    mock.metadata = { data: { hostname: "local-wsl" }, isSuccess: true, isError: false };
+    view.rerender(<TerminalView id="latest" onCwd={cwd} />);
+    await flush();
+    expect(cwd).not.toHaveBeenCalled();
+    act(() => mock.terms[0].events.osc("file://local-wsl/current"));
+    expect(cwd).toHaveBeenCalledExactlyOnceWith("/current");
+  },
+);
+test("pending OSC cannot cross session replacement or disposed renderer lifetime", async () => {
+  mock.metadata = { data: undefined, isSuccess: false, isError: false };
+  const oldCwd = vi.fn(),
+    newCwd = vi.fn();
+  const view = render(<TerminalView id="old" onCwd={oldCwd} />);
+  await flush();
+  const old = mock.terms[0];
+  act(() => old.events.osc("file://local-wsl/old"));
+  mock.metadata = { data: { hostname: "local-wsl" }, isSuccess: true, isError: false };
+  view.rerender(<TerminalView id="new" onCwd={newCwd} />);
+  await flush();
+  expect(oldCwd).not.toHaveBeenCalled();
+  expect(newCwd).not.toHaveBeenCalled();
+  const current = mock.terms[1];
+  act(() => {
+    old.events.osc("file://local-wsl/stale");
+    current.events.osc("file://local-wsl/current");
+  });
+  expect(newCwd).toHaveBeenCalledExactlyOnceWith("/current");
+  view.unmount();
+  act(() => current.events.osc("file:///disposed"));
+  expect(newCwd).toHaveBeenCalledOnce();
+});
+test.each([false, true])("missing or failed hostname keeps named paths unknown (%s)", async (failed) => {
+  mock.metadata = { data: failed ? undefined : {}, isSuccess: !failed, isError: failed };
+  const cwd = vi.fn();
+  render(<TerminalView id="unknown" onCwd={cwd} />);
+  await flush();
+  act(() => {
+    mock.terms[0].events.osc("file://local-wsl/unknown");
+    mock.terms[0].events.osc("file:///hostless");
+    mock.terms[0].events.osc("file://localhost/localhost");
+  });
+  expect(cwd.mock.calls).toEqual([["/hostless"], ["/localhost"]]);
 });
