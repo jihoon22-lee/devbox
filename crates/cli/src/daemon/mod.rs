@@ -125,6 +125,7 @@ fn build_services_with_runtime(
         terminal,
         agents,
         runs,
+        containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
     }))
 }

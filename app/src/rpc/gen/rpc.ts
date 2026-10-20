@@ -36,6 +36,14 @@ export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
+export type ContainerAction = "start" | "stop" | "restart";
+export type ContainerActionParams = { id: string, action: ContainerAction, };
+export type ContainerActionResult = { id: string, action: ContainerAction, undo: ContainerActionParams | null, };
+export type ContainerError = { "code": "runtime.container_invalid_id" } | { "code": "runtime.container_unavailable" } | { "code": "runtime.container_failed" } | { "code": "runtime.container_timeout" } | { "code": "runtime.container_output_limit" } | { "code": "runtime.container_invalid_output" } | { "code": "runtime.container_cancelled" };
+export type ContainerInfo = { id: string, name: string, image: string, state: string, status: string, ports: string, composeProject?: string, };
+export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
+export type ContainersQuery = Record<symbol, never>;
+export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
 export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
@@ -227,6 +235,8 @@ export interface Methods {
   "projects.summary": { kind: "query"; confirm: "none"; params: SummaryProjects; result: ProjectSummaryList; error: ProjectsError };
   "projects.trust_approve": { kind: "mutation"; confirm: "none"; params: TrustApprove; result: Done; error: ProjectsError };
   "projects.trust_preview": { kind: "query"; confirm: "none"; params: TrustPreviewParams; result: TrustPreview; error: ProjectsError };
+  "runtime.container_action": { kind: "mutation"; confirm: "reversible"; params: ContainerActionParams; result: ContainerActionResult; error: ContainerError };
+  "runtime.containers": { kind: "query"; confirm: "none"; params: ContainersQuery; result: ContainersResult; error: ContainerError };
   "runtime.define": { kind: "mutation"; confirm: "none"; params: DefineRun; result: DefineResult; error: RuntimeError };
   "runtime.detect": { kind: "query"; confirm: "none"; params: DetectRuns; result: Array<Suggestion>; error: RuntimeError };
   "runtime.exited": { kind: "mutation"; confirm: "always"; params: Exited; result: Done; error: RuntimeError };
@@ -306,6 +316,8 @@ export const METHOD_INFO = {
   "projects.summary": { kind: "query", confirm: "none" },
   "projects.trust_approve": { kind: "mutation", confirm: "none" },
   "projects.trust_preview": { kind: "query", confirm: "none" },
+  "runtime.container_action": { kind: "mutation", confirm: "reversible" },
+  "runtime.containers": { kind: "query", confirm: "none" },
   "runtime.define": { kind: "mutation", confirm: "none" },
   "runtime.detect": { kind: "query", confirm: "none" },
   "runtime.exited": { kind: "mutation", confirm: "always" },
@@ -399,6 +411,13 @@ export const RPC_ERROR_CODES = [
   "projects.trust_preview_stale",
   "projects.trust_required",
   "projects.unsafe_prompt_path",
+  "runtime.container_cancelled",
+  "runtime.container_failed",
+  "runtime.container_invalid_id",
+  "runtime.container_invalid_output",
+  "runtime.container_output_limit",
+  "runtime.container_timeout",
+  "runtime.container_unavailable",
   "runtime.def_invalid",
   "runtime.dependency_failed",
   "runtime.detect_io",

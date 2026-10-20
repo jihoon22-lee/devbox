@@ -58,6 +58,28 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "작업 감지 파일이나 제안 목록이 너무 큽니다.",
     action: "파일은 1MiB, 제안 목록은 768KiB 이내로 줄여 주세요.",
   },
+  "runtime.container_invalid_id": { title: "컨테이너 ID가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
+  "runtime.container_unavailable": {
+    title: "Docker를 사용할 수 없습니다.",
+    action: "Docker 설치와 실행 상태를 확인해 주세요.",
+  },
+  "runtime.container_failed": {
+    title: "컨테이너 작업에 실패했습니다.",
+    action: "Docker 상태를 확인하고 다시 시도해 주세요.",
+  },
+  "runtime.container_timeout": {
+    title: "Docker 응답 시간이 초과되었습니다.",
+    action: "목록을 새로고침하여 상태를 확인해 주세요.",
+  },
+  "runtime.container_output_limit": { title: "Docker 응답이 너무 큽니다.", action: "Docker 상태를 확인해 주세요." },
+  "runtime.container_invalid_output": {
+    title: "Docker 응답을 읽을 수 없습니다.",
+    action: "Docker 상태를 확인하고 다시 시도해 주세요.",
+  },
+  "runtime.container_cancelled": {
+    title: "컨테이너 요청이 취소되었습니다.",
+    action: "목록을 새로고침하여 상태를 확인해 주세요.",
+  },
   "runtime.invalid_cursor": { title: "실행 목록 위치가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
   "terminal.command_too_long": {
     title: "터미널 명령이 너무 깁니다.",

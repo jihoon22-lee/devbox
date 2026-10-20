@@ -90,6 +90,12 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_observe::LogsSearch, _, _>(|s, ctx, p| async move {
             super::logs::search(s, ctx, p).await
         })
+        .register::<devbox_runtime::RuntimeContainers, _, _>(|s, ctx, _| async move {
+            s.containers.list(ctx.cancel).await
+        })
+        .register::<devbox_runtime::RuntimeContainerAction, _, _>(|s, ctx, p| async move {
+            s.containers.action(p, ctx.cancel).await
+        })
         .register::<devbox_runtime::RuntimeStart, _, _>(
             |s, _, p| async move { s.runs.start(p).await },
         )

@@ -1,4 +1,8 @@
 //! Execution definitions owned by a project file or by this PC.
+mod container_model;
+mod containers;
+pub use container_model::*;
+pub use containers::DockerContainers;
 pub mod cron;
 mod defs;
 pub mod detect;
@@ -50,6 +54,8 @@ pub const MIGRATIONS: &[Migration] = &[
     },
 ];
 
+method!(pub RuntimeContainers = "runtime.containers", query, ContainersQuery => ContainersResult, ContainerError);
+method!(pub RuntimeContainerAction = "runtime.container_action", mutation(reversible), ContainerActionParams => ContainerActionResult, ContainerError);
 method!(pub RuntimeDetect = "runtime.detect", query, DetectRuns => Vec<Suggestion>, RuntimeError);
 method!(pub RuntimeList = "runtime.list", query, ListRuns => DefinitionList, RuntimeError);
 method!(pub RuntimeDefine = "runtime.define", mutation, DefineRun => DefineResult, RuntimeError);
@@ -63,6 +69,8 @@ method!(pub RuntimeSchedules = "runtime.schedules", query, SchedulesQuery => Sch
 topic!(pub RuntimeChanged = "runtime.changed", RuntimeChange);
 
 pub fn export<X: Exporter>(x: &mut X) {
+    x.method::<RuntimeContainers>();
+    x.method::<RuntimeContainerAction>();
     x.method::<RuntimeDetect>();
     x.method::<RuntimeSchedules>();
     x.method::<RuntimeStart>();
@@ -96,3 +104,6 @@ pub use unit_lookup::LiveUnitRun;
 
 mod log_observation;
 pub use log_observation::{RunLogMetadata, RunLogPage};
+
+#[cfg(test)]
+mod containers_tests;

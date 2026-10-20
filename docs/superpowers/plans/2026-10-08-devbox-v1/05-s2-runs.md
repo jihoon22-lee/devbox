@@ -605,14 +605,14 @@ pub fn extract(line: &str, project_root: &Path) -> Option<Problem> {
 ### Task 10: Docker 컨테이너
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/containers_tests.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/runtime/src/containers_tests.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 assert_eq!(container_args("abc", ContainerAction::Restart), ["restart", "abc"]);
 assert!(!parse_unavailable_cli().available);
 assert_eq!(parse_ps_fixture().items[0].compose_project.as_deref(), Some("owned"));
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-runtime containers`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** Docker CLI adapter는 argv 배열로만 호출하고 ps JSON·진단 reason을 typed 결과로 바꾼다. runtime.containers/container_action 등록·취소/종료 처리를 연결한다. Docker unavailable은 목록의 상태이며 전체 실행 화면 오류가 아니다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-runtime containers`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** Docker CLI adapter는 argv 배열로만 호출하고 ps JSON·진단 reason을 typed 결과로 바꾼다. runtime.containers/container_action 등록·취소/종료 처리를 연결한다. Docker unavailable은 목록의 상태이며 전체 실행 화면 오류가 아니다.
 
 ```rust
 let args = match action {
@@ -623,8 +623,8 @@ let args = match action {
 docker.command(&args).await?; // fixed argv, no shell; tests use a fake adapter.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 명령 조립·JSON 줄 fixture·daemon unavailable만 fake 실행기로 검증한다. 로컬 Docker 설치·시작·container/network 변경 없음. 묶음 P 진행 기록을 갱신한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): list and control docker containers`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 명령 조립·JSON 줄 fixture·daemon unavailable만 fake 실행기로 검증한다. 로컬 Docker 설치·시작·container/network 변경 없음. 묶음 P 진행 기록을 갱신한다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): list and control docker containers`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `crates/runtime/src/containers.rs`
@@ -633,6 +633,12 @@ docker.command(&args).await?; // fixed argv, no shell; tests use a fake adapter.
 - `runtime.containers{}`(query): `docker ps -a --format json` → `{ id, name, image, state, status, ports, composeProject? }`. CLI가 없거나 데몬이 꺼져 있으면 `{ available: false, reason }`.
 - `runtime.container_action{ id, action: start|stop|restart }`(mutation, `stop`은 reversible)
 - 로그는 Task 7의 `Container` 소스로 본다.
+
+**구현 계약·검증(로컬 완료):**
+- 목록은 `ContainersResult { available, reason?: cliMissing|daemonUnavailable, items }`다. 각 행의 ports는 Docker 표시 문자열을 보존하고 `Labels`에서 `com.docker.compose.project`만 추출한다. 성공한 빈 응답은 available=true, CLI 부재·비정상 ps 종료는 available=false다. 비정상 ps의 내부 stderr는 tracing 진단으로만 남긴다.
+- 목록 기한3초, start/stop/restart 기한30초(보통 Docker stop 유예10초 포함), stdout256KiB·stderr16KiB·목록1,024행 상한. fake 단위시험은 기한100ms 주입. timeout/상한/취소·future 폐기 때 소유 Docker CLI만 kill+wait한다. Docker 서버에서 이미 시작한 동작의 취소·원복을 보장하지 않으므로 시간 초과/취소 뒤 목록을 다시 조회한다. Docker에 더 긴 stop timeout이 설정된 경우도 클라이언트 기한은30초다.
+- 메서드 정적 메타데이터는 mutation(reversible), 성공 결과는 `{ id, action, undo: ContainerActionParams|null }`. stop만 `{id,action:"start"}` Undo를 주며 start/restart는 null이다. Task13/14 UI는 목록 state=running일 때만 stop을 표시/사용하고 결과.undo가 있을 때만 Undo를 노출한다. Undo는 start 요청이며 외부 동시 변경을 포함한 상태 복원 트랜잭션이 아니다. 이번 과제는 UI나 동적 확인 프레임워크를 추가하지 않는다.
+- 단위/fakeCLI/실제 typedRPC/라우터·한국어 오류 직접 검사, TS 생성·생성확인·typecheck를 수행한다. 원본 RED/GREEN·자원·소스해시는 Git common-dir `devbox-verification/s2-task10/`에 보관한다. 실제 Docker 실행·설치·daemon/container/network 조작은 하지 않았다. 고유13개·타입·독립 검토(미해결0)·최종 Biome278 PASS로 로컬 완료했다. 전체 검사·Windows·push/PR은 Task16 전 미실행이다.
 
 **핵심 테스트:**
 - 명령 조립 단위 테스트
