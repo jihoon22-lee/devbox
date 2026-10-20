@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–14 및 묶음 O·P·Q 로컬 완료. Task14 고유111개·타입/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome331 PASS(2026-10-21). 다음은 Task15 선행 agents 생성/이벤트·test/review 분리 2개 커밋 뒤 비밀 설정·에이전트 테스트·MCP 연결이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task 1–14 및 묶음 O·P·Q 로컬 완료. Task14 고유111개·타입/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome331 PASS(2026-10-21). Task15 생성/이벤트 선행 분리도 로컬 완료했으며, 다음은 test/review 분리 뒤 비밀 설정·에이전트 테스트·MCP 연결이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -907,6 +907,8 @@ const stats = useRpcQuery("observe.system", {}, { enabled: visible, refetchInter
 - 직접 고유 **111개 PASS**(프론트62·Rust49)와 타입/생성/MSVC 좁은 check·변경 TS27개 Biome·Rust 포맷 PASS. 실패 분류/정확한 명령은 Git common-dir `devbox-verification/s2-task14/{summary,test-names,parent-commands,bottom-commands,notify-commands,failure-classification}.json` 및 raw/resources에 기록한다. Task4 실제 소유 systemd start-limit 알림 1회 L2 PASS. 전체 check/clippy/build/E2E·실제 Windows 토스트/앱은 Task16 미실행이며 push/PR도 하지 않았다. 독립 검토 PASS·미해결0, 소스47개·artifact99개 해시 일치. 완료 Biome331 PASS(0.619초·cgroup115,904,512B·swap0). 검토된 원본 summary/manifest는 인계 시점으로 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다.
 
 ### Task 15: 비밀 설정·에이전트 테스트 실행 전환·MCP 도구
+
+**선행 분리 상태 (2026-10-21):** 첫 이동은 전후 고유34개·독립 검토(미해결0)·Biome331 PASS 뒤 로컬 완료했다. `service.rs` 598→282줄, 생성/포트 예약은 `create.rs` 228줄, `changed/apply_event`는 `events.rs` 124줄로 분리했다. 포트 단위 시험 1개도 구현과 함께 이동했으며 생성·이벤트·상태/상관관계·CLI 직접 영향 고유34개를 이동 전후 각각 통과했다(실행68개). 공개 계약·함수 본문·잠금/신뢰/소유 자원 의미를 보존한 이동이므로 인위적 RED를 만들지 않았다. 근거는 `devbox-verification/s2-task15-refactor-create/`다. 다음은 actions/test·review 선행 분리이며, 그다음 아래 기능 RED부터 진행한다. 검토된 인계 summary/manifest는 보존하며 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 기능 Task15·전체 검사·Windows·push/PR은 미실행이다.
 
 **단계별 실행:**
 - [ ] **1 · 실패 테스트:** `crates/cli/tests/{runtime_agent_test,mcp_runs}.rs · SecretsSettings.test.tsx`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
