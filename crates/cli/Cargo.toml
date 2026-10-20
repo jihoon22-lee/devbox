@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 devbox-agents.workspace = true
+devbox-runtime.workspace = true
 devbox-git.workspace = true
 devbox-core.workspace = true
 devbox-protocol.workspace = true

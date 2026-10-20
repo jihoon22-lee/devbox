@@ -31,7 +31,7 @@ pub async fn preview(
             };
             (true, vec![dir])
         }
-        TrustOperation::Launch => (true, vec![project.path.clone()]),
+        TrustOperation::Launch | TrustOperation::Run => (true, vec![project.path.clone()]),
         TrustOperation::Cleanup => {
             let candidates = s
                 .agents

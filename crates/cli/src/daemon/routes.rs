@@ -69,6 +69,16 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             s.projects.prompts(p).await
         });
     let router = router
+        .register::<devbox_runtime::RuntimeList, _, _>(
+            |s, _, p| async move { s.runs.list(p).await },
+        )
+        .register::<devbox_runtime::RuntimeDefine, _, _>(
+            |s, _, p| async move { s.runs.define(p).await },
+        )
+        .register::<devbox_runtime::RuntimeUndefine, _, _>(|s, _, p| async move {
+            s.runs.undefine(p).await
+        });
+    let router = router
         .register::<devbox_terminal::TerminalAttach, _, _>(|s, ctx, p| async move {
             s.terminal.attach(ctx, p).await
         })
@@ -181,6 +191,7 @@ pub fn declared() -> NameCollector {
     projects::export(&mut n);
     devbox_terminal::export(&mut n);
     devbox_agents::export(&mut n);
+    devbox_runtime::export(&mut n);
     n
 }
 

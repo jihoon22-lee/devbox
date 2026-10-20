@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. 다음 Task 2, PR은 Task 16에서 한 번.
+- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). 다음 Task 3, PR은 Task 16에서 한 번.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -145,15 +145,15 @@ git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply
 ### Task 2: 실행 정의 — toml + 이 PC 정의 병합
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/defs_tests.rs · projects `trust_tests` · CLI `runtime_definitions.rs``에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/runtime/src/defs_tests.rs`·projects `trust_tests`·CLI `runtime_definitions.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let merged = merge(vec![file("build", "echo file")], vec![local("build", "echo local")])?;
 assert_eq!(merged.defs[0].source, DefinitionSource::ProjectFile);
 assert_eq!(merged.shadowed.len(), 1);
 assert_eq!(required_scope_version(&config_with_task()), Some(2));
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-runtime merge_prefers_project_file_and_reports_shadowed`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** 선행 config/input 분할을 기존 시험으로 확인·별도 커밋한다. `run_config` typed DTO·`RuntimeError`·의존 DFS 검증·thisPc DB 저장을 구현한다. 프로젝트 파일은 ProjectsService::update_run_config의 typed 편집 helper에 맡겨 파일 수정·승인/rev를 한 도메인이 소유하게 한다. 반환된 config/rev로 runtime 결과와 changed를 갱신하며 프로젝트 정의를 runtime DB에 이중 저장하지 않는다. `required_scope_version`과 `store::approved` 최소 버전 판정, typed trust preview, Run operation을 같은 과제에서 연결한다. 신뢰 오류는 typed match로 `RuntimeError::ProjectTrustRequired { id } = "projects.trust_required"`에 매핑한다. 생성기 `TsExporter.codes`는 BTreeSet이므로 기존 코드와 공존하며 runtime 메서드의 typed error union에 포함된다(문자열 오류 탐지 금지). cron 구문 검증은 Task 5에서 쓸 v0.9.0 parser의 순수 부분을 여기서 함께 이식해 중복 parser를 만들지 않는다. `RuntimeService::{list,define,undefine}`를 CLI routes/state/migrations·xtask에 등록하고 300ms watcher는 변경 때만 rev를 발행한다. `runtime.define` 결과는 `{ rev, definition }`이며 수정할 때 같은 ID를 보존한다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-runtime merge_prefers_project_file_and_reports_shadowed`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** 선행 config/input 분할을 기존 시험으로 확인·별도 커밋한다. `run_config` typed DTO·`RuntimeError`·의존 DFS 검증·thisPc DB 저장을 구현한다. 프로젝트 파일은 ProjectsService::update_run_config의 typed 편집 helper에 맡겨 파일 수정·승인/rev를 한 도메인이 소유하게 한다. 반환된 config/rev로 runtime 결과와 changed를 갱신하며 프로젝트 정의를 runtime DB에 이중 저장하지 않는다. `required_scope_version`과 `store::approved` 최소 버전 판정, typed trust preview, Run operation을 같은 과제에서 연결한다. 신뢰 오류는 typed match로 `RuntimeError::ProjectTrustRequired { id } = "projects.trust_required"`에 매핑한다. 생성기 `TsExporter.codes`는 BTreeSet이므로 기존 코드와 공존하며 runtime 메서드의 typed error union에 포함된다(문자열 오류 탐지 금지). cron 구문 검증은 Task 5에서 쓸 v0.9.0 parser의 순수 부분을 여기서 함께 이식해 중복 parser를 만들지 않는다. `RuntimeService::{list,define,undefine}`를 CLI routes/state/migrations·xtask에 등록하고 300ms watcher는 변경 때만 rev를 발행한다. `runtime.define` 결과는 `{ rev, definition }`이며 수정할 때 같은 ID를 보존한다.
 
 ```rust
 pub fn required_scope_version(c: &ProjectConfig) -> Option<u32> {
@@ -166,8 +166,8 @@ pub fn required_scope_version(c: &ProjectConfig) -> Option<u32> {
 // ThisPc: runtime DB definition write; file definitions are never duplicated in runtime DB.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 모든 핵심 테스트 및 프로젝트 신뢰·등록 회귀를 실행한다. 외부 변경 직후 저장/동시 저장과 파일쓰기·DB쓰기 실패를 주입해 승인 부당 승격/중복 생성이 없음을 확인한다. `pnpm gen`으로 생성 타입을 확인한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): add execution definitions and scope two trust`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 모든 핵심 테스트 및 프로젝트 신뢰·등록 회귀를 실행한다. 외부 변경 직후 저장/동시 저장과 파일쓰기·DB쓰기 실패를 주입해 승인 부당 승격/중복 생성이 없음을 확인한다. `pnpm gen`으로 생성 타입을 확인한다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): add execution definitions and scope two trust`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `crates/runtime/{Cargo.toml,src/lib.rs,src/model.rs,src/defs.rs,src/store.rs}`

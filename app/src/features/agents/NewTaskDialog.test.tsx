@@ -193,7 +193,7 @@ test("stale approval shows changed preview and requires another explicit approva
     id: "a",
     expectedCanonicalPath: "/fixture/devbox",
     expectedDigest: "digest-first",
-    expectedScopeVersion: 1,
+    expectedScopeVersion: 2,
   });
   await act(async () =>
     wire.deliver({

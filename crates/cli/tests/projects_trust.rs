@@ -233,7 +233,7 @@ async fn preview_approval_rejects_changed_bytes_path_and_scope_without_approving
         (
             view["canonicalPath"].clone(),
             view["digest"].clone(),
-            json!(2),
+            json!(devbox_projects::trust::SCOPE_VERSION + 1),
         ),
     ] {
         refused(&c,"projects.trust_approve",json!({"id":project,"expectedCanonicalPath":path,"expectedDigest":digest,"expectedScopeVersion":scope}),"projects.trust_preview_stale").await;

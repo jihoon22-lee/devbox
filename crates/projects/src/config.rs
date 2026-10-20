@@ -50,13 +50,13 @@ pub struct ProjectConfig {
     pub launch: LaunchConfig,
     #[serde(rename = "task", skip_serializing)]
     #[ts(skip)]
-    pub raw_tasks: Vec<toml::Value>,
+    pub raw_tasks: Vec<crate::run_config::TaskDef>,
     #[serde(rename = "service", skip_serializing)]
     #[ts(skip)]
-    pub raw_services: Vec<toml::Value>,
+    pub raw_services: Vec<crate::run_config::ServiceDef>,
     #[serde(rename = "schedule", skip_serializing)]
     #[ts(skip)]
-    pub raw_schedules: Vec<toml::Value>,
+    pub raw_schedules: Vec<crate::run_config::ScheduleDef>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -156,3 +156,13 @@ pub(crate) fn read_config(project: &Path) -> Result<(Vec<u8>, ProjectConfig), Co
 
 #[cfg(test)]
 mod tests;
+
+impl ProjectConfig {
+    pub fn run_config(&self) -> crate::run_config::RunConfig {
+        crate::run_config::RunConfig {
+            tasks: self.raw_tasks.clone(),
+            services: self.raw_services.clone(),
+            schedules: self.raw_schedules.clone(),
+        }
+    }
+}

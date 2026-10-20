@@ -175,6 +175,7 @@ domain_error! {
 #[serde(rename_all = "snake_case")]
 pub enum TrustOperation {
     Create,
+    Run,
     Test,
     Launch,
     Discard,
@@ -219,6 +220,7 @@ pub struct TrustPreview {
     pub requires_approval: bool,
     pub config: Option<crate::config::ProjectConfig>,
     pub execution_directories: Vec<String>,
+    pub run_definitions: Vec<crate::run_config::RunDefinitionPreview>,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]

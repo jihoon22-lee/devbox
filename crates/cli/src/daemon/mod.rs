@@ -28,6 +28,7 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_projects::MIGRATIONS,
         devbox_terminal::MIGRATIONS,
         devbox_agents::MIGRATIONS,
+        devbox_runtime::MIGRATIONS,
     ]
     .concat()
 }
@@ -62,6 +63,11 @@ fn build_services_with_runtime(
         projects.clone(),
         config.terminal,
     ));
+    let runs = Arc::new(devbox_runtime::RuntimeService::new(
+        db.clone(),
+        hub.clone(),
+        projects.clone(),
+    ));
     let profiles = devbox_agents::profile::configured(&config.agents)?;
     let executable = std::env::current_exe()?;
     let devbox_bin = executable
@@ -94,6 +100,7 @@ fn build_services_with_runtime(
         projects,
         terminal,
         agents,
+        runs,
     }))
 }
 

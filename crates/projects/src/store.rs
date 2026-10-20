@@ -26,7 +26,7 @@ pub(crate) fn approved(
     digest: &str,
     scope: u32,
 ) -> rusqlite::Result<bool> {
-    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects_command_trust WHERE project_id=?1 AND canonical_path=?2 AND digest=?3 AND scope_version=?4)", params![id,path,digest,scope], |row| row.get(0))
+    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects_command_trust WHERE project_id=?1 AND canonical_path=?2 AND digest=?3 AND scope_version>=?4)", params![id,path,digest,scope], |row| row.get(0))
 }
 
 pub(crate) fn approve(
@@ -89,6 +89,15 @@ pub fn has_dependents(tx: &Transaction, id: &str) -> rusqlite::Result<bool> {
     if has_table("terminal_sessions")?
         && tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM terminal_sessions WHERE project_id=?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(true);
+    }
+    if has_table("runtime_definitions")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runtime_definitions WHERE project_id=?1)",
             [id],
             |row| row.get::<_, bool>(0),
         )?

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { Methods } from "../../rpc/gen/rpc";
 import { Button, Dialog } from "../../ui";
 import s from "./ProjectTrust.module.css";
+import { RunTrustDefinitions } from "./RunTrustDefinitions";
 import { visibleTrustText } from "./visibleTrustText";
 
 type Preview = Methods["projects.trust_preview"]["result"];
@@ -74,6 +75,11 @@ export function ProjectTrustDialog({
           <Commands label="작업 폴더 준비 명령" commands={config.agent.setup} />
           <Commands label="테스트 명령" commands={config.agent.test ? [config.agent.test] : []} />
           <Commands label="작업 폴더 정리 명령" commands={config.agent.teardown} />
+          <RunTrustDefinitions definitions={preview.runDefinitions} />
+          <section aria-label="시작 구성 서비스">
+            <h3>시작 구성 서비스</h3>
+            <p>{config.launch.services.length ? config.launch.services.map(visibleTrustText).join(" → ") : "없음"}</p>
+          </section>
           <section aria-label="시작 구성 터미널">
             <h3>시작 구성 터미널</h3>
             {config.launch.terminals.length ? (

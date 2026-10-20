@@ -60,6 +60,9 @@ pub async fn serve(
         .initialize()
         .await
         .map_err(|error| io::Error::other(format!("initialize agents: {error:?}")))?;
+    services.runs.initialize().await.map_err(|error| {
+        io::Error::other(format!("initialize execution definitions: {error:?}"))
+    })?;
     let daemon = Arc::new(Daemon {
         router: routes::router(services.clone()),
         topics: routes::declared().topics.into_iter().collect(),
@@ -85,6 +88,7 @@ pub async fn serve(
     daemon.dedupe.tracker.close();
     daemon.dedupe.tracker.wait().await;
     daemon.services.agents.shutdown().await;
+    daemon.services.runs.shutdown().await;
     result
 }
 

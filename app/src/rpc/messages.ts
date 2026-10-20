@@ -28,6 +28,19 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "시험용 스트림을 열 수 없습니다.",
     action: "시험 인스턴스의 연결 상태를 확인해 주세요.",
   },
+  "runtime.def_invalid": {
+    title: "실행 정의가 올바르지 않습니다.",
+    action: "명령과 의존 관계, 예약 시각을 확인해 주세요.",
+  },
+  "runtime.project_not_found": {
+    title: "실행 정의의 프로젝트를 찾을 수 없습니다.",
+    action: "프로젝트를 다시 선택해 주세요.",
+  },
+  "runtime.project_config_invalid": {
+    title: "프로젝트 실행 설정을 읽거나 저장할 수 없습니다.",
+    action: ".devbox/devbox.toml의 내용과 쓰기 권한을 확인해 주세요.",
+  },
+  "runtime.invalid_cursor": { title: "실행 목록 위치가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
   "terminal.command_too_long": {
     title: "터미널 명령이 너무 깁니다.",
     action: "명령을 UTF-8 기준 64KiB 이내로 줄여 주세요.",
@@ -108,8 +121,8 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "프로젝트와 작업 폴더를 다시 선택해 주세요.",
   },
   "projects.in_use": {
-    title: "프로젝트에 에이전트 작업이나 터미널이 남아 있습니다.",
-    action: "열린 작업과 터미널을 끝내고 남은 작업 폴더와 브랜치를 정리한 뒤 다시 시도하세요.",
+    title: "프로젝트에 에이전트 작업, 터미널 또는 이 PC 실행 정의가 남아 있습니다.",
+    action: "열린 작업과 터미널을 끝내고 남은 작업 폴더, 브랜치와 이 PC 실행 정의를 정리한 뒤 다시 시도하세요.",
   },
   "agents.title_invalid": {
     title: "에이전트 작업 제목을 확인해 주세요.",

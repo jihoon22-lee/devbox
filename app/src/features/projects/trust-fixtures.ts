@@ -12,10 +12,11 @@ export function trustPreview(id = "a", overrides: Record<string, unknown> = {}) 
     canonicalPath: "/fixture/devbox",
     configPath: "/fixture/devbox/.devbox/devbox.toml",
     digest: "digest-first",
-    scopeVersion: 1,
+    scopeVersion: 2,
     approved: false,
     requiresApproval: true,
     config: emptyTrustConfig,
+    runDefinitions: [],
     executionDirectories: ["/fixture/devbox-agents/new"],
     ...overrides,
   };

@@ -83,8 +83,8 @@ fn launch_sections_and_entries_require_named_toml_tables() {
 }
 
 #[test]
-fn parses_launch_and_preserves_future_sections_without_exposing_raw_values() {
-    let config = parse("[[task]]\nid='test'\ncommand='pnpm test'\n[[service]]\nid='web'\n[[schedule]]\nid='daily'\n[launch]\nservices=['web']\nterminals=[{name='shell'}, {name='logs',command='tail -f x.log'}]\nagents=[{tool='claude',worktree=false,prompt='hello'}]").expect("parse fixture");
+fn parses_launch_and_keeps_typed_runs_out_of_legacy_config_wire() {
+    let config = parse("[[task]]\nid='test'\ncommand='pnpm test'\n[[service]]\nid='web'\ncommand='serve'\n[[schedule]]\nid='daily'\ntask='test'\ncron='0 0 * * *'\n[launch]\nservices=['web']\nterminals=[{name='shell'}, {name='logs',command='tail -f x.log'}]\nagents=[{tool='claude',worktree=false,prompt='hello'}]").expect("parse fixture");
     assert_eq!(
         config.launch.terminals[1].command.as_deref(),
         Some("tail -f x.log")
@@ -94,6 +94,7 @@ fn parses_launch_and_preserves_future_sections_without_exposing_raw_values() {
     assert_eq!(config.raw_services.len(), 1);
     assert_eq!(config.raw_schedules.len(), 1);
     let wire = serde_json::to_string(&config).expect("serialize config");
+    assert_eq!(config.raw_tasks[0].command, "pnpm test");
     assert!(!wire.contains("pnpm test"));
     assert!(!wire.contains("raw_tasks"));
     assert!(parse("[launch]\nterminals=[{name='shell',commnad='x'}]").is_err());

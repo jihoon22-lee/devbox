@@ -15,4 +15,5 @@ pub struct Services {
     pub projects: Arc<ProjectsService>,
     pub terminal: Arc<devbox_terminal::TerminalService>,
     pub agents: Arc<devbox_agents::AgentsService>,
+    pub runs: Arc<devbox_runtime::RuntimeService>,
 }
