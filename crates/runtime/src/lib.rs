@@ -1,6 +1,8 @@
 //! Execution definitions owned by a project file or by this PC.
 pub mod cron;
 mod defs;
+pub mod detect;
+pub use detect::{DefinitionKind, DetectRuns, Suggestion, SuggestionSource};
 mod execution;
 pub mod exit_record;
 mod graph;
@@ -48,6 +50,7 @@ pub const MIGRATIONS: &[Migration] = &[
     },
 ];
 
+method!(pub RuntimeDetect = "runtime.detect", query, DetectRuns => Vec<Suggestion>, RuntimeError);
 method!(pub RuntimeList = "runtime.list", query, ListRuns => DefinitionList, RuntimeError);
 method!(pub RuntimeDefine = "runtime.define", mutation, DefineRun => DefineResult, RuntimeError);
 method!(pub RuntimeUndefine = "runtime.undefine", mutation(always), UndefineRun => devbox_protocol::Done, RuntimeError);
@@ -60,6 +63,7 @@ method!(pub RuntimeSchedules = "runtime.schedules", query, SchedulesQuery => Sch
 topic!(pub RuntimeChanged = "runtime.changed", RuntimeChange);
 
 pub fn export<X: Exporter>(x: &mut X) {
+    x.method::<RuntimeDetect>();
     x.method::<RuntimeSchedules>();
     x.method::<RuntimeStart>();
     x.method::<RuntimeStop>();
@@ -81,3 +85,6 @@ mod service_tests;
 
 #[cfg(test)]
 mod scheduler_tests;
+
+#[cfg(test)]
+mod detect_tests;

@@ -81,6 +81,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_runtime::RuntimeExited, _, _>(
             |s, _, p| async move { s.runs.exited(p).await },
         )
+        .register::<devbox_runtime::RuntimeDetect, _, _>(|s, _, p| async move {
+            s.runs.detect(p).await
+        })
         .register::<devbox_runtime::RuntimeSchedules, _, _>(|s, _, p| async move {
             s.runs.schedules(p).await
         })

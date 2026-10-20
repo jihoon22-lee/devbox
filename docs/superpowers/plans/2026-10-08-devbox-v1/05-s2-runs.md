@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. Task 4 `167da8b5` 로컬 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. 다음 Task 6. PR은 Task 16에서 한 번.
+- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. Task 4 `167da8b5` 로컬 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. Task 6 작업 자동 감지 구현·직접15개 및 TS 검증 PASS, 별도 검토·Biome·커밋 대기. PR은 Task 16에서 한 번.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -391,15 +391,16 @@ scheduler.stop().await; // worker 취소, 이미 시작한 systemd unit은 유�
 ### Task 6: 작업 자동 감지
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/detect_tests.rs · fixture 폴더`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/runtime/src/detect_tests.rs · fixture 폴더`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let items = detect(&fixture("pnpm"), &existing).await?;
-assert_eq!(items[0].command, "pnpm dev");
-assert_eq!(items[0].kind, DefinitionKind::Service);
+let dev = items.iter().find(|s| s.id == "dev").unwrap();
+assert_eq!(dev.command, "pnpm dev");
+assert_eq!(dev.kind, DefinitionKind::Service);
 assert!(!spawn_marker.exists());
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-runtime detect`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** package.json/lockfile·Makefile·justfile·Cargo.toml·compose 파일을 읽는 parser만 구현한다. `RuntimeService::detect`는 기존 ID를 제외하고 제안 출처를 반환하며 어떤 도구도 실행하지 않는다. 제안 저장은 명령을 보여 준 뒤 기존 define 경로를 쓴다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-runtime detect`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** package.json/lockfile·Makefile·justfile·Cargo.toml·compose 파일을 읽는 parser만 구현한다. `RuntimeService::detect`는 기존 ID를 제외하고 제안 출처를 반환하며 어떤 도구도 실행하지 않는다. 제안 저장은 명령을 보여 준 뒤 기존 define 경로를 쓴다.
 
 ```rust
 pub async fn detect(root: &Path, existing: &[String]) -> Result<Vec<Suggestion>, RuntimeError> {
@@ -408,21 +409,22 @@ pub async fn detect(root: &Path, existing: &[String]) -> Result<Vec<Suggestion>,
 } // No Command::new / just --summary / make invocation.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 각 파일 fixture·lockfile 우선순위·기존 ID 제외·악의가 아니라 단순 명령 실행 marker인 just/make fixture에서 프로세스 0을 확인한다. 묶음 O 현재 위치·행·세션을 갱신한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): suggest tasks from project files`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 각 파일 fixture·lockfile 우선순위·기존 ID 제외·악의가 아니라 단순 명령 실행 marker인 just/make fixture에서 프로세스 0을 확인한다. 묶음 O 현재 위치·행·세션을 갱신한다.
+- [x] **5 · 검토·커밋:** 직접15개·TS 생성/typecheck·독립 검토 PASS(미해결0)·Biome278 PASS 뒤 `feat(runtime): suggest tasks from project files`로 로컬 커밋한다. 실패·미실행 항목과 원시 근거는 PROGRESS 및 `s2-task6/{summary,review}.json`에 구분했다.
 
 **Files:**
-- Create: `crates/runtime/src/detect.rs`
+- Create: `crates/runtime/src/detect.rs`, `detect_tests.rs`, `fixtures/detect/`, `crates/cli/tests/runtime_detect.rs`
+- Modify: runtime `lib.rs`·`model.rs`, CLI `daemon/routes.rs`, 생성된 `app/src/rpc/gen/rpc.ts`, 기존 오류 `app/src/rpc/messages.ts`
 
-**Interfaces:**
-- `detect(project_dir) -> Vec<Suggestion { id, command, kind: Task|Service, from: "package.json"|"Makefile"|"justfile"|"Cargo.toml"|"compose" }>`
-  - `package.json`의 `scripts`: `dev`·`start`·`serve`는 서비스, 나머지는 작업. 패키지 관리자는 lockfile로 고른다(`pnpm`/`yarn`/`npm`/`bun`).
-  - `Makefile` 타깃(`.PHONY`와 `^name:`), `justfile` 레시피(파일 직접 파싱)
-  - `Cargo.toml`이 있으면 `cargo build`·`cargo test`
-  - `compose.yaml`/`docker-compose.yml`이 있으면 `docker compose up`(서비스)
-- 메서드 `runtime.detect{ projectId }`(query)
-
-- 제안은 파일을 읽기만 하고 실행하지 않는다. `just --summary`처럼 도구를 부르는 감지는 저장소 내용을 실행할 수 있으므로 쓰지 않고 `justfile`을 직접 읽는다. 제안을 추가할 때 명령을 보여 주고 `runtime.define`으로 저장한다(프로젝트 파일이면 Task 2 승인 규칙).
+**실제 Interfaces·정책:**
+- `detect(root: &Path, existing: &[String]) -> Result<Vec<Suggestion>, RuntimeError>`; `RuntimeService::detect(DetectRuns { project_id }) -> Result<Vec<Suggestion>, Fail<RuntimeError>>`.
+- `RuntimeDetect = "runtime.detect"` query. 기존 runtime export가 xtask에 이미 연결돼 있으므로 `RuntimeDetect`를 export·CLI route에 등록하고 `pnpm gen`으로 TS를 생성한다.
+- `Suggestion { id, command, kind: DefinitionKind::Task|Service, from: SuggestionSource }`. `kind`의 JSON은 `"task"|"service"`. 출처는 화면에 정확히 표시하도록 초안의 `"compose"`를 실제 파일명 두 값으로 구체화한다: `"package.json"|"Makefile"|"justfile"|"Cargo.toml"|"compose.yaml"|"docker-compose.yml"`.
+- package `scripts` 중 `dev`·`start`·`serve`는 서비스, 나머지는 작업. lockfile 우선순위는 `pnpm-lock.yaml` → `yarn.lock` → `package-lock.json` → `npm-shrinkwrap.json` → `bun.lock` → `bun.lockb`; 없으면 npm. 기존 내장 명령과 겹쳐도 script를 실행하도록 `<manager> run <name>`을 사용하며 예시 `pnpm dev`만 안전한 축약을 유지한다. 공백·shell 특수문자는 공통 `sh_quote`, 선행 `-`는 `--` 경계를 쓴다. ID/command는 기존 define 검증을 통과해야 한다.
+- Makefile `.PHONY`·정적 타깃과 justfile의 인자 없는 정적 recipe 이름을 직접 읽는다. 변수·pattern target·include 해석·매개변수 recipe 추론은 하지 않는다. Cargo.toml 존재는 `build`/`test`, compose 파일 존재는 `compose-up` 서비스 제안을 만든다.
+- 동일 ID는 package → Makefile → justfile → Cargo → compose 순서로 첫 출처가 이긴다. compose.yaml이 docker-compose.yml보다 우선한다. ID 오름차순 반환이며 이 병합 **뒤** 기존 merged 정의 전체 ID를 제외한다(페이지 목록을 호출하지 않는다). 제외된 ID의 낮은 우선순위 출처는 되살아나지 않는다.
+- 감지는 읽기 전 일반 파일 여부를 확인하며 파싱 파일당 1MiB, 반환 JSON은 768KiB로 제한한다. malformed package JSON은 위치를 포함한 `runtime.detect_parse`, 파일 I/O/UTF-8 실패는 `runtime.detect_io`(내부 원인 tracing), 크기 초과는 `runtime.detect_limit`을 반환한다. Make/just는 전체 언어 문법 검증기가 아닌 정적 헤더 인식기다.
+- 어떤 프로세스도 실행하지 않으며 신뢰 승인을 만들거나 정의를 저장하지 않는다. Task 13 UI가 명령·출처를 표시한 뒤 기존 `runtime.define`으로 저장한다(프로젝트 파일이면 Task 2 승인 규칙). UI 자체는 Task 6에서 추가하지 않는다.
 
 **핵심 테스트:** 각 파일 종류의 fixture 폴더로 제안 목록 비교. 이미 정의된 ID는 제외. 감지가 어떤 프로세스도 띄우지 않는다.
 

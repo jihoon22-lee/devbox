@@ -87,6 +87,9 @@ domain_error! {
         RunNotFound { id: String } = "runtime.run_not_found",
         NotReady { id: String } = "runtime.not_ready",
         DependencyFailed { id: String } = "runtime.dependency_failed",
+        DetectParse { file: String, message: String } = "runtime.detect_parse",
+        DetectLimit { subject: String, limit: u32 } = "runtime.detect_limit",
+        DetectIo { file: String, message: String } = "runtime.detect_io",
         InvalidCursor = "runtime.invalid_cursor",
     }
 }

@@ -44,8 +44,10 @@ export type DefineResult = { rev: string, definition: Definition, };
 export type DefineRun = { projectId: string, def: RunDef, saveTo: SaveTo, };
 export type Definition = { source: DefinitionSource, def: RunDef, };
 export type DefinitionCursor = { id: string, shadowed: boolean, };
+export type DefinitionKind = "task" | "service";
 export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: Array<Definition>, runs: Array<Run>, trust: TrustPreviewStatus, nextCursor: DefinitionCursor | null, };
 export type DefinitionSource = "projectFile" | "thisPc";
+export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
 export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
@@ -110,7 +112,7 @@ export type RunTarget = "linux" | "windows";
 export type RunsQuery = { projectId: string | null, limit: number, };
 export type RunsResult = { rev: string, items: Array<Run>, };
 export type RuntimeChange = { rev: string, projectId: string, };
-export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.invalid_cursor" };
+export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" };
 export type SaveTo = "project" | "thisPc";
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
@@ -129,6 +131,8 @@ export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
 export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
+export type Suggestion = { id: string, command: string, kind: DefinitionKind, from: SuggestionSource, };
+export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type TaskDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, };
@@ -187,6 +191,7 @@ export interface Methods {
   "projects.trust_approve": { kind: "mutation"; confirm: "none"; params: TrustApprove; result: Done; error: ProjectsError };
   "projects.trust_preview": { kind: "query"; confirm: "none"; params: TrustPreviewParams; result: TrustPreview; error: ProjectsError };
   "runtime.define": { kind: "mutation"; confirm: "none"; params: DefineRun; result: DefineResult; error: RuntimeError };
+  "runtime.detect": { kind: "query"; confirm: "none"; params: DetectRuns; result: Array<Suggestion>; error: RuntimeError };
   "runtime.exited": { kind: "mutation"; confirm: "always"; params: Exited; result: Done; error: RuntimeError };
   "runtime.list": { kind: "query"; confirm: "none"; params: ListRuns; result: DefinitionList; error: RuntimeError };
   "runtime.restart": { kind: "mutation"; confirm: "none"; params: RunId; result: Run; error: RuntimeError };
@@ -257,6 +262,7 @@ export const METHOD_INFO = {
   "projects.trust_approve": { kind: "mutation", confirm: "none" },
   "projects.trust_preview": { kind: "query", confirm: "none" },
   "runtime.define": { kind: "mutation", confirm: "none" },
+  "runtime.detect": { kind: "query", confirm: "none" },
   "runtime.exited": { kind: "mutation", confirm: "always" },
   "runtime.list": { kind: "query", confirm: "none" },
   "runtime.restart": { kind: "mutation", confirm: "none" },
@@ -339,6 +345,9 @@ export const RPC_ERROR_CODES = [
   "projects.unsafe_prompt_path",
   "runtime.def_invalid",
   "runtime.dependency_failed",
+  "runtime.detect_io",
+  "runtime.detect_limit",
+  "runtime.detect_parse",
   "runtime.invalid_cursor",
   "runtime.not_ready",
   "runtime.project_config_invalid",

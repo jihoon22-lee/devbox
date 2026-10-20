@@ -46,6 +46,18 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "선행 실행이 실패해 시작하지 않았습니다.",
     action: "실패한 실행의 로그를 확인해 주세요.",
   },
+  "runtime.detect_parse": {
+    title: "작업 감지 파일의 형식이 올바르지 않습니다.",
+    action: "package.json의 scripts 항목과 JSON 문법을 확인해 주세요.",
+  },
+  "runtime.detect_io": {
+    title: "작업 감지 파일을 읽을 수 없습니다.",
+    action: "파일의 읽기 권한과 UTF-8 형식을 확인해 주세요.",
+  },
+  "runtime.detect_limit": {
+    title: "작업 감지 파일이나 제안 목록이 너무 큽니다.",
+    action: "파일은 1MiB, 제안 목록은 768KiB 이내로 줄여 주세요.",
+  },
   "runtime.invalid_cursor": { title: "실행 목록 위치가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
   "terminal.command_too_long": {
     title: "터미널 명령이 너무 깁니다.",

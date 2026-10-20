@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지, S2 Task 1 `87fbd1e7`·Task 2 선행 분리 `b53a867b` 완료. Task 2 실행 정의·신뢰 범위 2 구현과 직접 영향 검증·독립 재검토(미해결 0)·Biome278 PASS, 기능 로컬 커밋 `c67e55eb` 완료. Task 3 실행 래퍼·영속 결과 구현·직접 영향 검사·독립 재검토(미해결 0)·Biome278 PASS, 로컬 커밋 완료 Task 4 systemd 실행 관리·직접 영향 검증·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 |
-| 다음 할 일 | 묶음 O Task 6 작업 자동 감지. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지, S2 Task 1 `87fbd1e7`·Task 2 선행 분리 `b53a867b` 완료. Task 2 실행 정의·신뢰 범위 2 구현과 직접 영향 검증·독립 재검토(미해결 0)·Biome278 PASS, 기능 로컬 커밋 `c67e55eb` 완료. Task 3 실행 래퍼·영속 결과 구현·직접 영향 검사·독립 재검토(미해결 0)·Biome278 PASS, 로컬 커밋 완료 Task 4 systemd 실행 관리·직접 영향 검증·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. Task 6 작업 감지·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
+| 다음 할 일 | 묶음 P Task 7 로그 실시간 tail·검색·소스 병합 구현. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-20 · S2 Task 5 구현·직접 검증·독립 최종 검토·Biome 완료, 다음 Task 6 |
+| 마지막 갱신 | 2026-10-20 · S2 Task 5 구현·직접 검증·독립 최종 검토·Biome 완료, Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | Task 4 `167da8b5` 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. 다음 Task 6 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | Task 4 `167da8b5` 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -97,7 +97,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.1h |
 | S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
-| S2 | O | Task 2–6 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. 다음 Task 6 |
+| S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S2 | P | Task 7–10 |  | 대기 | | | |
 | S2 | Q | Task 11–12 |  | 대기 | | | |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) |  | 대기 | | | |
@@ -188,6 +188,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 실제 소유 instance test-930ec9c0/test-4e068cd8 예약 fixture는 production 초기화·RPC·Scheduled run·반환 후 exit7 실패 알림·중복 억제·SIGTERM shutdown 종료·이미 시작한 unit active 유지·재시작 복구를 확인했고, test-f90dbe77은 기존 StartLimit 알림 계약을 확인했다. fixture 소유 unit/slice/control 정리 assertion PASS. 기존 서비스·Docker·방화벽·네트워크·Windows 설치는 변경하지 않았다. common-dir 잠금·CPU4/nice10/jobs2/threads2·cgroup6/8GiB/swap1GiB를 적용했다.
 - 독립 검토 P2 두 건을 실제 CLI RED로 확인했다(`review-stop-red.log`, `review-alert-red.log`). 실행 중 예약의 수동 stop이 Running으로 남던 매핑을 exhaustive 공통 helper와 stopped terminal로 고쳤으며, 실제 stop/중복 exited/무알림 및 늦은 Running/Failed worker 응답 보존을 확인했다. 같은 승인 identity의 cron-only 수정에서 trust 알림이 다시 나던 문제는 establish가 approval_stamp 동일 시 알림 표식을 보존하도록 고쳤다. 삭제/재추가 새 identity와는 구분한다. 보강 scheduler15·실제 CLI2·gen-ts/--check·typecheck PASS. 보강 소유 test-6a69400b/test-77ad18c8을 포함해 구현자가 만든 5개 instance의 unit/control 부재를 다시 확인했다(`owned-cleanup.json`). 최종 독립 재검토 미해결0·수정 후 Biome278 PASS, 로컬 완료 커밋으로 기록했다. 근거 `review-fixes-*.log`와 source hashes; 수정 전 Biome278은 최종 검증으로 재사용하지 않는다.
 - claim commit 직후 unit 시작 전 강제 종료는 claimed 상태를 남기며 자동 재실행하지 않는다(중복 방지 우선, DB↔systemd 원자적 exactly-once 보장 주장은 하지 않음). 정상 missed/repeated tick/restart의 1회 실행은 확인했다. 독립 최종 검토·Biome278 PASS를 확인하고 로컬 커밋했다. Task 6 이후 기능과 전체 check/clippy/build/E2E/Windows/push/PR은 미실행이다.
+
+### S2 Task 6 작업 자동 감지 (2026-10-20)
+
+- `runtime.detect{projectId}` query·`RuntimeService::detect`·typed Suggestion/DefinitionKind/SuggestionSource·CLI route/export·generated TS를 연결했다. package scripts/lockfiles, Makefile `.PHONY`·정적 target, justfile 인자 없는 정적 recipe, Cargo.toml·compose 파일을 읽는다. 도구 실행·정의 저장·신뢰 승인 없음. Task 13에서 출처/명령을 보여 준 뒤 기존 define을 사용한다.
+- manager는 pnpm→yarn→npm→bun lock 우선순위(없으면 npm); 명시적 run 문법을 쓰며 `pnpm dev` 예시는 보존했다. source dedup은 package→Makefile→justfile→Cargo→compose, ID 오름차순이다. 동일 ID 필터는 전체 merged 정의로 수행해 첫 페이지 밖·thisPc 정의도 제외하며 낮은 우선순위 출처로 되살리지 않는다. compose 출처는 실제 파일명 enum으로 구체화했다(05 실제 API 설명).
+- 일반 파일 확인·읽기 1MiB·반환 768KiB 한도, parse/I/O/limit typed 오류와 한국어 메시지를 추가했다. 전체 Make/just 문법 해석·변수/동적 target 평가·인자 recipe 추론은 하지 않는다. 새로운 parser/보안 framework나 v0.9 거대 imports 모듈을 이식하지 않았다.
+- RED: `cargo test -p devbox-runtime detect`가 detect/DTO/error 미구현으로 exit101; 크기 제한 추가도 DetectLimit 미구현 RED를 보존했다. CLI 신규 시험의 repo(String)에 join을 호출한 컴파일 오류 1회는 테스트 작성 오류로 별도 기록했으며 기능 RED로 세지 않는다.
+- 직접 검사 고유15개 PASS: runtime detect12·실제 daemon typed RPC/define round-trip1·기존 한국어 error messages2. TS 생성/--check·typecheck PASS. marker 회귀를 컴파일된 시험 바이너리에서 strace로 1회 재실행했으며 최초 시험 실행 execve 1개 외 exec/fork/vfork·프로세스 clone 0, CLONE_THREAD 2개만 확인했다(중복 test count에 더하지 않음). 단순 실행 marker 있는 make/just도 파일 생성0이다.
+- 근거 `devbox-verification/s2-task6/{summary.json,source-hashes.json,marker-processes.strace}`와 RED/GREEN 원시 log·자원 JSON. Cargo/TS/Vitest/strace 검사는 공통 잠금·CPU4/nice10/jobs2/threads2/workers2·cgroup6/8GiB/swap1GiB로 실행했다. 새 JSON fixture는 검증 뒤 Biome formatter로 공백만 정리했고 의미 동일성을 확인했다. 독립 검토는 PASS·미해결0이며 검토자가 pnpm/npm/bun의 선행 하이픈 script도 소유 fixture로 실제 확인했다. 최종 Biome278 PASS(cgroup peak139,534,336B·swap0) 뒤 로컬 커밋으로 묶음 O를 완료한다. 전체 check/clippy/build/E2E/Windows·push/PR 및 Task7 이후는 미실행이다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -496,6 +505,8 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 3 실행 래퍼·로그·영속 종료 결과 구현, background 수명 결함 RED→GREEN·직접 영향 검사·독립 재검토·Biome278 PASS | Task 2 `c67e55eb` 뒤 로컬 커밋. 다음 Task 4 systemd 실행 관리·맞춤. push·PR 없음, 증거 `devbox-verification/s2-task3/{summary,review}.json` |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 4 transient 실행·상태 복구·의존/시작 구성 구현. 실제 systemd L2 19개·runtime37·직접 영향 검사·TS/UI·독립 최종 검토(미해결0)·Biome278 PASS | Task 3 `0078c6a4` 뒤 로컬 커밋. 다음 Task 5 예약 실행. 중간 실패와 정정·소유 자원 정리를 보존, push·PR 없음. 증거 `devbox-verification/s2-task4/{summary,review}.json` |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 5 cron·예약·누락 정책·실패/신뢰 알림 구현. 고유51개 직접 검사·TS 생성/typecheck·독립 검토 P2 두 건 RED→GREEN·최종 미해결0·Biome278 PASS | Task 4 `167da8b5` 뒤 로컬 커밋. 다음 Task 6 작업 자동 감지. 강제 종료 claim-before-launch의 at-most-once 한계·실패 근거·소유 자원 정리 기록, push·PR 없음. 증거 `devbox-verification/s2-task5/{summary,review}.json` |
+
+| 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 6 파일 감지·typed RPC·출처/중복/전체ID 필터 구현. 직접15개·TS·marker 자식 프로세스0·독립 검토(미해결0)·Biome278 PASS | `88a593d6` 뒤 로컬 완료 커밋, 묶음 O 완료(로컬). 다음 Task7 로그 tail·검색·병합. push/PR 없음. 증거 `devbox-verification/s2-task6/{summary,review}.json` |
 
 ## 7. 착수 준비 검토
 
