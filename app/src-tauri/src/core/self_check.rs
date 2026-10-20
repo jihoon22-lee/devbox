@@ -20,12 +20,11 @@ pub fn validate_resources(directory: &Path, expected_version: &str) -> io::Resul
 }
 
 pub fn validate_channel(arguments: &[String]) -> io::Result<()> {
-    if let Some(index) = arguments.iter().position(|arg| arg == "--channel") {
-        if arguments.get(index + 1).map(String::as_str)
+    if let Some(index) = arguments.iter().position(|arg| arg == "--channel")
+        && arguments.get(index + 1).map(String::as_str)
             != Some(super::channel::CHANNEL.config().instance)
-        {
-            return Err(io::Error::other("self-check requested a different channel"));
-        }
+    {
+        return Err(io::Error::other("self-check requested a different channel"));
     }
     Ok(())
 }

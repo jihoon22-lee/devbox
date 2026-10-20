@@ -13,9 +13,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S2 구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기. Task16 통합 회귀 수정·직접140개·브랜치 독립 검토 PASS, 미해결0. Windows 설치 수용·필수 CI3·PR/머지는 미완료 |
-| 다음 할 일 | 완료 Biome·커밋→최초 push→Windows workflow의 동일 SHA accept 설치본 수용→단일 S2 PR·필수 CI3·리뷰 상한 판정·squash. 수용 도구 독립 검토 지적4건 수정 중, 현재 interop errno110으로 설치 수용 미실행. Codex 입력 대기 미검출은 비차단 이월 |
+| 다음 할 일 | `2d061058` 최초 push·Windows CI 실행 후 Windows 전용 Clippy1건 보정. 영향 검사·별도 검토·Biome 뒤 새 SHA push/Windows 빌드→동일 SHA accept 설치 수용→단일 S2 PR·필수 CI3·리뷰 상한 판정·squash. 수용 도구 지적4건 수정·재검토 PASS, 설치 수용 미실행. Codex 입력 대기 미검출은 비차단 이월 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
+| 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 과제별 커밋에 기록. 완료 커밋 `2d061058`을 origin/v1/s2-runs에 최초 push했고 S2 PR은 아직 없다. 원본 main 변경 없음 |
 | 마지막 갱신 | 2026-10-21 · 첫 전체 검사 실패를 보존하고 직접 영향만 수정·재검증 완료. strict Clippy·실패 E2E3·타입 PASS. SC9 60.000603초 CPU0.233331%·RSS39,899,136B PASS. 제품75개 동결·독립 최종 검토 PASS. 다음 설치 수용·CI/PR |
 
 ## 2. 막힌 것 · 사용자 결정 대기
@@ -316,7 +316,9 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 직접 영향 고유140개 PASS(Windows native helper18·CLI5·실제 Windows PowerShell1·프런트 fixture22·projects54·shutdown/refresh5·로그22·tmux10·E2E3). 실제 PowerShell IPv6 회귀 PASS와 네이티브 앱 수용 미실행을 구분한다. strict workspace Clippy PASS37.075초·cgroup1,250,508,800B/swap0, 실패 E2E3만 재실행 PASS31.489초·cgroup1,895,264,256B/swap0, 앱 타입 PASS. 시험의 unwrap/unwrap_err1,116개(50파일)는 compiler byte span 기반 expect 치환+rustfmt만 적용하고 원본/해시/재구성 근거를 보존했다. panic 문구 assertion은 없으며 이전 Rust954 PASS를 재사용한다.
 - 독립 최종 검토 PASS·미해결0. 동결 제품75개 digest `635d0359ebb1b4c83557d880b9e8c13bbb2244803ab207e2a022c31bfe486c9b`와 이전 검토 비수정288개 해시를 대조했다. 근거 `integration-fixes/{summary,source-freeze,unwrap-span-map}.json`, `branch-review/final-integration-review.json`. 제품 규모 Rust37,614+TS14,560=52,174줄/60,000, 코드 파일600줄 초과0·TSX 컴포넌트300줄 초과0(최대267), scripts+.github1,500줄·workflow2, E2E11개/40. `size-audit.json`·`component-size-audit.json`에 기록했다.
 - SC9는 최종 E2E 빌드 CLI와 소유 임시 HOME/test-* 인스턴스를 사용했다. 실행0·같은 daemon ID를 전후 확인하고 5초 준비 후 61개 /proc 표본을 60.000603초 수집했다. CPU0.233331%≤0.5%, peak RSS39,899,136B≤60,000,000B로 PASS. 소유 데몬·임시 HOME 정리 완료, supervisor65.506초·cgroup130,633,728B/swap0. 원시 stat/status·바이너리 SHA256·명령·결과는 `sc9/`에 있다.
-- 최종 제품 커밋과 Windows 산출물은 아직 없다. 설치 수용12개·필수 CI3·자동 리뷰는 미실행이며 S2 수용 완료가 아니다. 외부 수용 helper 독립 검토의 정리/로그 UI 진행/FAIL 판정/interop 오류 기록4건은 수정 중이고 실행 전 재검토한다. 기존 Windows 호출은 간헐적 errno110이며 현재 읽기 전용 호출도 실패했다. 사용자 prod·기존 서비스·Docker·방화벽·공유 네트워크·원본 main은 보존했다. 완료 Biome·문서 해시·커밋은 `s2-task16/root-completion.json`, 이후 수용/CI/PR 결과는 artifact·PR 본문과 머지 뒤 인계 문서에 기록한다.
+- 최초 완료 커밋은 `2d061058`이며 push 뒤 Windows workflow를 실행했다. 설치 수용12개·필수 CI3의 최종 성공·자동 리뷰는 미완료이며 S2 수용 완료가 아니다. 외부 수용 helper 독립 검토의 정리/로그 UI 진행/FAIL 판정/interop 오류 기록4건은 원본 오판7개→pure fixture12개 PASS·독립 재검토 PASS로 해결했다. 실제 Windows Parser2개도 PASS다. Windows 호출은 간헐적 errno110이 있어 성공·실패를 각각 보존하며 설치 시 연결을 확인한다. 사용자 prod·기존 서비스·Docker·방화벽·공유 네트워크·원본 main은 보존했다. 완료 Biome·문서 해시·커밋은 `s2-task16/root-completion.json`, 이후 수용/CI/PR 결과는 artifact·PR 본문과 머지 뒤 인계 문서에 기록한다.
+
+- Windows 최초 workflow [39509088000](https://github.com/jihoon22-lee/devbox/actions/runs/39509088000)는 Linux 배포 바이너리4분52초·Windows sync/package/dev fixture·앱 타입/build까지 PASS 후 native `self_check.rs:23`의 collapsible_if1건으로 실패했다. NSIS·설치 수용은 미실행이다. 동일 prod 채널/config의 MSVC all-targets strict Clippy로 RED4.529초를 재현하고 중첩 if를 short-circuit let-chain으로만 바꿔 GREEN2.255초·추가 lint0을 확인했다. 기존 self-check3개도 prod 조건에서 PASS3.106초이며 Windows 앱 실행·배포 빌드 근거는 아니다. `windows-clippy-fix/{summary,source-freeze,commands}.json`과 원본 CI 로그를 보존한다. 무관한 Linux/E2E/SC9 PASS는 재사용하며 새 SHA의 실제 Windows CI·설치 수용은 남아 있다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
