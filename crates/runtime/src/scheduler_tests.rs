@@ -7,6 +7,8 @@ use devbox_core::{
     HubMessage,
     notify::{Notification, NotificationReason},
 };
+#[path = "scheduler_retry_tests.rs"]
+mod retry;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicI64, Ordering},

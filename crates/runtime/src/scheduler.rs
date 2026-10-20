@@ -241,30 +241,41 @@ impl Scheduler {
         while self.workers.lock().await.join_next().await.is_some() {}
     }
     pub(crate) async fn launch(service: Arc<RuntimeService>) -> R<crate::watch::WatchHandle> {
-        let scheduler = Self::new(service.clone());
-        let mut changes = service.hub.subscribe("runtime.changed");
-        let mut approvals = service.hub.subscribe("projects.changed");
+        Self::new(service).start().await
+    }
+    pub(super) async fn start(self) -> R<crate::watch::WatchHandle> {
+        let scheduler = self;
+        let mut changes = scheduler.service.hub.subscribe("runtime.changed");
+        let mut approvals = scheduler.service.hub.subscribe("projects.changed");
         let cancel = CancellationToken::new();
         let stopped = cancel.clone();
         let mut next = scheduler.tick(true).await?;
         let join = tokio::spawn(async move {
+            let mut retry = None;
             loop {
-                let delay = next.map(|at| {
-                    Duration::from_millis(at.saturating_sub((scheduler.clock)()).max(0) as u64)
+                let now = (scheduler.clock)();
+                let delay =
+                    next.map(|at| Duration::from_millis(at.saturating_sub(now).max(0) as u64));
+                let deadline = retry.unwrap_or_else(|| {
+                    tokio::time::Instant::now() + delay.unwrap_or(Duration::from_secs(86400))
                 });
-                let deadline =
-                    tokio::time::Instant::now() + delay.unwrap_or(Duration::from_secs(86400));
                 tokio::select! {
                     _=stopped.cancelled()=>break,
                     event=changes.recv()=>if event.is_none(){break},
                     event=approvals.recv()=>if event.is_none(){break},
-                    _=tokio::time::sleep_until(deadline), if next.is_some()=>{},
+                    _=tokio::time::sleep_until(deadline), if next.is_some() || retry.is_some()=>{},
                 }
                 match scheduler.tick(false).await {
-                    Ok(value) => next = value,
+                    Ok(value) => {
+                        next = value;
+                        retry = None;
+                    }
                     Err(_) => {
                         tracing::warn!("schedule recomputation failed");
                         next = None;
+                        // A failed scan has no reliable next occurrence. Retry on a
+                        // monotonic deadline, distinct from a successful empty scan.
+                        retry = Some(tokio::time::Instant::now() + Duration::from_secs(1));
                     }
                 }
             }

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기**(2026-10-21). Task16 첫 전체 검사는 실패를 보존하고 직접140개·strict Clippy·실패 E2E3·타입 검사를 수정 후 통과했다. SC9 CPU0.233331%·RSS39,899,136B, 브랜치 최종 독립 검토 PASS·미해결0. Windows accept 설치 수용·필수 CI3·리뷰·PR/머지는 미완료다. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존.
+- 상태: **구현 완료·PR #642 열림·1회차 수정 검증 완료**(2026-10-21). 최종 로컬 검증·SC9·독립 검토 및 caf16863 Windows CI69개·Prod/Accept 패키징/self-check PASS. 설치 전 WSL interop errno110으로 수용1–11 미실행·12 FAIL, prod 불변 NOT_PROVEN. scheduler 코드 지적1건·CI 세션 테스트1건의 직접26개·영향 strict Clippy·독립 검토 PASS, 첫 보안 리뷰 지적0건 완료·최종 CI/후속 리뷰/머지는 미완료다. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -1120,6 +1120,8 @@ impl AppChannel {
 - 이 기록은 관찰 UI 보완의 좁은 검증이다. 독립 검토 PASS·미해결0·완료 Biome350 PASS이며 제품21개·문서2개·artifact54개 해시를 대조했다. Biome0.896초·cgroup122,421,248B·swap0. 최종 문서/커밋은 `root-completion.json`에 기록한다. 첫 전체 검사·SC9·실제 Windows 설치 수용·필수 CI3·PR은 **미실행**이며 Task16/S2 완료로 표시하지 않는다.
 
 **최종 로컬 검증 기록(2026-10-21):** 최초 전체 검사 Rust954 PASS/33 ignored·Vitest601 PASS/2 FAIL·E2E8 PASS/3 FAIL·Clippy FAIL을 보존했다. 원인별 수정 뒤 고유140개·strict Clippy·실패 E2E3·타입 PASS이며 통과한 무관한 검사는 반복하지 않았다. B1–B4 및 로그 초기 이력/진단 tmux PID/fixture를 고쳤고 제품75개 동결 digest `635d0359ebb1b4c83557d880b9e8c13bbb2244803ab207e2a022c31bfe486c9b`의 독립 검토 PASS·미해결0이다. SC9 60.000603초 CPU0.233331%·RSS39,899,136B PASS, 규모52,174줄·600/300 초과0·scripts1,500줄·workflow2·E2E11개다. 근거 `devbox-verification/s2-task16/{full,integration-fixes,branch-review,sc9}/` 및 PROGRESS §5. 실제 Windows PowerShell IPv6 회귀1개 PASS는 설치본 수용 PASS가 아니다. 수용 도구 지적4건은 수정·독립 재검토 PASS이며 Windows Parser2개도 PASS다. 최초 Windows CI39509088000은 native self_check의 collapsible_if1건으로 실패했고 같은 Windows-cfg strict Clippy RED→GREEN·기존 self-check3개 PASS로 보정했다. 새 SHA 실제 Windows CI·12개 설치 수용은 미완료다. 근거 `windows-clippy-fix/`와 PROGRESS §5.
+
+**PR 수용 기록:** caf16863 Windows run39510897220·receipt/hash는 PASS. 설치 driver는 읽기 전용 ParseFile/Windows fingerprint errno110으로 설치 전 FAIL했고 기능1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN이다. 소유 잔여0, 호스트 설정 변경 없음. #642 첫 코드 리뷰 scheduler1건과 CI 세션 assertion1건은 직접26개·영향 strict Clippy·독립 검토 PASS로 보완했다. 첫 보안 리뷰는 지적0건으로 완료됐으며 최종 CI·후속 리뷰·머지는 아직 완료되지 않았다. 자세한 근거와 회차 판정은 PROGRESS §5 및 `devbox-verification/s2-task16/pr/`를 따른다.
 
 **단계별 실행(통합·수용 과제):**
 - [x] **1 · 수용 실패 기준 고정:** 아래 12개 항목·SC9·필수 CI 3개·별도 검토·자동 리뷰 회차의 상태표를 artifact에 먼저 만들고 시작 상태를 `미실행`으로 둔다. Task 13의 E2E 2개와 기존 suite, 다중 로그/분리 창 부하, fallback·accept 불변 회귀를 포함한다. 제품 미구현/실패를 PASS로 바꾸지 않는다.
