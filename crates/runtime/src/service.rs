@@ -21,6 +21,7 @@ pub struct RuntimeService {
     locks: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     pub(crate) observation: AsyncMutex<HashMap<String, String>>,
     pub(crate) run_watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
+    pub(crate) scheduler: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
 }
 
@@ -36,6 +37,7 @@ impl RuntimeService {
             locks: Mutex::default(),
             observation: AsyncMutex::default(),
             watcher: AsyncMutex::default(),
+            scheduler: AsyncMutex::default(),
             run_watcher: AsyncMutex::default(),
         }
     }
@@ -244,6 +246,7 @@ impl RuntimeService {
             .run_config_status(&p.project_id)
             .await
             .map_err(project_error)?;
+        let removed_id = p.id.clone();
         let mut file = state.config.definitions();
         let (mut local, rev) = self.local(&p.project_id).await?;
         let in_file = file.iter().any(|d| d.id() == p.id);
@@ -282,7 +285,7 @@ impl RuntimeService {
             self.changed(&p.project_id, rev);
             rev
         } else {
-            let project = p.project_id;
+            let project = p.project_id.clone();
             let hub = self.hub.clone();
             let event_project = project.clone();
             let (_, rev) = self
@@ -298,6 +301,8 @@ impl RuntimeService {
                 .internal("delete local execution definition")??;
             rev
         };
+        self.remove_schedule_state(&p.project_id, &removed_id)
+            .await?;
         Ok(Done {
             rev: rev.to_string(),
         })

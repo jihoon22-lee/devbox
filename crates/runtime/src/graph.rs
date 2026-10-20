@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 pub struct PreparedGraph {
     pub(crate) project_id: String,
+    pub(crate) schedule: Option<crate::schedule_model::ScheduleClaim>,
     pub(crate) worktree: Option<String>,
     pub(crate) nodes: Vec<RunDef>,
     pub(crate) automatic_ports: std::collections::HashSet<String>,
@@ -17,6 +18,33 @@ impl PreparedGraph {
 }
 impl RuntimeService {
     pub async fn authorize_run_graph(&self, p: &StartRun) -> R<PreparedGraph> {
+        self.authorize_graph(p, None).await
+    }
+
+    pub(crate) async fn authorize_schedule(
+        &self,
+        project: &str,
+        expected: &Definition,
+    ) -> R<PreparedGraph> {
+        let RunDef::Schedule(schedule) = &expected.def else {
+            unreachable!()
+        };
+        self.authorize_graph(
+            &StartRun {
+                project_id: project.into(),
+                id: schedule.task.clone(),
+                worktree: None,
+            },
+            Some(expected),
+        )
+        .await
+    }
+
+    async fn authorize_graph(
+        &self,
+        p: &StartRun,
+        schedule: Option<&Definition>,
+    ) -> R<PreparedGraph> {
         let _guard = self.project_lock(&p.project_id).await;
         let project = self
             .projects
@@ -34,9 +62,19 @@ impl RuntimeService {
         let (local, _) = self.local(&p.project_id).await?;
         let mut merged = merge(state.config.definitions(), local.clone())?;
         let order = order(&merged, &p.id)?;
-        if merged.defs.iter().any(|d| {
-            order.contains(&d.def.id().to_owned()) && d.source == DefinitionSource::ProjectFile
-        }) {
+        if let Some(expected) = schedule {
+            if !merged.defs.contains(expected) {
+                return Err(RuntimeError::ProjectConfigChanged {
+                    id: p.project_id.clone(),
+                }
+                .into());
+            }
+        }
+        if schedule.is_some_and(|s| s.source == DefinitionSource::ProjectFile)
+            || merged.defs.iter().any(|d| {
+                order.contains(&d.def.id().to_owned()) && d.source == DefinitionSource::ProjectFile
+            })
+        {
             let snapshot = self
                 .projects
                 .run_snapshot(&p.project_id)
@@ -46,6 +84,14 @@ impl RuntimeService {
                 return Err(invalid(&p.id, "project path changed").into());
             }
             merged = merge(snapshot.config().run_config().definitions(), local)?;
+            if let Some(expected) = schedule {
+                if !merged.defs.contains(expected) {
+                    return Err(RuntimeError::ProjectConfigChanged {
+                        id: p.project_id.clone(),
+                    }
+                    .into());
+                }
+            }
         }
         prepare(self, p, &project.path, merged, std::slice::from_ref(&p.id)).await
     }
@@ -282,6 +328,7 @@ async fn prepare(
         .filter(|s| !s.chars().any(char::is_control))
         .ok_or_else(|| invalid(&p.id, "invalid execution binary path"))?;
     Ok(PreparedGraph {
+        schedule: None,
         project_id: p.project_id.clone(),
         worktree: p.worktree.clone(),
         nodes,

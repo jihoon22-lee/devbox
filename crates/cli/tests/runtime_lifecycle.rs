@@ -152,7 +152,7 @@ async fn service_restarts_on_failure_until_start_limit_then_fails_once() {
         .expect("start-limit event");
     let notification: Notification =
         serde_json::from_str(&event.payload).expect("typed notification");
-    assert_eq!(notification.run_id, failed.id);
+    assert_eq!(notification.run_id.as_deref(), Some(failed.id.as_str()));
     assert!(matches!(
         notification.reason,
         NotificationReason::StartLimit

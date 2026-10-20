@@ -89,10 +89,18 @@ impl RuntimeService {
             }
         });
         *slot = Some(WatchHandle { cancel, join });
+        if self.execution.is_some() {
+            *self.scheduler.lock().await =
+                Some(crate::scheduler::Scheduler::launch(self.clone()).await?);
+        }
         Ok(())
     }
 
     pub async fn shutdown(&self) {
+        if let Some(handle) = self.scheduler.lock().await.take() {
+            handle.cancel.cancel();
+            let _ = handle.join.await;
+        }
         if let Some(handle) = self.run_watcher.lock().await.take() {
             handle.cancel.cancel();
             let _ = handle.join.await;

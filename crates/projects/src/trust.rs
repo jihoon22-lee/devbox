@@ -188,7 +188,15 @@ impl ProjectsService {
         } else {
             TrustPreviewStatus::ApprovalRequired
         };
+        let project = id.to_owned();
+        let approval = self
+            .db
+            .read(move |tx| store::approval_identity(tx, &project))
+            .await
+            .internal("read approval change marker")?;
+        let approval_stamp = approval.map(|record| record.stamp());
         Ok(crate::run_config::RunConfigState {
+            approval_stamp,
             config: s.config.run_config(),
             trust,
             digest: s.digest,

@@ -75,8 +75,8 @@ export type ListSessions = { projectId: string | null, afterId?: string, };
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
-export type Notification = { id: string, projectId: string, runId: string, reason: NotificationReason, };
-export type NotificationReason = "startLimit";
+export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
+export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
@@ -115,6 +115,11 @@ export type SaveTo = "project" | "thisPc";
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type ScheduleDef = { id: string, task: string, cron: string, tz: string | null, missed: MissedPolicy, };
+export type ScheduleLast = { at: string, result: ScheduleOutcome, };
+export type ScheduleOutcome = "claimed" | "running" | "succeeded" | "failed" | "stopped" | "skippedMissed" | "skippedTrust";
+export type ScheduleStatus = { id: string, cron: string, next: string | null, last: ScheduleLast | null, };
+export type SchedulesQuery = { projectId: string, };
+export type SchedulesResult = { items: Array<ScheduleStatus>, };
 export type SendToAgent = { id: string, text: string, };
 export type ServiceDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, restart: RestartPolicy, restartSec: number, startLimit: StartLimit, portsHint: Array<number>, readyTimeoutSec: number, };
 export type SessionKind = "shell" | "agent";
@@ -186,6 +191,7 @@ export interface Methods {
   "runtime.list": { kind: "query"; confirm: "none"; params: ListRuns; result: DefinitionList; error: RuntimeError };
   "runtime.restart": { kind: "mutation"; confirm: "none"; params: RunId; result: Run; error: RuntimeError };
   "runtime.runs": { kind: "query"; confirm: "none"; params: RunsQuery; result: RunsResult; error: RuntimeError };
+  "runtime.schedules": { kind: "query"; confirm: "none"; params: SchedulesQuery; result: SchedulesResult; error: RuntimeError };
   "runtime.start": { kind: "mutation"; confirm: "none"; params: StartRun; result: Run; error: RuntimeError };
   "runtime.stop": { kind: "mutation"; confirm: "always"; params: RunId; result: Run; error: RuntimeError };
   "runtime.undefine": { kind: "mutation"; confirm: "always"; params: UndefineRun; result: Done; error: RuntimeError };
@@ -255,6 +261,7 @@ export const METHOD_INFO = {
   "runtime.list": { kind: "query", confirm: "none" },
   "runtime.restart": { kind: "mutation", confirm: "none" },
   "runtime.runs": { kind: "query", confirm: "none" },
+  "runtime.schedules": { kind: "query", confirm: "none" },
   "runtime.start": { kind: "mutation", confirm: "none" },
   "runtime.stop": { kind: "mutation", confirm: "always" },
   "runtime.undefine": { kind: "mutation", confirm: "always" },

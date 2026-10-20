@@ -12,6 +12,10 @@ mod model;
 mod reconcile;
 mod run_model;
 mod run_store;
+mod schedule_model;
+mod schedule_service;
+mod schedule_store;
+pub mod scheduler;
 mod service;
 mod store;
 mod watch;
@@ -23,6 +27,7 @@ pub use execution::{ExecutionConfig, Readiness, ReadyCheck, StartedRun, Worktree
 pub use graph::PreparedGraph;
 pub use model::*;
 pub use run_model::*;
+pub use schedule_model::*;
 pub use service::RuntimeService;
 
 pub const MIGRATIONS: &[Migration] = &[
@@ -36,6 +41,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: run_store::MIGRATION_2,
     },
+    Migration {
+        domain: "runtime",
+        version: 3,
+        sql: schedule_store::MIGRATION_3,
+    },
 ];
 
 method!(pub RuntimeList = "runtime.list", query, ListRuns => DefinitionList, RuntimeError);
@@ -46,9 +56,11 @@ method!(pub RuntimeStop = "runtime.stop", mutation(always), RunId => Run, Runtim
 method!(pub RuntimeRestart = "runtime.restart", mutation, RunId => Run, RuntimeError);
 method!(pub RuntimeExited = "runtime.exited", mutation(always), exit_record::Exited => devbox_protocol::Done, RuntimeError);
 method!(pub RuntimeRuns = "runtime.runs", query, RunsQuery => RunsResult, RuntimeError);
+method!(pub RuntimeSchedules = "runtime.schedules", query, SchedulesQuery => SchedulesResult, RuntimeError);
 topic!(pub RuntimeChanged = "runtime.changed", RuntimeChange);
 
 pub fn export<X: Exporter>(x: &mut X) {
+    x.method::<RuntimeSchedules>();
     x.method::<RuntimeStart>();
     x.method::<RuntimeStop>();
     x.method::<RuntimeRestart>();
@@ -66,3 +78,6 @@ type R<T> = Result<T, devbox_protocol::Fail<RuntimeError>>;
 mod defs_tests;
 #[cfg(test)]
 mod service_tests;
+
+#[cfg(test)]
+mod scheduler_tests;

@@ -3,16 +3,16 @@ use devbox_core::{Db, Hub};
 use devbox_projects::{AddProject, ProjectsService, TrustPreviewStatus};
 use std::{path::PathBuf, sync::Arc};
 
-struct Fixture {
-    root: tempfile::TempDir,
-    project: String,
-    db: Db,
-    hub: Arc<Hub>,
-    projects: Arc<ProjectsService>,
-    runs: Arc<RuntimeService>,
+pub(crate) struct Fixture {
+    pub(crate) root: tempfile::TempDir,
+    pub(crate) project: String,
+    pub(crate) db: Db,
+    pub(crate) hub: Arc<Hub>,
+    pub(crate) projects: Arc<ProjectsService>,
+    pub(crate) runs: Arc<RuntimeService>,
 }
 impl Fixture {
-    async fn new() -> Self {
+    pub(crate) async fn new() -> Self {
         let root = tempfile::tempdir().expect("owned fixture");
         let repo = root.path().join("repo");
         std::fs::create_dir(&repo).expect("owned project");
@@ -54,12 +54,12 @@ impl Fixture {
     fn config_path(&self) -> PathBuf {
         self.root.path().join("repo/.devbox/devbox.toml")
     }
-    fn write(&self, text: &str) {
+    pub(crate) fn write(&self, text: &str) {
         let path = self.config_path();
         std::fs::create_dir_all(path.parent().expect("parent")).expect("owned dir");
         std::fs::write(path, text).expect("owned config");
     }
-    async fn define(&self, id: &str, command: &str, save_to: SaveTo) -> DefineResult {
+    pub(crate) async fn define(&self, id: &str, command: &str, save_to: SaveTo) -> DefineResult {
         self.runs
             .define(DefineRun {
                 project_id: self.project.clone(),

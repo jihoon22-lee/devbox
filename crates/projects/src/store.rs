@@ -19,6 +19,32 @@ CREATE TABLE projects_command_trust (
   approved_ms INTEGER NOT NULL
 );";
 
+pub(crate) struct ApprovalIdentity {
+    path: String,
+    digest: String,
+    scope: u32,
+    at: i64,
+}
+impl ApprovalIdentity {
+    pub(crate) fn stamp(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        for text in [&self.path, &self.digest] {
+            hash.update((text.len() as u64).to_le_bytes());
+            hash.update(text.as_bytes());
+        }
+        hash.update(self.scope.to_le_bytes());
+        hash.update(self.at.to_le_bytes());
+        format!("{:x}", hash.finalize())
+    }
+}
+pub(crate) fn approval_identity(
+    tx: &Transaction,
+    id: &str,
+) -> rusqlite::Result<Option<ApprovalIdentity>> {
+    tx.query_row("SELECT canonical_path,digest,scope_version,approved_ms FROM projects_command_trust WHERE project_id=?1",[id],|r|Ok(ApprovalIdentity{path:r.get(0)?,digest:r.get(1)?,scope:r.get(2)?,at:r.get(3)?})).optional()
+}
+
 pub(crate) fn approved(
     tx: &Transaction,
     id: &str,

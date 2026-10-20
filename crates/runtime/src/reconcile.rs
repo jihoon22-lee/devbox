@@ -127,7 +127,8 @@ impl RuntimeService {
                     &Notification {
                         id: format!("run-{}-start-limit-{}", value.run.id, value.run.started_ms),
                         project_id: value.run.project_id.clone(),
-                        run_id: value.run.id.clone(),
+                        run_id: Some(value.run.id.clone()),
+                        task: None,
                         reason: NotificationReason::StartLimit,
                     },
                 );

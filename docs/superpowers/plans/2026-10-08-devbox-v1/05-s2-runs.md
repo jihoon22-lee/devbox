@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. Task 4 구현·직접 영향 검증·독립 최종 검토(미해결0)·Biome278 PASS 완료, root 로컬 커밋 뒤 다음 Task 5. PR은 Task 16에서 한 번.
+- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. Task 4 `167da8b5` 로컬 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. 다음 Task 6. PR은 Task 16에서 한 번.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -331,44 +331,53 @@ pub async fn start(&self, p: StartRun) -> Result<Run, Fail<RuntimeError>> {
 ### Task 5: 예약(cron)·놓친 예약·실패 알림
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/{cron_tests,scheduler_tests}.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** 새 예약의 현재 시각 baseline/API 테스트를 먼저 등록했다. cron 원본 10개·어댑터 4개도 구현 전에 등록했다. 이후 missed·신뢰·완료·수명 확장 검증을 추가했으며, 삭제/재추가와 재승인 직후 재편집은 각각 별도 assertion/timeout RED로 확인했다. 아래는 검증한 핵심 계약이다.
 ```rust
-clock.advance_to(missed_tick);
-scheduler.tick().await?;
-scheduler.tick().await?;
-assert_eq!(runner.started_count(), 1);
-assert_eq!(stale_schedule().await, Outcome::SkippedTrust);
+h.scheduler.tick(true).await?; // 최초 baseline
+h.advance(100);              // fake clock, minutes
+h.scheduler.tick(true).await?; // 재시작 missed 정책
+h.scheduler.tick(false).await?;
+h.scheduler.drain().await;
+assert_eq!(h.count(), 1);
+assert_eq!(stale.outcome().await, Some(ScheduleOutcome::SkippedTrust));
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-runtime scheduler`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** `git show v0.9.0:crates/runtime-engine/src/core/cron.rs`의 `CronSchedule::parse`·`validate_cron`·`next_occurrences_in_timezone`·`next_wall_occurrences`와 기존 DST 시험을 이식한다. `croner` parser를 그대로 사용하며 별도 cron 라이브러리로 바꾸지 않는다. 기존 테스트를 `cron_tests.rs`로 분리해 파일 600줄 상한을 지키고, scheduler가 한 시각을 요구할 때만 아래 thin adapter를 둔다. Scheduler는 다음 시각 sleep_until·변경 알림·shutdown cancellation을 선택한다. `last_fired`/skip 결과를 DB에 기록하고 중복 fire를 막는다. 매 fire와 missed RunOnce는 같은 `authorize_run_graph` 경로이며 ProjectFile 정의/의존이 있을 때만 `run_snapshot`을 요구한다. 승인 변경 전 trust 알림을 1회로 묶는다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-runtime scheduler`를 자원 제한 아래 실행한다. 초기 Scheduler/SchedulesQuery/schedules 미구현 API와 cron occurrence API/adapter 미구현 오류를 기록했다. `devbox-verification/s2-task5/{scheduler-red,cron-red,readd-red,approval-coalesced-red}.log`가 RED 근거다. fixture payload 호출 오타와 개발 중 serde_json 의존성 오류는 기능 RED가 아닌 컴파일 수정으로 구분한다.
+- [x] **3 · 구현:** `git show v0.9.0:crates/runtime-engine/src/core/cron.rs`의 `CronSchedule::parse`·`validate_cron`·`next_occurrences_in_timezone`·`next_wall_occurrences`와 기존 DST 시험을 이식한다. `croner` parser를 그대로 사용하며 별도 cron 라이브러리로 바꾸지 않는다. 기존 테스트를 `cron_tests.rs`로 분리해 파일 600줄 상한을 지키고, scheduler가 한 시각을 요구할 때만 아래 thin adapter를 둔다. Scheduler는 다음 시각 sleep_until·변경 알림·shutdown cancellation을 선택한다. `last_fired`/skip 결과를 DB에 기록하고 중복 fire를 막는다. 매 fire와 missed RunOnce는 `authorize_graph` 공통 경로로 schedule 자체·task·의존의 출처를 함께 확인하며, 하나라도 ProjectFile이면 `run_snapshot`을 요구한다. 실행은 그 snapshot과 thisPc 정의를 고정한 `PreparedGraph`만 받는다. ProjectsService의 typed `approval_stamp`는 기존 승인 기록 변화만 표시하며 권한으로 쓰지 않는다. 이를 runtime state에 저장해 승인 이벤트가 합쳐져도 trust 알림을 승인 변경 전 1회로 묶는다. 같은 schedule ID의 cron 수정은 baseline만 갱신하고 approval_stamp가 같으면 알림 표식을 유지한다. 삭제/재추가는 새 identity로 처리한다.
 
 ```rust
 loop {
     tokio::select! {
         _ = stop.cancelled() => break,
-        _ = changed.recv() => scheduler.recompute().await?,
-        _ = tokio::time::sleep_until(next) => scheduler.fire_due().await?,
+        _ = changed.recv() => {},
+        _ = approvals.recv() => {},
+        _ = tokio::time::sleep_until(deadline), if next.is_some() => {},
     }
+    next = scheduler.tick(false).await?;
 }
-// fire_due uses authorize_run_graph; project-file trust denial persists SkippedTrust.
+scheduler.stop().await; // worker 취소, 이미 시작한 systemd unit은 유지
+// tick uses authorize_graph with the schedule source; trust denial persists SkippedTrust.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. cron 전체(DST 없음/중복 시각), 가짜 시계 missed 두 정책·정의 변경·정상 실행 실패 알림·stale 두 tick/알림1을 검증한다. 재승인 후 다음 tick 실행을 확인한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): schedule trusted tasks with missed-run policies`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** cron 전체 15개(기존 10+adapter 4+이전 parser 계약 1), fake-clock scheduler 15개, 기존 runtime service/graph/watch 직접 영향 18개 PASS. 실제 CLI/systemd 소유 fixture 2개는 production 초기화·`runtime.schedules` RPC·Scheduled kind·비동기 exit7 실패 알림·중복 이벤트 억제·SIGTERM 종료/기존 unit 생존·재시작 복구·명시 stop의 stopped terminal/무알림·같은 승인 상태의 cron-only 수정 알림 억제를 확인했다. gen-ts 생성/--check PASS. 추가 직접 영향 결과와 raw/resource 파일은 PROGRESS 및 `s2-task5/summary.json`에 기록한다.
+- [x] **5 · 검토·커밋:** 별도 검토 P2 두 건을 실제 RED→GREEN으로 고치고 최종 미해결0·Biome278 PASS 뒤 `feat(runtime): schedule trusted tasks with missed-run policies`로 로컬 커밋했다. 실패·미실행·claim-before-launch 한계와 근거는 PROGRESS 및 `s2-task5/{summary,review}.json`에 구분했다.
 
 **Files:**
-- Create: `crates/runtime/src/cron.rs`(v0.9.0 `crates/runtime-engine/src/core/cron.rs`와 테스트를 그대로 이식), `crates/runtime/src/scheduler.rs`
+- Create/port: `crates/runtime/src/{cron,cron_tests,scheduler,scheduler_tests,schedule_model,schedule_service,schedule_store}.rs`
+- Modify: runtime graph/execution/run_store/watch/lib, core notify, projects typed approval marker, CLI routes·실제 `runtime_schedules` fixture, 생성 `app/src/rpc/gen/rpc.ts`
 
 **Interfaces:**
 - 기존 API: `CronSchedule::parse`·`validate_cron`·`next_occurrences_in_timezone`·`next_wall_occurrences`를 이식한다(`croner` 3.0.1 parser, 기존 wall-time/DST 정책 유지).
-- `cron::next_after(expr, tz, after) -> Result<Option<DateTime>, CronError>`는 기존 함수 이름이 아니라 위 occurrence API에 count=1을 요청해 첫 항목을 반환하는 필요한 thin adapter다. parse 오류를 `None`으로 삼키지 않는다.
+- `cron::next_after<Tz: TimeZone>(expr: &str, tz: &Tz, after: DateTime<Utc>) -> Result<Option<DateTime<Utc>>, CronError>`는 기존 함수 이름이 아니라 위 occurrence API에 count=1을 요청해 첫 항목을 반환하는 필요한 thin adapter다. parse 오류를 `None`으로 삼키지 않는다.
 - `Scheduler`: 다음 실행 시각 하나만 잡고 `tokio::time::sleep_until`로 기다린다(폴링 없음). 정의가 바뀌면 다시 계산한다.
 - 데몬 시작 시 놓친 예약:
   - `last_fired`(DB)와 지금 사이의 예약 시각이 있으면 `missed` 정책을 따른다.
   - `RunOnce`면 한 번 실행하고, `Skip`이면 "건너뜀"을 기록한다.
-- 예약 실행이 실패하면 알림 `{ kind: "schedule_failed", projectId, task, runId }`
-- 예약은 무인 실행이라 실행 시점마다 신뢰를 확인한다. 승인이 없거나 낡았으면 실행하지 않고 `skipped(trust)`를 기록하고 알림 `{ kind: "schedule_trust_required", projectId, task }`를 승인이 바뀔 때까지 한 번만 띄운다. 놓친 예약(`RunOnce`)도 같다.
-- 메서드 `runtime.schedules{ projectId }` → `{ items: [{ id, cron, next, last: { at, result } }] }`
+- 기존 core `notify.raised`의 `Notification { id, projectId, runId: string|null, task: string|null, reason }`를 확장한다. 기존 reason=`startLimit`을 보존하며 예약 실패는 `reason="schedule_failed"`다. 실제 생성된 target/dependency run ID가 있으면 넣고, preflight 실패에는 null을 쓴다. `save_run`과 schedule terminal 결과/알림 표식을 같은 DB transaction에 기록해 start 반환 뒤 종료도 반영하고 늦은 Running 결과가 terminal 상태를 덮지 못한다. 수동 stop은 stopped terminal로 기록하고 schedule_failed 알림을 보내지 않는다.
+- 예약은 무인 실행이라 실행 시점마다 신뢰를 확인한다. 승인이 없거나 낡았으면 실행하지 않고 `skipped(trust)`를 기록하고 알림 `reason="schedule_trust_required", projectId, task, runId=null`를 승인이 바뀔 때까지 한 번만 띄운다. 놓친 예약(`RunOnce`)도 같다.
+- 메서드 `runtime.schedules{ projectId }` → `{ items: [{ id, cron, next: string|null, last: { at, result }|null }] }`. 시각은 UTC RFC3339이며 result는 claimed/running/succeeded/failed/stopped/skippedMissed/skippedTrust다.
+- runtime migration 3의 state(cursor/definition/approval marker)와 occurrence claim/result만 실행 원장이다. 새 정의·삭제 뒤 재추가는 현재 시각을 baseline으로 삼는다. startup missed는 구간당 한 번 소비하며, 반복 tick/restart는 CAS cursor+occurrence key로 중복 실행을 막는다.
+- slow graph는 독립 worker로 실행한다. 종료는 scheduler worker를 취소하고 후속 노드를 시작하지 않으며, 이미 만들어진 systemd unit은 runtime 수명 정책대로 보존한다.
+- claim commit 직후 unit 시작 전 프로세스 강제 종료는 claimed 상태로 남아 재실행하지 않는다. DB와 systemd 간 원자적 exactly-once를 보장한다고 표현하지 않는다.
 
 **핵심 테스트:**
 - 이식한 `cron.rs` 테스트 전부(DST 포함)

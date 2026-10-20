@@ -199,6 +199,9 @@ pub struct UpdatedRunConfig {
 }
 #[derive(Debug)]
 pub struct RunConfigState {
+    /// Opaque identity of the persisted consent record, even when current bytes are stale.
+    /// It is a change marker, never an authorization capability.
+    pub approval_stamp: Option<String>,
     pub config: RunConfig,
     pub trust: crate::TrustPreviewStatus,
     pub digest: String,

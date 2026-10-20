@@ -15,6 +15,8 @@ CREATE INDEX runtime_runs_project ON runtime_runs(project_id, started_ms DESC);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StoredRun {
     pub run: Run,
+    #[serde(default)]
+    pub schedule: Option<crate::schedule_model::ScheduleClaim>,
     pub restart: RestartPolicy,
     pub start_limit: Option<crate::StartLimit>,
     pub worktree: Option<String>,

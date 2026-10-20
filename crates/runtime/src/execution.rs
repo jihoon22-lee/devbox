@@ -79,14 +79,35 @@ impl RuntimeService {
         let value = value.clone();
         let project = value.run.project_id.clone();
         let hub = self.hub.clone();
+        let notification = value
+            .schedule
+            .clone()
+            .map(|claim| (claim, value.run.clone()));
         let (_, rev) = self
             .db
             .write_checked_with_commit(
                 move |tx| {
                     run_store::put(tx, &value)?;
-                    Ok(Ok::<_, RuntimeError>(()))
+                    let alert = if let Some(claim) = &value.schedule {
+                        let outcome = ScheduleOutcome::from_run_state(value.run.state);
+                        schedule_store::finish(tx, claim, outcome, Some(&value.run.id))?.1
+                    } else {
+                        false
+                    };
+                    Ok(Ok::<_, RuntimeError>(alert))
                 },
-                move |_, rev| {
+                move |alert, rev| {
+                    if *alert {
+                        if let Some((claim, run)) = notification {
+                            crate::schedule_service::schedule_alert(
+                                &hub,
+                                rev,
+                                &claim,
+                                ScheduleOutcome::Failed,
+                                Some(run.id),
+                            );
+                        }
+                    }
                     hub.publish::<RuntimeChanged>(
                         rev,
                         &RuntimeChange {
@@ -161,11 +182,19 @@ impl RuntimeService {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let guard = self.run_lock(&id).await;
             let (kind, restart) = match def {
-                RunDef::Task(_) => (RunKind::Task, RestartPolicy::No),
+                RunDef::Task(_) => (
+                    if final_node && prepared.schedule.is_some() {
+                        RunKind::Scheduled
+                    } else {
+                        RunKind::Task
+                    },
+                    RestartPolicy::No,
+                ),
                 RunDef::Service(d) => (RunKind::Service, d.restart),
                 RunDef::Schedule(_) => unreachable!("preflight rejects schedules"),
             };
             let mut value = StoredRun {
+                schedule: prepared.schedule.clone().filter(|_| final_node),
                 run: Run {
                     id: id.clone(),
                     project_id: prepared.project_id.clone(),
