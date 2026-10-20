@@ -177,10 +177,7 @@ fn checked_path(path: &Path) -> Result<&str, CoreError> {
 pub fn path_environment(paths: &Paths) -> [(&'static str, &Path); 5] {
     [
         ("HOME", paths.home.as_path()),
-        (
-            "XDG_CONFIG_HOME",
-            paths.config_dir.parent().expect("resolved config parent"),
-        ),
+        ("XDG_CONFIG_HOME", paths.xdg_config_home.as_path()),
         (
             "XDG_DATA_HOME",
             paths

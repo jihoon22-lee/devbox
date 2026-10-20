@@ -106,17 +106,18 @@ jobs:
           & ./scripts/tests/windows-package.ps1
           & ./scripts/tests/windows-dev.ps1
           & ./scripts/win-package.ps1 -Verify
-          $installers = @(Get-ChildItem app/src-tauri/target/release/bundle/nsis/*.exe -File)
-          if (!$installers.Count) { throw 'NSIS installers missing' }
-          $hashes = @{}
-          foreach ($file in $installers) { $hashes[$file.Name] = (Get-FileHash $file.FullName).Hash.ToLowerInvariant() }
-          @{ source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID; repository = $env:GITHUB_REPOSITORY; workflow = '.github/workflows/windows.yml'; version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version; installers = $hashes } | ConvertTo-Json | Set-Content app/src-tauri/target/release/bundle/nsis/receipt.json -Encoding utf8
+          if ('${{ github.event_name }}' -in @('pull_request', 'workflow_dispatch')) { & ./scripts/win-package.ps1 -Channel accept }
       - uses: actions/upload-artifact@v4
         if: needs.changes.outputs.code == 'true'
         with:
           name: devbox-setup
-          path: |
-            app/src-tauri/target/release/bundle/nsis/*.exe
-            app/src-tauri/target/release/bundle/nsis/receipt.json
+          path: app/src-tauri/target/prod/release/bundle/nsis/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.code == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
+        with:
+          name: devbox-setup-accept
+          path: app/src-tauri/target/accept/release/bundle/nsis/
           if-no-files-found: error
           retention-days: 14

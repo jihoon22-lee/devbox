@@ -1,3 +1,4 @@
+use super::channel::CHANNEL;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -73,7 +74,11 @@ pub fn run_uri(search: &RunSearch) -> Option<String> {
     if !search.valid() {
         return None;
     }
-    let mut uri = format!("devbox://runs?projectId={}", encode(&search.project_id));
+    let mut uri = format!(
+        "{}://runs?projectId={}",
+        CHANNEL.config().protocol,
+        encode(&search.project_id)
+    );
     if let Some(id) = &search.run_id {
         uri.push_str(&format!("&runId={}", encode(id)));
     }
@@ -83,7 +88,10 @@ pub fn run_uri(search: &RunSearch) -> Option<String> {
     Some(uri)
 }
 pub fn route_for(uri: &str) -> Option<NavigationTarget> {
-    if let Some(id) = uri.strip_prefix("devbox://agents/") {
+    let uri = uri
+        .strip_prefix(CHANNEL.config().protocol)?
+        .strip_prefix("://")?;
+    if let Some(id) = uri.strip_prefix("agents/") {
         if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
             return None;
         }
@@ -92,7 +100,7 @@ pub fn route_for(uri: &str) -> Option<NavigationTarget> {
             view: "list".into(),
         }));
     }
-    let query = uri.strip_prefix("devbox://runs?")?;
+    let query = uri.strip_prefix("runs?")?;
     let mut project_id = None;
     let mut run_id = None;
     let mut task = None;
@@ -151,10 +159,24 @@ impl PendingNavigation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn uri(value: &str) -> String {
+        value.replacen("devbox://", &format!("{}://", CHANNEL.config().protocol), 1)
+    }
+    #[test]
+    fn other_channels_cannot_activate_this_apps_navigation() {
+        for channel in [
+            super::super::channel::AppChannel::Prod,
+            super::super::channel::AppChannel::Accept,
+            super::super::channel::AppChannel::Dev,
+        ] {
+            let uri = format!("{}://agents/a1", channel.config().protocol);
+            assert_eq!(route_for(&uri).is_some(), channel == CHANNEL);
+        }
+    }
     #[test]
     fn links_accept_only_one_ascii_agent_id_without_query_or_extra_segments() {
         assert_eq!(
-            route_for("devbox://agents/a1").unwrap(),
+            route_for(&uri("devbox://agents/a1")).unwrap(),
             NavigationTarget::Agents(AgentSearch {
                 id: "a1".into(),
                 view: "list".into()
@@ -173,28 +195,28 @@ mod tests {
             "devbox://agents/a-1",
             "devbox://agents/a1\n",
         ] {
-            assert!(route_for(uri).is_none(), "{uri}");
+            assert!(route_for(&self::uri(uri)).is_none(), "{uri}");
         }
     }
     #[test]
     fn cold_start_is_retained_until_ack_and_stale_ack_cannot_clear_second_instance() {
         let mut queue = PendingNavigation::default();
-        let cold = queue.enqueue("devbox://agents/a1").unwrap();
+        let cold = queue.enqueue(&uri("devbox://agents/a1")).unwrap();
         assert_eq!(queue.pending(), Some(cold.clone()));
-        assert!(queue.enqueue("devbox://agents/").is_none());
+        assert!(queue.enqueue(&uri("devbox://agents/")).is_none());
         assert_eq!(queue.pending(), Some(cold.clone()));
-        let second = queue.enqueue("devbox://agents/b2").unwrap();
+        let second = queue.enqueue(&uri("devbox://agents/b2")).unwrap();
         assert!(second.sequence > cold.sequence);
         queue.acknowledge(cold.sequence);
         assert_eq!(queue.pending(), Some(second.clone()));
         queue.acknowledge(second.sequence);
         assert_eq!(queue.pending(), None);
-        assert!(queue.enqueue("devbox://agents/b2").unwrap().sequence > second.sequence);
+        assert!(queue.enqueue(&uri("devbox://agents/b2")).unwrap().sequence > second.sequence);
     }
     #[test]
     fn tray_agents_navigation_is_retained_and_replaces_a_previous_deep_link() {
         let mut queue = PendingNavigation::default();
-        let link = queue.enqueue("devbox://agents/a1").unwrap();
+        let link = queue.enqueue(&uri("devbox://agents/a1")).unwrap();
         let summary = queue.enqueue_agents().unwrap();
         assert_eq!(
             summary.target,
@@ -221,7 +243,7 @@ mod tests {
                 Some(NavigationTarget::Runs(search.clone()))
             );
             let mut queue = PendingNavigation::default();
-            let agent = queue.enqueue("devbox://agents/a1").unwrap();
+            let agent = queue.enqueue(&self::uri("devbox://agents/a1")).unwrap();
             let run = queue.enqueue(&uri).unwrap();
             queue.acknowledge(agent.sequence);
             assert_eq!(queue.pending(), Some(run.clone()));
@@ -254,7 +276,7 @@ mod tests {
             "projectId=p&task=a#b",
         ] {
             assert!(
-                route_for(&format!("devbox://runs?{query}")).is_none(),
+                route_for(&uri(&format!("devbox://runs?{query}"))).is_none(),
                 "{query}"
             );
         }

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–15 및 묶음 O·P·Q 로컬 완료. Task15b 공용 색인 DB·코드 보기·검사 대기 구현과 직접 고유73개·타입/생성 검사 PASS(2026-10-21), 독립 제품 검토 PASS·미해결0, 완료 Biome 대기. 다음은 이 검토·커밋 뒤 Task15c 수용 전용 채널이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task1–15c 및 묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS(2026-10-21), 미해결0. 다음 Task16에서 설계 대비 관찰 UI 누락 보완·전체 검사·Windows accept 설치 수용·단일 PR을 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -1057,15 +1057,15 @@ git config merge.lockfile.driver true
 S2 머지 뒤 사용자가 새 빌드를 prod로 쓰기 시작하면, 01-design §11의 "기존 v1 설치본·`devbox@prod`가 있으면 멈춰 묻기" 때문에 이후 모든 설치본 스모크가 멈춘다. S3·S5 두 트랙이 같은 prod 자원에 설치하면 서로 덮어쓴다. 그래서 에이전트 수용 검증 전용 `accept` 채널을 만든다(01-design §6.1·§10·§11).
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `app/src-tauri core channel 시험 · crates/cli/tests/setup_accept.rs · dogfood parser fixture`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `app/src-tauri core channel 시험 · crates/cli/tests/setup_accept.rs · dogfood parser fixture`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 assert_ne!(channel(Prod).unit_template, channel(Accept).unit_template);
 setup_accept(&owned_home)?;
 assert_eq!(fingerprint(prod_binary), before_binary);
 assert_eq!(fingerprint(prod_template), before_template);
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-cli --test setup_accept accept_setup_leaves_prod_binary_and_template_untouched`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** build-time Channel enum/설정표를 단일 원장으로 만들어 connection/deploy/supervisor/setup/hook CLI 경로에 전달한다. Tauri accept override·NSIS 식별자/AUMID/protocol/autostart·CI prod/accept 산출물·receipt channel과 dogfood --channel을 연결한다. 런타임 채널 변경 설정 없음. accept setup/cleanup은 prod template/bin에 쓰지 않는다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-cli --test setup_accept accept_setup_leaves_prod_binary_and_template_untouched`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** build-time Channel enum/설정표를 단일 원장으로 만들어 connection/deploy/supervisor/setup/hook CLI 경로에 전달한다. Tauri accept override·NSIS 식별자/AUMID/protocol/autostart·CI prod/accept 산출물·receipt channel과 dogfood --channel을 연결한다. 런타임 채널 변경 설정 없음. accept setup/cleanup은 prod template/bin에 쓰지 않는다.
 
 ```rust
 pub enum AppChannel { Prod, Accept, Dev }
@@ -1076,8 +1076,8 @@ impl AppChannel {
 // build-time accept override is preserved through setup, hook binary and cleanup paths.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험과 identifier/프로토콜/앱data/경로표·owned-home setup 바이트/mtime 불변·receipt channel mismatch 거절을 실행한다. Windows NSIS self-check·실기 불변 비교는 Task16으로 남긴다. 묶음 R 기록을 갱신한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(windows): add an isolated acceptance install channel`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험과 identifier/프로토콜/앱data/경로표·owned-home setup 바이트/mtime 불변·receipt channel mismatch 거절을 실행한다. Windows NSIS self-check·실기 불변 비교는 Task16으로 남긴다. 묶음 R 기록을 갱신한다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(windows): add an isolated acceptance install channel`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Modify: `app/src-tauri/src/core/connection.rs`(`INSTANCE`), `app/src-tauri/src/core/deploy.rs`·`app/src-tauri/src/platform/deploy.rs`·`supervisor.rs`(배치 경로), `crates/cli/src/setup.rs`(unit 템플릿·바이너리 경로)
@@ -1100,6 +1100,13 @@ impl AppChannel {
 ```bash
 # 아래 단계별 검증·별도 검토 뒤 지정 메시지로 커밋한다.
 ```
+
+**구현·직접 검증 기록 (2026-10-21, 로컬 완료):**
+- `protocol::channel` 단일 표와 native compile env, accept/dev Tauri override·merged config/self-check 대조, identifier 기반 앱 data/단일 인스턴스/autostart/AUMID, productName 기반 NSIS 폴더/제거 registry를 연결했다. Windows는 `win-package.ps1`이 cargo와 Tauri에 같은 채널/config를 전달하며 직접 Windows debug 명령에는 dev override가 필요하다. Linux core 검사는 무옵션으로 유지한다.
+- accept config/bin은 `devbox-accept`, dev는 `devbox-dev`; 기존 prod 및 임의 test-* CLI 경로를 유지한다. data/state는 `devbox/<instance>`. 실제 accept unit은 `devbox-accept@accept.{socket,service}`·`devbox-accept-tmux@accept.service`, 별도 템플릿을 사용한다. 원래 XDG root·hook 실행 파일·OS 알림 URI를 맞추고 Windows root 미설정 오류는 유지한다.
+- 동일 필수 Windows job에서 PR/manual의 두 산출물과 태그 prod만, 채널별 target/receipt·dogfood channel mismatch 거절을 구현했다. 공통 receipt/env·Python fixture로 구조 중복을 줄여 scripts+.github1500줄/2 workflows를 유지했다.
+- 지정 setup RED→GREEN 및 실제 Secrets.save_name의 prod bytes/mtime 불변 포함 **고유79개 PASS(Rust75/Python4)**. 별도 PowerShell 모의2 suite·build-script8 case·MSVC accept compile·포맷/diff/600줄 PASS. 최초 MSVC 타입 오류와 WSL interop 환경 오류는 수정/재검증 기록을 보존한다. 실제 NSIS/Windows 앱 실행·전체 검사·설치 수용·push/PR은 Task16 미실행이다.
+- 제품30개 digest `a78bc281b95279eb5768c92e8d256112e11c8faa24a75a2d8af87a51858b3dc1`, Git common-dir `devbox-verification/s2-task15c/`에 raw/resources/명령/시험명/제품·문서 별도 manifest를 기록했다. 독립 최종 검토 PASS·미해결0·완료 Biome344 PASS로 로컬 완료했다. 제품30개·문서2개·artifact81개 해시를 대조했고 Biome 0.603초·cgroup118,235,136B·swap0이다. 검토된 인계 manifest는 보존하며 완료 문서 해시·커밋은 `root-completion.json`에 기록한다.
 
 ---
 

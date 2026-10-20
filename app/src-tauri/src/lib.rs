@@ -26,7 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
-                .app_name("io.github.jihoon22lee.devbox")
+                .app_name(core::channel::CHANNEL.config().identifier)
                 .arg("--minimized")
                 .build(),
         )

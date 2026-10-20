@@ -88,7 +88,11 @@ pub fn notify_attention(app: AppHandle, window: WebviewWindow, a: Attention) {
         }
         Some(NavigationTarget::Agents(_)) => return,
         None => (
-            format!("devbox://agents/{}", a.id),
+            format!(
+                "{}://agents/{}",
+                crate::core::channel::CHANNEL.config().protocol,
+                a.id
+            ),
             devbox_win::toast::tag_for(&a.id),
             "agents",
         ),

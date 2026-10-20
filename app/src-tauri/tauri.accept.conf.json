@@ -1,0 +1,13 @@
+{
+  "productName": "Devbox Accept",
+  "identifier": "io.github.jihoon22lee.devbox.accept",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "devbox-accept"
+        ]
+      }
+    }
+  }
+}

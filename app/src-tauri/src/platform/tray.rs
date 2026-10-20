@@ -120,7 +120,7 @@ pub fn show_notice(app: &AppHandle) {
             let spec = devbox_win::toast::ToastSpec {
                 title: "트레이에서 계속 실행됩니다".into(),
                 body: "완전히 끄려면 트레이 메뉴의 종료를 누르세요".into(),
-                launch_uri: "devbox://open".into(),
+                launch_uri: format!("{}://open", crate::core::channel::CHANNEL.config().protocol),
                 actions: vec![],
             };
             devbox_win::toast::show(&app.config().identifier, &spec, "tray-notice", "app")

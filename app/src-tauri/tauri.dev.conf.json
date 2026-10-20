@@ -1,0 +1,13 @@
+{
+  "productName": "Devbox Dev",
+  "identifier": "io.github.jihoon22lee.devbox.dev",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "devbox-dev"
+        ]
+      }
+    }
+  }
+}

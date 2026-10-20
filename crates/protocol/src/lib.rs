@@ -21,3 +21,5 @@ pub mod debug;
 pub mod secrets;
 
 pub mod windows;
+
+pub mod channel;

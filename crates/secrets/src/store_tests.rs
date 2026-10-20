@@ -153,3 +153,62 @@ async fn secret_names_preserve_valid_inline_tables() {
         );
     }
 }
+
+#[tokio::test]
+async fn accept_save_name_preserves_prod_config_bytes_and_mtime() {
+    let fixture = tempfile::tempdir().expect("owned channel HOME");
+    let home = Home(fixture.path().display().to_string());
+    let prod = Paths::resolve(Instance::parse("prod").unwrap(), &home).unwrap();
+    let accept = Paths::resolve(Instance::parse("accept").unwrap(), &home).unwrap();
+    prod.ensure_dirs().unwrap();
+    accept.ensure_dirs().unwrap();
+    let prod_config = prod.config_dir.join("config.toml");
+    let prod_local = prod.config_dir.join("config.local.toml");
+    std::fs::write(
+        &prod_config,
+        "# owned prod sentinel\n[secrets]\nnames=['PROD_ONLY']\n",
+    )
+    .unwrap();
+    std::fs::write(&prod_local, "[windows]\nroot='C:\\owned-prod'\n").unwrap();
+    let before: Vec<_> = [&prod_config, &prod_local]
+        .into_iter()
+        .map(|path| {
+            (
+                path,
+                std::fs::read(path).unwrap(),
+                std::fs::metadata(path).unwrap().modified().unwrap(),
+            )
+        })
+        .collect();
+    let db = Db::open(&accept.db_path, &accept.backups_dir, "test", MIGRATIONS).unwrap();
+    let service = SecretsService::with_key(db, accept.clone(), crypto::Key::from_bytes([7; 32]))
+        .await
+        .unwrap();
+    assert!(service.list().await.unwrap().is_empty());
+    for value in ["owned-first-value", "owned-replacement-value"] {
+        service
+            .set(SetSecret {
+                name: "ACCEPT_ONLY".into(),
+                value: value.into(),
+            })
+            .await
+            .unwrap();
+    }
+    let config = devbox_core::Config::load(&accept).unwrap();
+    assert_eq!(config.secrets.names, ["ACCEPT_ONLY"]);
+    assert_eq!(config.windows.root, None);
+    let names = service.list().await.unwrap();
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].name, "ACCEPT_ONLY");
+    assert!(names[0].has_value);
+    let accept_text = std::fs::read_to_string(accept.config_dir.join("config.toml")).unwrap();
+    assert!(!accept_text.contains("owned-first-value"));
+    assert!(!accept_text.contains("owned-replacement-value"));
+    for (path, bytes, modified) in before {
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+        assert_eq!(
+            std::fs::metadata(path).unwrap().modified().unwrap(),
+            modified
+        );
+    }
+}

@@ -12,18 +12,18 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q·Task15b 로컬 완료. 고유73개·타입/생성·독립 최종 검토·Biome344 PASS, 미해결0 |
-| 다음 할 일 | Task15c 수용 전용 설치 채널. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 Task1–15c·묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS, 미해결0 |
+| 다음 할 일 | Task16 설계 대비 관찰 UI 누락 보완·전체 검증·accept 설치 수용·단일 PR. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · Task15b 고유73개·독립 최종 검토·Biome344 PASS, 로컬 완료. 다음 Task15c |
+| 마지막 갱신 | 2026-10-21 · Task15c 구현·직접79개·MSVC 좁은 compile·PowerShell 모의2 suite PASS. 제품30개·문서2개·artifact81개 해시 대조, 독립 검토·완료 Biome344 PASS |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
 | 2026-10-14 | S1 완료 검토(Claude Code) 후속 · 자동 리뷰 상한 | 사용자 | 결정: PR마다 자동 리뷰 3회까지 반영, 4회째부터 차단 기준(실제 데이터 손실·비밀 유출·승인하지 않은 실행)만 수정하고 나머지는 §8 후속 목록. 사용량이 3회 전에 소진되면 남은 회차는 하네스 별도 리뷰로 대신하고 "미실행(한도)"으로 기록(사용자 확인 2026-10-14: 이 기본값 유지). CONVENTIONS §8·AGENTS·00 §3 반영 |
-| 2026-10-14 | 설치본 수용이 prod 자원과 충돌 | 사용자 | 결정(권장안): 에이전트 수용 전용 `accept` 채널(별도 identifier·폴더·프로토콜·자동 시작·WSL 인스턴스·채널 전용 바이너리/unit 템플릿)을 S2 Task 15c로 만들고, 스모크는 `windows-acceptance` 잠금(Task 15b)으로 한 번에 하나만. 그 뒤 prod 설치본·`devbox@prod`는 바꾸지 않고 있어도 멈추지 않음. 01 §6.1·§10·§11, 00 §2.2·§3.6, 05·06·07 반영 |
+| 2026-10-14 | 설치본 수용이 prod 자원과 충돌 | 사용자 | 결정(권장안): 에이전트 수용 전용 `accept` 채널(별도 identifier·폴더·프로토콜·자동 시작·WSL 인스턴스·채널 전용 바이너리/unit 템플릿)을 S2 Task 15c로 만들고, 스모크는 `windows-acceptance` 잠금(Task 15b)으로 한 번에 하나만. 그 뒤 prod 설치본·`devbox@prod`는 바꾸지 않고 있어도 멈추지 않음. Task15c 로컬 완료·좁은79개·독립 검토·완료 Biome344 PASS이며 실제 설치 수용은 Task16 미실행. 01 §6.1·§10·§11, 00 §2.2·§3.6, 05·06·07 반영 |
 | 2026-10-14 | S2 계획에 S1 신뢰 승인 미반영 | 계획 보강 | 해결(문서): 01 §7 "실행 범위 버전 2"와 05 Task 2·4·5·6·12·13·15·16에 반영. 범위 1 정의만 있는 설정의 기존 승인은 유지, 화면 정의 저장은 직전 바이트가 승인됐거나 승인이 필요 없었을 때만 새 digest 승인을 기록. 구현은 S2에서 |
 | 2026-10-14 | S1 인계 커밋 백업 | 사용자 | 결정: `v1/s2-runs`를 PR 없이 push(브랜치 push는 CI 미실행). 같은 날 후속 지시로 대체: 인계·보강 문서 커밋을 별도 문서 PR로 main에 squash 머지하고, S2 브랜치·worktree는 머지 뒤 최신 main에서 다시 만든다. 이 문서 PR은 00 §3의 "PR 7개"에 세지 않는 사용자 지시 예외이며, S2 PR은 Task 16에서 한 번만 연다 |
 | 2026-10-14 | CI E2E tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과) | 에이전트 | 미결: 원인 미확정(CI tmux 3.4, 로컬 3.6). Task15b에 소유 tmux 버전·server 로그·정리 전후 상태/명령 종료 수집 구현, 직접 fixture PASS. 실제 전체 E2E는 Task16 미실행이며 원인 해결로 표시하지 않음. 재발하면 이 행에 근거를 더하고 원인 수정, 재시도 래퍼 금지(00 §3.5) |
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q·Task15b 로컬 완료. 고유73개·타입/생성·독립 최종 검토·Biome344 PASS, 미해결0. 전체 검사·Windows 실기는 Task16 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q·R 및 Task15c 로컬 완료. Task15c 고유79개·독립 최종 검토·Biome344 PASS, 미해결0. 전체 검사·Windows 실기는 Task16 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -100,7 +100,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
-| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13·14·15·15b 로컬 완료. 고유73개·타입/생성·독립 최종 검토·Biome344 PASS, 미해결0. 다음 Task15c |
+| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
@@ -298,6 +298,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - **직접 고유73개 PASS**(Index12+Db18, CodeView18, scripts18, tmux7). 코드 미존재 RED/잠금 행동 RED와 lock75·초기 jsdom geometry·통합 타입 오류·tmux chdir 이전 관찰 경합을 분리했다. 마지막 diagnostic2개를 readiness 보정 뒤 재실행하고 직전 cleanup/finalizer5개 PASS는 재사용했다. app/E2E/acceptance 타입·gen-check·frozen lock·변경 포맷·actionlint·bash syntax·diff PASS. CI scope gate·시험 fixture 중복 제거와 읽을 수 있는 함수 구분으로 scripts+workflows1497줄/2개(시험 포함), Task15c 여유3줄이다.
 - 독립 검토 R1에서 같은 도메인의 parent-first DROP이 FK에 막힘을 재현했다(NO ACTION SQLite787·RESTRICT1811). 정식 사례표 RED 뒤 재생성 transaction 안 `defer_foreign_keys=ON`으로 고쳤으며 두 action·동일 버전 false·다른 도메인 보존·실패 시 행/버전 rollback·다음 write의 즉시 FK 검사 복귀를 검증했다. 최종 Index12개 PASS, 공유 Db는 변경 없어 앞선18개 PASS를 재사용했다. 재검토 해결·추가 지적0이다.
 - 제품/시험29개 digest `e5fc69b2ca6d38aff5cafdc84e8300020cf75810dc7754309d31a105131e2013`. 정확한 명령·raw/resources·실패 분류·소스/문서/검증 해시는 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,parent-commands,failure-classification,parent-static-checks,documentation-freeze,artifact-hashes}.json`에 기록한다. **독립 최종 검토 PASS·미해결0·완료 Biome344 PASS, 로컬 완료**다. 제품29개·문서2개·artifact77개 해시를 대조했고 Biome 0.909초·cgroup196,661,248B·swap0이다. 검토된 인계 summary/manifest는 보존하며 완료 문서 해시·커밋은 `root-completion.json`에 기록한다. 다음은 Task15c다. 전체 check/clippy/build/E2E·Windows 앱/배포·push/PR은 Task16 미실행이다.
+
+### S2 Task15c 수용 전용 설치 채널 (2026-10-21, 로컬 완료)
+
+- `protocol::channel::AppChannel`의 Prod/Accept/Dev 단일 표가 native compile 채널·Windows identifier/product/protocol·WSL config/bin/unit을 결정한다. native build-time `DEVBOX_APP_CHANNEL`을 고정하며 release 기본 prod/debug 기본 dev, 런타임 UI 설정은 없다. prod 경로·식별자는 그대로이고 accept는 `.accept`/`Devbox Accept`/`devbox-accept://`, dev는 `.dev`/`Devbox Dev`/`devbox-dev://`다. Tauri 실제 merged config와 compile 채널을 build/self-check에서 대조한다. Windows 지원 진입점 `win-package.ps1`은 cargo 검사와 Tauri 빌드에 같은 env/config를 주며 직접 Windows cargo/tauri debug에는 dev override가 필요하다. Linux native core 검사는 추가 환경 없이 실행된다.
+- exact `accept`/`dev`만 XDG config/bin을 `devbox-accept`/`devbox-dev`로 분리하며 임의 CLI `DEVBOX_INSTANCE`와 test-* fixture 계약은 유지한다. data/state는 기존 `devbox/<instance>`다. 원래 XDG_CONFIG_HOME을 별도 보존해 systemd 경계를 전달한다. accept 실제 unit은 `devbox-accept@accept.{socket,service}`·`devbox-accept-tmux@accept.service`; prod의 `devbox@.service`/`devbox-tmux@.service`를 덮어쓰지 않는다. native 배치·실행·setup/doctor/bridge/tmux·현재 실행 파일에서 파생한 hook DEVBOX_BIN 경로를 같은 표에 맞춘다. Windows root의 미설정 오류는 유지하고 accept 설정만 명시 소유 fixture root를 읽는다. 실제 SecretsService.set→save_name가 accept config만 쓰고 prod config bytes/mtime를 보존한다.
+- Windows local app data·settings와 single-instance 키·toast AUMID는 identifier, NSIS 설치 폴더·제거 registry는 productName, autostart는 명시 identifier를 사용한다. 설치된 dependency 및 pinned Tauri CLI 2.12.0 NSIS source로 계약을 확인했으며 실제 NSIS 실행 근거는 아니다. OS 알림 URI만 채널별로 바꾸고 process-local Tauri event는 유지했다. 전역 단축키 기존 충돌 정책도 유지한다.
+- `Rust (Windows)` 필수 job을 유지해 PR/manual에서 prod `devbox-setup`·accept `devbox-setup-accept`를 각각 만든다(태그는 prod만). 채널별 target·env 복원·self-check·receipt channel/SHA/repo/workflow/run/hash와 dogfood 기본 prod/명시 accept·불일치 거절을 연결했다. 기존 lock wrapper 계약 유지. 공통 receipt/env 처리와 Python command-boundary fixture로 구조 중복을 줄여 scripts+.github **1500줄·workflow2**를 맞췄다. 보호·시험 범위 제외나 다른 디렉터리 이동으로 줄이지 않았다.
+- 직접 **고유79개 PASS(Rust75=WSL51/native24, Python4)**, 별도 PowerShell 모의 패키징/개발2 suite·build-script 계약8 case·MSVC accept 좁은 compile·Rustfmt/diff/600줄 PASS. 지정 setup RED는 prod template bytes/mtime 변경으로 실제 실패한 뒤 GREEN. 최초 MSVC Context 타입 오류는 수정 후 통과, Windows PowerShell interop errno110은 기존 live socket을 해당 process 환경에만 지정해 재검증했으며 서비스/설정 변경은 없다. JSON targeted Biome format은 설정 제외로 no-files 오류(수정0), 완료 Biome는 아직 미실행이다. 제품/시험30개 digest `a78bc281b95279eb5768c92e8d256112e11c8faa24a75a2d8af87a51858b3dc1`.
+- 근거는 Git common-dir `devbox-verification/s2-task15c/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json`과 wsl/native/packaging raw·resource 기록. 소유 임시 fixture만 정리하고 사용자 prod·기존 서비스·공유 cache·원본 main은 보존했다. **독립 최종 검토 PASS·미해결0·완료 Biome344 PASS, 로컬 완료**다. 제품30개·문서2개·artifact81개 해시를 대조했고 Biome 0.603초·cgroup118,235,136B·swap0이다. 검토된 인계 manifest를 보존하며 최종 문서 해시·커밋은 `root-completion.json`에 기록한다. 다음은 Task16이고 전체 check/clippy/build/E2E·실제 Windows 앱/NSIS/self-check/설치·prod 불변 비교·push/PR은 Task16 미실행이다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -618,6 +627,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-21 | Codex 하네스 구현 | 선행1 `557139f2` 뒤 Task15 선행2 기존 test action 48줄 이동. 전후 고유11개·원문 보존·Rustfmt/diff/600줄 PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 기능 Task15 RED. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15-refactor-actions/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·Secrets/MCP 분담 | Task15 기능 runId 전환·서버 가림 실패 로그·비밀 설정/복구·MCP 도구. 고유73개·타입/생성·변경 포맷 PASS | 독립 검토 PASS·미해결0·Biome337 PASS, 로컬 완료 커밋. 다음 Task15b. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·IndexDb/CodeView 분담 | Task15b 공용 색인 DB·코드 보기·검사 대기/독립 잠금·tmux 진단, 고유73개·타입/생성·직접 영향 검사 PASS | 독립 최종 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품29/문서2/artifact77 해시 일치, scripts1497줄/2 workflows, 다음 Task15c. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,artifact-hashes}.json` |
+| 2026-10-21 | Codex 하네스 구현·WSL/패키징 분담 | Task15c 단일 채널 표·Windows/WSL 설치 격리·receipt 검증 구현, 고유79개·MSVC 좁은 compile·PowerShell 모의2 suite PASS | 독립 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품30/문서2/artifact81 해시 일치, scripts1500줄/2 workflows, 다음 Task16. 실제 Windows 설치·전체 검사·push/PR 미실행. 근거 `devbox-verification/s2-task15c/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
 
 
 ## 7. 착수 준비 검토
