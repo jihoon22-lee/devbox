@@ -8,7 +8,7 @@ use support::TestDaemon;
 async fn runtime_containers_typed_rpc_fake_path_and_actions() {
     let mut daemon = TestDaemon::fixture();
     let bin = daemon.home.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
+    std::fs::create_dir(&bin).expect("fixture result");
     let docker = bin.join("docker");
     std::fs::write(&docker, r##"#!/bin/sh
 cd -- "${0%/*}" || exit 91
@@ -17,8 +17,9 @@ printf '%s\n' "$@" > args
 if [ "$1" = ps ]; then
   printf '%s\n' '{"ID":"abc","Names":"owned","Image":"fake","State":"running","Status":"Up","Ports":"","Labels":"com.docker.compose.project=owned"}'
 fi
-"##).unwrap();
-    std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o700)).unwrap();
+"##).expect("fixture result");
+    std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o700))
+        .expect("fixture result");
     // Only the child daemon PATH changes; every Docker invocation resolves to this fake.
     daemon
         .extra_env
@@ -28,11 +29,11 @@ fi
     let result = client
         .call::<RuntimeContainers>(&ContainersQuery {})
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(result.available && result.reason.is_none());
     assert_eq!(result.items[0].compose_project.as_deref(), Some("owned"));
     assert_eq!(
-        std::fs::read_to_string(bin.join("args")).unwrap(),
+        std::fs::read_to_string(bin.join("args")).expect("fixture result"),
         "ps\n-a\n--format\njson\n"
     );
     for action in [
@@ -46,7 +47,7 @@ fi
                 action,
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         assert_eq!(result.action, action);
         assert_eq!(result.undo.is_some(), action == ContainerAction::Stop);
         if let Some(undo) = result.undo {
@@ -54,17 +55,17 @@ fi
         }
     }
     assert!(
-        matches!(client.call::<RuntimeContainerAction>(&ContainerActionParams { id: "--help".into(), action: ContainerAction::Start }).await.unwrap_err(), ClientError::Rpc { code, .. } if code == "runtime.container_invalid_id")
+        matches!(client.call::<RuntimeContainerAction>(&ContainerActionParams { id: "--help".into(), action: ContainerAction::Start }).await.expect_err("expected failure"), ClientError::Rpc { code, .. } if code == "runtime.container_invalid_id")
     );
-    std::fs::write(bin.join("failed"), "").unwrap();
+    std::fs::write(bin.join("failed"), "").expect("fixture result");
     assert!(
         !client
             .call::<RuntimeContainers>(&ContainersQuery {})
             .await
-            .unwrap()
+            .expect("fixture result")
             .available
     );
     assert!(
-        matches!(client.call::<RuntimeContainerAction>(&ContainerActionParams { id: "abc".into(), action: ContainerAction::Start }).await.unwrap_err(), ClientError::Rpc { code, .. } if code == "runtime.container_failed")
+        matches!(client.call::<RuntimeContainerAction>(&ContainerActionParams { id: "abc".into(), action: ContainerAction::Start }).await.expect_err("expected failure"), ClientError::Rpc { code, .. } if code == "runtime.container_failed")
     );
 }

@@ -24,6 +24,7 @@ pub struct RuntimeService {
     pub(crate) run_watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) scheduler: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
+    pub(crate) stopping: tokio_util::sync::CancellationToken,
 }
 
 impl RuntimeService {
@@ -41,6 +42,7 @@ impl RuntimeService {
             watcher: AsyncMutex::default(),
             scheduler: AsyncMutex::default(),
             run_watcher: AsyncMutex::default(),
+            stopping: tokio_util::sync::CancellationToken::new(),
         }
     }
 

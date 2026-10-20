@@ -35,14 +35,14 @@ mod tests {
     async fn summary_counts_all_live_runs_beyond_recent_history_at_one_revision() {
         let f = crate::service_tests::Fixture::new().await;
         let other_path = f.root.path().join("other");
-        std::fs::create_dir(&other_path).unwrap();
+        std::fs::create_dir(&other_path).expect("fixture result");
         let other = f
             .projects
             .add(devbox_projects::AddProject {
                 path: other_path.display().to_string(),
             })
             .await
-            .unwrap()
+            .expect("fixture result")
             .id;
         let project = f.project.clone();
         let (_, rev) = f.db.write(move |tx| {
@@ -52,8 +52,12 @@ mod tests {
                 tx.execute("INSERT INTO runtime_runs(id,project_id,started_ms,body) VALUES(?1,?2,?3,?4)", (format!("summary-{n}"), if n == 2 {&other} else {&project}, n, body))?;
             }
             Ok(())
-        }).await.unwrap();
-        let summary = f.runs.summary(crate::RunSummaryQuery {}).await.unwrap();
+        }).await.expect("fixture result");
+        let summary = f
+            .runs
+            .summary(crate::RunSummaryQuery {})
+            .await
+            .expect("fixture result");
         assert_eq!(summary.active, 3);
         assert_eq!(summary.rev, rev.to_string());
     }

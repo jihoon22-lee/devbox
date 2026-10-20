@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task1–15c 및 묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS(2026-10-21), 미해결0. Task16 관찰 UI 보완은 직접33개·독립 검토·Biome350 PASS로 로컬 완료했고, 다음 전체 검사·Windows accept 설치 수용·단일 PR을 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: **구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기**(2026-10-21). Task16 첫 전체 검사는 실패를 보존하고 직접140개·strict Clippy·실패 E2E3·타입 검사를 수정 후 통과했다. SC9 CPU0.233331%·RSS39,899,136B, 브랜치 최종 독립 검토 PASS·미해결0. Windows accept 설치 수용·필수 CI3·리뷰·PR/머지는 미완료다. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -1119,10 +1119,12 @@ impl AppChannel {
 - 실제 RED Rust1(시작 시각 null)·UI3(동작/조회 누락)를 보존했다. 첫 GREEN의 stale 갱신 전 재클릭 실패1을 수정했고, 직접 고유33개(프런트21·Rust12), TS 생성·앱 타입 검사가 PASS다. 생성 주석 때문에 생긴 whitespace는 원본 주석을 바꾸고 `pnpm gen`으로 재생성했다. 근거 `devbox-verification/s2-task16/observe-ui/`.
 - 이 기록은 관찰 UI 보완의 좁은 검증이다. 독립 검토 PASS·미해결0·완료 Biome350 PASS이며 제품21개·문서2개·artifact54개 해시를 대조했다. Biome0.896초·cgroup122,421,248B·swap0. 최종 문서/커밋은 `root-completion.json`에 기록한다. 첫 전체 검사·SC9·실제 Windows 설치 수용·필수 CI3·PR은 **미실행**이며 Task16/S2 완료로 표시하지 않는다.
 
+**최종 로컬 검증 기록(2026-10-21):** 최초 전체 검사 Rust954 PASS/33 ignored·Vitest601 PASS/2 FAIL·E2E8 PASS/3 FAIL·Clippy FAIL을 보존했다. 원인별 수정 뒤 고유140개·strict Clippy·실패 E2E3·타입 PASS이며 통과한 무관한 검사는 반복하지 않았다. B1–B4 및 로그 초기 이력/진단 tmux PID/fixture를 고쳤고 제품75개 동결 digest `635d0359ebb1b4c83557d880b9e8c13bbb2244803ab207e2a022c31bfe486c9b`의 독립 검토 PASS·미해결0이다. SC9 60.000603초 CPU0.233331%·RSS39,899,136B PASS, 규모52,174줄·600/300 초과0·scripts1,500줄·workflow2·E2E11개다. 근거 `devbox-verification/s2-task16/{full,integration-fixes,branch-review,sc9}/` 및 PROGRESS §5. 실제 Windows PowerShell IPv6 회귀1개 PASS는 설치본 수용 PASS가 아니다. 수용 도구 검토 지적4건 수정·재검토와 동일 SHA 산출물 확보 후 12개 설치 수용을 실행하며 현재는 미실행이다.
+
 **단계별 실행(통합·수용 과제):**
-- [ ] **1 · 수용 실패 기준 고정:** 아래 12개 항목·SC9·필수 CI 3개·별도 검토·자동 리뷰 회차의 상태표를 artifact에 먼저 만들고 시작 상태를 `미실행`으로 둔다. Task 13의 E2E 2개와 기존 suite, 다중 로그/분리 창 부하, fallback·accept 불변 회귀를 포함한다. 제품 미구현/실패를 PASS로 바꾸지 않는다.
-- [ ] **2 · 실패 확인/최종 검사:** 과제별 GREEN 뒤 처음으로 `bash scripts/check.sh`(내부 supervisor→check-inner)를 실행해 공통 잠금/자원 제한 안에서 전체 check·clippy·build·E2E를 한 번 수행한다. supervisor로 check.sh를 다시 감싸 이중 잠금을 만들지 않는다. 이미 check가 포함한 검사를 별도 명령으로 반복하지 않는다. 실패는 해당 범위만 수정·재실행한다. SC9는 실행0인 데몬의 RSS/CPU 1분 표본과 명령/시각을 저장한다.
-- [ ] **3 · 구현·수정:** 실제 발견 결함만 좁은 회귀→수정→GREEN으로 해결한다. `python3 xtask/loc.py` 규모·E2E 총40개 이하·600/300줄 경계를 확인하고 브랜치 전체 별도 검토를 마친다. 불가 항목은 구체적 사유/증거와 함께 남긴다.
+- [x] **1 · 수용 실패 기준 고정:** 아래 12개 항목·SC9·필수 CI 3개·별도 검토·자동 리뷰 회차의 상태표를 artifact에 먼저 만들고 시작 상태를 `미실행`으로 둔다. Task 13의 E2E 2개와 기존 suite, 다중 로그/분리 창 부하, fallback·accept 불변 회귀를 포함한다. 제품 미구현/실패를 PASS로 바꾸지 않는다.
+- [x] **2 · 실패 확인/최종 검사:** 과제별 GREEN 뒤 처음으로 `bash scripts/check.sh`(내부 supervisor→check-inner)를 실행해 공통 잠금/자원 제한 안에서 전체 check·clippy·build·E2E를 한 번 수행한다. supervisor로 check.sh를 다시 감싸 이중 잠금을 만들지 않는다. 이미 check가 포함한 검사를 별도 명령으로 반복하지 않는다. 실패는 해당 범위만 수정·재실행한다. SC9는 실행0인 데몬의 RSS/CPU 1분 표본과 명령/시각을 저장한다.
+- [x] **3 · 구현·수정:** 실제 발견 결함만 좁은 회귀→수정→GREEN으로 해결한다. `python3 xtask/loc.py` 규모·E2E 총40개 이하·600/300줄 경계를 확인하고 브랜치 전체 별도 검토를 마친다. 불가 항목은 구체적 사유/증거와 함께 남긴다.
 
 ```bash
 bash scripts/check.sh
@@ -1139,7 +1141,7 @@ gh workflow run windows.yml --ref v1/s2-runs
 **Files:**
 - Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치, 다음은 S3·S5 동시 시작), `python3 xtask/loc.py` 실행 결과를 PR 본문에 기록
 
-- [ ] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
+- [x] **Step 1: SC9 측정:** 실행 중인 작업이 없을 때 데몬 RSS ≤ 60MB, CPU ≤ 0.5%(`/proc/<pid>/status`·`stat`를 1분 표본으로). 결과를 PR 본문에 쓴다. 넘으면 원인을 찾아 고친 뒤 머지한다.
 - [ ] **Step 2: 에이전트 설치본 검증(12개)** — 설치 파일은 `bash scripts/dogfood.sh v1/s2-runs --channel accept`로 받고, `verify-resources.py --wait --lock windows-acceptance` 안에서 진행한다(Task 15b·15c).
   에이전트가 PR 전에 00-roadmap §2.2·01-design §11의 Windows 설치본 스모크를 수행한다. `scripts/dogfood.sh`와 같이 해당 브랜치 최종 SHA의 `windows.yml` 산출물에서 저장소·workflow·run·source SHA·SHA256을 확인하고, WSL에서 PowerShell 절대 경로로 설치·실행·제거한다. 아래 기능은 소유 fixture로 확인하고 앱·데몬 로그, user systemd unit 상태, 진단 정보와 필요시 스크린샷을 근거로 남긴다. UI 자동화가 불가능한 항목만 미실행으로 기록한다. prod 설치본·`devbox@prod`는 사용자 자원이라 바꾸지 않고, 설치 전후 해시·unit 상태를 읽기 전용으로 비교해 불변을 기록한다. 소유 표식 없는 `accept` 채널 자원이 이미 있으면 제거하지 않고 질문하며, UAC·재부팅·사용자 클릭이 필요하면 멈춰 보고한다. v0.9.0(`com.devbox.*`, DevboxSuite)·기존 데이터는 보존하고 이번 스모크가 만든 설치 경로·데이터·WSL unit·소켓만 정리한다. PASS·FAIL·미실행은 PROGRESS와 PR 본문에 구분한다. 자동 시험 성공을 Windows 실기 PASS로 바꾸지 않는다.
   1. 실제 프로젝트의 `pnpm dev`를 서비스로 정의 → 시작 → 로그 실시간 → 포트 칩으로 브라우저 열기

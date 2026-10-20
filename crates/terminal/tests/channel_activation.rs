@@ -8,11 +8,11 @@ async fn channel_tmux_activation_uses_only_its_own_service() {
     const CHILD: &str = "DEVBOX_CHANNEL_TMUX_FIXTURE";
     if let Ok(root) = std::env::var(CHILD) {
         let root = std::path::PathBuf::from(root);
-        let instance = std::env::var("DEVBOX_INSTANCE").unwrap();
+        let instance = std::env::var("DEVBOX_INSTANCE").expect("fixture result");
         let tmux = Tmux::with(format!("devbox-{instance}"), root.join("tmux.conf"));
-        tmux.ensure_server(&Instance::parse(&instance).unwrap())
+        tmux.ensure_server(&Instance::parse(&instance).expect("fixture result"))
             .await
-            .unwrap();
+            .expect("fixture result");
         return;
     }
     for (instance, unit) in [
@@ -20,7 +20,7 @@ async fn channel_tmux_activation_uses_only_its_own_service() {
         ("accept", "devbox-accept-tmux@accept.service"),
         ("dev", "devbox-dev-tmux@dev.service"),
     ] {
-        let fixture = tempfile::tempdir().unwrap();
+        let fixture = tempfile::tempdir().expect("fixture result");
         for (name, script) in [
             (
                 "tmux",
@@ -32,10 +32,12 @@ async fn channel_tmux_activation_uses_only_its_own_service() {
             ),
         ] {
             let path = fixture.path().join(name);
-            std::fs::write(&path, script).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::write(&path, script).expect("fixture result");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+                .expect("fixture result");
         }
-        let mut child = tokio::process::Command::new(std::env::current_exe().unwrap());
+        let mut child =
+            tokio::process::Command::new(std::env::current_exe().expect("fixture result"));
         child
             .args([
                 "--exact",
@@ -50,8 +52,8 @@ async fn channel_tmux_activation_uses_only_its_own_service() {
             .kill_on_drop(true);
         let output = tokio::time::timeout(Duration::from_secs(10), child.output())
             .await
-            .unwrap()
-            .unwrap();
+            .expect("fixture result")
+            .expect("fixture result");
         assert!(
             output.status.success(),
             "{} {}",
@@ -59,7 +61,7 @@ async fn channel_tmux_activation_uses_only_its_own_service() {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(
-            std::fs::read_to_string(fixture.path().join("calls")).unwrap(),
+            std::fs::read_to_string(fixture.path().join("calls")).expect("fixture result"),
             format!("--user\nstart\n{unit}\n")
         );
     }

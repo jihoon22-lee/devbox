@@ -57,11 +57,11 @@ pub(super) async fn resolve(s: Arc<Services>, p: ResolveFileLocation) -> R<FileL
                 .map_err(|_| ObserveError::SourceUnavailable)?;
             let mut source_allowed = false;
             for log_root in super::logs::roots(&s).await? {
-                if let Ok(log_root) = tokio::fs::canonicalize(log_root).await {
-                    if source.starts_with(&log_root) {
-                        source_allowed = true;
-                        allowed.push(log_root);
-                    }
+                if let Ok(log_root) = tokio::fs::canonicalize(log_root).await
+                    && source.starts_with(&log_root)
+                {
+                    source_allowed = true;
+                    allowed.push(log_root);
                 }
             }
             if !source_allowed || !source.is_file() {
@@ -122,11 +122,11 @@ mod tests {
     fn file_locations_resolve_relative_absolute_and_windows_copy_paths() {
         let base = Path::new("/owned/repo/src");
         assert_eq!(
-            location_path(base, None, "file name.rs").unwrap(),
+            location_path(base, None, "file name.rs").expect("fixture result"),
             base.join("file name.rs")
         );
         assert_eq!(
-            location_path(base, None, "/owned/repo/main.rs").unwrap(),
+            location_path(base, None, "/owned/repo/main.rs").expect("fixture result"),
             PathBuf::from("/owned/repo/main.rs")
         );
         assert_eq!(
@@ -135,7 +135,7 @@ mod tests {
                 Some(r"C:\dev\repo\src"),
                 r"C:\dev\repo\src\file name.rs"
             )
-            .unwrap(),
+            .expect("fixture result"),
             base.join("file name.rs")
         );
         assert!(location_path(base, Some(r"C:\dev\repo"), r"C:\dev\repo-other\file.rs").is_err());
@@ -157,12 +157,12 @@ mod integration_tests {
     use super::*;
     #[tokio::test]
     async fn file_location_query_uses_file_parent_and_rejects_escape_and_missing_run() {
-        let home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().expect("fixture result");
         let repo = home.path().join("repo");
-        std::fs::create_dir_all(repo.join("logs")).unwrap();
-        std::fs::write(repo.join("logs/output.log"), b"owned").unwrap();
-        std::fs::write(repo.join("source.rs"), b"owned").unwrap();
-        std::fs::write(home.path().join("outside.rs"), b"owned outside").unwrap();
+        std::fs::create_dir_all(repo.join("logs")).expect("fixture result");
+        std::fs::write(repo.join("logs/output.log"), b"owned").expect("fixture result");
+        std::fs::write(repo.join("source.rs"), b"owned").expect("fixture result");
+        std::fs::write(home.path().join("outside.rs"), b"owned outside").expect("fixture result");
         let services = crate::daemon::build_services_for_test(home.path());
         let project = services
             .projects
@@ -170,7 +170,7 @@ mod integration_tests {
                 path: repo.display().to_string(),
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         let request = |path: &str| ResolveFileLocation {
             project_id: project.id.clone(),
             source: LogSource::File {
@@ -182,7 +182,7 @@ mod integration_tests {
         };
         let location = resolve(services.clone(), request("../source.rs"))
             .await
-            .unwrap();
+            .expect("fixture result");
         assert_eq!(location.path, repo.join("source.rs").display().to_string());
         assert_eq!((location.line, location.column), (12, 3));
         assert!(matches!(
@@ -204,14 +204,14 @@ mod integration_tests {
     }
     #[tokio::test]
     async fn merged_run_location_uses_original_source_project_cwd_and_windows_mapping() {
-        let home = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().expect("fixture result");
         let repo = home.path().join("source");
         let other = home.path().join("selected");
-        std::fs::create_dir_all(repo.join("old")).unwrap();
-        std::fs::create_dir_all(repo.join("new")).unwrap();
-        std::fs::create_dir_all(&other).unwrap();
+        std::fs::create_dir_all(repo.join("old")).expect("fixture result");
+        std::fs::create_dir_all(repo.join("new")).expect("fixture result");
+        std::fs::create_dir_all(&other).expect("fixture result");
         for dir in ["old", "new"] {
-            std::fs::write(repo.join(dir).join("source.rs"), dir).unwrap();
+            std::fs::write(repo.join(dir).join("source.rs"), dir).expect("fixture result");
         }
         let services = crate::daemon::build_services_for_test(home.path());
         let project = services
@@ -220,14 +220,14 @@ mod integration_tests {
                 path: repo.display().to_string(),
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         let selected = services
             .projects
             .add(devbox_projects::AddProject {
                 path: other.display().to_string(),
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         let project_id = project.id.clone();
         let original = repo.join("old").display().to_string();
         services.db.write(move |tx| {
@@ -241,7 +241,7 @@ mod integration_tests {
             let body = serde_json::json!({ "run": run, "source_cwd": original, "restart": "no", "start_limit": null, "worktree": null, "start_limit_notified": false }).to_string();
             tx.execute("INSERT INTO runtime_runs(id,project_id,started_ms,body) VALUES('old-run',?1,1,?2)", [&project_id, &body])?;
             Ok(())
-        }).await.unwrap();
+        }).await.expect("fixture result");
         services
             .runs
             .define(devbox_runtime::DefineRun {
@@ -255,7 +255,7 @@ mod integration_tests {
                 }),
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         for path in ["source.rs", r"C:\dev\source\old\source.rs"] {
             let location = resolve(
                 services.clone(),
@@ -270,7 +270,7 @@ mod integration_tests {
                 },
             )
             .await
-            .unwrap();
+            .expect("fixture result");
             assert_eq!(
                 location.path,
                 repo.join("old/source.rs").display().to_string()
@@ -279,7 +279,7 @@ mod integration_tests {
         services.db.write(|tx| {
             tx.execute("UPDATE runtime_runs SET body=json_remove(body,'$.source_cwd') WHERE id='old-run'", [])?;
             Ok(())
-        }).await.unwrap();
+        }).await.expect("fixture result");
         assert!(matches!(
             resolve(
                 services,

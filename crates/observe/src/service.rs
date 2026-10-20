@@ -113,9 +113,8 @@ impl ObserveService {
                     // Poll each pipe once to collect the currently available frontier.
                     std::future::poll_fn(|cx| {
                         for (i, source) in &mut containers {
-                            if heads[*i].is_none() && !source.done {
-                                if let Poll::Ready(line) = source.poll_next(cx) { heads[*i] = line?; }
-                            }
+                            if heads[*i].is_none() && !source.done
+                                && let Poll::Ready(line) = source.poll_next(cx) { heads[*i] = line?; }
                         }
                         Poll::Ready(Ok::<_, devbox_protocol::Fail<ObserveError>>(()))
                     }).await?;
@@ -136,7 +135,7 @@ impl ObserveService {
                         result = std::future::poll_fn(|cx| {
                             let mut ready = false;
                             for (i, source) in &mut containers {
-                                if !source.done { if let Poll::Ready(line) = source.poll_next(cx) { heads[*i] = line?; ready = true; } }
+                                if !source.done && let Poll::Ready(line) = source.poll_next(cx) { heads[*i] = line?; ready = true; }
                             }
                             if ready { Poll::Ready(Ok::<_, devbox_protocol::Fail<ObserveError>>(())) } else { Poll::Pending }
                         }) => result?,

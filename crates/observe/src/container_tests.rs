@@ -29,8 +29,9 @@ else:
         os.write(2,err); os.write(1,out); toggle.unlink()
     else:
         os.write(1,out); os.write(2,err); toggle.touch()
-"#).unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+"#).expect("fixture result");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
+        .expect("fixture result");
     script
 }
 fn source(id: &str) -> ResolvedSource {
@@ -53,7 +54,7 @@ fn alive(root: &Path) -> bool {
 }
 #[tokio::test]
 async fn container_snapshot_search_has_stable_pipe_cursors_and_equal_timestamps() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::new(docker(temp.path()));
     let mut cursor = None;
     let mut rows = vec![];
@@ -73,7 +74,7 @@ async fn container_snapshot_search_has_stable_pipe_cursors_and_equal_timestamps(
                 vec![],
             )
             .await
-            .unwrap();
+            .expect("fixture result");
         rows.extend(page.items.into_iter().map(|l| (l.text, l.stream)));
         cursor = page.next_cursor;
         if cursor.is_none() {
@@ -92,7 +93,7 @@ async fn container_snapshot_search_has_stable_pipe_cursors_and_equal_timestamps(
 #[tokio::test]
 async fn container_only_eof_delivers_backlog_then_fin_and_reaps_child() {
     for id in ["eof", "failure"] {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
         let service = ObserveService::new(docker(temp.path()));
         let open = Open::new(256 * 1024);
         let source = source(id);
@@ -108,14 +109,14 @@ async fn container_only_eof_delivers_backlog_then_fin_and_reaps_child() {
                 vec![],
             )
             .await
-            .unwrap();
+            .expect("fixture result");
         until(|| open.finished()).await;
         if id == "eof" {
             let rows: Vec<LogLine> = open
                 .data()
                 .split(|b| *b == b'\n')
                 .filter(|s| !s.is_empty())
-                .map(|s| serde_json::from_slice(s).unwrap())
+                .map(|s| serde_json::from_slice(s).expect("fixture result"))
                 .collect();
             assert_eq!(
                 rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
@@ -129,7 +130,7 @@ async fn container_only_eof_delivers_backlog_then_fin_and_reaps_child() {
 #[tokio::test]
 async fn container_close_reaps_owned_child_during_idle_and_credit_wait() {
     for id in ["idle", "live"] {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
         let service = ObserveService::new(docker(temp.path()));
         let open = Open::new(0);
         let source = source(id);
@@ -145,7 +146,7 @@ async fn container_close_reaps_owned_child_during_idle_and_credit_wait() {
                 vec![],
             )
             .await
-            .unwrap();
+            .expect("fixture result");
         until(|| alive(temp.path())).await;
         open.closed.cancel();
         until(|| !alive(temp.path())).await;
@@ -154,7 +155,7 @@ async fn container_close_reaps_owned_child_during_idle_and_credit_wait() {
 }
 #[tokio::test]
 async fn container_search_cancellation_reaps_owned_child() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = std::sync::Arc::new(ObserveService::new(docker(temp.path())));
     let ctx = ctx();
     let cancel = ctx.cancel.clone();
@@ -177,13 +178,13 @@ async fn container_search_cancellation_reaps_owned_child() {
     });
     until(|| alive(temp.path())).await;
     cancel.cancel();
-    assert!(task.await.unwrap().is_err());
+    assert!(task.await.expect("fixture result").is_err());
     assert!(!alive(temp.path()));
     service.shutdown().await;
 }
 #[tokio::test]
 async fn container_offset_skips_raw_bytes_in_each_pipe() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::new(docker(temp.path()));
     let open = Open::new(256 * 1024);
     let source = source("eof");
@@ -201,13 +202,13 @@ async fn container_offset_skips_raw_bytes_in_each_pipe() {
             vec![],
         )
         .await
-        .unwrap();
+        .expect("fixture result");
     until(|| open.finished()).await;
     let rows: Vec<LogLine> = open
         .data()
         .split(|b| *b == b'\n')
         .filter(|s| !s.is_empty())
-        .map(|s| serde_json::from_slice(s).unwrap())
+        .map(|s| serde_json::from_slice(s).expect("fixture result"))
         .collect();
     assert_eq!(
         rows.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
@@ -218,7 +219,7 @@ async fn container_offset_skips_raw_bytes_in_each_pipe() {
 
 #[tokio::test]
 async fn docker_tabs_survive_live_stream_and_snapshot_search() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::new(docker(temp.path()));
     let open = Open::new(256 * 1024);
     let target = source("tabs");
@@ -234,13 +235,13 @@ async fn docker_tabs_survive_live_stream_and_snapshot_search() {
             vec![],
         )
         .await
-        .unwrap();
+        .expect("fixture result");
     until(|| open.finished()).await;
     let rows: Vec<LogLine> = open
         .data()
         .split(|b| *b == b'\n')
         .filter(|s| !s.is_empty())
-        .map(|s| serde_json::from_slice(s).unwrap())
+        .map(|s| serde_json::from_slice(s).expect("fixture result"))
         .collect();
     assert_eq!(
         rows.iter()
@@ -266,7 +267,7 @@ async fn docker_tabs_survive_live_stream_and_snapshot_search() {
             vec![],
         )
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(
         page.items
             .iter()

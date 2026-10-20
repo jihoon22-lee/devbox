@@ -15,17 +15,21 @@ async fn consent(f: &Fixture) -> devbox_projects::trust::AuthorizedConfig {
             vec![],
         )
         .await
-        .unwrap();
+        .expect("fixture result");
     f.projects
         .trust_approve(devbox_projects::TrustApprove {
             id: f.project.clone(),
             expected_canonical_path: preview.canonical_path,
-            expected_digest: preview.digest.unwrap(),
+            expected_digest: preview.digest.expect("fixture value"),
             expected_scope_version: preview.scope_version,
         })
         .await
-        .unwrap();
-    f.projects.test_snapshot(&f.project).await.unwrap().unwrap()
+        .expect("fixture result");
+    f.projects
+        .test_snapshot(&f.project)
+        .await
+        .expect("fixture result")
+        .expect("fixture value")
 }
 #[tokio::test]
 async fn agent_test_rejects_stale_or_reapproved_changed_snapshot_and_command_substitution_without_resources()
@@ -75,7 +79,7 @@ async fn agent_test_rejects_stale_or_reapproved_changed_snapshot_and_command_sub
                     limit: 100
                 })
                 .await
-                .unwrap()
+                .expect("fixture result")
                 .items
                 .is_empty()
         );

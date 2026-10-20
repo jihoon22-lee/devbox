@@ -21,10 +21,10 @@ fn run_tools_publish_bounded_schemas_and_gate_direct_writes() {
     );
     let logs = list["result"]["tools"]
         .as_array()
-        .unwrap()
+        .expect("fixture value")
         .iter()
         .find(|tool| tool["name"] == "devbox_logs")
-        .unwrap();
+        .expect("fixture value");
     assert_eq!(
         logs["inputSchema"]["properties"]["lines"]["type"],
         "integer"
@@ -39,7 +39,7 @@ fn run_tools_publish_bounded_schemas_and_gate_direct_writes() {
     assert!(
         denied["result"]["content"][0]["text"]
             .as_str()
-            .unwrap()
+            .expect("fixture value")
             .contains("쓰기")
     );
     m.finish();
@@ -74,12 +74,12 @@ async fn read_tools_return_recent_runs_exact_tails_and_problems() {
         .await;
     let mut m = Mcp::start(&d);
     let runs = body(&m.tool("devbox_runs", json!({})));
-    assert_eq!(runs["items"].as_array().unwrap().len(), 100);
+    assert_eq!(runs["items"].as_array().expect("fixture value").len(), 100);
     assert_eq!(runs["items"][0]["id"], "diagnostics");
     assert_eq!(runs["items"][99]["id"], "r007");
     for count in [1, 200, 256, 500] {
         let logs = body(&m.tool("devbox_logs", json!({"runId":"logs","lines":count})));
-        let items = logs["items"].as_array().unwrap();
+        let items = logs["items"].as_array().expect("fixture value");
         assert_eq!(items.len(), count);
         assert_eq!(items[0]["text"], format!("line-{:03}", 600 - count));
         assert_eq!(items[count - 1]["text"], "line-599");
@@ -108,15 +108,15 @@ async fn logs_cross_byte_limited_pages_and_bound_the_combined_response() {
     server.seed(&d, &project, "large", 1, &text).await;
     let mut m = Mcp::start(&d);
     let result = body(&m.tool("devbox_logs", json!({"runId":"large","lines":80})));
-    let items = result["items"].as_array().unwrap();
+    let items = result["items"].as_array().expect("fixture value");
     assert!(items.len() > 1 && items.len() < 80);
     assert!(
-        items.last().unwrap()["text"]
+        items.last().expect("fixture value")["text"]
             .as_str()
-            .unwrap()
+            .expect("fixture value")
             .starts_with("line-079")
     );
-    assert!(serde_json::to_vec(&result).unwrap().len() <= 768 * 1024);
+    assert!(serde_json::to_vec(&result).expect("fixture result").len() <= 768 * 1024);
     assert_eq!(result["truncated"], true);
     m.finish();
     server.stop().await;
@@ -137,7 +137,7 @@ async fn mcp_logs_never_include_secret_values() {
             value: secret.into(),
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     let client = f.daemon.client().await;
     let project = f.project(&client).await;
     let mut def = task(
@@ -164,7 +164,7 @@ async fn mcp_logs_never_include_secret_values() {
             .join("runs")
             .join(format!("{}.log", run.id)),
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(disk.contains("owned-executed"));
     assert!(disk.contains("[REDACTED]"));
     assert!(!disk.contains(secret));
@@ -188,8 +188,9 @@ async fn mcp_run_task_requires_trust_and_cannot_approve() {
     let client = f.daemon.client().await;
     let project = f.project(&client).await;
     let path = f.daemon.home.path().join("project/.devbox/devbox.toml");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "[[task]]\nid='owned'\ncommand = 'printf owned'\n").unwrap();
+    std::fs::create_dir_all(path.parent().expect("fixture value")).expect("fixture result");
+    std::fs::write(&path, "[[task]]\nid='owned'\ncommand = 'printf owned'\n")
+        .expect("fixture result");
     let mut m = Mcp::start(&f.daemon);
     let list = m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}));
     assert!(names(&list).contains(&"devbox_run_task".to_owned()));
@@ -209,7 +210,7 @@ async fn mcp_run_task_requires_trust_and_cannot_approve() {
     assert!(
         denied["result"]["content"][0]["text"]
             .as_str()
-            .unwrap()
+            .expect("fixture value")
             .contains("projects.trust_required")
     );
     assert!(f.runs(&client, &project).await.is_empty());
@@ -219,12 +220,13 @@ async fn mcp_run_task_requires_trust_and_cannot_approve() {
     m.call(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
     assert!(f.runs(&client, &project).await.is_empty());
     assert!(f.units().is_empty());
-    std::fs::write(&path, "[[task]]\nid='owned'\ncommand = 'printf changed'\n").unwrap();
+    std::fs::write(&path, "[[task]]\nid='owned'\ncommand = 'printf changed'\n")
+        .expect("fixture result");
     let denied = m.tool("devbox_run_task", json!({"projectId":project,"id":"owned"}));
     assert!(
         denied["result"]["content"][0]["text"]
             .as_str()
-            .unwrap()
+            .expect("fixture value")
             .contains("projects.trust_required")
     );
     assert!(f.runs(&client, &project).await.is_empty());

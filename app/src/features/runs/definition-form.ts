@@ -59,7 +59,7 @@ export function initialDefinitionForm(definition?: Definition, suggestion?: Sugg
     cron: schedule?.cron ?? "",
     tz: schedule?.tz ?? "",
     missed: schedule?.missed ?? "skip",
-    saveTo: definition?.source === "projectFile" ? "project" : "thisPc",
+    saveTo: definition?.source === "thisPc" ? "thisPc" : "project",
   };
 }
 const items = (value: string) =>

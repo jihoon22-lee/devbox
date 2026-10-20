@@ -47,8 +47,8 @@ async fn live_unit_lookup_keeps_runs_older_than_the_history_page() {
         Ok(())
     })
     .await
-    .unwrap();
-    let rows = f.runs.live_unit_runs().await.unwrap();
+    .expect("fixture result");
+    let rows = f.runs.live_unit_runs().await.expect("fixture result");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].run_id, "run-0");
     assert_eq!(rows[0].project_id, f.project);

@@ -4,10 +4,10 @@ use devbox_observe::{ObserveService, ProblemRun};
 #[tokio::test]
 async fn wrapper_new_attempt_starts_after_the_preserved_partial_previous_record() {
     let f = Fixture::new();
-    std::fs::create_dir_all(f.runs()).unwrap();
+    std::fs::create_dir_all(f.runs()).expect("fixture result");
     let log = f.runs().join("run-1.log");
     let partial = "2026-10-20T01:02:03.004Z\to\tx.ts(1,1): error truncated";
-    std::fs::write(&log, partial).unwrap();
+    std::fs::write(&log, partial).expect("fixture result");
     let status = f
         .command()
         .args([
@@ -22,7 +22,7 @@ async fn wrapper_new_attempt_starts_after_the_preserved_partial_previous_record(
             "printf 'x.ts(3,1): error current\\n'",
         ])
         .status()
-        .unwrap();
+        .expect("fixture result");
     assert!(status.success());
     let contents = f.log();
     assert!(
@@ -32,7 +32,7 @@ async fn wrapper_new_attempt_starts_after_the_preserved_partial_previous_record(
     let marker = contents
         .lines()
         .nth(1)
-        .unwrap()
+        .expect("fixture value")
         .splitn(3, '\t')
         .collect::<Vec<_>>();
     assert_eq!(marker[1], "s");
@@ -53,7 +53,7 @@ async fn wrapper_new_attempt_starts_after_the_preserved_partial_previous_record(
             started_ms: 1,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(batch.problems.len(), 1);
     assert_eq!(batch.problems[0].line, 3);
     assert_eq!(batch.problems[0].message, "current");

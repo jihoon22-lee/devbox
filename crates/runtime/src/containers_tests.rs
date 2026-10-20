@@ -18,7 +18,7 @@ fn containers_argv_and_json_compose_fixture() {
         container_args("abc", ContainerAction::Stop),
         ["stop", "abc"]
     );
-    let parsed = parse_ps(ROW.as_bytes()).unwrap();
+    let parsed = parse_ps(ROW.as_bytes()).expect("fixture result");
     assert_eq!(parsed.items[0].compose_project.as_deref(), Some("owned"));
     assert_eq!(parsed.items[0].ports, "127.0.0.1:8080->80/tcp");
     assert!(parsed.available);
@@ -26,9 +26,12 @@ fn containers_argv_and_json_compose_fixture() {
 
 #[tokio::test]
 async fn containers_missing_cli_is_unavailable_not_empty() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("fixture result");
     let adapter = DockerContainers::new(dir.path().join("missing"));
-    let result = adapter.list(CancellationToken::new()).await.unwrap();
+    let result = adapter
+        .list(CancellationToken::new())
+        .await
+        .expect("fixture result");
     assert!(!result.available);
     assert_eq!(result.reason, Some(ContainerUnavailableReason::CliMissing));
     assert!(result.items.is_empty());
@@ -43,8 +46,9 @@ fn fake(dir: &std::path::Path, body: &str) -> DockerContainers {
             "#!/bin/sh\ncd -- \"${{0%/*}}\" || exit 91\nprintf '%s\\n' \"$@\" > args\n{body}\n"
         ),
     )
-    .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    .expect("fixture result");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+        .expect("fixture result");
     DockerContainers::new(path)
 }
 fn request(action: ContainerAction) -> ContainerActionParams {
@@ -55,7 +59,7 @@ fn request(action: ContainerAction) -> ContainerActionParams {
 }
 #[tokio::test]
 async fn containers_fake_argv_actions_and_stop_undo() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("fixture result");
     let adapter = fake(dir.path(), "exit 0");
     for action in [
         ContainerAction::Start,
@@ -65,9 +69,9 @@ async fn containers_fake_argv_actions_and_stop_undo() {
         let result = adapter
             .action(request(action), CancellationToken::new())
             .await
-            .unwrap();
+            .expect("fixture result");
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("args")).unwrap(),
+            std::fs::read_to_string(dir.path().join("args")).expect("fixture result"),
             format!("{}\nowned-web_1.0\n", container_args("", action)[0])
         );
         assert_eq!(
@@ -75,10 +79,13 @@ async fn containers_fake_argv_actions_and_stop_undo() {
             (action == ContainerAction::Stop).then(|| request(ContainerAction::Start))
         );
     }
-    let result = adapter.list(CancellationToken::new()).await.unwrap();
+    let result = adapter
+        .list(CancellationToken::new())
+        .await
+        .expect("fixture result");
     assert!(result.available && result.reason.is_none() && result.items.is_empty());
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("args")).unwrap(),
+        std::fs::read_to_string(dir.path().join("args")).expect("fixture result"),
         "ps\n-a\n--format\njson\n"
     );
     assert_eq!(
@@ -88,20 +95,23 @@ async fn containers_fake_argv_actions_and_stop_undo() {
 }
 #[tokio::test]
 async fn containers_fake_ndjson_unavailable_and_failure() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("rows"), format!("{ROW}\n\n{ROW}\n")).unwrap();
+    let dir = tempfile::tempdir().expect("fixture result");
+    std::fs::write(dir.path().join("rows"), format!("{ROW}\n\n{ROW}\n")).expect("fixture result");
     let adapter = fake(dir.path(), "/bin/cat rows");
     assert_eq!(
         adapter
             .list(CancellationToken::new())
             .await
-            .unwrap()
+            .expect("fixture result")
             .items
             .len(),
         2
     );
     let adapter = fake(dir.path(), "echo private-diagnostic >&2; exit 1");
-    let result = adapter.list(CancellationToken::new()).await.unwrap();
+    let result = adapter
+        .list(CancellationToken::new())
+        .await
+        .expect("fixture result");
     assert!(!result.available);
     assert_eq!(
         result.reason,
@@ -110,7 +120,7 @@ async fn containers_fake_ndjson_unavailable_and_failure() {
     let error = adapter
         .action(request(ContainerAction::Stop), CancellationToken::new())
         .await
-        .unwrap_err();
+        .expect_err("expected failure");
     assert!(matches!(
         error,
         devbox_protocol::Fail::Domain(ContainerError::Failed)
@@ -118,7 +128,7 @@ async fn containers_fake_ndjson_unavailable_and_failure() {
 }
 #[tokio::test]
 async fn containers_invalid_id_never_spawns() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("fixture result");
     let adapter = fake(dir.path(), "exit 0");
     for id in ["", "-q", "--help", "a b", "a;echo", "a/b", "한글"] {
         let error = adapter
@@ -130,7 +140,7 @@ async fn containers_invalid_id_never_spawns() {
                 CancellationToken::new(),
             )
             .await
-            .unwrap_err();
+            .expect_err("expected failure");
         assert!(matches!(
             error,
             devbox_protocol::Fail::Domain(ContainerError::InvalidId)
@@ -140,20 +150,20 @@ async fn containers_invalid_id_never_spawns() {
 }
 #[tokio::test]
 async fn containers_malformed_and_output_bounds() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("fixture result");
     let adapter = fake(dir.path(), "/bin/cat rows");
     for bytes in [
         b"{oops}".to_vec(),
         vec![255],
         ROW.replace("abc", "--help").into_bytes(),
     ] {
-        std::fs::write(dir.path().join("rows"), bytes).unwrap();
+        std::fs::write(dir.path().join("rows"), bytes).expect("fixture result");
         assert!(matches!(
             adapter.list(CancellationToken::new()).await,
             Err(devbox_protocol::Fail::Domain(ContainerError::InvalidOutput))
         ));
     }
-    std::fs::write(dir.path().join("rows"), vec![b' '; OUTPUT_LIMIT + 1]).unwrap();
+    std::fs::write(dir.path().join("rows"), vec![b' '; OUTPUT_LIMIT + 1]).expect("fixture result");
     assert!(matches!(
         adapter.list(CancellationToken::new()).await,
         Err(devbox_protocol::Fail::Domain(ContainerError::OutputLimit))
@@ -167,16 +177,16 @@ async fn containers_malformed_and_output_bounds() {
 async fn pid(dir: &std::path::Path) -> u32 {
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
-            if let Ok(text) = std::fs::read_to_string(dir.join("pid")) {
-                if let Ok(pid) = text.trim().parse() {
-                    return pid;
-                }
+            if let Ok(text) = std::fs::read_to_string(dir.join("pid"))
+                && let Ok(pid) = text.trim().parse()
+            {
+                return pid;
             }
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     })
     .await
-    .unwrap()
+    .expect("fixture result")
 }
 async fn reaped(pid: u32) {
     tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -189,7 +199,7 @@ async fn reaped(pid: u32) {
 }
 #[tokio::test]
 async fn containers_timeouts_kill_and_reap_owned_child() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("fixture result");
     let mut adapter = fake(dir.path(), "echo $$ > pid; exec /bin/sleep 60");
     adapter.list_timeout = std::time::Duration::from_millis(100);
     adapter.action_timeout = std::time::Duration::from_millis(100);
@@ -198,7 +208,7 @@ async fn containers_timeouts_kill_and_reap_owned_child() {
         Err(devbox_protocol::Fail::Domain(ContainerError::Timeout))
     ));
     reaped(pid(dir.path()).await).await;
-    std::fs::remove_file(dir.path().join("pid")).unwrap();
+    std::fs::remove_file(dir.path().join("pid")).expect("fixture result");
     assert!(matches!(
         adapter
             .action(request(ContainerAction::Stop), CancellationToken::new())
@@ -210,7 +220,7 @@ async fn containers_timeouts_kill_and_reap_owned_child() {
 #[tokio::test]
 async fn containers_cancellation_and_dropped_future_reap_owned_child() {
     for drop_future in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("fixture result");
         let adapter = fake(dir.path(), "echo $$ > pid; exec /bin/sleep 60");
         let cancel = CancellationToken::new();
         let token = cancel.clone();
@@ -218,11 +228,11 @@ async fn containers_cancellation_and_dropped_future_reap_owned_child() {
         let owned = pid(dir.path()).await;
         if drop_future {
             task.abort();
-            assert!(task.await.unwrap_err().is_cancelled());
+            assert!(task.await.expect_err("expected failure").is_cancelled());
         } else {
             cancel.cancel();
             assert!(matches!(
-                task.await.unwrap(),
+                task.await.expect("fixture result"),
                 Err(devbox_protocol::Fail::Domain(ContainerError::Cancelled))
             ));
         }
@@ -233,7 +243,7 @@ async fn containers_cancellation_and_dropped_future_reap_owned_child() {
 #[tokio::test]
 async fn containers_output_limit_kills_and_reaps_owned_child() {
     for descriptor in [1, 2] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("fixture result");
         let adapter = fake(
             dir.path(),
             &format!(

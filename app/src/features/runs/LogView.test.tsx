@@ -29,6 +29,29 @@ async function setup() {
   return { wire, view, open };
 }
 
+test("opening a finished run includes output written before the log view mounted", async () => {
+  const { wire } = await setup();
+  // The real file source starts tail at EOF; only an initial offset includes
+  // the short task's already-persisted output.
+  if ((wire.request("logs.open").params as { from: unknown }).from !== "tail") {
+    act(() => deliver(wire, "completed before mount", "stdout"));
+  }
+  expect(await screen.findByText("completed before mount")).toBeVisible();
+  expect(wire.request("logs.open").params).toMatchObject({ from: { offset: 0 } });
+});
+
+test("file-only log views retain live-tail behavior", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <LogView sources={[{ kind: "file", path: "/owned/file.log" }]} />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("logs.open")).toHaveLength(1));
+  expect(wire.request("logs.open").params).toMatchObject({ from: "tail" });
+  await act(async () => wire.reply("logs.open", { streamId: 7 }));
+});
+
 test("uses actual log stream frames, credits bytes, renders safe ANSI and file locations, and closes on unmount", async () => {
   const { wire, view, open } = await setup();
   act(() => deliver(wire, "\x1b[31mfailed\x1b[0m src/app.ts:12:3"));
@@ -77,7 +100,7 @@ test("applies server filters, merges sources and reports search failure", async 
   await waitFor(() => expect(wire.requests("logs.open")).toHaveLength(2));
   expect(wire.request("logs.open", -1).params).toEqual({
     sources: [source],
-    from: "tail",
+    from: { offset: 0 },
     filter: { regex: "failure", streams: ["stderr"] },
   });
   await act(async () => wire.reply("logs.open", { streamId: 8 }));

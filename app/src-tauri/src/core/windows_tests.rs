@@ -7,7 +7,8 @@ use devbox_protocol::{
 use serde_json::json;
 
 fn response(id: u32, result: serde_json::Value) -> Vec<u8> {
-    let body = serde_json::to_vec(&json!({"type":"response","id":id,"result":result})).unwrap();
+    let body = serde_json::to_vec(&json!({"type":"response","id":id,"result":result}))
+        .expect("fixture result");
     let mut frame = ((body.len() + 5) as u32).to_le_bytes().to_vec();
     frame.push(0);
     frame.extend_from_slice(&0u32.to_le_bytes());
@@ -32,7 +33,7 @@ fn windows_native_next_uses_reserved_channel_and_id() {
     assert_eq!(frame_channel(&frame), Some(0));
     let ClientMessage::Request {
         id, method, params, ..
-    } = serde_json::from_slice(&frame[HEADER_LEN..]).unwrap()
+    } = serde_json::from_slice(&frame[HEADER_LEN..]).expect("fixture result")
     else {
         panic!("expected request");
     };
@@ -86,9 +87,10 @@ fn windows_native_rejects_renderer_channel_other_ids_and_malformed_frames() {
 #[test]
 fn windows_native_error_response_cannot_also_start_a_run() {
     let mut frame = response(100, run());
-    let mut body: serde_json::Value = serde_json::from_slice(&frame[HEADER_LEN..]).unwrap();
+    let mut body: serde_json::Value =
+        serde_json::from_slice(&frame[HEADER_LEN..]).expect("fixture result");
     body["error"] = json!({"code":"windows.unavailable"});
-    let body = serde_json::to_vec(&body).unwrap();
+    let body = serde_json::to_vec(&body).expect("fixture result");
     frame.truncate(HEADER_LEN);
     frame[..4].copy_from_slice(&((body.len() + 5) as u32).to_le_bytes());
     frame.extend(body);
@@ -118,25 +120,25 @@ fn windows_native_output_keeps_origin_and_attempt() {
         assert_eq!(frame_channel(&frame), Some(0));
         let ClientMessage::Request {
             id, method, params, ..
-        } = serde_json::from_slice(&frame[HEADER_LEN..]).unwrap()
+        } = serde_json::from_slice(&frame[HEADER_LEN..]).expect("fixture result")
         else {
             panic!("expected output request");
         };
         assert_eq!(id, 101);
         assert_eq!(method, "windows.output");
-        let decoded: WindowsEvent = serde_json::from_str(params.get()).unwrap();
+        let decoded: WindowsEvent = serde_json::from_str(params.get()).expect("fixture result");
         assert_eq!(decoded.run_id, event.run_id);
         assert_eq!(decoded.attempt_id, event.attempt_id);
         assert_eq!(
-            serde_json::to_value(decoded.event).unwrap(),
-            serde_json::to_value(event.event).unwrap()
+            serde_json::to_value(decoded.event).expect("fixture result"),
+            serde_json::to_value(event.event).expect("fixture result")
         );
     }
 }
 
 #[test]
 fn windows_native_powershell_arguments_never_contain_request_values() {
-    let request = receive(&response(100, run())).unwrap();
+    let request = receive(&response(100, run())).expect("fixture value");
     let args = powershell_args();
     assert_eq!(args[..3], ["-NoProfile", "-NonInteractive", "-Command"]);
     assert_eq!(args[3], devbox_protocol::windows::POWERSHELL_BOOTSTRAP);
@@ -151,8 +153,12 @@ async fn windows_native_precancelled_run_does_not_spawn() {
     let cancel = tokio_util::sync::CancellationToken::new();
     cancel.cancel();
     let (output, mut events) = tokio::sync::mpsc::channel(16);
-    super::platform_compile::run_windows(receive(&response(100, run())).unwrap(), output, cancel)
-        .await;
+    super::platform_compile::run_windows(
+        receive(&response(100, run())).expect("fixture value"),
+        output,
+        cancel,
+    )
+    .await;
     assert!(events.recv().await.is_none());
 }
 

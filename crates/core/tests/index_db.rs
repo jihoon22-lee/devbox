@@ -14,12 +14,12 @@ fn fixture() -> (tempfile::TempDir, IndexDb) {
 #[tokio::test]
 async fn ensure_domain_recreates_only_that_domain() {
     let (_dir, db) = fixture();
-    assert!(db.ensure_domain("notes", 1, NOTES).unwrap());
-    assert!(db.ensure_domain("api", 1, API).unwrap());
+    assert!(db.ensure_domain("notes", 1, NOTES).expect("fixture result"));
+    assert!(db.ensure_domain("api", 1, API).expect("fixture result"));
     db.write(|tx| tx.execute_batch("INSERT INTO notes_x VALUES ('keep'); INSERT INTO api_y VALUES ('old'); CREATE TABLE apix_y (value); INSERT INTO apix_y VALUES ('near'); CREATE TABLE apiX (value); INSERT INTO apiX VALUES ('boundary'); CREATE TABLE \"api_quoted\"\"name\" (value); CREATE VIEW api_view AS SELECT value FROM notes_x;"))
-        .await.unwrap();
-    assert!(db.ensure_domain("api", 2, API).unwrap());
-    assert!(!db.ensure_domain("notes", 1, NOTES).unwrap());
+        .await.expect("fixture result");
+    assert!(db.ensure_domain("api", 2, API).expect("fixture result"));
+    assert!(!db.ensure_domain("notes", 1, NOTES).expect("fixture result"));
     db.read(|tx| {
         assert_eq!(
             tx.query_row("SELECT value FROM notes_x", [], |r| r.get::<_, String>(0))?,
@@ -52,44 +52,60 @@ async fn ensure_domain_recreates_only_that_domain() {
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
 }
 
 #[tokio::test]
 async fn ensure_domain_is_idempotent_and_persists_versions() {
     let (dir, db) = fixture();
-    assert!(db.ensure_domain("api", 0, API).unwrap());
+    assert!(db.ensure_domain("api", 0, API).expect("fixture result"));
     db.write(|tx| tx.execute("INSERT INTO api_y VALUES ('keep')", []))
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         !db.ensure_domain("api", 0, "invalid SQL must not execute")
-            .unwrap()
+            .expect("fixture result")
     );
-    let reopened = IndexDb::open(&dir.path().join("index.db")).unwrap();
-    assert!(!reopened.ensure_domain("api", 0, API).unwrap());
+    let reopened = IndexDb::open(&dir.path().join("index.db")).expect("fixture result");
+    assert!(
+        !reopened
+            .ensure_domain("api", 0, API)
+            .expect("fixture result")
+    );
     assert_eq!(
         reopened
             .read(|tx| tx.query_row("SELECT value FROM api_y", [], |r| r.get::<_, String>(0)))
             .await
-            .unwrap(),
+            .expect("fixture result"),
         "keep"
     );
-    assert!(reopened.ensure_domain("api", u32::MAX, API).unwrap());
-    assert!(reopened.ensure_domain("api", 1, API).unwrap());
-    assert!(!reopened.ensure_domain("api", 1, API).unwrap());
+    assert!(
+        reopened
+            .ensure_domain("api", u32::MAX, API)
+            .expect("fixture result")
+    );
+    assert!(
+        reopened
+            .ensure_domain("api", 1, API)
+            .expect("fixture result")
+    );
+    assert!(
+        !reopened
+            .ensure_domain("api", 1, API)
+            .expect("fixture result")
+    );
 }
 
 #[tokio::test]
 async fn ensure_domain_failed_schema_rolls_back_tables_data_and_version() {
     let (_dir, db) = fixture();
-    db.ensure_domain("api", 1, API).unwrap();
-    db.ensure_domain("notes", 1, NOTES).unwrap();
+    db.ensure_domain("api", 1, API).expect("fixture result");
+    db.ensure_domain("notes", 1, NOTES).expect("fixture result");
     db.write(|tx| {
         tx.execute_batch("INSERT INTO api_y VALUES ('old'); INSERT INTO notes_x VALUES ('keep');")
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     assert!(
         db.ensure_domain(
             "api",
@@ -126,8 +142,8 @@ async fn ensure_domain_failed_schema_rolls_back_tables_data_and_version() {
         Ok(())
     })
     .await
-    .unwrap();
-    assert!(db.ensure_domain("api", 2, API).unwrap());
+    .expect("fixture result");
+    assert!(db.ensure_domain("api", 2, API).expect("fixture result"));
 }
 
 #[tokio::test]
@@ -158,10 +174,10 @@ async fn ensure_domain_failed_initialization_leaves_no_schema_or_version() {
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     assert!(
         db.ensure_domain("search", 1, "CREATE TABLE search_x(value);")
-            .unwrap()
+            .expect("fixture result")
     );
 }
 
@@ -196,28 +212,35 @@ fn ensure_domain_rejects_ambiguous_or_reserved_names_before_sql() {
     }
     assert!(
         db.ensure_domain("api2", 1, "CREATE TABLE api2_x(value);")
-            .unwrap()
+            .expect("fixture result")
     );
-    assert!(!db.ensure_domain("api2", 1, "INVALID SQL").unwrap());
+    assert!(
+        !db.ensure_domain("api2", 1, "INVALID SQL")
+            .expect("fixture result")
+    );
 }
 
 #[tokio::test]
 async fn ensure_domain_recreates_fts_without_dropping_shadow_tables_twice() {
     let (_dir, db) = fixture();
     let schema = "CREATE VIRTUAL TABLE notes_fts USING fts5(body); CREATE TABLE notes_meta(value);";
-    db.ensure_domain("notes", 1, schema).unwrap();
-    db.ensure_domain("api", 1, API).unwrap();
+    db.ensure_domain("notes", 1, schema)
+        .expect("fixture result");
+    db.ensure_domain("api", 1, API).expect("fixture result");
     db.write(|tx| {
         tx.execute_batch(
             "INSERT INTO notes_fts VALUES ('old searchable'); INSERT INTO api_y VALUES ('keep');",
         )
     })
     .await
-    .unwrap();
-    assert!(db.ensure_domain("notes", 2, schema).unwrap());
+    .expect("fixture result");
+    assert!(
+        db.ensure_domain("notes", 2, schema)
+            .expect("fixture result")
+    );
     db.write(|tx| tx.execute("INSERT INTO notes_fts VALUES ('fresh searchable')", []))
         .await
-        .unwrap();
+        .expect("fixture result");
     db.read(|tx| {
         assert_eq!(
             tx.query_row(
@@ -242,7 +265,7 @@ async fn ensure_domain_recreates_fts_without_dropping_shadow_tables_twice() {
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
 }
 
 #[test]
@@ -255,7 +278,7 @@ fn ensure_domain_concurrent_same_version_rebuilds_once() {
             let barrier = barrier.clone();
             std::thread::spawn(move || {
                 barrier.wait();
-                db.ensure_domain("api", 1, API).unwrap()
+                db.ensure_domain("api", 1, API).expect("fixture result")
             })
         })
         .collect();
@@ -263,7 +286,7 @@ fn ensure_domain_concurrent_same_version_rebuilds_once() {
     assert_eq!(
         workers
             .into_iter()
-            .map(|worker| usize::from(worker.join().unwrap()))
+            .map(|worker| usize::from(worker.join().expect("fixture result")))
             .sum::<usize>(),
         1
     );
@@ -272,9 +295,9 @@ fn ensure_domain_concurrent_same_version_rebuilds_once() {
 #[tokio::test]
 async fn ensure_domain_concurrent_domains_and_writers_preserve_each_other() {
     let (dir, db) = fixture();
-    db.ensure_domain("notes", 1, NOTES).unwrap();
-    db.ensure_domain("api", 1, API).unwrap();
-    let independent = IndexDb::open(&dir.path().join("index.db")).unwrap();
+    db.ensure_domain("notes", 1, NOTES).expect("fixture result");
+    db.ensure_domain("api", 1, API).expect("fixture result");
+    let independent = IndexDb::open(&dir.path().join("index.db")).expect("fixture result");
     let barrier = Arc::new(Barrier::new(3));
     let workers: Vec<_> = [
         (db.clone(), "api", API),
@@ -286,7 +309,10 @@ async fn ensure_domain_concurrent_domains_and_writers_preserve_each_other() {
         std::thread::spawn(move || {
             barrier.wait();
             for version in 2..18 {
-                assert!(db.ensure_domain(domain, version, schema).unwrap());
+                assert!(
+                    db.ensure_domain(domain, version, schema)
+                        .expect("fixture result")
+                );
             }
         })
     })
@@ -295,29 +321,32 @@ async fn ensure_domain_concurrent_domains_and_writers_preserve_each_other() {
     for _ in 0..32 {
         db.write(|tx| tx.execute("INSERT INTO notes_x VALUES ('keep')", []))
             .await
-            .unwrap();
+            .expect("fixture result");
     }
     for worker in workers {
-        worker.join().unwrap();
+        worker.join().expect("fixture result");
     }
     assert_eq!(
         db.read(|tx| tx.query_row("SELECT count(*) FROM notes_x", [], |r| r.get::<_, i64>(0)))
             .await
-            .unwrap(),
+            .expect("fixture result"),
         32
     );
-    assert!(!db.ensure_domain("api", 17, API).unwrap());
-    assert!(!db.ensure_domain("search", 17, "INVALID SQL").unwrap());
+    assert!(!db.ensure_domain("api", 17, API).expect("fixture result"));
+    assert!(
+        !db.ensure_domain("search", 17, "INVALID SQL")
+            .expect("fixture result")
+    );
 }
 
 #[tokio::test]
 async fn index_db_wal_read_only_pool_and_write_rollback() {
     let (dir, db) = fixture();
-    db.ensure_domain("api", 1, API).unwrap();
+    db.ensure_domain("api", 1, API).expect("fixture result");
     assert_eq!(
         db.read(|tx| tx.query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0)))
             .await
-            .unwrap(),
+            .expect("fixture result"),
         "wal"
     );
     assert!(
@@ -335,11 +364,11 @@ async fn index_db_wal_read_only_pool_and_write_rollback() {
     );
     db.write(|tx| tx.execute("INSERT INTO api_y VALUES ('committed')", []))
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(
         db.read(|tx| tx.query_row("SELECT value FROM api_y", [], |r| r.get::<_, String>(0)))
             .await
-            .unwrap(),
+            .expect("fixture result"),
         "committed"
     );
     assert!(!dir.path().join("backups").exists());
@@ -350,7 +379,7 @@ async fn index_db_wal_read_only_pool_and_write_rollback() {
             |r| r.get::<_, i64>(0)
         ))
         .await
-        .unwrap(),
+        .expect("fixture result"),
         0
     );
 }
@@ -358,8 +387,8 @@ async fn index_db_wal_read_only_pool_and_write_rollback() {
 #[tokio::test]
 async fn ensure_domain_version_write_failure_rolls_back_rebuild() {
     let (_dir, db) = fixture();
-    db.ensure_domain("api", 1, API).unwrap();
-    db.write(|tx| tx.execute_batch("INSERT INTO api_y VALUES ('keep'); CREATE TRIGGER reject_version BEFORE UPDATE ON index_schema BEGIN SELECT RAISE(ABORT, 'owned version failure'); END;")).await.unwrap();
+    db.ensure_domain("api", 1, API).expect("fixture result");
+    db.write(|tx| tx.execute_batch("INSERT INTO api_y VALUES ('keep'); CREATE TRIGGER reject_version BEFORE UPDATE ON index_schema BEGIN SELECT RAISE(ABORT, 'owned version failure'); END;")).await.expect("fixture result");
     assert!(db.ensure_domain("api", 2, API).is_err());
     db.read(|tx| {
         assert_eq!(
@@ -377,20 +406,20 @@ async fn ensure_domain_version_write_failure_rolls_back_rebuild() {
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     db.write(|tx| tx.execute_batch("DROP TRIGGER reject_version;"))
         .await
-        .unwrap();
-    assert!(db.ensure_domain("api", 2, API).unwrap());
+        .expect("fixture result");
+    assert!(db.ensure_domain("api", 2, API).expect("fixture result"));
 }
 
 #[tokio::test]
 async fn index_db_wal_reader_keeps_snapshot_while_writer_commits() {
     let (_dir, db) = fixture();
-    db.ensure_domain("api", 1, API).unwrap();
+    db.ensure_domain("api", 1, API).expect("fixture result");
     db.write(|tx| tx.execute("INSERT INTO api_y VALUES ('before')", []))
         .await
-        .unwrap();
+        .expect("fixture result");
     let (started, ready) = tokio::sync::oneshot::channel();
     let (finish, wait) = std::sync::mpsc::channel();
     let reader_db = db.clone();
@@ -398,25 +427,28 @@ async fn index_db_wal_reader_keeps_snapshot_while_writer_commits() {
         reader_db
             .read(move |tx| {
                 let before: String = tx.query_row("SELECT value FROM api_y", [], |r| r.get(0))?;
-                started.send(()).unwrap();
+                started.send(()).expect("fixture result");
                 wait.recv_timeout(std::time::Duration::from_secs(5))
-                    .unwrap();
+                    .expect("fixture result");
                 let after: String = tx.query_row("SELECT value FROM api_y", [], |r| r.get(0))?;
                 Ok((before, after))
             })
             .await
-            .unwrap()
+            .expect("fixture result")
     });
-    ready.await.unwrap();
+    ready.await.expect("fixture result");
     db.write(|tx| tx.execute("UPDATE api_y SET value='after'", []))
         .await
-        .unwrap();
-    finish.send(()).unwrap();
-    assert_eq!(reader.await.unwrap(), ("before".into(), "before".into()));
+        .expect("fixture result");
+    finish.send(()).expect("fixture result");
+    assert_eq!(
+        reader.await.expect("fixture result"),
+        ("before".into(), "before".into())
+    );
     assert_eq!(
         db.read(|tx| tx.query_row("SELECT value FROM api_y", [], |r| r.get::<_, String>(0)))
             .await
-            .unwrap(),
+            .expect("fixture result"),
         "after"
     );
 }
@@ -431,10 +463,10 @@ async fn ensure_domain_rebuilds_intradomain_foreign_keys_in_any_drop_order() {
         let schema = format!(
             "CREATE TABLE api_child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES api_parent(id) ON DELETE {action}); CREATE TABLE api_parent (id INTEGER PRIMARY KEY);"
         );
-        db.ensure_domain("api", 1, &schema).unwrap();
-        db.ensure_domain("notes", 1, NOTES).unwrap();
+        db.ensure_domain("api", 1, &schema).expect("fixture result");
+        db.ensure_domain("notes", 1, NOTES).expect("fixture result");
         db.write(|tx| tx.execute_batch("INSERT INTO api_parent VALUES (1); INSERT INTO api_child VALUES (1,1); INSERT INTO notes_x VALUES ('keep');"))
-            .await.unwrap();
+            .await.expect("fixture result");
         for invalid in ["INVALID SQL;", "INSERT INTO api_child VALUES (2,999);"] {
             assert!(
                 db.ensure_domain("api", 2, &format!("{schema} {invalid}"))
@@ -461,8 +493,8 @@ async fn ensure_domain_rebuilds_intradomain_foreign_keys_in_any_drop_order() {
                 Ok(())
             })
             .await
-            .unwrap();
-            assert_eq!(db.write(|tx| tx.query_row("PRAGMA defer_foreign_keys", [], |r| r.get::<_, i64>(0))).await.unwrap(), 0);
+            .expect("fixture result");
+            assert_eq!(db.write(|tx| tx.query_row("PRAGMA defer_foreign_keys", [], |r| r.get::<_, i64>(0))).await.expect("fixture result"), 0);
         }
         let result = db.ensure_domain("api", 2, &schema);
         if !matches!(result, Ok(true)) {
@@ -484,8 +516,11 @@ async fn ensure_domain_rebuilds_intradomain_foreign_keys_in_any_drop_order() {
             Ok(())
         })
         .await
-        .unwrap();
-        assert!(!db.ensure_domain("notes", 1, "INVALID SQL").unwrap());
+        .expect("fixture result");
+        assert!(
+            !db.ensure_domain("notes", 1, "INVALID SQL")
+                .expect("fixture result")
+        );
         db.write(|tx| {
             assert_eq!(
                 tx.query_row("PRAGMA defer_foreign_keys", [], |r| r.get::<_, i64>(0))?,
@@ -496,15 +531,18 @@ async fn ensure_domain_rebuilds_intradomain_foreign_keys_in_any_drop_order() {
             )
         })
         .await
-        .unwrap();
-        assert!(!db.ensure_domain("api", 2, "INVALID SQL").unwrap());
+        .expect("fixture result");
+        assert!(
+            !db.ensure_domain("api", 2, "INVALID SQL")
+                .expect("fixture result")
+        );
         assert_eq!(
             db.read(
                 |tx| tx.query_row("SELECT parent_id FROM api_child", [], |r| r
                     .get::<_, i64>(0))
             )
             .await
-            .unwrap(),
+            .expect("fixture result"),
             2
         );
         assert!(

@@ -39,7 +39,8 @@ impl KeyProtector for Fixture {
     }
 }
 fn response(id: u32, result: serde_json::Value) -> Vec<u8> {
-    let body = serde_json::to_vec(&json!({"type":"response","id":id,"result":result})).unwrap();
+    let body = serde_json::to_vec(&json!({"type":"response","id":id,"result":result}))
+        .expect("fixture result");
     let mut frame = ((body.len() + 5) as u32).to_le_bytes().to_vec();
     frame.push(0);
     frame.extend_from_slice(&0u32.to_le_bytes());
@@ -50,7 +51,7 @@ fn request(frame: &[u8], expected: &str) -> (u32, Box<serde_json::value::RawValu
     assert_eq!(devbox_protocol::frame::frame_channel(frame), Some(0));
     let ClientMessage::Request {
         id, method, params, ..
-    } = serde_json::from_slice(&frame[9..]).unwrap()
+    } = serde_json::from_slice(&frame[9..]).expect("fixture result")
     else {
         panic!("request")
     };
@@ -61,19 +62,19 @@ fn begin(flow: &mut NativeSecrets, provider: &Fixture) -> (u32, Box<serde_json::
     let hello = flow.start("test");
     let ClientMessage::Hello {
         client, instance, ..
-    } = serde_json::from_slice(&hello[9..]).unwrap()
+    } = serde_json::from_slice(&hello[9..]).expect("fixture result")
     else {
         panic!("hello")
     };
     assert_eq!(client, devbox_protocol::message::ClientKind::App);
     assert_eq!(instance, "test");
-    let body = serde_json::to_vec(&json!({"type":"welcome","version":env!("CARGO_PKG_VERSION"),"protocol":devbox_protocol::PROTOCOL_VERSION,"daemonId":"fixture"})).unwrap();
+    let body = serde_json::to_vec(&json!({"type":"welcome","version":env!("CARGO_PKG_VERSION"),"protocol":devbox_protocol::PROTOCOL_VERSION,"daemonId":"fixture"})).expect("fixture result");
     let mut frame = ((body.len() + 5) as u32).to_le_bytes().to_vec();
     frame.push(0);
     frame.extend_from_slice(&0u32.to_le_bytes());
     frame.extend(body);
     request(
-        &flow.receive(&frame, provider).unwrap(),
+        &flow.receive(&frame, provider).expect("fixture value"),
         "secrets.key_status",
     )
 }
@@ -83,9 +84,12 @@ fn windows_app_unlocks_when_daemon_interop_is_unavailable() {
     let mut flow = NativeSecrets::default();
     let (id, _) = begin(&mut flow, &provider);
     let status = json!({"locked":true,"keyId":fingerprint(&[7;32]),"blob":[9,9,9]});
-    let unlock = flow.receive(&response(id, status), &provider).unwrap();
+    let unlock = flow
+        .receive(&response(id, status), &provider)
+        .expect("fixture value");
     let (id, params) = request(&unlock, "secrets.unlock");
-    let key: devbox_protocol::secrets::Unlock = serde_json::from_str(params.get()).unwrap();
+    let key: devbox_protocol::secrets::Unlock =
+        serde_json::from_str(params.get()).expect("fixture result");
     assert_eq!(key.key, vec![7; 32]);
     assert_eq!(provider.opens.get(), 1);
     assert_eq!(provider.seals.get(), 0);
@@ -105,9 +109,9 @@ fn native_first_run_seals_and_bootstraps_before_unlocking() {
             &response(id, json!({"locked":true,"keyId":null,"blob":null})),
             &provider,
         )
-        .unwrap();
+        .expect("fixture value");
     let (id, params) = request(&bootstrap, "secrets.bootstrap");
-    let params: serde_json::Value = serde_json::from_str(params.get()).unwrap();
+    let params: serde_json::Value = serde_json::from_str(params.get()).expect("fixture result");
     assert_eq!(
         params,
         json!({"blob":vec![9;48],"keyId":fingerprint(&[7;32])})
@@ -115,7 +119,7 @@ fn native_first_run_seals_and_bootstraps_before_unlocking() {
     assert!(params.get("key").is_none());
     let unlock = flow
         .receive(&response(id, json!({"rev":"1"})), &provider)
-        .unwrap();
+        .expect("fixture value");
     request(&unlock, "secrets.unlock");
     assert_eq!(provider.seals.get(), 1);
     assert_eq!(provider.opens.get(), 0);
@@ -147,14 +151,14 @@ fn native_bootstrap_failure_never_sends_plaintext_unlock() {
             &response(id, json!({"locked":true,"keyId":null,"blob":null})),
             &provider,
         )
-        .unwrap();
+        .expect("fixture value");
     let (id, _) = request(&bootstrap, "secrets.bootstrap");
     let mut failed = response(id, json!(null));
     failed.truncate(9);
     let body = serde_json::to_vec(
         &json!({"type":"response","id":id,"error":{"code":"secrets.key_mismatch"}}),
     )
-    .unwrap();
+    .expect("fixture result");
     failed[..4].copy_from_slice(&((body.len() + 5) as u32).to_le_bytes());
     failed.extend(body);
     assert!(flow.receive(&failed, &provider).is_none());
@@ -210,7 +214,7 @@ fn native_malformed_bootstrap_ack_does_not_release_the_key() {
             &response(id, json!({"locked":true,"keyId":null,"blob":null})),
             &provider,
         )
-        .unwrap();
+        .expect("fixture value");
     let (id, _) = request(&bootstrap, "secrets.bootstrap");
     assert!(
         flow.receive(&response(id, json!({"unexpected":true})), &provider)

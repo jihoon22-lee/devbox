@@ -35,17 +35,16 @@ impl ObserveService {
     /// Serialize metadata resolution, scanning and validation using
     /// problem_refresh_lock; a changed durable attempt discards the batch.
     pub async fn read_problem_batch(&self, run: &ProblemRun) -> R<ProblemBatch> {
-        if let Some(stamp) = stamp(&run.path).await {
-            if self
+        if let Some(stamp) = stamp(&run.path).await
+            && self
                 .problems
                 .completed
                 .lock()
                 .await
                 .get(&run.run_id)
                 .is_some_and(|(old, s)| old == run && s == &stamp)
-            {
-                return Ok(ProblemBatch::default());
-            }
+        {
+            return Ok(ProblemBatch::default());
         }
         self.problems.completed.lock().await.remove(&run.run_id);
         let mut readers = self.problems.readers.lock().await;
@@ -108,13 +107,13 @@ impl ObserveService {
                 } else {
                     &mut reader.stdout
                 };
-                if let Some(problem) = parser.push_source(&line.text, run) {
-                    if !batch.problems.contains(&problem) {
-                        if batch.problems.len() < crate::problem_store::MAX_PROBLEMS {
-                            batch.problems.push(problem);
-                        } else {
-                            batch.overflow = true;
-                        }
+                if let Some(problem) = parser.push_source(&line.text, run)
+                    && !batch.problems.contains(&problem)
+                {
+                    if batch.problems.len() < crate::problem_store::MAX_PROBLEMS {
+                        batch.problems.push(problem);
+                    } else {
+                        batch.overflow = true;
                     }
                 }
             }
@@ -138,17 +137,14 @@ impl ObserveService {
                     .lock()
                     .await
                     .insert(run.run_id.clone(), reader);
-            } else if let Some(stamp) = stamp(&run.path).await {
-                if !reader.file.has_pending_line()
-                    && stamp.id == reader.file.file_identity()
-                    && stamp.len == reader.file.offset
-                {
-                    let mut cache = self.problems.completed.lock().await;
-                    if cache.len() < crate::problem_store::MAX_RUNS
-                        || cache.contains_key(&run.run_id)
-                    {
-                        cache.insert(run.run_id.clone(), (run, stamp));
-                    }
+            } else if let Some(stamp) = stamp(&run.path).await
+                && !reader.file.has_pending_line()
+                && stamp.id == reader.file.file_identity()
+                && stamp.len == reader.file.offset
+            {
+                let mut cache = self.problems.completed.lock().await;
+                if cache.len() < crate::problem_store::MAX_RUNS || cache.contains_key(&run.run_id) {
+                    cache.insert(run.run_id.clone(), (run, stamp));
                 }
             }
         }

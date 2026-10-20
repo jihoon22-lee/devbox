@@ -22,11 +22,11 @@ fn assert_problem(
 
 #[test]
 fn problems_plan_assertions() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let root = temp.path();
     assert_eq!(
         extract("src/x.ts(10,5): error TS1005: expected", root)
-            .unwrap()
+            .expect("fixture value")
             .line,
         10
     );
@@ -35,7 +35,7 @@ fn problems_plan_assertions() {
 
 #[test]
 fn problems_single_line_tool_fixtures() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     for (text, file, line, col, severity, message) in [
         (
             "src/x.ts(10,5): error TS1005: ';' expected.",
@@ -115,7 +115,7 @@ fn problems_single_line_tool_fixtures() {
 
 #[test]
 fn problems_rust_cargo_header_retains_message_until_location() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let mut parser = ProblemParser::default();
     assert!(
         parser
@@ -126,7 +126,9 @@ fn problems_rust_cargo_header_retains_message_until_location() {
             .is_none()
     );
     assert_problem(
-        parser.push("  --> src/main.rs:10:5", temp.path()).unwrap(),
+        parser
+            .push("  --> src/main.rs:10:5", temp.path())
+            .expect("fixture value"),
         "src/main.rs",
         10,
         Some(5),
@@ -139,7 +141,9 @@ fn problems_rust_cargo_header_retains_message_until_location() {
             .is_none()
     );
     assert_problem(
-        parser.push(" --> src/main.rs:12:9", temp.path()).unwrap(),
+        parser
+            .push(" --> src/main.rs:12:9", temp.path())
+            .expect("fixture value"),
         "src/main.rs",
         12,
         Some(9),
@@ -150,7 +154,7 @@ fn problems_rust_cargo_header_retains_message_until_location() {
 
 #[test]
 fn problems_python_traceback_uses_last_frame_and_exception() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let mut parser = ProblemParser::default();
     for text in [
         "Traceback (most recent call last):",
@@ -162,7 +166,9 @@ fn problems_python_traceback_uses_last_frame_and_exception() {
         assert!(parser.push(text, temp.path()).is_none());
     }
     assert_problem(
-        parser.push("ValueError: bad value", temp.path()).unwrap(),
+        parser
+            .push("ValueError: bad value", temp.path())
+            .expect("fixture value"),
         "src/한 글.py",
         7,
         None,
@@ -174,7 +180,7 @@ fn problems_python_traceback_uses_last_frame_and_exception() {
 
 #[test]
 fn problems_vitest_and_jest_stack_locations_keep_failure_message() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     for (header, location, message) in [
         (
             "AssertionError: expected 1 to be 2",
@@ -190,7 +196,7 @@ fn problems_vitest_and_jest_stack_locations_keep_failure_message() {
         let mut parser = ProblemParser::default();
         assert!(parser.push(header, temp.path()).is_none());
         assert_problem(
-            parser.push(location, temp.path()).unwrap(),
+            parser.push(location, temp.path()).expect("fixture value"),
             "src/math.test.ts",
             8,
             Some(17),
@@ -202,10 +208,10 @@ fn problems_vitest_and_jest_stack_locations_keep_failure_message() {
 
 #[test]
 fn problems_ansi_sequences_do_not_enter_fields() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let text = "\u{1b}[31msrc/x.ts\u{1b}[0m(10,5): \u{1b}[31merror\u{1b}[0m TS1005: expected";
     assert_problem(
-        extract(text, temp.path()).unwrap(),
+        extract(text, temp.path()).expect("fixture value"),
         "src/x.ts",
         10,
         Some(5),
@@ -213,15 +219,21 @@ fn problems_ansi_sequences_do_not_enter_fields() {
         "TS1005: expected",
     );
     let linked = "\u{1b}]8;;file:///project/src/x.ts\u{1b}\\src/x.ts\u{1b}]8;;\u{1b}\\(10,5): error TS1005: expected";
-    assert_eq!(extract(linked, temp.path()).unwrap().file, "src/x.ts");
+    assert_eq!(
+        extract(linked, temp.path()).expect("fixture value").file,
+        "src/x.ts"
+    );
 }
 
 #[test]
 fn problems_absolute_inside_root_is_relative_and_outside_is_rejected() {
-    let temp = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
+    let outside = tempfile::tempdir().expect("fixture result");
     let text = format!("{}:4:2: broken", temp.path().join("src/main.go").display());
-    assert_eq!(extract(&text, temp.path()).unwrap().file, "src/main.go");
+    assert_eq!(
+        extract(&text, temp.path()).expect("fixture value").file,
+        "src/main.go"
+    );
     let text = format!("{}:4:2: broken", outside.path().join("main.go").display());
     assert!(extract(&text, temp.path()).is_none());
     assert!(extract("src/../../outside.go:4:2: broken", temp.path()).is_none());
@@ -230,17 +242,22 @@ fn problems_absolute_inside_root_is_relative_and_outside_is_rejected() {
 
 #[test]
 fn problems_normalizes_existing_and_missing_files_within_root() {
-    let temp = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(temp.path().join("src")).unwrap();
-    std::fs::write(temp.path().join("src/main.go"), "package main").unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
+    std::fs::create_dir_all(temp.path().join("src")).expect("fixture result");
+    std::fs::write(temp.path().join("src/main.go"), "package main").expect("fixture result");
     for text in [
         "./src/main.go:2:1: broken",
         "src/../src/main.go:2:1: broken",
     ] {
-        assert_eq!(extract(text, temp.path()).unwrap().file, "src/main.go");
+        assert_eq!(
+            extract(text, temp.path()).expect("fixture value").file,
+            "src/main.go"
+        );
     }
     assert_eq!(
-        extract("src/new.go:2:1: broken", temp.path()).unwrap().file,
+        extract("src/new.go:2:1: broken", temp.path())
+            .expect("fixture value")
+            .file,
         "src/new.go"
     );
 }
@@ -248,10 +265,10 @@ fn problems_normalizes_existing_and_missing_files_within_root() {
 #[cfg(unix)]
 #[test]
 fn problems_symlink_escape_including_missing_leaf_is_rejected() {
-    let temp = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
-    std::fs::write(outside.path().join("existing.go"), "package main").unwrap();
-    std::os::unix::fs::symlink(outside.path(), temp.path().join("linked")).unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
+    let outside = tempfile::tempdir().expect("fixture result");
+    std::fs::write(outside.path().join("existing.go"), "package main").expect("fixture result");
+    std::os::unix::fs::symlink(outside.path(), temp.path().join("linked")).expect("fixture result");
     assert!(extract("linked/existing.go:1:2: broken", temp.path()).is_none());
     assert!(extract("linked/missing.go:1:2: broken", temp.path()).is_none());
     assert!(extract("linked/../outside.go:1:2: broken", temp.path()).is_none());
@@ -259,7 +276,7 @@ fn problems_symlink_escape_including_missing_leaf_is_rejected() {
 
 #[test]
 fn problems_invalid_and_unbounded_fields_are_rejected() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     for text in [
         "normal output",
         "src/x.ts(0,2): error bad",
@@ -284,7 +301,7 @@ fn problems_invalid_and_unbounded_fields_are_rejected() {
 
 #[test]
 fn problems_parser_context_is_bounded_and_cleared_by_new_diagnostics() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let mut parser = ProblemParser::default();
     assert!(parser.push("error: stale", temp.path()).is_none());
     for _ in 0..64 {
@@ -302,7 +319,7 @@ fn problems_parser_context_is_bounded_and_cleared_by_new_diagnostics() {
 
 #[test]
 fn problems_python_outside_last_frame_cannot_reuse_an_inside_frame() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let mut parser = ProblemParser::default();
     assert!(
         parser
@@ -324,12 +341,12 @@ fn problems_python_outside_last_frame_cannot_reuse_an_inside_frame() {
 
 #[test]
 fn problems_source_context_preserves_project_boundary_and_never_guesses_old_cwd() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let project = temp.path().join("project");
     let cwd = project.join("nested");
-    std::fs::create_dir_all(&cwd).unwrap();
-    std::fs::write(project.join("shared.rs"), "owned").unwrap();
-    std::fs::write(temp.path().join("outside.rs"), "owned outside").unwrap();
+    std::fs::create_dir_all(&cwd).expect("fixture result");
+    std::fs::write(project.join("shared.rs"), "owned").expect("fixture result");
+    std::fs::write(temp.path().join("outside.rs"), "owned outside").expect("fixture result");
     let mut run = crate::ProblemRun {
         run_id: "source".into(),
         project_id: "project".into(),
@@ -343,7 +360,7 @@ fn problems_source_context_preserves_project_boundary_and_never_guesses_old_cwd(
     let mut parser = ProblemParser::default();
     let problem = parser
         .push_source("../shared.rs:10:2: error: shared", &run)
-        .unwrap();
+        .expect("fixture value");
     assert_eq!(
         problem.file,
         project.join("shared.rs").display().to_string()
@@ -360,7 +377,7 @@ fn problems_source_context_preserves_project_boundary_and_never_guesses_old_cwd(
     }
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(temp.path(), cwd.join("outside")).unwrap();
+        std::os::unix::fs::symlink(temp.path(), cwd.join("outside")).expect("fixture result");
         assert!(
             parser
                 .push_source("outside/outside.rs:1:2: error: symlink", &run)
@@ -378,7 +395,10 @@ fn problems_source_context_preserves_project_boundary_and_never_guesses_old_cwd(
         project.join("shared.rs").display()
     );
     assert_eq!(
-        parser.push_source(&absolute, &run).unwrap().file,
+        parser
+            .push_source(&absolute, &run)
+            .expect("fixture value")
+            .file,
         project.join("shared.rs").display().to_string()
     );
 }

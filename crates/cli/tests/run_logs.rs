@@ -43,14 +43,17 @@ impl Fixture {
     }
     fn file(&self, name: &str, data: &[u8]) -> std::path::PathBuf {
         let vault = self.daemon.home.path().join("notes");
-        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::create_dir_all(&vault).expect("fixture result");
         let file = vault.join(name);
-        std::fs::write(&file, data).unwrap();
+        std::fs::write(&file, data).expect("fixture result");
         file
     }
     async fn stop(self) {
         self.cancel.cancel();
-        bounded(self.task).await.unwrap().unwrap();
+        bounded(self.task)
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
     }
 }
 #[tokio::test]
@@ -81,15 +84,16 @@ async fn slow_client_pauses_reading_not_the_daemon() {
         first,
         "zero credit stops file consumption"
     );
-    stream.credit(256 * 1024).await.unwrap();
+    stream.credit(256 * 1024).await.expect("fixture result");
     let line = stream.read_until(b"\n", Duration::from_secs(2)).await;
-    let row: LogLine = serde_json::from_slice(line.split(|b| *b == b'\n').next().unwrap())
-        .expect("JSONL across 64KiB transport chunks");
+    let row: LogLine =
+        serde_json::from_slice(line.split(|b| *b == b'\n').next().expect("fixture value"))
+            .expect("JSONL across 64KiB transport chunks");
     assert_eq!(row.text.len(), 100 * 1024);
-    stream.close().await.unwrap();
+    stream.close().await.expect("fixture result");
     bounded(fixture.client.call::<Ping>(&PingParams {}))
         .await
-        .unwrap();
+        .expect("fixture result");
     fixture.stop().await;
 }
 #[tokio::test]
@@ -104,16 +108,16 @@ async fn file_tail_append_search_and_close_use_actual_rpc() {
         serde_json::json!({"sources":[source],"from":"tail"}),
     ))
     .await
-    .unwrap();
-    stream.credit(256 * 1024).await.unwrap();
+    .expect("fixture result");
+    stream.credit(256 * 1024).await.expect("fixture result");
     std::fs::OpenOptions::new()
         .append(true)
         .open(&path)
-        .unwrap()
+        .expect("fixture result")
         .write_all(b"new\n")
-        .unwrap();
+        .expect("fixture result");
     let bytes = stream.read_until(b"\n", Duration::from_secs(2)).await;
-    let row: LogLine = serde_json::from_slice(&bytes).unwrap();
+    let row: LogLine = serde_json::from_slice(&bytes).expect("fixture result");
     assert_eq!(row.text, "new");
     let page: SearchResult = bounded(fixture.client.call::<devbox_observe::LogsSearch>(
         &SearchLogs {
@@ -125,10 +129,10 @@ async fn file_tail_append_search_and_close_use_actual_rpc() {
         },
     ))
     .await
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(page.items[0].text, "new");
     assert!(page.next_cursor.is_some());
-    stream.close().await.unwrap();
+    stream.close().await.expect("fixture result");
     fixture.stop().await;
 }
 #[tokio::test]
@@ -136,9 +140,9 @@ async fn rpc_rejects_outside_symlink_invalid_regex_and_unknown_run() {
     let fixture = Fixture::start().await;
     let inside = fixture.file("inside.log", b"ok\n");
     let outside = fixture.daemon.home.path().join("outside.log");
-    std::fs::write(&outside, "private").unwrap();
+    std::fs::write(&outside, "private").expect("fixture result");
     let link = inside.with_file_name("outside-link");
-    std::os::unix::fs::symlink(outside, &link).unwrap();
+    std::os::unix::fs::symlink(outside, &link).expect("fixture result");
     for (source, regex, query, code) in [
         (
             serde_json::json!({"kind":"file","path":link}),
@@ -167,7 +171,7 @@ async fn rpc_rejects_outside_symlink_invalid_regex_and_unknown_run() {
                 None,
             )
             .await
-            .unwrap_err();
+            .expect_err("expected failure");
         assert!(format!("{error:?}").contains(code), "{error:?}");
     }
     fixture.stop().await;
@@ -208,7 +212,7 @@ async fn recorded_run_stdout_stderr_are_streamed_and_searched() {
         limit: 256,
     }))
     .await
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(page.items.len(), 2);
     assert!(
         page.items
@@ -225,12 +229,12 @@ async fn recorded_run_stdout_stderr_are_streamed_and_searched() {
         serde_json::json!({"sources":[source],"from":{"offset":0}}),
     ))
     .await
-    .unwrap();
+    .expect("fixture result");
     let bytes = stream.read_available(Duration::from_millis(150)).await;
     let rows: Vec<LogLine> = bytes
         .split(|b| *b == b'\n')
         .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice(line).unwrap())
+        .map(|line| serde_json::from_slice(line).expect("fixture result"))
         .collect();
     assert_eq!(rows.len(), 3);
     assert!(
@@ -246,5 +250,5 @@ async fn recorded_run_stdout_stderr_are_streamed_and_searched() {
         rows.iter()
             .any(|l| l.text == "task7-err" && l.stream == devbox_observe::LogStream::Stderr)
     );
-    stream.close().await.unwrap();
+    stream.close().await.expect("fixture result");
 }

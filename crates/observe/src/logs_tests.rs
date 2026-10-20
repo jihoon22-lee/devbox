@@ -25,7 +25,7 @@ fn merges_two_sources_in_timestamp_order() {
             .map(|s| s.front().cloned())
             .collect::<Vec<_>>(),
     ) {
-        merged.push(sources[index].pop_front().unwrap().text);
+        merged.push(sources[index].pop_front().expect("fixture value").text);
     }
     assert_eq!(merged, ["a", "b", "c"]);
 }
@@ -41,7 +41,11 @@ fn resolved(path: &std::path::Path, run: bool) -> crate::ResolvedSource {
     crate::ResolvedSource {
         source: if run {
             LogSource::Run {
-                run_id: path.file_name().unwrap().to_string_lossy().into_owned(),
+                run_id: path
+                    .file_name()
+                    .expect("fixture value")
+                    .to_string_lossy()
+                    .into_owned(),
             }
         } else {
             LogSource::File {
@@ -72,14 +76,14 @@ async fn search(
             roots,
         )
         .await
-        .unwrap()
+        .expect("fixture result")
 }
 #[tokio::test]
 async fn follows_appended_lines_and_survives_truncation() {
     use tokio::io::AsyncWriteExt;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let path = temp.path().join("log");
-    std::fs::write(&path, b"old-long-line\n").unwrap();
+    std::fs::write(&path, b"old-long-line\n").expect("fixture result");
     let source = resolved(&path, false);
     let mut reader = crate::sources::FileSource::open(
         &source,
@@ -87,28 +91,60 @@ async fn follows_appended_lines_and_survives_truncation() {
         &crate::LogFrom::Tail(crate::Tail::Tail),
     )
     .await
-    .unwrap();
-    assert!(reader.next().await.unwrap().is_none());
+    .expect("fixture result");
+    assert!(reader.next().await.expect("fixture result").is_none());
     let mut file = tokio::fs::OpenOptions::new()
         .append(true)
         .open(&path)
         .await
-        .unwrap();
-    file.write_all(b"new\n").await.unwrap();
-    assert_eq!(reader.next().await.unwrap().unwrap().text, "new");
-    std::fs::write(&path, b"short\n").unwrap();
-    reader.refresh().await.unwrap();
-    assert_eq!(reader.next().await.unwrap().unwrap().text, "short");
+        .expect("fixture result");
+    file.write_all(b"new\n").await.expect("fixture result");
+    assert_eq!(
+        reader
+            .next()
+            .await
+            .expect("fixture result")
+            .expect("fixture value")
+            .text,
+        "new"
+    );
+    std::fs::write(&path, b"short\n").expect("fixture result");
+    reader.refresh().await.expect("fixture result");
+    assert_eq!(
+        reader
+            .next()
+            .await
+            .expect("fixture result")
+            .expect("fixture value")
+            .text,
+        "short"
+    );
     let next = temp.path().join("next");
-    std::fs::write(&next, b"rotated\n").unwrap();
-    std::fs::rename(next, &path).unwrap();
-    reader.refresh().await.unwrap();
-    assert_eq!(reader.next().await.unwrap().unwrap().text, "rotated");
+    std::fs::write(&next, b"rotated\n").expect("fixture result");
+    std::fs::rename(next, &path).expect("fixture result");
+    reader.refresh().await.expect("fixture result");
+    assert_eq!(
+        reader
+            .next()
+            .await
+            .expect("fixture result")
+            .expect("fixture value")
+            .text,
+        "rotated"
+    );
     // EOF fragments are emitted once; the cursor consumes their exact bytes.
-    std::fs::write(&path, b"partial").unwrap();
-    reader.refresh().await.unwrap();
-    assert_eq!(reader.next().await.unwrap().unwrap().text, "partial");
-    assert!(reader.next().await.unwrap().is_none());
+    std::fs::write(&path, b"partial").expect("fixture result");
+    reader.refresh().await.expect("fixture result");
+    assert_eq!(
+        reader
+            .next()
+            .await
+            .expect("fixture result")
+            .expect("fixture value")
+            .text,
+        "partial"
+    );
+    assert!(reader.next().await.expect("fixture result").is_none());
 }
 #[test]
 fn filter_by_stream_and_regex() {
@@ -117,7 +153,7 @@ fn filter_by_stream_and_regex() {
         regex: Some("E[0-9]+".into()),
         streams: Some(vec![LogStream::Stderr]),
     })
-    .unwrap();
+    .expect("fixture result");
     let mut row = at("2026-01-01T00:00:01Z", "error E42");
     assert!(!filter.accepts(&row));
     row.stream = LogStream::Stderr;
@@ -136,12 +172,12 @@ fn filter_by_stream_and_regex() {
 }
 #[tokio::test]
 async fn file_source_outside_allowed_roots_is_rejected() {
-    let root = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
+    let outside = tempfile::tempdir().expect("fixture result");
     let private = outside.path().join("private");
-    std::fs::write(&private, b"private\n").unwrap();
+    std::fs::write(&private, b"private\n").expect("fixture result");
     let link = root.path().join("link");
-    std::os::unix::fs::symlink(&private, &link).unwrap();
+    std::os::unix::fs::symlink(&private, &link).expect("fixture result");
     assert!(matches!(
         crate::sources::FileSource::open(
             &resolved(&link, false),
@@ -153,17 +189,17 @@ async fn file_source_outside_allowed_roots_is_rejected() {
             crate::ObserveError::FileOutsideRoots
         ))
     ));
-    std::fs::remove_file(&link).unwrap();
-    std::fs::write(&link, b"safe\n").unwrap();
+    std::fs::remove_file(&link).expect("fixture result");
+    std::fs::write(&link, b"safe\n").expect("fixture result");
     let mut reader = crate::sources::FileSource::open(
         &resolved(&link, false),
         &[root.path().into()],
         &crate::LogFrom::Tail(crate::Tail::Tail),
     )
     .await
-    .unwrap();
-    std::fs::remove_file(&link).unwrap();
-    std::os::unix::fs::symlink(private, &link).unwrap();
+    .expect("fixture result");
+    std::fs::remove_file(&link).expect("fixture result");
+    std::os::unix::fs::symlink(private, &link).expect("fixture result");
     assert!(matches!(
         reader.refresh().await,
         Err(devbox_protocol::Fail::Domain(
@@ -173,7 +209,7 @@ async fn file_source_outside_allowed_roots_is_rejected() {
 }
 #[tokio::test]
 async fn reverse_search_equal_times_partial_lines_and_byte_budget_progress() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     let path = root.path().join("run");
     let ts = "2026-01-01T00:00:01Z";
     std::fs::write(
@@ -183,7 +219,7 @@ async fn reverse_search_equal_times_partial_lines_and_byte_budget_progress() {
             "\u{0001}".repeat(500_000)
         ),
     )
-    .unwrap();
+    .expect("fixture result");
     let service = crate::ObserveService::default();
     let mut cursor = None;
     let mut all = vec![];
@@ -196,7 +232,7 @@ async fn reverse_search_equal_times_partial_lines_and_byte_budget_progress() {
             1,
         )
         .await;
-        assert!(serde_json::to_vec(&page).unwrap().len() <= 768 * 1024);
+        assert!(serde_json::to_vec(&page).expect("fixture result").len() <= 768 * 1024);
         all.extend(page.items.into_iter().map(|l| l.text));
         cursor = page.next_cursor;
         if cursor.is_none() {
@@ -212,15 +248,15 @@ async fn reverse_search_equal_times_partial_lines_and_byte_budget_progress() {
 }
 #[tokio::test]
 async fn search_merges_reverse_source_heads_and_rejects_stale_cursor() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     let a = root.path().join("a");
     let b = root.path().join("b");
     std::fs::write(
         &a,
         b"2026-01-01T00:00:01Z\to\ta\n2026-01-01T00:00:03Z\to\tc\n",
     )
-    .unwrap();
-    std::fs::write(&b, b"2026-01-01T00:00:02Z\te\tb\n").unwrap();
+    .expect("fixture result");
+    std::fs::write(&b, b"2026-01-01T00:00:02Z\te\tb\n").expect("fixture result");
     let service = crate::ObserveService::default();
     let page = search(
         &service,
@@ -238,7 +274,7 @@ async fn search_merges_reverse_source_heads_and_rejects_stale_cursor() {
         ["c", "b", "a"]
     );
     let page = search(&service, vec![resolved(&a, true)], vec![], None, 1).await;
-    std::fs::write(&a, b"replacement\n").unwrap();
+    std::fs::write(&a, b"replacement\n").expect("fixture result");
     let sources = vec![resolved(&a, true)];
     assert!(matches!(
         service
@@ -264,15 +300,15 @@ async fn search_merges_reverse_source_heads_and_rejects_stale_cursor() {
 
 #[tokio::test]
 async fn appended_previously_empty_source_does_not_invalidate_previous_page() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     let a = root.path().join("a");
     let b = root.path().join("b");
     std::fs::write(
         &a,
         b"2026-01-01T00:00:01Z\to\ta\n2026-01-01T00:00:02Z\to\tb\n",
     )
-    .unwrap();
-    std::fs::write(&b, b"").unwrap();
+    .expect("fixture result");
+    std::fs::write(&b, b"").expect("fixture result");
     let service = crate::ObserveService::default();
     let first = search(
         &service,
@@ -282,7 +318,7 @@ async fn appended_previously_empty_source_does_not_invalidate_previous_page() {
         1,
     )
     .await;
-    std::fs::write(&b, b"2026-01-01T00:00:03Z\to\tnew\n").unwrap();
+    std::fs::write(&b, b"2026-01-01T00:00:03Z\to\tnew\n").expect("fixture result");
     let second = search(
         &service,
         vec![resolved(&a, true), resolved(&b, true)],

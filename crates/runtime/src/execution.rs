@@ -111,16 +111,14 @@ impl RuntimeService {
                     Ok(Ok::<_, RuntimeError>(alert))
                 },
                 move |alert, rev| {
-                    if *alert {
-                        if let Some((claim, run)) = notification {
-                            crate::schedule_service::schedule_alert(
-                                &hub,
-                                rev,
-                                &claim,
-                                ScheduleOutcome::Failed,
-                                Some(run.id),
-                            );
-                        }
+                    if *alert && let Some((claim, run)) = notification {
+                        crate::schedule_service::schedule_alert(
+                            &hub,
+                            rev,
+                            &claim,
+                            ScheduleOutcome::Failed,
+                            Some(run.id),
+                        );
                     }
                     hub.publish::<RuntimeChanged>(
                         rev,
@@ -142,7 +140,7 @@ impl RuntimeService {
             .read(move |tx| Ok((run_store::get(tx, &id)?, devbox_core::current_rev(tx)?)))
             .await
             .internal("read execution detail snapshot")?;
-        let run = run.ok_or_else(|| RuntimeError::RunNotFound { id: p.run_id })?;
+        let run = run.ok_or(RuntimeError::RunNotFound { id: p.run_id })?;
         Ok(RunDetail {
             rev: rev.to_string(),
             run: run.run,
@@ -202,6 +200,7 @@ impl RuntimeService {
         let mut last = None;
         let count = prepared.nodes.len();
         for (index, def) in prepared.nodes.iter().enumerate() {
+            self.check_starting()?;
             if let Some(copy) = prepared.windows.get(def.id()) {
                 copy.sync()
                     .await
@@ -213,6 +212,7 @@ impl RuntimeService {
                 .map(|v| v.run.id.clone())
                 .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let guard = self.run_lock(&id).await;
+            self.check_starting()?;
             let (kind, restart) = match def {
                 RunDef::Task(_) => (
                     if prepared.agent_test {
@@ -322,7 +322,8 @@ impl RuntimeService {
                     if !run.state.is_live() {
                         break;
                     }
-                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    self.coordinate(tokio::time::sleep(Duration::from_millis(50)))
+                        .await?;
                     run = self.reconcile_one(&id).await?;
                 }
                 if run.state != RunState::Exited
@@ -338,11 +339,30 @@ impl RuntimeService {
         }
         Ok(last.expect("preflight requires requested definition"))
     }
+    fn check_starting(&self) -> R<()> {
+        if self.stopping.is_cancelled() {
+            return Err(Fail::Internal(
+                "execution coordination stopped for daemon shutdown".into(),
+            ));
+        }
+        Ok(())
+    }
+    async fn coordinate<T>(&self, wait: impl Future<Output = T>) -> R<T> {
+        tokio::select! {
+            biased;
+            _ = self.stopping.cancelled() => {
+                self.check_starting()?;
+                unreachable!("shutdown token is cancelled")
+            }
+            result = wait => Ok(result),
+        }
+    }
     async fn wait_ready(&self, mut run: Run, service: &ServiceDef) -> R<Run> {
         let execution = self.execution()?;
         let until =
             tokio::time::Instant::now() + Duration::from_secs(service.ready_timeout_sec.into());
         loop {
+            self.check_starting()?;
             if !run.state.is_live() {
                 // A directly requested short-lived service still returns its observable result.
                 return Ok(run);
@@ -356,15 +376,15 @@ impl RuntimeService {
             let ready = if service.target == RunTarget::Windows {
                 service.ports_hint.is_empty() || run.ready
             } else {
-                tokio::time::timeout_at(
+                self.coordinate(tokio::time::timeout_at(
                     until,
                     (execution.readiness)(ReadyCheck {
                         unit: run.unit.clone(),
                         pid: run.pid,
                         ports: service.ports_hint.clone(),
                     }),
-                )
-                .await
+                ))
+                .await?
                 .map_err(|_| RuntimeError::NotReady {
                     id: service.id.clone(),
                 })?
@@ -402,7 +422,8 @@ impl RuntimeService {
                 .into());
             }
             let next_poll = tokio::time::Instant::now() + Duration::from_secs(1);
-            tokio::time::sleep_until(next_poll.min(until)).await;
+            self.coordinate(tokio::time::sleep_until(next_poll.min(until)))
+                .await?;
             if tokio::time::Instant::now() >= until {
                 return Err(RuntimeError::NotReady {
                     id: service.id.clone(),

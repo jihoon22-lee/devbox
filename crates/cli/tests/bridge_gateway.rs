@@ -250,7 +250,7 @@ async fn bridge_activation(instance: Option<&str>, unit: &str) {
         d.socket = d
             .socket
             .parent()
-            .unwrap()
+            .expect("fixture value")
             .join(format!("devbox-{instance}.sock"));
     }
     let bin = fake_systemctl(

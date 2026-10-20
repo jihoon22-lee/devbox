@@ -31,15 +31,15 @@ impl Scheduler {
                     let result = runs
                         .start_prepared_graph_reporting(graph, &mut started)
                         .await;
-                    if result.is_err() {
-                        if let Some(claim) = claim {
-                            runs.finish_schedule(
-                                claim,
-                                ScheduleOutcome::Failed,
-                                started.last().map(|run| run.id.clone()),
-                            )
-                            .await?;
-                        }
+                    if result.is_err()
+                        && let Some(claim) = claim
+                    {
+                        runs.finish_schedule(
+                            claim,
+                            ScheduleOutcome::Failed,
+                            started.last().map(|run| run.id.clone()),
+                        )
+                        .await?;
                     }
                     result
                 })

@@ -24,20 +24,19 @@ pub fn validate_sources(sources: &[LogSource]) -> R<()> {
         if value.is_empty() || value.len() > 4096 || value.contains('\0') {
             return Err(ObserveError::InvalidInput.into());
         }
-        if let LogSource::File { path } = source {
-            if !Path::new(path).is_absolute() {
-                return Err(ObserveError::InvalidInput.into());
-            }
+        if let LogSource::File { path } = source
+            && !Path::new(path).is_absolute()
+        {
+            return Err(ObserveError::InvalidInput.into());
         }
-        if let LogSource::Container { id } = source {
-            if id.len() > 256
+        if let LogSource::Container { id } = source
+            && (id.len() > 256
                 || !id
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-                || !id.as_bytes()[0].is_ascii_alphanumeric()
-            {
-                return Err(ObserveError::InvalidInput.into());
-            }
+                || !id.as_bytes()[0].is_ascii_alphanumeric())
+        {
+            return Err(ObserveError::InvalidInput.into());
         }
     }
     Ok(())

@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 struct Sink(Mutex<Vec<Frame>>);
 impl StreamSink for Sink {
     fn push(&self, frame: Frame) -> Pin<Box<dyn Future<Output = bool> + Send + '_>> {
-        self.0.lock().unwrap().push(frame);
+        self.0.lock().expect("fixture result").push(frame);
         Box::pin(async { true })
     }
 }
@@ -45,18 +45,18 @@ impl Open {
         self.sink
             .0
             .lock()
-            .unwrap()
+            .expect("fixture result")
             .iter()
-            .flat_map(|f| parse_stream(&f.body).unwrap().2.to_vec())
+            .flat_map(|f| parse_stream(&f.body).expect("fixture value").2.to_vec())
             .collect()
     }
     pub fn finished(&self) -> bool {
         self.sink
             .0
             .lock()
-            .unwrap()
+            .expect("fixture result")
             .iter()
-            .any(|f| parse_stream(&f.body).unwrap().1 == FLAG_FIN)
+            .any(|f| parse_stream(&f.body).expect("fixture value").1 == FLAG_FIN)
     }
 }
 impl StreamOpener for Open {
@@ -86,9 +86,9 @@ pub(crate) async fn until(mut condition: impl FnMut() -> bool) {
 }
 #[tokio::test]
 async fn open_returns_with_zero_credit_and_does_not_prefetch_more_heads() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let path = temp.path().join("log");
-    std::fs::write(&path, ("x".repeat(100 * 1024) + "\n").repeat(100)).unwrap();
+    std::fs::write(&path, ("x".repeat(100 * 1024) + "\n").repeat(100)).expect("fixture result");
     let service = ObserveService::default();
     let open = Open::new(0);
     let source = LogSource::File {
@@ -111,8 +111,8 @@ async fn open_returns_with_zero_credit_and_does_not_prefetch_more_heads() {
         ),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("fixture result")
+    .expect("fixture result");
     assert_eq!(result.stream_id, 1);
     until(|| service.file_bytes_read() > 0).await;
     tokio::time::sleep(Duration::from_millis(25)).await;
@@ -128,17 +128,17 @@ async fn open_returns_with_zero_credit_and_does_not_prefetch_more_heads() {
 #[tokio::test]
 async fn follows_allowed_symlink_target_append_and_replaces_watch_parent() {
     use std::io::Write;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let a = temp.path().join("a");
     let b = temp.path().join("b");
-    std::fs::create_dir(&a).unwrap();
-    std::fs::create_dir(&b).unwrap();
+    std::fs::create_dir(&a).expect("fixture result");
+    std::fs::create_dir(&b).expect("fixture result");
     let first = a.join("log");
     let second = b.join("log");
     let link = temp.path().join("link");
-    std::fs::write(&first, b"first\n").unwrap();
-    std::fs::write(&second, b"second\n").unwrap();
-    std::os::unix::fs::symlink(&first, &link).unwrap();
+    std::fs::write(&first, b"first\n").expect("fixture result");
+    std::fs::write(&second, b"second\n").expect("fixture result");
+    std::os::unix::fs::symlink(&first, &link).expect("fixture result");
     let service = ObserveService::default();
     let open = Open::new(256 * 1024);
     let source = LogSource::File {
@@ -159,26 +159,26 @@ async fn follows_allowed_symlink_target_append_and_replaces_watch_parent() {
             vec![temp.path().into()],
         )
         .await
-        .unwrap();
+        .expect("fixture result");
     until(|| String::from_utf8_lossy(&open.data()).contains("first")).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     std::fs::OpenOptions::new()
         .append(true)
         .open(&first)
-        .unwrap()
+        .expect("fixture result")
         .write_all(b"first-append\n")
-        .unwrap();
+        .expect("fixture result");
     until(|| String::from_utf8_lossy(&open.data()).contains("first-append")).await;
-    std::fs::remove_file(&link).unwrap();
-    std::os::unix::fs::symlink(&second, &link).unwrap();
+    std::fs::remove_file(&link).expect("fixture result");
+    std::os::unix::fs::symlink(&second, &link).expect("fixture result");
     until(|| String::from_utf8_lossy(&open.data()).contains("second")).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     std::fs::OpenOptions::new()
         .append(true)
         .open(&second)
-        .unwrap()
+        .expect("fixture result")
         .write_all(b"second-append\n")
-        .unwrap();
+        .expect("fixture result");
     until(|| String::from_utf8_lossy(&open.data()).contains("second-append")).await;
     open.closed.cancel();
     service.shutdown().await;

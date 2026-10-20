@@ -5,18 +5,21 @@ use std::process::Command;
 use std::time::SystemTime;
 
 fn write(path: &Path, bytes: &[u8]) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, bytes).unwrap();
+    std::fs::create_dir_all(path.parent().expect("fixture value")).expect("fixture result");
+    std::fs::write(path, bytes).expect("fixture result");
 }
 fn fingerprint(path: &Path) -> (Vec<u8>, SystemTime) {
     (
-        std::fs::read(path).unwrap(),
-        std::fs::metadata(path).unwrap().modified().unwrap(),
+        std::fs::read(path).expect("fixture result"),
+        std::fs::metadata(path)
+            .expect("fixture result")
+            .modified()
+            .expect("fixture result"),
     )
 }
 fn executable(path: &Path, script: &str) {
     write(path, script.as_bytes());
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("fixture result");
 }
 
 fn command(home: &Path) -> Command {
@@ -41,7 +44,7 @@ fn command(home: &Path) -> Command {
 
 #[test]
 fn accept_setup_leaves_prod_binary_and_template_untouched() {
-    let fixture = tempfile::tempdir().unwrap();
+    let fixture = tempfile::tempdir().expect("fixture result");
     let home = fixture.path();
     let files = [
         ".local/share/devbox/bin/devbox",
@@ -65,7 +68,10 @@ fn accept_setup_leaves_prod_binary_and_template_untouched() {
             (path, before)
         })
         .collect();
-    let output = command(home).args(["setup", "--json"]).output().unwrap();
+    let output = command(home)
+        .args(["setup", "--json"])
+        .output()
+        .expect("fixture result");
     assert!(
         output.status.success(),
         "{} {}",
@@ -88,10 +94,11 @@ fn accept_setup_leaves_prod_binary_and_template_untouched() {
     ] {
         assert!(units.join(name).is_file(), "missing {name}");
     }
-    let service = std::fs::read_to_string(units.join("devbox-accept@.service")).unwrap();
+    let service =
+        std::fs::read_to_string(units.join("devbox-accept@.service")).expect("fixture result");
     assert!(service.contains(".local/share/devbox-accept/bin/devbox daemon"));
     assert!(service.contains(".config/devbox-accept/%i/env"));
-    let calls = std::fs::read_to_string(home.join("systemctl-calls")).unwrap();
+    let calls = std::fs::read_to_string(home.join("systemctl-calls")).expect("fixture result");
     assert_eq!(
         calls,
         "--user daemon-reload \n--user enable --now devbox-accept@accept.socket devbox-accept@accept.service devbox-accept-tmux@accept.service \n--user restart devbox-accept@accept.service \n"
@@ -100,7 +107,7 @@ fn accept_setup_leaves_prod_binary_and_template_untouched() {
 
 #[test]
 fn accept_setup_preserves_custom_xdg_roots_across_systemd() {
-    let fixture = tempfile::tempdir().unwrap();
+    let fixture = tempfile::tempdir().expect("fixture result");
     let home = fixture.path();
     let config = home.join("custom config");
     let data = home.join("custom data");
@@ -112,7 +119,7 @@ fn accept_setup_preserves_custom_xdg_roots_across_systemd() {
         .env("XDG_DATA_HOME", &data)
         .args(["setup", "--json"])
         .output()
-        .unwrap();
+        .expect("fixture result");
     assert!(
         output.status.success(),
         "{}",
@@ -124,7 +131,7 @@ fn accept_setup_preserves_custom_xdg_roots_across_systemd() {
     let dropin = std::fs::read_to_string(
         config.join("systemd/user/devbox-accept@accept.service.d/paths.conf"),
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(dropin.contains(&format!(
         "Environment=\"XDG_CONFIG_HOME={}\"",
         config.display()
@@ -138,7 +145,7 @@ fn accept_setup_preserves_custom_xdg_roots_across_systemd() {
 
 #[test]
 fn accept_doctor_requires_accept_hook_binary_even_when_prod_exists() {
-    let fixture = tempfile::tempdir().unwrap();
+    let fixture = tempfile::tempdir().expect("fixture result");
     let home = fixture.path();
     executable(
         &home.join(".local/share/devbox/bin/devbox"),
@@ -151,14 +158,17 @@ fn accept_doctor_requires_accept_hook_binary_even_when_prod_exists() {
                 "#!/bin/sh\nexit 0\n",
             );
         }
-        let output = command(home).args(["doctor", "--json"]).output().unwrap();
+        let output = command(home)
+            .args(["doctor", "--json"])
+            .output()
+            .expect("fixture result");
         let report: devbox_protocol::system::DoctorReport =
-            serde_json::from_slice(&output.stdout).unwrap();
+            serde_json::from_slice(&output.stdout).expect("fixture result");
         let hook = report
             .checks
             .iter()
             .find(|check| check.id == "hook.binary")
-            .unwrap();
+            .expect("fixture value");
         assert_eq!(
             hook.status,
             if available {

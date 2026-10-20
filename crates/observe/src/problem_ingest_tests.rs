@@ -28,21 +28,21 @@ fn record(stream: &str, text: &str) -> String {
 }
 #[tokio::test]
 async fn problems_dedup_restart_only_own_source_and_rev_pages() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Hub::new();
     let a = run(temp.path(), "a", "one");
     let b = run(temp.path(), "b", "one");
     service
         .apply_problem_batch(a.clone(), vec![problem(1), problem(1)], false, &hub)
-        .unwrap();
+        .expect("fixture result");
     service
         .apply_problem_batch(b, vec![problem(1)], false, &hub)
-        .unwrap();
+        .expect("fixture result");
     let rev = service.problem_rev();
     service
         .apply_problem_batch(a.clone(), vec![problem(1)], false, &hub)
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(service.problem_rev(), rev);
     let page = service
         .problem_result(ProblemsQuery {
@@ -50,21 +50,21 @@ async fn problems_dedup_restart_only_own_source_and_rev_pages() {
             limit: Some(1),
             cursor: None,
         })
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(page.items.len(), 1);
     assert!(page.next_cursor.is_some());
     let mut restarted = a;
     restarted.attempt_id = Some("two".into());
     service
         .apply_problem_batch(restarted, vec![], false, &hub)
-        .unwrap();
+        .expect("fixture result");
     let page2 = service
         .problem_result(ProblemsQuery {
             project_id: "project".into(),
             limit: Some(100),
             cursor: None,
         })
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(page2.items.len(), 1);
     assert_eq!(page2.items[0].source, "run:b");
     assert_eq!(page2.rev, (rev + 1).to_string());
@@ -80,7 +80,7 @@ async fn problems_dedup_restart_only_own_source_and_rev_pages() {
 }
 #[tokio::test]
 async fn problems_ingest_markers_stream_context_and_same_millisecond_attempts() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let r = run(temp.path(), "a", "new");
     let lines = [
@@ -99,8 +99,11 @@ async fn problems_ingest_markers_stream_context_and_same_millisecond_attempts() 
         &r.path,
         lines.iter().map(|(s, t)| record(s, t)).collect::<String>(),
     )
-    .unwrap();
-    let batch = service.read_problem_batch(&r).await.unwrap();
+    .expect("fixture result");
+    let batch = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     let rows = batch.problems;
     let overflow = batch.overflow;
     assert!(!overflow);
@@ -111,7 +114,7 @@ async fn problems_ingest_markers_stream_context_and_same_millisecond_attempts() 
 }
 #[tokio::test]
 async fn problems_duplicate_backlog_does_not_report_overflow() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let r = run(temp.path(), "a", "one");
     std::fs::write(
@@ -119,8 +122,11 @@ async fn problems_duplicate_backlog_does_not_report_overflow() {
         record("s", &attempt_marker("one"))
             + &record("o", "x.ts(1,1): error repeated").repeat(2100),
     )
-    .unwrap();
-    let batch = service.read_problem_batch(&r).await.unwrap();
+    .expect("fixture result");
+    let batch = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     let rows = batch.problems;
     let overflow = batch.overflow;
     assert!(
@@ -131,13 +137,13 @@ async fn problems_duplicate_backlog_does_not_report_overflow() {
 }
 #[tokio::test]
 async fn problems_result_bound_is_explicit_and_does_not_churn() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Arc::new(Hub::new());
     let r = run(temp.path(), "a", "one");
     service
         .apply_problem_batch(r.clone(), (1..=2050).map(problem).collect(), false, &hub)
-        .unwrap();
+        .expect("fixture result");
     let rev = service.problem_rev();
     let p = service
         .problem_result(ProblemsQuery {
@@ -145,13 +151,13 @@ async fn problems_result_bound_is_explicit_and_does_not_churn() {
             limit: Some(100),
             cursor: None,
         })
-        .unwrap();
+        .expect("fixture result");
     assert!(p.truncated);
     assert_eq!(p.items.len(), 100);
-    assert!(serde_json::to_vec(&p).unwrap().len() < 768 * 1024);
+    assert!(serde_json::to_vec(&p).expect("fixture result").len() < 768 * 1024);
     service
         .apply_problem_batch(r, vec![problem(2050)], false, &hub)
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(service.problem_rev(), rev);
     assert!(
         service
@@ -165,15 +171,16 @@ async fn problems_result_bound_is_explicit_and_does_not_churn() {
 }
 #[tokio::test]
 async fn problems_markerless_logs_are_not_attributed_to_current_attempt() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let r = run(temp.path(), "a", "one");
-    std::fs::write(&r.path, record("o", "x.ts(1,1): error old unknown attempt")).unwrap();
+    std::fs::write(&r.path, record("o", "x.ts(1,1): error old unknown attempt"))
+        .expect("fixture result");
     assert!(
         service
             .read_problem_batch(&r)
             .await
-            .unwrap()
+            .expect("fixture result")
             .problems
             .is_empty()
     );
@@ -181,7 +188,7 @@ async fn problems_markerless_logs_are_not_attributed_to_current_attempt() {
 
 #[tokio::test]
 async fn problems_dropped_uncommitted_batch_replays_and_stale_attempt_cannot_resurrect() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Hub::new();
     let mut r = run(temp.path(), "a", "one");
@@ -189,23 +196,32 @@ async fn problems_dropped_uncommitted_batch_replays_and_stale_attempt_cannot_res
         &r.path,
         record("s", &attempt_marker("one")) + &record("o", "x.ts(1,1): error old"),
     )
-    .unwrap();
-    let old = service.read_problem_batch(&r).await.unwrap();
+    .expect("fixture result");
+    let old = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert_eq!(old.problems.len(), 1);
     drop(old);
-    let replay = service.read_problem_batch(&r).await.unwrap();
+    let replay = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert_eq!(replay.problems.len(), 1);
     service
         .commit_problem_batch(r.clone(), replay, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     r.attempt_id = Some("two".into());
-    let next = service.read_problem_batch(&r).await.unwrap();
+    let next = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert!(next.problems.is_empty());
     service
         .commit_problem_batch(r, next, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         service
             .problem_result(ProblemsQuery {
@@ -213,7 +229,7 @@ async fn problems_dropped_uncommitted_batch_replays_and_stale_attempt_cannot_res
                 limit: Some(100),
                 cursor: None
             })
-            .unwrap()
+            .expect("fixture result")
             .items
             .is_empty()
     );
@@ -221,7 +237,7 @@ async fn problems_dropped_uncommitted_batch_replays_and_stale_attempt_cannot_res
 
 #[tokio::test]
 async fn problems_json_escaping_still_fits_one_protocol_page() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Hub::new();
     let r = run(temp.path(), "a", "one");
@@ -235,22 +251,24 @@ async fn problems_json_escaping_still_fits_one_protocol_page() {
             source: String::new(),
         })
         .collect();
-    service.apply_problem_batch(r, rows, false, &hub).unwrap();
+    service
+        .apply_problem_batch(r, rows, false, &hub)
+        .expect("fixture result");
     let page = service
         .problem_result(ProblemsQuery {
             project_id: "project".into(),
             limit: Some(100),
             cursor: None,
         })
-        .unwrap();
-    assert!(serde_json::to_vec(&page).unwrap().len() < 768 * 1024);
+        .expect("fixture result");
+    assert!(serde_json::to_vec(&page).expect("fixture result").len() < 768 * 1024);
     assert!(!page.items.is_empty());
     assert!(page.next_cursor.is_some());
 }
 
 #[tokio::test]
 async fn problems_cancelled_scan_replays_all_uncommitted_lines() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = Arc::new(ObserveService::default());
     let hub = Hub::new();
     let r = run(temp.path(), "a", "one");
@@ -258,20 +276,23 @@ async fn problems_cancelled_scan_replays_all_uncommitted_lines() {
         &r.path,
         record("s", &attempt_marker("one")) + &record("o", "x.ts(1,1): error initial"),
     )
-    .unwrap();
-    let first = service.read_problem_batch(&r).await.unwrap();
+    .expect("fixture result");
+    let first = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     service
         .commit_problem_batch(r.clone(), first, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(&r.path)
-        .unwrap();
+        .expect("fixture result");
     for n in 2..=1001 {
         file.write_all(record("o", &format!("x.ts({n},1): error cancelled")).as_bytes())
-            .unwrap();
+            .expect("fixture result");
     }
     let worker = {
         let service = service.clone();
@@ -284,39 +305,49 @@ async fn problems_cancelled_scan_replays_all_uncommitted_lines() {
         }
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     worker.abort();
     assert!(matches!(worker.await,Err(error) if error.is_cancelled()));
-    let replay = service.read_problem_batch(&r).await.unwrap();
+    let replay = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert_eq!(replay.problems.len(), 1001);
     service
         .commit_problem_batch(r, replay, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     service.shutdown().await;
 }
 
 #[tokio::test]
 async fn problems_partial_physical_record_waits_for_lf_and_replays_complete_diagnostic() {
     use std::io::Write;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Hub::new();
     let r = run(temp.path(), "partial", "one");
-    std::fs::write(&r.path, record("s", &attempt_marker("one"))).unwrap();
-    let initial = service.read_problem_batch(&r).await.unwrap();
+    std::fs::write(&r.path, record("s", &attempt_marker("one"))).expect("fixture result");
+    let initial = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     service
         .commit_problem_batch(r.clone(), initial, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(&r.path)
-        .unwrap();
+        .expect("fixture result");
     let complete = record("e", "x.ts(3,1): error expected semicolon");
-    let cut = complete.find("expected").unwrap() + "expected".len();
-    file.write_all(&complete.as_bytes()[..cut]).unwrap();
-    let partial = service.read_problem_batch(&r).await.unwrap();
+    let cut = complete.find("expected").expect("fixture value") + "expected".len();
+    file.write_all(&complete.as_bytes()[..cut])
+        .expect("fixture result");
+    let partial = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert!(
         partial.problems.is_empty(),
         "incomplete physical record must not emit a partial diagnostic: {:?}",
@@ -325,71 +356,85 @@ async fn problems_partial_physical_record_waits_for_lf_and_replays_complete_diag
     service
         .commit_problem_batch(r.clone(), partial, true, &hub)
         .await
-        .unwrap();
-    file.write_all(&complete.as_bytes()[cut..]).unwrap();
-    let completed = service.read_problem_batch(&r).await.unwrap();
+        .expect("fixture result");
+    file.write_all(&complete.as_bytes()[cut..])
+        .expect("fixture result");
+    let completed = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert_eq!(completed.problems.len(), 1);
     assert_eq!(completed.problems[0].message, "expected semicolon");
     service
         .commit_problem_batch(r, completed, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     service.shutdown().await;
 }
 
 #[tokio::test]
 async fn problems_partial_system_marker_is_retained_until_its_lf() {
     use std::io::Write;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Hub::new();
     let r = run(temp.path(), "partial-marker", "one");
     let marker = record("s", &attempt_marker("one"));
     let cut = marker.len() - 3;
-    std::fs::write(&r.path, &marker.as_bytes()[..cut]).unwrap();
-    let partial = service.read_problem_batch(&r).await.unwrap();
+    std::fs::write(&r.path, &marker.as_bytes()[..cut]).expect("fixture result");
+    let partial = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert!(partial.problems.is_empty());
     service
         .commit_problem_batch(r.clone(), partial, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(&r.path)
-        .unwrap();
-    file.write_all(&marker.as_bytes()[cut..]).unwrap();
+        .expect("fixture result");
+    file.write_all(&marker.as_bytes()[cut..])
+        .expect("fixture result");
     file.write_all(record("e", "x.ts(3,1): error complete marker").as_bytes())
-        .unwrap();
-    let completed = service.read_problem_batch(&r).await.unwrap();
+        .expect("fixture result");
+    let completed = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert_eq!(completed.problems.len(), 1);
     assert_eq!(completed.problems[0].message, "complete marker");
     service
         .commit_problem_batch(r, completed, true, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     service.shutdown().await;
 }
 
 #[tokio::test]
 async fn problems_completed_run_does_not_cache_a_pending_fragment_as_complete() {
     use std::io::Write;
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let service = ObserveService::default();
     let hub = Hub::new();
     let r = run(temp.path(), "completed-partial", "one");
     let diagnostic = record("e", "x.ts(3,1): error expected semicolon");
-    let cut = diagnostic.find("expected").unwrap() + "expected".len();
+    let cut = diagnostic.find("expected").expect("fixture value") + "expected".len();
     std::fs::write(
         &r.path,
         record("s", &attempt_marker("one")) + &diagnostic[..cut],
     )
-    .unwrap();
-    let partial = service.read_problem_batch(&r).await.unwrap();
+    .expect("fixture result");
+    let partial = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert!(partial.problems.is_empty());
     service
         .commit_problem_batch(r.clone(), partial, false, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         !service
             .problems
@@ -401,15 +446,19 @@ async fn problems_completed_run_does_not_cache_a_pending_fragment_as_complete() 
     let mut file = std::fs::OpenOptions::new()
         .append(true)
         .open(&r.path)
-        .unwrap();
-    file.write_all(&diagnostic.as_bytes()[cut..]).unwrap();
-    let completed = service.read_problem_batch(&r).await.unwrap();
+        .expect("fixture result");
+    file.write_all(&diagnostic.as_bytes()[cut..])
+        .expect("fixture result");
+    let completed = service
+        .read_problem_batch(&r)
+        .await
+        .expect("fixture result");
     assert_eq!(completed.problems.len(), 1);
     assert_eq!(completed.problems[0].message, "expected semicolon");
     service
         .commit_problem_batch(r.clone(), completed, false, &hub)
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         service
             .problems
@@ -423,10 +472,10 @@ async fn problems_completed_run_does_not_cache_a_pending_fragment_as_complete() 
 
 #[tokio::test]
 async fn problems_complete_reader_preserves_raw_log_eof_fragment_display() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
     let r = run(temp.path(), "raw-fragment", "one");
     let line = record("e", "x.ts(3,1): error fragment");
-    std::fs::write(&r.path, line.trim_end_matches('\n')).unwrap();
+    std::fs::write(&r.path, line.trim_end_matches('\n')).expect("fixture result");
     let mut reader = crate::sources::FileSource::open(
         &ResolvedSource {
             source: LogSource::Run { run_id: r.run_id },
@@ -436,7 +485,11 @@ async fn problems_complete_reader_preserves_raw_log_eof_fragment_display() {
         &LogFrom::Offset { offset: 0 },
     )
     .await
-    .unwrap();
-    let fragment = reader.next().await.unwrap().unwrap();
+    .expect("fixture result");
+    let fragment = reader
+        .next()
+        .await
+        .expect("fixture result")
+        .expect("fixture value");
     assert_eq!(fragment.text, "x.ts(3,1): error fragment");
 }

@@ -96,7 +96,14 @@ impl RuntimeService {
         Ok(())
     }
 
+    /// End dependency/readiness coordination before the daemon drains accepted mutations.
+    /// Unit creation and persisted reservations finish normally; existing units survive.
+    pub fn begin_shutdown(&self) {
+        self.stopping.cancel();
+    }
+
     pub async fn shutdown(&self) {
+        self.begin_shutdown();
         if let Some(handle) = self.scheduler.lock().await.take() {
             handle.cancel.cancel();
             let _ = handle.join.await;

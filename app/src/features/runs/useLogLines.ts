@@ -11,7 +11,10 @@ export function useLogLines(sources: LogSource[], filter: LogFilter, retry: numb
     error: null,
     ended: false,
   });
-  const key = JSON.stringify({ sources, from: "tail", filter } satisfies OpenLogs);
+  // A short run may finish before this view opens. Read its retained history,
+  // then follow the same stream; file/container-only selections remain live tails.
+  const from = sources.some((source) => source.kind === "run") ? { offset: 0 } : "tail";
+  const key = JSON.stringify({ sources, from, filter } satisfies OpenLogs);
   useEffect(() => {
     // The retry counter and daemon generation deliberately reopen a failed stream.
     void retry;

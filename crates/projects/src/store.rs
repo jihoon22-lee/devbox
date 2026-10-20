@@ -130,6 +130,15 @@ pub fn has_dependents(tx: &Transaction, id: &str) -> rusqlite::Result<bool> {
     {
         return Ok(true);
     }
+    if has_table("runtime_runs")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.state') IN ('starting','running','restarting'))",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(true);
+    }
     if !has_table("agents_tasks")? {
         return Ok(false);
     }

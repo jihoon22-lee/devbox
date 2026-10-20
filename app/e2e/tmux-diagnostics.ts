@@ -21,10 +21,11 @@ export class TmuxDiagnostics {
     this.observations.push(execFileSync(this.binary, ["-V"], { env, encoding: "utf8", timeout: 5000 }).trim());
   }
   install(bin: string) {
-    // -vv writes server/client/output logs in this owned directory. Preserve the caller's exit status.
+    // Attach callers identify tmux by the spawned PID. Exec keeps that identity,
+    // including compound capture/attach commands and control-mode grid clients.
     writeFileSync(
       join(bin, "tmux"),
-      `#!/bin/sh\ncd ${quote(this.directory)} || exit 1\n${quote(this.binary)} -vv "$@"\nstatus=$?\nprintf 'exit=%s args=' "$status" >> commands.log\nprintf '%s ' "$@" >> commands.log\nprintf '\\n' >> commands.log\nexit "$status"\n`,
+      `#!/bin/sh\ncd ${quote(this.directory)} || exit 1\nfor arg do\n  case "$arg" in\n    -C|-CC|attach|attach-session)\n      printf 'exec args=' >> commands.log\n      printf '%s ' "$@" >> commands.log\n      printf '\\n' >> commands.log\n      exec ${quote(this.binary)} -vv "$@"\n      ;;\n  esac\ndone\n${quote(this.binary)} -vv "$@"\nstatus=$?\nprintf 'exit=%s args=' "$status" >> commands.log\nprintf '%s ' "$@" >> commands.log\nprintf '\\n' >> commands.log\nexit "$status"\n`,
       { mode: 0o700 },
     );
   }

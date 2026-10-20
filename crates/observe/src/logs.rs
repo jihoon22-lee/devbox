@@ -78,24 +78,23 @@ fn parse_as(src: &LogSource, raw: &[u8], stream: LogStream, format: RecordFormat
         RecordFormat::Run => {
             let mut parts = text.splitn(3, '\t');
             if let (Some(ts), Some(stream), Some(text)) = (parts.next(), parts.next(), parts.next())
+                && DateTime::parse_from_rfc3339(ts).is_ok()
             {
-                if DateTime::parse_from_rfc3339(ts).is_ok() {
-                    result.ts = ts.into();
-                    result.stream = match stream {
-                        "e" => LogStream::Stderr,
-                        "s" => LogStream::System,
-                        _ => LogStream::Stdout,
-                    };
-                    result.text = text.into();
-                }
+                result.ts = ts.into();
+                result.stream = match stream {
+                    "e" => LogStream::Stderr,
+                    "s" => LogStream::System,
+                    _ => LogStream::Stdout,
+                };
+                result.text = text.into();
             }
         }
         RecordFormat::Docker => {
-            if let Some((ts, text)) = text.split_once(' ') {
-                if DateTime::parse_from_rfc3339(ts).is_ok() {
-                    result.ts = ts.into();
-                    result.text = text.into();
-                }
+            if let Some((ts, text)) = text.split_once(' ')
+                && DateTime::parse_from_rfc3339(ts).is_ok()
+            {
+                result.ts = ts.into();
+                result.text = text.into();
             }
         }
         RecordFormat::File => (),

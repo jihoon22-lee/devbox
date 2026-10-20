@@ -219,7 +219,11 @@ mod tests {
         write(&paths, "config.toml", "");
         write(&paths, "config.local.toml", "[windows]\nroot='C:\\dev'\n");
         assert_eq!(
-            Config::load(&paths).unwrap().windows.root.as_deref(),
+            Config::load(&paths)
+                .expect("fixture result")
+                .windows
+                .root
+                .as_deref(),
             Some("C:\\dev")
         );
         write(

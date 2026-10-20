@@ -87,15 +87,14 @@ pub(crate) fn pids(root: &Path) -> R<Vec<u32>> {
         if i >= 65_536 {
             return Err(ObserveError::LimitExceeded.into());
         }
-        if let Ok(entry) = entry {
-            if let Some(pid) = entry
+        if let Ok(entry) = entry
+            && let Some(pid) = entry
                 .file_name()
                 .to_str()
                 .and_then(|s| s.parse::<u32>().ok())
                 .filter(|v| *v > 0 && *v <= i32::MAX as u32)
-            {
-                pids.push(pid);
-            }
+        {
+            pids.push(pid);
         }
     }
     pids.sort_unstable();

@@ -270,6 +270,8 @@ impl ProjectsService {
 }
 
 #[cfg(test)]
+mod run_ownership_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod trust_tests;

@@ -59,7 +59,7 @@ async fn ui_definition_page_keeps_old_live_service_and_latest_result() {
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     let page = f
         .runs
         .list(ListRuns {
@@ -67,7 +67,7 @@ async fn ui_definition_page_keeps_old_live_service_and_latest_result() {
             cursor: None,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         page.runs.iter().any(|r| r.id == "run-0"),
         "old live service must survive recent history bounds"
@@ -86,17 +86,17 @@ async fn ui_get_returns_old_selection_with_current_revision_and_original_cwd() {
     f.define("task", "true", SaveTo::ThisPc).await;
     let mut run = recorded(&f.project, 1, "task", RunState::Running);
     run.source_cwd = Some("/owned/original".into());
-    f.runs.save_run(&run).await.unwrap();
+    f.runs.save_run(&run).await.expect("fixture result");
     let first = f
         .runs
         .get(RunId {
             run_id: "run-1".into(),
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     run.run.pid = Some(999);
     run.run.restarts = 2;
-    f.runs.save_run(&run).await.unwrap();
+    f.runs.save_run(&run).await.expect("fixture result");
     f.define("task", "echo edited", SaveTo::ThisPc).await;
     let detail = f
         .runs
@@ -104,15 +104,18 @@ async fn ui_get_returns_old_selection_with_current_revision_and_original_cwd() {
             run_id: "run-1".into(),
         })
         .await
-        .unwrap();
-    assert!(detail.rev.parse::<u64>().unwrap() > first.rev.parse().unwrap());
+        .expect("fixture result");
+    assert!(
+        detail.rev.parse::<u64>().expect("fixture result")
+            > first.rev.parse().expect("fixture result")
+    );
     assert_eq!(detail.run.pid, Some(999));
     assert_eq!(detail.run.restarts, 2);
     assert_eq!(
         f.runs
             .location_context("run-1")
             .await
-            .unwrap()
+            .expect("fixture result")
             .cwd
             .as_deref(),
         Some("/owned/original")
@@ -150,7 +153,7 @@ async fn ui_definition_pages_are_bounded_and_include_later_definitions() {
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     let first = f
         .runs
         .list(ListRuns {
@@ -158,10 +161,12 @@ async fn ui_definition_pages_are_bounded_and_include_later_definitions() {
             cursor: None,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(first.defs.len(), 256);
     assert_eq!(first.runs.len(), 256);
-    assert!(serde_json::to_vec(&first).unwrap().len() <= crate::service::PAGE_BYTES);
+    assert!(
+        serde_json::to_vec(&first).expect("fixture result").len() <= crate::service::PAGE_BYTES
+    );
     let next = f
         .runs
         .list(ListRuns {
@@ -169,9 +174,12 @@ async fn ui_definition_pages_are_bounded_and_include_later_definitions() {
             cursor: first.next_cursor,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(next.defs.len(), 14);
     assert_eq!(next.runs.len(), 14);
     assert!(next.next_cursor.is_none());
-    assert_eq!(next.defs.last().unwrap().def.id(), "task-269");
+    assert_eq!(
+        next.defs.last().expect("fixture value").def.id(),
+        "task-269"
+    );
 }

@@ -16,9 +16,15 @@ async fn detect_package_managers_and_service_kinds() {
         ("npm", "npm run build"),
         ("bun", "bun run build"),
     ] {
-        let items = detect(&fixture(manager), &[]).await.unwrap();
+        let items = detect(&fixture(manager), &[])
+            .await
+            .expect("fixture result");
         assert_eq!(
-            items.iter().find(|s| s.id == "build").unwrap().command,
+            items
+                .iter()
+                .find(|s| s.id == "build")
+                .expect("fixture value")
+                .command,
             command
         );
         assert!(
@@ -27,19 +33,31 @@ async fn detect_package_managers_and_service_kinds() {
                 .all(|s| s.from == SuggestionSource::PackageJson)
         );
     }
-    let items = detect(&fixture("pnpm"), &[]).await.unwrap();
+    let items = detect(&fixture("pnpm"), &[]).await.expect("fixture result");
     for id in ["dev", "start", "serve"] {
         assert_eq!(
-            items.iter().find(|s| s.id == id).unwrap().kind,
+            items
+                .iter()
+                .find(|s| s.id == id)
+                .expect("fixture value")
+                .kind,
             DefinitionKind::Service
         );
     }
     assert_eq!(
-        items.iter().find(|s| s.id == "dev").unwrap().command,
+        items
+            .iter()
+            .find(|s| s.id == "dev")
+            .expect("fixture value")
+            .command,
         "pnpm dev"
     );
     assert_eq!(
-        items.iter().find(|s| s.id == "build").unwrap().kind,
+        items
+            .iter()
+            .find(|s| s.id == "build")
+            .expect("fixture value")
+            .kind,
         DefinitionKind::Task
     );
 }
@@ -70,7 +88,7 @@ async fn detect_static_make_just_cargo_and_compose_fixtures() {
         ("compose", vec![("compose-up", "docker compose up")]),
         ("compose-legacy", vec![("compose-up", "docker compose up")]),
     ] {
-        let items = detect(&fixture(name), &[]).await.unwrap();
+        let items = detect(&fixture(name), &[]).await.expect("fixture result");
         assert_eq!(
             items
                 .iter()
@@ -90,7 +108,7 @@ async fn detect_static_make_just_cargo_and_compose_fixtures() {
             _ => "docker-compose.yml",
         };
         assert_eq!(
-            serde_json::to_string(&items[0].from).unwrap(),
+            serde_json::to_string(&items[0].from).expect("fixture result"),
             format!("\"{source}\"")
         );
     }
@@ -98,12 +116,12 @@ async fn detect_static_make_just_cargo_and_compose_fixtures() {
 
 #[tokio::test]
 async fn detect_lock_priority_fallback_and_bun_binary_lock() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     std::fs::write(
         root.path().join("package.json"),
         r#"{"scripts":{"build":"echo build"}}"#,
     )
-    .unwrap();
+    .expect("fixture result");
     let locks = [
         ("pnpm-lock.yaml", "pnpm"),
         ("yarn.lock", "yarn"),
@@ -113,24 +131,24 @@ async fn detect_lock_priority_fallback_and_bun_binary_lock() {
         ("bun.lockb", "bun"),
     ];
     for (file, _) in locks {
-        std::fs::write(root.path().join(file), b"fixture").unwrap();
+        std::fs::write(root.path().join(file), b"fixture").expect("fixture result");
     }
     for (file, manager) in locks {
         assert_eq!(
-            detect(root.path(), &[]).await.unwrap()[0].command,
+            detect(root.path(), &[]).await.expect("fixture result")[0].command,
             format!("{manager} run build")
         );
-        std::fs::remove_file(root.path().join(file)).unwrap();
+        std::fs::remove_file(root.path().join(file)).expect("fixture result");
     }
     assert_eq!(
-        detect(root.path(), &[]).await.unwrap()[0].command,
+        detect(root.path(), &[]).await.expect("fixture result")[0].command,
         "npm run build"
     );
 }
 
 #[tokio::test]
 async fn detect_duplicates_are_deterministic_and_existing_ids_stay_excluded() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     for (name, text) in [
         ("package.json", r#"{"scripts":{"build":"echo package"}}"#),
         ("Makefile", "build:\n\techo make\n"),
@@ -139,39 +157,58 @@ async fn detect_duplicates_are_deterministic_and_existing_ids_stay_excluded() {
         ("compose.yaml", ""),
         ("docker-compose.yml", ""),
     ] {
-        std::fs::write(root.path().join(name), text).unwrap();
+        std::fs::write(root.path().join(name), text).expect("fixture result");
     }
-    let items = detect(root.path(), &[]).await.unwrap();
+    let items = detect(root.path(), &[]).await.expect("fixture result");
     assert_eq!(items.iter().filter(|s| s.id == "build").count(), 1);
     assert_eq!(
-        items.iter().find(|s| s.id == "build").unwrap().from,
+        items
+            .iter()
+            .find(|s| s.id == "build")
+            .expect("fixture value")
+            .from,
         SuggestionSource::PackageJson
     );
     assert_eq!(
-        items.iter().find(|s| s.id == "compose-up").unwrap().from,
+        items
+            .iter()
+            .find(|s| s.id == "compose-up")
+            .expect("fixture value")
+            .from,
         SuggestionSource::ComposeYaml
     );
     assert!(
         detect(root.path(), &["build".into(), "compose-up".into()])
             .await
-            .unwrap()
+            .expect("fixture result")
             .iter()
             .all(|s| s.id == "test")
     );
-    assert_eq!(items, detect(root.path(), &[]).await.unwrap());
+    assert_eq!(
+        items,
+        detect(root.path(), &[]).await.expect("fixture result")
+    );
 }
 
 #[tokio::test]
 async fn detect_marker_files_are_read_without_execution() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     let marker = root.path().join("detect-spawn-marker");
     for (name, file) in [("make", "Makefile"), ("just", "justfile")] {
         let content = std::fs::read_to_string(fixture(name).join(file))
-            .unwrap()
-            .replace("detect-spawn-marker", marker.to_str().unwrap());
-        std::fs::write(root.path().join(file), content).unwrap();
+            .expect("fixture result")
+            .replace(
+                "detect-spawn-marker",
+                marker.to_str().expect("fixture value"),
+            );
+        std::fs::write(root.path().join(file), content).expect("fixture result");
     }
-    assert!(!detect(root.path(), &[]).await.unwrap().is_empty());
+    assert!(
+        !detect(root.path(), &[])
+            .await
+            .expect("fixture result")
+            .is_empty()
+    );
     assert!(
         !marker.exists(),
         "detection must never evaluate make shell or just backticks/recipes"
@@ -180,16 +217,16 @@ async fn detect_marker_files_are_read_without_execution() {
 
 #[tokio::test]
 async fn detect_parse_and_io_failures_are_typed_not_empty_success() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     for content in ["{", r#"{"scripts":{"build":17}}"#, r#"{"scripts":[]}"#] {
-        std::fs::write(root.path().join("package.json"), content).unwrap();
+        std::fs::write(root.path().join("package.json"), content).expect("fixture result");
         assert!(matches!(
             detect(root.path(), &[]).await,
             Err(RuntimeError::DetectParse { .. })
         ));
     }
-    std::fs::remove_file(root.path().join("package.json")).unwrap();
-    std::fs::create_dir(root.path().join("package.json")).unwrap();
+    std::fs::remove_file(root.path().join("package.json")).expect("fixture result");
+    std::fs::create_dir(root.path().join("package.json")).expect("fixture result");
     assert!(matches!(
         detect(root.path(), &[]).await,
         Err(RuntimeError::DetectIo { .. })
@@ -198,13 +235,13 @@ async fn detect_parse_and_io_failures_are_typed_not_empty_success() {
 
 #[tokio::test]
 async fn detect_script_names_preserve_literal_shell_arguments() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     std::fs::write(
         root.path().join("package.json"),
         r#"{"scripts":{"a'; touch marker; echo '":"ignored","with space":"ignored"}}"#,
     )
-    .unwrap();
-    let items = detect(root.path(), &[]).await.unwrap();
+    .expect("fixture result");
+    let items = detect(root.path(), &[]).await.expect("fixture result");
     for item in &items {
         assert_eq!(
             item.command,
@@ -229,7 +266,7 @@ async fn detect_service_filters_all_merged_definitions_beyond_first_page() {
         repo.join("package.json"),
         r#"{"scripts":{"z-existing":"ignored","local":"ignored","new":"ignored"}}"#,
     )
-    .unwrap();
+    .expect("fixture result");
     let list = f
         .runs
         .list(ListRuns {
@@ -237,7 +274,7 @@ async fn detect_service_filters_all_merged_definitions_beyond_first_page() {
             cursor: None,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(list.next_cursor.is_some());
     let suggestions = f
         .runs
@@ -245,7 +282,7 @@ async fn detect_service_filters_all_merged_definitions_beyond_first_page() {
             project_id: f.project.clone(),
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(
         suggestions
             .iter()
@@ -265,16 +302,16 @@ async fn detect_service_filters_all_merged_definitions_beyond_first_page() {
 
 #[tokio::test]
 async fn detect_script_builtin_names_colons_and_options_use_explicit_run() {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("package.json"), r#"{"scripts":{"install":"ignored","test":"ignored","build:web":"ignored","-custom":"ignored"}}"#).unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
+    std::fs::write(root.path().join("package.json"), r#"{"scripts":{"install":"ignored","test":"ignored","build:web":"ignored","-custom":"ignored"}}"#).expect("fixture result");
     for (lock, manager) in [
         ("pnpm-lock.yaml", "pnpm"),
         ("yarn.lock", "yarn"),
         ("package-lock.json", "npm"),
         ("bun.lock", "bun"),
     ] {
-        std::fs::write(root.path().join(lock), "fixture").unwrap();
-        for item in detect(root.path(), &[]).await.unwrap() {
+        std::fs::write(root.path().join(lock), "fixture").expect("fixture result");
+        for item in detect(root.path(), &[]).await.expect("fixture result") {
             let expected = if item.id.starts_with('-') {
                 format!("{manager} run -- {}", item.id)
             } else {
@@ -282,24 +319,24 @@ async fn detect_script_builtin_names_colons_and_options_use_explicit_run() {
             };
             assert_eq!(item.command, expected);
         }
-        std::fs::remove_file(root.path().join(lock)).unwrap();
+        std::fs::remove_file(root.path().join(lock)).expect("fixture result");
     }
 }
 
 #[tokio::test]
 async fn detect_input_validation_and_non_utf8_are_reported() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     std::fs::write(
         root.path().join("package.json"),
         r#"{"scripts":{"":"ignored"}}"#,
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(matches!(
         detect(root.path(), &[]).await,
         Err(RuntimeError::DefInvalid { .. })
     ));
-    std::fs::remove_file(root.path().join("package.json")).unwrap();
-    std::fs::write(root.path().join("Makefile"), [0xff]).unwrap();
+    std::fs::remove_file(root.path().join("package.json")).expect("fixture result");
+    std::fs::write(root.path().join("Makefile"), [0xff]).expect("fixture result");
     assert!(
         matches!(detect(root.path(), &[]).await, Err(RuntimeError::DetectIo { file, .. }) if file == "Makefile")
     );
@@ -307,21 +344,22 @@ async fn detect_input_validation_and_non_utf8_are_reported() {
 
 #[tokio::test]
 async fn detect_file_and_response_budgets_are_typed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
     std::fs::write(
         root.path().join("package.json"),
         vec![b' '; 1024 * 1024 + 1],
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(
         matches!(detect(root.path(), &[]).await, Err(RuntimeError::DetectLimit { subject, .. }) if subject == "package.json")
     );
     let scripts: std::collections::BTreeMap<_, _> = (0..5000)
         .map(|n| (format!("script-{n:04}-{}", "a".repeat(60)), "ignored"))
         .collect();
-    let json = serde_json::to_string(&serde_json::json!({ "scripts": scripts })).unwrap();
+    let json =
+        serde_json::to_string(&serde_json::json!({ "scripts": scripts })).expect("fixture result");
     assert!(json.len() < 1024 * 1024);
-    std::fs::write(root.path().join("package.json"), json).unwrap();
+    std::fs::write(root.path().join("package.json"), json).expect("fixture result");
     assert!(
         matches!(detect(root.path(), &[]).await, Err(RuntimeError::DetectLimit { subject, .. }) if subject == "suggestions")
     );
@@ -330,8 +368,9 @@ async fn detect_file_and_response_budgets_are_typed() {
 #[cfg(unix)]
 #[tokio::test]
 async fn detect_non_regular_files_return_without_opening() {
-    let root = tempfile::tempdir().unwrap();
-    let _socket = std::os::unix::net::UnixListener::bind(root.path().join("Makefile")).unwrap();
+    let root = tempfile::tempdir().expect("fixture result");
+    let _socket = std::os::unix::net::UnixListener::bind(root.path().join("Makefile"))
+        .expect("fixture result");
     assert!(
         matches!(detect(root.path(), &[]).await, Err(RuntimeError::DetectIo { file, .. }) if file == "Makefile")
     );

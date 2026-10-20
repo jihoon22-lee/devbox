@@ -20,6 +20,13 @@ const service: Definition = {
     readyTimeoutSec: 10,
   },
 };
+test("new and suggested definitions default to the project file, preserving existing local source", () => {
+  expect(initialDefinitionForm().saveTo).toBe("project");
+  expect(
+    initialDefinitionForm(undefined, { id: "dev", command: "pnpm dev", kind: "service", from: "package.json" }).saveTo,
+  ).toBe("project");
+  expect(initialDefinitionForm({ ...service, source: "thisPc" }).saveTo).toBe("thisPc");
+});
 test("editing preserves every service setting and the existing identifier", () => {
   const form = initialDefinitionForm(service);
   expect(form.saveTo).toBe("project");

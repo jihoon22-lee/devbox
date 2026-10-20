@@ -18,8 +18,8 @@ struct Fixture {
 impl Fixture {
     async fn start() -> Self {
         let daemon = support::TestDaemon::fixture();
-        let services = daemon::build_services(daemon.paths.clone()).unwrap();
-        let listener = tokio::net::UnixListener::bind(&daemon.socket).unwrap();
+        let services = daemon::build_services(daemon.paths.clone()).expect("fixture result");
+        let listener = tokio::net::UnixListener::bind(&daemon.socket).expect("fixture result");
         let cancel = tokio_util::sync::CancellationToken::new();
         let task = tokio::spawn(daemon::server::serve(
             listener,
@@ -32,15 +32,15 @@ impl Fixture {
             &daemon.instance,
         ))
         .await
-        .unwrap();
+        .expect("fixture result");
         let root = daemon.home.path().join("project");
-        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&root).expect("fixture result");
         let project = client
             .call::<devbox_projects::ProjectsAdd>(&devbox_projects::AddProject {
                 path: root.display().to_string(),
             })
             .await
-            .unwrap()
+            .expect("fixture result")
             .id;
         Self {
             daemon,
@@ -52,13 +52,14 @@ impl Fixture {
         }
     }
     async fn seed(&self, id: &str, attempt: &str, lines: &str) -> ExitStore {
-        let store = ExitStore::new(&self.daemon.paths.data_dir.join("runs"), id).unwrap();
-        store.begin(attempt).unwrap();
+        let store =
+            ExitStore::new(&self.daemon.paths.data_dir.join("runs"), id).expect("fixture result");
+        store.begin(attempt).expect("fixture result");
         std::fs::write(
             store.log_path(),
             format!("{}{}", record("s", &attempt_marker(attempt)), lines),
         )
-        .unwrap();
+        .expect("fixture result");
         let row=serde_json::json!({"run":{"id":id,"projectId":self.project,"defId":"fixture","kind":"task","state":"stopped","exit":null,"startedMs":1,"endedMs":2,"restarts":0,"unit":"devbox-test-problem.service","ready":false,"pid":null,"port":null,"attemptId":attempt},"source_cwd":self.daemon.home.path().join("project").display().to_string(),"restart":"no","start_limit":null,"worktree":null,"start_limit_notified":false}).to_string();
         let id = id.to_string();
         let project = self.project.clone();
@@ -73,7 +74,7 @@ impl Fixture {
                 Ok(())
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         self.services.hub.publish::<devbox_runtime::RuntimeChanged>(
             rev,
             &devbox_runtime::RuntimeChange {
@@ -90,11 +91,14 @@ impl Fixture {
             cursor: None,
         }))
         .await
-        .unwrap()
+        .expect("fixture result")
     }
     async fn stop(self) {
         self.cancel.cancel();
-        bounded(self.task).await.unwrap().unwrap();
+        bounded(self.task)
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
     }
 }
 fn record(stream: &str, text: &str) -> String {
@@ -105,9 +109,9 @@ fn append(path: &std::path::Path, text: &str) {
     std::fs::OpenOptions::new()
         .append(true)
         .open(path)
-        .unwrap()
+        .expect("fixture result")
         .write_all(text.as_bytes())
-        .unwrap();
+        .expect("fixture result");
 }
 
 #[tokio::test]
@@ -124,20 +128,20 @@ async fn problems_first_query_ingests_then_inotify_events_and_filtered_logs_pres
         .client
         .subscribe("observe.problems.changed")
         .await
-        .unwrap();
+        .expect("fixture result");
     let before = f.services.db.rev();
     let first = f.query().await;
     assert_eq!(first.items.len(), 1);
     assert_eq!(first.items[0].line, 10);
     assert_eq!(first.items[0].source, "run:one");
-    let event = bounded(events.next_event()).await.unwrap();
+    let event = bounded(events.next_event()).await.expect("fixture value");
     assert_eq!(event.rev, first.rev);
     assert_eq!(
         f.services.db.rev(),
         before,
         "memory observation must not write DB rev"
     );
-    let stream=f.client.open_stream("logs.open",serde_json::json!({"sources":[{"kind":"run","runId":"one"}],"from":{"offset":0},"filter":{"text":"never matches"}})).await.unwrap();
+    let stream=f.client.open_stream("logs.open",serde_json::json!({"sources":[{"kind":"run","runId":"one"}],"from":{"offset":0},"filter":{"text":"never matches"}})).await.expect("fixture result");
     let search = f
         .client
         .call::<LogsSearch>(&SearchLogs {
@@ -150,13 +154,13 @@ async fn problems_first_query_ingests_then_inotify_events_and_filtered_logs_pres
             limit: 1,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(search.items.is_empty());
     append(
         &store.log_path(),
         &record("e", "src/x.ts(11,1): warning second"),
     );
-    let event = bounded(events.next_event()).await.unwrap();
+    let event = bounded(events.next_event()).await.expect("fixture value");
     let next = f.query().await;
     assert_eq!(next.items.len(), 2);
     assert_eq!(event.rev, next.rev);
@@ -170,7 +174,7 @@ async fn problems_first_query_ingests_then_inotify_events_and_filtered_logs_pres
             .await
             .is_err()
     );
-    stream.close().await.unwrap();
+    stream.close().await.expect("fixture result");
     f.stop().await;
 }
 #[tokio::test]
@@ -186,8 +190,8 @@ async fn problems_restart_clears_only_its_source_and_old_search_cannot_restore_i
         .client
         .subscribe("observe.problems.changed")
         .await
-        .unwrap();
-    a.begin("b").unwrap();
+        .expect("fixture result");
+    a.begin("b").expect("fixture result");
     // Identical timestamps: only system marker identity partitions the attempts.
     append(
         &a.log_path(),
@@ -201,7 +205,7 @@ async fn problems_restart_clears_only_its_source_and_old_search_cannot_restore_i
         page.items.iter().map(|p| p.line).collect::<Vec<_>>(),
         vec![2, 4]
     );
-    bounded(events.next_event()).await.unwrap();
+    bounded(events.next_event()).await.expect("fixture value");
     let rev = page.rev;
     let old = f
         .client
@@ -215,13 +219,13 @@ async fn problems_restart_clears_only_its_source_and_old_search_cannot_restore_i
             limit: 10,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert_eq!(old.items.len(), 1);
     let page = f.query().await;
     assert_eq!(page.rev, rev);
     assert_eq!(page.items.len(), 2);
     // Clear is published even before the new invocation writes its marker/output.
-    a.begin("c").unwrap();
+    a.begin("c").expect("fixture result");
     let page = f.query().await;
     assert_eq!(page.items.len(), 1);
     assert_eq!(page.items[0].source, "run:two");
@@ -242,7 +246,7 @@ async fn problems_query_validation_is_typed() {
                 cursor: None,
             })
             .await
-            .unwrap_err();
+            .expect_err("expected failure");
         assert!(format!("{error:?}").contains(code));
     }
     f.stop().await;
@@ -251,16 +255,16 @@ async fn problems_query_validation_is_typed() {
 #[tokio::test]
 async fn problems_metadata_keeps_live_history_and_manual_starting_has_no_previous_attempt() {
     let daemon = support::TestDaemon::fixture();
-    let services = daemon::build_services(daemon.paths.clone()).unwrap();
+    let services = daemon::build_services(daemon.paths.clone()).expect("fixture result");
     let root = daemon.home.path().join("project");
-    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(&root).expect("fixture result");
     let project = services
         .projects
         .add(devbox_projects::AddProject {
             path: root.display().to_string(),
         })
         .await
-        .unwrap()
+        .expect("fixture result")
         .id;
     let p = project.clone();
     services.db.write(move|tx| {
@@ -269,20 +273,29 @@ async fn problems_metadata_keeps_live_history_and_manual_starting_has_no_previou
             let row=serde_json::json!({"run":{"id":id,"projectId":p,"defId":"fixture","kind":"task","state":if i==0 {"running"} else {"stopped"},"exit":null,"startedMs":i,"endedMs":null,"restarts":0,"unit":"devbox-test-problems.service","ready":false,"pid":null,"port":null,"attemptId":"old"},"restart":"no","start_limit":null,"worktree":null,"start_limit_notified":false}).to_string();
             tx.execute("INSERT INTO runtime_runs(id,project_id,started_ms,body) VALUES(?1,?2,?3,?4)",(&id,&p,i,&row))?;
         } Ok(())
-    }).await.unwrap();
-    let store = ExitStore::new(&daemon.paths.data_dir.join("runs"), "history-0").unwrap();
-    store.begin("old").unwrap();
+    }).await.expect("fixture result");
+    let store =
+        ExitStore::new(&daemon.paths.data_dir.join("runs"), "history-0").expect("fixture result");
+    store.begin("old").expect("fixture result");
     std::fs::write(
         store.log_path(),
         record("s", &attempt_marker("old")) + &record("o", "x.ts(1,1): error retired"),
     )
-    .unwrap();
-    let page = services.runs.problem_runs(&project).await.unwrap();
+    .expect("fixture result");
+    let page = services
+        .runs
+        .problem_runs(&project)
+        .await
+        .expect("fixture result");
     assert!(page.truncated);
     assert_eq!(page.items.len(), 129);
     assert!(page.items.iter().any(|r| r.run_id == "history-0"));
-    services.db.write(|tx|{tx.execute("UPDATE runtime_runs SET started_ms=999,body=json_set(body,'$.run.startedMs',999,'$.run.state','starting','$.run.attemptId',NULL) WHERE id='history-0'",[])?;Ok(())}).await.unwrap();
-    let meta = services.runs.run_log_metadata("history-0").await.unwrap();
+    services.db.write(|tx|{tx.execute("UPDATE runtime_runs SET started_ms=999,body=json_set(body,'$.run.startedMs',999,'$.run.state','starting','$.run.attemptId',NULL) WHERE id='history-0'",[])?;Ok(())}).await.expect("fixture result");
+    let meta = services
+        .runs
+        .run_log_metadata("history-0")
+        .await
+        .expect("fixture result");
     assert_eq!(meta.attempt_id, None);
     let run = ProblemRun {
         run_id: meta.run_id,
@@ -299,24 +312,28 @@ async fn problems_metadata_keeps_live_history_and_manual_starting_has_no_previou
             .observe
             .read_problem_batch(&run)
             .await
-            .unwrap()
+            .expect("fixture result")
             .problems
             .is_empty()
     );
-    store.begin("new").unwrap();
+    store.begin("new").expect("fixture result");
     append(
         &store.log_path(),
         &(record("s", &attempt_marker("new")) + &record("o", "x.ts(2,1): error current")),
     );
-    services.db.write(|tx|{tx.execute("UPDATE runtime_runs SET body=json_set(body,'$.run.state','running','$.run.attemptId','new') WHERE id='history-0'",[])?;Ok(())}).await.unwrap();
-    let meta = services.runs.run_log_metadata("history-0").await.unwrap();
+    services.db.write(|tx|{tx.execute("UPDATE runtime_runs SET body=json_set(body,'$.run.state','running','$.run.attemptId','new') WHERE id='history-0'",[])?;Ok(())}).await.expect("fixture result");
+    let meta = services
+        .runs
+        .run_log_metadata("history-0")
+        .await
+        .expect("fixture result");
     let mut new = run;
     new.attempt_id = meta.attempt_id;
     let rows = services
         .observe
         .read_problem_batch(&new)
         .await
-        .unwrap()
+        .expect("fixture result")
         .problems;
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].line, 2);
@@ -331,7 +348,7 @@ async fn problems_watch_a_later_run_directory_and_explicit_old_runs_outside_hist
         .client
         .subscribe("observe.problems.changed")
         .await
-        .unwrap();
+        .expect("fixture result");
     let old = f
         .seed(
             "explicit-old",
@@ -339,9 +356,9 @@ async fn problems_watch_a_later_run_directory_and_explicit_old_runs_outside_hist
             &record("o", "x.ts(7,1): error oldest"),
         )
         .await;
-    bounded(events.next_event()).await.unwrap();
+    bounded(events.next_event()).await.expect("fixture value");
     append(&old.log_path(), &record("e", "x.ts(8,1): error append"));
-    bounded(events.next_event()).await.unwrap();
+    bounded(events.next_event()).await.expect("fixture value");
     let project = f.project.clone();
     f.services.db.write(move|tx|{
         for i in 0..130 {
@@ -349,9 +366,14 @@ async fn problems_watch_a_later_run_directory_and_explicit_old_runs_outside_hist
             let row=serde_json::json!({"run":{"id":id,"projectId":project,"defId":"fixture","kind":"task","state":"stopped","exit":null,"startedMs":i+10,"endedMs":null,"restarts":0,"unit":"devbox-test-problems.service","ready":false,"pid":null,"port":null,"attemptId":null},"restart":"no","start_limit":null,"worktree":null,"start_limit_notified":false}).to_string();
             tx.execute("INSERT INTO runtime_runs(id,project_id,started_ms,body) VALUES(?1,?2,?3,?4)",(&id,&project,i+10,&row))?;
         }Ok(())
-    }).await.unwrap();
+    }).await.expect("fixture result");
     // Explicit log lookup still follows this run outside automatic history.
-    let page = f.services.runs.problem_runs(&f.project).await.unwrap();
+    let page = f
+        .services
+        .runs
+        .problem_runs(&f.project)
+        .await
+        .expect("fixture result");
     assert!(page.truncated);
     assert!(!page.items.iter().any(|r| r.run_id == "explicit-old"));
     let search = f
@@ -366,9 +388,9 @@ async fn problems_watch_a_later_run_directory_and_explicit_old_runs_outside_hist
             limit: 1,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(search.items.is_empty());
-    old.begin("new").unwrap();
+    old.begin("new").expect("fixture result");
     append(
         &old.log_path(),
         &(record("s", &attempt_marker("new")) + &record("o", "x.ts(9,1): error explicit current")),
@@ -386,19 +408,19 @@ async fn problems_new_reader_after_rotation_keeps_only_current_attempt_diagnosti
     let f = Fixture::start().await;
     for (id, cut_in_new) in [("rotate-old", false), ("rotate-current", true)] {
         let store = f.seed(id, "old", "").await;
-        let mut writer = Writer::open(&store.log_path()).unwrap();
+        let mut writer = Writer::open(&store.log_path()).expect("fixture result");
         for _ in 0..20 {
             writer
                 .write_line(
                     Stream::Out,
                     format!("x.ts(1,1): error {}", "o".repeat(100)).as_bytes(),
                 )
-                .unwrap();
+                .expect("fixture result");
         }
-        store.begin("new").unwrap();
+        store.begin("new").expect("fixture result");
         writer
             .write_line(Stream::System, attempt_marker("new").as_bytes())
-            .unwrap();
+            .expect("fixture result");
         if cut_in_new {
             for _ in 0..20 {
                 writer
@@ -406,17 +428,17 @@ async fn problems_new_reader_after_rotation_keeps_only_current_attempt_diagnosti
                         Stream::Out,
                         format!("current padding {}", "x".repeat(100)).as_bytes(),
                     )
-                    .unwrap();
+                    .expect("fixture result");
             }
         }
         writer
             .write_line(Stream::Err, b"x.ts(9,1): error current")
-            .unwrap();
+            .expect("fixture result");
         drop(writer);
         Writer::with_limit(&store.log_path(), 2048)
-            .unwrap()
+            .expect("fixture result")
             .write_line(Stream::Out, b"rotate now")
-            .unwrap();
+            .expect("fixture result");
     }
     // No earlier query or log request registered a collector for these files.
     let page: ProblemsResult = serde_json::from_str(
@@ -427,9 +449,9 @@ async fn problems_new_reader_after_rotation_keeps_only_current_attempt_diagnosti
                 None,
             )
             .await
-            .unwrap(),
+            .expect("fixture result"),
     )
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(page.items.len(), 2);
     assert!(page.items.iter().all(|p| p.line == 9));
     f.stop().await;
@@ -468,8 +490,8 @@ async fn problems_open_original_subdirectory_worktree_and_windows_locations() {
             r"C:\owned\copied\src\x.rs:10:4: error: windows".to_string(),
         ),
     ] {
-        std::fs::create_dir_all(cwd.join("src")).unwrap();
-        std::fs::write(cwd.join("src/x.rs"), "owned fixture").unwrap();
+        std::fs::create_dir_all(cwd.join("src")).expect("fixture result");
+        std::fs::write(cwd.join("src/x.rs"), "owned fixture").expect("fixture result");
         f.seed(id, "attempt", &record("e", &diagnostic)).await;
         let id = id.to_string();
         let original = cwd.display().to_string();
@@ -482,7 +504,7 @@ async fn problems_open_original_subdirectory_worktree_and_windows_locations() {
                 tx.execute("UPDATE runtime_runs SET body=json_set(body,'$.run.windows',json(?1)) WHERE id=?2", (&windows,&id))?;
             }
             Ok(())
-        }).await.unwrap();
+        }).await.expect("fixture result");
     }
     let result = f.query().await;
     assert_eq!(
@@ -491,7 +513,7 @@ async fn problems_open_original_subdirectory_worktree_and_windows_locations() {
         "all source diagnostics, including Windows paths, must be retained"
     );
     for problem in result.items {
-        let id = problem.source.strip_prefix("run:").unwrap();
+        let id = problem.source.strip_prefix("run:").expect("fixture value");
         let expected = match id {
             "subdir" => project.join("nested/src/x.rs"),
             "absolute" => project.join("absolute/src/x.rs"),
@@ -509,7 +531,7 @@ async fn problems_open_original_subdirectory_worktree_and_windows_locations() {
                 column: problem.col,
             })
             .await
-            .unwrap();
+            .expect("fixture result");
         assert_eq!(opened.path, expected.display().to_string());
         assert_eq!((opened.line, opened.column), (10, 4));
     }

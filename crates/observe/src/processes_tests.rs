@@ -17,13 +17,13 @@ pub(crate) fn stat(pid: u32, ticks: u64, start: u64) -> String {
 }
 #[test]
 fn process_stat_cpu_delta_priority_and_disappearing_entries() {
-    let parsed = parse_stat(&stat(32, 100, 1234)).unwrap();
+    let parsed = parse_stat(&stat(32, 100, 1234)).expect("fixture value");
     assert_eq!(parsed.name, "worker (a) b)");
     assert_eq!(parsed.start_ticks, 1234);
     assert_eq!(parsed.cpu_ticks, 100);
     assert_eq!(parsed.rss_pages, 3);
-    let temp = tempfile::tempdir().unwrap();
-    fs::write(temp.path().join("stat"), "btime 1700000000\n").unwrap();
+    let temp = tempfile::tempdir().expect("fixture result");
+    fs::write(temp.path().join("stat"), "btime 1700000000\n").expect("fixture result");
     let now = Arc::new(AtomicU64::new(1000));
     let clock = now.clone();
     let proc = ProcFs::fixture(
@@ -34,8 +34,8 @@ fn process_stat_cpu_delta_priority_and_disappearing_entries() {
     );
     for pid in 10..70 {
         let path = temp.path().join(pid.to_string());
-        fs::create_dir(&path).unwrap();
-        fs::write(path.join("stat"), stat(pid, 100, 1234)).unwrap();
+        fs::create_dir(&path).expect("fixture result");
+        fs::write(path.join("stat"), stat(pid, 100, 1234)).expect("fixture result");
         std::os::unix::fs::symlink(
             if pid == 69 {
                 "/project/sub"
@@ -44,35 +44,39 @@ fn process_stat_cpu_delta_priority_and_disappearing_entries() {
             },
             path.join("cwd"),
         )
-        .unwrap();
+        .expect("fixture result");
     }
-    fs::create_dir(temp.path().join("99")).unwrap(); // exited before stat
+    fs::create_dir(temp.path().join("99")).expect("fixture result"); // exited before stat
     let mut sampler = ProcessSampler::default();
     let projects = vec![ProjectRoot {
         id: "p".into(),
         path: "/project".into(),
     }];
-    let first = sampler.sample(&proc, &projects, &[], Some("p")).unwrap();
+    let first = sampler
+        .sample(&proc, &projects, &[], Some("p"))
+        .expect("fixture result");
     assert_eq!(first.len(), 51);
     assert_eq!(first[0].pid, 69);
     assert_eq!(first[0].start_time_ms, 1_700_000_012_340);
     assert_eq!(first[0].rss_bytes, 12288);
     assert!(first.iter().all(|p| p.cpu_percent == 0.0));
     now.store(2000, Ordering::Relaxed);
-    fs::write(temp.path().join("10/stat"), stat(10, 150, 1234)).unwrap();
-    let next = sampler.sample(&proc, &projects, &[], Some("p")).unwrap();
+    fs::write(temp.path().join("10/stat"), stat(10, 150, 1234)).expect("fixture result");
+    let next = sampler
+        .sample(&proc, &projects, &[], Some("p"))
+        .expect("fixture result");
     assert_eq!(next[0].pid, 69);
     assert_eq!(next[1].pid, 10);
     assert_eq!(next[1].cpu_percent, 50.0);
     for pid in 10..70 {
         let cwd = temp.path().join(format!("{pid}/cwd"));
-        fs::remove_file(&cwd).unwrap();
-        std::os::unix::fs::symlink("/project/sub", cwd).unwrap();
+        fs::remove_file(&cwd).expect("fixture result");
+        std::os::unix::fs::symlink("/project/sub", cwd).expect("fixture result");
     }
     assert_eq!(
         sampler
             .sample(&proc, &projects, &[], Some("p"))
-            .unwrap()
+            .expect("fixture result")
             .len(),
         60,
         "all project rows survive the 50 other-process limit"
@@ -82,15 +86,15 @@ fn process_stat_cpu_delta_priority_and_disappearing_entries() {
             .is_none()
     );
     // PID reuse resets the CPU sample, and prefix siblings are not project children.
-    fs::write(temp.path().join("10/stat"), stat(10, 900, 2000)).unwrap();
+    fs::write(temp.path().join("10/stat"), stat(10, 900, 2000)).expect("fixture result");
     now.store(3000, Ordering::Relaxed);
     assert_eq!(
         sampler
             .sample(&proc, &projects, &[], None)
-            .unwrap()
+            .expect("fixture result")
             .iter()
             .find(|p| p.pid == 10)
-            .unwrap()
+            .expect("fixture value")
             .cpu_percent,
         0.0
     );
@@ -109,11 +113,11 @@ async fn kill_refuses_a_reused_pid_and_signals_only_owned_children() {
             std::process::Command::new("sleep")
                 .arg("60")
                 .spawn()
-                .unwrap(),
+                .expect("fixture result"),
         );
         let child = &mut owned.0;
         let pid = child.id();
-        let current = crate::processes::identity(pid).unwrap();
+        let current = crate::processes::identity(pid).expect("fixture result");
         let result = crate::processes::kill_process(KillProcess {
             pid,
             signal,
@@ -125,7 +129,7 @@ async fn kill_refuses_a_reused_pid_and_signals_only_owned_children() {
             result,
             Err(devbox_protocol::Fail::Domain(ObserveError::StateChanged))
         ));
-        assert!(child.try_wait().unwrap().is_none());
+        assert!(child.try_wait().expect("fixture result").is_none());
         crate::processes::kill_process(KillProcess {
             pid,
             signal,
@@ -133,8 +137,8 @@ async fn kill_refuses_a_reused_pid_and_signals_only_owned_children() {
                 start_time_ms: current.start_time_ms,
             },
         })
-        .unwrap();
-        assert!(!child.wait().unwrap().success());
+        .expect("fixture result");
+        assert!(!child.wait().expect("fixture result").success());
     }
 }
 #[test]

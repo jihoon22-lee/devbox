@@ -16,7 +16,7 @@ async fn insert(f: &RuntimeFixture, project: &str, id: &str, def: &RunDef) -> Ru
         ]
         .concat(),
     )
-    .unwrap();
+    .expect("fixture result");
     let run = Run {
         id: id.into(),
         project_id: project.into(),
@@ -47,7 +47,7 @@ async fn insert(f: &RuntimeFixture, project: &str, id: &str, def: &RunDef) -> Ru
         Ok(())
     })
     .await
-    .unwrap();
+    .expect("fixture result");
     run
 }
 fn definition(f: &RuntimeFixture, id: &str) -> RunDef {
@@ -71,13 +71,13 @@ async fn launch(f: &RuntimeFixture, run: &Run, def: &RunDef) {
     devbox_core::systemd::Systemd
         .run_transient(&args)
         .await
-        .unwrap();
+        .expect("fixture result");
 }
 async fn next(app: &Client) -> RunWindows {
     let raw = bounded(app.raw_call("windows.next", serde_json::json!({}), None))
         .await
-        .unwrap();
-    serde_json::from_str(&raw).unwrap()
+        .expect("fixture result");
+    serde_json::from_str(&raw).expect("fixture result")
 }
 async fn event(app: &Client, r: &RunWindows, event: WindowsOutput) {
     app.raw_call(
@@ -90,13 +90,14 @@ async fn event(app: &Client, r: &RunWindows, event: WindowsOutput) {
         None,
     )
     .await
-    .unwrap();
+    .expect("fixture result");
 }
 async fn finish(f: &RuntimeFixture, run: &Run) -> devbox_runtime::exit_record::ExitRecord {
-    let store = ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id).unwrap();
+    let store =
+        ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id).expect("fixture result");
     bounded(async {
         loop {
-            if let Some(exit) = store.read().unwrap() {
+            if let Some(exit) = store.read().expect("fixture result") {
                 return exit;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -133,7 +134,7 @@ async fn windows_native_worker_preserves_logs_secrets_ready_exit_and_restart_pol
             .await
             .into_iter()
             .find(|r| r.id == run.id)
-            .unwrap()
+            .expect("fixture value")
             .attempt_id,
         None,
         "first Ready precedes database observation"
@@ -185,10 +186,15 @@ async fn windows_native_worker_preserves_logs_secrets_ready_exit_and_restart_pol
     let request2 = bounded(&mut next_request).await;
     assert_eq!(request2.run_id, run.id);
     assert_ne!(request2.attempt_id, request.attempt_id);
-    assert!(f.show(&run.unit)["NRestarts"].parse::<u32>().unwrap() >= 1);
+    assert!(
+        f.show(&run.unit)["NRestarts"]
+            .parse::<u32>()
+            .expect("fixture result")
+            >= 1
+    );
     let worker = Client::connect(&f.daemon.socket, ClientKind::Cli, &f.daemon.instance)
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         worker
             .raw_call(
@@ -219,17 +225,21 @@ async fn windows_native_worker_preserves_logs_secrets_ready_exit_and_restart_pol
     .await;
     let log = std::fs::read_to_string(
         ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id)
-            .unwrap()
+            .expect("fixture result")
             .log_path(),
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(!log.contains(SECRET));
     assert!(log.contains("[REDACTED]"));
     assert!(log.lines().any(|line| line.contains("\to\tOUT [REDACTED]")));
     assert!(log.lines().any(|line| line.contains("\te\tERR [REDACTED]")));
     assert!(log.contains(&devbox_core::run_log::attempt_marker(&request.attempt_id)));
     let rows = f.runs(&client, &project).await;
-    assert!(!serde_json::to_string(&rows).unwrap().contains(SECRET));
+    assert!(
+        !serde_json::to_string(&rows)
+            .expect("fixture result")
+            .contains(SECRET)
+    );
     assert!(!format!("{:?}", f.show(&run.unit)).contains(SECRET));
     server.stop().await;
 }
@@ -264,7 +274,8 @@ async fn windows_native_disconnect_is_unknown_and_does_not_restart_or_duplicate(
     let props = f.show(&run.unit);
     assert_eq!(props["NRestarts"], "0");
     assert_eq!(props["ActiveState"], "failed");
-    let store = ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id).unwrap();
+    let store =
+        ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id).expect("fixture result");
     assert!(store.claim_windows_native(&request.attempt_id).is_err());
     server.stop().await;
 }
@@ -276,8 +287,9 @@ async fn windows_direct_worker_failure_does_not_fallback_and_preserves_masked_st
     let mut f = RuntimeFixture::new();
     f.daemon.stop();
     let executable = f.daemon.home.path().join("absent-windows-interop");
-    std::fs::write(&executable, "#!/usr/bin/python3\nimport json,sys\nr=json.load(sys.stdin)\nassert r['cwd']==\"C:\\\\owned copy's\\\\repo\"\nassert r['env']['TOKEN']=='owned-fixture-token-42'\nassert not any(r['env']['TOKEN'] in a for a in sys.argv)\nprint('DIRECT OUT '+r['env']['TOKEN'],flush=True)\nprint('DIRECT ERR '+r['env']['TOKEN'],file=sys.stderr,flush=True)\nsys.exit(9)\n").unwrap();
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(&executable, "#!/usr/bin/python3\nimport json,sys\nr=json.load(sys.stdin)\nassert r['cwd']==\"C:\\\\owned copy's\\\\repo\"\nassert r['env']['TOKEN']=='owned-fixture-token-42'\nassert not any(r['env']['TOKEN'] in a for a in sys.argv)\nprint('DIRECT OUT '+r['env']['TOKEN'],flush=True)\nprint('DIRECT ERR '+r['env']['TOKEN'],file=sys.stderr,flush=True)\nsys.exit(9)\n").expect("fixture result");
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+        .expect("fixture result");
     let server = Server::start(&f).await;
     let app = bootstrap(&f).await;
     let client = f.daemon.client().await;
@@ -306,10 +318,10 @@ async fn windows_direct_worker_failure_does_not_fallback_and_preserves_masked_st
     assert_eq!(exit.signal, None);
     let log = std::fs::read_to_string(
         ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id)
-            .unwrap()
+            .expect("fixture result")
             .log_path(),
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(log.contains("\to\tDIRECT OUT [REDACTED]"));
     assert!(log.contains("\te\tDIRECT ERR [REDACTED]"));
     assert!(!log.contains(SECRET));
@@ -328,8 +340,9 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
     let client = f.daemon.client().await;
     let project = f.project(&client).await;
     let fake = f.daemon.home.path().join("owned-quiet-native");
-    std::fs::write(&fake,"#!/usr/bin/python3\nimport os,sys,json,time\nr=json.load(sys.stdin)\nopen(r['env']['OWNED_PID_FILE'],'w').write(str(os.getpid()))\ntime.sleep(60)\n").unwrap();
-    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(&fake,"#!/usr/bin/python3\nimport os,sys,json,time\nr=json.load(sys.stdin)\nopen(r['env']['OWNED_PID_FILE'],'w').write(str(os.getpid()))\ntime.sleep(60)\n").expect("fixture result");
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700))
+        .expect("fixture result");
     let tokens = Arc::new(Mutex::new(HashMap::new()));
     let (output, mut events) = tokio::sync::mpsc::channel::<WindowsEvent>(16);
     let proxy_app = app.clone();
@@ -342,7 +355,10 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
                 .await
                 .is_err()
             {
-                native_window_protocol::finish_run(&mut proxy_tokens.lock().unwrap(), &key);
+                native_window_protocol::finish_run(
+                    &mut proxy_tokens.lock().expect("fixture result"),
+                    &key,
+                );
             }
         }
     });
@@ -371,7 +387,10 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
         };
         let key = (request.run_id.clone(), request.attempt_id.clone());
         let token = CancellationToken::new();
-        tokens.lock().unwrap().insert(key, token.clone());
+        tokens
+            .lock()
+            .expect("fixture result")
+            .insert(key, token.clone());
         let executable = fake.clone();
         let sender = output.clone();
         children.push(tokio::spawn(async move {
@@ -403,7 +422,7 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
             run_id: rows[0].0.id.clone(),
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     tokio::time::timeout(Duration::from_secs(4), async {
         while Path::new(&format!("/proc/{}", rows[0].1)).exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -417,13 +436,13 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
         "unrelated native child remains alive"
     );
     assert_eq!(f.show(&rows[1].0.unit)["ActiveState"], "active");
-    assert_eq!(tokens.lock().unwrap().len(), 1);
+    assert_eq!(tokens.lock().expect("fixture result").len(), 1);
     let log = std::fs::read_to_string(
         ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &rows[1].0.id)
-            .unwrap()
+            .expect("fixture result")
             .log_path(),
     )
-    .unwrap();
+    .expect("fixture result");
     assert!(
         log.lines().all(|line| line.contains("\ts\t")),
         "heartbeat never becomes stdout/stderr log data"
@@ -433,7 +452,7 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
             .await
             .into_iter()
             .find(|r| r.id == rows[1].0.id)
-            .unwrap()
+            .expect("fixture value")
             .ready,
         "heartbeat does not mark readiness"
     );
@@ -442,12 +461,12 @@ async fn windows_quiet_stop_cancels_matching_native_child_and_keeps_other_run_al
             run_id: rows[1].0.id.clone(),
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     for child in children {
-        bounded(child).await.unwrap();
+        bounded(child).await.expect("fixture result");
     }
     drop(output);
-    bounded(proxy).await.unwrap();
+    bounded(proxy).await.expect("fixture result");
     assert!(!Path::new(&format!("/proc/{}", rows[1].1)).exists());
     server.stop().await;
 }

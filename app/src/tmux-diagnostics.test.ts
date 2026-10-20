@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,4 +50,55 @@ test("owned tmux diagnostics retain version, verbose server logs and teardown st
 
 test("diagnostics refuse unowned tmux names before creating a wrapper", () => {
   expect(() => new TmuxDiagnostics("/unused", "prod", {})).toThrow("unowned");
+});
+
+test.each([
+  ["control attach", ["-C", "attach", "-t", "=owned"]],
+  ["attach-session alias", ["-C", "attach-session", "-t", "=owned"]],
+  ["compound grid attach and resize", ["-C", "attach", "-t", "=owned", ";", "refresh-client", "-C", "80,24"]],
+])("diagnostic wrapper preserves the client PID for %s", async (_name, args) => {
+  const home = mkdtempSync(join(tmpdir(), "devbox-tmux-client-"));
+  const instance = `test-${randomBytes(6).toString("hex")}`;
+  const socket = `devbox-${instance}`;
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
+  delete env.TMUX;
+  delete env.TMUX_TMPDIR;
+  const diagnostics = new TmuxDiagnostics(home, instance, env);
+  diagnostics.install(bin);
+  env.PATH = `${bin}:${env.PATH}`;
+  let client: ReturnType<typeof spawn> | undefined;
+  try {
+    execFileSync(
+      "tmux",
+      ["-L", socket, "-f", "/dev/null", "new-session", "-d", "-s", "owned", "-c", home, "sleep 30"],
+      { env, timeout: 5000 },
+    );
+    client = spawn("tmux", ["-L", socket, "-f", "/dev/null", ...args], { env, stdio: ["pipe", "ignore", "ignore"] });
+    const pid = client.pid;
+    expect(pid).toBeGreaterThan(1);
+    await expect
+      .poll(
+        () =>
+          execFileSync(diagnostics.binary, ["-L", socket, "list-clients", "-F", "#{client_pid}"], {
+            env,
+            encoding: "utf8",
+            timeout: 1000,
+          })
+            .trim()
+            .split("\n"),
+        { timeout: 2000 },
+      )
+      .toContain(String(pid));
+  } finally {
+    const exited =
+      client && client.exitCode === null && client.signalCode === null
+        ? new Promise<void>((resolve) => client!.once("exit", () => resolve()))
+        : Promise.resolve();
+    client?.kill();
+    await stopOwnedTmux(instance, env);
+    await exited;
+    rmSync(home, { recursive: true, force: true });
+  }
 });

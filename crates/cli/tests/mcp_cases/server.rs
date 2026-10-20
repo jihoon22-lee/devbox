@@ -10,7 +10,7 @@ pub struct Server {
 }
 impl Server {
     pub async fn start(d: &TestDaemon, slice: Option<String>) -> Self {
-        let mut services = daemon::build_services(d.paths.clone()).unwrap();
+        let mut services = daemon::build_services(d.paths.clone()).expect("fixture result");
         let secrets = Arc::new(
             devbox_secrets::SecretsService::with_key(
                 services.db.clone(),
@@ -18,7 +18,7 @@ impl Server {
                 devbox_secrets::crypto::Key::from_bytes([7; 32]),
             )
             .await
-            .unwrap(),
+            .expect("fixture result"),
         );
         let mut execution = devbox_runtime::ExecutionConfig::new(d.paths.clone());
         execution.executable = env!("CARGO_BIN_EXE_devbox").into();
@@ -32,13 +32,13 @@ impl Server {
             .with_execution(execution)
             .with_secrets(secrets.clone()),
         );
-        let inner = Arc::get_mut(&mut services).unwrap();
+        let inner = Arc::get_mut(&mut services).expect("fixture value");
         inner.secrets = secrets;
         inner.runs = runs;
         if d.socket.exists() {
-            std::fs::remove_file(&d.socket).unwrap();
+            std::fs::remove_file(&d.socket).expect("fixture result");
         }
-        let listener = tokio::net::UnixListener::bind(&d.socket).unwrap();
+        let listener = tokio::net::UnixListener::bind(&d.socket).expect("fixture result");
         let cancel = CancellationToken::new();
         let task = tokio::spawn(daemon::server::serve(
             listener,
@@ -53,8 +53,8 @@ impl Server {
     }
     pub async fn seed(&self, d: &TestDaemon, project: &str, id: &str, started: u64, text: &str) {
         let store = devbox_runtime::exit_record::ExitStore::new(&d.paths.data_dir.join("runs"), id)
-            .unwrap();
-        store.begin("owned").unwrap();
+            .expect("fixture result");
+        store.begin("owned").expect("fixture result");
         std::fs::write(
             store.log_path(),
             format!(
@@ -62,7 +62,7 @@ impl Server {
                 devbox_core::run_log::attempt_marker("owned")
             ),
         )
-        .unwrap();
+        .expect("fixture result");
         let row=serde_json::json!({"run":{"id":id,"projectId":project,"defId":"fixture","kind":"task","state":"stopped","exit":null,"startedMs":started,"endedMs":started+1,"restarts":0,"unit":"devbox-test-mcp.service","ready":false,"pid":null,"port":null,"attemptId":"owned"},"source_cwd":d.home.path().join("project").display().to_string(),"restart":"no","start_limit":null,"worktree":null,"start_limit_notified":false}).to_string();
         let id = id.to_owned();
         let project = project.to_owned();
@@ -76,11 +76,14 @@ impl Server {
                 Ok(())
             })
             .await
-            .unwrap();
+            .expect("fixture result");
     }
     pub async fn stop(mut self) {
         self.cancel.cancel();
-        bounded(self.task.take().unwrap()).await.unwrap().unwrap();
+        bounded(self.task.take().expect("fixture value"))
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
     }
 }
 impl Drop for Server {

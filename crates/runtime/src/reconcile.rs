@@ -210,6 +210,43 @@ fn polling_deadline(
     }
     *next
 }
+
+fn start_limit_hit(
+    unit: &devbox_core::systemd::UnitState,
+    policy: RestartPolicy,
+    limit: Option<&StartLimit>,
+    exit: Option<&exit_record::ExitRecord>,
+) -> bool {
+    if unit.result == "start-limit-hit" {
+        return true;
+    }
+    let Some(limit) = limit else {
+        return false;
+    };
+    if limit.burst == 0
+        || limit.interval_sec == 0
+        || unit.n_restarts < limit.burst
+        || unit.active_state != "failed"
+        || unit.sub_state != "failed"
+    {
+        return false;
+    }
+    // systemd can retain the previous invocation's Result when the automatic
+    // restart job hits its start limit (systemd/systemd#32203).
+    match unit.result.as_str() {
+        "success" => {
+            policy == RestartPolicy::Always
+                && exit.is_some_and(|e| e.code == Some(0) && e.signal.is_none())
+        }
+        "exit-code" => {
+            policy != RestartPolicy::No && exit.is_some_and(|e| e.code.is_some_and(|c| c != 0))
+        }
+        "signal" | "core-dump" => {
+            policy != RestartPolicy::No && exit.is_some_and(|e| e.signal.is_some())
+        }
+        _ => false,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,42 +351,4 @@ mod tests {
             Some(now + Duration::from_secs(110))
         );
     }
-}
-
-fn start_limit_hit(
-    unit: &devbox_core::systemd::UnitState,
-    policy: RestartPolicy,
-    limit: Option<&StartLimit>,
-    exit: Option<&exit_record::ExitRecord>,
-) -> bool {
-    if unit.result == "start-limit-hit" {
-        return true;
-    }
-    let Some(limit) = limit else {
-        return false;
-    };
-    if limit.burst == 0
-        || limit.interval_sec == 0
-        || unit.n_restarts < limit.burst
-        || unit.active_state != "failed"
-        || unit.sub_state != "failed"
-    {
-        return false;
-    }
-    // systemd can retain the previous invocation's Result when the automatic
-    // restart job hits its start limit (systemd/systemd#32203).
-    let restartable = match unit.result.as_str() {
-        "success" => {
-            policy == RestartPolicy::Always
-                && exit.is_some_and(|e| e.code == Some(0) && e.signal.is_none())
-        }
-        "exit-code" => {
-            policy != RestartPolicy::No && exit.is_some_and(|e| e.code.is_some_and(|c| c != 0))
-        }
-        "signal" | "core-dump" => {
-            policy != RestartPolicy::No && exit.is_some_and(|e| e.signal.is_some())
-        }
-        _ => false,
-    };
-    restartable
 }

@@ -150,23 +150,23 @@ fn logfile_reader_caps_line_count_and_rejects_oversized_physical_lines() {
 fn logfile_rotation_restores_the_attempt_at_cut_not_the_latest_attempt() {
     use devbox_core::run_log::{attempt_marker, parse_attempt_marker};
     for cut_in_new in [false, true] {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("fixture result");
         let path = dir.path().join("run.log");
-        let mut writer = Writer::open(&path).unwrap();
+        let mut writer = Writer::open(&path).expect("fixture result");
         writer
             .write_line(Stream::System, attempt_marker("old").as_bytes())
-            .unwrap();
+            .expect("fixture result");
         for n in 0..20 {
             writer
                 .write_line(
                     Stream::Out,
                     format!("old-{n}-{}", "x".repeat(100)).as_bytes(),
                 )
-                .unwrap();
+                .expect("fixture result");
         }
         writer
             .write_line(Stream::System, attempt_marker("new").as_bytes())
-            .unwrap();
+            .expect("fixture result");
         if cut_in_new {
             for n in 0..20 {
                 writer
@@ -174,29 +174,31 @@ fn logfile_rotation_restores_the_attempt_at_cut_not_the_latest_attempt() {
                         Stream::Out,
                         format!("new-{n}-{}", "x".repeat(100)).as_bytes(),
                     )
-                    .unwrap();
+                    .expect("fixture result");
             }
         }
         writer
             .write_line(Stream::Err, b"x.ts(9,1): error current")
-            .unwrap();
+            .expect("fixture result");
         drop(writer);
-        let before = fs::read_to_string(&path).unwrap();
+        let before = fs::read_to_string(&path).expect("fixture result");
         let expected_attempt = if cut_in_new { "new" } else { "old" };
         let expected_marker = before
             .lines()
             .find(|line| line.ends_with(&format!("\ts\t{}", attempt_marker(expected_attempt))))
-            .unwrap()
+            .expect("fixture value")
             .to_owned();
-        let mut writer = Writer::with_limit(&path, 2048).unwrap();
-        writer.write_line(Stream::Out, b"after rotation").unwrap();
-        let (lines, end) = read_range(&path, 0, 256).unwrap();
+        let mut writer = Writer::with_limit(&path, 2048).expect("fixture result");
+        writer
+            .write_line(Stream::Out, b"after rotation")
+            .expect("fixture result");
+        let (lines, end) = read_range(&path, 0, 256).expect("fixture result");
         assert!(end <= 2048);
         assert_eq!(
             lines[1], expected_marker,
             "restore the original marker timestamp"
         );
-        let restored = lines[1].splitn(3, '\t').nth(2).unwrap();
+        let restored = lines[1].splitn(3, '\t').nth(2).expect("fixture value");
         assert_eq!(
             parse_attempt_marker(restored),
             Some(if cut_in_new { "new" } else { "old" })
@@ -218,7 +220,7 @@ fn logfile_rotation_restores_the_attempt_at_cut_not_the_latest_attempt() {
                 .any(|l| l.ends_with("x.ts(9,1): error current"))
         );
         assert_eq!(
-            lines.last().unwrap().splitn(3, '\t').nth(2),
+            lines.last().expect("fixture value").splitn(3, '\t').nth(2),
             Some("after rotation")
         );
     }

@@ -2,12 +2,12 @@ use super::*;
 use std::time::Duration;
 
 async fn consent(f: &Fixture) {
-    fs::create_dir_all(f.repo.join(".devbox")).unwrap();
+    fs::create_dir_all(f.repo.join(".devbox")).expect("fixture result");
     fs::write(
         f.repo.join(".devbox/devbox.toml"),
         "[agent]\ntest='printf test-only'\n",
     )
-    .unwrap();
+    .expect("fixture result");
     let preview = f
         .svc
         .projects
@@ -23,17 +23,17 @@ async fn consent(f: &Fixture) {
             vec![],
         )
         .await
-        .unwrap();
+        .expect("fixture result");
     f.svc
         .projects
         .trust_approve(devbox_projects::TrustApprove {
             id: f.project.clone(),
             expected_canonical_path: preview.canonical_path,
-            expected_digest: preview.digest.unwrap(),
+            expected_digest: preview.digest.expect("fixture value"),
             expected_scope_version: preview.scope_version,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
 }
 #[tokio::test]
 async fn agent_test_runner_receives_only_approved_test_and_holds_action_lock_until_start_finishes()
@@ -54,15 +54,15 @@ async fn agent_test_runner_receives_only_approved_test_and_holds_action_lock_unt
                 spec.snapshot.config().agent.test.as_deref(),
                 Some(spec.command.as_str())
             );
-            entered_tx.send(()).unwrap();
-            release_rx.await.unwrap();
+            entered_tx.send(()).expect("fixture result");
+            release_rx.await.expect("fixture result");
             Ok(AgentTest {
                 run_id: "owned-run".into(),
             })
         })
         .await
     });
-    entered_rx.await.unwrap();
+    entered_rx.await.expect("fixture result");
     assert!(
         f.svc.actions.try_lock().is_err(),
         "runner await must retain action lock"
@@ -76,7 +76,7 @@ async fn agent_test_runner_receives_only_approved_test_and_holds_action_lock_unt
     drop(rebase);
     let expect =
         serde_json::from_value(serde_json::json!({"headOid":"unused", "unmergedCommits":0}))
-            .unwrap();
+            .expect("fixture result");
     let mut discard = Box::pin(f.svc.discard(crate::DiscardAgent {
         id: task.id.clone(),
         expect,
@@ -87,8 +87,15 @@ async fn agent_test_runner_receives_only_approved_test_and_holds_action_lock_unt
             .is_err()
     );
     drop(discard);
-    release_tx.send(()).unwrap();
-    assert_eq!(runner.await.unwrap().unwrap().run_id, "owned-run");
+    release_tx.send(()).expect("fixture result");
+    assert_eq!(
+        runner
+            .await
+            .expect("fixture result")
+            .expect("fixture result")
+            .run_id,
+        "owned-run"
+    );
     assert!(f.svc.actions.try_lock().is_ok());
     unchanged(&f, &task).await;
 }
@@ -104,7 +111,7 @@ async fn agent_test_closed_unsafe_and_unapproved_never_call_runner() {
                 f.repo.join(".devbox/devbox.toml"),
                 "[agent]\ntest='changed'\n",
             )
-            .unwrap(),
+            .expect("fixture result"),
         }
         save(&f, &task).await;
         let result = f

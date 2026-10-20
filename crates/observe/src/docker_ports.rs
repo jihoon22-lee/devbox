@@ -104,7 +104,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     #[test]
     fn docker_ports_json_published_ipv4_ipv6_and_ranges() {
-        let rows = parse(r#"{"ID":"abc","Ports":"0.0.0.0:8080->80/tcp, [::]:8081->80/tcp, 127.0.0.1:9000-9002->9000-9002/udp, 80/tcp"}"#).unwrap();
+        let rows = parse(r#"{"ID":"abc","Ports":"0.0.0.0:8080->80/tcp, [::]:8081->80/tcp, 127.0.0.1:9000-9002->9000-9002/udp, 80/tcp"}"#).expect("fixture value");
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[1].addr, "::");
         assert_eq!(rows[4].port, 9002);
@@ -116,10 +116,11 @@ mod tests {
     }
     #[tokio::test]
     async fn docker_ports_fake_cli_checks_argv_and_unavailable() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("fixture result");
         let script = dir.path().join("docker");
-        std::fs::write(&script, "#!/bin/sh\n[ \"$*\" = 'ps --format json' ] || exit 9\nprintf '%s\\n' '{\"ID\":\"fake\",\"Ports\":\"0.0.0.0:4321->80/tcp\"}'\n").unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::write(&script, "#!/bin/sh\n[ \"$*\" = 'ps --format json' ] || exit 9\nprintf '%s\\n' '{\"ID\":\"fake\",\"Ports\":\"0.0.0.0:4321->80/tcp\"}'\n").expect("fixture result");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
+            .expect("fixture result");
         assert_eq!(snapshot(&script).await[0].port, 4321);
         assert!(snapshot(&dir.path().join("missing")).await.is_empty());
     }

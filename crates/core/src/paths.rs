@@ -374,7 +374,8 @@ mod tests {
             ("dev", "devbox-dev"),
             ("test-owned", "devbox"),
         ] {
-            let p = Paths::resolve(Instance::parse(instance).unwrap(), &e).unwrap();
+            let p = Paths::resolve(Instance::parse(instance).expect("fixture result"), &e)
+                .expect("fixture result");
             assert_eq!(p.xdg_config_home, PathBuf::from("/custom/config"));
             assert_eq!(p.config_dir, PathBuf::from("/custom/config").join(storage));
             assert_eq!(p.instance_config_dir, p.config_dir.join(instance));
@@ -399,34 +400,36 @@ mod tests {
 
     #[test]
     fn accept_config_does_not_load_prod_roots_or_secret_names() {
-        let temp = tempfile::tempdir().unwrap();
-        let e = env(&[("HOME", temp.path().to_str().unwrap())]);
-        let prod = Paths::resolve(Instance::parse("prod").unwrap(), &e).unwrap();
-        let accept = Paths::resolve(Instance::parse("accept").unwrap(), &e).unwrap();
-        prod.ensure_dirs().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
+        let e = env(&[("HOME", temp.path().to_str().expect("fixture value"))]);
+        let prod = Paths::resolve(Instance::parse("prod").expect("fixture result"), &e)
+            .expect("fixture result");
+        let accept = Paths::resolve(Instance::parse("accept").expect("fixture result"), &e)
+            .expect("fixture result");
+        prod.ensure_dirs().expect("fixture result");
         std::fs::write(
             prod.config_dir.join("config.toml"),
             "[secrets]\nnames=['PROD_SENTINEL']\n",
         )
-        .unwrap();
+        .expect("fixture result");
         std::fs::write(
             prod.config_dir.join("config.local.toml"),
             "[windows]\nroot='C:\\prod-fixture'\n",
         )
-        .unwrap();
-        let config = crate::Config::load(&accept).unwrap();
+        .expect("fixture result");
+        let config = crate::Config::load(&accept).expect("fixture result");
         assert!(config.secrets.names.is_empty());
         assert_eq!(config.windows.root, None);
-        accept.ensure_dirs().unwrap();
+        accept.ensure_dirs().expect("fixture result");
         std::fs::write(
             accept.config_dir.join("config.local.toml"),
             "[windows]\nroot='C:\\accept-fixture'\n[secrets]\nnames=['ACCEPT_SENTINEL']\n",
         )
-        .unwrap();
-        let config = crate::Config::load(&accept).unwrap();
+        .expect("fixture result");
+        let config = crate::Config::load(&accept).expect("fixture result");
         assert_eq!(config.windows.root.as_deref(), Some(r"C:\accept-fixture"));
         assert_eq!(config.secrets.names, ["ACCEPT_SENTINEL"]);
-        let prod_config = crate::Config::load(&prod).unwrap();
+        let prod_config = crate::Config::load(&prod).expect("fixture result");
         assert_eq!(
             prod_config.windows.root.as_deref(),
             Some(r"C:\prod-fixture")

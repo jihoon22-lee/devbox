@@ -55,10 +55,10 @@ fn background_with_closed_pipes_is_also_terminated() {
 struct EscapedFixture(PathBuf);
 impl Drop for EscapedFixture {
     fn drop(&mut self) {
-        if let Ok(pid) = std::fs::read_to_string(&self.0) {
-            if let Ok(pid) = pid.parse::<i32>() {
-                let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
-            }
+        if let Ok(pid) = std::fs::read_to_string(&self.0)
+            && let Ok(pid) = pid.parse::<i32>()
+        {
+            let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
         }
     }
 }

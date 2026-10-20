@@ -94,6 +94,7 @@ pub async fn serve(
         }
     };
     shutdown.cancel();
+    daemon.services.runs.begin_shutdown();
     while connections.join_next().await.is_some() {}
     daemon.dedupe.tracker.close();
     daemon.dedupe.tracker.wait().await;

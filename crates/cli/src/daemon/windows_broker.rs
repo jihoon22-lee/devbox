@@ -173,7 +173,13 @@ mod tests {
         let owner = broker.clone();
         let task = tokio::spawn(async move { owner.next(generation, cancel).await });
         loop {
-            if broker.state.lock().unwrap().waiter.is_some() {
+            if broker
+                .state
+                .lock()
+                .expect("fixture result")
+                .waiter
+                .is_some()
+            {
                 break;
             }
             tokio::task::yield_now().await;
@@ -188,21 +194,27 @@ mod tests {
         let (mut events, _) = broker
             .submit(request(), CancellationToken::new())
             .await
-            .unwrap();
-        let request = native.await.unwrap().unwrap();
+            .expect("fixture result");
+        let request = native
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
         assert_eq!(request.attempt_id, "attempt");
         for n in 0..16 {
-            broker.output(7, output(n)).await.unwrap();
+            broker.output(7, output(n)).await.expect("fixture result");
         }
         let b = broker.clone();
         let blocked = tokio::spawn(async move { b.output(7, output(16)).await });
         tokio::task::yield_now().await;
         assert!(!blocked.is_finished());
         for n in 0..17 {
-            let e = events.recv().await.unwrap();
+            let e = events.recv().await.expect("fixture value");
             assert!(matches!(e.event,WindowsOutput::Stdout{data} if data==[n]));
         }
-        blocked.await.unwrap().unwrap();
+        blocked
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
         broker
             .output(
                 7,
@@ -215,7 +227,7 @@ mod tests {
                 },
             )
             .await
-            .unwrap();
+            .expect("fixture result");
         broker
             .output(
                 7,
@@ -226,13 +238,13 @@ mod tests {
                 },
             )
             .await
-            .unwrap();
+            .expect("fixture result");
         assert!(matches!(
-            events.recv().await.unwrap().event,
+            events.recv().await.expect("fixture value").event,
             WindowsOutput::Stderr { .. }
         ));
         assert!(matches!(
-            events.recv().await.unwrap().event,
+            events.recv().await.expect("fixture value").event,
             WindowsOutput::Finished { code: 78 }
         ));
         assert!(events.recv().await.is_none());
@@ -245,8 +257,11 @@ mod tests {
         let (_, lost) = broker
             .submit(request(), CancellationToken::new())
             .await
-            .unwrap();
-        native.await.unwrap().unwrap();
+            .expect("fixture result");
+        native
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
         assert!(broker.output(2, output(1)).await.is_err());
         cancel.cancel();
         assert!(lost.is_cancelled());

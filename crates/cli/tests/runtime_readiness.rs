@@ -291,7 +291,7 @@ async fn readiness_poll_is_once_per_second_and_stops_at_timeout() {
     let readiness: Readiness = Arc::new({
         let samples = samples.clone();
         move |_| {
-            samples.lock().unwrap().push(Instant::now());
+            samples.lock().expect("fixture result").push(Instant::now());
             Box::pin(async { false })
         }
     });
@@ -317,7 +317,7 @@ async fn readiness_poll_is_once_per_second_and_stops_at_timeout() {
         .await,
         Err(Fail::Domain(RuntimeError::NotReady { .. }))
     ));
-    let observed = samples.lock().unwrap().clone();
+    let observed = samples.lock().expect("fixture result").clone();
     assert!(
         (1..=2).contains(&observed.len()),
         "two-second deadline permits at most the initial and one subsequent poll, got {}",
@@ -330,7 +330,10 @@ async fn readiness_poll_is_once_per_second_and_stops_at_timeout() {
         "readiness callback must not poll faster than once per second"
     );
     tokio::time::sleep(Duration::from_millis(1100)).await;
-    assert_eq!(samples.lock().unwrap().len(), observed.len());
+    assert_eq!(
+        samples.lock().expect("fixture result").len(),
+        observed.len()
+    );
 }
 
 #[tokio::test]
@@ -346,7 +349,7 @@ async fn readiness_poll_clamps_sleep_and_never_checks_after_deadline() {
         move |_| {
             let initial = calls.fetch_add(1, Ordering::Relaxed) == 0;
             if initial {
-                *first.lock().unwrap() = Some(Instant::now());
+                *first.lock().expect("fixture result") = Some(Instant::now());
             }
             Box::pin(async move {
                 if initial {
@@ -381,7 +384,7 @@ async fn readiness_poll_clamps_sleep_and_never_checks_after_deadline() {
         .await,
         Err(Fail::Domain(RuntimeError::NotReady { .. }))
     ));
-    let elapsed = first.lock().unwrap().unwrap().elapsed();
+    let elapsed = first.lock().expect("fixture result").unwrap().elapsed();
     assert!(
         elapsed >= Duration::from_millis(1900) && elapsed < Duration::from_millis(2400),
         "remaining deadline bounds the one-second sleep: {elapsed:?}"

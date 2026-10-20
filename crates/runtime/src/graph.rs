@@ -64,13 +64,13 @@ impl RuntimeService {
         let (local, _) = self.local(&p.project_id).await?;
         let mut merged = merge(state.config.definitions(), local.clone())?;
         let order = order(&merged, &p.id)?;
-        if let Some(expected) = schedule {
-            if !merged.defs.contains(expected) {
-                return Err(RuntimeError::ProjectConfigChanged {
-                    id: p.project_id.clone(),
-                }
-                .into());
+        if let Some(expected) = schedule
+            && !merged.defs.contains(expected)
+        {
+            return Err(RuntimeError::ProjectConfigChanged {
+                id: p.project_id.clone(),
             }
+            .into());
         }
         if schedule.is_some_and(|s| s.source == DefinitionSource::ProjectFile)
             || merged.defs.iter().any(|d| {
@@ -86,13 +86,13 @@ impl RuntimeService {
                 return Err(invalid(&p.id, "project path changed").into());
             }
             merged = merge(snapshot.config().run_config().definitions(), local)?;
-            if let Some(expected) = schedule {
-                if !merged.defs.contains(expected) {
-                    return Err(RuntimeError::ProjectConfigChanged {
-                        id: p.project_id.clone(),
-                    }
-                    .into());
+            if let Some(expected) = schedule
+                && !merged.defs.contains(expected)
+            {
+                return Err(RuntimeError::ProjectConfigChanged {
+                    id: p.project_id.clone(),
                 }
+                .into());
             }
         }
         prepare(self, p, &project.path, merged, std::slice::from_ref(&p.id)).await

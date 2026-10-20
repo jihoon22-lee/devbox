@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 Task1–15c·묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS, 미해결0 |
-| 다음 할 일 | Task16 관찰 UI 보완·직접 고유33개·독립 검토·완료 Biome350 PASS. 다음 첫 전체 검증·accept 설치 수용·단일 PR. Codex 입력 대기 미검출은 비차단 이월. S2 수용 완료 아님 |
+| 단계 | S2 구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기. Task16 통합 회귀 수정·직접140개·브랜치 독립 검토 PASS, 미해결0. Windows 설치 수용·필수 CI3·PR/머지는 미완료 |
+| 다음 할 일 | 완료 Biome·커밋→최초 push→Windows workflow의 동일 SHA accept 설치본 수용→단일 S2 PR·필수 CI3·리뷰 상한 판정·squash. 수용 도구 독립 검토 지적4건 수정 중, 현재 interop errno110으로 설치 수용 미실행. Codex 입력 대기 미검출은 비차단 이월 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · Task16 관찰 UI 보완: 프로젝트 우선 프로세스·TERM 확인, 포트 브라우저·시작 시각 검증 종료. 직접 고유33개·TS 생성/타입·독립 검토·완료 Biome350 PASS, 미해결0. 전체 검사·실제 Windows·CI/PR 미실행 |
+| 마지막 갱신 | 2026-10-21 · 첫 전체 검사 실패를 보존하고 직접 영향만 수정·재검증 완료. strict Clippy·실패 E2E3·타입 PASS. SC9 60.000603초 CPU0.233331%·RSS39,899,136B PASS. 제품75개 동결·독립 최종 검토 PASS. 다음 설치 수용·CI/PR |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -26,7 +26,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-14 | 설치본 수용이 prod 자원과 충돌 | 사용자 | 결정(권장안): 에이전트 수용 전용 `accept` 채널(별도 identifier·폴더·프로토콜·자동 시작·WSL 인스턴스·채널 전용 바이너리/unit 템플릿)을 S2 Task 15c로 만들고, 스모크는 `windows-acceptance` 잠금(Task 15b)으로 한 번에 하나만. 그 뒤 prod 설치본·`devbox@prod`는 바꾸지 않고 있어도 멈추지 않음. Task15c 로컬 완료·좁은79개·독립 검토·완료 Biome344 PASS이며 실제 설치 수용은 Task16 미실행. 01 §6.1·§10·§11, 00 §2.2·§3.6, 05·06·07 반영 |
 | 2026-10-14 | S2 계획에 S1 신뢰 승인 미반영 | 계획 보강 | 해결(문서): 01 §7 "실행 범위 버전 2"와 05 Task 2·4·5·6·12·13·15·16에 반영. 범위 1 정의만 있는 설정의 기존 승인은 유지, 화면 정의 저장은 직전 바이트가 승인됐거나 승인이 필요 없었을 때만 새 digest 승인을 기록. 구현은 S2에서 |
 | 2026-10-14 | S1 인계 커밋 백업 | 사용자 | 결정: `v1/s2-runs`를 PR 없이 push(브랜치 push는 CI 미실행). 같은 날 후속 지시로 대체: 인계·보강 문서 커밋을 별도 문서 PR로 main에 squash 머지하고, S2 브랜치·worktree는 머지 뒤 최신 main에서 다시 만든다. 이 문서 PR은 00 §3의 "PR 7개"에 세지 않는 사용자 지시 예외이며, S2 PR은 Task 16에서 한 번만 연다 |
-| 2026-10-14 | CI E2E tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과) | 에이전트 | 미결: 원인 미확정(CI tmux 3.4, 로컬 3.6). Task15b에 소유 tmux 버전·server 로그·정리 전후 상태/명령 종료 수집 구현, 직접 fixture PASS. 실제 전체 E2E는 Task16 미실행이며 원인 해결로 표시하지 않음. 재발하면 이 행에 근거를 더하고 원인 수정, 재시도 래퍼 금지(00 §3.5) |
+| 2026-10-14 | CI E2E tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과) | 에이전트 | 미결: 원인 미확정(CI tmux 3.4, 로컬 3.6). Task15b에 소유 tmux 버전·server 로그·정리 전후 상태/명령 종료 수집 구현, 직접 fixture PASS. Task16 첫 E2E에서 터미널2개 실패했지만 서버는 살아 있었고 진단 wrapper가 PID를 바꾼 별도 결함이었다. exec로 PID를 보존해 실패2개 PASS. 기존 CI tmux3.4 비정상 종료 원인 해결로 표시하지 않음. 재발하면 원인 수정, 재시도 래퍼 금지(00 §3.5) |
 | 2026-10-20 | Codex 새 worktree 폴더 신뢰 화면의 입력 대기 미검출 | 에이전트 | 확인·비차단 이월: CLI 0.163.0 실제 `agents.create(worktree=true)`에서 신뢰 화면 표시, 45초 `running` 유지·`waiting` 0·PONG 미완료. 설정 쓰기를 피하려고 승인 선택 안 함. Ctrl-C 종료 `review/toolExited=true`, 사용자 config 해시 불변·소유 자원 정리 확인. 증거 `devbox-verification/s2-task1-20261020/` (S1 우회 실행은 새 worktree PASS 근거가 아니며 이번에도 PASS로 바꾸지 않음). 사용자 지시대로 S2 계속 |
 | 2026-10-14 | PR #640 최신 자동 리뷰 한도 소진 | 사용자 | 이번 PR의 최종 SHA `c28e4cab` 자동 코드/보안 리뷰만 생략하고 머지·정리하도록 명시 승인. 필수 CI·Windows 실기·별도 검토 완료, 보호 규칙 유지. 향후 PR에는 예외를 적용하지 않음 |
 | 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push(`aa5c6785`), main에는 S0b PR과 함께 |
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q·R 및 Task15c 로컬 완료. Task15c 고유79개·독립 최종 검토·Biome344 PASS, 미해결0. 전체 검사·Windows 실기는 Task16 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 구현 완료·로컬 최종 검증/SC9/브랜치 검토 완료. accept 설치 수용·필수 CI3·단일 PR·squash 대기 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -101,7 +101,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
-| S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
+| S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | 작업 중 | 2026-10-21 | | 첫 전체 검사→직접 회귀140개·strict Clippy·E2E 실패3개 수정 PASS, SC9·독립 최종 검토 PASS. 설치 수용·CI·PR 미완료 |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
 | S3 | T | Task 4–6 |  | 대기 | | | |
@@ -307,6 +307,16 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - `Rust (Windows)` 필수 job을 유지해 PR/manual에서 prod `devbox-setup`·accept `devbox-setup-accept`를 각각 만든다(태그는 prod만). 채널별 target·env 복원·self-check·receipt channel/SHA/repo/workflow/run/hash와 dogfood 기본 prod/명시 accept·불일치 거절을 연결했다. 기존 lock wrapper 계약 유지. 공통 receipt/env 처리와 Python command-boundary fixture로 구조 중복을 줄여 scripts+.github **1500줄·workflow2**를 맞췄다. 보호·시험 범위 제외나 다른 디렉터리 이동으로 줄이지 않았다.
 - 직접 **고유79개 PASS(Rust75=WSL51/native24, Python4)**, 별도 PowerShell 모의 패키징/개발2 suite·build-script 계약8 case·MSVC accept 좁은 compile·Rustfmt/diff/600줄 PASS. 지정 setup RED는 prod template bytes/mtime 변경으로 실제 실패한 뒤 GREEN. 최초 MSVC Context 타입 오류는 수정 후 통과, Windows PowerShell interop errno110은 기존 live socket을 해당 process 환경에만 지정해 재검증했으며 서비스/설정 변경은 없다. JSON targeted Biome format은 설정 제외로 no-files 오류(수정0), 완료 Biome는 아직 미실행이다. 제품/시험30개 digest `a78bc281b95279eb5768c92e8d256112e11c8faa24a75a2d8af87a51858b3dc1`.
 - 근거는 Git common-dir `devbox-verification/s2-task15c/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json`과 wsl/native/packaging raw·resource 기록. 소유 임시 fixture만 정리하고 사용자 prod·기존 서비스·공유 cache·원본 main은 보존했다. **독립 최종 검토 PASS·미해결0·완료 Biome344 PASS, 로컬 완료**다. 제품30개·문서2개·artifact81개 해시를 대조했고 Biome 0.603초·cgroup118,235,136B·swap0이다. 검토된 인계 manifest를 보존하며 최종 문서 해시·커밋은 `root-completion.json`에 기록한다. 다음은 Task16이고 전체 check/clippy/build/E2E·실제 Windows 앱/NSIS/self-check/설치·prod 불변 비교·push/PR은 Task16 미실행이다.
+
+### S2 Task16 최종 로컬 검증·설치 수용 준비 (2026-10-21)
+
+- 관찰 UI 보완 `52a45035` 뒤 최초 전체 `scripts/check.sh`를 한 번 실행했다(557.102초, exit1). Rust954 PASS/33 ignored, Vitest601 PASS/2 FAIL, E2E8 PASS/3 FAIL, workspace Clippy FAIL이었다. Python·포맷·생성물·금지어·Biome350·타입·앱 build는 PASS. 원본 결과를 `devbox-verification/s2-task16/full/`에 보존했고 전체 검사를 다시 실행하지 않았다. peak cgroup3,242,610,688B·swap5,070,848B.
+- 브랜치 전체 별도 검토의 B1–B4를 RED→GREEN으로 해결했다. Windows readiness는 각 포트의 IPv4 또는 IPv6 loopback을 확인하고, 새 정의 기본값은 저장소 프로젝트다. TOML 전용 서비스도 살아 있는 runtime run이 있으면 프로젝트 삭제를 거절한다. SIGTERM/refresh는 dedupe drain 전에 실행 조정 대기를 취소해 종료되며 기존 unit·원자적인 spawn/save는 보존한다. 클라이언트 연결 종료는 수락된 그래프를 취소하지 않는다.
+- 짧은 완료 작업의 초기 로그가 tail 구독 전에 누락되어 run을 포함한 로그 선택은 offset0부터 읽도록 고쳤다. file/container 전용 live-tail은 유지한다. 터미널 빈 화면은 E2E 진단 shell의 PID가 tmux client PID와 달라 attach가 기다린 결함이었다. attach/별칭/compound 경로를 exec해 PID를 보존했으며 기존 S1 CI tmux 서버 종료의 원인 해결로 주장하지 않는다. Vitest 실패2개는 새 RPC context·서비스 개수에 맞게 fixture를 고쳤다.
+- 직접 영향 고유140개 PASS(Windows native helper18·CLI5·실제 Windows PowerShell1·프런트 fixture22·projects54·shutdown/refresh5·로그22·tmux10·E2E3). 실제 PowerShell IPv6 회귀 PASS와 네이티브 앱 수용 미실행을 구분한다. strict workspace Clippy PASS37.075초·cgroup1,250,508,800B/swap0, 실패 E2E3만 재실행 PASS31.489초·cgroup1,895,264,256B/swap0, 앱 타입 PASS. 시험의 unwrap/unwrap_err1,116개(50파일)는 compiler byte span 기반 expect 치환+rustfmt만 적용하고 원본/해시/재구성 근거를 보존했다. panic 문구 assertion은 없으며 이전 Rust954 PASS를 재사용한다.
+- 독립 최종 검토 PASS·미해결0. 동결 제품75개 digest `635d0359ebb1b4c83557d880b9e8c13bbb2244803ab207e2a022c31bfe486c9b`와 이전 검토 비수정288개 해시를 대조했다. 근거 `integration-fixes/{summary,source-freeze,unwrap-span-map}.json`, `branch-review/final-integration-review.json`. 제품 규모 Rust37,614+TS14,560=52,174줄/60,000, 코드 파일600줄 초과0·TSX 컴포넌트300줄 초과0(최대267), scripts+.github1,500줄·workflow2, E2E11개/40. `size-audit.json`·`component-size-audit.json`에 기록했다.
+- SC9는 최종 E2E 빌드 CLI와 소유 임시 HOME/test-* 인스턴스를 사용했다. 실행0·같은 daemon ID를 전후 확인하고 5초 준비 후 61개 /proc 표본을 60.000603초 수집했다. CPU0.233331%≤0.5%, peak RSS39,899,136B≤60,000,000B로 PASS. 소유 데몬·임시 HOME 정리 완료, supervisor65.506초·cgroup130,633,728B/swap0. 원시 stat/status·바이너리 SHA256·명령·결과는 `sc9/`에 있다.
+- 최종 제품 커밋과 Windows 산출물은 아직 없다. 설치 수용12개·필수 CI3·자동 리뷰는 미실행이며 S2 수용 완료가 아니다. 외부 수용 helper 독립 검토의 정리/로그 UI 진행/FAIL 판정/interop 오류 기록4건은 수정 중이고 실행 전 재검토한다. 기존 Windows 호출은 간헐적 errno110이며 현재 읽기 전용 호출도 실패했다. 사용자 prod·기존 서비스·Docker·방화벽·공유 네트워크·원본 main은 보존했다. 완료 Biome·문서 해시·커밋은 `s2-task16/root-completion.json`, 이후 수용/CI/PR 결과는 artifact·PR 본문과 머지 뒤 인계 문서에 기록한다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -629,6 +639,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-21 | Codex 하네스 구현·IndexDb/CodeView 분담 | Task15b 공용 색인 DB·코드 보기·검사 대기/독립 잠금·tmux 진단, 고유73개·타입/생성·직접 영향 검사 PASS | 독립 최종 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품29/문서2/artifact77 해시 일치, scripts1497줄/2 workflows, 다음 Task15c. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·WSL/패키징 분담 | Task15c 단일 채널 표·Windows/WSL 설치 격리·receipt 검증 구현, 고유79개·MSVC 좁은 compile·PowerShell 모의2 suite PASS | 독립 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품30/문서2/artifact81 해시 일치, scripts1500줄/2 workflows, 다음 Task16. 실제 Windows 설치·전체 검사·push/PR 미실행. 근거 `devbox-verification/s2-task15c/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 관찰 UI 구현 | Task16 승인 설계 누락 보완: 프로세스 우선 목록·종료 확인, 포트 브라우저·소유자 종료. RED Rust1/UI3→직접 고유33개(프런트21·Rust12) PASS | `PortInfo.startTimeMs`는 fd 스캔 전후 시작 tick 일치에서 생성, 미확인/container는 종료 불가. 확인 snapshot 고정·stale 오류 후 갱신 완료까지 잠금/새 확인 회귀 PASS. 생성/타입·독립 검토·완료 Biome350 PASS, 미해결0. 제품21/문서2/artifact54 해시 일치, Biome0.896초·cgroup122,421,248B·swap0. 완료 커밋·문서 해시는 root-completion.json. 전체 검사·SC9·Windows·CI·PR 미실행. 근거 `devbox-verification/s2-task16/observe-ui/{summary,source-freeze,test-names,commands}.json` |
+| 2026-10-21 | Codex 하네스 통합 수정·별도 브랜치 검토 | Task16 첫 전체 검사 실패 보존→직접140개·strict Clippy·E2E3 수정 PASS, SC9 CPU0.233331%/RSS39,899,136B PASS | 제품75개 동결·독립 검토 PASS·미해결0, 규모52,174줄·scripts1,500줄. 완료 Biome/커밋 뒤 최초 push·동일SHA Windows accept 수용·단일PR. 현재 설치 수용·CI·리뷰 미실행, S2 수용 완료 아님. 근거 `devbox-verification/s2-task16/` |
 
 
 ## 7. 착수 준비 검토

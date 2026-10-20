@@ -72,7 +72,9 @@ async fn scheduled_rpc_async_failure_and_graceful_shutdown_preserve_owned_run() 
         SaveTo::ThisPc,
     )
     .await;
-    let mut alerts = bounded(client.subscribe("notify.raised")).await.unwrap();
+    let mut alerts = bounded(client.subscribe("notify.raised"))
+        .await
+        .expect("fixture result");
     schedule(&f, &client, &project, "* * * * * *").await;
     let started = await_scheduled(&f, &client, &project, None).await;
     schedule(&f, &client, &project, "0 0 0 1 1 *").await;
@@ -80,16 +82,16 @@ async fn scheduled_rpc_async_failure_and_graceful_shutdown_preserve_owned_run() 
         project_id: project.clone(),
     }))
     .await
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(status.items.len(), 1);
     assert!(status.items[0].next.is_some());
     assert_eq!(
-        status.items[0].last.as_ref().unwrap().result,
+        status.items[0].last.as_ref().expect("fixture value").result,
         ScheduleOutcome::Running
     );
-    std::fs::write(f.daemon.home.path().join("project/release"), "owned").unwrap();
-    let event = bounded(alerts.next_event()).await.unwrap();
-    let alert: Notification = serde_json::from_str(&event.payload).unwrap();
+    std::fs::write(f.daemon.home.path().join("project/release"), "owned").expect("fixture result");
+    let event = bounded(alerts.next_event()).await.expect("fixture value");
+    let alert: Notification = serde_json::from_str(&event.payload).expect("fixture result");
     assert!(matches!(alert.reason, NotificationReason::ScheduleFailed));
     assert_eq!(alert.project_id, project);
     assert_eq!(alert.task.as_deref(), Some("task"));
@@ -106,10 +108,10 @@ async fn scheduled_rpc_async_failure_and_graceful_shutdown_preserve_owned_run() 
     for _ in 0..2 {
         bounded(client.call::<RuntimeExited>(&exit_record::Exited {
             run_id: failed.id.clone(),
-            attempt_id: failed.attempt_id.clone().unwrap(),
+            attempt_id: failed.attempt_id.clone().expect("fixture value"),
         }))
         .await
-        .unwrap();
+        .expect("fixture result");
     }
     assert!(
         tokio::time::timeout(Duration::from_millis(100), alerts.next_event())
@@ -120,29 +122,29 @@ async fn scheduled_rpc_async_failure_and_graceful_shutdown_preserve_owned_run() 
         project_id: project.clone(),
     }))
     .await
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(
-        status.items[0].last.as_ref().unwrap().result,
+        status.items[0].last.as_ref().expect("fixture value").result,
         ScheduleOutcome::Failed
     );
 
     // A second already-started unit survives the daemon's real graceful scheduler shutdown.
-    std::fs::remove_file(f.daemon.home.path().join("project/release")).unwrap();
+    std::fs::remove_file(f.daemon.home.path().join("project/release")).expect("fixture result");
     schedule(&f, &client, &project, "* * * * * *").await;
     let survivor = await_scheduled(&f, &client, &project, Some(&failed.id)).await;
     schedule(&f, &client, &project, "0 0 0 1 1 *").await;
-    let mut child = f.daemon.child.take().unwrap();
-    assert!(child.0.try_wait().unwrap().is_none());
+    let mut child = f.daemon.child.take().expect("fixture value");
+    assert!(child.0.try_wait().expect("fixture result").is_none());
     assert!(
         std::process::Command::new("kill")
             .args(["-TERM", &child.0.id().to_string()])
             .status()
-            .unwrap()
+            .expect("fixture result")
             .success()
     );
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        if let Some(status) = child.0.try_wait().unwrap() {
+        if let Some(status) = child.0.try_wait().expect("fixture result") {
             assert!(status.success());
             break;
         }
@@ -167,31 +169,33 @@ async fn scheduled_rpc_async_failure_and_graceful_shutdown_preserve_owned_run() 
         .await
         .into_iter()
         .find(|r| r.id == survivor.id)
-        .unwrap();
+        .expect("fixture value");
     assert_eq!(recovered.kind, RunKind::Scheduled);
     assert_eq!(recovered.state, RunState::Running);
-    let mut stopped_alerts = bounded(client.subscribe("notify.raised")).await.unwrap();
+    let mut stopped_alerts = bounded(client.subscribe("notify.raised"))
+        .await
+        .expect("fixture result");
     let stopped = bounded(client.call::<RuntimeStop>(&RunId {
         run_id: survivor.id.clone(),
     }))
     .await
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(stopped.state, RunState::Stopped);
     for _ in 0..2 {
         bounded(client.call::<RuntimeExited>(&exit_record::Exited {
             run_id: stopped.id.clone(),
-            attempt_id: stopped.attempt_id.clone().unwrap(),
+            attempt_id: stopped.attempt_id.clone().expect("fixture value"),
         }))
         .await
-        .unwrap();
+        .expect("fixture result");
     }
     let status = bounded(client.call::<RuntimeSchedules>(&SchedulesQuery {
         project_id: project,
     }))
     .await
-    .unwrap();
+    .expect("fixture result");
     assert_eq!(
-        status.items[0].last.as_ref().unwrap().result,
+        status.items[0].last.as_ref().expect("fixture value").result,
         ScheduleOutcome::Stopped
     );
     assert!(
@@ -209,9 +213,11 @@ async fn unchanged_approval_schedule_edit_does_not_renotify_trust() {
     let client = f.daemon.client().await;
     let project = f.project(&client).await;
     let config = f.daemon.home.path().join("project/.devbox/devbox.toml");
-    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
-    std::fs::write(config, "[[task]]\nid='task'\ncommand='true'\n").unwrap();
-    let mut alerts = bounded(client.subscribe("notify.raised")).await.unwrap();
+    std::fs::create_dir_all(config.parent().expect("fixture value")).expect("fixture result");
+    std::fs::write(config, "[[task]]\nid='task'\ncommand='true'\n").expect("fixture result");
+    let mut alerts = bounded(client.subscribe("notify.raised"))
+        .await
+        .expect("fixture result");
     for cron in ["* * * * * *", "*/1 * * * * *"] {
         f.define(
             &client,
@@ -233,8 +239,8 @@ async fn unchanged_approval_schedule_edit_does_not_renotify_trust() {
                 "same approval identity must not emit another trust alert after cron-only edit: {result:?}"
             );
         } else {
-            let event = result.unwrap().unwrap();
-            let alert: Notification = serde_json::from_str(&event.payload).unwrap();
+            let event = result.expect("fixture result").expect("fixture value");
+            let alert: Notification = serde_json::from_str(&event.payload).expect("fixture result");
             assert!(matches!(
                 alert.reason,
                 NotificationReason::ScheduleTrustRequired

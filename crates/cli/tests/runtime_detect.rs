@@ -14,12 +14,15 @@ async fn runtime_detect_query_suggestions_define_round_trip_and_typed_error() {
         repo.join("package.json"),
         r#"{"scripts":{"dev":"touch marker"}}"#,
     )
-    .unwrap();
-    std::fs::write(repo.join("pnpm-lock.yaml"), "lockfileVersion: 9\n").unwrap();
+    .expect("fixture result");
+    std::fs::write(repo.join("pnpm-lock.yaml"), "lockfileVersion: 9\n").expect("fixture result");
     let request = DetectRuns {
         project_id: project.clone(),
     };
-    let items = client.call::<RuntimeDetect>(&request).await.unwrap();
+    let items = client
+        .call::<RuntimeDetect>(&request)
+        .await
+        .expect("fixture result");
     assert_eq!(items.len(), 1);
     let suggestion = &items[0];
     assert_eq!(suggestion.id, "dev");
@@ -38,18 +41,18 @@ async fn runtime_detect_query_suggestions_define_round_trip_and_typed_error() {
             save_to: SaveTo::ThisPc,
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     assert!(
         client
             .call::<RuntimeDetect>(&request)
             .await
-            .unwrap()
+            .expect("fixture result")
             .is_empty()
     );
     assert!(!repo.join("marker").exists());
-    std::fs::write(repo.join("package.json"), "{broken").unwrap();
+    std::fs::write(repo.join("package.json"), "{broken").expect("fixture result");
     assert!(
-        matches!(client.call::<RuntimeDetect>(&request).await.unwrap_err(),
+        matches!(client.call::<RuntimeDetect>(&request).await.expect_err("expected failure"),
         ClientError::Rpc { code, .. } if code == "runtime.detect_parse")
     );
 }

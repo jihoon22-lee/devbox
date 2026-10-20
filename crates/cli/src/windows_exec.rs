@@ -8,7 +8,29 @@ use std::{
 };
 use tokio::{io::AsyncWriteExt, process::Command};
 use zeroize::Zeroizing;
-const PROBE: &str = r#"$ErrorActionPreference='Stop'; try { $ports=[Console]::In.ReadToEnd() | ConvertFrom-Json; foreach($port in $ports) { $c=New-Object System.Net.Sockets.TcpClient; try { $t=$c.ConnectAsync('127.0.0.1',[int]$port); if(!$t.Wait(200) -or !$c.Connected) { exit 1 } } finally { $c.Dispose() } }; exit 0 } catch { exit 1 }"#;
+const PROBE: &str = r#"
+$ErrorActionPreference='Stop'
+try {
+    $ports=[Console]::In.ReadToEnd() | ConvertFrom-Json
+    foreach($port in $ports) {
+        $open=$false
+        foreach($address in @('127.0.0.1','::1')) {
+            $family=if($address -eq '::1') { [System.Net.Sockets.AddressFamily]::InterNetworkV6 } else { [System.Net.Sockets.AddressFamily]::InterNetwork }
+            $c=[System.Net.Sockets.TcpClient]::new($family)
+            try {
+                $t=$c.ConnectAsync($address,[int]$port)
+                if($t.Wait(200) -and $c.Connected) { $open=$true; break }
+            } catch {} finally { $c.Dispose() }
+        }
+        if(!$open) { exit 1 }
+    }
+    exit 0
+} catch { exit 1 }
+"#;
+
+#[cfg(test)]
+#[path = "windows_exec_probe_tests.rs"]
+mod probe_tests;
 #[derive(Debug, PartialEq, Eq)]
 enum Direct {
     Unavailable,
@@ -172,8 +194,8 @@ mod tests {
     use std::{fs, os::unix::fs::PermissionsExt};
     fn fake(dir: &Path, body: &str) -> std::path::PathBuf {
         let path = dir.join("fake powershell");
-        fs::write(&path, format!("#!/usr/bin/python3\n{body}\n")).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(&path, format!("#!/usr/bin/python3\n{body}\n")).expect("fixture result");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).expect("fixture result");
         path
     }
     fn request() -> RunWindows {
@@ -188,7 +210,7 @@ mod tests {
     }
     #[tokio::test]
     async fn windows_direct_spawn_failure_is_only_native_fallback_condition() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
         let (started, _) = tokio::sync::oneshot::channel();
         assert_eq!(
             direct(&request(), &temp.path().join("absent"), started).await,
@@ -207,7 +229,7 @@ mod tests {
     }
     #[tokio::test]
     async fn windows_direct_started_failure_never_becomes_unavailable() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
         let path = fake(temp.path(), "import sys\nsys.exit(9)");
         let (started, _) = tokio::sync::oneshot::channel();
         assert!(matches!(
@@ -227,17 +249,17 @@ mod tests {
     }
     #[tokio::test]
     async fn windows_probe_timeout_and_cancellation_reap_owned_process() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
         let pidfile = temp.path().join("pid");
         let body = format!(
             "import os,time\nf=open({:?},'w')\ntime.sleep(0.03)\nf.write(str(os.getpid()))\nf.flush()\ntime.sleep(60)",
-            pidfile.to_str().unwrap()
+            pidfile.to_str().expect("fixture value")
         );
         let path = fake(temp.path(), &body);
         assert!(!probe_with_timeout(&path, &[12345], Duration::from_millis(250)).await);
-        let pid = fs::read_to_string(&pidfile).unwrap();
+        let pid = fs::read_to_string(&pidfile).expect("fixture result");
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
-        fs::remove_file(&pidfile).unwrap();
+        fs::remove_file(&pidfile).expect("fixture result");
         let task = tokio::spawn(async move {
             probe_with_timeout(&path, &[12345], Duration::from_secs(60)).await
         });
@@ -254,7 +276,7 @@ mod tests {
             }
         })
         .await
-        .unwrap();
+        .expect("fixture result");
         eprintln!("owned cancelled probe pid={pid}");
         task.abort();
         let _ = task.await;
@@ -264,11 +286,11 @@ mod tests {
             }
         })
         .await
-        .unwrap();
+        .expect("fixture result");
     }
     #[tokio::test]
     async fn windows_direct_probe_passes_ports_to_windows_process_stdin() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = tempfile::tempdir().expect("fixture result");
         let path = fake(
             temp.path(),
             "import sys,json\nassert json.load(sys.stdin)==[12345,12346]\nassert 'TcpClient' in sys.argv[-1]\nsys.exit(0)",

@@ -119,10 +119,10 @@ impl Drop for OwnedChild {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        if let Ok(text) = std::fs::read_to_string(&self.pid_file) {
-            if let Ok(pid) = text.parse::<i32>() {
-                let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
-            }
+        if let Ok(text) = std::fs::read_to_string(&self.pid_file)
+            && let Ok(pid) = text.parse::<i32>()
+        {
+            let _ = killpg(Pid::from_raw(pid), Signal::SIGKILL);
         }
     }
 }
@@ -151,10 +151,10 @@ impl Fixture {
     fn ready(&self) -> i32 {
         let end = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Ok(text) = std::fs::read_to_string(self.temp.path().join("child-pid")) {
-                if let Ok(pid) = text.parse() {
-                    return pid;
-                }
+            if let Ok(text) = std::fs::read_to_string(self.temp.path().join("child-pid"))
+                && let Ok(pid) = text.parse()
+            {
+                return pid;
             }
             assert!(Instant::now() < end, "fixture child did not become ready");
             std::thread::sleep(Duration::from_millis(10));

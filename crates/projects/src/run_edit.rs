@@ -127,21 +127,22 @@ fn edited(bytes: &[u8], change: &RunConfigChange) -> R<Vec<u8>> {
                     .and_then(Value::as_str)
                     == Some(id);
                 if same {
-                    if let Some((target, replacement)) = &replacement {
-                        if *target == section && !inserted {
-                            let mut table = array
-                                .get(index)
-                                .expect("matched entry")
-                                .as_inline_table()
-                                .expect("matched inline table")
-                                .clone()
-                                .into_table();
-                            patch_table(&mut table, replacement, true);
-                            array.replace(index, Value::InlineTable(table.into_inline_table()));
-                            inserted = true;
-                            index += 1;
-                            continue;
-                        }
+                    if let Some((target, replacement)) = &replacement
+                        && *target == section
+                        && !inserted
+                    {
+                        let mut table = array
+                            .get(index)
+                            .expect("matched entry")
+                            .as_inline_table()
+                            .expect("matched inline table")
+                            .clone()
+                            .into_table();
+                        patch_table(&mut table, replacement, true);
+                        array.replace(index, Value::InlineTable(table.into_inline_table()));
+                        inserted = true;
+                        index += 1;
+                        continue;
                     }
                     array.remove(index);
                 } else {
@@ -153,13 +154,14 @@ fn edited(bytes: &[u8], change: &RunConfigChange) -> R<Vec<u8>> {
             let mut next = ArrayOfTables::new();
             for table in tables.iter() {
                 if table.get("id").and_then(Item::as_str) == Some(id) {
-                    if let Some((target, replacement)) = &replacement {
-                        if *target == section && !inserted {
-                            let mut updated = table.clone();
-                            patch_table(&mut updated, replacement, true);
-                            next.push(updated);
-                            inserted = true;
-                        }
+                    if let Some((target, replacement)) = &replacement
+                        && *target == section
+                        && !inserted
+                    {
+                        let mut updated = table.clone();
+                        patch_table(&mut updated, replacement, true);
+                        next.push(updated);
+                        inserted = true;
                     }
                 } else {
                     next.push(table.clone());
@@ -168,19 +170,17 @@ fn edited(bytes: &[u8], change: &RunConfigChange) -> R<Vec<u8>> {
             *tables = next;
         }
     }
-    if !inserted {
-        if let Some((section, table)) = replacement {
-            if doc.get(section).is_none() {
-                doc[section] = Item::ArrayOfTables(ArrayOfTables::new());
-            }
-            if let Some(array) = doc[section].as_array_mut() {
-                array.push(Value::InlineTable(table.into_inline_table()));
-            } else {
-                doc[section]
-                    .as_array_of_tables_mut()
-                    .ok_or_else(|| invalid("execution definitions must use arrays"))?
-                    .push(table);
-            }
+    if !inserted && let Some((section, table)) = replacement {
+        if doc.get(section).is_none() {
+            doc[section] = Item::ArrayOfTables(ArrayOfTables::new());
+        }
+        if let Some(array) = doc[section].as_array_mut() {
+            array.push(Value::InlineTable(table.into_inline_table()));
+        } else {
+            doc[section]
+                .as_array_of_tables_mut()
+                .ok_or_else(|| invalid("execution definitions must use arrays"))?
+                .push(table);
         }
     }
     let bytes = doc.to_string().into_bytes();
