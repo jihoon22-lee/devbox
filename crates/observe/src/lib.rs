@@ -29,6 +29,7 @@ pub use model::*;
 pub use ports::{is_listening, is_listening_in, ports_listening_in};
 pub use service::ObserveService;
 pub use sources::{ResolvedSource, validate_sources};
+method!(pub ResolveLocation = "observe.resolve_location", query, ResolveFileLocation => FileLocation, ObserveError);
 method!(pub LogsOpen = "logs.open", stream, OpenLogs => devbox_protocol::StreamOpened, ObserveError);
 method!(pub LogsSearch = "logs.search", query, SearchLogs => SearchResult, ObserveError);
 method!(pub ObservePorts = "observe.ports", query, ObserveQuery => Vec<PortInfo>, ObserveError);
@@ -39,6 +40,7 @@ method!(pub ObserveProblems = "observe.problems", query, ProblemsQuery => Proble
 topic!(pub ObserveProblemsChanged = "observe.problems.changed", ProblemsChange);
 pub fn export<X: Exporter>(x: &mut X) {
     x.method::<ObserveProblems>();
+    x.method::<ResolveLocation>();
     x.topic::<ObserveProblemsChanged>();
     x.method::<ObservePorts>();
     x.method::<ObserveProcesses>();

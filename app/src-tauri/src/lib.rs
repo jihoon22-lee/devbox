@@ -46,6 +46,7 @@ pub fn run() {
             connection::rpc_send,
             connection::rpc_detach,
             platform::external::open_external,
+            platform::external::open_file_location,
             platform::notify::notify_attention,
             platform::notify::set_badge,
             platform::notify::pending_navigation,

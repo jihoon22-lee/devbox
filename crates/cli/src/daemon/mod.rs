@@ -2,6 +2,7 @@ mod debug;
 mod dedupe;
 mod hostname;
 mod launch;
+mod locations;
 mod logs;
 pub mod observe;
 mod outbox;

@@ -68,3 +68,20 @@ impl RuntimeService {
         })
     }
 }
+
+/// Original resolved working directory, retained across definition edits.
+pub struct RunLocationContext {
+    pub project_id: String,
+    pub cwd: Option<String>,
+    pub windows: Option<WindowsRun>,
+}
+impl RuntimeService {
+    pub async fn location_context(&self, id: &str) -> R<RunLocationContext> {
+        let value = self.stored(id).await?;
+        Ok(RunLocationContext {
+            project_id: value.run.project_id,
+            cwd: value.source_cwd,
+            windows: value.run.windows,
+        })
+    }
+}

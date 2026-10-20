@@ -107,3 +107,20 @@ domain_error! {
         StreamUnsupported = "observe.stream_unsupported",
     }
 }
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResolveFileLocation {
+    pub project_id: String,
+    pub source: LogSource,
+    pub path: String,
+    pub line: u32,
+    pub column: Option<u32>,
+}
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FileLocation {
+    pub path: String,
+    pub line: u32,
+    pub column: u32,
+}

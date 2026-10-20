@@ -67,6 +67,7 @@ export type ExitRecord = { attemptId: string, code: number | null, signal?: stri
 export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
+export type FileLocation = { path: string, line: number, column: number, };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
@@ -136,10 +137,12 @@ export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
+export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
+export type RunDetail = { rev: string, run: Run, };
 export type RunId = { runId: string, };
 export type RunKind = "task" | "service" | "scheduled";
 export type RunState = "starting" | "running" | "restarting" | "exited" | "failed" | "stopped";
@@ -229,6 +232,7 @@ export interface Methods {
   "observe.ports": { kind: "query"; confirm: "none"; params: ObserveQuery; result: Array<PortInfo>; error: ObserveError };
   "observe.problems": { kind: "query"; confirm: "none"; params: ProblemsQuery; result: ProblemsResult; error: ObserveError };
   "observe.processes": { kind: "query"; confirm: "none"; params: ProcessesQuery; result: Array<ProcessInfo>; error: ObserveError };
+  "observe.resolve_location": { kind: "query"; confirm: "none"; params: ResolveFileLocation; result: FileLocation; error: ObserveError };
   "observe.system": { kind: "query"; confirm: "none"; params: ObserveQuery; result: SystemInfo; error: ObserveError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.clone": { kind: "mutation"; confirm: "none"; params: CloneProject; result: Project; error: ProjectsError };
@@ -247,12 +251,13 @@ export interface Methods {
   "runtime.define": { kind: "mutation"; confirm: "none"; params: DefineRun; result: DefineResult; error: RuntimeError };
   "runtime.detect": { kind: "query"; confirm: "none"; params: DetectRuns; result: Array<Suggestion>; error: RuntimeError };
   "runtime.exited": { kind: "mutation"; confirm: "always"; params: Exited; result: Done; error: RuntimeError };
+  "runtime.get": { kind: "query"; confirm: "none"; params: RunId; result: RunDetail; error: RuntimeError };
   "runtime.list": { kind: "query"; confirm: "none"; params: ListRuns; result: DefinitionList; error: RuntimeError };
   "runtime.restart": { kind: "mutation"; confirm: "none"; params: RunId; result: Run; error: RuntimeError };
   "runtime.runs": { kind: "query"; confirm: "none"; params: RunsQuery; result: RunsResult; error: RuntimeError };
   "runtime.schedules": { kind: "query"; confirm: "none"; params: SchedulesQuery; result: SchedulesResult; error: RuntimeError };
   "runtime.start": { kind: "mutation"; confirm: "none"; params: StartRun; result: Run; error: RuntimeError };
-  "runtime.stop": { kind: "mutation"; confirm: "always"; params: RunId; result: Run; error: RuntimeError };
+  "runtime.stop": { kind: "mutation"; confirm: "reversible"; params: RunId; result: Run; error: RuntimeError };
   "runtime.undefine": { kind: "mutation"; confirm: "always"; params: UndefineRun; result: Done; error: RuntimeError };
   "secrets.delete": { kind: "mutation"; confirm: "always"; params: Name; result: Done; error: SecretsError };
   "secrets.export_key": { kind: "query"; confirm: "none"; params: Empty; result: Recovery; error: SecretsError };
@@ -315,6 +320,7 @@ export const METHOD_INFO = {
   "observe.ports": { kind: "query", confirm: "none" },
   "observe.problems": { kind: "query", confirm: "none" },
   "observe.processes": { kind: "query", confirm: "none" },
+  "observe.resolve_location": { kind: "query", confirm: "none" },
   "observe.system": { kind: "query", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.clone": { kind: "mutation", confirm: "none" },
@@ -333,12 +339,13 @@ export const METHOD_INFO = {
   "runtime.define": { kind: "mutation", confirm: "none" },
   "runtime.detect": { kind: "query", confirm: "none" },
   "runtime.exited": { kind: "mutation", confirm: "always" },
+  "runtime.get": { kind: "query", confirm: "none" },
   "runtime.list": { kind: "query", confirm: "none" },
   "runtime.restart": { kind: "mutation", confirm: "none" },
   "runtime.runs": { kind: "query", confirm: "none" },
   "runtime.schedules": { kind: "query", confirm: "none" },
   "runtime.start": { kind: "mutation", confirm: "none" },
-  "runtime.stop": { kind: "mutation", confirm: "always" },
+  "runtime.stop": { kind: "mutation", confirm: "reversible" },
   "runtime.undefine": { kind: "mutation", confirm: "always" },
   "secrets.delete": { kind: "mutation", confirm: "always" },
   "secrets.export_key": { kind: "query", confirm: "none" },

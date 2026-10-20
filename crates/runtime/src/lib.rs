@@ -62,9 +62,10 @@ method!(pub RuntimeList = "runtime.list", query, ListRuns => DefinitionList, Run
 method!(pub RuntimeDefine = "runtime.define", mutation, DefineRun => DefineResult, RuntimeError);
 method!(pub RuntimeUndefine = "runtime.undefine", mutation(always), UndefineRun => devbox_protocol::Done, RuntimeError);
 method!(pub RuntimeStart = "runtime.start", mutation, StartRun => Run, RuntimeError);
-method!(pub RuntimeStop = "runtime.stop", mutation(always), RunId => Run, RuntimeError);
+method!(pub RuntimeStop = "runtime.stop", mutation(reversible), RunId => Run, RuntimeError);
 method!(pub RuntimeRestart = "runtime.restart", mutation, RunId => Run, RuntimeError);
 method!(pub RuntimeExited = "runtime.exited", mutation(always), exit_record::Exited => devbox_protocol::Done, RuntimeError);
+method!(pub RuntimeGet = "runtime.get", query, RunId => RunDetail, RuntimeError);
 method!(pub RuntimeRuns = "runtime.runs", query, RunsQuery => RunsResult, RuntimeError);
 method!(pub RuntimeSchedules = "runtime.schedules", query, SchedulesQuery => SchedulesResult, RuntimeError);
 topic!(pub RuntimeChanged = "runtime.changed", RuntimeChange);
@@ -79,6 +80,7 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<RuntimeRestart>();
     x.method::<RuntimeExited>();
     x.method::<RuntimeRuns>();
+    x.method::<RuntimeGet>();
     x.method::<RuntimeList>();
     x.method::<RuntimeDefine>();
     x.method::<RuntimeUndefine>();
@@ -104,7 +106,7 @@ mod unit_lookup;
 pub use unit_lookup::LiveUnitRun;
 
 mod log_observation;
-pub use log_observation::{RunLogMetadata, RunLogPage};
+pub use log_observation::{RunLocationContext, RunLogMetadata, RunLogPage};
 
 #[cfg(test)]
 mod containers_tests;
@@ -113,3 +115,6 @@ pub mod secret_input;
 
 #[cfg(test)]
 mod windows_tests;
+
+#[cfg(test)]
+mod run_ui_tests;

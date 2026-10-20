@@ -8,18 +8,7 @@ async fn resolve(
     sources: &[LogSource],
 ) -> R<(Vec<ResolvedSource>, Vec<PathBuf>)> {
     devbox_observe::validate_sources(sources)?;
-    let projects = s
-        .projects
-        .list(devbox_projects::ListProjects {})
-        .await
-        .map_err(|e| Fail::Internal(format!("read log roots: {e:?}")))?;
-    let mut roots: Vec<_> = projects
-        .items
-        .into_iter()
-        .map(|p| PathBuf::from(p.path))
-        .collect();
-    // D15 default; configurable notes.vault belongs to S3 Task 4.
-    roots.extend([s.paths.home.join("notes"), PathBuf::from("/var/log")]);
+    let roots = roots(s).await?;
     let mut resolved = vec![];
     for source in sources {
         let path = match source {
@@ -47,6 +36,21 @@ async fn resolve(
         });
     }
     Ok((resolved, roots))
+}
+pub(super) async fn roots(s: &Arc<Services>) -> R<Vec<PathBuf>> {
+    let projects = s
+        .projects
+        .list(devbox_projects::ListProjects {})
+        .await
+        .map_err(|e| Fail::Internal(format!("read log roots: {e:?}")))?;
+    let mut roots: Vec<_> = projects
+        .items
+        .into_iter()
+        .map(|p| PathBuf::from(p.path))
+        .collect();
+    // D15 default; configurable notes.vault belongs to S3 Task 4.
+    roots.extend([s.paths.home.join("notes"), PathBuf::from("/var/log")]);
+    Ok(roots)
 }
 pub(super) async fn open(s: Arc<Services>, ctx: Ctx, p: OpenLogs) -> R<StreamOpened> {
     let (sources, roots) = resolve(&s, &p.sources).await?;

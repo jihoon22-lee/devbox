@@ -84,3 +84,9 @@ pub struct RunsResult {
     pub rev: String,
     pub items: Vec<Run>,
 }
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct RunDetail {
+    pub rev: String,
+    pub run: Run,
+}

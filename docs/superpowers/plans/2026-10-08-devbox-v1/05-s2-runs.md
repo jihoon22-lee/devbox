@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–12 및 묶음 O·P·Q 로컬 완료. Task 12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS(2026-10-20). 다음은 묶음 R Task 13 실행 화면이다. 전체 검사·Windows 실기·단일 PR은 Task 16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task 1–13 및 묶음 O·P·Q 로컬 완료. Task13 고유64개·TS/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome316 PASS(2026-10-20). 다음은 묶음 R Task14 하단 로그·문제·상태·알림이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -794,25 +794,25 @@ match interop.run(&prepared).await {
 ### Task 13: 실행 섹션 화면
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `app/src/features/runs/{DefineDialog,LogView,model,RunList}.test.tsx · app/e2e/runs.spec.ts`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `app/src/features/runs/{DefineDialog,LogView,model,RunList}.test.tsx · app/e2e/runs.spec.ts`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```tsx
 await saveDefinition(); // define succeeds, following list fails
 expect(screen.getByRole("heading", { name: "작업 수정" })).toBeVisible();
 await saveDefinition();
 expect(createdIds()).toEqual(["task-1"]);
 ```
-- [ ] **2 · 실패 확인:** `pnpm --filter app exec vitest run src/features/runs/DefineDialog.test.tsx --maxWorkers=2`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** RunsPage/목록·DefineDialog·ANSI model·가상 LogView를 작은 컴포넌트로 만들고 sections/router에 등록한다. define 결과로 ID/수정 모드 확정, 동일 요청 재전송과 새 수정 의도를 구분한다(기존 useRpcMutation의 성공 후 새 requestId 정책을 임의로 바꾸지 않음). 요청 응답을 잃은 retry만 같은 clientRequestId를 유지하고 저장 성공 뒤 수정은 같은 definition ID를 유지한다. runtime.changed rev로 상세 PID/runId를 갱신한다. trust UI는 Run preview와 제어문자 변환을 재사용해 승인 뒤 같은 동작 한 번만 재시도한다.
+- [x] **2 · 실패 확인:** `pnpm --filter app exec vitest run src/features/runs/DefineDialog.test.tsx --maxWorkers=2`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** RunsPage/목록·DefineDialog·ANSI model·가상 LogView를 작은 컴포넌트로 만들고 sections/router에 등록한다. define 결과로 ID/수정 모드 확정, 동일 요청 재전송과 새 수정 의도를 구분한다(기존 useRpcMutation의 성공 후 새 requestId 정책을 임의로 바꾸지 않음). 요청 응답을 잃은 retry만 같은 clientRequestId를 유지하고 저장 성공 뒤 수정은 같은 definition ID를 유지한다. runtime.changed rev로 상세 PID/runId를 갱신한다. trust UI는 Run preview와 제어문자 변환을 재사용해 승인 뒤 같은 동작 한 번만 재시도한다.
 
 ```tsx
 const saved = await define.mutateAsync(draftWithExistingId);
-setEditingId(saved.definition.id);
-queryClient.setQueryData(["runtime.list", { projectId }], old => upsertDefinition(old, saved));
-void queryClient.invalidateQueries({ queryKey: ["runtime.list", { projectId }] });
+setEditingId(saved.definition.def.id);
+queryClient.setQueryData(["runtime.list", { projectId, cursor: null }], old => upsertDefinition(old, saved));
+void queryClient.invalidateQueries({ queryKey: ["runtime.list", { projectId, cursor: null }] });
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. ANSI 16/256/truecolor·제어열 제거·follow 상태기계·목록 실패/멱등·restart 상세·stale trust 단위 시험을 실행한다. 대표 E2E 2개는 작성만 하고 Task 16에서 전체 실행에 포함한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runs): add execution management and live log views`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. ANSI 16/256/truecolor·제어열 제거·follow 상태기계·목록 실패/멱등·restart 상세·stale trust 단위 시험을 실행한다. 대표 E2E 2개는 작성만 하고 Task 16에서 전체 실행에 포함한다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runs): add execution management and live log views`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `app/src/features/runs/{RunsPage,RunList,LogView,RunChips,DefineDialog,model}.tsx|ts`
@@ -846,6 +846,16 @@ void queryClient.invalidateQueries({ queryKey: ["runtime.list", { projectId }] }
 - E2E `runs.spec.ts`(2개)
   - `echo` 작업을 정의 → 시작 → 로그에 줄 → 종료 코드 표시
   - 서비스(`python3 -m http.server $DEVBOX_PORT`) 시작 → 포트 칩 → 중지 → 되돌리기 토스트
+
+**실제 통합 계약·직접 검증(2026-10-20):**
+- `runtime.list`의 256행/768KiB 페이지마다 definition별 live 우선·최근 결과를 같은 DB read rev로 보낸다. `readRuntimeList`는 같은 rev의 모든 페이지를 모으고 drift 재시도는 3회로 제한한다. 선택 상세는 별도 typed `runtime.get{runId} → {rev,run}`로 읽어 최근32/256회 밖의 실행·PID·재시작 수를 유지한다.
+- `DefineResult`는 부분 응답이므로 기존 `useRpcMutation`은 그대로 두고, 프로젝트 파일 우선 upsert·낮은 rev 응답 거절을 적용했다. `runtime.list`에만 같은 rev의 정식 snapshot 교체를 허용하여 저장 직후 trust/runs가 낡게 남지 않는다. 다른 query의 revision 정책은 유지한다.
+- 서비스 중지는 reversible이며 전역 `RunStopUndo`가 10초 토스트·섹션/프로젝트 전환 뒤 되돌리기를 처리한다. 같은 Run ID를 현재 신뢰로 재시작하고 승인 뒤 한 번만 재시도한다. 작업 중지는 확인하며, 컨테이너 되돌리기는 실제 stop 응답의 undo만 사용한다.
+- `StoredRun.source_cwd`는 실제 실행의 정규 cwd를 보존한다. `observe.resolve_location`은 source run/파일/프로젝트를 기준으로 위치를 해석하고 Windows 사본 경로를 원본으로 매핑한다. 이전 cwd 미기록 실행의 상대 위치는 추측하지 않고 거절한다. native 기존 검증된 distro·Code.exe/Cursor.exe+cli.js argv에 `--goto`를 더했으며 http/https 전용 URL helper는 그대로다. Task14의 project-root-relative Problem.file은 이 run-cwd 계약과 구분해야 한다.
+- ANSI 16/256/truecolor·굵게/밑줄·제어열 제거, ANSI 경계/한글/따옴표 공백 파일 링크, 가상화·follow·서버 검색/필터·8개 소스 병합·credit/dispose·10,000줄/4MiB 보관을 구현했다. Windows 폴더/종료 한계는 표시하고 WSL 래퍼 CPU/메모리를 Windows 자원으로 표시하지 않는다.
+- 고유64개 PASS(프런트47·Rust17), TS 생성/check·앱/E2E 정적 타입·MSVC 좁은 check·파일/컴포넌트 상한 PASS. Define 실제 assertion2·오래된 live 누락1·ANSI 링크5·저장 우선순위/rev3 RED를 보존했다. fixture geometry/Provider 종료 기대·작성 중 타입/컴파일 오류는 별도 실패 분류다.
+- 대표 E2E2개는 **작성만** 했다. runtime-only fixture는 고유 소유 slice/anchor·고정 env·CPU4/nice10·6/8GiB/swap1GiB·정확한 drop-in 정리를 사용하고 모든 browser fixture PATH에 소유 fake Docker를 둔다. helper mock 검증은 E2E 실행 성공이 아니다. 기존 systemd 로그 시험1 ignored·실제 Windows/편집기 실행·전체 검사·push/PR은 미실행이며 Task16에서 수행한다.
+- 근거 `devbox-verification/s2-task13/{summary,source-freeze,test-names,static-checks,artifact-hashes}.json` 및 raw/resources. 제품·시험62개 digest `a0a55722fbe0c82901e23d6efc4a23b1851f2da6240540b79dd30df4e177cedf`; 독립 검토 PASS·미해결0. 완료 Biome 최초 줄바꿈1건을 포맷만 수정한 뒤 316개 PASS(0.582초·cgroup114,196,480B·swap0). 최종 상태·해시·커밋은 `root-completion.json`에 기록한다.
 
 ---
 

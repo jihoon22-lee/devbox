@@ -69,6 +69,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             s.projects.prompts(p).await
         });
     let router = router
+        .register::<devbox_observe::ResolveLocation, _, _>(|s, _, p| async move {
+            super::locations::resolve(s, p).await
+        })
         .register::<devbox_observe::ObserveProblems, _, _>(|s, _, p| async move {
             super::problems::query(s, p).await
         })
@@ -114,6 +117,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_runtime::RuntimeSchedules, _, _>(|s, _, p| async move {
             s.runs.schedules(p).await
         })
+        .register::<devbox_runtime::RuntimeGet, _, _>(|s, _, p| async move { s.runs.get(p).await })
         .register::<devbox_runtime::RuntimeRuns, _, _>(
             |s, _, p| async move { s.runs.runs(p).await },
         )

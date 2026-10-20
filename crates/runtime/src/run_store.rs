@@ -14,6 +14,8 @@ CREATE INDEX runtime_runs_project ON runtime_runs(project_id, started_ms DESC);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StoredRun {
+    #[serde(default)]
+    pub source_cwd: Option<String>,
     pub run: Run,
     #[serde(default)]
     pub secret_definition: Option<crate::RunDef>,
@@ -69,4 +71,14 @@ pub(crate) fn problem_history(
 ) -> rusqlite::Result<Vec<StoredRun>> {
     tx.prepare("SELECT body FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.state') NOT IN ('starting','running','restarting') ORDER BY started_ms DESC,id LIMIT 129")?
         .query_map([project],|r|decode(r.get(0)?))?.collect()
+}
+
+/// Prefer a live invocation; history volume cannot evict a running service.
+pub(crate) fn representative(
+    tx: &Transaction<'_>,
+    project: &str,
+    definition: &str,
+) -> rusqlite::Result<Option<StoredRun>> {
+    tx.query_row("SELECT body FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.defId')=?2 ORDER BY (json_extract(body,'$.run.state') IN ('starting','running','restarting')) DESC,started_ms DESC,id LIMIT 1",
+        params![project, definition], |row| decode(row.get(0)?)).optional()
 }

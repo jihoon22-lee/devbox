@@ -4,7 +4,8 @@ import { readAgentList } from "./agentPages";
 import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
 import { useRpc, useRpcSession } from "./RpcProvider";
-import { invalidateIfNewer, shareByRevision, shareTerminalLive } from "./revisions";
+import { invalidateIfNewer, shareByRevision, shareRuntimeList, shareTerminalLive } from "./revisions";
+import { readRuntimeList } from "./runtimePages";
 import { readTerminalList } from "./terminalPages";
 
 export { compareRev, invalidateIfNewer, setIfNewer } from "./revisions";
@@ -34,7 +35,8 @@ export function useRpcQuery<M extends QueryMethod>(
     refetchIntervalInBackground: opts.refetchIntervalInBackground,
     ...(opts.refetchOnWindowFocus === undefined ? {} : { refetchOnWindowFocus: opts.refetchOnWindowFocus }),
     meta: { generation },
-    structuralSharing: method === "terminal.list" ? shareTerminalLive : shareByRevision,
+    structuralSharing:
+      method === "terminal.list" ? shareTerminalLive : method === "runtime.list" ? shareRuntimeList : shareByRevision,
     queryFn: ({ signal }) =>
       method === "agents.list"
         ? (readAgentList(client, params as Methods["agents.list"]["params"], signal) as Promise<Methods[M]["result"]>)
@@ -42,7 +44,11 @@ export function useRpcQuery<M extends QueryMethod>(
           ? (readTerminalList(client, params as Methods["terminal.list"]["params"], signal) as Promise<
               Methods[M]["result"]
             >)
-          : client.call(method, params, { signal }),
+          : method === "runtime.list"
+            ? (readRuntimeList(client, params as Methods["runtime.list"]["params"], signal) as Promise<
+                Methods[M]["result"]
+              >)
+            : client.call(method, params, { signal }),
   });
 }
 export function useRpcMutation<M extends MutationMethod>(method: M) {

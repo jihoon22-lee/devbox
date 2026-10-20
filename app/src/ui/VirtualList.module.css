@@ -1,0 +1,19 @@
+.viewport {
+  overflow: auto;
+  min-height: 180px;
+  height: 100%;
+  flex: 1;
+  overflow-anchor: none;
+}
+.content {
+  position: relative;
+  min-width: 100%;
+  width: max-content;
+}
+.row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 100%;
+  white-space: pre;
+}

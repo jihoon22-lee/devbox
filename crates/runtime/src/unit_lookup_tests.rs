@@ -12,6 +12,7 @@ async fn live_unit_lookup_keeps_runs_older_than_the_history_page() {
             run_store::put(
                 tx,
                 &StoredRun {
+                    source_cwd: None,
                     secret_definition: None,
                     windows: None,
                     run: Run {

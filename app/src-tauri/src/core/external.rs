@@ -104,3 +104,96 @@ mod tests {
         );
     }
 }
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorKind {
+    Vscode,
+    Cursor,
+}
+
+pub fn file_arguments(
+    distro: &str,
+    path: &str,
+    line: u32,
+    column: u32,
+) -> Result<Vec<String>, IpcError> {
+    let mut args = arguments(ExternalKind::Vscode, distro, path)?;
+    if line == 0 || column == 0 || path.contains(':') {
+        return Err(IpcError::new("파일 위치가 올바르지 않습니다"));
+    }
+    args.pop();
+    args.push("--goto".into());
+    args.push(format!("{path}:{line}:{column}"));
+    Ok(args)
+}
+
+pub fn editor_cli(
+    bin: &std::path::Path,
+    kind: EditorKind,
+) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    match kind {
+        EditorKind::Vscode => vscode_cli(bin),
+        EditorKind::Cursor => {
+            let parent = bin.parent()?;
+            let root = if bin.ends_with("resources/app/bin") {
+                parent.parent()?.parent()?
+            } else {
+                parent
+            };
+            let exe = root.join("Cursor.exe");
+            let cli = root.join("resources/app/out/cli.js");
+            (bin.join("cursor.cmd").is_file() && exe.is_file() && cli.is_file())
+                .then_some((exe, cli))
+        }
+    }
+}
+
+#[cfg(test)]
+mod file_tests {
+    use super::*;
+    #[test]
+    fn external_file_goto_keeps_every_location_argument_literal() {
+        assert_eq!(
+            file_arguments("Debian", "/owned/a & $(x); '한글'.rs", 12, 3).unwrap(),
+            [
+                "--remote",
+                "wsl+Debian",
+                "--goto",
+                "/owned/a & $(x); '한글'.rs:12:3"
+            ]
+        );
+        for path in ["--exec", "vscode://x", "/x/../y", "/x\ny", "/x:2"] {
+            assert!(file_arguments("Debian", path, 1, 1).is_err());
+        }
+        assert!(file_arguments("Debian", "/owned/x", 0, 1).is_err());
+        assert!(file_arguments("Debian", "/owned/x", 1, 0).is_err());
+    }
+    #[test]
+    fn external_cursor_cli_requires_complete_owned_layout() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("Cursor");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        assert!(editor_cli(&bin, EditorKind::Cursor).is_none());
+        std::fs::create_dir_all(root.join("resources/app/out")).unwrap();
+        for file in [
+            bin.join("cursor.cmd"),
+            root.join("Cursor.exe"),
+            root.join("resources/app/out/cli.js"),
+        ] {
+            std::fs::write(file, b"owned fake, never execute").unwrap();
+        }
+        assert_eq!(
+            editor_cli(&bin, EditorKind::Cursor).unwrap().0,
+            root.join("Cursor.exe")
+        );
+        let nested = root.join("resources/app/bin");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("cursor.cmd"), b"owned fake").unwrap();
+        assert_eq!(
+            editor_cli(&nested, EditorKind::Cursor).unwrap().0,
+            root.join("Cursor.exe")
+        );
+    }
+}

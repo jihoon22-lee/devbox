@@ -11,6 +11,7 @@ import { decodeFrame, jsonFrame } from "../src/rpc/frame";
 import type { Methods } from "../src/rpc/gen/rpc";
 import { parseServerMessage } from "../src/rpc/server-message";
 import { connectFixtureRpc } from "./rpc";
+import { RuntimeResources } from "./runtime-resources";
 import { stopOwnedTmux } from "./tmux-cleanup";
 import { viteAnnounced } from "./vite-readiness";
 
@@ -55,7 +56,8 @@ export class Stack {
   readonly logs = new Map<string, string>();
   readonly env: NodeJS.ProcessEnv;
   daemon?: ChildProcess;
-  constructor() {
+  readonly runtime?: RuntimeResources;
+  constructor(options: { runtime?: boolean } = {}) {
     this.env = { ...process.env, HOME: this.home, DEVBOX_INSTANCE: this.instance };
     try {
       this.env.DEVBOX_NO_SCOPE = "1";
@@ -87,6 +89,15 @@ export class Stack {
         this.env[key] = join(this.home, directory);
         mkdirSync(this.env[key], { mode: 0o700 });
       }
+      const fakeBin = join(this.home, "bin");
+      mkdirSync(fakeBin);
+      // Every browser fixture may navigate to Runs; never query the host Docker.
+      writeFileSync(
+        join(fakeBin, "docker"),
+        '#!/bin/sh\nif [ "$1" = "ps" ]; then exit 0; fi\necho "owned fixture: Docker unavailable" >&2\nexit 1\n',
+        { mode: 0o700 },
+      );
+      this.env.PATH = `${fakeBin}:${this.env.PATH ?? "/usr/bin:/bin"}`;
       mkdirSync(join(this.home, "projects/alpha/.git"), { recursive: true });
       mkdirSync(join(this.home, "projects/beta"), { recursive: true });
       writeFileSync(
@@ -116,6 +127,7 @@ export class Stack {
         join(config, "config.toml"),
         `[[agents.profiles]]\nid="fake"\nlabel="Fake"\ncommand=${JSON.stringify(command)}\nhooks="claude"\n`,
       );
+      if (options.runtime) this.runtime = new RuntimeResources(this.instance, this.env);
     } catch (error) {
       rmSync(this.home, { recursive: true, force: true });
       throw error;
@@ -233,6 +245,7 @@ export class Stack {
     });
   }
   async startDaemon() {
+    this.runtime?.start();
     const binary = process.env.DEVBOX_E2E_BIN;
     if (!binary) throw new Error("global setup did not supply the binary");
     this.daemon = this.start("daemon", binary, ["daemon", "--foreground"]);
@@ -275,16 +288,21 @@ export class Stack {
     return [...this.logs].map(([name, log]) => `${name}:\n${log}`).join("\n");
   }
   async close() {
-    await Promise.all(this.children.map(stop));
-    // Daemon restarts preserve sessions; only fixture teardown kills its exact server.
-    await stopOwnedTmux(this.instance, this.env);
-    rmSync(this.home, { recursive: true, force: true });
+    try {
+      await Promise.all(this.children.map(stop));
+      // Daemon restarts preserve sessions; only fixture teardown kills its exact server.
+      await stopOwnedTmux(this.instance, this.env);
+    } finally {
+      this.runtime?.close();
+      rmSync(this.home, { recursive: true, force: true });
+    }
   }
 }
 
-export const test = base.extend<{ stack: Stack }>({
-  stack: async ({}, use, info) => {
-    const stack = new Stack();
+export const test = base.extend<{ stack: Stack; runtimeEnabled: boolean }>({
+  runtimeEnabled: [false, { option: true }],
+  stack: async ({ runtimeEnabled }, use, info) => {
+    const stack = new Stack({ runtime: runtimeEnabled });
     try {
       await stack.launch();
       await use(stack);

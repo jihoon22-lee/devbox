@@ -107,17 +107,34 @@ impl RuntimeService {
                 })
             })
             .peekable();
-        let recent = self
-            .runs(RunsQuery {
-                project_id: Some(p.project_id.clone()),
-                limit: 32,
+        // Each bounded definition page carries its current live invocation (or
+        // most recent result). A long-lived service must not fall out of a global
+        // recent-history window when unrelated tasks run frequently.
+        let candidates: Vec<_> = rows.by_ref().take(PAGE_ROWS + 1).collect();
+        let ids: Vec<_> = candidates
+            .iter()
+            .map(|(_, d)| d.def.id().to_owned())
+            .collect();
+        let project = p.project_id.clone();
+        let (representatives, run_rev) = self
+            .db
+            .read(move |tx| {
+                let mut runs = HashMap::new();
+                for id in ids {
+                    if let Some(run) = crate::run_store::representative(tx, &project, &id)? {
+                        runs.insert(id, run.run);
+                    }
+                }
+                Ok((runs, current_rev(tx)?))
             })
-            .await?;
+            .await
+            .internal("read definition invocation snapshot")?;
+        let mut rows = candidates.into_iter().peekable();
         let mut page = DefinitionList {
-            rev: rev.to_string(),
+            rev: run_rev.max(rev).to_string(),
             defs: vec![],
             shadowed: vec![],
-            runs: recent.items,
+            runs: vec![],
             trust: state.trust,
             next_cursor: None,
         };
@@ -128,6 +145,13 @@ impl RuntimeService {
                 id: def.def.id().into(),
                 shadowed,
             };
+            let run = (!shadowed)
+                .then(|| representatives.get(def.def.id()))
+                .flatten()
+                .cloned();
+            if let Some(run) = &run {
+                page.runs.push(run.clone());
+            }
             if shadowed {
                 page.shadowed.push(def);
             } else {
@@ -138,6 +162,9 @@ impl RuntimeService {
                 .internal("measure execution list")?
                 .len();
             if bytes > PAGE_BYTES {
+                if run.is_some() {
+                    page.runs.pop();
+                }
                 if shadowed {
                     page.shadowed.pop();
                 } else {

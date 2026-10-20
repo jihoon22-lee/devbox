@@ -135,6 +135,19 @@ impl RuntimeService {
             .internal("save execution state")??;
         Ok(rev)
     }
+    pub async fn get(&self, p: RunId) -> R<RunDetail> {
+        let id = p.run_id.clone();
+        let (run, rev) = self
+            .db
+            .read(move |tx| Ok((run_store::get(tx, &id)?, devbox_core::current_rev(tx)?)))
+            .await
+            .internal("read execution detail snapshot")?;
+        let run = run.ok_or_else(|| RuntimeError::RunNotFound { id: p.run_id })?;
+        Ok(RunDetail {
+            rev: rev.to_string(),
+            run: run.run,
+        })
+    }
     pub async fn runs(&self, p: RunsQuery) -> R<RunsResult> {
         let limit = p.limit.clamp(1, 256);
         let (items, rev) = self
@@ -213,6 +226,11 @@ impl RuntimeService {
                 RunDef::Schedule(_) => unreachable!("preflight rejects schedules"),
             };
             let mut value = StoredRun {
+                source_cwd: match def {
+                    RunDef::Task(d) => d.cwd.clone(),
+                    RunDef::Service(d) => d.cwd.clone(),
+                    _ => None,
+                },
                 secret_definition: crate::secret_input::requires(def).then(|| def.clone()),
                 windows: prepared.windows.get(def.id()).map(|w| {
                     crate::windows::WindowsDefinition {

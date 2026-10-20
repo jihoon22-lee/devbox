@@ -11,6 +11,8 @@ import { AttentionBridge } from "../features/notifications/AttentionBridge";
 import { subscribeNativeNavigation } from "../features/notifications/native";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
+import { RunStopUndo } from "../features/runs/RunStopUndo";
+import { RunsPage } from "../features/runs/RunsPage";
 import { openSettings, registerSettingsNavigation } from "../features/settings/open";
 import { restorePreferences } from "../features/settings/preferences";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -46,6 +48,7 @@ export function Shell() {
         ),
         pages: {
           "/terminal": { component: TerminalPage },
+          "/runs": { component: RunsPage },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
         },
         settings: SettingsPage,
@@ -182,6 +185,7 @@ export function Shell() {
           }}
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
+        <RunStopUndo />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />
         <ProjectSwitcher
