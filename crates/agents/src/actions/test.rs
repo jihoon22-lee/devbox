@@ -3,10 +3,25 @@ use crate::{
     model::{AgentTest, AgentsError, project_trust_failure},
     service::{AgentsService, Result},
 };
-use std::path::Path;
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+};
+
+/// Prepared under the action lock; the runner must finish starting before it is released.
+pub struct AgentTestSpec {
+    pub project_id: String,
+    pub cwd: PathBuf,
+    pub command: String,
+    pub snapshot: devbox_projects::trust::AuthorizedConfig,
+}
 
 impl AgentsService {
-    pub async fn test(&self, id: &str) -> Result<AgentTest> {
+    pub async fn test_with_runner<F, Fut>(&self, id: &str, runner: F) -> Result<AgentTest>
+    where
+        F: FnOnce(AgentTestSpec) -> Fut,
+        Fut: Future<Output = Result<AgentTest>>,
+    {
         let _guard = self.actions.lock().await;
         let task = self.get(id).await?;
         open(&task)?;
@@ -38,20 +53,12 @@ impl AgentsService {
             .test
             .clone()
             .ok_or(AgentsError::InvalidInput)?;
-        let session = self
-            .terminal
-            .create_internal(
-                devbox_terminal::SessionKind::Shell,
-                Some(task.project_id),
-                cwd,
-                format!("{} 테스트", task.title),
-                command,
-                &[],
-            )
-            .await
-            .map_err(|e| devbox_protocol::Fail::Internal(format!("agent test terminal: {e:?}")))?;
-        Ok(AgentTest {
-            terminal_id: session.id,
+        runner(AgentTestSpec {
+            project_id: task.project_id,
+            cwd,
+            command,
+            snapshot,
         })
+        .await
     }
 }

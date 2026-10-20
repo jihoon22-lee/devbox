@@ -203,9 +203,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsDiscard, _, _>(|s, _, p| async move {
             s.agents.discard(p).await
         })
-        .register::<devbox_agents::AgentsTest, _, _>(
-            |s, _, p| async move { s.agents.test(&p.id).await },
-        )
+        .register::<devbox_agents::AgentsTest, _, _>(|s, _, p| async move {
+            super::agent_test::test_agent(s, &p.id).await
+        })
         .register::<devbox_agents::AgentsCleanupCandidates, _, _>(|s, _, p| async move {
             s.agents.cleanup_candidates(p).await
         })

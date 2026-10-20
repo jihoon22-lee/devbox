@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q·Task14·Task15 선행1 로컬 완료. 선행2 test 분리 고유11개·독립 검토(미해결0)·Biome331 PASS, 로컬 완료 |
-| 다음 할 일 | Task15 비밀 설정·에이전트 테스트·MCP 기능 RED부터 구현. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q·Task15(선행 분리2개 포함) 로컬 완료. Task15 고유73개·타입/생성·독립 검토(미해결0)·Biome337 PASS |
+| 다음 할 일 | Task15b 공용 색인 DB·코드 보기·검사 대기를 구현한다. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · Task15 선행2 test 분리 고유11개·독립 검토(미해결0)·Biome331 PASS, 로컬 완료 |
+| 마지막 갱신 | 2026-10-21 · Task15 고유73개·독립 검토(미해결0)·Biome337 PASS, 로컬 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q 로컬 완료. Task14 로컬 완료. Task15 선행1 로컬 완료, 선행2 고유11개·독립 검토·Biome331 PASS, 로컬 완료. 전체 검사·Windows 실기는 Task16 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q·Task15(선행2개 포함) 로컬 완료. Task15 고유73개·타입/생성·독립 검토·Biome337 PASS. 전체 검사·Windows 실기는 Task16 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -100,7 +100,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
-| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13·14 로컬 완료. Task15 선행 분리2개 로컬 완료, 선행2 고유11개·독립 검토·Biome331 PASS. 다음 기능 RED |
+| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13·14·15(선행 분리2개 포함) 로컬 완료. Task15 고유73개·타입/생성·독립 검토·Biome337 PASS. 다음 Task15b |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
@@ -281,6 +281,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 선행1 `557139f2` 뒤 기존 AgentsService::test 48줄만 `actions/test.rs`로 원문 그대로 옮겼다. actions571→525줄·test57줄로 상한과 이후 test 연결 공간을 확보했으므로 선택 사항인 review/rebase 이동은 하지 않았다. private mod test만 추가했으며 공개 API·terminalId 직렬화·open/소유 worktree·Test snapshot·action lock 수명은 유지했다. 시험 코드 변경은 0이다.
 - 고유 **11개를 이동 전후 각각 PASS**(CLI agents_actions_safety8·기존 agents.test 실행1·projects_trust 승인 실행/미승인 거절2, 실행22개). actual 시험명과 기존 시험 파일 해시의 전후 일치를 확인했다. 이동한 메서드와 남은 actions 본문은 모듈 선언 외 byte 동일, Rustfmt/diff/600줄 PASS다. 순수 이동으로 인위적 RED를 만들지 않았으며 실패/무시/잠금75는 0이다.
 - 근거 `devbox-verification/s2-task15-refactor-actions/{summary,source-freeze,test-source-freeze,documentation-freeze,test-names,artifact-hashes}.json` 및 원시 로그·정확한 명령·자원 JSON. 6회 검증 모두 common-dir 비차단 잠금·CPU4/nice10/jobs2/threads2/workers2·cgroup6/8GiB/swap1GiB를 적용하고 소유 fixture만 사용했다. 독립 검토 PASS·미해결0, 제품2개·기존 시험3개·문서2개·artifact23개 해시 일치. 완료 Biome331 PASS(0.864초·cgroup126,255,104B·swap0). 제품 digest `99e1312eb7e0e357dfa9cf5d832568b78758988a8972b4881b9168ef474db5c6`. 인계 시점 summary/manifest는 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 기능 Task15 RED/AgentTestSpec/runner/runtime 전환·SecretsSettings·MCP는 미착수이며 전체 check/clippy/build/E2E·실제 Windows·push/PR은 Task16 미실행이다.
+
+### S2 Task15 비밀 설정·에이전트 테스트·MCP (2026-10-21)
+
+- 선행2 `3e43ef95` 뒤 `test_with_runner`의 open/소유 worktree/Test snapshot·await 전체 action lock을 유지하며 CLI에서 runtime으로 연결했다. 결과는 runId, 일반 대화형 AgentTask.terminalId는 유지한다. `RunKind::AgentTest`를 일반 정의 대표·generic restart에서 분리하고 재실행은 agents.test를 통과한다. snapshot digest·정규 경로가 바뀌거나 임의 명령이 들어오면 자원0으로 거절하며 실제 작업 폴더 cwd를 로그/문제 링크에 보존한다.
+- RunTab은 runtime.get/changed·LogView·명시 실패 로그 전송을 사용한다. 해당 run의 서버 가림 결과 최근200줄만 시간순 인용하고 헤더/인용 포함 UTF-8 64KiB에 명시 생략을 적용한다. 닫힘·취소·중복 클릭을 막으며 브라우저 로그/검색 버퍼를 읽지 않는다. MCP runs는 최근100, problems는 최대100, logs는 기본200/최대500·768KiB/64페이지/5초다. 빈 페이지 cursor도 이어가며 write=false 직접 호출·신뢰 없음/변경을 거절한다. 승인 도구·timeout mutation 재시도는 없다. 초기 예시 `****` 대신 기존 `[REDACTED]` 서버 계약을 그대로 검증했다.
+- SecretsSettings는 이름/이 PC 값 유무·password 입력/실패 후 비움·열림/잠김/불일치·명시 복구 보기/입력·확인 후 재입력을 구현했다. 공개 status는 두 boolean뿐이다. reset은 mutation(always)이며 새 DPAPI 파일을 keyId별로 먼저 준비한 뒤 값 삭제/keyId 변경을 DB 단일 transaction으로 커밋한다. DPAPI/파일/DB 실패 때 기존 값/키/blob·공유 이름을 보존하고 새 소유 파일만 정리한다. interop 불가 reset은 오류/보존이며 기존 native bootstrap/unlock fallback은 유지한다. 평문 캐시 없이 SHA256 fingerprint+요청ID만 임시 보존해 응답 손실의 동일 재시도만 같은 ID를 쓴다.
+- 직접 **고유73개 PASS**(부모30=Rust12+UI18, MCP15, Secrets28). 실제 소유 runtime L2 및 owned fake agent만 사용했다. true assertion RED와 fixture 준비/타이밍/형식 기대·잠금75를 분리했다. 부모 최초 UI 실행에서 통과한 helper6/기존Actions7은 재사용하고 RunTab5만 대기 fixture 보정 뒤 재검증했다. 앱/E2E/acceptance 타입·gen-check·Rust39 포맷/TS·CSS12 Biome·diff/600·300 PASS. 근거 `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,failure-classification,static-checks,documentation-freeze,artifact-hashes}.json` 및 raw/resources·MCP/Secrets 기록. 제품/시험52개 digest `dbf77bf5664d654361f0a41c06666942adb0cc8398e5ca2d52537996825e620e`.
+- **독립 검토 PASS·미해결0·완료 Biome337 PASS, 로컬 완료**. 제품52개·문서2개·artifact92개 해시와 고유73개(Rust40·UI33)를 확인했다. Biome 0.910초·cgroup117,723,136B·swap0. 검토된 인계 summary/manifest는 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 전체 check/clippy/build/E2E·Windows 앱/실제 DPAPI/배포·push/PR은 Task16 미실행이고 native 변경이 없어 MSVC check는 반복하지 않았다. 사용자 비밀·기존 서비스·공유 cache를 변경하지 않았다. 이번 범위에 Task15b/15c/16 기능은 없으며 다음은 Task15b다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -599,6 +607,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-21 | Codex 하네스 구현·하단/알림 분담·별도 검토 | Task13 `de2ed50b` 뒤 Task14 하단 로그/문제·전체 실행 수·가시 상태 관찰·run 알림 연결. 고유111개·타입/생성/MSVC 좁은 check PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 Task15 선행 분리 2개. 실제 Windows·전체 검사·push/PR Task16. 근거 `devbox-verification/s2-task14/{summary,review,root-completion}.json` |
 | 2026-10-21 | Codex 하네스 구현 | Task14 `38658093` 뒤 Task15 선행1 생성/포트 예약·이벤트 함수 분리. 전후 고유34개·Rustfmt/diff/600줄 PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 선행2 actions 분리 뒤 기능 RED. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15-refactor-create/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현 | 선행1 `557139f2` 뒤 Task15 선행2 기존 test action 48줄 이동. 전후 고유11개·원문 보존·Rustfmt/diff/600줄 PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 기능 Task15 RED. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15-refactor-actions/{summary,source-freeze,test-names,artifact-hashes}.json` |
+| 2026-10-21 | Codex 하네스 구현·Secrets/MCP 분담 | Task15 기능 runId 전환·서버 가림 실패 로그·비밀 설정/복구·MCP 도구. 고유73개·타입/생성·변경 포맷 PASS | 독립 검토 PASS·미해결0·Biome337 PASS, 로컬 완료 커밋. 다음 Task15b. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
 
 ## 7. 착수 준비 검토
 

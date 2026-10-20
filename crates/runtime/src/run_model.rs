@@ -8,6 +8,7 @@ pub enum RunKind {
     Task,
     Service,
     Scheduled,
+    AgentTest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

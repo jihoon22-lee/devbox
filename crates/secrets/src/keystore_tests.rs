@@ -139,3 +139,262 @@ async fn unavailable_stays_locked_but_wrong_key_reports_mismatch_until_unlock() 
         b"owned-sealed-fixture"
     );
 }
+
+#[tokio::test]
+async fn reset_rekeys_locally_preserves_names_and_restarts_with_the_committed_blob() {
+    let (t, db, paths) = crate::store_tests::fixture();
+    let fake = executable(
+        t.path(),
+        "import sys\nb=sys.stdin.buffer.read()\nsys.stdout.buffer.write(b'owned-sealed:'+b if '::Protect(' in sys.argv[-1] else b.removeprefix(b'owned-sealed:'))",
+    );
+    let store = DpapiKeyStore::new(&paths.data_dir).with_executable(fake);
+    let original = Key::from_bytes([19; 32]);
+    let original_id = original.id();
+    store
+        .publish(&store.seal(&original).await.expect("seal"), false)
+        .expect("publish");
+    let service = SecretsService::with_key(db.clone(), paths.clone(), original)
+        .await
+        .expect("fixture")
+        .with_keystore(store.clone());
+    service
+        .set(crate::SetSecret {
+            name: "TOKEN".into(),
+            value: "owned-old-value".into(),
+        })
+        .await
+        .expect("set");
+    let config = std::fs::read(paths.config_dir.join("config.toml")).expect("shared names");
+    store
+        .publish(
+            &store
+                .seal(&Key::from_bytes([20; 32]))
+                .await
+                .expect("seal wrong account"),
+            true,
+        )
+        .expect("mismatched fixture blob");
+    drop(service);
+    let service = SecretsService::new(db.clone(), paths.clone()).with_keystore(store.clone());
+    service.initialize().await.expect("detect mismatch");
+    assert!(
+        service
+            .public_status()
+            .await
+            .expect("mismatch state")
+            .key_mismatch
+    );
+    service.reset().await.expect("confirmed reset");
+    let status = service.status().await.expect("status");
+    assert!(!status.locked && !status.key_mismatch);
+    assert_ne!(status.key_id.as_deref(), Some(original_id.as_str()));
+    let reset_id = status.key_id.expect("new native key id");
+    let reset_blob = status.blob.expect("new native fallback blob");
+    assert_eq!(
+        store
+            .unseal(&reset_blob)
+            .await
+            .expect("native fallback unwrap")
+            .id(),
+        reset_id
+    );
+    assert_eq!(
+        store.for_key(&reset_id).blob().expect("committed blob"),
+        Some(reset_blob.clone())
+    );
+    assert_eq!(
+        std::fs::read(paths.config_dir.join("config.toml")).expect("names unchanged"),
+        config
+    );
+    let names = service.list().await.expect("names");
+    assert_eq!(names[0].name, "TOKEN");
+    assert!(!names[0].has_value);
+    let public =
+        serde_json::to_value(service.public_status().await.expect("public")).expect("serialize");
+    assert_eq!(
+        public,
+        serde_json::json!({"locked":false,"keyMismatch":false})
+    );
+    service
+        .set(crate::SetSecret {
+            name: "TOKEN".into(),
+            value: "owned-new-value".into(),
+        })
+        .await
+        .expect("reinput");
+    drop(service);
+    let restarted = SecretsService::new(db, paths).with_keystore(store);
+    restarted.initialize().await.expect("restart");
+    let restarted_status = restarted
+        .status()
+        .await
+        .expect("native status after restart");
+    assert_eq!(restarted_status.key_id, Some(reset_id));
+    assert_eq!(restarted_status.blob, Some(reset_blob));
+    assert_eq!(
+        restarted
+            .resolve(&["TOKEN".into()])
+            .await
+            .expect("reinput persists")["TOKEN"]
+            .as_slice(),
+        b"owned-new-value"
+    );
+    let recovery = restarted.export_key().await.expect("export new key");
+    restarted
+        .import_key(recovery)
+        .await
+        .expect("reimport selected key");
+}
+
+#[tokio::test]
+async fn reset_failures_preserve_committed_key_values_blob_and_shared_settings() {
+    for failure in ["dpapi", "file", "database"] {
+        let (t, db, paths) = crate::store_tests::fixture();
+        let fake = executable(
+            t.path(),
+            "import sys\nb=sys.stdin.buffer.read()\nsys.stdout.buffer.write(b'owned-sealed:'+b)",
+        );
+        let store = DpapiKeyStore::new(&paths.data_dir).with_executable(fake);
+        let original = Key::from_bytes([21; 32]);
+        let old_id = original.id();
+        let old_blob = store.seal(&original).await.expect("seal original");
+        store.publish(&old_blob, false).expect("publish original");
+        let service = SecretsService::with_key(db.clone(), paths.clone(), original)
+            .await
+            .expect("fixture")
+            .with_keystore(store.clone());
+        std::fs::write(
+            paths.config_dir.join("config.toml"),
+            "[secrets]\nnames=['TOKEN']\n[mcp]\nwrite=false\n",
+        )
+        .expect("owned config");
+        service
+            .set(crate::SetSecret {
+                name: "TOKEN".into(),
+                value: "owned-value".into(),
+            })
+            .await
+            .expect("set");
+        let config = std::fs::read(paths.config_dir.join("config.toml")).expect("config");
+        let service = if failure == "dpapi" {
+            service.with_keystore(store.with_executable(t.path().join("absent")))
+        } else {
+            service
+        };
+        if failure == "database" {
+            db.write(|tx| tx.execute_batch("CREATE TRIGGER deny_reset BEFORE DELETE ON secrets_values BEGIN SELECT RAISE(ABORT,'owned reset fault'); END;")).await.expect("fault injection");
+        }
+        if failure == "file" {
+            // Inject a forbidden parent-directory symlink at publication time;
+            // restore the owned directory before checking the original data.
+            std::fs::rename(
+                paths.data_dir.join("keys"),
+                paths.data_dir.join("saved-keys"),
+            )
+            .expect("owned rename");
+            std::os::unix::fs::symlink(
+                paths.data_dir.join("saved-keys"),
+                paths.data_dir.join("keys"),
+            )
+            .expect("owned symlink");
+        }
+        assert!(service.reset().await.is_err(), "{failure}");
+        if failure == "file" {
+            std::fs::remove_file(paths.data_dir.join("keys")).expect("owned link");
+            std::fs::rename(
+                paths.data_dir.join("saved-keys"),
+                paths.data_dir.join("keys"),
+            )
+            .expect("restore");
+        }
+        assert_eq!(
+            std::fs::read_dir(paths.data_dir.join("keys"))
+                .expect("keys")
+                .count(),
+            1,
+            "prepared blob must be removed on {failure}"
+        );
+        assert_eq!(
+            service.status().await.expect("status").key_id.as_deref(),
+            Some(old_id.as_str())
+        );
+        assert_eq!(
+            std::fs::read(paths.data_dir.join("keys/data.key.dpapi")).expect("old blob"),
+            old_blob
+        );
+        assert_eq!(
+            service.resolve(&["TOKEN".into()]).await.expect("preserved")["TOKEN"].as_slice(),
+            b"owned-value"
+        );
+        assert_eq!(
+            std::fs::read(paths.config_dir.join("config.toml")).expect("config preserved"),
+            config
+        );
+    }
+}
+
+#[tokio::test]
+async fn reset_commit_updates_memory_even_if_the_request_is_cancelled() {
+    use std::sync::Arc;
+    let (t, db, paths) = crate::store_tests::fixture();
+    let fake = executable(
+        t.path(),
+        "import sys\nsys.stdout.buffer.write(b'owned-sealed:'+sys.stdin.buffer.read())",
+    );
+    let service = Arc::new(
+        SecretsService::with_key(db.clone(), paths.clone(), Key::from_bytes([23; 32]))
+            .await
+            .expect("fixture")
+            .with_keystore(DpapiKeyStore::new(&paths.data_dir).with_executable(fake)),
+    );
+    let old_id = service.status().await.expect("old status").key_id;
+    let (entered, entered_wait) = tokio::sync::oneshot::channel();
+    let (release, release_wait) = std::sync::mpsc::channel();
+    let writer_db = db.clone();
+    let blocker = tokio::spawn(async move {
+        writer_db
+            .write(move |_| {
+                let _ = entered.send(());
+                release_wait
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("release owned blocker");
+                Ok(())
+            })
+            .await
+    });
+    entered_wait.await.expect("writer blocked");
+    let resetting = service.clone();
+    let task = tokio::spawn(async move { resetting.reset().await });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if std::fs::read_dir(paths.data_dir.join("keys"))
+                .is_ok_and(|entries| entries.count() == 1)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("new sealed file prepared before database write");
+    task.abort();
+    assert!(task.await.expect_err("cancelled caller").is_cancelled());
+    release.send(()).expect("release writer");
+    blocker.await.expect("writer joined").expect("write done");
+    // Queue after the reset request; reaching this read confirms its write finished.
+    db.write(|_| Ok(())).await.expect("writer drained");
+    let status = service.status().await.expect("committed in-memory key");
+    assert!(!status.locked);
+    assert_ne!(status.key_id, old_id);
+    service
+        .set(crate::SetSecret {
+            name: "TOKEN".into(),
+            value: "owned-after-cancel".into(),
+        })
+        .await
+        .expect("new key remains usable");
+    assert_eq!(
+        service.resolve(&["TOKEN".into()]).await.expect("resolve")["TOKEN"].as_slice(),
+        b"owned-after-cancel"
+    );
+}

@@ -5,6 +5,7 @@ use devbox_protocol::Internal;
 use std::path::{Path, PathBuf};
 
 pub struct PreparedGraph {
+    pub(crate) agent_test: bool,
     pub(crate) project_id: String,
     pub(crate) schedule: Option<crate::schedule_model::ScheduleClaim>,
     pub(crate) worktree: Option<String>,
@@ -188,7 +189,7 @@ async fn canonical_directory(id: &str, path: &Path) -> R<PathBuf> {
     }
     Ok(path)
 }
-async fn prepare(
+pub(crate) async fn prepare(
     service: &RuntimeService,
     p: &StartRun,
     project: &str,
@@ -402,6 +403,7 @@ async fn prepare(
         .filter(|s| !s.chars().any(char::is_control))
         .ok_or_else(|| invalid(&p.id, "invalid execution binary path"))?;
     Ok(PreparedGraph {
+        agent_test: false,
         schedule: None,
         project_id: p.project_id.clone(),
         worktree: p.worktree.clone(),

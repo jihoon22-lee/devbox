@@ -157,9 +157,47 @@ async fn secret_rpc_keeps_native_keys_off_renderer_mcp_and_public_lists() {
     assert!(
         matches!(message,ServerMessage::Response{error:Some(e),result:None,..}if e.code=="method_not_found")
     );
-    assert!(
-        !std::fs::read_to_string(f.home.path().join("stderr.log"))
-            .expect("daemon logs")
-            .contains("owned-secret-value")
+    for (request_id, method) in [(2, "secrets.status"), (3, "secrets.export_key")] {
+        wire.send(json_frame(
+            1,
+            &ClientMessage::Request {
+                id: request_id,
+                method: method.into(),
+                params: serde_json::value::to_raw_value(&Empty {}).expect("params"),
+                client_request_id: None,
+            },
+        ))
+        .await
+        .expect("explicit renderer request");
+        let frame = bounded(wire.next())
+            .await
+            .expect("response")
+            .expect("frame");
+        let message = parse_json::<ServerMessage>(&frame).expect("reply");
+        let ServerMessage::Response {
+            result: Some(result),
+            error: None,
+            ..
+        } = message
+        else {
+            panic!("renderer metadata and explicit export must be allowed");
+        };
+        if method == "secrets.status" {
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(result.get()).expect("metadata"),
+                serde_json::json!({"locked":false,"keyMismatch":false})
+            );
+        } else {
+            let explicit: devbox_secrets::Recovery =
+                serde_json::from_str(result.get()).expect("explicit recovery");
+            assert_eq!(explicit.recovery, recovery.recovery);
+        }
+    }
+    assert_eq!(
+        <devbox_secrets::Reset as devbox_protocol::Method>::CONFIRM,
+        devbox_protocol::Confirm::Always
     );
+    let logs = std::fs::read_to_string(f.home.path().join("stderr.log")).expect("daemon logs");
+    assert!(!logs.contains("owned-secret-value"));
+    assert!(!logs.contains(&recovery.recovery));
 }

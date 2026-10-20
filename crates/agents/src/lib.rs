@@ -7,6 +7,7 @@ pub mod start;
 pub mod state;
 pub mod store;
 pub mod tracker;
+pub use actions::AgentTestSpec;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
 pub use limits::input as validate_input;

@@ -8,6 +8,7 @@ use devbox_protocol::{Fail, Internal};
 use std::path::Path;
 
 mod test;
+pub use test::AgentTestSpec;
 
 pub(crate) fn open(task: &AgentTask) -> Result<()> {
     if matches!(task.state, AgentState::Closed | AgentState::Preparing) {

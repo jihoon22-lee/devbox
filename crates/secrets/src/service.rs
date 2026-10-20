@@ -8,15 +8,18 @@ use devbox_protocol::{
     Done, Fail, Internal,
     secrets::{Bootstrap, KeyStatus, Unlock},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 use zeroize::Zeroizing;
 pub struct SecretsService {
     db: Db,
     paths: Paths,
     keystore: DpapiKeyStore,
-    key: Mutex<Option<Key>>,
-    mismatch: std::sync::atomic::AtomicBool,
+    key: Arc<Mutex<Option<Key>>>,
+    mismatch: Arc<std::sync::atomic::AtomicBool>,
 }
 impl SecretsService {
     pub fn new(db: Db, paths: Paths) -> Self {
@@ -25,8 +28,8 @@ impl SecretsService {
             db,
             paths,
             keystore,
-            key: Mutex::new(None),
-            mismatch: std::sync::atomic::AtomicBool::new(false),
+            key: Arc::new(Mutex::new(None)),
+            mismatch: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
     pub fn with_keystore(mut self, keystore: DpapiKeyStore) -> Self {
@@ -73,7 +76,7 @@ impl SecretsService {
         let Some(id) = self.id().await? else {
             return Ok(());
         };
-        match self.keystore.blob() {
+        match self.keystore.stored_key(&id).blob() {
             Ok(Some(blob)) => match self.keystore.unseal(&blob).await {
                 Ok(candidate) if candidate.id() == id => {
                     *key = Some(candidate);
@@ -91,7 +94,11 @@ impl SecretsService {
     pub async fn status(&self) -> R<KeyStatus> {
         let key = self.key.lock().await;
         let id = self.id().await?;
-        let blob = match self.keystore.blob() {
+        let keystore = id
+            .as_deref()
+            .map(|id| self.keystore.stored_key(id))
+            .unwrap_or_else(|| self.keystore.clone());
+        let blob = match keystore.blob() {
             Ok(blob) => blob,
             Err(_) => {
                 self.mark_mismatch();
@@ -106,6 +113,13 @@ impl SecretsService {
             key_mismatch: self.mismatch.load(std::sync::atomic::Ordering::Acquire),
             key_id: id,
             blob,
+        })
+    }
+    pub async fn public_status(&self) -> R<PublicKeyStatus> {
+        let status = self.status().await?;
+        Ok(PublicKeyStatus {
+            locked: status.locked,
+            key_mismatch: status.key_mismatch,
         })
     }
     pub async fn bootstrap(&self, input: Bootstrap) -> R<Done> {
@@ -244,12 +258,42 @@ impl SecretsService {
             return Err(SecretsError::KeyMismatch.into());
         }
         let blob = self.keystore.seal(&candidate).await?;
-        self.keystore.publish(&blob, true)?;
+        self.keystore
+            .stored_key(&candidate.id())
+            .publish(&blob, true)?;
         *current = Some(candidate);
         self.mismatch
             .store(false, std::sync::atomic::Ordering::Release);
         Ok(Done {
             rev: self.db.rev().to_string(),
+        })
+    }
+    pub async fn reset(&self) -> R<Done> {
+        let mut current = self.key.clone().lock_owned().await;
+        // Preparation never overwrites the key selected by the current DB identity.
+        // Both deletion and the switch to the fully synced sealed key commit together.
+        let (candidate, blob) = self.keystore.create().await?;
+        let id = candidate.id();
+        let prepared = self.keystore.prepare_key(&id, &blob)?;
+        let mismatch = self.mismatch.clone();
+        let result = self
+            .db
+            .write_checked_with_commit::<_, std::convert::Infallible, _, _>(
+                move |tx| store::reset(tx, &id).map(Ok),
+                move |_, _| {
+                    prepared.commit();
+                    *current = Some(candidate);
+                    mismatch.store(false, std::sync::atomic::Ordering::Release);
+                },
+            )
+            .await
+            .internal("reset encrypted secrets")?;
+        let (_, rev) = match result {
+            Ok(value) => value,
+            Err(never) => match never {},
+        };
+        Ok(Done {
+            rev: rev.to_string(),
         })
     }
     pub async fn resolve(&self, names: &[String]) -> R<BTreeMap<String, Zeroizing<Vec<u8>>>> {

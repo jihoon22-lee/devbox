@@ -17,7 +17,7 @@ export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes
 export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
 export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
-export type AgentTest = { terminalId: string, };
+export type AgentTest = { runId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
@@ -131,6 +131,7 @@ export type ProjectSummaryList = { items: Array<ProjectSummary>, };
 export type ProjectsChanged = { rev: string, };
 export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
+export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
 export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
 export type RefreshEnvResult = { restarting: boolean, };
@@ -144,7 +145,7 @@ export type Run = { id: string, projectId: string, defId: string, kind: RunKind,
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunDetail = { rev: string, run: Run, };
 export type RunId = { runId: string, };
-export type RunKind = "task" | "service" | "scheduled";
+export type RunKind = "task" | "service" | "scheduled" | "agentTest";
 export type RunState = "starting" | "running" | "restarting" | "exited" | "failed" | "stopped";
 export type RunSummary = { rev: string, active: number, };
 export type RunSummaryQuery = Record<symbol, never>;
@@ -266,7 +267,9 @@ export interface Methods {
   "secrets.export_key": { kind: "query"; confirm: "none"; params: Empty; result: Recovery; error: SecretsError };
   "secrets.import_key": { kind: "mutation"; confirm: "none"; params: Recovery; result: Done; error: SecretsError };
   "secrets.list": { kind: "query"; confirm: "none"; params: Empty; result: Array<SecretInfo>; error: SecretsError };
+  "secrets.reset": { kind: "mutation"; confirm: "always"; params: Empty; result: Done; error: SecretsError };
   "secrets.set": { kind: "mutation"; confirm: "none"; params: SetSecret; result: Done; error: SecretsError };
+  "secrets.status": { kind: "query"; confirm: "none"; params: Empty; result: PublicKeyStatus; error: SecretsError };
   "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
@@ -355,7 +358,9 @@ export const METHOD_INFO = {
   "secrets.export_key": { kind: "query", confirm: "none" },
   "secrets.import_key": { kind: "mutation", confirm: "none" },
   "secrets.list": { kind: "query", confirm: "none" },
+  "secrets.reset": { kind: "mutation", confirm: "always" },
   "secrets.set": { kind: "mutation", confirm: "none" },
+  "secrets.status": { kind: "query", confirm: "none" },
   "system.doctor": { kind: "query", confirm: "none" },
   "system.info": { kind: "query", confirm: "none" },
   "system.ping": { kind: "query", confirm: "none" },

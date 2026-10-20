@@ -20,14 +20,17 @@ pub struct RuntimeFixture {
 }
 impl RuntimeFixture {
     pub fn new() -> Self {
+        let mut daemon = TestDaemon::fixture();
+        daemon.extra_env.retain(|(key, _)| key != "DEVBOX_NO_SCOPE");
+        Self::with_daemon(daemon)
+    }
+    pub fn with_daemon(mut daemon: TestDaemon) -> Self {
         use std::os::unix::fs::MetadataExt;
         let uid = std::fs::metadata("/proc/self").expect("process uid").uid();
-        let mut daemon = TestDaemon::fixture();
         let bus = format!("unix:path=/run/user/{uid}/bus");
         let slice = format!("devbox-{}.slice", daemon.instance);
         let anchor = format!("devbox-{}-fixture.service", daemon.instance);
         let control_dir = PathBuf::from(format!("/run/user/{uid}/systemd/user.control/{slice}.d"));
-        daemon.extra_env.retain(|(key, _)| key != "DEVBOX_NO_SCOPE");
         daemon.extra_env.extend([
             ("DBUS_SESSION_BUS_ADDRESS".into(), bus.clone()),
             ("DEVBOX_TEST_SLICE".into(), slice.clone()),

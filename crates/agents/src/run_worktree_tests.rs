@@ -213,3 +213,6 @@ async fn run_worktree_rejects_changed_or_detached_branch() {
         unchanged(&fixture, &task).await;
     }
 }
+
+#[path = "agent_test_tests.rs"]
+mod agent_test_tests;

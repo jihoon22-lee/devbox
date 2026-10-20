@@ -215,7 +215,9 @@ impl RuntimeService {
             let guard = self.run_lock(&id).await;
             let (kind, restart) = match def {
                 RunDef::Task(_) => (
-                    if final_node && prepared.schedule.is_some() {
+                    if prepared.agent_test {
+                        RunKind::AgentTest
+                    } else if final_node && prepared.schedule.is_some() {
                         RunKind::Scheduled
                     } else {
                         RunKind::Task
@@ -441,6 +443,13 @@ impl RuntimeService {
     }
     pub async fn restart(&self, p: RunId) -> R<Run> {
         let value = self.stored(&p.run_id).await?;
+        if value.run.kind == RunKind::AgentTest {
+            return Err(RuntimeError::DefInvalid {
+                id: value.run.def_id,
+                reason: "rerun agent tests through agents.test".into(),
+            }
+            .into());
+        }
         let mut prepared = self
             .authorize_run_graph(&StartRun {
                 project_id: value.run.project_id.clone(),

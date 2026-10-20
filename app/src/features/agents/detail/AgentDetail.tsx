@@ -54,8 +54,8 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         sessionKnown={!!sessions.data}
         onInstruct={instruct}
         onResume={() => setTab("terminal")}
-        onTest={(terminalId) => {
-          useAgentRuns.getState().set(id, terminalId);
+        onTest={(runId) => {
+          useAgentRuns.getState().set(id, runId);
           setTab("run");
         }}
       />

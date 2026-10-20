@@ -39,3 +39,9 @@ pub fn delete(tx: &Transaction<'_>, name: &str) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM secrets_values WHERE name=?1", [name])?;
     Ok(())
 }
+
+pub fn reset(tx: &Transaction<'_>, id: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM secrets_values", [])?;
+    tx.execute("DELETE FROM secrets_key", [])?;
+    init(tx, id)
+}

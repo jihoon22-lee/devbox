@@ -1,91 +1,11 @@
 mod support;
 use serde_json::{Value, json};
-use std::io::{BufRead, BufReader, Write};
-use std::process::{ChildStdin, Stdio};
-use std::sync::mpsc::{Receiver, channel};
+use std::io::Write;
 use std::time::Duration;
-use support::{ChildGuard, TestDaemon};
-
-struct Mcp {
-    child: ChildGuard,
-    input: Option<ChildStdin>,
-    output: Receiver<String>,
-}
-impl Mcp {
-    fn start(d: &TestDaemon) -> Self {
-        let mut command = d.environment(env!("CARGO_BIN_EXE_devbox"));
-        command
-            .arg("mcp")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped());
-        let mut child = ChildGuard(command.spawn().expect("owned MCP process"));
-        let input = child.0.stdin.take();
-        let stdout = child.0.stdout.take().expect("MCP stdout");
-        let (tx, output) = channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                if tx.send(line.expect("protocol line")).is_err() {
-                    break;
-                }
-            }
-        });
-        Self {
-            child,
-            input,
-            output,
-        }
-    }
-    fn send(&mut self, message: Value) {
-        self.raw(&message.to_string());
-    }
-    fn raw(&mut self, message: &str) {
-        writeln!(self.input.as_mut().expect("open stdin"), "{message}").expect("write request");
-    }
-    fn read(&self) -> Value {
-        let line = self
-            .output
-            .recv_timeout(Duration::from_secs(8))
-            .expect("bounded MCP response");
-        serde_json::from_str(&line).expect("stdout is JSON-RPC only")
-    }
-    fn call(&mut self, message: Value) -> Value {
-        self.send(message);
-        self.read()
-    }
-    fn tool(&mut self, name: &str, arguments: Value) -> Value {
-        self.call(json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments,"_meta":{"owned":"test"}}}))
-    }
-    fn finish(mut self) {
-        self.input.take();
-        assert!(support::exits(self.child).success());
-        assert!(
-            self.output.recv_timeout(Duration::from_secs(1)).is_err(),
-            "no stray response at EOF"
-        );
-    }
-}
-fn body(reply: &Value) -> Value {
-    assert_ne!(reply["result"]["isError"], true, "{reply}");
-    assert_eq!(reply["result"]["content"][0]["type"], "text");
-    serde_json::from_str(
-        reply["result"]["content"][0]["text"]
-            .as_str()
-            .expect("text"),
-    )
-    .expect("JSON text")
-}
-fn names(reply: &Value) -> Vec<String> {
-    reply["result"]["tools"]
-        .as_array()
-        .expect("tools")
-        .iter()
-        .map(|tool| {
-            assert_eq!(tool["inputSchema"]["type"], "object");
-            assert_eq!(tool["inputSchema"]["additionalProperties"], false);
-            tool["name"].as_str().expect("name").to_owned()
-        })
-        .collect()
-}
+use support::TestDaemon;
+#[path = "mcp_cases/support.rs"]
+mod mcp_support;
+use mcp_support::{Mcp, body, names};
 #[test]
 fn offline_initialize_notifications_and_eof_keep_stdout_protocol_only() {
     let d = TestDaemon::fixture();
@@ -103,7 +23,16 @@ fn offline_initialize_notifications_and_eof_keep_stdout_protocol_only() {
     assert_eq!(rejected_null["error"]["code"], -32600);
     assert!(rejected_null["id"].is_null());
     let listed = m.call(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}));
-    assert_eq!(names(&listed), ["devbox_projects", "devbox_agents"]);
+    assert_eq!(
+        names(&listed),
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems"
+        ]
+    );
     let unavailable = m.tool("devbox_projects", json!({}));
     assert_eq!(unavailable["result"]["isError"], true);
     assert!(
@@ -180,7 +109,13 @@ fn oversized_and_invalid_utf8_lines_are_bounded_and_recover() {
     assert_eq!(m.read()["error"]["code"], -32700);
     assert_eq!(
         names(&m.call(json!({"jsonrpc":"2.0","id":8,"method":"tools/list"}))),
-        ["devbox_projects", "devbox_agents"]
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems"
+        ]
     );
     m.finish();
 }
@@ -196,7 +131,13 @@ fn local_false_overrides_shared_write_true() {
     let mut m = Mcp::start(&d);
     assert_eq!(
         names(&m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))),
-        ["devbox_projects", "devbox_agents"]
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems"
+        ]
     );
     assert_eq!(
         m.tool("devbox_agent_send", json!({"id":"missing","text":"deny"}))["result"]["isError"],
@@ -307,10 +248,18 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
     let tools = m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}));
     assert_eq!(
         names(&tools),
-        ["devbox_projects", "devbox_agents", "devbox_agent_send"]
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems",
+            "devbox_agent_send",
+            "devbox_run_task"
+        ]
     );
     assert_eq!(
-        tools["result"]["tools"][2]["inputSchema"]["required"],
+        tools["result"]["tools"][5]["inputSchema"]["required"],
         json!(["id", "text"])
     );
     m.send(json!({"jsonrpc":"2.0","method":"tools/call","params":{"name":"devbox_agent_send","arguments":{"id":id,"text":"notification must not send"}}}));
@@ -410,7 +359,13 @@ async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
     );
     assert_eq!(
         names(&m.call(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))),
-        ["devbox_projects", "devbox_agents"]
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems"
+        ]
     );
     m.finish();
     peer.await.expect("owned fixture");

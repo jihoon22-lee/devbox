@@ -16,6 +16,7 @@ pub(crate) struct Snapshot {
 /// Only projects can construct this whole-config capability. All fields remain immutable.
 #[derive(Debug, Clone)]
 pub struct AuthorizedConfig {
+    digest: String,
     project_id: String,
     canonical_path: String,
     config: ProjectConfig,
@@ -164,6 +165,7 @@ impl ProjectsService {
             return Err(ProjectsError::TrustRequired { id: s.project.id }.into());
         }
         Ok(AuthorizedConfig {
+            digest: s.digest,
             project_id: s.project.id,
             canonical_path: s.project.path,
             config: s.config,
@@ -260,6 +262,20 @@ impl ProjectsService {
             return Ok(None);
         }
         self.authorize_snapshot(s).await.map(Some)
+    }
+
+    /// Reject a stale test capability before a delayed runner creates resources.
+    pub async fn validate_test_snapshot(&self, snapshot: &AuthorizedConfig) -> R<()> {
+        let current = self.test_snapshot(snapshot.project_id()).await?;
+        if current.is_none_or(|current| {
+            current.digest != snapshot.digest || current.canonical_path != snapshot.canonical_path
+        }) {
+            return Err(ProjectsError::TrustRequired {
+                id: snapshot.project_id.clone(),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     /// `command_branch` is UI guidance only. Mutations never consume this decision.

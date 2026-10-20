@@ -163,14 +163,15 @@ pub struct Tool {
 pub struct InputSchema {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    pub properties: BTreeMap<&'static str, StringSchema>,
+    pub properties: BTreeMap<&'static str, PropertySchema>,
     pub required: Vec<&'static str>,
     pub additional_properties: bool,
 }
 #[derive(Serialize)]
-pub struct StringSchema {
-    #[serde(rename = "type")]
-    pub kind: &'static str,
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum PropertySchema {
+    String,
+    Integer { minimum: u32, maximum: u32 },
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

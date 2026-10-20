@@ -79,6 +79,6 @@ pub(crate) fn representative(
     project: &str,
     definition: &str,
 ) -> rusqlite::Result<Option<StoredRun>> {
-    tx.query_row("SELECT body FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.defId')=?2 ORDER BY (json_extract(body,'$.run.state') IN ('starting','running','restarting')) DESC,started_ms DESC,id LIMIT 1",
+    tx.query_row("SELECT body FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.defId')=?2 AND json_extract(body,'$.run.kind')!='agentTest' ORDER BY (json_extract(body,'$.run.state') IN ('starting','running','restarting')) DESC,started_ms DESC,id LIMIT 1",
         params![project, definition], |row| decode(row.get(0)?)).optional()
 }

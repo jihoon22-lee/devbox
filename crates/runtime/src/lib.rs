@@ -7,7 +7,9 @@ pub mod cron;
 mod defs;
 pub mod detect;
 pub use detect::{DefinitionKind, DetectRuns, Suggestion, SuggestionSource};
+mod agent_test;
 mod execution;
+pub use agent_test::AgentTestRequest;
 pub mod exit_record;
 mod graph;
 pub mod launch;
@@ -120,3 +122,6 @@ mod windows_tests;
 
 #[cfg(test)]
 mod run_ui_tests;
+
+#[cfg(test)]
+mod agent_test_tests;

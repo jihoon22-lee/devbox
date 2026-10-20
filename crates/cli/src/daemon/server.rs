@@ -291,7 +291,10 @@ async fn handle(
             let internal = super::secret_routes::internal(&method);
             let allowed = if native {
                 ch == 0 && state.client == Some(ClientKind::App)
-            } else if windows || method == "secrets.run" || method == "secrets.export_key" {
+            } else if method == "secrets.export_key" {
+                (ch == 0 && state.client == Some(ClientKind::Cli))
+                    || (ch != 0 && state.client == Some(ClientKind::App))
+            } else if windows || method == "secrets.run" {
                 ch == 0 && state.client == Some(ClientKind::Cli)
             } else {
                 true

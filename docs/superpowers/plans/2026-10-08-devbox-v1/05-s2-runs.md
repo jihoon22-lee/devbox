@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–14 및 묶음 O·P·Q 로컬 완료. Task14 고유111개·타입/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome331 PASS(2026-10-21). Task15 선행 분리 2개도 로컬 완료했으며, 다음은 비밀 설정·에이전트 테스트·MCP 연결의 기능 RED다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task 1–15 및 묶음 O·P·Q 로컬 완료. Task15는 선행 분리 2개 뒤 기능 고유73개·타입/생성 검사·독립 검토(미해결0)·완료 Biome337 PASS(2026-10-21)로 마쳤다. 다음은 Task15b 공용 색인 DB·코드 보기·검사 대기다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -913,15 +913,15 @@ const stats = useRpcQuery("observe.system", {}, { enabled: visible, refetchInter
 **선행2 상태 (2026-10-21):** 기존 AgentsService::test 48줄을 `actions/test.rs`로 그대로 옮겼다. actions571→525줄·test57줄로 상한과 이후 test 연결 공간을 확보했으므로 계획의 선택 사항인 review/rebase 추가 이동은 하지 않았다. terminalId 결과·open/소유 worktree·Test snapshot·action lock 수명은 유지했다. CLI actions 안전8·기존 agents.test 실행1·신뢰 승인/거절2의 고유11개가 이동 전후 각각 PASS(실행22개), Rustfmt/diff/600줄 PASS다. 독립 검토 PASS·미해결0·완료 Biome331 PASS 뒤 로컬 완료했다. 근거 `devbox-verification/s2-task15-refactor-actions/`. 인계 시점 summary/manifest는 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 다음은 아래 기능 RED·runtime 전환이다.
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/cli/tests/{runtime_agent_test,mcp_runs}.rs · SecretsSettings.test.tsx`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/cli/tests/{runtime_agent_test,mcp_runs}.rs · SecretsSettings.test.tsx`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let run = agent_test(&agent_in_worktree).await?;
 assert_eq!(run.cwd, agent_in_worktree.workdir);
-assert!(mcp_logs(&run.id).await.contains("****"));
+assert!(mcp_logs(&run.id).await.contains("[REDACTED]"));
 assert_eq!(mcp_start_stale().await.created_units, 0);
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-cli --test runtime_agent_test agents_test_runs_in_the_agent_worktree`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** 위 두 agents 분할을 먼저 별도 커밋한다. `AgentsService::test_with_runner(id, runner)`(새 연결 API)은 action lock을 잡고 열림/소유 worktree/TrustOperation::Test를 확인한 `AgentTestSpec { project_id, cwd, command, snapshot }`을 runner에 넘긴다. runner future의 시작 결과까지 lock을 유지해 discard/rebase와 경합하지 않게 한다. CLI daemon/agent_test가 runner closure로 RuntimeService::start_agent_test를 호출해 `{ runId }` 응답을 만든다. agent crate가 runtime에 의존하지 않는다. MCP read 도구·write gate·secrets settings를 연결하고 RunTab은 마지막 200줄의 가려진 로그만 보낸다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-cli --test runtime_agent_test agents_test_runs_in_the_agent_worktree`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** 위 두 agents 분할을 먼저 별도 커밋한다. `AgentsService::test_with_runner(id, runner)`(새 연결 API)은 action lock을 잡고 열림/소유 worktree/TrustOperation::Test를 확인한 `AgentTestSpec { project_id, cwd, command, snapshot }`을 runner에 넘긴다. runner future의 시작 결과까지 lock을 유지해 discard/rebase와 경합하지 않게 한다. CLI daemon/agent_test가 runner closure로 RuntimeService::start_agent_test를 호출해 `{ runId }` 응답을 만든다. agent crate가 runtime에 의존하지 않는다. MCP read 도구·write gate·secrets settings를 연결하고 RunTab은 마지막 200줄의 가려진 로그만 보낸다.
 
 ```rust
 pub async fn test_agent(s: Arc<Services>, id: &str) -> Result<AgentTest, Fail<AgentsError>> {
@@ -932,8 +932,8 @@ pub async fn test_agent(s: Arc<Services>, id: &str) -> Result<AgentTest, Fail<Ag
 } // test_with_runner holds the action lock through the awaited start result.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험과 closed/unsafe worktree 거절·stale test snapshot·MCP write=false·승인 도구 부재·값입력 후 비움/목록 비노출·실패로그 200줄 상한을 검사한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runs): add secrets settings agent test runs and MCP tools`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험과 closed/unsafe worktree 거절·stale test snapshot·MCP write=false·승인 도구 부재·값입력 후 비움/목록 비노출·실패로그 200줄 상한을 검사한다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runs): add secrets settings agent test runs and MCP tools`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `app/src/features/settings/SecretsSettings.tsx`
@@ -944,19 +944,23 @@ pub async fn test_agent(s: Arc<Services>, id: &str) -> Result<AgentTest, Fail<Ag
 - 설정 › 비밀:
   - 이름 목록과 "이 PC에 값 있음/없음"을 보인다. [값 입력] 입력란은 `type=password`이고 보내면 비운다. [삭제]
   - 키 상태(열림·잠김·불일치)와 [복구 문자열 보기·입력]이 있다.
+  - `secrets.status{}`는 `{locked,keyMismatch}`만 공개한다. native `secrets.key_status`의 keyId/blob는 renderer에 노출하지 않는다.
+  - `secrets.reset{}`는 `mutation(always)`이며 전체 로컬 값을 지운다는 확인 뒤 새 키를 만든다. 공유 이름은 보존한다. DPAPI 봉인/key-id별 파일 준비 뒤 DB의 값 삭제·keyId 변경을 한 transaction으로 커밋한다. DPAPI/파일/DB 실패 시 기존 값/키/blob를 보존하고 새 소유 파일만 정리한다. interop 불가 시 초기화하지 않고 오류를 표시한다(기존 Windows bootstrap/unlock fallback 유지).
+  - set/import/delete/reset은 응답 손실 후 동일 입력에 같은 requestId를 재사용한다. 평문을 query/mutation cache에 저장하지 않고 SHA256 fingerprint+요청 메타데이터만 임시 보관한다. 복구 문자열은 명시 조회에만 표시하고 닫거나 화면이 바뀌면 지운다.
   - 불일치면 상단 배너 "비밀 키가 다릅니다 · [복구 문자열 입력][비밀 다시 입력]"(01-design §6.5)이다.
 - `agents.test`:
   - S1에서는 터미널 세션이었다. 이제 runtime 작업 `[agent] test`를 그 작업 폴더에서 실행하고 `runId`를 돌려준다.
-  - 실행 탭은 `LogView`로 보인다. 결과가 실패면 [에이전트에게 실패 로그 보내기]를 띄운다. 마지막 200줄을 인용해 `agents.send`로 보낸다.
+  - 실행 탭은 `LogView`와 `runtime.get`/`runtime.changed`로 ID·결과를 갱신한다. 실패 때 명시적 [에이전트에게 실패 로그 보내기]는 해당 run의 서버 가림 로그만 최근 200줄까지 받아 시간순으로 인용한다. 헤더·인용을 포함해 UTF-8 64KiB를 넘으면 명시적으로 생략하며 닫힌 에이전트/중복 클릭/취소를 차단한다. 조회는 최대 256페이지·전체 5초이며 LogView 검색·브라우저 버퍼·raw 파일을 쓰지 않는다.
+  - `RunKind::AgentTest`를 일반 정의 대표/`runtime.restart`에서 제외한다. 같은 이름의 일반 task와 섞지 않으며 재실행은 새 `agents.test`의 소유권·Test 신뢰 확인을 거친다. 내부 snapshot의 digest·정규 경로가 시작 전 달라졌으면 자원 생성 없이 거절한다. 실제 cwd를 보존해 작업 폴더의 로그/문제 위치를 연다.
 - MCP 도구 추가:
-  - `devbox_runs`(읽기)
-  - `devbox_logs{ runId, lines ≤ 500 }`(읽기, 비밀 값 가림)
-  - `devbox_problems`(읽기)
+  - `devbox_runs{projectId?}`(읽기, 최근 최대 100개)
+  - `devbox_logs{ runId, lines ≤ 500 }`(읽기, 기본 200줄·비밀 값 가림·합계 768KiB·최대 64페이지·전체 5초; 256행 이하 서버 페이지를 모아 시간순 반환, 제한 시 truncated 표시)
+  - `devbox_problems{projectId}`(읽기, 최대 100개와 서버 nextCursor; 전체 문제라고 표시하지 않음)
   - `devbox_run_task{ projectId, id }`(쓰기, `[mcp] write = true`일 때만). 신뢰 승인이 없거나 낡으면 실행하지 않고 `projects.trust_required`를 돌려준다. MCP로 승인을 만들거나 미리보기를 승인할 수 없다.
 - `agents.test`는 S1처럼 `TrustOperation::Test` snapshot의 `[agent] test`만 runtime으로 실행한다.
 
 **핵심 테스트:**
-- `mcp_logs_never_include_secret_values`: 비밀을 출력하는 작업의 로그를 MCP로 읽으면 값이 `****`로 가려짐
+- `mcp_logs_never_include_secret_values`: 비밀을 출력하는 작업의 로그를 MCP로 읽으면 값이 기존 서버 계약 `[REDACTED]`로 가려짐(초기 `****`는 예시였으며 응답 문자열을 변환하지 않음)
 - `agents_test_runs_in_the_agent_worktree`(L2)
 - `mcp_run_task_requires_trust_and_cannot_approve`
 - `SecretsSettings` 단위(값 입력 후 입력란 비움, 목록에 값이 나오지 않음)
@@ -964,6 +968,13 @@ pub async fn test_agent(s: Arc<Services>, id: &str) -> Result<AgentTest, Fail<Ag
 ```bash
 # 아래 단계별 검증·별도 검토 뒤 지정 메시지로 커밋한다.
 ```
+
+**구현·직접 검증 기록 (2026-10-21, 로컬 완료):**
+- 선행2 `3e43ef95` 뒤 AgentsService의 awaited runner lock·CLI 도메인 연결·runtime AgentTest 종류·신뢰 snapshot digest 재확인·실제 소유 cwd 보존을 구현했다. 동일 이름 일반 task와 representative/재시작 경계를 구분하고 에이전트 실행 탭·명시 실패 로그 전송을 연결했다. 대화형 AgentTask.terminalId는 유지한다.
+- 비밀 공개 상태 metadata·값/복구 입력 비움·명시 복구 보기·확인된 재입력 초기화와 파일/DB 실패 보존을 구현했다. MCP 읽기3/쓰기1 도구는 직접 호출에서도 write gate와 기존 runtime 신뢰를 강제하며 승인 도구·자동 mutation 재시도는 추가하지 않았다. 실제 비밀 출력의 기존 `[REDACTED]` 가림을 보존한다.
+- 직접 **고유73개 PASS**(부모30: agents/runtime/CLI12·UI18, MCP15, Secrets28). 실제 소유 systemd 작업 폴더/동일 이름 충돌/재실행·MCP 비밀 출력/신뢰 차단을 포함한다. 초기 terminalId→runId·RunTab·MCP·비밀 탭/요청ID assertion RED와 fixture 준비/비동기 타이밍/로그 형식 기대/잠금75를 구분했다. 최초 부모 UI 묶음의 helper6·기존Actions7 PASS는 그대로 재사용하고, fixture 알림 대기만 고친 RunTab5를 따로 통과했다.
+- 앱/E2E/acceptance 정적 타입·생성 타입 check·변경 Rust39 포맷/TS·CSS12 Biome·diff·파일600/컴포넌트300 PASS. 제품/시험52개 digest `dbf77bf5664d654361f0a41c06666942adb0cc8398e5ca2d52537996825e620e`. 정확한 명령·시험명·raw/resources·실패 분류·동결 해시는 Git common-dir `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,failure-classification,static-checks,documentation-freeze,artifact-hashes}.json` 및 MCP/Secrets 하위 기록에 모았다.
+- **독립 검토 PASS·미해결0·완료 Biome337 PASS로 로컬 완료**했다. 제품52개·문서2개·artifact92개 해시와 고유73개(Rust40·UI33)를 확인했다. Biome는 0.910초·cgroup117,723,136B·swap0이다. 검토된 인계 summary/manifest는 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 전체 check/clippy/build/E2E·실제 Windows 앱/DPAPI·배포·push/PR은 미실행(Task16)이며 fake DPAPI 시험을 Windows 실기 PASS로 표시하지 않는다. native 소스는 바꾸지 않아 MSVC check를 반복하지 않았다. 다음은 Task15b이며 이번 변경에 Task15b/15c/16 기능은 없다.
 
 ---
 

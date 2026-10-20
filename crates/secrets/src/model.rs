@@ -50,3 +50,11 @@ pub fn valid_name(name: &str) -> bool {
             .is_some_and(|b| b == b'_' || b.is_ascii_alphabetic())
         && bytes.all(|b| b == b'_' || b.is_ascii_alphanumeric())
 }
+
+/// Renderer-safe key state. The native key identity/blob stay on channel zero.
+#[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublicKeyStatus {
+    pub locked: bool,
+    pub key_mismatch: bool,
+}

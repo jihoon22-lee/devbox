@@ -1,3 +1,4 @@
+mod agent_test;
 mod debug;
 mod dedupe;
 mod hostname;

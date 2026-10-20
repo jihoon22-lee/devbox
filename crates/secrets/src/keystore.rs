@@ -10,15 +10,55 @@ pub const POWERSHELL: &str = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/pow
 const PREFIX: &str = "$ErrorActionPreference='Stop';Add-Type -AssemblyName System.Security;$b=$null;$r=$null;$m=$null;$failed=$false;try{$i=[Console]::OpenStandardInput();$m=New-Object IO.MemoryStream;$i.CopyTo($m);$b=$m.ToArray();";
 const SUFFIX: &str = ";$o=[Console]::OpenStandardOutput();$o.Write($r,0,$r.Length)}catch{$failed=$true}finally{if($null -ne $b){[Array]::Clear($b,0,$b.Length)};if($null -ne $r){[Array]::Clear($r,0,$r.Length)};if($null -ne $m){$buffer=$m.GetBuffer();[Array]::Clear($buffer,0,$buffer.Length);$m.Dispose()}};if($failed){exit 42}";
 
+#[derive(Clone)]
 pub struct DpapiKeyStore {
     path: PathBuf,
     executable: PathBuf,
+}
+pub(crate) struct PreparedKey {
+    path: PathBuf,
+    committed: bool,
+}
+impl PreparedKey {
+    pub(crate) fn commit(mut self) {
+        self.committed = true;
+    }
+}
+impl Drop for PreparedKey {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 impl DpapiKeyStore {
     pub fn new(data: &Path) -> Self {
         Self {
             path: data.join("keys/data.key.dpapi"),
             executable: POWERSHELL.into(),
+        }
+    }
+    pub(crate) fn for_key(&self, id: &str) -> Self {
+        Self {
+            path: self.path.with_file_name(format!("data.{id}.dpapi")),
+            executable: self.executable.clone(),
+        }
+    }
+    pub(crate) fn prepare_key(&self, id: &str, blob: &[u8]) -> Result<PreparedKey, SecretsError> {
+        let keyed = self.for_key(id);
+        keyed.publish(blob, false)?;
+        Ok(PreparedKey {
+            path: keyed.path,
+            committed: false,
+        })
+    }
+    pub(crate) fn stored_key(&self, id: &str) -> Self {
+        let keyed = self.for_key(id);
+        // A published reset key is selected by the committed database identity.
+        if std::fs::symlink_metadata(&keyed.path).is_ok() {
+            keyed
+        } else {
+            self.clone()
         }
     }
     pub fn with_executable(mut self, path: PathBuf) -> Self {
@@ -74,9 +114,10 @@ impl DpapiKeyStore {
                 .mode(0o600)
                 .open(&self.path)
                 .map_err(|_| SecretsError::KeyMismatch)?;
-            file.write_all(blob)
-                .and_then(|()| file.sync_all())
-                .map_err(|_| SecretsError::Unavailable)?;
+            if file.write_all(blob).and_then(|()| file.sync_all()).is_err() {
+                let _ = std::fs::remove_file(&self.path);
+                return Err(SecretsError::Unavailable);
+            }
         } else {
             let temp = parent.join(format!(".sealed-{}", std::process::id()));
             let mut file = std::fs::OpenOptions::new()
@@ -92,9 +133,11 @@ impl DpapiKeyStore {
             let _ = std::fs::remove_file(temp);
             result.map_err(|_| SecretsError::Unavailable)?;
         }
-        std::fs::File::open(parent)
-            .and_then(|f| f.sync_all())
-            .map_err(|_| SecretsError::Unavailable)
+        let result = std::fs::File::open(parent).and_then(|f| f.sync_all());
+        if result.is_err() && !replace {
+            let _ = std::fs::remove_file(&self.path);
+        }
+        result.map_err(|_| SecretsError::Unavailable)
     }
     pub async fn create(&self) -> Result<(Key, Vec<u8>), SecretsError> {
         let key = Key::random();

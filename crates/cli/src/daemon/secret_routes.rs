@@ -94,6 +94,10 @@ pub(crate) fn register(
     router: devbox_protocol::Router<Services>,
 ) -> devbox_protocol::Router<Services> {
     router
+        .register::<devbox_secrets::Reset, _, _>(|s, _, _| async move { s.secrets.reset().await })
+        .register::<devbox_secrets::Status, _, _>(|s, _, _| async move {
+            s.secrets.public_status().await
+        })
         .register::<devbox_secrets::List, _, _>(|s, _, _| async move { s.secrets.list().await })
         .register::<devbox_secrets::Set, _, _>(|s, _, p| async move { s.secrets.set(p).await })
         .register::<devbox_secrets::Delete, _, _>(
