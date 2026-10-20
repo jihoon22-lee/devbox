@@ -91,9 +91,9 @@ impl ProcessSampler {
             } else {
                 delta as f64 * 100_000.0 / proc.ticks_per_second as f64 / elapsed as f64
             };
-            let project_id = project_for(cwd.as_deref(), projects)
-                .map(str::to_owned)
-                .or_else(|| run.map(|r| r.project_id.clone()));
+            let project_id = run
+                .map(|r| r.project_id.clone())
+                .or_else(|| project_for(cwd.as_deref(), projects).map(str::to_owned));
             next.insert(pid, (stat.start_ticks, stat.cpu_ticks));
             result.push(ProcessInfo {
                 pid,

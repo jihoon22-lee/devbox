@@ -165,7 +165,7 @@ fn kill_refuses_other_users_processes_and_invalid_pids() {
 }
 
 #[test]
-fn selected_project_keeps_unit_owned_processes_outside_its_root() {
+fn selected_project_keeps_unit_owned_processes_even_inside_another_project() {
     let temp = tempfile::tempdir().expect("owned proc fixture");
     fs::write(temp.path().join("stat"), "btime 1700000000\n").expect("boot time");
     for pid in 10..72 {
@@ -173,10 +173,10 @@ fn selected_project_keeps_unit_owned_processes_outside_its_root() {
         fs::create_dir(&path).expect("process directory");
         fs::write(path.join("stat"), stat(pid, 100, 1234)).expect("process stat");
         std::os::unix::fs::symlink(
-            if pid == 70 {
-                "/agent-worktrees/task"
-            } else {
-                "/absolute-cwd"
+            match pid {
+                70 => "/agent-worktrees/task",
+                71 => "/other-project/sub",
+                _ => "/absolute-cwd",
             },
             path.join("cwd"),
         )
@@ -193,10 +193,16 @@ fn selected_project_keeps_unit_owned_processes_outside_its_root() {
     let rows = ProcessSampler::default()
         .sample(
             &proc,
-            &[ProjectRoot {
-                id: "selected".into(),
-                path: "/project".into(),
-            }],
+            &[
+                ProjectRoot {
+                    id: "selected".into(),
+                    path: "/project".into(),
+                },
+                ProjectRoot {
+                    id: "other".into(),
+                    path: "/other-project".into(),
+                },
+            ],
             &[UnitRun {
                 unit: "devbox-run-selected.service".into(),
                 run_id: "run".into(),
@@ -208,7 +214,7 @@ fn selected_project_keeps_unit_owned_processes_outside_its_root() {
     assert_eq!(
         rows.len(),
         52,
-        "both selected run processes plus 50 global rows"
+        "both unit-owned processes survive, including cwd inside another project, plus 50 global rows"
     );
     assert_eq!(
         rows[..2].iter().map(|row| row.pid).collect::<Vec<_>>(),

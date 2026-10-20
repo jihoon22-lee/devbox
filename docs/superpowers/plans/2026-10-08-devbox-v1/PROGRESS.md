@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S2 PR #642 열림·2회차 수정 검증 완료. 구현/로컬 최종 검증/SC9/별도 검토 완료. caf16863 Windows CI·산출물 출처 PASS, 설치 전 interop errno110으로 실기1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN. 최종 SHA CI·3회차 리뷰·머지 대기 |
-| 다음 할 일 | 2회차 코드 지적3건·CI 실패3건 수정의 직접 고유95개·독립 검토·영향 strict Clippy PASS. 완료 Biome→묶음 push→최종 필수 CI3·3회차 리뷰 판정→필요한 최종 SHA 설치 시도→squash. 3회차 수정 뒤 4회차는 차단 기준만 적용 |
+| 단계 | S2 PR #642 열림·3회차 수정 검증 완료. 구현/로컬 최종 검증/SC9/별도 검토 완료. caf16863 Windows CI·산출물 출처 PASS, 설치 전 interop errno110으로 실기1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN. 최종 SHA CI·설치 시도·머지 대기 |
+| 다음 할 일 | 3회차 코드1건·보안0건 완료, Run 프로젝트 귀속 수정2개·독립 검토·영향 strict Clippy PASS. 완료 Biome→묶음 push→최종 SHA 필수 CI3·설치 시도→squash. 4회차를 기다리지 않으며 도착한 지적은 실제 데이터 손실·비밀 유출·승인하지 않은 실행만 차단, 나머지는 §8 인계 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 `699d44e1` 보존. 과제별 기능 커밋·최초 완료2d061058·Windows lint 보정caf16863 후 [PR #642](https://github.com/jihoon22-lee/devbox/pull/642)를 한 번 열었다. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · b59e6c6a CI의 Frontend608 PASS/1 FAIL·E2E10 PASS/1 FAIL·Rust 로그1 FAIL 원본 보존. 2회차 코드3건·보안0건 완료, 수정95개·독립 검토 PASS. 검증한 소스 SHA를 유지하고 최종 결과만 머지 후 문서 작업 사본으로 인계 |
+| 마지막 갱신 | 2026-10-21 · b24d99d5 Frontend/Rust workspace/E2E CI 모두 PASS. 3회차 코드1·보안0 완료, 마지막 귀속 수정2개·독립 검토·Clippy PASS. 최종 SHA CI·설치 시도·머지는 대기, 결과만 머지 후 문서 작업 사본으로 인계 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -51,7 +51,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | PR 열림 | 2026-10-20 | | #642·2회차 수정 검증 완료, 최종 CI·3회차 리뷰·squash 대기. 설치 실기1–11 미실행·12 FAIL/환경 사전 검사, prod 불변 미확인 |
+| S2 | 05-s2-runs | PR 열림 | 2026-10-20 | | #642·3회차 수정 검증 완료, 최종 SHA CI·설치 시도·squash 대기. 설치 실기1–11 미실행·12 FAIL/환경 사전 검사, prod 불변 미확인 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -102,7 +102,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
-| S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | PR 열림 | 2026-10-21 | | 구현·로컬 최종 검증·SC9·caf16863 Windows CI PASS. 설치 전 errno110 FAIL·기능 미실행. 2회차 코드3건·CI3건 직접95개·독립 검토·영향 Clippy PASS, 최종 CI·3회차 리뷰·머지 대기 |
+| S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | PR 열림 | 2026-10-21 | | b24d99d5 Linux/Frontend/E2E CI PASS. 3회차 코드1·보안0 완료, 귀속 수정2개·독립 검토·Clippy PASS. 최종 SHA CI·설치 시도·머지 대기, 설치 전 errno110 실패·기능 미실행 보존 |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
 | S3 | T | Task 4–6 |  | 대기 | | | |
@@ -336,6 +336,12 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - Rust CI는 `logs_tests::follows_appended_lines_and_survives_truncation`의 append 직후 읽기가 None이었다(해당 target50 PASS/1 FAIL). 정확한 Tokio1.53.2 소스의 write_all/flush 완료 계약을 확인해 fixture의 쓰기 뒤 flush만 추가했다. 실제 CI RED를 보존하며 로컬 RED 재현으로 주장하지 않는다. 로그8개 PASS, 제품 로그 변경 없음. 세 CI 수정도 각각 독립 검토 PASS·미해결0이다.
 - 이번 직접 고유95개 PASS(관찰13·비밀16·정리15·터미널43·로그8). 영향 observe/secrets/CLI all-target strict Clippy PASS11.156초·cgroup989,925,376B·swap0. 규모52,258줄/60,000·코드600줄 초과0이며 컴포넌트·scripts1,500줄·workflow2·E2E11개는 유지한다. 기존 성공 전체 검사는 반복하지 않았다. 근거 `devbox-verification/s2-task16/pr/round2/`의 실패/통과 raw·resource·source hash와 각 `review.json`이다.
 - 이전 caf16863 PR Windows run39513889328은 같은 SHA 수동 Windows 성공39510897220이 보존돼 있어 취소했고, b59e6c6a Windows run39515595402는 후속 수정으로 SHA가 바뀌므로 작업 시작 전 pending에서 취소했다. 취소를 PASS로 계산하지 않는다. 완료 Biome 뒤 수정을 한 번에 push해 최종 CI와 3회차 리뷰를 받는다. 마지막 설치 시도·머지 결과만 문서 작업 사본과 artifact/PR에 남기며 추가 결과 커밋으로 검증 SHA를 바꾸지 않는다.
+
+### S2 Task16 PR 3회차 수정·리뷰 상한 (2026-10-21)
+
+- `b24d99d5`의 [CI39516957634](https://github.com/jihoon22-lee/devbox/actions/runs/39516957634)에서 Frontend·Rust workspace·E2E·집계가 모두 PASS했다. 실제 실패했던 세 fixture 보정이 CI에서 확인됐다. 자동 코드 리뷰1건·보안 리뷰0건으로 세 번째 SHA의 리뷰도 완료했다.
+- [추가 프로젝트 귀속 지적](https://github.com/jihoon22-lee/devbox/pull/642#discussion_r4331542053)은 타당했다. cwd가 다른 등록 프로젝트 안에 있으면 이전 cwd-first 판정이 알려진 Run의 project_id를 가렸다. 포트 관찰과 동일하게 Run 소속을 우선하고 해당 Run이 없을 때 cwd로 판정한다. 다른 프로젝트 내부 cwd+전역60개 fixture의 기대52/실제51 RED→GREEN, 기존 cwd·CPU 우선 시험 포함 직접2개 PASS·독립 검토 PASS·미해결0이다.
+- 영향 observe all-target strict Clippy PASS8.376초·cgroup485,990,400B·swap0. 근거 `devbox-verification/s2-task16/pr/round3/process-attribution/` 및 `round3/focused-clippy*`. 완료 Biome 뒤 마지막 수정을 한 번 push한다. 리뷰는 실제 완료한 서로 다른 SHA3개로 상한에 도달했다(코드1/3/1건, 보안0/0/0건). 최종 수정의 필수 CI3와 설치 시도 결과를 확인하고 4회차 리뷰는 기다리지 않는다. 4회차 이후 실제 데이터 손실·비밀 유출·승인하지 않은 실행만 별도 재현·검토로 차단하며 나머지는 §8에 인계한다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -662,6 +668,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 
 | 2026-10-21 | Codex 하네스 PR #642 1회차 수정 | Windows CI69개·Prod/Accept 패키징 PASS, 설치 전 errno110 FAIL·실기 미실행. 코드 리뷰 scheduler1건·CI 세션 assertion1건 보완 | 직접26개·영향 strict Clippy·별도 검토 PASS. 실제 CI 오류 UNKNOWN·원본 실패 보존. 첫 보안 리뷰 지적0건 완료·Biome 뒤 묶음 push, 최종 필수CI/후속 리뷰/머지 대기. 근거 `devbox-verification/s2-task16/pr/` |
 | 2026-10-21 | Codex 하네스 PR #642 2회차 수정 | 코드3건·보안0건 판정, readiness 귀속/선택 프로젝트/비밀키 DB 실패 복구 및 CI 정리·터미널 준비·로그 flush 보완 | 직접 고유95개·영향 strict Clippy·독립 검토 PASS, 실패 원본 보존. 완료 Biome 뒤 묶음 push, 최종 CI·3회차 리뷰·설치 시도·squash 대기. 근거 `devbox-verification/s2-task16/pr/round2/` |
+| 2026-10-21 | Codex 하네스 PR #642 3회차 수정 | b24d99d5 Linux/Frontend/E2E CI PASS, 코드1건·보안0건 완료. 다른 등록 프로젝트 cwd의 Run 귀속 우선순위 보정 | RED→직접2개·독립 검토·영향 strict Clippy PASS. 자동 리뷰3회 상한 도달, 완료 Biome 뒤 최종 SHA CI·설치 시도·squash 진행. 4회차는 차단 기준만 적용 |
 
 
 ## 7. 착수 준비 검토
