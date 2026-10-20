@@ -9,10 +9,13 @@ import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { PopoutAgent } from "../features/agents/detail/AgentDetail";
 import { AttentionBridge } from "../features/notifications/AttentionBridge";
 import { subscribeNativeNavigation } from "../features/notifications/native";
+import { ProblemsPanel } from "../features/problems/ProblemsPanel";
 import { ProjectDataProvider } from "../features/projects/ProjectData";
 import { ProjectSwitcher, ProjectTitle } from "../features/projects/ProjectSwitcher";
+import { BottomLogs } from "../features/runs/BottomLogs";
 import { RunStopUndo } from "../features/runs/RunStopUndo";
 import { RunsPage } from "../features/runs/RunsPage";
+import { runsSearch } from "../features/runs/search";
 import { openSettings, registerSettingsNavigation } from "../features/settings/open";
 import { restorePreferences } from "../features/settings/preferences";
 import { SettingsPage } from "../features/settings/SettingsPage";
@@ -48,7 +51,7 @@ export function Shell() {
         ),
         pages: {
           "/terminal": { component: TerminalPage },
-          "/runs": { component: RunsPage },
+          "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
         },
         settings: SettingsPage,
@@ -125,6 +128,8 @@ export function Shell() {
   );
   useKeymap(bindings);
   useEffect(() => registerBottomTab({ id: "terminal", label: "터미널", render: () => <BottomTerminal /> }), []);
+  useEffect(() => registerBottomTab({ id: "logs", label: "로그", render: () => <BottomLogs /> }), []);
+  useEffect(() => registerBottomTab({ id: "problems", label: "문제", render: () => <ProblemsPanel /> }), []);
   useEffect(() => {
     const cleanupPreferences = restorePreferences();
     const onMouse = (event: MouseEvent) => {

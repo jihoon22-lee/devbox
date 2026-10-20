@@ -9,6 +9,8 @@ pub struct RunLogMetadata {
     pub attempt_id: Option<String>,
     pub started_ms: u64,
     pub path: PathBuf,
+    pub source_cwd: Option<PathBuf>,
+    pub windows_directory: Option<String>,
     pub live: bool,
 }
 pub struct RunLogPage {
@@ -35,14 +37,15 @@ impl RuntimeService {
         }
         let mut items = Vec::with_capacity(runs.len());
         for run in runs {
-            items.push(self.log_metadata(run.run)?);
+            items.push(self.log_metadata(run)?);
         }
         Ok(RunLogPage { items, truncated })
     }
     pub async fn run_log_metadata(&self, id: &str) -> R<RunLogMetadata> {
-        self.log_metadata(self.stored(id).await?.run)
+        self.log_metadata(self.stored(id).await?)
     }
-    fn log_metadata(&self, run: Run) -> R<RunLogMetadata> {
+    fn log_metadata(&self, stored: crate::run_store::StoredRun) -> R<RunLogMetadata> {
+        let run = stored.run;
         let store = crate::exit_record::ExitStore::new(
             &self.execution()?.paths.data_dir.join("runs"),
             &run.id,
@@ -59,6 +62,8 @@ impl RuntimeService {
                 .internal("read observed invocation")?
         };
         Ok(RunLogMetadata {
+            source_cwd: stored.source_cwd.map(PathBuf::from),
+            windows_directory: run.windows.as_ref().map(|w| w.directory.clone()),
             run_id: run.id,
             project_id: run.project_id,
             attempt_id,

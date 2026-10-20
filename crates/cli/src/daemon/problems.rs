@@ -131,6 +131,8 @@ async fn refresh(s: &Services) -> R<()> {
                     run_id: meta.run_id.clone(),
                     project_id: meta.project_id.clone(),
                     root: PathBuf::from(&project.path),
+                    source_cwd: meta.source_cwd.clone(),
+                    windows_directory: meta.windows_directory.clone(),
                     path: meta.path.clone(),
                     attempt_id: meta.attempt_id.clone(),
                     started_ms: meta.started_ms,

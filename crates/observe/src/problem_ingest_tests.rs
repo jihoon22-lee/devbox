@@ -16,6 +16,8 @@ fn run(root: &std::path::Path, id: &str, attempt: &str) -> ProblemRun {
         run_id: id.into(),
         project_id: "project".into(),
         root: root.into(),
+        source_cwd: Some(root.into()),
+        windows_directory: None,
         path: root.join(format!("{id}.log")),
         attempt_id: Some(attempt.into()),
         started_ms: 1,

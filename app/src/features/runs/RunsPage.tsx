@@ -1,3 +1,4 @@
+import { useRouterState, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { Definition, LogSource, Suggestion } from "../../rpc/gen/rpc";
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
@@ -10,25 +11,52 @@ import { useCurrentProject } from "../projects/store";
 import { visibleTrustText } from "../projects/visibleTrustText";
 import { DefineDialog } from "./DefineDialog";
 import { LogView } from "./LogView";
+import { usePinnedLogSources } from "./pinnedSources";
 import { RunChips } from "./RunChips";
 import { RunList, type RunSelection } from "./RunList";
 import s from "./RunsPage.module.css";
 import { resultLabel, runStateLabel } from "./runPresentation";
+import { SystemOverview } from "./SystemOverview";
+import { type RunsSearch, runsSearch } from "./search";
 import { useRunActions } from "./useRunActions";
 export function RunsPage() {
-  const projectId = useCurrentProject((state) => state.id);
+  const search = runsSearch(useSearch({ strict: false }));
+  const currentProject = useCurrentProject((state) => state.id);
+  const navigationKey = useRouterState({
+    select: (state) => `${state.location.state.__TSR_key}:${state.location.state.runActivation ?? ""}`,
+  });
+  const [appliedNavigation, setAppliedNavigation] = useState<string>();
+  const projectId = appliedNavigation === navigationKey ? currentProject : (search.projectId ?? currentProject);
+  useEffect(() => {
+    if (search.projectId) useCurrentProject.getState().set(search.projectId);
+    setAppliedNavigation(navigationKey);
+  }, [search.projectId, navigationKey]);
+  if (search.view) return <SystemOverview view={search.view} />;
   return projectId ? (
-    <ProjectRuns key={projectId} projectId={projectId} />
+    <ProjectRuns
+      key={`${projectId}:${navigationKey}`}
+      projectId={projectId}
+      target={search.projectId === projectId ? search : undefined}
+    />
   ) : (
     <EmptyState title="프로젝트를 선택하세요" body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
   );
 }
-export function ProjectRuns({ projectId }: { projectId: string }) {
+function targetSelection(target?: RunsSearch): RunSelection | undefined {
+  if (target?.runId) return { definitionId: "", runId: target.runId };
+  return target?.task ? { definitionId: target.task } : undefined;
+}
+export function ProjectRuns({ projectId, target }: { projectId: string; target?: RunsSearch }) {
   const client = useRpc();
   const list = useRpcQuery("runtime.list", { projectId, cursor: null });
   const containers = useRpcQuery("runtime.containers", {}, { refetchInterval: 5000 });
   const schedules = useRpcQuery("runtime.schedules", { projectId }, { refetchInterval: 10000 });
-  const [selection, setSelection] = useState<RunSelection>();
+  const [selection, setSelection] = useState<RunSelection | undefined>(() => targetSelection(target));
+  const targetRunId = target?.runId;
+  const targetTask = target?.task;
+  useEffect(() => {
+    setSelection(targetSelection({ runId: targetRunId, task: targetTask }));
+  }, [targetRunId, targetTask]);
   const [editor, setEditor] = useState<{ definition?: Definition; suggestion?: Suggestion }>();
   const [detect, setDetect] = useState(false);
   const [externalEditor, setExternalEditor] = useState<"vscode" | "cursor">("vscode");
@@ -52,6 +80,10 @@ export function ProjectRuns({ projectId }: { projectId: string }) {
     if (!selection && list.data?.defs[0]) setSelection({ definitionId: list.data.defs[0].def.id });
   }, [selection, list.data]);
   const run = detail.data?.run;
+  useEffect(() => {
+    if (run && selection && "definitionId" in selection && !selection.definitionId && selection.runId === run.id)
+      setSelection({ definitionId: run.defId, runId: run.id });
+  }, [run, selection]);
   const container =
     selection && "containerId" in selection
       ? containers.data?.items.find((row) => row.id === selection.containerId)
@@ -211,6 +243,7 @@ export function ProjectRuns({ projectId }: { projectId: string }) {
               key={runId ?? container?.id}
               sources={sources}
               projectId={projectId}
+              onPinSources={(sources) => usePinnedLogSources.getState().set(projectId, sources)}
               onOpenLocation={(location) => openFileLocation(client, projectId, location, externalEditor)}
             />
           ) : (

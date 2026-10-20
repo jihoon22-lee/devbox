@@ -14,6 +14,8 @@ pub struct ProblemRun {
     pub run_id: String,
     pub project_id: String,
     pub root: PathBuf,
+    pub source_cwd: Option<PathBuf>,
+    pub windows_directory: Option<String>,
     pub path: PathBuf,
     pub attempt_id: Option<String>,
     pub started_ms: u64,

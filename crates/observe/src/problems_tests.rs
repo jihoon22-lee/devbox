@@ -321,3 +321,64 @@ fn problems_python_outside_last_frame_cannot_reuse_an_inside_frame() {
     );
     assert!(parser.push("ValueError: bad value", temp.path()).is_none());
 }
+
+#[test]
+fn problems_source_context_preserves_project_boundary_and_never_guesses_old_cwd() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    let cwd = project.join("nested");
+    std::fs::create_dir_all(&cwd).unwrap();
+    std::fs::write(project.join("shared.rs"), "owned").unwrap();
+    std::fs::write(temp.path().join("outside.rs"), "owned outside").unwrap();
+    let mut run = crate::ProblemRun {
+        run_id: "source".into(),
+        project_id: "project".into(),
+        root: project.clone(),
+        source_cwd: Some(cwd.clone()),
+        windows_directory: Some(r"C:\owned\nested".into()),
+        path: temp.path().join("fixture.log"),
+        attempt_id: Some("a".into()),
+        started_ms: 1,
+    };
+    let mut parser = ProblemParser::default();
+    let problem = parser
+        .push_source("../shared.rs:10:2: error: shared", &run)
+        .unwrap();
+    assert_eq!(
+        problem.file,
+        project.join("shared.rs").display().to_string()
+    );
+    for diagnostic in [
+        "../../outside.rs:1:2: error: escape",
+        r"C:\owned\nested-other\x.rs:1:2: error: copy escape",
+        "https://bad/x.rs:1:2: error: url",
+    ] {
+        assert!(
+            parser.push_source(diagnostic, &run).is_none(),
+            "accepted {diagnostic}"
+        );
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(temp.path(), cwd.join("outside")).unwrap();
+        assert!(
+            parser
+                .push_source("outside/outside.rs:1:2: error: symlink", &run)
+                .is_none()
+        );
+    }
+    run.source_cwd = None;
+    assert!(
+        parser
+            .push_source("shared.rs:1:2: error: unknown cwd", &run)
+            .is_none()
+    );
+    let absolute = format!(
+        "{}:1:2: error: old absolute",
+        project.join("shared.rs").display()
+    );
+    assert_eq!(
+        parser.push_source(&absolute, &run).unwrap().file,
+        project.join("shared.rs").display().to_string()
+    );
+}

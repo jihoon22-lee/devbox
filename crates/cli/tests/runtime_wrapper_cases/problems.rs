@@ -46,6 +46,8 @@ async fn wrapper_new_attempt_starts_after_the_preserved_partial_previous_record(
             run_id: "run-1".into(),
             project_id: "fixture".into(),
             root: f.temp.path().into(),
+            source_cwd: Some(f.temp.path().into()),
+            windows_directory: None,
             path: log,
             attempt_id: Some("new".into()),
             started_ms: 1,

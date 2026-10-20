@@ -1,20 +1,25 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { runNavigationState } from "../runs/search";
 
 interface Attention {
   id: string;
   title: string;
   body?: string;
   visible: boolean;
+  target?: RunNavigation;
 }
 export interface AgentNavigation {
   to: "/agents";
   search: { id: string; view: "list" };
 }
-interface NavigationIntent extends AgentNavigation {
-  sequence: number;
+export interface RunNavigation {
+  to: "/runs";
+  search: { projectId: string; runId?: string; task?: string };
 }
+export type NativeNavigation = AgentNavigation | (RunNavigation & { state?: ReturnType<typeof runNavigationState> });
+type NavigationIntent = NativeNavigation & { sequence: number };
 function mainHost() {
   return "__TAURI_INTERNALS__" in window && getCurrentWindow().label === "main";
 }
@@ -35,17 +40,25 @@ export function nativeBadge(attention: number, open: number) {
 function intent(value: unknown): value is NavigationIntent {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<NavigationIntent>;
+  if (!Number.isSafeInteger(candidate.sequence) || (candidate.sequence ?? 0) <= 0) return false;
+  if (candidate.to === "/agents")
+    return (
+      candidate.search?.view === "list" &&
+      typeof candidate.search.id === "string" &&
+      /^[A-Za-z0-9]*$/.test(candidate.search.id)
+    );
+  if (candidate.to !== "/runs" || !candidate.search) return false;
+  const { projectId, runId, task } = candidate.search;
+  const valid = (value: unknown) => typeof value === "string" && !!value.trim();
   return (
-    Number.isSafeInteger(candidate.sequence) &&
-    (candidate.sequence ?? 0) > 0 &&
-    candidate.to === "/agents" &&
-    candidate.search?.view === "list" &&
-    typeof candidate.search.id === "string" &&
-    /^[A-Za-z0-9]*$/.test(candidate.search.id)
+    valid(projectId) &&
+    (runId === undefined || valid(runId)) &&
+    (task === undefined || valid(task)) &&
+    (valid(runId) || valid(task))
   );
 }
 /** Register before reading pending state; ack only a completed navigation while still mounted. */
-export function subscribeNativeNavigation(navigate: (target: AgentNavigation) => Promise<void> | void) {
+export function subscribeNativeNavigation(navigate: (target: NativeNavigation) => Promise<void> | void) {
   if (!mainHost()) return () => {};
   let cancelled = false;
   let release: (() => void) | undefined;
@@ -57,7 +70,8 @@ export function subscribeNativeNavigation(navigate: (target: AgentNavigation) =>
     pending = pending
       .then(async () => {
         if (cancelled || value.sequence < newest) return;
-        await navigate({ to: value.to, search: value.search });
+        const { sequence: _sequence, ...target } = value;
+        await navigate(target.to === "/runs" ? { ...target, state: runNavigationState() } : target);
         if (!cancelled) await invoke("acknowledge_navigation", { sequence: value.sequence });
       })
       .catch(report);

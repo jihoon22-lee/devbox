@@ -66,6 +66,7 @@ method!(pub RuntimeStop = "runtime.stop", mutation(reversible), RunId => Run, Ru
 method!(pub RuntimeRestart = "runtime.restart", mutation, RunId => Run, RuntimeError);
 method!(pub RuntimeExited = "runtime.exited", mutation(always), exit_record::Exited => devbox_protocol::Done, RuntimeError);
 method!(pub RuntimeGet = "runtime.get", query, RunId => RunDetail, RuntimeError);
+method!(pub RuntimeSummary = "runtime.summary", query, RunSummaryQuery => RunSummary, RuntimeError);
 method!(pub RuntimeRuns = "runtime.runs", query, RunsQuery => RunsResult, RuntimeError);
 method!(pub RuntimeSchedules = "runtime.schedules", query, SchedulesQuery => SchedulesResult, RuntimeError);
 topic!(pub RuntimeChanged = "runtime.changed", RuntimeChange);
@@ -80,6 +81,7 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<RuntimeRestart>();
     x.method::<RuntimeExited>();
     x.method::<RuntimeRuns>();
+    x.method::<RuntimeSummary>();
     x.method::<RuntimeGet>();
     x.method::<RuntimeList>();
     x.method::<RuntimeDefine>();

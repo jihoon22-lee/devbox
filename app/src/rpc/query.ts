@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { readAgentList } from "./agentPages";
 import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
+import { readProblemPages } from "./problemPages";
 import { useRpc, useRpcSession } from "./RpcProvider";
 import { invalidateIfNewer, shareByRevision, shareRuntimeList, shareTerminalLive } from "./revisions";
 import { readRuntimeList } from "./runtimePages";
@@ -48,7 +49,11 @@ export function useRpcQuery<M extends QueryMethod>(
             ? (readRuntimeList(client, params as Methods["runtime.list"]["params"], signal) as Promise<
                 Methods[M]["result"]
               >)
-            : client.call(method, params, { signal }),
+            : method === "observe.problems"
+              ? (readProblemPages(client, params as Methods["observe.problems"]["params"], signal) as Promise<
+                  Methods[M]["result"]
+                >)
+              : client.call(method, params, { signal }),
   });
 }
 export function useRpcMutation<M extends MutationMethod>(method: M) {

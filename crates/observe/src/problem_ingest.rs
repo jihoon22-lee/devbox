@@ -108,7 +108,7 @@ impl ObserveService {
                 } else {
                     &mut reader.stdout
                 };
-                if let Some(problem) = parser.push(&line.text, &run.root) {
+                if let Some(problem) = parser.push_source(&line.text, run) {
                     if !batch.problems.contains(&problem) {
                         if batch.problems.len() < crate::problem_store::MAX_PROBLEMS {
                             batch.problems.push(problem);

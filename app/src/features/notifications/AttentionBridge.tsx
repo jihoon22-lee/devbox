@@ -1,12 +1,19 @@
 import { useEffect } from "react";
-import type { Methods } from "../../rpc/gen/rpc";
+import type { Methods, NotificationReason } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { useNativeRuntime } from "../../shell/nativeRuntime";
 import { useAgentData } from "../agents/AgentData";
 import { STATE_LABEL } from "../agents/model";
-import { nativeAttention, nativeBadge } from "./native";
+import { nativeAttention, nativeBadge, type RunNavigation } from "./native";
 import { useNotifications } from "./store";
 
+const runReason: Record<NotificationReason, string> = {
+  startLimit: "서비스 재시작 한도 초과",
+  schedule_failed: "예약 실행 실패",
+  schedule_trust_required: "예약 실행 승인 필요",
+};
+// Keep replay identity for the RPC session even after the user clears visible history.
+const seenRunEvents = new WeakMap<object, Set<string>>();
 const noLocation = () => ({ pathname: "", search: {} });
 
 /** Shell mounts this only for the main host, regardless of route changes. */
@@ -49,6 +56,41 @@ export function AttentionBridge({
         () => {},
       ),
     [client, qc, location],
+  );
+  useEffect(
+    () =>
+      client.subscribe(
+        "notify.raised",
+        (_revision, event) => {
+          let seen = seenRunEvents.get(client);
+          if (!seen) {
+            seen = new Set();
+            seenRunEvents.set(client, seen);
+          }
+          if (seen.has(event.id)) return;
+          seen.add(event.id);
+          const target: RunNavigation = {
+            to: "/runs",
+            search: {
+              projectId: event.projectId,
+              ...(event.runId ? { runId: event.runId } : {}),
+              ...(event.task ? { task: event.task } : {}),
+            },
+          };
+          const title = runReason[event.reason];
+          const body = event.task ?? event.runId ?? "실행 설정을 확인하세요.";
+          // Event identity differs after a manual restart, even when the run ID is reused.
+          if (
+            !useNotifications
+              .getState()
+              .pushOnce({ key: `run:${event.id}`, id: event.id, kind: "run", title, body, target })
+          )
+            return;
+          void nativeAttention({ id: event.id, title, body, visible: false, target });
+        },
+        () => {},
+      ),
+    [client],
   );
   useEffect(() => {
     nativeBadge(data.attention, data.tasks.filter((item) => item.state !== "closed").length);

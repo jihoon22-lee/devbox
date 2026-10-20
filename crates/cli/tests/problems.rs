@@ -59,7 +59,7 @@ impl Fixture {
             format!("{}{}", record("s", &attempt_marker(attempt)), lines),
         )
         .unwrap();
-        let row=serde_json::json!({"run":{"id":id,"projectId":self.project,"defId":"fixture","kind":"task","state":"stopped","exit":null,"startedMs":1,"endedMs":2,"restarts":0,"unit":"devbox-test-problem.service","ready":false,"pid":null,"port":null,"attemptId":attempt},"restart":"no","start_limit":null,"worktree":null,"start_limit_notified":false}).to_string();
+        let row=serde_json::json!({"run":{"id":id,"projectId":self.project,"defId":"fixture","kind":"task","state":"stopped","exit":null,"startedMs":1,"endedMs":2,"restarts":0,"unit":"devbox-test-problem.service","ready":false,"pid":null,"port":null,"attemptId":attempt},"source_cwd":self.daemon.home.path().join("project").display().to_string(),"restart":"no","start_limit":null,"worktree":null,"start_limit_notified":false}).to_string();
         let id = id.to_string();
         let project = self.project.clone();
         let (_, rev) = self
@@ -288,6 +288,8 @@ async fn problems_metadata_keeps_live_history_and_manual_starting_has_no_previou
         run_id: meta.run_id,
         project_id: meta.project_id,
         root: root.clone(),
+        source_cwd: Some(root.clone()),
+        windows_directory: None,
         path: meta.path,
         attempt_id: meta.attempt_id,
         started_ms: meta.started_ms,
@@ -430,5 +432,86 @@ async fn problems_new_reader_after_rotation_keeps_only_current_attempt_diagnosti
     .unwrap();
     assert_eq!(page.items.len(), 2);
     assert!(page.items.iter().all(|p| p.line == 9));
+    f.stop().await;
+}
+
+#[tokio::test]
+async fn problems_open_original_subdirectory_worktree_and_windows_locations() {
+    let f = Fixture::start().await;
+    let project = f.daemon.home.path().join("project");
+    for (id, cwd, windows, diagnostic) in [
+        (
+            "subdir",
+            project.join("nested"),
+            None,
+            "src/x.rs:10:4: error: subdir".to_string(),
+        ),
+        (
+            "absolute",
+            project.join("absolute"),
+            None,
+            format!(
+                "{}:10:4: error: absolute source",
+                project.join("absolute/src/x.rs").display()
+            ),
+        ),
+        (
+            "worktree",
+            f.daemon.home.path().join("owned-worktree"),
+            None,
+            "src/x.rs:10:4: error: worktree".to_string(),
+        ),
+        (
+            "windows",
+            project.join("copied"),
+            Some(r"C:\owned\copied"),
+            r"C:\owned\copied\src\x.rs:10:4: error: windows".to_string(),
+        ),
+    ] {
+        std::fs::create_dir_all(cwd.join("src")).unwrap();
+        std::fs::write(cwd.join("src/x.rs"), "owned fixture").unwrap();
+        f.seed(id, "attempt", &record("e", &diagnostic)).await;
+        let id = id.to_string();
+        let original = cwd.display().to_string();
+        let windows = windows.map(|directory| {
+            serde_json::json!({"directory":directory,"notice":"fixture"}).to_string()
+        });
+        f.services.db.write(move |tx| {
+            tx.execute("UPDATE runtime_runs SET body=json_set(body,'$.source_cwd',?1) WHERE id=?2", (&original,&id))?;
+            if let Some(windows) = windows {
+                tx.execute("UPDATE runtime_runs SET body=json_set(body,'$.run.windows',json(?1)) WHERE id=?2", (&windows,&id))?;
+            }
+            Ok(())
+        }).await.unwrap();
+    }
+    let result = f.query().await;
+    assert_eq!(
+        result.items.len(),
+        4,
+        "all source diagnostics, including Windows paths, must be retained"
+    );
+    for problem in result.items {
+        let id = problem.source.strip_prefix("run:").unwrap();
+        let expected = match id {
+            "subdir" => project.join("nested/src/x.rs"),
+            "absolute" => project.join("absolute/src/x.rs"),
+            "worktree" => f.daemon.home.path().join("owned-worktree/src/x.rs"),
+            "windows" => project.join("copied/src/x.rs"),
+            _ => panic!("unexpected source"),
+        };
+        let opened = f
+            .client
+            .call::<ResolveLocation>(&ResolveFileLocation {
+                project_id: f.project.clone(),
+                source: LogSource::Run { run_id: id.into() },
+                path: problem.file,
+                line: problem.line,
+                column: problem.col,
+            })
+            .await
+            .unwrap();
+        assert_eq!(opened.path, expected.display().to_string());
+        assert_eq!((opened.line, opened.column), (10, 4));
+    }
     f.stop().await;
 }

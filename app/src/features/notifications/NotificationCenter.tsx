@@ -4,6 +4,7 @@ import { Bell, X } from "lucide-react";
 import { useState } from "react";
 import { useVisibleClock } from "../../shell/visibility";
 import { Button } from "../../ui/Button";
+import { runNavigationState } from "../runs/search";
 import s from "./NotificationCenter.module.css";
 import { safeTarget, useNotifications } from "./store";
 export function relativeTime(atMs: number, now: number) {
@@ -62,6 +63,7 @@ export function NotificationCenter() {
                   if (target)
                     void navigate({
                       to: target.to,
+                      ...(target.to === "/runs" ? { state: runNavigationState() } : {}),
                       search: (previous: Record<string, unknown>) => ({
                         ...(typeof previous.gateway === "string" ? { gateway: previous.gateway } : {}),
                         ...(previous.renderer === "dom" ? { renderer: "dom" } : {}),

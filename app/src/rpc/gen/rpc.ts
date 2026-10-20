@@ -146,6 +146,8 @@ export type RunDetail = { rev: string, run: Run, };
 export type RunId = { runId: string, };
 export type RunKind = "task" | "service" | "scheduled";
 export type RunState = "starting" | "running" | "restarting" | "exited" | "failed" | "stopped";
+export type RunSummary = { rev: string, active: number, };
+export type RunSummaryQuery = Record<symbol, never>;
 export type RunTarget = "linux" | "windows";
 export type RunsQuery = { projectId: string | null, limit: number, };
 export type RunsResult = { rev: string, items: Array<Run>, };
@@ -258,6 +260,7 @@ export interface Methods {
   "runtime.schedules": { kind: "query"; confirm: "none"; params: SchedulesQuery; result: SchedulesResult; error: RuntimeError };
   "runtime.start": { kind: "mutation"; confirm: "none"; params: StartRun; result: Run; error: RuntimeError };
   "runtime.stop": { kind: "mutation"; confirm: "reversible"; params: RunId; result: Run; error: RuntimeError };
+  "runtime.summary": { kind: "query"; confirm: "none"; params: RunSummaryQuery; result: RunSummary; error: RuntimeError };
   "runtime.undefine": { kind: "mutation"; confirm: "always"; params: UndefineRun; result: Done; error: RuntimeError };
   "secrets.delete": { kind: "mutation"; confirm: "always"; params: Name; result: Done; error: SecretsError };
   "secrets.export_key": { kind: "query"; confirm: "none"; params: Empty; result: Recovery; error: SecretsError };
@@ -346,6 +349,7 @@ export const METHOD_INFO = {
   "runtime.schedules": { kind: "query", confirm: "none" },
   "runtime.start": { kind: "mutation", confirm: "none" },
   "runtime.stop": { kind: "mutation", confirm: "reversible" },
+  "runtime.summary": { kind: "query", confirm: "none" },
   "runtime.undefine": { kind: "mutation", confirm: "always" },
   "secrets.delete": { kind: "mutation", confirm: "always" },
   "secrets.export_key": { kind: "query", confirm: "none" },

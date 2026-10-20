@@ -199,6 +199,8 @@ async fn problems_subscription_ack_uses_memory_rev_even_when_db_rev_is_larger() 
                 run_id: "one".into(),
                 project_id: "p".into(),
                 root: temp.path().into(),
+                source_cwd: Some(temp.path().into()),
+                windows_directory: None,
                 path: temp.path().join("one.log"),
                 attempt_id: Some("a".into()),
                 started_ms: 1,

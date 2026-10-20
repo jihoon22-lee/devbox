@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q 로컬 완료. Task13 고유64개·TS/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome316 PASS |
-| 다음 할 일 | 묶음 R Task14 하단 로그/문제·상태/알림 구현. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q 로컬 완료. Task14 고유111개·타입/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome331 PASS |
+| 다음 할 일 | Task15 선행 agents 생성/이벤트·test/review 분리 2개 커밋 뒤 비밀 설정·에이전트 테스트·MCP 연결. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-20 · Task13 고유64개·TS/생성/MSVC 좁은 check·독립 검토·Biome316 PASS, 로컬 완료 |
+| 마지막 갱신 | 2026-10-21 · Task14 고유111개·타입/생성/MSVC 좁은 check·독립 검토·Biome331 PASS, 로컬 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q 로컬 완료. Task13 고유64개·타입·독립 검토·Biome316 PASS, 로컬 완료. 다음 Task14, 전체 검사·Windows 실기는 Task16 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q 로컬 완료. Task14 고유111개·타입·독립 검토·Biome331 PASS, 로컬 완료. 다음 Task15 선행 분리, 전체 검사·Windows 실기는 Task16 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -100,7 +100,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
-| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13 고유64개·타입·독립 검토·Biome316 PASS, 로컬 완료. Task14 이후 미착수 |
+| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13·14 로컬 완료. Task14 고유111개·타입·독립 검토·Biome331 PASS. 다음 Task15 선행 분리 |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
@@ -261,6 +261,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 고유 **64개 PASS(프런트47·Rust17)**, TS 생성/확인·앱/E2E 정적 타입·MSVC 좁은 check·파일600/컴포넌트300 상한 PASS. 실제 assertion RED는 Define2·오래된live1·ANSI 링크5·저장우선/rev3; 미구현 import0-test·fixture geometry/Provider 종료 기대·타입/컴파일 오류는 별도 분류다. 소유 임시 DB/파일·fake wrapper/명령 대역만 사용했고 실제 사용자 편집기/Docker/서비스/네트워크를 변경하지 않았다.
 - E2E2개는 작성만 했다. runtime-only 고유 slice/anchor·고정 env·자원 제한·정확한 소유 drop-in 정리와 모든 browser fixture의 fake Docker PATH를 구성하고 helper mock1개를 검증했다. 기존 run_logs systemd 시험1 ignored, 실제 E2E/Windows/편집기·전체 check/clippy/build·push/PR은 Task16 미실행이다.
 - 근거 `devbox-verification/s2-task13/{summary,source-freeze,test-names,static-checks,artifact-hashes}.json` 및 raw/resources. 제품/시험62개 digest `a0a55722fbe0c82901e23d6efc4a23b1851f2da6240540b79dd30df4e177cedf`, base Task12 `dacbdc23`. 공통 비차단 잠금·CPU4/nice10/jobs2/threads2/workers2·지원 cgroup6/8GiB/swap1GiB 적용. 독립 검토 PASS·미해결0, 소스64개·artifact59개 초기 해시 일치. 완료 Biome 최초 줄바꿈1건을 포맷만 수정한 뒤 최종316개 PASS(0.582초·cgroup114,196,480B·swap0). 최종 해시·검토·완료 커밋은 `root-completion.json`에 기록한다. 다음 Task14이며 전체 검사·Windows 실기·push/PR은 Task16이다.
+
+### S2 Task14 하단 로그·문제·상태·실행 알림 (2026-10-20 착수, 2026-10-21 로컬 완료)
+
+- 하네스 구현 에이전트가 문제/backend·통합을 맡고 하단/상태·알림 자식 2명이 파일 소유권을 나눠 구현했다. 기존 터미널 탭을 보존한 로그/문제 탭, 프로젝트별 source 고정·최근 실행 fallback·LogView 재사용을 연결했다. 문제 100개 paging/동일 rev 모음·invalid cursor fresh retry·프로젝트 전환/정리·외부 VS Code/Cursor 이동을 검증했다.
+- Task13 파일 위치 resolver와 parser의 기준을 맞췄다. 원본 source_cwd/Windows 사본 metadata로 문제를 해석하며 cwd 내부 상대 경로·허용 프로젝트의 절대 경로만 반환한다. 하위 cwd 절대/상대 진단·프로젝트 밖 소유 작업 폴더·Windows 사본의 실제 problems→resolve_location RPC와 심볼릭링크/경계·과거 cwd 미상 거절을 확인했다.
+- 최소 typed runtime.summary는 같은 DB snapshot의 전체 live count+rev다. 300개 종료 이력 뒤의 오래된 실행·동시 실행·두 프로젝트를 놓치지 않는다. StatusBar는 runtime.changed 갱신과 가시 상태의 system/ports 3초 관찰을 쓰며 숨김/해제 뒤 조회 0을 검증했다. 포트·WSL 클릭은 실행의 조회 전용 상세로 이동하고 S5 도구 placeholder는 유지했다.
+- 기존 notify.raised 계약을 유지하고 event ID로 센터/네이티브를 중복 제거한다. 센터 삭제 후 재전송도 억제하고 같은 run ID의 새 실패는 표시한다. 정확한 프로젝트/과거 실행·run 없는 작업 fallback·동일 알림 재클릭을 연결했다. native cold/warm sequence/ack와 agent 태그를 보존하고 run URI Unicode/slash 인코딩·run event tag를 추가했다.
+- 직접 고유 **111개 PASS**(프론트62·Rust49, Task4 실제 소유 systemd start-limit 알림 1회 L2 포함). 타입/생성/MSVC 좁은 check·변경 TS27개 Biome·변경 Rust 포맷 PASS. 정확한 명령/raw/resources는 `devbox-verification/s2-task14/{summary,test-names,source-freeze,documentation-freeze,parent-commands,bottom-commands,notify-commands,artifact-hashes}.json`에 모은다. 초기 행동 RED와 fixture/컴파일/TS/비동기 assertion 수정·잠금75를 구분했다. Windows 실제 토스트/앱·전체 check/clippy/build/E2E·push/PR은 Task16 미실행. 독립 검토 PASS·미해결0, 제품/시험45개·문서2개·artifact99개 해시 일치. 완료 Biome331 PASS(0.619초·cgroup115,904,512B·swap0). 제품 digest `1f71ebc3724ef3952ce3c8d6d3b3fd3c3f6d1cb99298374a4177ab2143a5169b` 유지. 검토된 인계 시점 summary/manifest는 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 다음 Task15 선행 분리이며 Task15 이후 기능은 아직 구현하지 않았다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -565,24 +573,18 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-14 | Claude Code | S1 완료 검토와 사용자 결정 4건 반영: AGENTS 하위 에이전트 규칙 복원, 자동 리뷰 3회 상한(CONVENTIONS §8), 수용 전용 `accept` 채널·`windows-acceptance` 잠금 계획(S2 Task 15b·15c), S2 신뢰 범위 2 계획, 00 §2.1 재추정, §5 S2 착수 요약·§8 후속 목록 신설 | `v1/s2-runs`에 문서 커밋 후 백업 push. 사용자 지시로 문서 PR을 main에 squash 머지하고 S2 브랜치·worktree를 최신 main에서 다시 만든다. S2 Task 1 미착수, 다음: Task 1 Step 1·1b |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 1 상세화·Codex 새 worktree 1회 실측·별도 검토 4건 수정 및 재검토·Biome276 통과. 사용자 설정 불변·소유 자원 정리, PONG 미완료/입력 대기 FAIL 구분 | `v1/s2-runs`의 기존 `699d44e1` 보존, 상세화 로컬 커밋. 다음: 묶음 O Task2 config/input 선행 분리→실행 정의·신뢰 범위2. push·PR 없음. 증거 `devbox-verification/s2-task1-20261020/` |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 2 실행 정의·신뢰 범위 2 구현, 저장/감시/승인 UI 직접 영향 검증·독립 지적 2건 수정 및 재검토·Biome278 PASS | 선행 분리 `b53a867b` 뒤 기능 로컬 커밋 완료. 다음 Task 3 실행 래퍼·영속 종료 결과. push·PR 없음, 증거 `devbox-verification/s2-task2/{summary,review}.json` |
-
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 3 실행 래퍼·로그·영속 종료 결과 구현, background 수명 결함 RED→GREEN·직접 영향 검사·독립 재검토·Biome278 PASS | Task 2 `c67e55eb` 뒤 로컬 커밋. 다음 Task 4 systemd 실행 관리·맞춤. push·PR 없음, 증거 `devbox-verification/s2-task3/{summary,review}.json` |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 4 transient 실행·상태 복구·의존/시작 구성 구현. 실제 systemd L2 19개·runtime37·직접 영향 검사·TS/UI·독립 최종 검토(미해결0)·Biome278 PASS | Task 3 `0078c6a4` 뒤 로컬 커밋. 다음 Task 5 예약 실행. 중간 실패와 정정·소유 자원 정리를 보존, push·PR 없음. 증거 `devbox-verification/s2-task4/{summary,review}.json` |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 5 cron·예약·누락 정책·실패/신뢰 알림 구현. 고유51개 직접 검사·TS 생성/typecheck·독립 검토 P2 두 건 RED→GREEN·최종 미해결0·Biome278 PASS | Task 4 `167da8b5` 뒤 로컬 커밋. 다음 Task 6 작업 자동 감지. 강제 종료 claim-before-launch의 at-most-once 한계·실패 근거·소유 자원 정리 기록, push·PR 없음. 증거 `devbox-verification/s2-task5/{summary,review}.json` |
-
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 6 파일 감지·typed RPC·출처/중복/전체ID 필터 구현. 직접15개·TS·marker 자식 프로세스0·독립 검토(미해결0)·Biome278 PASS | `88a593d6` 뒤 로컬 완료 커밋, 묶음 O 완료(로컬). 다음 Task7 로그 tail·검색·병합. push/PR 없음. 증거 `devbox-verification/s2-task6/{summary,review}.json` |
-
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 7 로그 open/search·버퍼 제한·inotify·container 소유 자식 수명 구현. 직접23개·TS/포맷·독립 최종 검토(미해결0)·Biome278 PASS | `bbc0d1b1` 뒤 로컬 완료 커밋. Docker 탭 오파싱 리뷰1건 실제RED→GREEN, 다음 Task8. push/PR 없음. 근거 `devbox-verification/s2-task7/{summary,review}.json` |
-
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | `bb0ef99a` 뒤 Task 8 관찰·production readiness 구현, 직접38개·타입·독립 최종 검토(미해결0)·Biome278 PASS | 로컬 완료 커밋. cgroup 부모 unit·readiness cadence/deadline RED→GREEN, 최초 미구현 RED2건·중간 컴파일 오류 보존. 다음 Task9, push/PR 없음. 근거 `devbox-verification/s2-task8/{summary,review}.json` |
-
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | Task 8 `9cd1eff3` 뒤 Task9 문제 추출·원시 ingest·source restart·메모리 query/topic/ACK 구현. 고유50개·타입·독립 최종 검토(미해결0)·Biome278 PASS | 로컬 완료 커밋. partial EOF 리뷰와 wrapper 경계를 실제 RED→GREEN으로 수정, 미구현·행동 RED7건·준비/컴파일 오류 보존. 다음 Task10, push/PR 없음. 근거 `devbox-verification/s2-task9/{summary,review}.json` |
-
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | Task 9 `63023cb7` 뒤 Task10 Docker 목록·동작 구현, 고유13개·타입·독립 검토(미해결0)·Biome278 PASS | 묶음 P 로컬 완료 커밋. 근거 `devbox-verification/s2-task10/{summary,review,root-completion}.json`. 다음 묶음 Q Task11, push/PR 없음 |
-
 | 2026-10-20 | Codex 하네스 구현·Windows native 분담·별도 검토 | Task10 `37fff05b` 뒤 Task11 비밀 저장·매 attempt 주입·native fallback 구현, 고유50개·타입·독립 최종 검토·Biome278 PASS | 로컬 완료 커밋. 설정 타입 오류 panic RED→GREEN 수정, 미해결0·소스67/증거74 해시 일치. 근거 `devbox-verification/s2-task11/{summary,review,root-completion}.json`. 다음 Task12, Task16 전 push/PR 없음 |
 | 2026-10-20 | Codex 하네스 구현·Windows native 분담·별도 검토 | Task11 `4182a6f5` 뒤 Task12 Windows 동기화·직접 실행·native 위임 구현, 고유93개·타입·독립 최종 검토·Biome278 PASS | 묶음 Q 로컬 완료. 대상 링크·quiet stop RED→GREEN, 미해결0·소스41/증거94 해시 일치. 근거 `devbox-verification/s2-task12/{summary,review,root-completion}.json`. 다음 묶음 R Task13, 실제 Windows·전체 검사·push/PR은 Task16 |
 | 2026-10-20 | Codex 하네스 구현·Define/Log UI 분담 | Task12 `dacbdc23` 뒤 Task13 실행 화면·typed 상세/파일위치 연결. 고유64개·TS/생성/MSVC 좁은 check PASS | 독립 검토 PASS·미해결0·Biome316 PASS, 로컬 완료 커밋. 다음 Task14. E2E2개 작성만, 전체 검사·실제 Windows·push/PR Task16. 근거 `devbox-verification/s2-task13/{summary,source-freeze,test-names,artifact-hashes}.json` |
+| 2026-10-21 | Codex 하네스 구현·하단/알림 분담·별도 검토 | Task13 `de2ed50b` 뒤 Task14 하단 로그/문제·전체 실행 수·가시 상태 관찰·run 알림 연결. 고유111개·타입/생성/MSVC 좁은 check PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 Task15 선행 분리 2개. 실제 Windows·전체 검사·push/PR Task16. 근거 `devbox-verification/s2-task14/{summary,review,root-completion}.json` |
 
 ## 7. 착수 준비 검토
 

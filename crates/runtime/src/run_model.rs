@@ -90,3 +90,12 @@ pub struct RunDetail {
     pub rev: String,
     pub run: Run,
 }
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RunSummaryQuery {}
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct RunSummary {
+    pub rev: String,
+    pub active: u32,
+}

@@ -12,13 +12,21 @@ import { useLogLines } from "./useLogLines";
 export interface LogViewProps {
   sources: LogSource[];
   projectId?: string;
+  onPinSources?: (sources: LogSource[]) => void;
   onOpenLocation?: (location: LogLocation) => void | Promise<void>;
 }
-export function LogView({ sources, projectId, onOpenLocation }: LogViewProps) {
+export function LogView({ sources, projectId, onOpenLocation, onPinSources }: LogViewProps) {
   const identity = JSON.stringify(sources);
-  return <LogSession key={`${projectId ?? ""}:${identity}`} sources={sources} onOpenLocation={onOpenLocation} />;
+  return (
+    <LogSession
+      key={`${projectId ?? ""}:${identity}`}
+      sources={sources}
+      onOpenLocation={onOpenLocation}
+      onPinSources={onPinSources}
+    />
+  );
 }
-function LogSession({ sources: initialSources, onOpenLocation }: LogViewProps) {
+function LogSession({ sources: initialSources, onOpenLocation, onPinSources }: LogViewProps) {
   const { client, state, generation } = useRpcSession();
   const [sources, setSources] = useState(initialSources);
   const [query, setQuery] = useState("");
@@ -109,6 +117,11 @@ function LogSession({ sources: initialSources, onOpenLocation }: LogViewProps) {
         }
         onRemove={(source) => setSources((old) => old.filter((s) => sourceKey(s) !== sourceKey(source)))}
       />
+      {onPinSources && (
+        <Button size="sm" disabled={!sources.length} onClick={() => onPinSources(sources)}>
+          하단 로그에 고정
+        </Button>
+      )}
       <form
         className={s.toolbar}
         onSubmit={(event) => {

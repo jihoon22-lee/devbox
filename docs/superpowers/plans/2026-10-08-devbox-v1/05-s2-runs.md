@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–13 및 묶음 O·P·Q 로컬 완료. Task13 고유64개·TS/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome316 PASS(2026-10-20). 다음은 묶음 R Task14 하단 로그·문제·상태·알림이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task 1–14 및 묶음 O·P·Q 로컬 완료. Task14 고유111개·타입/생성/MSVC 좁은 check·독립 검토(미해결0)·Biome331 PASS(2026-10-21). 다음은 Task15 선행 agents 생성/이벤트·test/review 분리 2개 커밋 뒤 비밀 설정·에이전트 테스트·MCP 연결이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -862,15 +862,15 @@ void queryClient.invalidateQueries({ queryKey: ["runtime.list", { projectId, cur
 ### Task 14: 하단 패널의 로그·문제 탭, 상태 표시줄, 알림
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `app/src/features/problems/ProblemsPanel.test.tsx · notifications/run notification 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `app/src/features/problems/ProblemsPanel.test.tsx · notifications/run notification 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```tsx
 await emitRunFailure("run-1");
 await emitRunFailure("run-1");
 expect(notificationsFor("run-1")).toHaveLength(1);
 expect(screen.getByRole("link", { name: /src\/x.rs:10/ })).toBeVisible();
 ```
-- [ ] **2 · 실패 확인:** `pnpm --filter app exec vitest run src/features/problems/ProblemsPanel.test.tsx --maxWorkers=2`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** registerBottomTab으로 로그/문제를 연결하고 StatusBar는 visible 상태에서만 observe를 조회한다. Task 4 notify.raised 타입에 schedule 실패와 run target을 연결, AttentionBridge/알림센터/기존 notify_attention Windows 경로에 run tag를 전달한다. 문제 링크는 S2 외부 편집기이며 S4 내부 편집기를 미리 구현하지 않는다.
+- [x] **2 · 실패 확인:** `pnpm --filter app exec vitest run src/features/problems/ProblemsPanel.test.tsx --maxWorkers=2`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** registerBottomTab으로 로그/문제를 연결하고 StatusBar는 visible 상태에서만 observe를 조회한다. Task 4 notify.raised 타입에 schedule 실패와 run target을 연결, AttentionBridge/알림센터/기존 notify_attention Windows 경로에 run tag를 전달한다. 문제 링크는 S2 외부 편집기이며 S4 내부 편집기를 미리 구현하지 않는다.
 
 ```tsx
 useEffect(() => registerBottomTab({ id: "logs", label: "로그", render: () => <BottomLogs /> }), []);
@@ -878,8 +878,8 @@ const stats = useRpcQuery("observe.system", {}, { enabled: visible, refetchInter
 // AttentionBridge consumes notify.raised once per run/tag and uses existing native notify path.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 문제 이동·프로젝트별 고정 source·숨김 polling0·알림 중복제거 단위 시험, Task4 start-limit 알림1 L2 직접 영향 부분만 검사한다. Windows 토스트 실기는 Task16이다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runs): connect logs problems and run notifications`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 문제 이동·프로젝트별 고정 source·숨김 polling0·알림 중복제거 단위 시험, Task4 start-limit 알림1 L2 직접 영향 부분만 검사한다. Windows 토스트 실기는 Task16이다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runs): connect logs problems and run notifications`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `app/src/features/runs/BottomLogs.tsx`, `app/src/features/problems/ProblemsPanel.tsx`
@@ -889,15 +889,22 @@ const stats = useRpcQuery("observe.system", {}, { enabled: visible, refetchInter
 **Interfaces:**
 - 하단 패널 `로그` 탭은 고정한 소스를 보이고, 고정이 없으면 현재 프로젝트의 최근 실행을 보인다. `문제` 탭은 `observe.problems`(파일·줄·메시지, 누르면 열기)를 보인다.
 - 상태 표시줄: "실행 n · 포트 5173, 8080 · WSL 6.1/20GB"(누르면 해당 화면)
-- 데몬 알림 주제 `notify.raised { kind, title, body, target }`
+- 기존 데몬 알림 주제 `notify.raised { id, projectId, runId: string|null, task: string|null, reason }`를 유지한다. `reason`은 `startLimit`·`schedule_failed`·`schedule_trust_required`다. 제목/본문/화면 target은 UI에서 구성한다.
   - 예약 실패와 서비스 재시작 한도 초과에 쓴다.
-  - 화면은 알림 센터에 넣고, Windows 토스트는 S1 `notify_attention`과 같은 경로로 띄운다(tag `run-<id>`).
+  - 화면은 알림 센터에 넣고, Windows 토스트는 S1 `notify_attention`과 같은 경로로 띄운다(tag `run-<eventId>`, 긴 ID는 별도 run namespace hash). event ID로 센터/토스트 재전송을 함께 억제하고 수동 재시작으로 run ID를 재사용한 새 실패는 표시한다.
 
 **핵심 테스트:**
 - `ProblemsPanel` 렌더·이동 단위
 - 데몬 `notify.raised`가 서비스 한도 초과에 한 번만 나오는지 L2(Task 4 시험에 붙임)
 
 ---
+
+**구현·검증 기록 (2026-10-21, 로컬 완료):**
+- 기존 터미널을 유지한 로그/문제 탭, 프로젝트별 최대 8개 고정 source·최근 실행 fallback·기존 LogView 재사용·스트림 정리·조회 오류 재시도를 연결했다. 문제 목록은 100개 페이지를 같은 rev로 최대 2,048개 모으고 invalid cursor에는 최대 3회 새 snapshot을 읽는다. 프로젝트 변경/취소 시 이전 응답을 섞지 않는다.
+- `RunLogMetadata`가 원본 `source_cwd`·Windows 사본 위치를 Problem ingest에 전달한다. Problem.file은 원본 cwd 안에서는 cwd 상대, 그 밖의 허용된 프로젝트 파일은 절대 경로다. 원본 cwd 없는 이전 기록의 상대 진단은 추측하지 않는다. 하위 cwd의 절대/상대 파일·소유 작업 폴더·Windows 진단을 실제 problems→resolve_location RPC로 열고 기존 프로젝트/심볼릭링크 경계를 검증했다.
+- `runtime.summary {}` → `{ rev, active }`는 같은 DB snapshot에서 모든 live 상태를 센다. 대표 정의나 최근 256개 이력의 개수로 대체하지 않는다. 상태 표시줄은 runtime.changed로 갱신하며 system/ports만 가시 상태에서 3초 조회한다. 클릭은 `/runs` 목록 또는 `/runs?view=ports|system` 조회 화면으로 이동한다.
+- 알림 센터·네이티브 pending/ack 경로는 정확한 project/run을 선택하고 run 없는 예약 승인/사전 실패는 task로 이동한다. Unicode/slash 정의 ID를 percent encoding하고 agent URI/tag·cold/warm 최신 intent를 보존했다. 센터 삭제·동일 알림 반복 클릭·프로젝트 수동 전환·run ID 재사용도 직접 검증했다.
+- 직접 고유 **111개 PASS**(프론트62·Rust49)와 타입/생성/MSVC 좁은 check·변경 TS27개 Biome·Rust 포맷 PASS. 실패 분류/정확한 명령은 Git common-dir `devbox-verification/s2-task14/{summary,test-names,parent-commands,bottom-commands,notify-commands,failure-classification}.json` 및 raw/resources에 기록한다. Task4 실제 소유 systemd start-limit 알림 1회 L2 PASS. 전체 check/clippy/build/E2E·실제 Windows 토스트/앱은 Task16 미실행이며 push/PR도 하지 않았다. 독립 검토 PASS·미해결0, 소스47개·artifact99개 해시 일치. 완료 Biome331 PASS(0.619초·cgroup115,904,512B·swap0). 검토된 원본 summary/manifest는 인계 시점으로 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다.
 
 ### Task 15: 비밀 설정·에이전트 테스트 실행 전환·MCP 도구
 
