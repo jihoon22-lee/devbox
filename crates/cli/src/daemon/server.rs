@@ -89,6 +89,7 @@ pub async fn serve(
     daemon.dedupe.tracker.wait().await;
     daemon.services.agents.shutdown().await;
     daemon.services.runs.shutdown().await;
+    daemon.services.observe.shutdown().await;
     result
 }
 

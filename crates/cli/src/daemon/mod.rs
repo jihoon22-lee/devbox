@@ -2,6 +2,7 @@ mod debug;
 mod dedupe;
 mod hostname;
 mod launch;
+mod logs;
 mod outbox;
 pub mod routes;
 pub mod server;
@@ -121,6 +122,7 @@ fn build_services_with_runtime(
         terminal,
         agents,
         runs,
+        observe: Arc::new(devbox_observe::ObserveService::default()),
     }))
 }
 

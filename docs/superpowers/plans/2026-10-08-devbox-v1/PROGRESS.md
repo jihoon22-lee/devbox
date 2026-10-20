@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지, S2 Task 1 `87fbd1e7`·Task 2 선행 분리 `b53a867b` 완료. Task 2 실행 정의·신뢰 범위 2 구현과 직접 영향 검증·독립 재검토(미해결 0)·Biome278 PASS, 기능 로컬 커밋 `c67e55eb` 완료. Task 3 실행 래퍼·영속 결과 구현·직접 영향 검사·독립 재검토(미해결 0)·Biome278 PASS, 로컬 커밋 완료 Task 4 systemd 실행 관리·직접 영향 검증·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. Task 6 작업 감지·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
-| 다음 할 일 | 묶음 P Task 7 로그 실시간 tail·검색·소스 병합 구현. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지, S2 Task 1 `87fbd1e7`·Task 2 선행 분리 `b53a867b` 완료. Task 2 실행 정의·신뢰 범위 2 구현과 직접 영향 검증·독립 재검토(미해결 0)·Biome278 PASS, 기능 로컬 커밋 `c67e55eb` 완료. Task 3 실행 래퍼·영속 결과 구현·직접 영향 검사·독립 재검토(미해결 0)·Biome278 PASS, 로컬 커밋 완료 Task 4 systemd 실행 관리·직접 영향 검증·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. Task 6 작업 감지·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료. Task 7 로그 스트림·검색·직접23개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 |
+| 다음 할 일 | 묶음 P Task 8 포트·프로세스·WSL 자원 관찰 구현. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-20 · S2 Task 5 구현·직접 검증·독립 최종 검토·Biome 완료, Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
+| 마지막 갱신 | 2026-10-20 · Task 6 `bbc0d1b1` 뒤 Task 7 구현·직접23개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | Task 4 `167da8b5` 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O(Task 2–6) 로컬 완료. Task 7 로그 스트림·검색 구현·직접23개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. 다음 Task 8 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -98,7 +98,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
-| S2 | P | Task 7–10 |  | 대기 | | | |
+| S2 | P | Task 7–10 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 7 구현·직접23개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. 다음 Task 8 |
 | S2 | Q | Task 11–12 |  | 대기 | | | |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) |  | 대기 | | | |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
@@ -197,6 +197,16 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - RED: `cargo test -p devbox-runtime detect`가 detect/DTO/error 미구현으로 exit101; 크기 제한 추가도 DetectLimit 미구현 RED를 보존했다. CLI 신규 시험의 repo(String)에 join을 호출한 컴파일 오류 1회는 테스트 작성 오류로 별도 기록했으며 기능 RED로 세지 않는다.
 - 직접 검사 고유15개 PASS: runtime detect12·실제 daemon typed RPC/define round-trip1·기존 한국어 error messages2. TS 생성/--check·typecheck PASS. marker 회귀를 컴파일된 시험 바이너리에서 strace로 1회 재실행했으며 최초 시험 실행 execve 1개 외 exec/fork/vfork·프로세스 clone 0, CLONE_THREAD 2개만 확인했다(중복 test count에 더하지 않음). 단순 실행 marker 있는 make/just도 파일 생성0이다.
 - 근거 `devbox-verification/s2-task6/{summary.json,source-hashes.json,marker-processes.strace}`와 RED/GREEN 원시 log·자원 JSON. Cargo/TS/Vitest/strace 검사는 공통 잠금·CPU4/nice10/jobs2/threads2/workers2·cgroup6/8GiB/swap1GiB로 실행했다. 새 JSON fixture는 검증 뒤 Biome formatter로 공백만 정리했고 의미 동일성을 확인했다. 독립 검토는 PASS·미해결0이며 검토자가 pnpm/npm/bun의 선행 하이픈 script도 소유 fixture로 실제 확인했다. 최종 Biome278 PASS(cgroup peak139,534,336B·swap0) 뒤 로컬 커밋으로 묶음 O를 완료한다. 전체 check/clippy/build/E2E/Windows·push/PR 및 Task7 이후는 미실행이다.
+
+### S2 Task 7 로그 tail·검색·소스 병합 (2026-10-20)
+
+- `devbox-observe`의 typed source/filter/search DTO·logs.open/search·CLI service/routes·생성 TS·한국어 오류를 연결했다. Run은 기록 조회 뒤 log path를 얻고, File은 registered roots+D15 기본 vault+`/var/log`의 canonical 일반 파일만 허용한다. configurable vault·포트/프로세스·문제 추출·Docker 관리는 해당 후속 과제에 남겼다.
+- inotify append/truncate/inode replacement·허용 symlink target 변경과 부모 감시 해제, available-head timestamp 병합·filter·JSONL multi-chunk·credit/idle 취소를 구현했다. source8·raw line `3×1MiB+128`·chunk8KiB·source head1·container pipe head2로 유한하게 유지하고 producer queue를 두지 않았다. 초기 256KiB transport credit와 UTF-8/JSON 복사본을 raw buffer 한도와 구분한다. idle source의 미래 행까지 전역 순서를 보장하지 않는다.
+- 검색은 byte cursor·동률 진행·EOF 조각·행 text64KiB truncation marker·응답256행/768KiB를 적용했다. container는 소유 logs 자식의 stdout/stderr 별도 snapshot/cursor(합계64MiB 한도)로 역사 조회하며 양쪽 도착순서 변경에도 중복 없이 진행한다. scan 예산/빈 page/완료 source offset0 의미와 missing file 정책은 05 Task 7 실제 계약에 명시했다. 새 데이터는 새 검색에서 본다.
+- 실제 RED는 첫 merge DTO 미구현, container-only EOF FIN 누락, 허용 symlink target append 누락, 완료 source의 append에 의한 InvalidCursor다. 원본을 보존하고 각각 좁게 GREEN으로 확인했다. `python` 부재·supervisor `--` 누락은 환경 준비 오류, 초기 async 타입/Result helper 및 fixture import는 컴파일 작성 오류, CLI 최초108KiB 상한 기대는 초기 STREAM_WINDOW256KiB 누락 fixture 오류로 구분한다. 이것들을 행동 RED나 PASS로 바꾸지 않았다.
+- 고유 직접23개 PASS(observe16·실제 CLI4·router1·기존 한국어 메시지2), TS 생성/--check·typecheck·관련 fmt PASS. CLI는 소유 runtime fixture의 실제 실행→stdout/stderr→Run open/search까지 연결했고, slow reader에서 ping과 실제 파일 읽기 상한을 함께 확인했다. initial0 credit은 별도 opener로 검사했다. fake docker의 idle/credit/search 취소와 정상/실패 EOF는 소유 child kill/wait·잔존 PID 없음까지 확인했다. 실제 Docker/기존 서비스·공유 네트워크 변경은 없다.
+- 독립 검토의 Docker 본문 탭 오인 1건은 실제 parser/live stream에서 timestamp·본문·순서 훼손 RED 2개를 재현했다. native Run(tab)/Docker(first-space)/File(raw)와 내부 normalized snapshot 형식을 명시 분리했고 신규2개·영향 검색을 확인했다. 최종 독립 재검토 PASS·미해결0, Biome278 PASS 뒤 로컬 커밋했다.
+- 모든 검사에는 공통 nonblocking lock·CPU4/nice10/jobs2/threads2/workers2·cgroup high6/max8GiB/swap1GiB를 적용했다. 원시 log/resource와 실패 분류·source hash는 `devbox-verification/s2-task7/{summary.json,source-hashes.json}`. 독립 최종 검토는 변경27개·artifact66개 해시 일치와 미해결0을 확인했다. 최종 Biome278 PASS(cgroup peak125,140,992B·swap0) 뒤 로컬 커밋했다. 전체 check/clippy/build/E2E·Windows·push/PR은 Task16에서 실행한다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -507,6 +517,8 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 5 cron·예약·누락 정책·실패/신뢰 알림 구현. 고유51개 직접 검사·TS 생성/typecheck·독립 검토 P2 두 건 RED→GREEN·최종 미해결0·Biome278 PASS | Task 4 `167da8b5` 뒤 로컬 커밋. 다음 Task 6 작업 자동 감지. 강제 종료 claim-before-launch의 at-most-once 한계·실패 근거·소유 자원 정리 기록, push·PR 없음. 증거 `devbox-verification/s2-task5/{summary,review}.json` |
 
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 6 파일 감지·typed RPC·출처/중복/전체ID 필터 구현. 직접15개·TS·marker 자식 프로세스0·독립 검토(미해결0)·Biome278 PASS | `88a593d6` 뒤 로컬 완료 커밋, 묶음 O 완료(로컬). 다음 Task7 로그 tail·검색·병합. push/PR 없음. 증거 `devbox-verification/s2-task6/{summary,review}.json` |
+
+| 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 7 로그 open/search·버퍼 제한·inotify·container 소유 자식 수명 구현. 직접23개·TS/포맷·독립 최종 검토(미해결0)·Biome278 PASS | `bbc0d1b1` 뒤 로컬 완료 커밋. Docker 탭 오파싱 리뷰1건 실제RED→GREEN, 다음 Task8. push/PR 없음. 근거 `devbox-verification/s2-task7/{summary,review}.json` |
 
 ## 7. 착수 준비 검토
 

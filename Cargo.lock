@@ -459,6 +459,7 @@ dependencies = [
  "devbox-core",
  "devbox-git",
  "devbox-mux",
+ "devbox-observe",
  "devbox-projects",
  "devbox-protocol",
  "devbox-runtime",
@@ -519,6 +520,27 @@ dependencies = [
  "devbox-protocol",
  "thiserror 2.0.21",
  "tokio-util",
+]
+
+[[package]]
+name = "devbox-observe"
+version = "1.0.0-dev"
+dependencies = [
+ "bytes",
+ "chrono",
+ "devbox-core",
+ "devbox-protocol",
+ "notify",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ts-rs",
 ]
 
 [[package]]
@@ -2453,6 +2475,7 @@ dependencies = [
  "anyhow",
  "devbox-agents",
  "devbox-core",
+ "devbox-observe",
  "devbox-projects",
  "devbox-protocol",
  "devbox-runtime",

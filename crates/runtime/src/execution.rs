@@ -66,6 +66,16 @@ impl RuntimeService {
         };
         lock.lock_owned().await
     }
+    /// Resolve only a recorded run; callers cannot turn an arbitrary ID into a path.
+    pub async fn log_path(&self, id: &str) -> R<std::path::PathBuf> {
+        let run = self.stored(id).await?;
+        Ok(crate::exit_record::ExitStore::new(
+            &self.execution()?.paths.data_dir.join("runs"),
+            &run.run.id,
+        )
+        .internal("resolve recorded run log")?
+        .log_path())
+    }
     pub(crate) async fn stored(&self, id: &str) -> R<StoredRun> {
         let id = id.to_owned();
         let missing = id.clone();

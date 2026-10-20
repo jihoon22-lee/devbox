@@ -438,14 +438,14 @@ pub async fn detect(root: &Path, existing: &[String]) -> Result<Vec<Suggestion>,
 ### Task 7: 로그 — 실시간 tail·검색·소스 병합·파일 tail
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/observe/src/logs_tests.rs · crates/cli/tests/run_logs.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/observe/src/logs_tests.rs · crates/cli/tests/run_logs.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let merged = merge_sources([source([at(1,"a"),at(3,"c")]), source([at(2,"b")])]);
 assert_eq!(merged.map(|l| l.text).collect::<Vec<_>>(), ["a","b","c"]);
 assert!(other_rpc_completes_while_log_credit_is_zero().await);
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-observe merges_two_sources_in_timestamp_order`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** observe crate와 typed source/filter/search DTO를 만든다. 정규화한 project/vault/var-log 읽기 경계를 확인하고 inotify tail→k-way merge→filter→Ctx open_stream credit 64KiB 송신을 연결한다. 회전 후 offset을 초기화하고 stream close는 reader·docker logs 자식만 종료한다. 검색은 256행/768KiB 한도와 다음 cursor를 반환한다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-observe merges_two_sources_in_timestamp_order`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** observe crate와 typed source/filter/search DTO를 만든다. 정규화한 project/vault/var-log 읽기 경계를 확인하고 inotify tail→k-way merge→filter→Ctx open_stream credit 64KiB 송신을 연결한다. 회전 후 offset을 초기화하고 stream close는 reader·docker logs 자식만 종료한다. 검색은 256행/768KiB 한도와 다음 cursor를 반환한다.
 
 ```rust
 let ends = ctx.open_stream()?;
@@ -460,8 +460,8 @@ background.spawn(async move {
 Ok(StreamOpened { stream_id }) // Return before reading/waiting for stream credit.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험과 symlink 밖 읽기 거부, invalid regex, 조각 경계/다중 source/취소를 검사한다. 느린 reader 시험은 ping 지연과 buffer 상한을 함께 본다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(observe): stream and search merged execution logs`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험과 symlink 밖 읽기 거부, invalid regex, 조각 경계/다중 source/취소를 검사한다. 느린 reader 시험은 ping 지연과 buffer 상한을 함께 본다.
+- [x] **5 · 검토·커밋:** 직접23개·TS/포맷·독립 최종 검토 PASS(미해결0)·Biome278 PASS 뒤 `feat(observe): stream and search merged execution logs`로 로컬 커밋했다. Docker 탭 parser 리뷰1건 실제 RED→GREEN과 실패·미실행 근거를 PROGRESS 및 `s2-task7/{summary,review}.json`에 구분했다.
 
 **Files:**
 - Create: `crates/observe/{Cargo.toml,src/lib.rs,src/logs.rs,src/sources.rs}`
@@ -483,6 +483,17 @@ Ok(StreamOpened { stream_id }) // Return before reading/waiting for stream credi
 - `filter_by_stream_and_regex`
 - `file_source_outside_allowed_roots_is_rejected`
 - `slow_client_pauses_reading_not_the_daemon`(신용 소진 시 다른 RPC 응답 유지, S1 Task 1 규칙 재확인)
+
+
+**Task 7 실제 계약·검증(2026-10-20, 별도 검토·커밋 대기):**
+- wire source는 `{kind:"run",runId}` / `{kind:"file",path}` / `{kind:"container",id}`, stream은 `stdout|stderr|system`이다. CLI가 등록 프로젝트 경로·D15 기본 `~/notes`·`/var/log`를 매 요청 주입한다. configurable vault는 S3 Task 4에서 연결한다. 절대 경로인 일반 파일만 읽으며 최초 missing은 `observe.source_unavailable`, 허용 루트 밖 symlink는 거절한다. Run은 DB 기록 조회 후 내부 log path를 얻는다.
+- `tail`은 파일 EOF부터, container는 `docker logs --follow --timestamps --tail 0`부터다. `{offset}`은 파일 원시 byte 위치(EOF보다 크면 EOF), container는 stdout/stderr **각 pipe의 원시 byte 위치**를 건너뛴다. Run의 `RFC3339\t o|e|s \t text`를 JSONL로 변환한다. 파일의 EOF 조각은 한 번 내보내고, 뒤 append는 새 조각으로 읽는다.
+- available head의 timestamp(ns)·요청 소스 순서로 합친다. container 내부 stdout/stderr도 head를 합치며 동률은 stdout 먼저다. idle source는 기다리지 않으므로 미래에 도착할 과거 시각까지 전역 정렬한다고 주장하지 않는다. 시각 없는 File 행은 읽은 시각이며 검색 진행은 timestamp가 아닌 byte cursor로 유지한다.
+- inotify 알림 큐 1개, 소스 최대 8개, 각 File의 원시 행 `3×1MiB+128`·chunk 8KiB·merge head 1개, container의 pipe별 같은 행/chunk 상한·head 2개와 바깥 head 1개다. producer queue는 없다. UTF-8 lossy·JSON escape와 송신 중 DTO의 유한 복사본은 별도이며 위 숫자를 전체 프로세스 RSS 한도라고 보고하지 않는다. 너무 긴 live 행은 읽기를 종료한다. 한 JSONL 행이 64KiB보다 크면 여러 transport chunk로 나뉘며 초기 credit 256KiB 소진 뒤 추가 파일 읽기가 멈춘다.
+- 회전 시 inode replacement·현재 길이 감소를 확인해 offset을 0으로 초기화한다. 요청 경로와 현재 canonical target의 부모 집합(최대 16개)을 감시하고 target 변경 때 옛 부모 감시는 해제한다. reopen은 읽기 경계를 다시 확인한다. close·channel disconnect·shutdown에서 reader를 끝내고 소유 `docker logs` 자식만 kill/wait한다. container-only EOF는 잔여 행 뒤 FIN, File이 함께 있으면 File tail을 계속한다.
+- 검색은 1–256행·직렬화 JSON 768KiB이며, 응답 text는 UTF-8 경계 64KiB까지만 담고 `[log line truncated]`를 명시한다. cursor는 원본 행 전체를 소비하므로 큰 행·같은 timestamp가 반복되거나 빠지지 않는다. 역방향 reader는 8KiB block·요청당 source별 scan 8MiB, 한 거대 행까지 포함한 hard scan 64MiB다. scan 예산으로 빈 page와 nextCursor가 함께 올 수 있다.
+- container 과거 검색은 소유 `docker logs --timestamps`를 최대 합계 64MiB 임시 stdout/stderr snapshot으로 받아 동일한 역방향 reader로 처리한다. 두 pipe를 별개 cursor로 고정해 도착 순서가 바뀌어도 진행을 유지한다. File은 inode와 첫 행 prefix, container는 pipe별 첫 행 prefix를 확인한다. 이미 offset 0인 소스는 새 append를 이전 검색에 섞지 않으며 새 검색에서 본다. snapshot·자식은 요청/취소 완료 때 정리한다.
+- 직접 고유 23개(observe16·실제 CLI4·router1·한국어 메시지2), gen-ts/--check·typecheck·관련 Rust fmt PASS. 실제 CLI는 소유 systemd fixture의 실행 stdout/stderr→Run open/search와 File append/close·초기창 소진 후 ping+읽기 상한을 확인했다. 별도 zero-credit opener는 응답 선반환과 head 1개 상한을 확인했다. 실제 Docker 조작·Windows·전체 check/clippy/build/E2E·push/PR은 미실행이다. 독립 검토의 Docker 본문 탭 오인은 native Run/Docker/File 형식과 내부 snapshot 형식을 명시 분리하여 신규2개 RED→GREEN 및 영향 검색으로 수정했다. 원본 RED/환경·fixture 오류 구분·자원·source hash는 `devbox-verification/s2-task7/`에 보존한다.
 
 ---
 

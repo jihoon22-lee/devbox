@@ -1,0 +1,28 @@
+[package]
+name = "devbox-observe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+devbox-protocol.workspace = true
+devbox-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+tempfile.workspace = true
+sha2.workspace = true
+notify = "8.2"
+regex = "1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+
+[dev-dependencies]
+bytes.workspace = true

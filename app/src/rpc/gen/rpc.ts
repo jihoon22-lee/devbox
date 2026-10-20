@@ -74,11 +74,18 @@ export type ListAgents = { includeClosedHours: number | null, afterId?: string, 
 export type ListProjects = Record<symbol, never>;
 export type ListRuns = { projectId: string, cursor: DefinitionCursor | null, };
 export type ListSessions = { projectId: string | null, afterId?: string, };
+export type LogFilter = { text?: string, regex?: string, streams?: Array<LogStream>, };
+export type LogFrom = Tail | { offset: number, };
+export type LogLine = { src: LogSource, ts: string, stream: LogStream, text: string, };
+export type LogSource = { "kind": "run", runId: string, } | { "kind": "file", path: string, } | { "kind": "container", id: string, };
+export type LogStream = "stdout" | "stderr" | "system";
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
+export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
+export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
@@ -122,11 +129,15 @@ export type ScheduleOutcome = "claimed" | "running" | "succeeded" | "failed" | "
 export type ScheduleStatus = { id: string, cron: string, next: string | null, last: ScheduleLast | null, };
 export type SchedulesQuery = { projectId: string, };
 export type SchedulesResult = { items: Array<ScheduleStatus>, };
+export type SearchCursor = { sources: Array<SourceCursor>, };
+export type SearchLogs = { sources: Array<LogSource>, query: string, regex: boolean, before?: SearchCursor, limit: number, };
+export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SendToAgent = { id: string, text: string, };
 export type ServiceDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, restart: RestartPolicy, restartSec: number, startLimit: StartLimit, portsHint: Array<number>, readyTimeoutSec: number, };
 export type SessionKind = "shell" | "agent";
 export type SessionList = { rev: string, items: Array<TerminalSession>, nextAfterId?: string, };
 export type SetFavorite = { id: string, favorite: boolean, };
+export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
 export type Status = "ok" | "warn" | "fail";
@@ -135,6 +146,7 @@ export type Suggestion = { id: string, command: string, kind: DefinitionKind, fr
 export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
+export type Tail = "tail";
 export type TaskDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
@@ -178,6 +190,8 @@ export interface Methods {
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
+  "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
+  "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.clone": { kind: "mutation"; confirm: "none"; params: CloneProject; result: Project; error: ProjectsError };
   "projects.config": { kind: "query"; confirm: "none"; params: GetProjectConfig; result: ProjectConfigResult; error: ProjectsError };
@@ -249,6 +263,8 @@ export const METHOD_INFO = {
   "agents.test": { kind: "mutation", confirm: "none" },
   "agents.usage": { kind: "query", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
+  "logs.open": { kind: "stream", confirm: "none" },
+  "logs.search": { kind: "query", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.clone": { kind: "mutation", confirm: "none" },
   "projects.config": { kind: "query", confirm: "none" },
@@ -326,6 +342,14 @@ export const RPC_ERROR_CODES = [
   "invalid_params",
   "method_not_found",
   "not_found",
+  "observe.file_outside_roots",
+  "observe.invalid_cursor",
+  "observe.invalid_input",
+  "observe.invalid_regex",
+  "observe.limit_exceeded",
+  "observe.run_not_found",
+  "observe.source_unavailable",
+  "observe.stream_unsupported",
   "projects.already_exists",
   "projects.clone_failed",
   "projects.clone_invalid_url",
