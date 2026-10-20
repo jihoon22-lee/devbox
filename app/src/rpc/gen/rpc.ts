@@ -58,6 +58,7 @@ export type ExitRecord = { attemptId: string, code: number | null, signal?: stri
 export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
+export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
@@ -65,6 +66,9 @@ export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
+export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
+export type KillResult = { pid: number, };
+export type KillSignal = "term" | "kill";
 export type LaunchAgent = { tool: string, worktree: boolean, prompt: string | null, };
 export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTerminal>, agents: Array<LaunchAgent>, };
 export type LaunchProject = { id: string, };
@@ -84,11 +88,18 @@ export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
-export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
+export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
+export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
+export type PortInfo = { port: number, proto: string, addr: string, pid: number | null, process: string | null, runId: string | null, containerId: string | null, projectId: string | null, };
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
+export type Pressure = { some: PressureLine | null, full: PressureLine | null, };
+export type PressureLine = { avg10: number, avg60: number, avg300: number, totalUs: number, };
+export type ProcessExpectation = { startTimeMs: number, };
+export type ProcessInfo = { pid: number, name: string, uid: number, cwd: string | null, startTimeMs: number, cpuPercent: number, rssBytes: number, unit: string | null, runId: string | null, projectId: string | null, };
+export type ProcessesQuery = { projectId: string | null, };
 export type Project = { id: string, name: string, path: string, favorite: boolean, addedMs: number, };
 export type ProjectAgentCounts = { open: number, attention: number, };
 export type ProjectConfig = { agent: AgentConfig, launch: LaunchConfig, };
@@ -146,6 +157,7 @@ export type Suggestion = { id: string, command: string, kind: DefinitionKind, fr
 export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
+export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
 export type Tail = "tail";
 export type TaskDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
@@ -192,6 +204,10 @@ export interface Methods {
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
+  "observe.kill": { kind: "mutation"; confirm: "always"; params: KillProcess; result: KillResult; error: ObserveError };
+  "observe.ports": { kind: "query"; confirm: "none"; params: ObserveQuery; result: Array<PortInfo>; error: ObserveError };
+  "observe.processes": { kind: "query"; confirm: "none"; params: ProcessesQuery; result: Array<ProcessInfo>; error: ObserveError };
+  "observe.system": { kind: "query"; confirm: "none"; params: ObserveQuery; result: SystemInfo; error: ObserveError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.clone": { kind: "mutation"; confirm: "none"; params: CloneProject; result: Project; error: ProjectsError };
   "projects.config": { kind: "query"; confirm: "none"; params: GetProjectConfig; result: ProjectConfigResult; error: ProjectsError };
@@ -265,6 +281,10 @@ export const METHOD_INFO = {
   "debug.echo": { kind: "stream", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
+  "observe.kill": { kind: "mutation", confirm: "always" },
+  "observe.ports": { kind: "query", confirm: "none" },
+  "observe.processes": { kind: "query", confirm: "none" },
+  "observe.system": { kind: "query", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.clone": { kind: "mutation", confirm: "none" },
   "projects.config": { kind: "query", confirm: "none" },
@@ -347,8 +367,11 @@ export const RPC_ERROR_CODES = [
   "observe.invalid_input",
   "observe.invalid_regex",
   "observe.limit_exceeded",
+  "observe.permission_denied",
+  "observe.project_not_found",
   "observe.run_not_found",
   "observe.source_unavailable",
+  "observe.state_changed",
   "observe.stream_unsupported",
   "projects.already_exists",
   "projects.clone_failed",

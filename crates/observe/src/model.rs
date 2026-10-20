@@ -95,6 +95,9 @@ pub struct SearchResult {
 domain_error! {
     pub enum ObserveError {
         InvalidInput = "observe.invalid_input",
+        StateChanged = "observe.state_changed",
+        PermissionDenied = "observe.permission_denied",
+        ProjectNotFound = "observe.project_not_found",
         InvalidRegex = "observe.invalid_regex",
         FileOutsideRoots = "observe.file_outside_roots",
         SourceUnavailable = "observe.source_unavailable",

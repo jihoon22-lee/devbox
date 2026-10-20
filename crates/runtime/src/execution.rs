@@ -307,6 +307,12 @@ impl RuntimeService {
                 // A directly requested short-lived service still returns its observable result.
                 return Ok(run);
             }
+            if tokio::time::Instant::now() >= until {
+                return Err(RuntimeError::NotReady {
+                    id: service.id.clone(),
+                }
+                .into());
+            }
             let ready = tokio::time::timeout_at(
                 until,
                 (execution.readiness)(ReadyCheck {
@@ -319,6 +325,13 @@ impl RuntimeService {
             .map_err(|_| RuntimeError::NotReady {
                 id: service.id.clone(),
             })?;
+            // timeout_at may poll an immediately-ready future before its expired timer.
+            if tokio::time::Instant::now() >= until {
+                return Err(RuntimeError::NotReady {
+                    id: service.id.clone(),
+                }
+                .into());
+            }
             if ready {
                 let _guard = self.run_lock(&run.id).await;
                 let mut stored = self.stored(&run.id).await?;
@@ -344,7 +357,14 @@ impl RuntimeService {
                 }
                 .into());
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            let next_poll = tokio::time::Instant::now() + Duration::from_secs(1);
+            tokio::time::sleep_until(next_poll.min(until)).await;
+            if tokio::time::Instant::now() >= until {
+                return Err(RuntimeError::NotReady {
+                    id: service.id.clone(),
+                }
+                .into());
+            }
             run = self.reconcile_one(&run.id).await?;
         }
     }

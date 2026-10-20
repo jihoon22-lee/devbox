@@ -26,3 +26,6 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 bytes.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["fs", "signal", "process", "user", "feature"] }

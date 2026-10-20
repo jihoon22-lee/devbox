@@ -69,6 +69,18 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             s.projects.prompts(p).await
         });
     let router = router
+        .register::<devbox_observe::ObservePorts, _, _>(|s, _, _| async move {
+            super::observe::ports(s).await
+        })
+        .register::<devbox_observe::ObserveProcesses, _, _>(|s, _, p| async move {
+            super::observe::processes(s, p).await
+        })
+        .register::<devbox_observe::ObserveKill, _, _>(
+            |s, _, p| async move { s.observe.kill(p).await },
+        )
+        .register::<devbox_observe::ObserveSystem, _, _>(|s, _, _| async move {
+            s.observe.system(s.paths.home.clone()).await
+        })
         .register::<devbox_observe::LogsOpen, _, _>(|s, ctx, p| async move {
             super::logs::open(s, ctx, p).await
         })

@@ -12,7 +12,10 @@ use std::{
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 pub struct ObserveService {
-    docker: PathBuf,
+    pub(crate) docker: PathBuf,
+    pub(crate) proc: ProcFs,
+    pub(crate) host_slots: Arc<tokio::sync::Semaphore>,
+    pub(crate) process_sampler: Arc<std::sync::Mutex<crate::processes::ProcessSampler>>,
     cancel: CancellationToken,
     tasks: TaskTracker,
     /// Counts actual file bytes read, useful for bounded-prefetch diagnostics/tests.
@@ -27,6 +30,9 @@ impl ObserveService {
     pub fn new(docker: PathBuf) -> Self {
         Self {
             docker,
+            proc: ProcFs::default(),
+            host_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+            process_sampler: Arc::default(),
             cancel: CancellationToken::new(),
             tasks: TaskTracker::new(),
             read_bytes: Arc::default(),

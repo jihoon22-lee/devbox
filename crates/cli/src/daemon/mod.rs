@@ -3,6 +3,7 @@ mod dedupe;
 mod hostname;
 mod launch;
 mod logs;
+pub mod observe;
 mod outbox;
 pub mod routes;
 pub mod server;
@@ -85,6 +86,7 @@ fn build_services_with_runtime(
         },
     ));
     let mut execution = devbox_runtime::ExecutionConfig::new(paths.clone());
+    execution.readiness = observe::readiness();
     execution.slice = std::env::var("DEVBOX_TEST_SLICE").ok().filter(|slice| {
         paths.instance.is_test() && slice.starts_with("devbox-test-") && slice.ends_with(".slice")
     });

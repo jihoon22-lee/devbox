@@ -49,22 +49,7 @@ fn port() -> u16 {
         .port()
 }
 fn listening() -> Readiness {
-    Arc::new(|check| {
-        Box::pin(async move {
-            for port in check.ports {
-                if !tokio::time::timeout(
-                    Duration::from_millis(100),
-                    tokio::net::TcpStream::connect(("127.0.0.1", port)),
-                )
-                .await
-                .is_ok_and(|r| r.is_ok())
-                {
-                    return false;
-                }
-            }
-            true
-        })
-    })
+    devbox_cli::daemon::observe::readiness()
 }
 #[tokio::test]
 #[ignore = "needs systemd user"]
@@ -296,4 +281,110 @@ async fn stopped_service_cannot_be_marked_ready_by_an_inflight_checker() {
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].state, RunState::Stopped);
     assert!(!items[0].ready);
+}
+
+#[tokio::test]
+#[ignore = "needs systemd user"]
+async fn readiness_poll_is_once_per_second_and_stops_at_timeout() {
+    let mut fixture = RuntimeFixture::new();
+    let samples = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let readiness: Readiness = Arc::new({
+        let samples = samples.clone();
+        move |_| {
+            samples.lock().unwrap().push(Instant::now());
+            Box::pin(async { false })
+        }
+    });
+    let (runs, project) = direct(&mut fixture, readiness).await;
+    define(
+        &runs,
+        &project,
+        RunDef::Service(ServiceDef {
+            id: "poll-cadence".into(),
+            command: "sleep 60".into(),
+            ports_hint: vec![port()],
+            ready_timeout_sec: 2,
+            ..Default::default()
+        }),
+    )
+    .await;
+    assert!(matches!(
+        runs.start(StartRun {
+            project_id: project,
+            id: "poll-cadence".into(),
+            worktree: None,
+        })
+        .await,
+        Err(Fail::Domain(RuntimeError::NotReady { .. }))
+    ));
+    let observed = samples.lock().unwrap().clone();
+    assert!(
+        (1..=2).contains(&observed.len()),
+        "two-second deadline permits at most the initial and one subsequent poll, got {}",
+        observed.len()
+    );
+    assert!(
+        observed
+            .windows(2)
+            .all(|pair| pair[1].duration_since(pair[0]) >= Duration::from_secs(1)),
+        "readiness callback must not poll faster than once per second"
+    );
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert_eq!(samples.lock().unwrap().len(), observed.len());
+}
+
+#[tokio::test]
+#[ignore = "needs systemd user"]
+async fn readiness_poll_clamps_sleep_and_never_checks_after_deadline() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let mut fixture = RuntimeFixture::new();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let first = Arc::new(std::sync::Mutex::new(None));
+    let readiness: Readiness = Arc::new({
+        let calls = calls.clone();
+        let first = first.clone();
+        move |_| {
+            let initial = calls.fetch_add(1, Ordering::Relaxed) == 0;
+            if initial {
+                *first.lock().unwrap() = Some(Instant::now());
+            }
+            Box::pin(async move {
+                if initial {
+                    tokio::time::sleep(Duration::from_millis(1600)).await;
+                    false
+                } else {
+                    // This immediately-ready future must never run at or after the deadline.
+                    true
+                }
+            })
+        }
+    });
+    let (runs, project) = direct(&mut fixture, readiness).await;
+    define(
+        &runs,
+        &project,
+        RunDef::Service(ServiceDef {
+            id: "poll-deadline".into(),
+            command: "sleep 60".into(),
+            ports_hint: vec![port()],
+            ready_timeout_sec: 2,
+            ..Default::default()
+        }),
+    )
+    .await;
+    assert!(matches!(
+        runs.start(StartRun {
+            project_id: project,
+            id: "poll-deadline".into(),
+            worktree: None,
+        })
+        .await,
+        Err(Fail::Domain(RuntimeError::NotReady { .. }))
+    ));
+    let elapsed = first.lock().unwrap().unwrap().elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(1900) && elapsed < Duration::from_millis(2400),
+        "remaining deadline bounds the one-second sleep: {elapsed:?}"
+    );
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
 }

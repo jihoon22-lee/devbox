@@ -500,14 +500,14 @@ Ok(StreamOpened { stream_id }) // Return before reading/waiting for stream credi
 ### Task 8: 포트·프로세스·WSL 자원
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/observe/src/{ports,processes,system}_tests.rs · crates/cli/tests/observe.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/observe/src/{ports,processes,system}_tests.rs`의 proc·kill·system assertion을 구현 전에 작성했다. `crates/cli/tests/observe.rs`에 typed RPC·production callback·느린 fake Docker 격리 회귀를 추가했다.
 ```rust
 assert!(is_listening_in(&proc_fixture, port)); // 127.0.0.1, ::1, 0.0.0.0, ::
 assert!(!is_listening_in(&established_only, port));
 assert!(matches!(kill(stale_start_time).await, Err(ObserveError::StateChanged)));
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-observe is_listening_accepts_ipv4_ipv6_loopback_and_wildcard`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** proc parser는 fixture root와 clock을 받는다. inode→PID→cgroup unit 매핑·CPU delta·메모리/PSI/df를 구현한다. kill은 UID·stat starttime을 실제 signal 직전 확인한다. Task 4의 readiness 검사에 실제 is_listening을 CLI에서 주입하여 runtime→observe 순환 의존을 피한다. 준비됨/timeout 후 해당 polling을 멈추며 재시작 정책은 건드리지 않는다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-observe is_listening_accepts_ipv4_ipv6_loopback_and_wildcard`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** proc parser는 fixture root와 clock을 받는다. inode→PID→cgroup unit 매핑·CPU delta·메모리/PSI/df를 구현한다. kill은 UID·stat starttime을 실제 signal 직전 확인한다. Task 4의 readiness 검사에 실제 is_listening을 CLI에서 주입하여 runtime→observe 순환 의존을 피한다. 준비됨/timeout 후 해당 polling을 멈추며 재시작 정책은 건드리지 않는다.
 
 ```rust
 pub fn is_listening(port: u16) -> bool {
@@ -517,8 +517,8 @@ pub fn is_listening(port: u16) -> bool {
 // kill checks UID + expected startTimeMs immediately before sending the signal.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 fixture와 소유 TCP listener/PID 재사용 거부를 확인한다. pid1은 권한 거부만 확인하고 signal을 보내지 않는다. services ports_hint empty/3초 open/2초 timeout 회귀를 재사용한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(observe): inspect ports processes and system resources`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 fixture와 소유 TCP listener/PID 재사용 거부를 확인한다. pid1은 권한 거부만 확인하고 signal을 보내지 않는다. services ports_hint empty/3초 open/2초 timeout 회귀를 재사용한다.
+- [x] **5 · 검토·커밋:** 직접38개·타입 검사·독립 최종 검토 PASS(미해결0)·Biome278 PASS 뒤 `feat(observe): inspect ports processes and system resources`로 로컬 커밋했다. readiness cadence 리뷰 지적과 실패·미실행 근거를 PROGRESS 및 `s2-task8/{summary,review}.json`에 구분했다.
 
 **Files:**
 - Create: `crates/observe/src/ports.rs`, `processes.rs`, `system.rs`
@@ -540,6 +540,17 @@ pub fn is_listening(port: u16) -> bool {
 - L2: 테스트가 연 TCP 리스너(127.0.0.1:0)가 목록에 pid와 함께 보임
 - `kill_refuses_other_users_processes`(pid 1)
 - `kill_refuses_a_reused_pid`: 실제 시작 시각과 다른 `expect.startTimeMs` → `observe.state_changed`, 프로세스 살아 있음
+
+**Task 8 실제 계약(2026-10-20, 구현·직접 검증·독립 최종 검토·로컬 커밋 완료):**
+- `ProcessInfo`는 `pid/name/uid/cwd?/startTimeMs/cpuPercent/rssBytes/unit?/runId?/projectId?`다. `startTimeMs`는 `/proc/stat btime × 1000 + stat22 ticks × 1000 / CLK_TCK`의 Unix ms(정수 내림)다. CPU는 같은 PID·시작 tick의 두 표본 간 `(utime+stime) delta / monotonic elapsed`이며 한 코어 100%, 멀티스레드는 100% 초과 가능하다. 첫 표본·PID 재사용·같은 시각 표본은 0이다. RSS는 stat24의 페이지 수 × OS page size다.
+- `processes{projectId}`는 선택 프로젝트 경로 아래 cwd인 **전체** 프로세스를 먼저(CPU 내림차순), 그 외 CPU 상위 50개를 붙인다. 선택이 없으면 전체 CPU 상위 50개다. 동률은 PID 오름차순이다. cwd는 경로 component로 비교하며 중첩 등록에서는 가장 깊은 프로젝트를 표시한다. 사라진/읽을 수 없는 proc 엔트리는 건너뛰고 cwd/cgroup만 읽을 수 없으면 해당 필드를 null로 둔다.
+- inode→PID는 오름차순 PID에서 먼저 확인한 소유자(공유 socket은 대표 PID 하나), cgroup은 가장 안쪽 `.service/.scope`를 사용한다. runtime 소유 `live_unit_runs()`는 history의 256개 제한 없이 live unit identity를 제공한다. 포트 주소는 IPv4·IPv6 전체 LISTEN을 인정하며 ESTABLISHED는 제외한다.
+- `observe.kill`은 `mutation(always)`이며 성공하면 `{ pid }`를 돌려준다. live `/proc`만 사용해 UID와 원본 start tick을 signal 직전 다시 확인한다. PID 0·i32 범위 밖은 invalid_input, PID 1·다른 UID는 permission_denied, 소멸·시작시각 변경은 state_changed다. 관찰용 fixture root는 signal 대상을 바꾸지 않는다. proc 조회와 OS signal 사이 완전한 원자성은 보장하지 않는다.
+- `observe.system`의 메모리/스왑은 바이트, PSI avg10/60/300은 Linux 백분율·totalUs는 누적 μs다. PSI 파일 미지원/권한/파싱 실패는 해당 cpu/memory/ioPressure=null이다. 홈 파티션은 `statvfs`로 df와 같은 total/available/used 바이트를 읽으며 미가용은 homeFilesystem=null이다. 필수 meminfo 미가용은 source_unavailable이다.
+- Docker는 읽기 전용 `docker ps --format json`의 게시된 host 포트만 합친다(미게시 expose 제외, TCP/UDP·IPv4/IPv6·범위 지원). 프로그램 없음·비정상 종료·2초 timeout·1MiB 초과·잘못된 JSON은 container 행을 생략하며 OS 포트는 유지한다. 빈 Docker 목록과 미가용을 구별하는 별도 상태 필드는 아직 없다. 모든 검증은 fake CLI/미존재 실행 파일을 사용하며 실제 Docker는 실행하지 않는다.
+- proc 조회는 semaphore 2와 spawn_blocking, proc 루트 엔트리 최대 65,536·fd 엔트리 최대 262,144·tcp 표 최대 4MiB·응답 최대 768KiB로 제한한다. 상한 초과는 limit_exceeded다. Docker는 동시에 최대 2개·2초 timeout 뒤 소유 자식 kill/wait다. readiness는 CLI에서 한 번의 tcp/tcp6 snapshot으로 모든 힌트 포트를 검사하며 PID/fd 스캔·접속 시도는 하지 않는다. runtime의 기존 50ms readiness poll을 1초로 맞췄다. 다음 sleep은 deadline을 넘지 않고 callback 전·후 및 sleep 뒤 deadline을 다시 검사한다. 준비/timeout 후 polling 종료·stop/attempt 경합·재시작 정책은 보존한다.
+
+- 직접 고유 38개 PASS: observe unit26(초기 1회), CLI observe3, 실제 systemd readiness5, live unit lookup1, router1, 한국어 오류2. cgroup 조상 unit 선택 오류는 별도 assertion RED→GREEN, 프로젝트 전체 행 보존도 좁은 재검사 PASS다. 독립 검토에서 readiness 50ms 간격을 발견해 2초 동안 callback29회·늦은 첫 검사 뒤 잘못된 성공을 실제 RED2개로 재현했고, 1초 cadence·남은 400ms deadline sleep·기한 뒤 새 callback 없음 및 기존 readiness3개를 함께 GREEN5개로 확인했다. TS 생성·Rust 포맷·diff 검사 PASS. 원본 미구현 RED2건·중간 Done 필드 컴파일 오류1건을 포함한 원본 로그/자원/소스 해시는 Git common-dir `devbox-verification/s2-task8/`에 보존한다. 전체 검사·clippy/build/E2E/Windows·실제 Docker는 미실행(Task16), 최종 Biome·독립 검토는 다음 단계다.
 
 ---
 
