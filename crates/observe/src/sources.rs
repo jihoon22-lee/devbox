@@ -146,6 +146,9 @@ impl FileSource {
             bytes_read: 0,
         })
     }
+    pub(crate) fn file_identity(&self) -> &str {
+        &self.id
+    }
     pub(crate) fn parents(&self) -> [&Path; 2] {
         [
             self.path.parent().expect("requested log parent"),
@@ -174,6 +177,17 @@ impl FileSource {
         Ok(())
     }
     pub(crate) async fn next(&mut self) -> R<Option<LogLine>> {
+        self.next_line(true).await
+    }
+    /// Diagnostics need a complete physical record; raw log display may expose
+    /// an EOF fragment through next(). Keep this buffer until its LF arrives.
+    pub(crate) async fn next_complete(&mut self) -> R<Option<LogLine>> {
+        self.next_line(false).await
+    }
+    pub(crate) fn has_pending_line(&self) -> bool {
+        !self.line.is_empty()
+    }
+    async fn next_line(&mut self, show_eof_fragment: bool) -> R<Option<LogLine>> {
         loop {
             if self.used < self.chunk.len() {
                 let rest = &self.chunk[self.used..];
@@ -206,7 +220,7 @@ impl FileSource {
             self.chunk.extend_from_slice(&bytes[..n]);
             self.used = 0;
             if n == 0 {
-                return Ok((!self.line.is_empty()).then(|| {
+                return Ok((show_eof_fragment && !self.line.is_empty()).then(|| {
                     crate::logs::parse(&self.source, &self.line.take(), LogStream::Stdout)
                 }));
             }

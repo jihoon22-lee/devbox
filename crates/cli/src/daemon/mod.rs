@@ -5,6 +5,7 @@ mod launch;
 mod logs;
 pub mod observe;
 mod outbox;
+mod problems;
 pub mod routes;
 pub mod server;
 mod socket;

@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 상세화·묶음 O(Task 2–6) 로컬 완료. 묶음 P Task 7 `bb0ef99a`·Task 8 관찰 구현 완료. Task 8 직접38개·독립 최종 검토(미해결0)·타입 검사·Biome278 PASS, 로컬 커밋 완료 |
-| 다음 할 일 | 묶음 P Task 9 로그에서 문제 추출. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 상세화·묶음 O(Task 2–6) 로컬 완료. 묶음 P Task 7 `bb0ef99a`·Task 8 `9cd1eff3`·Task 9 문제 추출 로컬 완료. Task 9 직접50개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
+| 다음 할 일 | 묶음 P Task 10 Docker 컨테이너 목록·동작 구현. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-20 · Task 8 관찰 구현·직접38개·독립 최종 검토(미해결0)·타입 검사·Biome278 PASS, 로컬 커밋 완료 |
+| 마지막 갱신 | 2026-10-20 · Task 9 문제 추출·직접50개·타입·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O 로컬 완료. Task 7 `bb0ef99a`·Task 8 관찰 구현·직접38개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. 다음 Task 9 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O 로컬 완료. Task 7 `bb0ef99a`·Task 8 `9cd1eff3`·Task 9 문제 추출·직접50개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 완료. 다음 Task 10 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -98,7 +98,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
-| S2 | P | Task 7–10 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 7 `bb0ef99a`·Task 8 관찰 구현·직접38개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. 다음 Task 9 |
+| S2 | P | Task 7–10 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 7 `bb0ef99a`·Task 8 `9cd1eff3`·Task 9 문제 추출·직접50개·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 완료. 다음 Task 10 |
 | S2 | Q | Task 11–12 |  | 대기 | | | |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) |  | 대기 | | | |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
@@ -215,6 +215,13 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 메모리·스왑/PSI·홈 statvfs와 제한된 읽기 전용 docker ps adapter를 추가했다. proc scans·응답 크기·동시 실행을 제한하고 spawn_blocking을 사용한다. Docker는 2초/1MiB 제한·kill/wait, 미가용 시 OS ports 유지다. fake Docker가 멈춘 동안 Ping 성공 및 timeout 뒤 소유 PID 소멸을 확인했다. 실제 Docker·사용자 서비스·네트워크·방화벽은 변경하지 않았다.
 - CLI production readiness가 tcp/tcp6 한 snapshot으로 모든 ports_hint를 검사한다. 실제 소유 systemd의 ports 없음/3초 open/2초 timeout·stalled checker·stop 경합 3개 회귀를 그대로 실행했다. 독립 검토가 readiness 50ms 간격을 발견해 1초 cadence로 맞추고 deadline을 넘겨 자거나 기한 뒤 callback 성공을 받지 않도록 검사했다. dependency 종료 대기 50ms·runtime 재시작 정책·준비/timeout 뒤 polling 종료는 보존했다. inode/run 연결 fixture와 300개 history 뒤 오래된 live run 보존도 PASS다.
 - 고유 직접38개 PASS(observe26·CLI observe3·실제 readiness5·live lookup1·router1·한국어2), TS 생성/--check·typecheck·Rust 포맷·diff 검사 PASS. cgroup 부모 user@1000.service 선택은 assertion RED→GREEN, readiness callback29회/늦은 첫 검사 뒤 잘못된 성공 RED2개는 1초 cadence·deadline 검사로 GREEN5개(기존3+신규2), 최초 ports/lookup 미구현 RED2건과 중간 Done 필드 컴파일 오류1건 원본도 구분 보존한다. 근거 `devbox-verification/s2-task8/{summary,source-hashes}.json`·raw log/resources. 검사마다 common-dir nonblocking lock·CPU4/nice10/jobs2/threads2/workers2·cgroup high6/max8GiB/swap1GiB를 적용했다. 소유 child/temp fixture를 정리하고 후속 devbox-test unit 목록이 비었음을 확인했다. 독립 최종 검토 PASS·미해결0, 최종 Biome278 PASS(cgroup peak200,523,776B·swap0) 뒤 로컬 커밋했다. 전체 검사·Windows·실제 Docker·push/PR은 미실행이다.
+
+### S2 Task 9 로그 문제 추출 (2026-10-20)
+
+- 형식/경로 parser·원시 Run ingest·출처별 restart clear·query/topic/ACK의 메모리 rev를 연결했다. 첫 query catchup, stdout/stderr 문맥 분리, durable attempt marker·Starting 전환창·취소 batch 재생·회전 시 원본 marker 복원으로 과거 문제 부활을 막는다. 최근 완료128+전체 live·명시 Run과 페이지/보관/reader 상한의 실제 계약은 05 Task9에 기록했다.
+- 독립 검토에서 LF 전 진단 조기 등록을 재현해 문제 ingest만 완전한 행을 기다리게 했다. partial System marker·완료 Run cache도 보완하고, 이전 wrapper의 LF 없는 끝과 다음 marker가 붙는 실제 RED는 새 attempt 시작의 조건부 LF1개로 수정했다. Task7 raw fragment 표시는 유지하며 관련5개 신규 회귀·취소/회전/실제 CLI 영향 PASS, wire 불변으로 TS 근거 재사용.
+- 고유50개 직접 검사·생성 TS/확인·typecheck·한국어 오류·Rust 포맷 PASS. 미구현/중복 overflow/escape 페이지 크기/회전 marker 유실 및 partial 진단·marker·wrapper 새 경계 RED7건을 구분 보존하고, 준비 인자·통합/취소 테스트 컴파일·pnpm 옵션 오류는 행동 RED로 세지 않았다. 근거 `devbox-verification/s2-task9/{summary,source-freeze}.json`·raw log/resources, 30개 기능 소스 freeze. 최초 준비 오류 직후 복사된 이전 resource report는 `preparation-stale-prior-resource-copy.json`으로 무효 근거임을 명시했다.
+- common-dir 비차단 잠금·CPU4/nice10/jobs2/threads2/workers2·지원 cgroup6/8GiB/swap1GiB를 적용했다. 소유 wrapper/임시 DB·실제 고유 systemd fixture만 사용·정리했으며 기존 서비스/Docker/공유 네트워크는 변경하지 않았다. 독립 최종 검토 PASS·미해결0, 변경32개·artifact52개 해시 일치, 최종 Biome278 PASS(cgroup peak232,513,536B·swap0) 뒤 로컬 커밋했다. 전체 check/clippy/build/E2E·Windows·push/PR은 Task16 전 미실행이다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -529,6 +536,8 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 7 로그 open/search·버퍼 제한·inotify·container 소유 자식 수명 구현. 직접23개·TS/포맷·독립 최종 검토(미해결0)·Biome278 PASS | `bbc0d1b1` 뒤 로컬 완료 커밋. Docker 탭 오파싱 리뷰1건 실제RED→GREEN, 다음 Task8. push/PR 없음. 근거 `devbox-verification/s2-task7/{summary,review}.json` |
 
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | `bb0ef99a` 뒤 Task 8 관찰·production readiness 구현, 직접38개·타입·독립 최종 검토(미해결0)·Biome278 PASS | 로컬 완료 커밋. cgroup 부모 unit·readiness cadence/deadline RED→GREEN, 최초 미구현 RED2건·중간 컴파일 오류 보존. 다음 Task9, push/PR 없음. 근거 `devbox-verification/s2-task8/{summary,review}.json` |
+
+| 2026-10-20 | Codex 하네스 구현·별도 검토 | Task 8 `9cd1eff3` 뒤 Task9 문제 추출·원시 ingest·source restart·메모리 query/topic/ACK 구현. 고유50개·타입·독립 최종 검토(미해결0)·Biome278 PASS | 로컬 완료 커밋. partial EOF 리뷰와 wrapper 경계를 실제 RED→GREEN으로 수정, 미구현·행동 RED7건·준비/컴파일 오류 보존. 다음 Task10, push/PR 없음. 근거 `devbox-verification/s2-task9/{summary,review}.json` |
 
 ## 7. 착수 준비 검토
 

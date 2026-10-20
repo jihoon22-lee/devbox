@@ -10,6 +10,7 @@ name = "devbox"
 path = "src/main.rs"
 
 [dependencies]
+notify = "8.2"
 devbox-agents.workspace = true
 devbox-runtime.workspace = true
 devbox-observe.workspace = true

@@ -60,6 +60,7 @@ pub async fn run(
     let _execution = store.execution_guard()?;
     store.begin(&attempt)?;
     let mut writer = Writer::open(&store.log_path())?;
+    writer.begin_attempt(&attempt)?;
     let mut child = Command::new(executable)
         .args(&command[1..])
         .envs(secrets.envs())

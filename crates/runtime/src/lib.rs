@@ -93,3 +93,6 @@ mod unit_lookup_tests;
 
 mod unit_lookup;
 pub use unit_lookup::LiveUnitRun;
+
+mod log_observation;
+pub use log_observation::{RunLogMetadata, RunLogPage};

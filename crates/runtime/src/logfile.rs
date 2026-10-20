@@ -66,6 +66,24 @@ impl Writer {
         })
     }
 
+    /// Begin a new invocation on its own physical line, preserving any bytes
+    /// left by an interrupted previous writer. Other writes keep their existing
+    /// append semantics; only this invocation boundary repairs a missing LF.
+    pub fn begin_attempt(&mut self, attempt: &str) -> io::Result<()> {
+        if self.file.metadata()?.len() > 0 {
+            self.file.seek(SeekFrom::End(-1))?;
+            let mut last = [0];
+            self.file.read_exact(&mut last)?;
+            if last[0] != b'\n' {
+                self.file.write_all(b"\n")?;
+            }
+        }
+        self.write_line(
+            Stream::System,
+            devbox_core::run_log::attempt_marker(attempt).as_bytes(),
+        )
+    }
+
     /// Writes one line without an LF terminator. Callers split embedded LFs.
     /// Truncation applies to raw bytes before lossy UTF-8 conversion.
     /// Every successful call is flushed to the file (not fsynced to disk).
@@ -88,19 +106,69 @@ impl Writer {
             (self.limit / 2).min(self.limit.saturating_sub(incoming + marker.len() as u64));
         let mut source = BufReader::new(self.file.try_clone()?);
         let start = length.saturating_sub(budget);
-        let start = next_line_boundary(&mut source, start, length)?;
+        let mut start = next_line_boundary(&mut source, start, length)?;
+        // Preserve the invocation which was effective at the cut, not the
+        // newest invocation (the retained tail can still contain older output).
+        let attempt = loop {
+            let attempt = attempt_before(&mut source, start)?;
+            let overhead = attempt.as_ref().map_or(0, |s| s.len() as u64);
+            let budget = (self.limit / 2).min(
+                self.limit
+                    .saturating_sub(incoming + marker.len() as u64 + overhead),
+            );
+            let next = next_line_boundary(
+                &mut source,
+                start.max(length.saturating_sub(budget)),
+                length,
+            )?;
+            if next == start {
+                break attempt;
+            }
+            start = next;
+        };
         let temporary = RotationFile::create(&self.path)?;
         temporary
             .file
             .set_permissions(self.file.metadata()?.permissions())?;
         let mut replacement = temporary.file.try_clone()?;
         replacement.write_all(marker.as_bytes())?;
+        if let Some(attempt) = attempt {
+            replacement.write_all(attempt.as_bytes())?;
+        }
+        source.seek(SeekFrom::Start(start))?;
         io::copy(&mut source.take(length - start), &mut replacement)?;
         replacement.flush()?;
         fs::rename(&temporary.path, &self.path)?;
         self.file = replacement;
         Ok(())
     }
+}
+
+fn attempt_before(reader: &mut BufReader<File>, end: u64) -> io::Result<Option<String>> {
+    reader.seek(SeekFrom::Start(0))?;
+    let mut position = 0;
+    let mut last = None;
+    while position < end {
+        let Some(line) = read_complete_line(reader)? else {
+            break;
+        };
+        position += line.len() as u64;
+        let text = String::from_utf8_lossy(&line);
+        let mut fields = text.trim_end_matches(['\n', '\r']).splitn(3, '\t');
+        if fields
+            .next()
+            .is_some_and(|ts| chrono::DateTime::parse_from_rfc3339(ts).is_ok())
+            && fields.next() == Some("s")
+            && fields
+                .next()
+                .and_then(devbox_core::run_log::parse_attempt_marker)
+                .is_some()
+        {
+            // Copy the original timestamp as well as the invocation identity.
+            last = Some(text.into_owned());
+        }
+    }
+    Ok(last)
 }
 
 fn record(stream: Stream, text: &str) -> String {

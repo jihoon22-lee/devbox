@@ -97,6 +97,12 @@ export type PortInfo = { port: number, proto: string, addr: string, pid: number 
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type Pressure = { some: PressureLine | null, full: PressureLine | null, };
 export type PressureLine = { avg10: number, avg60: number, avg300: number, totalUs: number, };
+export type Problem = { file: string, line: number, col: number | null, severity: ProblemSeverity, message: string, source: string, };
+export type ProblemSeverity = "error" | "warning" | "info";
+export type ProblemsChange = { rev: string, projectId: string, };
+export type ProblemsCursor = { rev: string, offset: number, };
+export type ProblemsQuery = { projectId: string, limit?: number, cursor?: ProblemsCursor, };
+export type ProblemsResult = { rev: string, items: Array<Problem>, nextCursor: ProblemsCursor | null, truncated: boolean, };
 export type ProcessExpectation = { startTimeMs: number, };
 export type ProcessInfo = { pid: number, name: string, uid: number, cwd: string | null, startTimeMs: number, cpuPercent: number, rssBytes: number, unit: string | null, runId: string | null, projectId: string | null, };
 export type ProcessesQuery = { projectId: string | null, };
@@ -206,6 +212,7 @@ export interface Methods {
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
   "observe.kill": { kind: "mutation"; confirm: "always"; params: KillProcess; result: KillResult; error: ObserveError };
   "observe.ports": { kind: "query"; confirm: "none"; params: ObserveQuery; result: Array<PortInfo>; error: ObserveError };
+  "observe.problems": { kind: "query"; confirm: "none"; params: ProblemsQuery; result: ProblemsResult; error: ObserveError };
   "observe.processes": { kind: "query"; confirm: "none"; params: ProcessesQuery; result: Array<ProcessInfo>; error: ObserveError };
   "observe.system": { kind: "query"; confirm: "none"; params: ObserveQuery; result: SystemInfo; error: ObserveError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
@@ -248,6 +255,7 @@ export interface Topics {
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
   "notify.raised": Notification;
+  "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
   "runtime.changed": RuntimeChange;
   "terminal.changed": TerminalChanged;
@@ -283,6 +291,7 @@ export const METHOD_INFO = {
   "logs.search": { kind: "query", confirm: "none" },
   "observe.kill": { kind: "mutation", confirm: "always" },
   "observe.ports": { kind: "query", confirm: "none" },
+  "observe.problems": { kind: "query", confirm: "none" },
   "observe.processes": { kind: "query", confirm: "none" },
   "observe.system": { kind: "query", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },

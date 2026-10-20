@@ -58,3 +58,11 @@ pub(crate) fn put(tx: &Transaction<'_>, value: &StoredRun) -> rusqlite::Result<(
     )?;
     Ok(())
 }
+
+pub(crate) fn problem_history(
+    tx: &Transaction<'_>,
+    project: &str,
+) -> rusqlite::Result<Vec<StoredRun>> {
+    tx.prepare("SELECT body FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.state') NOT IN ('starting','running','restarting') ORDER BY started_ms DESC,id LIMIT 129")?
+        .query_map([project],|r|decode(r.get(0)?))?.collect()
+}

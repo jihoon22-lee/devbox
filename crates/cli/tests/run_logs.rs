@@ -232,7 +232,12 @@ async fn recorded_run_stdout_stderr_are_streamed_and_searched() {
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice(line).unwrap())
         .collect();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 3);
+    assert!(
+        rows.iter()
+            .any(|l| l.stream == devbox_observe::LogStream::System
+                && devbox_core::run_log::parse_attempt_marker(&l.text).is_some())
+    );
     assert!(
         rows.iter()
             .any(|l| l.text == "task7-out" && l.stream == devbox_observe::LogStream::Stdout)

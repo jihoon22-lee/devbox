@@ -145,3 +145,81 @@ fn logfile_reader_caps_line_count_and_rejects_oversized_physical_lines() {
         std::io::ErrorKind::InvalidData
     );
 }
+
+#[test]
+fn logfile_rotation_restores_the_attempt_at_cut_not_the_latest_attempt() {
+    use devbox_core::run_log::{attempt_marker, parse_attempt_marker};
+    for cut_in_new in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("run.log");
+        let mut writer = Writer::open(&path).unwrap();
+        writer
+            .write_line(Stream::System, attempt_marker("old").as_bytes())
+            .unwrap();
+        for n in 0..20 {
+            writer
+                .write_line(
+                    Stream::Out,
+                    format!("old-{n}-{}", "x".repeat(100)).as_bytes(),
+                )
+                .unwrap();
+        }
+        writer
+            .write_line(Stream::System, attempt_marker("new").as_bytes())
+            .unwrap();
+        if cut_in_new {
+            for n in 0..20 {
+                writer
+                    .write_line(
+                        Stream::Out,
+                        format!("new-{n}-{}", "x".repeat(100)).as_bytes(),
+                    )
+                    .unwrap();
+            }
+        }
+        writer
+            .write_line(Stream::Err, b"x.ts(9,1): error current")
+            .unwrap();
+        drop(writer);
+        let before = fs::read_to_string(&path).unwrap();
+        let expected_attempt = if cut_in_new { "new" } else { "old" };
+        let expected_marker = before
+            .lines()
+            .find(|line| line.ends_with(&format!("\ts\t{}", attempt_marker(expected_attempt))))
+            .unwrap()
+            .to_owned();
+        let mut writer = Writer::with_limit(&path, 2048).unwrap();
+        writer.write_line(Stream::Out, b"after rotation").unwrap();
+        let (lines, end) = read_range(&path, 0, 256).unwrap();
+        assert!(end <= 2048);
+        assert_eq!(
+            lines[1], expected_marker,
+            "restore the original marker timestamp"
+        );
+        let restored = lines[1].splitn(3, '\t').nth(2).unwrap();
+        assert_eq!(
+            parse_attempt_marker(restored),
+            Some(if cut_in_new { "new" } else { "old" })
+        );
+        let markers: Vec<_> = lines
+            .iter()
+            .filter_map(|line| {
+                let mut p = line.splitn(3, '\t');
+                p.next()?;
+                (p.next()? == "s")
+                    .then(|| parse_attempt_marker(p.next()?))
+                    .flatten()
+            })
+            .collect();
+        assert_eq!(markers.last().copied(), Some("new"));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.ends_with("x.ts(9,1): error current"))
+        );
+        assert_eq!(
+            lines.last().unwrap().splitn(3, '\t').nth(2),
+            Some("after rotation")
+        );
+    }
+}

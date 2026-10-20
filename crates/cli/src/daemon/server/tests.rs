@@ -167,3 +167,58 @@ async fn inflight_request_id_collision_closes_connection_and_cleans_state() {
     d.dedupe.tracker.close();
     bounded(d.dedupe.tracker.wait()).await;
 }
+
+#[tokio::test]
+async fn problems_subscription_ack_uses_memory_rev_even_when_db_rev_is_larger() {
+    use devbox_observe::{Problem, ProblemRun, ProblemSeverity};
+    let temp = tempfile::tempdir().unwrap();
+    let d = daemon(&temp, Arc::new(tokio::sync::Notify::new()));
+    for _ in 0..8 {
+        d.services.db.write(|_| Ok(())).await.unwrap();
+    }
+    let (client, server) = UnixStream::pair().unwrap();
+    let serving = tokio::spawn(connection(server, d.clone(), CancellationToken::new()));
+    let mut wire = Wire::new(client, FrameCodec::default());
+    wire.send(json_frame(0, &hello())).await.unwrap();
+    receive(&mut wire).await;
+    wire.send(json_frame(
+        0,
+        &ClientMessage::Subscribe {
+            id: 1,
+            topic: "observe.problems.changed".into(),
+            params: None,
+        },
+    ))
+    .await
+    .unwrap();
+    assert!(matches!(receive(&mut wire).await,ServerMessage::Subscribed{rev,..} if rev=="0"));
+    d.services
+        .observe
+        .apply_problem_batch(
+            ProblemRun {
+                run_id: "one".into(),
+                project_id: "p".into(),
+                root: temp.path().into(),
+                path: temp.path().join("one.log"),
+                attempt_id: Some("a".into()),
+                started_ms: 1,
+            },
+            vec![Problem {
+                file: "x.ts".into(),
+                line: 1,
+                col: None,
+                severity: ProblemSeverity::Error,
+                message: "example".into(),
+                source: String::new(),
+            }],
+            false,
+            &d.services.hub,
+        )
+        .unwrap();
+    assert!(matches!(receive(&mut wire).await,ServerMessage::Event{rev,..} if rev=="1"));
+    assert!(d.services.db.rev() > d.services.observe.problem_rev());
+    drop(wire);
+    bounded(serving).await.unwrap().unwrap();
+    d.dedupe.tracker.close();
+    bounded(d.dedupe.tracker.wait()).await;
+}

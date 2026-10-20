@@ -557,13 +557,13 @@ pub fn is_listening(port: u16) -> bool {
 ### Task 9: 문제 추출
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/observe/src/problems_tests.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/observe/src/problems_tests.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 assert_eq!(extract("src/x.ts(10,5): error TS1005: expected", root).unwrap().line, 10);
 assert!(extract("../outside.go:10:5: error", root).is_none());
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-observe problems`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** 형식별 parser를 순수 함수로 구현하고 project-root 상대 경로·중복 key를 고정한다. rustc/traceback의 문맥이 필요한 경우 source별 작은 parser state에 직전 severity/message만 둔다. 실행 로그 ingest에서 추출하고 run 재시작 때 해당 source만 비운 뒤 observe.problems.changed를 발행한다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-observe problems`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** 형식별 parser를 순수 함수로 구현하고 project-root 상대 경로·중복 key를 고정한다. rustc/traceback의 문맥이 필요한 경우 source별 작은 parser state에 직전 severity/message만 둔다. 실행 로그 ingest에서 추출하고 run 재시작 때 해당 source만 비운 뒤 observe.problems.changed를 발행한다.
 
 ```rust
 pub fn extract(line: &str, project_root: &Path) -> Option<Problem> {
@@ -574,8 +574,8 @@ pub fn extract(line: &str, project_root: &Path) -> Option<Problem> {
 // Insert deduped (source,file,line,col,severity,message); restart clears only source.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. rustc/tsc/eslint/biome/vitest/jest/python/go 실제 출력 fixture, 밖 경로·symlink·중복 제거·한 실행 restart가 다른 실행 문제를 지우지 않음을 검사한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(observe): extract source problems from run logs`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. rustc/tsc/eslint/biome/vitest/jest/python/go 실제 출력 fixture, 밖 경로·symlink·중복 제거·한 실행 restart가 다른 실행 문제를 지우지 않음을 검사한다.
+- [x] **5 · 검토·커밋:** 직접50개·타입·독립 최종 검토 PASS(미해결0)·Biome278 PASS 뒤 `feat(observe): extract source problems from run logs`로 로컬 커밋했다. partial EOF 지적과 wrapper 경계 수정·실패/미실행 근거를 PROGRESS 및 `s2-task9/{summary,review}.json`에 구분했다.
 
 **Files:**
 - Create: `crates/observe/src/problems.rs`
@@ -589,6 +589,16 @@ pub fn extract(line: &str, project_root: &Path) -> Option<Problem> {
 - S4에서 LSP 진단이 같은 목록에 `source: "lsp:<server>"`로 들어온다.
 
 **핵심 테스트:** 형식마다 실제 출력 줄 fixture → `Problem` 비교. 프로젝트 밖 경로 버림. 같은 문제 중복 제거.
+
+**Task 9 실제 계약(2026-10-20, 구현·직접 검증·독립 최종 검토·Biome·로컬 커밋 완료):**
+- `observe.problems{projectId, limit?, cursor?}`는 `{rev, items, nextCursor, truncated}`를 반환한다. limit 기본 100·범위 1–100, JSON escape를 포함한 페이지는 768KiB 이하다. cursor는 전역 메모리 rev+offset에 묶이며 변경 뒤 재사용은 `observe.invalid_cursor`다. `observe.problems.changed`의 payload·event rev·Subscribe ACK는 모두 같은 메모리 카운터다. DB rev는 읽기/중복/관찰시각 때문에 증가하지 않는다. 최초 추가·출처 재시작 clear·불완전 목록 표시가 실제로 바뀔 때만 이벤트를 낸다.
+- 문제 source는 `run:<runId>`의 안정된 문자열이다. dedup key는 source/file/line/col/severity/message 전체이며 다른 Run의 같은 문제는 별개다. stdout/stderr마다 32행 이내 문맥을 따로 둔다. rustc/cargo header+location, tsc, file:line:col eslint/biome, Vitest/Jest stack, Python 마지막 traceback frame+exception, Go를 지원한다. ANSI CSI/OSC를 제거하며 Unicode/공백 파일명을 보존한다. 경로의 기존 component를 canonical 검사하고 프로젝트 밖 absolute/`..`/symlink를 버린다. 프로젝트 안의 아직 없는 소스 파일은 허용한다. file/message 각각 4KiB, parser 입력 64KiB를 넘는 진단은 버린다.
+- 첫 문제 query 자체가 등록된 프로젝트의 원시 Run 로그 catchup 완료를 기다린다. `logs.open/search`도 Run의 프로젝트 및 명시 Run을 등록하지만 display/search filter·stream credit는 문제 수집에 적용하지 않는다. runtime 소유 typed helper로 **모든 live Run + 최근 완료 Run 128개**를 읽으며 history가 더 길면 truncated다. explicit 로그 lookup은 history 상한 밖의 Run도 추적한다. 이미 모은 과거 문제는 보관 상한 안에서 유지한다. observe가 runtime DB를 직접 조회하지 않는다.
+- wrapper는 자식 실행 전 기존 3열 로그의 System 행에 공통 helper의 `실행 시도 시작: <attemptId>`를 기록한다. 현재 durable attempt와 일치하는 정확한 System marker 뒤 행만 수집한다. stdout/stderr의 가짜 marker, 이전 attempt의 같은 ms 행·검색 결과는 현재 문제를 만들지 않는다. 수동 재시작의 Starting+DB attempt 미확정 구간은 이전 durable ID를 쓰지 않는다. 읽기 뒤 identity를 다시 검사하고 바뀐 batch를 폐기한다. 미커밋 batch가 reader를 소유하므로 query/scan 취소도 다음 읽기에서 재생된다. marker 없는 이전 로그는 raw open/search에는 그대로 보이며 현재 attempt 문제로 귀속하지 않는다(v0.9 이전 없음).
+- 독립 검토의 partial EOF 진단 조기 등록을 실제 RED로 재현해 Task9만 `next_complete()`로 LF까지 기다린다. partial System marker도 buffer에 보존하며 Task7 raw display의 EOF fragment 의미는 유지한다. 이전 wrapper가 행 중간에 끝난 경우 새 attempt 시작에서만 필요한 LF 하나를 보완한 뒤 marker를 쓴다(기존 bytes 보존). 완성 진단/marker·완료 캐시·raw 표시·실제 wrapper 새 경계 회귀 PASS, 독립 기능 재검토 PASS·미해결0이다. wire 불변으로 이전 TS 근거를 재사용한다.
+- 회전은 잘라낸 위치에서 유효했던 마지막 System attempt marker **원본 행·timestamp**를 보존 tail 앞에 복원한다. tail 안의 더 새로운 marker는 그대로 전환되며 이전 attempt 행을 현재로 재분류하지 않는다. 복원 marker 길이도 회전 예산에 넣고 prefix는 기존 bounded line reader로 읽는다.
+- 관찰은 TaskTracker·공유 inotify instance 1개(data 부모/runs 디렉터리 nonrecursive)·RuntimeChanged를 쓴다. 완료 Run은 reader를 닫고 file identity/size/mtime만 캐시하되, LF 전 pending fragment가 있으면 완료 캐시를 만들지 않아 다음 조회에서 재생한다. daemon당 등록 프로젝트 8개·explicit Run 32개·live reader 128개·source/cache 2,048개 상한 초과는 `observe.limit_exceeded`다. 원시 스캔은 직렬, 한 Run에서 68MiB를 넘게 읽으면 같은 오류다. 문제는 daemon당 고유 2,048개를 보관하고 이후 새 문제는 보관하지 않으며 해당 프로젝트 truncated=true를 유지한다. 이 표시는 daemon 세션 중 보관/이력 누락이 있었음을 뜻하며 재시작 clear로 공간이 생겨도 이미 놓친 행의 완전성을 주장하지 않는다. 공용 설정/UI/LSP는 추가하지 않았다.
+- 직접 고유 **50개 PASS**: observe24, runtime logfile7, CLI problems6, server ACK/세대3, router1, wrapper3, 로그 RPC3+실제 소유 systemd Run1, 한국어 오류2. 초기 미구현 RED와 중복 2,100행 overflow·JSON escape 응답 크기·회전 marker 유실·partial 진단/marker·다음 wrapper marker 연결 실패 RED까지 7건을 보존했다. TS 생성/생성 확인/typecheck·Rust 포맷·diff 검사 PASS. supervisor 인자 누락·통합 컴파일 오류·취소 테스트 Debug 컴파일 오류·pnpm 옵션 위치 오류는 행동 RED/PASS와 별도로 기록한다. 원본/자원/소스 해시는 Git common-dir `devbox-verification/s2-task9/`에 둔다. 기존 서비스·실제 Docker/공유 네트워크를 바꾸지 않았으며 systemd 검사는 고유 소유 fixture만 정리했다. 최종 Biome278 PASS(cgroup peak232,513,536B·swap0). 전체 check/clippy/build/E2E·Windows는 Task16 전 미실행이다.
 
 ---
 

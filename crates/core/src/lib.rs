@@ -67,3 +67,5 @@ mod shell_tests {
 }
 
 mod sql_enum;
+
+pub mod run_log;

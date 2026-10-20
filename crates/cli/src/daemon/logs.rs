@@ -3,7 +3,10 @@ use devbox_observe::{LogSource, ObserveError, OpenLogs, ResolvedSource, SearchLo
 use devbox_protocol::{Ctx, Fail, StreamOpened};
 use std::{path::PathBuf, sync::Arc};
 type R<T> = Result<T, Fail<ObserveError>>;
-async fn resolve(s: &Services, sources: &[LogSource]) -> R<(Vec<ResolvedSource>, Vec<PathBuf>)> {
+async fn resolve(
+    s: &Arc<Services>,
+    sources: &[LogSource],
+) -> R<(Vec<ResolvedSource>, Vec<PathBuf>)> {
     devbox_observe::validate_sources(sources)?;
     let projects = s
         .projects
@@ -23,6 +26,13 @@ async fn resolve(s: &Services, sources: &[LogSource]) -> R<(Vec<ResolvedSource>,
             LogSource::File { path } => Some(PathBuf::from(path)),
             LogSource::Container { .. } => None,
             LogSource::Run { run_id } => {
+                let meta = s
+                    .runs
+                    .run_log_metadata(run_id)
+                    .await
+                    .map_err(|_| Fail::Domain(ObserveError::RunNotFound))?;
+                super::problems::register(s, &meta.project_id).await?;
+                s.observe.register_problem_run(run_id, &meta.project_id)?;
                 Some(s.runs.log_path(run_id).await.map_err(|e| match e {
                     Fail::Domain(devbox_runtime::RuntimeError::RunNotFound { .. }) => {
                         Fail::Domain(ObserveError::RunNotFound)

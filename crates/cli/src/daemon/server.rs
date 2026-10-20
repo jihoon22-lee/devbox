@@ -344,7 +344,12 @@ async fn handle(
                 ServerMessage::Subscribed {
                     id,
                     sub_id,
-                    rev: d.services.db.rev().to_string(),
+                    rev: if topic == "observe.problems.changed" {
+                        d.services.observe.problem_rev()
+                    } else {
+                        d.services.db.rev()
+                    }
+                    .to_string(),
                 },
             )
             .await?;

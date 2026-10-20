@@ -16,8 +16,9 @@ pub struct ObserveService {
     pub(crate) proc: ProcFs,
     pub(crate) host_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) process_sampler: Arc<std::sync::Mutex<crate::processes::ProcessSampler>>,
-    cancel: CancellationToken,
-    tasks: TaskTracker,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) problems: crate::problem_store::ProblemCollection,
+    pub(crate) tasks: TaskTracker,
     /// Counts actual file bytes read, useful for bounded-prefetch diagnostics/tests.
     read_bytes: Arc<AtomicU64>,
 }
@@ -34,6 +35,7 @@ impl ObserveService {
             host_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             process_sampler: Arc::default(),
             cancel: CancellationToken::new(),
+            problems: Default::default(),
             tasks: TaskTracker::new(),
             read_bytes: Arc::default(),
         }

@@ -79,6 +79,13 @@ fn wrapper_records_lines_with_stream_markers_and_exit_code() {
         .lines()
         .map(|line| line.split_once('\t').expect("timestamp").1)
         .collect();
+    assert_eq!(
+        lines.remove(0),
+        format!(
+            "s\t{}",
+            devbox_core::run_log::attempt_marker(&f.exit().attempt_id)
+        )
+    );
     lines.sort();
     assert_eq!(lines, ["e\terr", "o\tout"]);
 }
@@ -243,7 +250,7 @@ os.write(1,b'\xff'+b'x'*(1024*1024+100)+b'\nlast')
     assert!(owned.wait().success());
     let log = f.log();
     let lines: Vec<_> = log.lines().collect();
-    assert_eq!(lines.len(), 1002);
+    assert_eq!(lines.len(), 1003);
     for i in 0..500 {
         assert!(log.contains(&format!("\to\tout-{i}\n")));
         assert!(log.contains(&format!("\te\terr-{i}\n")));
@@ -565,3 +572,6 @@ fn explicit_attempt_precedes_systemd_invocation_and_standalone_ids_are_fresh() {
 
 #[path = "runtime_wrapper_cases/background.rs"]
 mod background;
+
+#[path = "runtime_wrapper_cases/problems.rs"]
+mod problems;
