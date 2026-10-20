@@ -13,7 +13,6 @@ DOGFOOD = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DOGFOOD)
 SHA = 'a' * 40
 
-
 class Dogfood(unittest.TestCase):
     def test_receipt_rejects_mismatch_and_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -73,12 +72,9 @@ else: sys.exit(99)
             self.assertNotIn("gh ['workflow', 'run'", log.read_text())
             self.assertNotIn("--workflow", log.read_text())
             self.assertIn("/actions/runs'", log.read_text())
-            log.write_text('')
-            result = subprocess.run(['bash', str(ROOT / 'scripts/dogfood.sh'), 'fixture'], env=dict(env, WATCH_EXIT='1'), capture_output=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertNotIn('download', log.read_text())
-            log.write_text('')
-            result = subprocess.run(['bash', str(ROOT / 'scripts/dogfood.sh'), 'fixture'], env=dict(env, RUN_SHA='b' * 40), capture_output=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertNotIn('download', log.read_text())
-            self.assertNotIn('powershell.exe', log.read_text())
+            for override in [dict(WATCH_EXIT='1'), dict(RUN_SHA='b' * 40)]:
+                log.write_text('')
+                result = subprocess.run(['bash', str(ROOT / 'scripts/dogfood.sh'), 'fixture'], env=dict(env, **override), capture_output=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('download', log.read_text())
+                self.assertNotIn('powershell.exe', log.read_text())

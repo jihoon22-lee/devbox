@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1–15 및 묶음 O·P·Q 로컬 완료. Task15는 선행 분리 2개 뒤 기능 고유73개·타입/생성 검사·독립 검토(미해결0)·완료 Biome337 PASS(2026-10-21)로 마쳤다. 다음은 Task15b 공용 색인 DB·코드 보기·검사 대기다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task 1–15 및 묶음 O·P·Q 로컬 완료. Task15b 공용 색인 DB·코드 보기·검사 대기 구현과 직접 고유73개·타입/생성 검사 PASS(2026-10-21), 독립 제품 검토 PASS·미해결0, 완료 Biome 대기. 다음은 이 검토·커밋 뒤 Task15c 수용 전용 채널이다. 전체 검사·Windows 실기·단일 PR은 Task16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -983,15 +983,15 @@ pub async fn test_agent(s: Arc<Services>, id: &str) -> Result<AgentTest, Fail<Ag
 S2 다음에는 S3(기록)과 S5(개발 도구)를 한 세션이 두 트랙으로 동시에 진행한다(사용자 결정 2026-10-08, 00-roadmap §3.6). 두 쪽이 다 쓰는 바탕을 여기서 먼저 만든다. 그래야 두 브랜치가 같은 것을 따로 만들거나 서로를 기다리지 않는다.
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `core index_db 시험 · CodeView.test.tsx · scripts 자원 supervisor 회귀 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `core index_db 시험 · CodeView.test.tsx · scripts 자원 supervisor 회귀 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 assert!(db.ensure_domain("api", 2, API_SCHEMA)?);
 assert_eq!(read_notes_row(&db)?, "keep");
 assert!(!db.ensure_domain("api", 2, API_SCHEMA)?);
 assert_eq!(contended_default_lock().exit_code, 75);
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-core ensure_domain`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** IndexDb는 현재 Db의 WAL/단일 writer 패턴을 재사용하고 버전별 접두사 테이블만 transaction으로 재생성한다. CodeView/theme/languages와 의존성·생성물 merge 속성을 추가한다. supervisor --wait/--lock 구현은 기본 비차단 유지, deadline 60분/fixture 짧은 주입, check/E2E/dogfood 진입점 전달과 잠금 중복 방지를 포함한다. E2E 실패 수집은 해당 fixture tmux의 버전·서버 exit/log만 기록한다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-core ensure_domain`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** IndexDb는 현재 Db의 WAL/단일 writer 패턴을 재사용하고 버전별 접두사 테이블만 transaction으로 재생성한다. CodeView/theme/languages와 의존성·생성물 merge 속성을 추가한다. supervisor --wait/--lock 구현은 기본 비차단 유지, deadline 60분/fixture 짧은 주입, check/E2E/dogfood 진입점 전달과 잠금 중복 방지를 포함한다. E2E 실패 수집은 해당 fixture tmux의 버전·서버 exit/log만 기록한다.
 
 ```rust
 if read_domain_version(tx, domain)? == Some(version) { return Ok(false); }
@@ -1001,8 +1001,8 @@ write_domain_version(tx, domain, version)?;
 Ok(true) // all statements commit atomically; other domains remain unchanged.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험, 잘못된 domain/다른 domain 보존·migration rollback·CodeView readOnly·검사/default와 windows-acceptance 독립·서로 다른 worktree 공통 잠금·기한 자식0·기존 자원제한 유지 회귀를 수행한다. `.github`+`scripts` 합계1500줄/워크플로3개 제한도 확인한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(core): prepare shared indexing code views and verification locks`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험, 잘못된 domain/다른 domain 보존·migration rollback·CodeView readOnly·검사/default와 windows-acceptance 독립·서로 다른 worktree 공통 잠금·기한 자식0·기존 자원제한 유지 회귀를 수행한다. `.github`+`scripts` 합계1500줄/워크플로3개 제한도 확인한다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(core): prepare shared indexing code views and verification locks`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `crates/core/src/index_db.rs`
@@ -1040,6 +1040,15 @@ git config merge.lockfile.driver true
 # 아래 단계별 검증·별도 검토 뒤 지정 메시지로 커밋한다.
 # 묶음 R 끝: 과제별 좁은 검증·별도 검토 뒤 PROGRESS.md의 묶음 R 행과 현재 위치를 갱신해 로컬 커밋한다(00-roadmap §3).
 ```
+
+**Task15b 구현·검증 기록 (2026-10-21, 독립 검토·완료 Biome PASS·로컬 완료):**
+- `IndexDb`는 기존 Db의 writer/read pool 연결을 작은 내부 모듈로 공유하며, `index_schema`와 WAL만 만들고 백업은 만들지 않는다. ASCII 소문자+숫자 도메인 이름(`index`·`sqlite` 예약, `_` 불가), 정확한 접두사, FTS5 shadow table, 같은 버전 멱등, schema/metadata rollback, 동시 writer·읽기 snapshot을 검증했다. 개발자 schema SQL은 도메인 내부 객체만 정의하고 transaction 제어·교차 도메인 FK를 넣지 않는 계약이다.
+- CodeView는 실제 CodeMirror 입력·JSON 강조·readOnly·props 재설정·언어 로드 경쟁/실패·unmount/StrictMode·한국어 검색을 검증했다. 6개 요청 의존성과 semantic tags용 직접 의존성 `@lezer/highlight`를 pnpm9 lock에 반영했고, 단일 theme은 기존 CSS 토큰을 사용한다. S3/S4/S5 화면은 구현하지 않았다.
+- supervisor 기본 비차단 `lock`/`latest.json`은 유지한다. `--wait`는 최대3600초(시험 `DEVBOX_VERIFY_WAIT_SECONDS`도 양수·상한 검증), 기한 초과75/검사 대기 초과/자식0이다. named lock·`--no-lock`은 고유 `run-<id>.json`을 써서 동시 보고서 충돌을 막는다. check/E2E는 기본 대기+공통 잠금 한 번이며 잠금 해제/변경 옵션을 거절한다. dogfood 기본 호출은 직접 실행하고 명시 선두 `--wait --lock windows-acceptance --`만 supervisor로 전달한다. Task16은 **외부 supervisor가 다운로드→설치→검증→제거 전체를 감싸고 그 안에서 기본 dogfood를 호출**한다. standalone dogfood 잠금은 다운로드 범위뿐이다. 채널 옵션은 Task15c에서 구현한다.
+- E2E private PATH의 tmux wrapper만 `-vv`를 쓰고 소유 디렉터리에 로그·명령 exit를 남긴다. 실제 new-session은 기존 `-c`를 유지한다. 버전·정리 전후 server 존재/PID·probe exit/signal·server/client/output log tail을 정리 후 artifact에 붙이며, 로그 수집 실패도 본문에 남긴다. daemonized server의 직접 wait exit code를 얻었다고 주장하지 않는다. 소유 tmux 실제 fixture만 실행했고 전체 E2E와 S1 비정상 종료 원인 확인은 미실행이다.
+- **고유73개 PASS**: IndexDb12+기존Db18, CodeView18, scripts18, tmux7. missing module/type RED와 잠금 assertion RED, index 잠금75, 초기 jsdom geometry·병렬 시험 타입 오류, tmux fork 직후 cwd 관찰 경합을 구분했다. cwd 시험은 실제 값 readiness로 보정해 diagnostic2개만 재실행, 직전 통과한 cleanup/finalizer5개는 재사용했다. app/E2E/acceptance 타입·gen-check·frozen lock·변경 포맷·actionlint·bash syntax·diff PASS. 공통 Git 설정은 이미 true여서 변경하지 않았다. CI scope gate·시험 fixture를 공통화하고 읽을 수 있는 함수 구분을 유지해 `.github`+`scripts` **1497줄/2 workflows**(시험 포함), Task15c 잔여3줄이다.
+- 독립 검토 R1에서 같은 도메인의 parent-first DROP이 FK에 막힘을 재현했다(NO ACTION SQLite787·RESTRICT1811). 정식 사례표 RED 뒤 재생성 transaction 안 `defer_foreign_keys=ON`으로 고쳤으며 두 action·동일 버전 false·다른 도메인 보존·실패 시 행/버전 rollback·다음 write의 즉시 FK 검사 복귀를 검증했다. 최종 Index12개 PASS, 공유 Db는 변경 없어 앞선18개 PASS를 재사용했다. 재검토 해결·추가 지적0이다.
+- 제품/시험29개 digest `e5fc69b2ca6d38aff5cafdc84e8300020cf75810dc7754309d31a105131e2013`. 근거 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,parent-commands,failure-classification,parent-static-checks,documentation-freeze,artifact-hashes}.json` 및 raw/resources. 독립 최종 검토 PASS·미해결0·완료 Biome344 PASS로 로컬 완료했다. 제품29개·문서2개·artifact77개 해시를 대조했고 Biome는 0.909초·cgroup196,661,248B·swap0이다. 검토된 인계 summary/manifest는 보존하고 완료 문서 해시·커밋은 `root-completion.json`에 기록한다. 다음은 Task15c다. 전체 check/clippy/build/E2E·Windows 실제 앱/배포·push/PR은 Task16 미실행이다.
 
 ---
 

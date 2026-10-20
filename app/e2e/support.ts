@@ -13,6 +13,7 @@ import { parseServerMessage } from "../src/rpc/server-message";
 import { connectFixtureRpc } from "./rpc";
 import { RuntimeResources } from "./runtime-resources";
 import { stopOwnedTmux } from "./tmux-cleanup";
+import { TmuxDiagnostics } from "./tmux-diagnostics";
 import { viteAnnounced } from "./vite-readiness";
 
 const { version } = packageJson;
@@ -57,6 +58,7 @@ export class Stack {
   readonly env: NodeJS.ProcessEnv;
   daemon?: ChildProcess;
   readonly runtime?: RuntimeResources;
+  readonly tmux: TmuxDiagnostics;
   constructor(options: { runtime?: boolean } = {}) {
     this.env = { ...process.env, HOME: this.home, DEVBOX_INSTANCE: this.instance };
     try {
@@ -91,6 +93,8 @@ export class Stack {
       }
       const fakeBin = join(this.home, "bin");
       mkdirSync(fakeBin);
+      this.tmux = new TmuxDiagnostics(this.home, this.instance, this.env);
+      this.tmux.install(fakeBin);
       // Every browser fixture may navigate to Runs; never query the host Docker.
       writeFileSync(
         join(fakeBin, "docker"),
@@ -291,10 +295,15 @@ export class Stack {
     try {
       await Promise.all(this.children.map(stop));
       // Daemon restarts preserve sessions; only fixture teardown kills its exact server.
+      this.logs.set("tmux", this.tmux.capture("before-cleanup"));
       await stopOwnedTmux(this.instance, this.env);
     } finally {
-      this.runtime?.close();
-      rmSync(this.home, { recursive: true, force: true });
+      try {
+        this.logs.set("tmux", this.tmux.capture("after-cleanup"));
+      } finally {
+        this.runtime?.close();
+        rmSync(this.home, { recursive: true, force: true });
+      }
     }
   }
 }
@@ -308,9 +317,9 @@ export const test = base.extend<{ stack: Stack; runtimeEnabled: boolean }>({
       await use(stack);
     } finally {
       try {
-        await info.attach("owned-process-logs", { body: stack.diagnostics(), contentType: "text/plain" });
-      } finally {
         await stack.close();
+      } finally {
+        await info.attach("owned-process-logs", { body: stack.diagnostics(), contentType: "text/plain" });
       }
     }
   },

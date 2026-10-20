@@ -50,6 +50,8 @@ pub use paths::{Env, Instance, OsEnv, Paths};
 
 pub mod db;
 pub use db::{Db, Migration, current_rev};
+pub mod index_db;
+pub use index_db::IndexDb;
 
 /// Quote one shell argument, including literal quotes, whitespace and newlines.
 pub fn sh_quote(value: &str) -> String {

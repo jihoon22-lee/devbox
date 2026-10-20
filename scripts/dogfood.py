@@ -13,14 +13,11 @@ from urllib.parse import quote
 
 REPO = 'jihoon22-lee/devbox'
 
-
 def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
-
 def gh_json(*args):
     return json.loads(command('gh', *args))
-
 
 def verify(directory, sha, run):
     receipt = json.loads((directory / 'receipt.json').read_text(encoding='utf-8-sig'))
@@ -38,7 +35,6 @@ def verify(directory, sha, run):
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected.lower():
             raise ValueError('Installer SHA256 mismatch')
     return receipt
-
 
 def main():
     branch = sys.argv[1] if len(sys.argv) == 2 else command('git', 'branch', '--show-current')
@@ -90,7 +86,6 @@ def main():
     receipt = verify(destination, sha, run)
     print(f'Verified source: {sha}\nRun: {detail["html_url"]}\nVersion: {receipt["version"]}\nReceipt: {destination / "receipt.json"}')
     print('Windows installer directory: ' + command('wslpath', '-w', str(destination)))
-
 
 if __name__ == '__main__':
     try:

@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q·Task15(선행 분리2개 포함) 로컬 완료. Task15 고유73개·타입/생성·독립 검토(미해결0)·Biome337 PASS |
-| 다음 할 일 | Task15b 공용 색인 DB·코드 보기·검사 대기를 구현한다. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P·Q·Task15b 로컬 완료. 고유73개·타입/생성·독립 최종 검토·Biome344 PASS, 미해결0 |
+| 다음 할 일 | Task15c 수용 전용 설치 채널. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · Task15 고유73개·독립 검토(미해결0)·Biome337 PASS, 로컬 완료 |
+| 마지막 갱신 | 2026-10-21 · Task15b 고유73개·독립 최종 검토·Biome344 PASS, 로컬 완료. 다음 Task15c |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -26,7 +26,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-14 | 설치본 수용이 prod 자원과 충돌 | 사용자 | 결정(권장안): 에이전트 수용 전용 `accept` 채널(별도 identifier·폴더·프로토콜·자동 시작·WSL 인스턴스·채널 전용 바이너리/unit 템플릿)을 S2 Task 15c로 만들고, 스모크는 `windows-acceptance` 잠금(Task 15b)으로 한 번에 하나만. 그 뒤 prod 설치본·`devbox@prod`는 바꾸지 않고 있어도 멈추지 않음. 01 §6.1·§10·§11, 00 §2.2·§3.6, 05·06·07 반영 |
 | 2026-10-14 | S2 계획에 S1 신뢰 승인 미반영 | 계획 보강 | 해결(문서): 01 §7 "실행 범위 버전 2"와 05 Task 2·4·5·6·12·13·15·16에 반영. 범위 1 정의만 있는 설정의 기존 승인은 유지, 화면 정의 저장은 직전 바이트가 승인됐거나 승인이 필요 없었을 때만 새 digest 승인을 기록. 구현은 S2에서 |
 | 2026-10-14 | S1 인계 커밋 백업 | 사용자 | 결정: `v1/s2-runs`를 PR 없이 push(브랜치 push는 CI 미실행). 같은 날 후속 지시로 대체: 인계·보강 문서 커밋을 별도 문서 PR로 main에 squash 머지하고, S2 브랜치·worktree는 머지 뒤 최신 main에서 다시 만든다. 이 문서 PR은 00 §3의 "PR 7개"에 세지 않는 사용자 지시 예외이며, S2 PR은 Task 16에서 한 번만 연다 |
-| 2026-10-14 | CI E2E tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과) | 에이전트 | 미결: 원인 미확정(CI tmux 3.4, 로컬 3.6). S2 Task 15b에서 E2E 실패 산출물에 tmux 버전·서버 로그 수집. 재발하면 이 행에 근거를 더하고 원인 수정, 재시도 래퍼 금지(00 §3.5) |
+| 2026-10-14 | CI E2E tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과) | 에이전트 | 미결: 원인 미확정(CI tmux 3.4, 로컬 3.6). Task15b에 소유 tmux 버전·server 로그·정리 전후 상태/명령 종료 수집 구현, 직접 fixture PASS. 실제 전체 E2E는 Task16 미실행이며 원인 해결로 표시하지 않음. 재발하면 이 행에 근거를 더하고 원인 수정, 재시도 래퍼 금지(00 §3.5) |
 | 2026-10-20 | Codex 새 worktree 폴더 신뢰 화면의 입력 대기 미검출 | 에이전트 | 확인·비차단 이월: CLI 0.163.0 실제 `agents.create(worktree=true)`에서 신뢰 화면 표시, 45초 `running` 유지·`waiting` 0·PONG 미완료. 설정 쓰기를 피하려고 승인 선택 안 함. Ctrl-C 종료 `review/toolExited=true`, 사용자 config 해시 불변·소유 자원 정리 확인. 증거 `devbox-verification/s2-task1-20261020/` (S1 우회 실행은 새 worktree PASS 근거가 아니며 이번에도 PASS로 바꾸지 않음). 사용자 지시대로 S2 계속 |
 | 2026-10-14 | PR #640 최신 자동 리뷰 한도 소진 | 사용자 | 이번 PR의 최종 SHA `c28e4cab` 자동 코드/보안 리뷰만 생략하고 머지·정리하도록 명시 승인. 필수 CI·Windows 실기·별도 검토 완료, 보호 규칙 유지. 향후 PR에는 예외를 적용하지 않음 |
 | 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push(`aa5c6785`), main에는 S0b PR과 함께 |
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q·Task15(선행2개 포함) 로컬 완료. Task15 고유73개·타입/생성·독립 검토·Biome337 PASS. 전체 검사·Windows 실기는 Task16 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P·Q·Task15b 로컬 완료. 고유73개·타입/생성·독립 최종 검토·Biome344 PASS, 미해결0. 전체 검사·Windows 실기는 Task16 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -100,7 +100,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
-| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13·14·15(선행 분리2개 포함) 로컬 완료. Task15 고유73개·타입/생성·독립 검토·Biome337 PASS. 다음 Task15b |
+| S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task13·14·15·15b 로컬 완료. 고유73개·타입/생성·독립 최종 검토·Biome344 PASS, 미해결0. 다음 Task15c |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
@@ -289,6 +289,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - SecretsSettings는 이름/이 PC 값 유무·password 입력/실패 후 비움·열림/잠김/불일치·명시 복구 보기/입력·확인 후 재입력을 구현했다. 공개 status는 두 boolean뿐이다. reset은 mutation(always)이며 새 DPAPI 파일을 keyId별로 먼저 준비한 뒤 값 삭제/keyId 변경을 DB 단일 transaction으로 커밋한다. DPAPI/파일/DB 실패 때 기존 값/키/blob·공유 이름을 보존하고 새 소유 파일만 정리한다. interop 불가 reset은 오류/보존이며 기존 native bootstrap/unlock fallback은 유지한다. 평문 캐시 없이 SHA256 fingerprint+요청ID만 임시 보존해 응답 손실의 동일 재시도만 같은 ID를 쓴다.
 - 직접 **고유73개 PASS**(부모30=Rust12+UI18, MCP15, Secrets28). 실제 소유 runtime L2 및 owned fake agent만 사용했다. true assertion RED와 fixture 준비/타이밍/형식 기대·잠금75를 분리했다. 부모 최초 UI 실행에서 통과한 helper6/기존Actions7은 재사용하고 RunTab5만 대기 fixture 보정 뒤 재검증했다. 앱/E2E/acceptance 타입·gen-check·Rust39 포맷/TS·CSS12 Biome·diff/600·300 PASS. 근거 `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,failure-classification,static-checks,documentation-freeze,artifact-hashes}.json` 및 raw/resources·MCP/Secrets 기록. 제품/시험52개 digest `dbf77bf5664d654361f0a41c06666942adb0cc8398e5ca2d52537996825e620e`.
 - **독립 검토 PASS·미해결0·완료 Biome337 PASS, 로컬 완료**. 제품52개·문서2개·artifact92개 해시와 고유73개(Rust40·UI33)를 확인했다. Biome 0.910초·cgroup117,723,136B·swap0. 검토된 인계 summary/manifest는 보존하고 최종 상태·문서 해시·커밋은 `root-completion.json`에 기록한다. 전체 check/clippy/build/E2E·Windows 앱/실제 DPAPI/배포·push/PR은 Task16 미실행이고 native 변경이 없어 MSVC check는 반복하지 않았다. 사용자 비밀·기존 서비스·공유 cache를 변경하지 않았다. 이번 범위에 Task15b/15c/16 기능은 없으며 다음은 Task15b다.
+
+### S2 Task15b 공용 색인·코드 보기·검사 대기 (2026-10-21)
+
+- 기존 Db의 writer/read pool을 공유하는 IndexDb에 WAL·도메인별 원자적 재생성·정확 접두사·FTS5 shadow table·rollback·동시성/읽기 snapshot을 구현했다. 파생 DB 백업은 없다. domain은 ASCII 소문자+숫자, index/sqlite 예약·밑줄 불가이며 개발자 schema는 도메인 내부 객체만 정의하는 계약이다. CodeView/theme/languages와 CodeMirror6·직접 highlight tags 의존성을 pnpm9 lock에 반영했다. 실제 입력·JSON 강조·readOnly·props·언어 경합·정리·한국어 검색 시험을 통과했다.
+- 기본 nonblocking lock/latest는 보존, --wait 최대3600초/기한75·자식0, windows-acceptance 독립 잠금, --no-lock 자원 제한과 고유 report를 추가했다. check/E2E는 기본 wait 공통 잠금 한 번이며 우회를 거절한다. dogfood는 기본 direct로 외부 수용 lock 안에서 재진입하지 않고 명시 선두 잠금 옵션만 전달한다. Task16 전체 다운로드→설치→검증→정리 소유는 외부 supervisor다. Task15c channel은 아직 없다. merge 속성3개와 이미 true인 clone git 설정을 확인했고 생성물 검사를 통과했다.
+- E2E 시험 소유 tmux wrapper의 -vv 로그·버전·정리 전후 상태·명령/probe exit를 artifact에 붙이며, 로그 수집 실패는 기존 오류를 가리지 않고 본문에 남긴다. 실제 new-session -c 경로를 유지했다. daemonized server 자체 wait exit는 미확보이며 존재/PID/probe와 실제 서버 로그가 근거다. 사용자 tmux·서비스·Docker·네트워크·공유 cache를 변경하지 않았다. CI Frontend에도 실제 tmux fixture 의존성을 설치한다.
+- **직접 고유73개 PASS**(Index12+Db18, CodeView18, scripts18, tmux7). 코드 미존재 RED/잠금 행동 RED와 lock75·초기 jsdom geometry·통합 타입 오류·tmux chdir 이전 관찰 경합을 분리했다. 마지막 diagnostic2개를 readiness 보정 뒤 재실행하고 직전 cleanup/finalizer5개 PASS는 재사용했다. app/E2E/acceptance 타입·gen-check·frozen lock·변경 포맷·actionlint·bash syntax·diff PASS. CI scope gate·시험 fixture 중복 제거와 읽을 수 있는 함수 구분으로 scripts+workflows1497줄/2개(시험 포함), Task15c 여유3줄이다.
+- 독립 검토 R1에서 같은 도메인의 parent-first DROP이 FK에 막힘을 재현했다(NO ACTION SQLite787·RESTRICT1811). 정식 사례표 RED 뒤 재생성 transaction 안 `defer_foreign_keys=ON`으로 고쳤으며 두 action·동일 버전 false·다른 도메인 보존·실패 시 행/버전 rollback·다음 write의 즉시 FK 검사 복귀를 검증했다. 최종 Index12개 PASS, 공유 Db는 변경 없어 앞선18개 PASS를 재사용했다. 재검토 해결·추가 지적0이다.
+- 제품/시험29개 digest `e5fc69b2ca6d38aff5cafdc84e8300020cf75810dc7754309d31a105131e2013`. 정확한 명령·raw/resources·실패 분류·소스/문서/검증 해시는 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,parent-commands,failure-classification,parent-static-checks,documentation-freeze,artifact-hashes}.json`에 기록한다. **독립 최종 검토 PASS·미해결0·완료 Biome344 PASS, 로컬 완료**다. 제품29개·문서2개·artifact77개 해시를 대조했고 Biome 0.909초·cgroup196,661,248B·swap0이다. 검토된 인계 summary/manifest는 보존하며 완료 문서 해시·커밋은 `root-completion.json`에 기록한다. 다음은 Task15c다. 전체 check/clippy/build/E2E·Windows 앱/배포·push/PR은 Task16 미실행이다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -608,6 +617,8 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-21 | Codex 하네스 구현 | Task14 `38658093` 뒤 Task15 선행1 생성/포트 예약·이벤트 함수 분리. 전후 고유34개·Rustfmt/diff/600줄 PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 선행2 actions 분리 뒤 기능 RED. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15-refactor-create/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현 | 선행1 `557139f2` 뒤 Task15 선행2 기존 test action 48줄 이동. 전후 고유11개·원문 보존·Rustfmt/diff/600줄 PASS | 독립 검토 PASS·미해결0·Biome331 PASS, 로컬 완료 커밋. 다음 기능 Task15 RED. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15-refactor-actions/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·Secrets/MCP 분담 | Task15 기능 runId 전환·서버 가림 실패 로그·비밀 설정/복구·MCP 도구. 고유73개·타입/생성·변경 포맷 PASS | 독립 검토 PASS·미해결0·Biome337 PASS, 로컬 완료 커밋. 다음 Task15b. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
+| 2026-10-21 | Codex 하네스 구현·IndexDb/CodeView 분담 | Task15b 공용 색인 DB·코드 보기·검사 대기/독립 잠금·tmux 진단, 고유73개·타입/생성·직접 영향 검사 PASS | 독립 최종 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품29/문서2/artifact77 해시 일치, scripts1497줄/2 workflows, 다음 Task15c. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,artifact-hashes}.json` |
+
 
 ## 7. 착수 준비 검토
 

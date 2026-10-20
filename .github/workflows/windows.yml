@@ -29,24 +29,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ "$EVENT" = "workflow_dispatch" ] || { [ "$EVENT" = "push" ] && [ "$BASE" = "0000000000000000000000000000000000000000" ]; }; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}"; then
-              echo "Scope gate: missing or unreadable baseline commit: $BASE" >&2
-              exit 1
-            fi
-            # Count both sides of renames. Diff errors abort before classification.
-            git diff --no-renames --name-only "$BASE" HEAD > "$RUNNER_TEMP/devbox-changed-files"
-            status=0
-            grep -vE '^(docs/|[^/]+\.md$)' "$RUNNER_TEMP/devbox-changed-files" > /dev/null || status=$?
-            case "$status" in
-              0) echo "code=true" >> "$GITHUB_OUTPUT" ;;
-              1) echo "code=false" >> "$GITHUB_OUTPUT" ;;
-              *) echo "Scope gate: file classification failed (grep exit $status)" >&2; exit "$status" ;;
-            esac
-          fi
+        run: bash scripts/ci-scope.sh
   linux-bin:
     needs: changes
     if: needs.changes.outputs.code == 'true'
