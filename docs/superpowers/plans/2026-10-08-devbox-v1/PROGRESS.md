@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 Task 1–24와 승인된 보완 완료, PR #640 squash 머지(`c475e511`). S1 인계·S2 착수 전 보강 문서는 사용자 지시로 별도 문서 PR #641로 main에 squash 머지(2026-10-14 · `4cb0e833`, Codex 자동 리뷰는 한도로 미실행). 최종 소스 `c28e4cab`의 필수 CI·E2E·Windows 영향 수용·별도 검토 완료. 최신 자동 리뷰는 한도 소진에 따른 이번 PR 한정 사용자 승인으로 생략했으며 PASS로 보고하지 않음 |
-| 다음 할 일 | S2 Task 1 상세화부터 시작(아직 미착수). 먼저 §5 맨 앞 "S2 착수 요약"을 읽는다. 2026-10-14 착수 전 보강(신뢰 범위 2, 수용 전용 채널 Task 15c, `windows-acceptance` 잠금, 자동 리뷰 3회 상한, AGENTS 하위 에이전트 규칙 복원)은 main에 들어가 있다 |
+| 단계 | S1 PR #640(`c475e511`)·착수 보강 PR #641(`4cb0e833`) 머지 완료. 사용자 승인(2026-10-20)에 따라 S2 Task 1 상세화·Codex 새 worktree 실측 완료. 별도 검토 지적 4건 보정·재검토·Biome CI 통과, 로컬 커밋. S2 제품 구현은 다음 과제부터 |
+| 다음 할 일 | 묶음 O Task 2의 기존 config/input 분리 후 실행 정의·신뢰 범위 2 구현. Codex 폴더 신뢰 화면에서 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s2-runs` · `../devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`. 이전 브랜치·worktree는 지우고 다시 만들었다(사용자 지시 2026-10-14). 로컬에 이 기록 커밋만 있고 원격에는 없다. `pnpm install` 완료, `merge.lockfile.driver`·`rerere` 설정 완료. S2 구현·PR 미착수. 사용자는 Codex 리뷰 한도가 돌아오면 S2를 진행한다 |
-| 마지막 갱신 | 2026-10-14 · Claude Code 검토·보강 세션 |
+| 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화는 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main은 변경하지 않음 |
+| 마지막 갱신 | 2026-10-20 · S2 Task 1 구현 세션 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -27,7 +27,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-14 | S2 계획에 S1 신뢰 승인 미반영 | 계획 보강 | 해결(문서): 01 §7 "실행 범위 버전 2"와 05 Task 2·4·5·6·12·13·15·16에 반영. 범위 1 정의만 있는 설정의 기존 승인은 유지, 화면 정의 저장은 직전 바이트가 승인됐거나 승인이 필요 없었을 때만 새 digest 승인을 기록. 구현은 S2에서 |
 | 2026-10-14 | S1 인계 커밋 백업 | 사용자 | 결정: `v1/s2-runs`를 PR 없이 push(브랜치 push는 CI 미실행). 같은 날 후속 지시로 대체: 인계·보강 문서 커밋을 별도 문서 PR로 main에 squash 머지하고, S2 브랜치·worktree는 머지 뒤 최신 main에서 다시 만든다. 이 문서 PR은 00 §3의 "PR 7개"에 세지 않는 사용자 지시 예외이며, S2 PR은 Task 16에서 한 번만 연다 |
 | 2026-10-14 | CI E2E tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과) | 에이전트 | 미결: 원인 미확정(CI tmux 3.4, 로컬 3.6). S2 Task 15b에서 E2E 실패 산출물에 tmux 버전·서버 로그 수집. 재발하면 이 행에 근거를 더하고 원인 수정, 재시도 래퍼 금지(00 §3.5) |
-| 2026-10-14 | 새 worktree에서 Codex 실제 실행 PASS 근거 없음(S1 수용은 fixture 신뢰 화면 FAIL 뒤 신뢰된 main으로 우회) | 에이전트 | 미결: S2 Task 1 Step 1b에서 사용자 Codex 설정을 바꾸지 않고 `/home/jihoon/projects/` 아래 소유 임시 저장소로 1회 실측. 막혀도 S2는 계속 |
+| 2026-10-20 | Codex 새 worktree 폴더 신뢰 화면의 입력 대기 미검출 | 에이전트 | 확인·비차단 이월: CLI 0.163.0 실제 `agents.create(worktree=true)`에서 신뢰 화면 표시, 45초 `running` 유지·`waiting` 0·PONG 미완료. 설정 쓰기를 피하려고 승인 선택 안 함. Ctrl-C 종료 `review/toolExited=true`, 사용자 config 해시 불변·소유 자원 정리 확인. 증거 `devbox-verification/s2-task1-20261020/` (S1 우회 실행은 새 worktree PASS 근거가 아니며 이번에도 PASS로 바꾸지 않음). 사용자 지시대로 S2 계속 |
 | 2026-10-14 | PR #640 최신 자동 리뷰 한도 소진 | 사용자 | 이번 PR의 최종 SHA `c28e4cab` 자동 코드/보안 리뷰만 생략하고 머지·정리하도록 명시 승인. 필수 CI·Windows 실기·별도 검토 완료, 보호 규칙 유지. 향후 PR에는 예외를 적용하지 않음 |
 | 2026-10-08 | P0 진행 방식 | 사용자 | 해결: PR·CI 없이 `docs/v1-plan`에 커밋·push(`aa5c6785`), main에는 S0b PR과 함께 |
 | 2026-10-08 | PR 47개 → 하위 프로젝트당 1개(7개)로 줄임 | 사용자 | 해결(00-roadmap §3) |
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 대기 | | | 완료·검증 결과 보고 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | Task 1 상세화 완료, 다음 묶음 O |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -96,7 +96,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | M | Task 20–21 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.2h |
 | S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.1h |
 | S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
-| S2 | 상세화 | Task 1 | `v1/s2-runs` | 대기 | | | |
+| S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
 | S2 | O | Task 2–6 |  | 대기 | | | |
 | S2 | P | Task 7–10 |  | 대기 | | | |
 | S2 | Q | Task 11–12 |  | 대기 | | | |
@@ -137,6 +137,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - **규모:** 제품 코드 34,205줄(`python3 xtask/loc.py`, S1 머지 시점), 600줄 근접 파일 `crates/agents/src/service.rs` 598·`actions.rs` 571·`crates/projects/src/config.rs` 563.
 - **일정:** S1 약 29시간(구현 약 13·PR 뒤 약 16, 리뷰 15회). 00 §2.1을 리뷰 3회 상한 기준으로 재추정했다.
 - **기록 방식(2026-10-14부터):** 이 표의 새 행은 한 줄 요약 + artifact 경로로 쓴다. 긴 근거는 `.git/devbox-verification/<이름>/`과 PR 본문에 둔다.
+
+### S2 Task 1 상세화 결과 (2026-10-20)
+
+- 실제 계약: `StreamEnds{id,tx,input}`, `Services.runs`(기존 `runtime`은 데몬 수명관리), 이미 공개된 `ProjectConfig.raw_*`의 typed preview·단일 파싱, `required_scope_version`·`TrustOperation::Run`·`run_snapshot`·launch 서비스 snapshot을 05에 확정했다. config/actions/service 563/571/598줄은 Task 2·15 선행 이동 커밋으로 나눈다.
+- Task 2–16(15b·15c) 각각 RED assertion·명령→구현→GREEN→별도 검토·커밋을 상세화했다. Task 13 멱등은 실제 `useRpcMutation`에 맞춰 성공 뒤 같은 definition ID의 수정, 응답 불명확 retry만 같은 clientRequestId로 보정했다(AR-F04 중복 생성 0 목표 유지). Task 4 readiness·알림 계약을 먼저 두고 Task 8·14에서 실제 관찰/화면을 연결해 순서 역전 의존을 없앴다.
+- 별도 검토 보정: whitelist EnvironmentFile·exec/helper/ExecStopPost 인스턴스/XDG 전달, 독립 stdout/stderr 순서 비가정, thisPc-only Windows 승인 예외, ProjectsService typed 파일 수정·승인/rev 소유(TOML 정의 이중 DB 저장 없음)를 명시했다. v0.9.0 cron의 실제 `croner` 의존성·`CronSchedule` API와 새 thin adapter도 구분했다. 재검토·커밋 대기다.
+- R10은 단일 호스트/세션의 DPAPI direct 성공일 뿐 fallback 면제 근거가 아니다. 앱 fallback·최초 초기화와 매 systemd attempt의 내부 비밀 stream→anonymous pipe→exec stdin 계약을 추가했다. daemon unavailable/locked이면 새 사용자 자식0, 이미 실행 중인 자식은 유지하며 systemd 재시작 정책만 쓴다.
+- Codex 실측은 §2와 `devbox-verification/s2-task1-20261020/`에 기록했다. CLI 최소 빌드만 25.35초/성공(peak cgroup 약2.2GB, swap0), 실제 실행 관찰 46.39초/측정 종료 정상이나 PONG 미완료·waiting 표시 FAIL. 전체 check/clippy/build/E2E·Windows 설치본 스모크는 미실행(Task 16). 제품 실패 테스트는 상세화에 해당하지 않아 새로 만들지 않았다.
+- 별도 검토의 4건(환경/인스턴스 전달·ThisPc Windows 승인 예외·TOML/DB 소유 경계·출력 순서)을 수정하고 영향 범위 재검토 PASS. Biome CI 276개 파일 PASS. 증거 `devbox-verification/s2-task1-20261020/{review,biome-resources}.json`.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -439,6 +448,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-13 | Codex | Task2 뒤 승인된 Windows 조기 스모크에서 bridge/setup 결함 발견·회귀/독립검토 후 수정. 새 CI 설치본으로 실행한 S0b 범위 PASS, 소유 자원 정리 | `v1/s1-agents-terminal` Task1 `f1f4e445`, Task2 `9e21bc6a`, 수정/실기 source `7eca14c5`(원격 일치), 후속 실기 기록 로컬 커밋. 다음 Task3 tmux 미착수(읽기 전용 준비만). S1 전체 검사·브랜치 전체 검토·최종 Windows 실기·PR/머지 미실행 |
 | 2026-10-14 | Codex | S1 최종 소스 c28e4cab의 필수 CI·E2E·Windows 수용·별도 검토 완료. 자동 리뷰 한도 소진을 정정 보고하고 이번 PR 한정 생략 승인 후 #640 squash 머지 | main c475e511의 tree가 최종 검증 소스와 동일함을 확인. 최종 결과 작업 사본을 00 §3에 따라 S2 준비 브랜치에 보존. S2 Task1 상세화·구현은 미착수 |
 | 2026-10-14 | Claude Code | S1 완료 검토와 사용자 결정 4건 반영: AGENTS 하위 에이전트 규칙 복원, 자동 리뷰 3회 상한(CONVENTIONS §8), 수용 전용 `accept` 채널·`windows-acceptance` 잠금 계획(S2 Task 15b·15c), S2 신뢰 범위 2 계획, 00 §2.1 재추정, §5 S2 착수 요약·§8 후속 목록 신설 | `v1/s2-runs`에 문서 커밋 후 백업 push. 사용자 지시로 문서 PR을 main에 squash 머지하고 S2 브랜치·worktree를 최신 main에서 다시 만든다. S2 Task 1 미착수, 다음: Task 1 Step 1·1b |
+| 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 1 상세화·Codex 새 worktree 1회 실측·별도 검토 4건 수정 및 재검토·Biome276 통과. 사용자 설정 불변·소유 자원 정리, PONG 미완료/입력 대기 FAIL 구분 | `v1/s2-runs`의 기존 `699d44e1` 보존, 상세화 로컬 커밋. 다음: 묶음 O Task2 config/input 선행 분리→실행 정의·신뢰 범위2. push·PR 없음. 증거 `devbox-verification/s2-task1-20261020/` |
 
 ## 7. 착수 준비 검토
 
