@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지, S2 Task 1 `87fbd1e7`·Task 2 선행 분리 `b53a867b` 완료. Task 2 실행 정의·신뢰 범위 2 구현과 직접 영향 검증·독립 재검토(미해결 0)·Biome278 PASS, 기능 로컬 커밋 완료 |
-| 다음 할 일 | 묶음 O Task 3: 실행 래퍼·줄별 로그·영속 종료 결과. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지, S2 Task 1 `87fbd1e7`·Task 2 선행 분리 `b53a867b` 완료. Task 2 실행 정의·신뢰 범위 2 구현과 직접 영향 검증·독립 재검토(미해결 0)·Biome278 PASS, 기능 로컬 커밋 `c67e55eb` 완료. Task 3 실행 래퍼·영속 결과 구현·직접 영향 검사·독립 재검토(미해결 0)·Biome278 PASS, 로컬 커밋 완료 |
+| 다음 할 일 | 묶음 O Task 4: systemd 실행 관리·현재 attempt 상태 맞춤. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-20 · S2 Task 2 구현·검증 완료 |
+| 마지막 갱신 | 2026-10-20 · S2 Task 3 구현·검증·독립 재검토 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | Task 2 구현·직접 검증·별도 검토 완료, 다음 Task 3 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | Task 3 구현·직접 검증·별도 검토 완료, 다음 Task 4 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -97,7 +97,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.1h |
 | S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
-| S2 | O | Task 2–6 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 2 선행 분리 `b53a867b`·기능 구현/검증/별도 검토 완료. 다음 Task 3 |
+| S2 | O | Task 2–6 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb` 완료. Task 3 구현·검증·독립 재검토·Biome278 PASS, 로컬 커밋 완료 |
 | S2 | P | Task 7–10 |  | 대기 | | | |
 | S2 | Q | Task 11–12 |  | 대기 | | | |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) |  | 대기 | | | |
@@ -157,6 +157,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - typed 실행 정의·프로젝트 우선 병합/의존 검증·thisPc 저장·scope2 승인/불변 snapshot·주석 보존 편집·300ms 설정 감시·RPC/TS 연결 완료. TOML/승인/rev는 ProjectsService가 소유하며 프로젝트 정의를 runtime DB에 복제하지 않는다. 기존 ProjectConfig wire 범위는 유지하고 typed 실행 미리보기를 기존 승인 대화상자에 표시했다(실행 관리 UI는 Task 13).
 - 실제 RED와 수정 근거는 `devbox-verification/s2-task2/summary.json`에 모았다. 최종 좁은 근거: 프로젝트 설정/편집/신뢰, runtime 정의·페이지/감시, 실제 CLI RPC/시작 구성/DB fixture, 승인 UI 6파일30개·타입 검사·생성 타입 통과. 이전 통과 중 입력 불변 범위는 재사용했다. 파일/DB 쓰기 실패·외부 수정·동시 저장·과거 승인 바이트 복원·같은 바이트 재승인·디렉터리 교체를 구분해 검증했다.
 - 독립 검토 지적 2건(새 프로젝트의 최초 설정 알림 누락, nested start_limit 별칭의 주석 유실)은 각각 RED→GREEN·영향 검사·재검토 PASS, 미해결 0. 최종 로그 문구의 경로 제외도 재검토 PASS, Biome CI278 PASS. 상세 판정/소스 해시는 `review.json`, 검증은 각 log/resources에 남겼다. 전체 check/clippy/build·E2E·Windows·push/PR은 미실행이며 Task 16에서 수행한다. 기능 로컬 커밋 뒤 Task 3으로 이어간다.
+
+### S2 Task 3 실행 래퍼·영속 종료 결과 (2026-10-20)
+
+- `exec`·`run-exited`, 독립 stdout/stderr의 줄별 로그·64MiB tail 회전, byte offset 읽기, 원자적 종료 파일과 attempt 분리, stdin 비밀의 자식 환경 주입·원시 스트림 가림, TERM 그룹 전달을 구현했다. 직접 자식의 종료 코드/신호를 wrapper가 그대로 재현해 systemd Restart 정책에 전달한다. 명령/비밀 형식 검증은 run 파일·자식 생성 전에 끝난다.
+- attempt 우선순위는 `--attempt` → systemd `INVOCATION_ID` → standalone UUID다. 이전 `.exit`는 attempt별 파일로 분리하고 `.retired` 표식으로 늦거나 중복된 결과를 무시한다. `run-exited`가 선택한 attempt와 실제 `INVOCATION_ID`가 같을 때만 systemd의 ExecStopPost→재시작 순차 계약에 따라 begin 이전 사망도 새 결과로 확정한다. `runtime.exited`는 typed `{ runId, attemptId }`만 보내며 파일이 원장이다. 실제 Run DB/handler·중복 이벤트 맞춤·systemd 순차 실측은 Task 4다.
+- 로그 내부 reader는 최대256줄·각 물리 줄 `3×1MiB+128` 바이트로 제한하고 UTF-8 lossy 확장도 보존한다. 이것은 공개 RPC 응답 예산이 아니다. Task 7은 64KiB stream 청크와 검색 RPC 256행/768KiB를 별도로 강제한다. raw-byte 비밀 가림 뒤 줄 분리·1MiB 절단을 하므로 청크·개행·잘림 경계에서도 fixture 값이 로그에 남지 않는다.
+- 검증 근거는 `devbox-verification/s2-task3/summary.json`과 각 raw log/resource다. logfile6·비밀 parser/redactor2·영속 attempt1 PASS. wrapper는 종료3/신호·동시 출력·invalid UTF-8/긴 줄·secret argv/로그·fallback·old/duplicate·socket 전달/timeout·입력 무부수효과를 검증했다. 별도 검토의 background 손자 수명 문제는 pipe 상속/닫힘 2개 RED→GREEN으로 고쳤고, setsid 소유 fixture에서 1초 drain 기한·원래 결과·표시 줄과 그룹 밖 PID 비추적까지 PASS. 직접 영향 시험만 재실행했다.
+- 시험 오탐 2건(환경 키 접미사 `TOKEN=` 검색, 독립 pipe의 전체 마지막 ACK 순서 가정)은 정확한 키 경계·stream 내부 순서로 고쳤다. 원시 환경/사용자 값은 출력하지 않았으며 최종 wrapper fixture는 `env_clear` 뒤 PATH와 소유 HOME/XDG만 넣는다. 모든 검사는 common-dir 잠금·cgroup6/8GiB·swap1GiB 등 자원 제한을 적용했다. 독립 재검토 PASS(미해결0), Biome278 PASS. 실제 systemd unit/L2는 Task 4, 키 저장소·DPAPI는 Task 11, 전체 check/clippy/build·E2E·Windows·push/PR은 Task 16 미실행으로 남긴다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -461,6 +469,8 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-14 | Claude Code | S1 완료 검토와 사용자 결정 4건 반영: AGENTS 하위 에이전트 규칙 복원, 자동 리뷰 3회 상한(CONVENTIONS §8), 수용 전용 `accept` 채널·`windows-acceptance` 잠금 계획(S2 Task 15b·15c), S2 신뢰 범위 2 계획, 00 §2.1 재추정, §5 S2 착수 요약·§8 후속 목록 신설 | `v1/s2-runs`에 문서 커밋 후 백업 push. 사용자 지시로 문서 PR을 main에 squash 머지하고 S2 브랜치·worktree를 최신 main에서 다시 만든다. S2 Task 1 미착수, 다음: Task 1 Step 1·1b |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 1 상세화·Codex 새 worktree 1회 실측·별도 검토 4건 수정 및 재검토·Biome276 통과. 사용자 설정 불변·소유 자원 정리, PONG 미완료/입력 대기 FAIL 구분 | `v1/s2-runs`의 기존 `699d44e1` 보존, 상세화 로컬 커밋. 다음: 묶음 O Task2 config/input 선행 분리→실행 정의·신뢰 범위2. push·PR 없음. 증거 `devbox-verification/s2-task1-20261020/` |
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 2 실행 정의·신뢰 범위 2 구현, 저장/감시/승인 UI 직접 영향 검증·독립 지적 2건 수정 및 재검토·Biome278 PASS | 선행 분리 `b53a867b` 뒤 기능 로컬 커밋 완료. 다음 Task 3 실행 래퍼·영속 종료 결과. push·PR 없음, 증거 `devbox-verification/s2-task2/{summary,review}.json` |
+
+| 2026-10-20 | Codex 하네스 구현·별도 검토 | S2 Task 3 실행 래퍼·로그·영속 종료 결과 구현, background 수명 결함 RED→GREEN·직접 영향 검사·독립 재검토·Biome278 PASS | Task 2 `c67e55eb` 뒤 로컬 커밋. 다음 Task 4 systemd 실행 관리·맞춤. push·PR 없음, 증거 `devbox-verification/s2-task3/{summary,review}.json` |
 
 ## 7. 착수 준비 검토
 

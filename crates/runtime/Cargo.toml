@@ -23,6 +23,8 @@ tracing.workspace = true
 notify = "8.2"
 croner = "=3.0.1"
 chrono-tz = "0.10"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

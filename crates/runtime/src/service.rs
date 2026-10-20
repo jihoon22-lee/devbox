@@ -314,9 +314,7 @@ pub(crate) fn project_error(error: Fail<ProjectsError>) -> Fail<RuntimeError> {
         Fail::Domain(ProjectsError::ConfigurationInvalid { message }) => {
             RuntimeError::ProjectConfigInvalid { message }.into()
         }
-        Fail::Domain(error) => {
-            Fail::Internal(format!("project execution configuration: {error}"))
-        }
+        Fail::Domain(error) => Fail::Internal(format!("project execution configuration: {error}")),
         Fail::Internal(error) => Fail::Internal(error),
     }
 }

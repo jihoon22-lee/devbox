@@ -1,6 +1,8 @@
 //! Execution definitions owned by a project file or by this PC.
 pub mod cron;
 mod defs;
+pub mod exit_record;
+pub mod logfile;
 mod model;
 mod service;
 mod store;

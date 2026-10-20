@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). 다음 Task 3, PR은 Task 16에서 한 번.
+- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. 다음 Task 4, PR은 Task 16에서 한 번.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -207,7 +207,7 @@ pub fn required_scope_version(c: &ProjectConfig) -> Option<u32> {
 ### Task 3: `devbox exec` 래퍼와 `devbox run-exited`
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/logfile_tests.rs · crates/cli/tests/runtime_wrapper.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/runtime/src/logfile_tests.rs · crates/cli/tests/runtime_wrapper.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let output = run_wrapper(["sh", "-c", "echo out; echo err >&2; exit 3"]).await;
 assert_eq!(output.exit.code, Some(3));
@@ -215,8 +215,8 @@ assert_eq!(output.marker_text_set(), set![("o", "out"), ("e", "err")]);
 // Independent stdout/stderr pipes do not guarantee cross-stream ordering.
 assert!(!output.argv.contains("owned-token"));
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-cli --test runtime_wrapper wrapper_records_lines_with_stream_markers_and_exit_code`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** `main.rs`/`lib.rs`에 Exec·RunExited 명령을 연결하고 process group·TERM 전달, bounded line reader, log writer/rotation, atomic exit 파일을 구현한다. `run-exited`는 기존 wrapper 결과를 덮지 않는다. run attempt 시작 전에 이전 attempt 결과를 분리해 오래된 exit가 새 실행을 끝난 것으로 만들지 않는다. stdin 비밀 파서는 NUL 구분을 읽고 자식 환경만 채우며 로그 기록 전 값 가림 필터를 둔다(Task 11에서 실제 키 저장소와 연결).
+- [x] **2 · 실패 확인:** `cargo test -p devbox-cli --test runtime_wrapper wrapper_records_lines_with_stream_markers_and_exit_code`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** `main.rs`/`lib.rs`에 Exec·RunExited 명령을 연결하고 process group·TERM 전달, bounded line reader, log writer/rotation, atomic exit 파일을 구현한다. `run-exited`는 기존 wrapper 결과를 덮지 않는다. run attempt 시작 전에 이전 attempt 결과를 분리해 오래된 exit가 새 실행을 끝난 것으로 만들지 않는다. stdin 비밀 파서는 NUL 구분을 읽고 자식 환경만 채우며 로그 기록 전 값 가림 필터를 둔다(Task 11에서 실제 키 저장소와 연결).
 
 ```rust
 let secrets = read_secret_stdin().await?;
@@ -226,27 +226,30 @@ write_exit_atomic(&paths, run_id, child.wait().await?).await?;
 // run-exited creates a fallback only when this attempt has no wrapper exit.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험에 invalid UTF-8·1MiB 줄·SIGTERM 자식 그룹·동시 stdout/stderr·오래된 exit/중복 exited 이벤트를 포함한다. 비밀 전달 시험의 판정은 원시 로그 평문이 아니라 자식 내부 값 일치 후 고정 ACK다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): add execution wrapper and durable exit records`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험에 invalid UTF-8·1MiB 줄·SIGTERM 자식 그룹·동시 stdout/stderr·오래된 exit/중복 exited 이벤트를 포함한다. 비밀 전달 시험의 판정은 원시 로그 평문이 아니라 자식 내부 값 일치 후 고정 ACK다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): add execution wrapper and durable exit records`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `crates/cli/src/exec.rs`, `crates/cli/src/run_exited.rs`, `crates/runtime/src/logfile.rs`
 - Modify: `crates/cli/src/main.rs`
 
 **Interfaces:**
-- `devbox exec --run <runId> [--secrets-stdin] -- <명령...>`
+- `devbox exec --run <runId> [--attempt <attemptId>] [--secrets-stdin] -- <명령...>`
   - 자식을 띄운다. 비밀이 있으면 표준 입력의 `NAME=값\0` 목록을 읽어 자식 환경에만 넣는다.
   - stdout·stderr를 줄 단위로 `runs/<runId>.log`에 쓴다(`logfile::Writer`, 64 MiB 회전).
-  - 끝나면 `runs/<runId>.exit`(JSON `{ code, signal?, endedMs, by: "wrapper" }`)를 쓴다.
-  - 데몬 소켓으로 `runtime.exited`를 보낸다(실패해도 무시).
-  - SIGTERM을 받으면 자식 프로세스 그룹에 전달한다.
-- `devbox run-exited --run <runId>`(ExecStopPost):
-  - `.exit` 파일이 없을 때만 `$SERVICE_RESULT`·`$EXIT_CODE`·`$EXIT_STATUS`로 `{ by: "systemd" }` 결과를 쓴다.
+  - 끝나면 `runs/<runId>.exit`(JSON `{ attemptId, code, signal?, endedMs, by: "wrapper" }`)를 쓴다.
+  - 데몬 소켓으로 `runtime.exited`의 typed `{ runId, attemptId }`를 보낸다(500ms 내 best-effort). Task 4가 실제 handler/현재 Run 상태를 연결한다.
+  - SIGTERM을 받으면 자식 프로세스 그룹에 전달한다. 직접 자식 종료 뒤 남은 그룹은 TERM→200ms→KILL, 출력 drain은 최대1초로 끝내며 원래 자식 코드/신호를 그대로 반환한다.
+  - attempt 선택은 명시 옵션 → `INVOCATION_ID` → UUID. 현재 `.attempt`, 이전 attempt의 `.retired`와 별도 `.exit`를 같은 run 잠금 아래 원자적으로 기록해 오래된 결과가 새 실행을 끝내지 못하게 한다. 실제 systemd 재시작에서는 고정 `--attempt`를 재사용하지 않는다.
+- `devbox run-exited --run <runId> [--attempt <attemptId>]`(ExecStopPost):
+  - 이 attempt의 `.exit`가 없을 때만 `$SERVICE_RESULT`·`$EXIT_CODE`·`$EXIT_STATUS`로 `{ by: "systemd" }` 결과를 쓴다. 명시 옵션/`INVOCATION_ID`가 없으면 현재 attempt를 사용한다.
+  - 선택한 ID와 `INVOCATION_ID`가 같을 때만 ExecStopPost→restart 순차 계약을 이용해 begin 이전 실패도 확정한다. 이미 retired된 ID는 항상 무시하며 일반 wrapper 보고는 현재 attempt만 허용한다. 실제 systemd 순차성 검증은 Task 4다.
 - `logfile::Writer::write_line(stream, bytes)`
   - 시각은 받은 시각이다.
   - 줄이 1 MiB를 넘으면 자르고 `…(잘림)`을 붙인다.
   - UTF-8이 아니면 손실 변환한다.
 - `logfile::read_range(path, from_offset, max_lines) -> (lines, next_offset)`
+  - 내부 reader: byte offset, 최대256줄, 각 물리 줄 최대 `3×1MiB+128` 바이트. 미완성 마지막 줄은 offset을 소비하지 않으며 EOF 초과 offset은0으로 재설정한다. Task 7의 64KiB stream 청크·검색 RPC 768KiB 예산은 별도 강제한다.
 
 **핵심 테스트:**
 - `wrapper_records_lines_with_stream_markers_and_exit_code`: `sh -c 'echo out; echo err >&2; exit 3'` → 두 줄(`o`·`e`), exit 3
@@ -297,7 +300,7 @@ pub async fn start(&self, p: StartRun) -> Result<Run, Fail<RuntimeError>> {
   - `runtime.start{ projectId, id, worktree? }`(mutation): 의존 작업을 순서대로 실행한다. 앞 단계가 실패하면 멈춘다.
   - `runtime.stop{ runId }`(mutation, reversible)
   - `runtime.restart{ runId }`(mutation): 실패 상태면 `reset-failed` 뒤 시작한다.
-  - `runtime.exited{ runId, code, signal? }`(내부)
+  - `runtime.exited{ runId, attemptId }`(내부): Task 3의 현재 attempt 종료 파일을 읽어 맞추며 호출자가 종료 내용을 덮지 않는다.
   - `runtime.runs{ projectId?, limit }`(query)
 - 데몬이 시작할 때 맞춘다: `systemctl --user list-units 'devbox-<i>-run-*' --output=json` + `.exit` 파일 → 상태를 갱신한다.
 - 서비스 재시작은 `systemctl show -p NRestarts,ActiveState,Result`를 실행 이벤트 때와 10초 간격(서비스가 있을 때만)으로 읽어 `restarts`를 갱신한다.

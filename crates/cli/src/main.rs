@@ -47,6 +47,24 @@ enum Cmd {
         #[command(subcommand)]
         cmd: AgentCmd,
     },
+    /// 작업 명령의 출력과 종료 결과를 기록한다.
+    Exec {
+        #[arg(long)]
+        run: String,
+        #[arg(long)]
+        attempt: Option<String>,
+        #[arg(long)]
+        secrets_stdin: bool,
+        #[arg(last = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
+    /// systemd ExecStopPost에서 종료 결과를 보충한다.
+    RunExited {
+        #[arg(long)]
+        run: String,
+        #[arg(long)]
+        attempt: Option<String>,
+    },
     /// 버전만 출력한다.
     Version,
 }
@@ -74,6 +92,17 @@ fn main() -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
+    if let Cmd::Exec {
+        run,
+        attempt,
+        secrets_stdin,
+        command,
+    } = cli.cmd
+    {
+        let status = rt.block_on(devbox_cli::exec::run(run, attempt, secrets_stdin, command))?;
+        drop(rt);
+        devbox_cli::exec::exit_like_child(status);
+    }
     rt.block_on(async move {
         match cli.cmd {
             Cmd::Daemon { foreground } => devbox_cli::daemon::run(foreground).await,
@@ -113,6 +142,8 @@ fn main() -> anyhow::Result<()> {
                 devbox_cli::agent_event::run(source, code, payload).await;
                 Ok(())
             }
+            Cmd::Exec { .. } => unreachable!("exec handled before runtime teardown"),
+            Cmd::RunExited { run, attempt } => devbox_cli::run_exited::run(run, attempt).await,
             Cmd::Version => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 Ok(())

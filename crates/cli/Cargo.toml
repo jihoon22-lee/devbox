@@ -31,6 +31,8 @@ tokio-util.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 libc.workspace = true
+aho-corasick = "1"
+nix = { version = "0.30", features = ["signal", "process"] }
 
 axum.workspace = true
 
