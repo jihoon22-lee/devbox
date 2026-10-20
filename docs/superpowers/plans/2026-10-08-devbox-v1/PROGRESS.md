@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1 PR #640(`c475e511`)·착수 보강 PR #641(`4cb0e833`) 머지 완료. 사용자 승인(2026-10-20)에 따라 S2 Task 1 상세화·Codex 새 worktree 실측 완료. 별도 검토 지적 4건 보정·재검토·Biome CI 통과, 로컬 커밋. S2 제품 구현은 다음 과제부터 |
-| 다음 할 일 | 묶음 O Task 2의 기존 config/input 분리 후 실행 정의·신뢰 범위 2 구현. Codex 폴더 신뢰 화면에서 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
+| 단계 | S1 PR #640(`c475e511`)·착수 보강 PR #641(`4cb0e833`) 머지 완료. 사용자 승인(2026-10-20)에 따라 S2 Task 1 상세화·Codex 새 worktree 실측 완료. 별도 검토 지적 4건 보정·재검토·Biome CI 통과, 로컬 커밋 `87fbd1e7`. 묶음 O Task 2의 config/input 동작 보존 선행 분리·좁은 검증·별도 검토·Biome276 통과, 선행 로컬 커밋 |
+| 다음 할 일 | Task 2 실행 정의·신뢰 범위 2의 실패 테스트부터 구현. Codex 폴더 신뢰 화면에서 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화는 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main은 변경하지 않음 |
-| 마지막 갱신 | 2026-10-20 · S2 Task 1 구현 세션 |
+| 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리는 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main은 변경하지 않음 |
+| 마지막 갱신 | 2026-10-20 · S2 Task 2 선행 분리 작업 중 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -97,7 +97,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S1 | N | Task 22–23 | `v1/s1-agents-terminal` | 완료(로컬) | 2026-10-13 | 2026-10-13 | 약 1.1h |
 | S1 | 마무리 | Task 24 → S1 PR | `v1/s1-agents-terminal` | 머지 | 2026-10-13 | 2026-10-14 | S1 전체 경과 약28.6h(구현·수정·CI·리뷰 대기 포함; Task24 단독 시간이 아님) |
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
-| S2 | O | Task 2–6 |  | 대기 | | | |
+| S2 | O | Task 2–6 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task 2 선행 config/input 분리, 기능 구현은 별도 검토·이동 커밋 뒤 |
 | S2 | P | Task 7–10 |  | 대기 | | | |
 | S2 | Q | Task 11–12 |  | 대기 | | | |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) |  | 대기 | | | |
@@ -146,6 +146,11 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - R10은 단일 호스트/세션의 DPAPI direct 성공일 뿐 fallback 면제 근거가 아니다. 앱 fallback·최초 초기화와 매 systemd attempt의 내부 비밀 stream→anonymous pipe→exec stdin 계약을 추가했다. daemon unavailable/locked이면 새 사용자 자식0, 이미 실행 중인 자식은 유지하며 systemd 재시작 정책만 쓴다.
 - Codex 실측은 §2와 `devbox-verification/s2-task1-20261020/`에 기록했다. CLI 최소 빌드만 25.35초/성공(peak cgroup 약2.2GB, swap0), 실제 실행 관찰 46.39초/측정 종료 정상이나 PONG 미완료·waiting 표시 FAIL. 전체 check/clippy/build/E2E·Windows 설치본 스모크는 미실행(Task 16). 제품 실패 테스트는 상세화에 해당하지 않아 새로 만들지 않았다.
 - 별도 검토의 4건(환경/인스턴스 전달·ThisPc Windows 승인 예외·TOML/DB 소유 경계·출력 순서)을 수정하고 영향 범위 재검토 PASS. Biome CI 276개 파일 PASS. 증거 `devbox-verification/s2-task1-20261020/{review,biome-resources}.json`.
+
+### S2 Task 2 선행 분리 (2026-10-20)
+
+- `config.rs` 563줄을 파싱·읽기158줄, `config/copy.rs`188줄, 기존 `config/tests.rs`225줄로 분리했다. `parse/load/read_config/copy_files`와 descriptor 읽기·경로 검사 재수출 계약을 보존했다. `core::input::validate_command_text`가 기존 64KiB/NUL 순수 검사를 소유하고 terminal 오류·NUL 우선순위를 유지한다. agents 입력은 기존 길이 전용 정책 그대로다.
+- 기존 좁은 검사 config12·trust5(2중복)·agents input1·terminal admission1을 이동 전후 모두 통과(고유17). 추출 계약의 UTF-8 경계·NUL 우선순위·terminal 매핑3을 더해 이동 후 고유20 통과. 동작 보존 이동에 인위적 RED를 만들지 않았다. 모든 실행은 common-dir 잠금·자원 제한과 cgroup6/8GiB·swap1GiB 적용, 기존 사용자 자원 변경 없음. 증거 `devbox-verification/s2-task2-refactor-20261020/{before-*,after-*,summary.json}`. 별도 검토 PASS·Biome276 PASS 후 선행 로컬 커밋. 기능 구현·전체 검사·E2E·Windows 미실행.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
