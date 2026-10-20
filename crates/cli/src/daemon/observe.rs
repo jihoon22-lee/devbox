@@ -48,7 +48,12 @@ pub fn readiness() -> devbox_runtime::Readiness {
                 return true;
             }
             tokio::task::spawn_blocking(move || {
-                devbox_observe::ports_listening_in(std::path::Path::new("/proc"), &check.ports)
+                devbox_observe::run_ports_listening_in(
+                    std::path::Path::new("/proc"),
+                    &check.ports,
+                    &check.unit,
+                    check.pid,
+                )
             })
             .await
             .internal::<ObserveError>("read readiness ports")

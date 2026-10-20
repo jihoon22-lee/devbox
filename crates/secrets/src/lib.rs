@@ -30,4 +30,6 @@ mod crypto_tests;
 mod store_tests;
 
 #[cfg(test)]
+mod initialization_tests;
+#[cfg(test)]
 mod keystore_tests;

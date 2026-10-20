@@ -12,7 +12,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 use zeroize::Zeroizing;
 pub struct SecretsService {
     db: Db,
@@ -123,7 +123,7 @@ impl SecretsService {
         })
     }
     pub async fn bootstrap(&self, input: Bootstrap) -> R<Done> {
-        let _key = self.key.lock().await;
+        let key = self.key.clone().lock_owned().await;
         if self.id().await?.is_some() || self.keystore.blob()?.is_some() {
             return Err(SecretsError::KeyMismatch.into());
         }
@@ -135,12 +135,9 @@ impl SecretsService {
         {
             return Err(SecretsError::InvalidInput.into());
         }
-        self.keystore.publish(&input.blob, false)?;
-        let (_, rev) = self
-            .db
-            .write(move |tx| store::init(tx, &input.key_id))
-            .await
-            .internal("record sealed key identity")?;
+        let rev = self
+            .commit_initial_key(key, input.key_id, &input.blob, None)
+            .await?;
         Ok(Done {
             rev: rev.to_string(),
         })
@@ -164,9 +161,38 @@ impl SecretsService {
             rev: self.db.rev().to_string(),
         })
     }
-    async fn ensure_key(&self, key: &mut Option<Key>) -> R<()> {
+    async fn commit_initial_key(
+        &self,
+        mut current: OwnedMutexGuard<Option<Key>>,
+        id: String,
+        blob: &[u8],
+        candidate: Option<Key>,
+    ) -> R<u64> {
+        // Until the identity commits, only this guard owns the prepared file.
+        // Keep both it and the key lock in the writer if the request is cancelled.
+        let prepared = self.keystore.prepare_key(&id, blob)?;
+        let mismatch = self.mismatch.clone();
+        let result = self
+            .db
+            .write_checked_with_commit::<_, std::convert::Infallible, _, _>(
+                move |tx| store::init(tx, &id).map(Ok),
+                move |_, _| {
+                    prepared.commit();
+                    *current = candidate;
+                    mismatch.store(false, std::sync::atomic::Ordering::Release);
+                },
+            )
+            .await
+            .internal("record data key identity")?;
+        match result {
+            Ok(((), rev)) => Ok(rev),
+            Err(never) => match never {},
+        }
+    }
+    async fn ensure_key(&self) -> R<OwnedMutexGuard<Option<Key>>> {
+        let key = self.key.clone().lock_owned().await;
         if key.is_some() {
-            return Ok(());
+            return Ok(key);
         }
         if self.id().await?.is_some() || self.keystore.blob()?.is_some() {
             return Err(self.locked_error().into());
@@ -176,14 +202,10 @@ impl SecretsService {
             .create()
             .await
             .map_err(|_| SecretsError::Locked)?;
-        self.keystore.publish(&blob, false)?;
         let id = created.id();
-        self.db
-            .write(move |tx| store::init(tx, &id))
-            .await
-            .internal("record data key identity")?;
-        *key = Some(created);
-        Ok(())
+        self.commit_initial_key(key, id, &blob, Some(created))
+            .await?;
+        Ok(self.key.clone().lock_owned().await)
     }
     pub async fn list(&self) -> R<Vec<SecretInfo>> {
         let configured = devbox_core::Config::load(&self.paths)
@@ -212,8 +234,7 @@ impl SecretsService {
         {
             return Err(SecretsError::InvalidInput.into());
         }
-        let mut key = self.key.lock().await;
-        self.ensure_key(&mut key).await?;
+        let key = self.ensure_key().await?;
         let key = key.as_ref().expect("initialized key");
         let id = key.id();
         let blob = crypto::seal(key, &input.name, &id, input.value.as_bytes())?;

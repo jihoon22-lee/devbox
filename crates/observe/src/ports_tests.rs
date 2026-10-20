@@ -137,3 +137,63 @@ async fn owned_tcp_listener_is_observed_with_pid_without_docker() {
     );
     service.shutdown().await;
 }
+
+#[test]
+fn run_readiness_requires_owned_inodes_for_every_ipv4_and_ipv6_hint() {
+    use crate::run_ports_listening_in;
+    let temp = tempfile::tempdir().expect("owned proc fixture");
+    let root = temp.path();
+    fs::create_dir(root.join("net")).expect("net fixture");
+    fs::write(root.join("net/tcp"), table("0100007F", 3456, "0A", 42)).expect("IPv4 fixture");
+    fs::write(
+        root.join("net/tcp6"),
+        table("00000000000000000000000001000000", 3457, "0A", 43),
+    )
+    .expect("IPv6 fixture");
+    for (pid, unit, inodes) in [
+        (23, "unrelated.service", vec![42, 43]),
+        (24, "devbox-run-owned.service", vec![42]),
+    ] {
+        let path = root.join(pid.to_string());
+        fs::create_dir_all(path.join("fd")).expect("process fixture");
+        fs::write(path.join("stat"), crate::processes_tests::stat(pid, 0, 9))
+            .expect("process stat");
+        fs::write(
+            path.join("cgroup"),
+            format!("0::/user.slice/{unit}/workers\n"),
+        )
+        .expect("process unit");
+        for inode in inodes {
+            std::os::unix::fs::symlink(
+                format!("socket:[{inode}]"),
+                path.join(format!("fd/{inode}")),
+            )
+            .expect("socket fd");
+        }
+    }
+    // PID 24 is the service child, while the wrapper has a different PID.
+    let ready =
+        |ports: &[u16]| run_ports_listening_in(root, ports, "devbox-run-owned.service", Some(25));
+    assert!(
+        ready(&[3456]),
+        "an unrelated lower PID sharing the FD must not hide its unit owner"
+    );
+    assert!(
+        !ready(&[3456, 3457]),
+        "an unrelated IPv6 listener cannot satisfy the second hint"
+    );
+    assert!(
+        !run_ports_listening_in(root, &[3456], "owned.service", None),
+        "unit names match whole components"
+    );
+    std::os::unix::fs::symlink("socket:[43]", root.join("24/fd/43")).expect("owned IPv6 socket");
+    assert!(
+        ready(&[3456, 3457]),
+        "both IPv4 and IPv6 belong to the service child"
+    );
+    fs::remove_file(root.join("24/stat")).expect("disappeared child");
+    assert!(
+        !ready(&[3456, 3457]),
+        "unverified process ownership cannot ready the service"
+    );
+}

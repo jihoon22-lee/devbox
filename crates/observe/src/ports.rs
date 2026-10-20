@@ -86,6 +86,42 @@ pub fn ports_listening_in(root: &Path, ports: &[u16]) -> bool {
                 .all(|port| rows.iter().any(|row| row.port == *port))
         })
 }
+/// All hinted ports must belong to the launched PID or a process in its unit.
+/// A host listener alone is insufficient, including when /proc ownership is unreadable.
+pub fn run_ports_listening_in(root: &Path, ports: &[u16], unit: &str, pid: Option<u32>) -> bool {
+    if ports.is_empty() {
+        return true;
+    }
+    let Ok(rows) = tcp_rows(root) else {
+        return false;
+    };
+    let wanted: Vec<_> = rows
+        .iter()
+        .filter(|row| ports.contains(&row.port))
+        .map(|row| row.inode)
+        .collect();
+    let Ok(owners) = socket_inode_to_pid_matching(root, &wanted, |candidate| {
+        pid == Some(candidate)
+            || (!unit.is_empty()
+                && read_text(&root.join(candidate.to_string()).join("cgroup"), 65536).is_ok_and(
+                    |text| {
+                        text.lines()
+                            .filter_map(|line| line.splitn(3, ':').nth(2))
+                            .any(|path| path.split('/').any(|part| part == unit))
+                    },
+                ))
+    }) else {
+        return false;
+    };
+    ports.iter().all(|port| {
+        rows.iter().any(|row| {
+            row.port == *port
+                && owners
+                    .get(&row.inode)
+                    .is_some_and(|(_, stat)| stat.is_some())
+        })
+    })
+}
 pub(crate) fn unit_from_cgroup(text: &str) -> Option<String> {
     text.lines()
         .filter_map(|line| line.splitn(3, ':').nth(2))
@@ -99,10 +135,20 @@ pub(crate) fn socket_inode_to_pid(
     root: &Path,
     wanted: &[u64],
 ) -> R<HashMap<u64, (u32, Option<Stat>)>> {
+    socket_inode_to_pid_matching(root, wanted, |_| true)
+}
+fn socket_inode_to_pid_matching(
+    root: &Path,
+    wanted: &[u64],
+    matches: impl Fn(u32) -> bool,
+) -> R<HashMap<u64, (u32, Option<Stat>)>> {
     let mut result = HashMap::new();
     let wanted: std::collections::HashSet<_> = wanted.iter().copied().collect();
     let mut scanned = 0;
     for pid in pids(root)? {
+        if !matches(pid) {
+            continue;
+        }
         let stat_path = root.join(pid.to_string()).join("stat");
         let read_stat = || {
             read_text(&stat_path, 65536)

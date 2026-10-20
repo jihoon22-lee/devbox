@@ -138,23 +138,32 @@ async fn typed_observe_routes_report_owned_listener_process_system_and_guard_kil
     f.stop().await;
 }
 #[tokio::test]
-async fn production_readiness_observes_owned_listener_and_empty_ports() {
+async fn production_readiness_rejects_unrelated_listener_and_accepts_its_owner() {
     let callback = daemon::observe::readiness();
-    let check = |ports| devbox_runtime::ReadyCheck {
-        unit: "fixture-only".into(),
-        pid: None,
+    let check = |ports, pid| devbox_runtime::ReadyCheck {
+        unit: "fixture-only.service".into(),
+        pid,
         ports,
     };
-    assert!(bounded(callback(check(vec![]))).await);
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("fixture result");
-    let port = listener.local_addr().expect("fixture result").port();
-    assert!(bounded(callback(check(vec![port]))).await);
-    drop(listener);
-    assert!(
-        !tokio::time::timeout(Duration::from_secs(2), callback(check(vec![port])))
-            .await
-            .expect("fixture result")
+    assert!(bounded(callback(check(vec![], None))).await);
+    let unrelated = support::ChildGuard(
+        std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .expect("owned child"),
     );
+    for address in ["127.0.0.1", "::1"] {
+        let listener = std::net::TcpListener::bind((address, 0)).expect("owned listener");
+        let port = listener.local_addr().expect("listener address").port();
+        assert!(
+            !bounded(callback(check(vec![port], Some(unrelated.0.id())))).await,
+            "{address}: another process listening must not ready this service"
+        );
+        assert!(!bounded(callback(check(vec![port], None))).await);
+        assert!(bounded(callback(check(vec![port], Some(std::process::id())))).await);
+        drop(listener);
+        assert!(!bounded(callback(check(vec![port], Some(std::process::id())))).await);
+    }
 }
 
 #[tokio::test]

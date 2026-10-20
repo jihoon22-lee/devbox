@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S2 PR #642 열림·1회차 수정 검증 완료. 구현/로컬 최종 검증/SC9/별도 검토 완료, caf16863 Windows CI·설치 산출물 출처 검증 PASS. 설치 전 WSL interop errno110으로 실기1–11 미실행·12 FAIL, prod 불변 NOT_PROVEN. 최종 CI·리뷰·머지 미완료 |
-| 다음 할 일 | PR #642 첫 코드 리뷰1건·보안 리뷰0건 판정 완료. scheduler 재시도 결함·세션 테스트 fixture 수정은 직접26개·별도 검토·영향 strict Clippy PASS. 완료 Biome→한 번 push→최종 필수 CI3·최대3회 리뷰 판정→squash. 실제 설치 수용 미실행과 Codex 입력 대기 미검출을 구분해 인계 |
+| 단계 | S2 PR #642 열림·2회차 수정 검증 완료. 구현/로컬 최종 검증/SC9/별도 검토 완료. caf16863 Windows CI·산출물 출처 PASS, 설치 전 interop errno110으로 실기1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN. 최종 SHA CI·3회차 리뷰·머지 대기 |
+| 다음 할 일 | 2회차 코드 지적3건·CI 실패3건 수정의 직접 고유95개·독립 검토·영향 strict Clippy PASS. 완료 Biome→묶음 push→최종 필수 CI3·3회차 리뷰 판정→필요한 최종 SHA 설치 시도→squash. 3회차 수정 뒤 4회차는 차단 기준만 적용 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 `699d44e1` 보존. 과제별 기능 커밋·최초 완료2d061058·Windows lint 보정caf16863 후 [PR #642](https://github.com/jihoon22-lee/devbox/pull/642)를 한 번 열었다. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · Windows CI69개·Prod/Accept 패키징/self-check PASS, 설치 전 읽기 전용 검사 FAIL 보존. 첫 PR CI Frontend/E2E PASS·Rust 세션 테스트1 FAIL, 자동 코드 리뷰1건 수정 검증·독립 검토 PASS. 첫 보안 리뷰 지적0건 완료·PR Windows CI 진행 중 |
+| 마지막 갱신 | 2026-10-21 · b59e6c6a CI의 Frontend608 PASS/1 FAIL·E2E10 PASS/1 FAIL·Rust 로그1 FAIL 원본 보존. 2회차 코드3건·보안0건 완료, 수정95개·독립 검토 PASS. 검증한 소스 SHA를 유지하고 최종 결과만 머지 후 문서 작업 사본으로 인계 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -51,7 +51,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | PR 열림 | 2026-10-20 | | #642·1회차 수정 검증 완료, 최종 CI·리뷰·squash 대기. 설치 실기1–11 미실행·12 FAIL/환경 사전 검사, prod 불변 미확인 |
+| S2 | 05-s2-runs | PR 열림 | 2026-10-20 | | #642·2회차 수정 검증 완료, 최종 CI·3회차 리뷰·squash 대기. 설치 실기1–11 미실행·12 FAIL/환경 사전 검사, prod 불변 미확인 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -102,7 +102,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
-| S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | PR 열림 | 2026-10-21 | | 로컬 최종 검증·SC9·Windows CI/패키징 PASS, 설치 전 errno110 FAIL·기능 미실행. #642 첫 코드 지적1·CI 테스트1 수정 검증 완료, 최종 CI·리뷰·머지 대기 |
+| S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | PR 열림 | 2026-10-21 | | 구현·로컬 최종 검증·SC9·caf16863 Windows CI PASS. 설치 전 errno110 FAIL·기능 미실행. 2회차 코드3건·CI3건 직접95개·독립 검토·영향 Clippy PASS, 최종 CI·3회차 리뷰·머지 대기 |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
 | S3 | S | Task 2–3 |  | 대기 | | | |
 | S3 | T | Task 4–6 |  | 대기 | | | |
@@ -327,6 +327,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 실제 수용 driver는 windows-acceptance 잠금 안에서 20.544초 뒤 exit1. 첫 읽기 전용 PowerShell ParseFile과 종료 단계 Windows fingerprint가 WSL errno110으로 실패했다. 다운로드·설치·fixture·unit 변경은 시작하지 않았으며 소유 잔여0이다. 수용1–11 NOT_RUN, 12 FAIL, prod 불변 NOT_PROVEN을 그대로 남긴다. raw verdict의 downloadCleanup FAIL은 다운로드 미실행을 보수적으로 분류한 것이며 누출/잔여를 뜻하지 않는다. 독립 근거 검토 PASS이며 설치 수용 PASS가 아니다. `windows/acceptance-attempt-review.json`·`acceptance-preparation/runs/caf16863-170f051d/`에 기록했다.
 - [PR #642](https://github.com/jihoon22-lee/devbox/pull/642)를 한 번 열었다. 첫 PR CI39513889136은 Frontend/E2E PASS 뒤 `agents_actions`의 세션 부재 오류 assertion1개가 실패했다. 실제 오류 값은 출력되지 않았고 로컬 baseline21회는 통과했으므로 정확한 CI 원인을 확정하지 않는다. 종료 시각 경합 대신 정확한 소유 tmux 세션을 rename해 tool을 살린 채 binding 부재를 만들고 typed 오류·followUps 불변·toolExited=false를 확인한다. 기존 kill/restart/resume·정리 검증은 유지한다. missing rename 음성 대조 RED와 원래 CI 실패를 구분하며 해당 target8개 PASS·독립 검토 PASS다.
 - 첫 자동 코드 리뷰의 [scheduler 지적1건](https://github.com/jihoon22-lee/devbox/pull/642#discussion_r4331385461)을 수용했다. 시작 후 tick 오류가 next=None으로 타이머를 꺼 영구 대기하므로 별도 monotonic 1초 retry를 둔다. 실제 소유 SQLite claim trigger 오류→hub 이벤트 없이 복구 RED→GREEN, 신뢰 재확인·중복 claim 방지·빈 스케줄 유휴·기존 시작 오류 전파를 보존했다. scheduler18개 PASS(마지막 시험 정리 보완 뒤 retry3개 재확인)·독립 검토 PASS다. 두 수정 직접 고유26개이며 영향 runtime/CLI all-target strict Clippy PASS9.675초·cgroup961,212,416B/swap0이다. 근거 `pr/{ci-fix,scheduler-fix,round1}/`. 첫 보안 리뷰는 지적0건으로 완료됐고 이번 수정을 모아 한 번 push한다. 완료 SHA 기준 필수 CI·후속 리뷰·머지는 미완료다.
+
+### S2 Task16 PR 2회차 수정 (2026-10-21)
+
+- `b59e6c6a`의 두 번째 자동 코드 리뷰3건·보안 리뷰0건을 완료했다. 준비 상태는 해당 PID 또는 정확한 unit 자식의 socket inode로 IPv4/IPv6 모든 hint를 확인하고 무관한 호스트 listener를 거절한다. 관찰 목록은 cwd 외에 unit으로 판정한 project_id도 선택 프로젝트 우선순위에 사용한다. 실제 RED2→관찰13개 PASS(소유 systemd 의존 실행1개 포함), 독립 검토 PASS다.
+- 최초 비밀키 생성과 native bootstrap은 기존 reset의 key-id별 PreparedKey rollback·DB commit callback을 재사용한다. identity 저장 실패 시 새로 준비한 소유 키만 정리해 재시도하고 기존/미확인 키는 보존한다. 요청 취소 후 writer가 완료될 때 메모리·DB·blob 상태도 일치한다. DB 실패/취소 RED2→고유16개 PASS(실제 CLI RPC1 포함), 독립 검토 PASS다. 명시 키 초기화/복구·진짜 불일치 거절 정책은 유지한다.
+- PR CI [39515595261](https://github.com/jihoon22-lee/devbox/actions/runs/39515595261)의 새 실패3건을 보완했다. Frontend608 PASS/1 FAIL은 `/proc/<pid>/stat` 읽기 중 ESRCH 소멸 경합이며 ENOENT와 같은 소멸로만 처리한다. 초기 소유권 거절·PID 재사용·고아 재스캔·예상 밖 오류 전파를 보존하고 RED2→15개 PASS다. E2E10 PASS/1 FAIL은 trace에서 두 번째 pane이 연결 중인데 입력한 것으로 확인했다. renderer·live 상태·textarea focus를 기다리는 시험 수정 뒤 E2E2·관련 단위41 PASS, 오프라인 입력 폐기 검증은 유지했다.
+- Rust CI는 `logs_tests::follows_appended_lines_and_survives_truncation`의 append 직후 읽기가 None이었다(해당 target50 PASS/1 FAIL). 정확한 Tokio1.53.2 소스의 write_all/flush 완료 계약을 확인해 fixture의 쓰기 뒤 flush만 추가했다. 실제 CI RED를 보존하며 로컬 RED 재현으로 주장하지 않는다. 로그8개 PASS, 제품 로그 변경 없음. 세 CI 수정도 각각 독립 검토 PASS·미해결0이다.
+- 이번 직접 고유95개 PASS(관찰13·비밀16·정리15·터미널43·로그8). 영향 observe/secrets/CLI all-target strict Clippy PASS11.156초·cgroup989,925,376B·swap0. 규모52,258줄/60,000·코드600줄 초과0이며 컴포넌트·scripts1,500줄·workflow2·E2E11개는 유지한다. 기존 성공 전체 검사는 반복하지 않았다. 근거 `devbox-verification/s2-task16/pr/round2/`의 실패/통과 raw·resource·source hash와 각 `review.json`이다.
+- 이전 caf16863 PR Windows run39513889328은 같은 SHA 수동 Windows 성공39510897220이 보존돼 있어 취소했고, b59e6c6a Windows run39515595402는 후속 수정으로 SHA가 바뀌므로 작업 시작 전 pending에서 취소했다. 취소를 PASS로 계산하지 않는다. 완료 Biome 뒤 수정을 한 번에 push해 최종 CI와 3회차 리뷰를 받는다. 마지막 설치 시도·머지 결과만 문서 작업 사본과 artifact/PR에 남기며 추가 결과 커밋으로 검증 SHA를 바꾸지 않는다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -652,6 +661,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-21 | Codex 하네스 통합 수정·별도 브랜치 검토 | Task16 첫 전체 검사 실패 보존→직접140개·strict Clippy·E2E3 수정 PASS, SC9 CPU0.233331%/RSS39,899,136B PASS | 제품75개 동결·독립 검토 PASS·미해결0, 규모52,174줄·scripts1,500줄. 완료 Biome/커밋 뒤 최초 push·동일SHA Windows accept 수용·단일PR. 현재 설치 수용·CI·리뷰 미실행, S2 수용 완료 아님. 근거 `devbox-verification/s2-task16/` |
 
 | 2026-10-21 | Codex 하네스 PR #642 1회차 수정 | Windows CI69개·Prod/Accept 패키징 PASS, 설치 전 errno110 FAIL·실기 미실행. 코드 리뷰 scheduler1건·CI 세션 assertion1건 보완 | 직접26개·영향 strict Clippy·별도 검토 PASS. 실제 CI 오류 UNKNOWN·원본 실패 보존. 첫 보안 리뷰 지적0건 완료·Biome 뒤 묶음 push, 최종 필수CI/후속 리뷰/머지 대기. 근거 `devbox-verification/s2-task16/pr/` |
+| 2026-10-21 | Codex 하네스 PR #642 2회차 수정 | 코드3건·보안0건 판정, readiness 귀속/선택 프로젝트/비밀키 DB 실패 복구 및 CI 정리·터미널 준비·로그 flush 보완 | 직접 고유95개·영향 strict Clippy·독립 검토 PASS, 실패 원본 보존. 완료 Biome 뒤 묶음 push, 최종 CI·3회차 리뷰·설치 시도·squash 대기. 근거 `devbox-verification/s2-task16/pr/round2/` |
 
 
 ## 7. 착수 준비 검토

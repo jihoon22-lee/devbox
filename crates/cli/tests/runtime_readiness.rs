@@ -103,7 +103,13 @@ async fn dependent_service_waits_for_readiness_then_times_out() {
     assert!(run.ready);
     support::runtime::file_exists(&dependent).await;
     assert!(opened.is_file());
-    let timeout_port = port();
+    // This fixture-owned listener belongs to the test, not the unready service.
+    let unrelated_listener =
+        std::net::TcpListener::bind(("127.0.0.1", 0)).expect("unrelated listener");
+    let timeout_port = unrelated_listener
+        .local_addr()
+        .expect("listener address")
+        .port();
     define(
         &runs,
         &project,

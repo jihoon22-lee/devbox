@@ -26,7 +26,7 @@ use devbox_protocol::{Exporter, method, topic};
 pub use host::ProcFs;
 pub use host_model::*;
 pub use model::*;
-pub use ports::{is_listening, is_listening_in, ports_listening_in};
+pub use ports::{is_listening, is_listening_in, ports_listening_in, run_ports_listening_in};
 pub use service::ObserveService;
 pub use sources::{ResolvedSource, validate_sources};
 method!(pub ResolveLocation = "observe.resolve_location", query, ResolveFileLocation => FileLocation, ObserveError);

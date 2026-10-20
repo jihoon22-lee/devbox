@@ -163,3 +163,60 @@ fn kill_refuses_other_users_processes_and_invalid_pids() {
         ));
     }
 }
+
+#[test]
+fn selected_project_keeps_unit_owned_processes_outside_its_root() {
+    let temp = tempfile::tempdir().expect("owned proc fixture");
+    fs::write(temp.path().join("stat"), "btime 1700000000\n").expect("boot time");
+    for pid in 10..72 {
+        let path = temp.path().join(pid.to_string());
+        fs::create_dir(&path).expect("process directory");
+        fs::write(path.join("stat"), stat(pid, 100, 1234)).expect("process stat");
+        std::os::unix::fs::symlink(
+            if pid == 70 {
+                "/agent-worktrees/task"
+            } else {
+                "/absolute-cwd"
+            },
+            path.join("cwd"),
+        )
+        .expect("process cwd");
+        if pid >= 70 {
+            fs::write(
+                path.join("cgroup"),
+                "0::/user.slice/devbox-run-selected.service\n",
+            )
+            .expect("owned run unit");
+        }
+    }
+    let proc = ProcFs::fixture(temp.path().into(), Arc::new(|| 0), 100, 4096);
+    let rows = ProcessSampler::default()
+        .sample(
+            &proc,
+            &[ProjectRoot {
+                id: "selected".into(),
+                path: "/project".into(),
+            }],
+            &[UnitRun {
+                unit: "devbox-run-selected.service".into(),
+                run_id: "run".into(),
+                project_id: "selected".into(),
+            }],
+            Some("selected"),
+        )
+        .expect("process snapshot");
+    assert_eq!(
+        rows.len(),
+        52,
+        "both selected run processes plus 50 global rows"
+    );
+    assert_eq!(
+        rows[..2].iter().map(|row| row.pid).collect::<Vec<_>>(),
+        [70, 71]
+    );
+    assert!(
+        rows[..2]
+            .iter()
+            .all(|row| row.project_id.as_deref() == Some("selected"))
+    );
+}

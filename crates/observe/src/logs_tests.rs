@@ -99,6 +99,8 @@ async fn follows_appended_lines_and_survives_truncation() {
         .await
         .expect("fixture result");
     file.write_all(b"new\n").await.expect("fixture result");
+    // Tokio queues the write; the independent reader must wait for its completion.
+    file.flush().await.expect("fixture append completed");
     assert_eq!(
         reader
             .next()
