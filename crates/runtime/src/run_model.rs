@@ -28,6 +28,13 @@ impl RunState {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct WindowsRun {
+    pub directory: String,
+    pub notice: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct Run {
     pub id: String,
     pub project_id: String,
@@ -43,6 +50,9 @@ pub struct Run {
     pub pid: Option<u32>,
     pub port: Option<u16>,
     pub attempt_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub windows: Option<WindowsRun>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

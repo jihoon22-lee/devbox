@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. Task 4 `167da8b5` 로컬 완료. Task 5 예약 실행·고유51개 직접 검사·독립 최종 검토(미해결0)·Biome278 PASS, 로컬 커밋 완료. Task 6 작업 자동 감지 구현·직접15개 및 TS 검증 PASS, 별도 검토·Biome·커밋 대기. PR은 Task 16에서 한 번.
+- 상태: Task 1–12 및 묶음 O·P·Q 로컬 완료. Task 12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS(2026-10-20). 다음은 묶음 R Task 13 실행 화면이다. 전체 검사·Windows 실기·단일 PR은 Task 16에서 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -736,15 +736,15 @@ write_nul_pairs(writer, &values).await?;
 ### Task 12: Windows 대상 실행
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/windows_tests.rs · app/src-tauri Windows 실행 adapter 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/runtime/src/windows_tests.rs · app/src-tauri Windows 실행 adapter 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let report = sync(&source, &target).await?;
 assert_eq!(read(target.join("tracked.txt")), "changed");
 assert!(target.join("node_modules/keep").exists());
 assert_eq!(quote_powershell("a'b"), "'a''b'");
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-runtime windows`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** `core::config`의 config.local 전용 windows.root를 추가하고 git -z 목록의 변경 파일만 복사한다(deleted=0). `authorize_run_graph`의 prepared graph·입력·작업 폴더를 확인한 뒤에만 sync한다. 프로젝트 정의/의존이 포함될 때만 승인 snapshot을 요구하고, thisPc-only Windows 실행은 저장소 승인이 낡아도 허용한다. direct interop와 Windows app `run_windows` adapter는 같은 실행 ID·출력·종료 결과를 쓰며 shell 문자열의 cwd/argv quoting을 검증한다. 앱 위임 중 연결이 끊기면 상태를 실패/확인 필요로 남기며 조용히 중복 실행하지 않는다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-runtime windows`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** `core::config`의 config.local 전용 windows.root를 추가하고 git -z 목록의 변경 파일만 복사한다(deleted=0). `authorize_run_graph`의 prepared graph·입력·작업 폴더를 확인한 뒤에만 sync한다. 프로젝트 정의/의존이 포함될 때만 승인 snapshot을 요구하고, thisPc-only Windows 실행은 저장소 승인이 낡아도 허용한다. direct interop와 Windows app `run_windows` adapter는 같은 실행 ID·출력·종료 결과를 쓰며 shell 문자열의 cwd/argv quoting을 검증한다. 앱 위임 중 연결이 끊기면 상태를 실패/확인 필요로 남기며 조용히 중복 실행하지 않는다.
 
 ```rust
 let graph = runtime.authorize_run_graph(&p).await?; // ThisPc-only needs no project snapshot.
@@ -756,21 +756,24 @@ match interop.run(&prepared).await {
 } // Delegate only if no process was started; preserve runId and stdout/stderr origin.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 파일 변경·추가 대상 보존·공백/작은따옴표 경로·trust 미승인 sync0·interop 실패 fallback 계약을 fixture로 확인한다. Windows 자식 종료 보장은 추가하지 않고 UI 문구에 표시한다. 묶음 Q 기록을 갱신한다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): run trusted tasks on Windows targets`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 파일 변경·추가 대상 보존·공백/작은따옴표 경로·trust 미승인 sync0·interop 실패 fallback 계약을 fixture로 확인한다. Windows 자식 종료 보장은 추가하지 않고 UI 문구에 표시한다. 묶음 Q 기록을 갱신한다.
+- [x] **5 · 검토·커밋:** 독립 최종 검토(미해결0)·Biome CI를 통과하고 `feat(runtime): run trusted tasks on Windows targets`로 로컬 완료한다. 실패·미실행 항목은 PROGRESS와 검증 artifact에 구분했다.
 
 **Files:**
 - Create: `crates/runtime/src/windows.rs`
 - Modify: `crates/core/src/config.rs`(`config.local.toml`의 `[windows] root = 'C:\dev'`)
 
 **Interfaces:**
-- 대상 폴더 `windows_dir = <root>\<프로젝트 이름>`
+- 대상 폴더 `windows_dir = <root>\<프로젝트 이름>`. 원장은 local-only `[windows] root` 하나이며 미사용 `pc.windows_root`는 엄격 파싱 오류로 제거한다(자동 설정 변경 없음).
 - `sync(project_dir, windows_dir) -> SyncReport { copied, deleted, skipped }`
   - 대상 목록: `git ls-files -co --exclude-standard -z`
-  - `/mnt/c/...`로 바꾼 경로에 크기·mtime이 다른 파일만 복사한다. 목록에 없는 대상 쪽 파일은 지우지 않는다(`node_modules` 같은 Windows 쪽 산출물 보호).
+  - `/mnt/<drive>/...`로 바꾼 경로에 크기·mtime이 다른 파일만 복사하고 mtime을 보존한다. 목록에 없는 대상 쪽 파일은 지우지 않는다(`deleted=0`, `node_modules` 같은 Windows 쪽 산출물 보호). source/target의 링크 경로와 Windows 금지 파일명·대소문자 충돌은 복사 전 거절한다.
 - 실행:
-  - `powershell.exe -NoProfile -Command "Set-Location '<windows_dir>'; <command>"`를 래퍼 안에서 실행한다.
-  - interop이 안 되는 환경(R10)이면 Windows 앱에 위임한다. 앱 명령 `run_windows`가 출력을 브리지로 돌려준다.
+  - 기존 exec-attempt/exec 래퍼 안에서 고정 PowerShell bootstrap을 실행한다. cwd·command·env는 JSON stdin으로만 보내며 `Set-Location -LiteralPath`와 `ScriptBlock.Create`로 공백/작은따옴표를 보존한다. 비밀 값은 argv·스크립트 literal·공개 RPC에 넣지 않는다.
+  - interop process spawn이 시작 전에 실패한 경우만 Windows 앱에 한 번 위임한다. App0의 `windows.next/output`, Cli0의 `windows.prepare/run/ready`는 공개 선언/renderer에서 제외한다. native 최대 4개, 출력 큐 16칸 및 ACK 기반 backpressure를 사용한다. 현재 run/attempt와 연결 세대를 대조하며 run별 native-attempt 파일이 재연결 재위임을 막는다.
+  - 조용한 native 실행도 1초 내부 Heartbeat를 보낸다. CLI stream 종료의 ACK 오류는 해당 run/attempt token만 취소하고 직접 PowerShell kill/wait를 시도한다. Heartbeat는 로그·Ready에 반영하지 않는다.
+  - Windows 서비스의 ports_hint는 Windows PowerShell TcpClient 또는 native Windows TcpStream에서 확인한다. WSL localhost/mirrored mode를 가정하지 않는다. 준비 알림은 먼저 reconcile하고 현재 attempt를 다시 확인한다.
+  - 알려진 종료 코드는 기존 durable ExitRecord에 기록하고, 불명확한 native 완료는 worker→exec→exec-attempt의 SIGUSR2로 구분해 `RestartPreventExitStatus=SIGUSR2`로 자동 중복 시작을 막는다. 실제 exit78은 원래 코드와 재시작 정책을 유지한다.
 - 화면 표시: "Windows에서 실행 · 자식 프로세스 종료는 보장하지 않음". 신뢰 미리보기에도 대상(Windows)과 실행 폴더를 보인다.
 
 **핵심 테스트:**
@@ -778,6 +781,8 @@ match interop.run(&prepared).await {
 - `windows_command_is_quoted_for_powershell`(작은따옴표 이스케이프)
 - `this_pc_only_windows_run_ignores_stale_project_trust`·`windows_run_with_project_dependency_requires_current_snapshot`: thisPc-only+낡은 저장소 승인에서는 sync/실행 허용, ProjectFile 의존이 있으면 승인 전 sync/자원0
 - 실제 실행은 Task 16 에이전트 설치본 검증
+
+**직접 검증 기록(2026-10-20):** 고유93개(Rust90·프런트3), 실제 소유 systemd7개·native16·TS 생성/확인/typecheck·MSVC 좁은 check·Biome278 PASS. quiet stop과 대상 링크 RED를 포함한 원본/실패 분류/자원/최종38개 소스 해시는 `devbox-verification/s2-task12/`에 보존한다. 독립 최종 검토 PASS·미해결0, 소스41개·검증 artifact94개 해시 일치. 묶음 Q 로컬 완료이며 최종 상태와 커밋은 `root-completion.json`에 기록한다. 실제 Windows 앱/PowerShell/DPAPI·전체 검사·push/PR은 Task16 미실행이다.
 
 ```bash
 # 묶음 Q 끝

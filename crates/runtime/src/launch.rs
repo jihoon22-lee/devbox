@@ -56,6 +56,9 @@ pub fn unit_args_with_executable(
         transient_path(&paths.instance_config_dir.join("env")).expect("resolved environment path")
     ));
     property("KillMode=control-group".into());
+    if is_windows(def) {
+        property("RestartPreventExitStatus=SIGUSR2".into());
+    }
     property("MemoryAccounting=yes".into());
     for (key, value) in [("PYTHONUNBUFFERED", "1"), ("FORCE_COLOR", "1")] {
         property(format!(
@@ -126,7 +129,18 @@ pub fn unit_args_with_executable(
         run_id.into(),
         "--".into(),
     ]);
-    args.extend(child_args(def));
+    if is_windows(def) {
+        args.extend([
+            executable.display().to_string(),
+            "--instance".into(),
+            instance.into(),
+            "run-windows".into(),
+            "--run".into(),
+            run_id.into(),
+        ]);
+    } else {
+        args.extend(child_args(def));
+    }
     args
 }
 /// Exactly the child argv admitted by preflight and passed to the exec wrapper.
@@ -151,4 +165,12 @@ pub fn child_args(def: &RunDef) -> Vec<String> {
         def.command().expect("executable definition").into(),
     ]);
     args
+}
+
+pub fn is_windows(def: &RunDef) -> bool {
+    match def {
+        RunDef::Task(d) => d.target == crate::RunTarget::Windows,
+        RunDef::Service(d) => d.target == crate::RunTarget::Windows,
+        _ => false,
+    }
 }

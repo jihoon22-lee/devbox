@@ -138,7 +138,7 @@ export type RenameSession = { id: string, title: string, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
-export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, };
+export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunId = { runId: string, };
 export type RunKind = "task" | "service" | "scheduled";
@@ -194,6 +194,7 @@ export type TrustPreview = { status: TrustPreviewStatus, projectId: string, proj
 export type TrustPreviewParams = { id: string, operation: TrustOperation, agentId: string | null, worktrees: Array<string>, worktree: boolean | null, };
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
+export type WindowsRun = { directory: string, notice: string, };
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {

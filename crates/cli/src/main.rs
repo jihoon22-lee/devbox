@@ -65,6 +65,11 @@ enum Cmd {
         #[arg(last = true, required = true)]
         command: Vec<std::ffi::OsString>,
     },
+    /// Internal Windows target worker.
+    RunWindows {
+        #[arg(long)]
+        run: String,
+    },
     /// Export a recovery key, or import one from standard input.
     Secrets {
         #[command(subcommand)]
@@ -126,6 +131,11 @@ fn main() -> anyhow::Result<()> {
         drop(rt);
         devbox_cli::exec::exit_like_child(status);
     }
+    if let Cmd::RunWindows { run } = cli.cmd {
+        let status = rt.block_on(devbox_cli::windows_exec::run(run))?;
+        drop(rt);
+        devbox_cli::exec::exit_like_child(status);
+    }
     rt.block_on(async move {
         match cli.cmd {
             Cmd::Daemon { foreground } => devbox_cli::daemon::run(foreground).await,
@@ -167,6 +177,9 @@ fn main() -> anyhow::Result<()> {
             }
             Cmd::Secrets { cmd } => {
                 devbox_cli::secrets::recovery(matches!(cmd, SecretsCmd::ImportKey)).await
+            }
+            Cmd::RunWindows { .. } => {
+                unreachable!("Windows worker handled before runtime teardown")
             }
             Cmd::ExecAttempt { .. } => unreachable!("attempt handled before runtime teardown"),
             Cmd::Exec { .. } => unreachable!("exec handled before runtime teardown"),

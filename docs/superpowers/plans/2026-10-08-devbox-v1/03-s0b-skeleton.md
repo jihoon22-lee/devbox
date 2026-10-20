@@ -2232,13 +2232,15 @@ git add Cargo.toml crates/core && git commit -m "feat(core): resolve instance-sc
 
 ### Task 8: 설정 (공유 `config.toml` + PC별 `config.local.toml`)
 
+Windows 사본 루트는 S2 Task 12에서 `config.local.toml` 전용 `[windows] root`로 추가한다. 미사용 `pc.windows_root` 초안 필드는 제거했으며 자동 설정 이전은 하지 않는다.
+
 **Files:**
 - Create: `crates/core/src/config.rs`
 
 **Interfaces:**
 - Consumes: Task 7의 `Paths`
 - Produces:
-  - `Config { projects: ProjectsConfig { roots: Vec<String> }, pc: PcConfig { name: Option<String>, windows_root: Option<String> } }`
+  - `Config { projects: ProjectsConfig { roots: Vec<String> }, pc: PcConfig { name: Option<String> } }`
   - `Config::load(&Paths) -> Result<Config, CoreError>`
   - `expand_home(&str, &Path) -> PathBuf`
   - 이후 하위 프로젝트가 절을 추가한다(`deny_unknown_fields` 유지).
@@ -2274,11 +2276,10 @@ mod tests {
         let p = paths_in(t.path());
         std::fs::create_dir_all(&p.config_dir).unwrap();
         std::fs::write(p.config_dir.join("config.toml"), "[projects]\nroots = [\"~/a\", \"~/b\"]\n[pc]\nname = \"shared\"\n").unwrap();
-        std::fs::write(p.config_dir.join("config.local.toml"), "[pc]\nname = \"desk\"\nwindows_root = 'C:\\dev'\n").unwrap();
+        std::fs::write(p.config_dir.join("config.local.toml"), "[pc]\nname = \"desk\"\n").unwrap();
         let c = Config::load(&p).unwrap();
         assert_eq!(c.projects.roots, vec!["~/a", "~/b"]);
         assert_eq!(c.pc.name.as_deref(), Some("desk"));
-        assert_eq!(c.pc.windows_root.as_deref(), Some("C:\\dev"));
     }
 
     #[test]
@@ -2333,7 +2334,6 @@ impl Default for ProjectsConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct PcConfig {
     pub name: Option<String>,
-    pub windows_root: Option<String>,
 }
 
 impl Default for Config {

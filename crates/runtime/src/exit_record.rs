@@ -99,6 +99,42 @@ impl ExitStore {
         file.lock()?;
         Ok(file)
     }
+    pub fn record_windows_exit(&self, attempt: &str, code: i32) -> Result<(), ExitError> {
+        validate_identity(attempt)?;
+        let _lock = self.lock()?;
+        if self.current_attempt()?.as_deref() != Some(attempt) {
+            return Err(ExitError::NoAttempt);
+        }
+        atomic_write(
+            &self.path("windows-exit"),
+            &serde_json::to_vec(&(attempt, code))?,
+        )?;
+        Ok(())
+    }
+    pub fn windows_exit(&self, attempt: &str) -> Result<Option<i32>, ExitError> {
+        match fs::read(self.path("windows-exit")) {
+            Ok(bytes) => {
+                let (id, code): (String, i32) = serde_json::from_slice(&bytes)?;
+                Ok((id == attempt).then_some(code))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+    /// One native dispatch per immutable attempt, even after a bridge reconnect.
+    pub fn claim_windows_native(&self, attempt: &str) -> Result<(), ExitError> {
+        validate_identity(attempt)?;
+        let _lock = self.lock()?;
+        if self.current_attempt()?.as_deref() != Some(attempt) {
+            return Err(ExitError::NoAttempt);
+        }
+        let path = self.path("native-attempt");
+        if fs::read_to_string(&path).ok().as_deref() == Some(attempt) {
+            return Err(ExitError::AlreadyStarted);
+        }
+        atomic_write(&path, attempt.as_bytes())?;
+        Ok(())
+    }
     pub fn current_attempt(&self) -> Result<Option<String>, ExitError> {
         match fs::read_to_string(self.path("attempt")) {
             Ok(id) => {

@@ -28,6 +28,7 @@ impl Server {
         let mut execution = ExecutionConfig::new(f.daemon.paths.clone());
         execution.executable = env!("CARGO_BIN_EXE_devbox").into();
         execution.slice = Some(f.slice.clone());
+        execution.windows_interop = f.daemon.home.path().join("absent-windows-interop");
         let runs = Arc::new(
             RuntimeService::new(
                 services.db.clone(),
@@ -382,4 +383,15 @@ async fn missing_secret_blocks_the_run_with_names() {
     assert_eq!(before, f.units());
     assert!(f.runs(&client, &project).await.is_empty());
     server.stop().await;
+}
+
+#[path = "support/runtime_windows_wrapper.rs"]
+mod windows_wrapper;
+
+#[path = "../../../app/src-tauri/src/core/windows.rs"]
+mod native_window_protocol;
+mod core {
+    pub mod windows {
+        pub use crate::native_window_protocol::powershell_args;
+    }
 }

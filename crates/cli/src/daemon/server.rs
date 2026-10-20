@@ -22,7 +22,9 @@ struct Daemon {
     topics: HashSet<&'static str>,
     dedupe: Dedupe,
 }
+static NATIVE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 struct Channel {
+    native_generation: u64,
     hello: bool,
     client: Option<devbox_protocol::message::ClientKind>,
     generation: CancellationToken,
@@ -32,6 +34,7 @@ struct Channel {
 impl Default for Channel {
     fn default() -> Self {
         Self {
+            native_generation: NATIVE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             hello: false,
             client: None,
             generation: CancellationToken::new(),
@@ -282,11 +285,13 @@ async fn handle(
             client_request_id,
         } => {
             use devbox_protocol::message::ClientKind;
-            let native = super::secret_routes::native(&method);
+            let windows = super::windows_routes::internal(&method);
+            let native =
+                super::secret_routes::native(&method) || super::windows_routes::native(&method);
             let internal = super::secret_routes::internal(&method);
             let allowed = if native {
                 ch == 0 && state.client == Some(ClientKind::App)
-            } else if method == "secrets.run" || method == "secrets.export_key" {
+            } else if windows || method == "secrets.run" || method == "secrets.export_key" {
                 ch == 0 && state.client == Some(ClientKind::Cli)
             } else {
                 true
@@ -304,6 +309,41 @@ async fn handle(
                     ),
                 )
                 .await;
+            }
+            if windows {
+                let token = state.generation.child_token();
+                {
+                    let mut inflight = state.inflight.lock().expect("requests");
+                    if inflight.contains_key(&id) {
+                        return Err(invalid("duplicate inflight request id"));
+                    }
+                    inflight.insert(id, token.clone());
+                }
+                let (d, tx, generation, inflight, native_generation) = (
+                    d.clone(),
+                    tx.clone(),
+                    state.generation.clone(),
+                    state.inflight.clone(),
+                    state.native_generation,
+                );
+                let opener = streams.opener(ch, generation.clone(), tx.clone());
+                tokio::spawn(async move {
+                    let result = super::windows_routes::dispatch(
+                        d.services.clone(),
+                        &method,
+                        Ctx {
+                            channel: ch,
+                            cancel: token,
+                            streams: Some(opener),
+                        },
+                        native_generation,
+                        params,
+                    )
+                    .await;
+                    let _ = send(&tx, ch, &generation, response(id, result)).await;
+                    inflight.lock().expect("requests").remove(&id);
+                });
+                return Ok(());
             }
             if internal {
                 let result = super::secret_routes::dispatch(

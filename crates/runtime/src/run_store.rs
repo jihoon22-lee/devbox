@@ -18,6 +18,8 @@ pub(crate) struct StoredRun {
     #[serde(default)]
     pub secret_definition: Option<crate::RunDef>,
     #[serde(default)]
+    pub windows: Option<crate::windows::WindowsDefinition>,
+    #[serde(default)]
     pub schedule: Option<crate::schedule_model::ScheduleClaim>,
     pub restart: RestartPolicy,
     pub start_limit: Option<crate::StartLimit>,

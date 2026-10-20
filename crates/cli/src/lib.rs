@@ -33,3 +33,5 @@ pub fn paths() -> anyhow::Result<devbox_core::Paths> {
 
 pub mod exec_attempt;
 pub mod secrets;
+
+pub mod windows_exec;

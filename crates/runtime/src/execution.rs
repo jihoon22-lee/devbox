@@ -30,6 +30,8 @@ pub struct ExecutionConfig {
     pub slice: Option<String>,
     pub readiness: Readiness,
     pub worktree: Option<WorktreeResolver>,
+    pub windows_root: Option<String>,
+    pub windows_interop: std::path::PathBuf,
 }
 impl ExecutionConfig {
     pub fn new(paths: Paths) -> Self {
@@ -39,6 +41,8 @@ impl ExecutionConfig {
             slice: None,
             readiness: Arc::new(|check| Box::pin(async move { check.ports.is_empty() })),
             worktree: None,
+            windows_root: None,
+            windows_interop: devbox_secrets::keystore::POWERSHELL.into(),
         }
     }
 }
@@ -185,6 +189,11 @@ impl RuntimeService {
         let mut last = None;
         let count = prepared.nodes.len();
         for (index, def) in prepared.nodes.iter().enumerate() {
+            if let Some(copy) = prepared.windows.get(def.id()) {
+                copy.sync()
+                    .await
+                    .map_err(|_| Fail::Internal("Windows copy failed".into()))?;
+            }
             let final_node = index + 1 == count;
             let existing = replacement.as_ref().filter(|_| final_node);
             let id = existing
@@ -205,6 +214,12 @@ impl RuntimeService {
             };
             let mut value = StoredRun {
                 secret_definition: crate::secret_input::requires(def).then(|| def.clone()),
+                windows: prepared.windows.get(def.id()).map(|w| {
+                    crate::windows::WindowsDefinition {
+                        cwd: w.cwd.clone(),
+                        def: def.clone(),
+                    }
+                }),
                 schedule: prepared.schedule.clone().filter(|_| final_node),
                 run: Run {
                     id: id.clone(),
@@ -226,6 +241,10 @@ impl RuntimeService {
                     }
                     .and_then(|s| s.parse().ok()),
                     attempt_id: None,
+                    windows: prepared.windows.get(def.id()).map(|w| WindowsRun {
+                        directory: w.cwd.clone(),
+                        notice: crate::windows::EXECUTION_NOTICE.into(),
+                    }),
                 },
                 restart,
                 start_limit: if let RunDef::Service(d) = def {
@@ -314,18 +333,22 @@ impl RuntimeService {
                 }
                 .into());
             }
-            let ready = tokio::time::timeout_at(
-                until,
-                (execution.readiness)(ReadyCheck {
-                    unit: run.unit.clone(),
-                    pid: run.pid,
-                    ports: service.ports_hint.clone(),
-                }),
-            )
-            .await
-            .map_err(|_| RuntimeError::NotReady {
-                id: service.id.clone(),
-            })?;
+            let ready = if service.target == RunTarget::Windows {
+                service.ports_hint.is_empty() || run.ready
+            } else {
+                tokio::time::timeout_at(
+                    until,
+                    (execution.readiness)(ReadyCheck {
+                        unit: run.unit.clone(),
+                        pid: run.pid,
+                        ports: service.ports_hint.clone(),
+                    }),
+                )
+                .await
+                .map_err(|_| RuntimeError::NotReady {
+                    id: service.id.clone(),
+                })?
+            };
             // timeout_at may poll an immediately-ready future before its expired timer.
             if tokio::time::Instant::now() >= until {
                 return Err(RuntimeError::NotReady {

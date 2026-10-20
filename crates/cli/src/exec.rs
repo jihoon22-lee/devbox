@@ -64,6 +64,7 @@ pub async fn run(
     let mut child = Command::new(executable)
         .args(&command[1..])
         .envs(secrets.envs())
+        .env("DEVBOX_RUN_ATTEMPT", &attempt)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -140,7 +141,7 @@ pub async fn run(
     let status = status.expect("wait completed");
     let record = ExitRecord {
         attempt_id: attempt.clone(),
-        code: status.code(),
+        code: store.windows_exit(&attempt)?.or_else(|| status.code()),
         signal: status.signal().map(signal_name),
         ended_ms: now_ms(),
         by: ExitSource::Wrapper,

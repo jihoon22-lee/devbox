@@ -13,6 +13,7 @@ async fn live_unit_lookup_keeps_runs_older_than_the_history_page() {
                 tx,
                 &StoredRun {
                     secret_definition: None,
+                    windows: None,
                     run: Run {
                         id: format!("run-{i}"),
                         project_id: project.clone(),
@@ -32,6 +33,7 @@ async fn live_unit_lookup_keeps_runs_older_than_the_history_page() {
                         pid: None,
                         port: None,
                         attempt_id: None,
+                        windows: None,
                     },
                     schedule: None,
                     restart: RestartPolicy::No,

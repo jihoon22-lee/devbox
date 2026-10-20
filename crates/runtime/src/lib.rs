@@ -25,6 +25,7 @@ pub mod scheduler;
 mod service;
 mod store;
 mod watch;
+pub mod windows;
 pub use defs::{MergedDefinitions, merge, validate_definition};
 use devbox_core::Migration;
 pub use devbox_projects::run_config::*;
@@ -109,3 +110,6 @@ pub use log_observation::{RunLogMetadata, RunLogPage};
 mod containers_tests;
 
 pub mod secret_input;
+
+#[cfg(test)]
+mod windows_tests;

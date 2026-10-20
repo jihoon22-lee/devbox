@@ -57,7 +57,7 @@ test("scope two approval displays every executable input and schedule link with 
     "sub\\u200Fdir",
     "MODE\\u2066",
     "value\\u2069",
-    "Windows",
+    "Windows에서 실행 · 자식 프로세스 종료는 보장하지 않음",
     "first\\u200E → second",
     "agent\\u061Cwork",
     "API_TOKEN\\u202C",

@@ -72,5 +72,11 @@ pub async fn preview(
             (branch, vec![task.workdir])
         }
     };
-    s.projects.trust_preview(p, branch, dirs).await
+    let mut preview = s.projects.trust_preview(p, branch, dirs).await?;
+    preview.execution_directories.extend(s.runs.windows_preview(
+        &preview.project_name,
+        &preview.canonical_path,
+        &preview.run_definitions,
+    ));
+    Ok(preview)
 }

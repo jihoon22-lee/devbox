@@ -30,7 +30,11 @@ export function RunTrustDefinitions({ definitions }: { definitions: RunDef[] }) 
                 <pre>{visible(definition.command)}</pre>
                 <dl>
                   <dt>실행 대상</dt>
-                  <dd>{definition.target === "windows" ? "Windows" : "Linux"}</dd>
+                  <dd>
+                    {definition.target === "windows"
+                      ? "Windows에서 실행 · 자식 프로세스 종료는 보장하지 않음"
+                      : "Linux"}
+                  </dd>
                   <dt>시작 폴더</dt>
                   <dd>{visible(definition.cwd ?? "프로젝트 기준 폴더")}</dd>
                   <dt>작업 폴더</dt>

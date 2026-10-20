@@ -222,3 +222,44 @@ async fn problems_subscription_ack_uses_memory_rev_even_when_db_rev_is_larger() 
     d.dedupe.tracker.close();
     bounded(d.dedupe.tracker.wait()).await;
 }
+
+#[tokio::test]
+async fn windows_native_long_poll_does_not_block_renderer_ping_and_routes_are_private() {
+    let temp = tempfile::tempdir().unwrap();
+    let d = daemon(&temp, Arc::new(tokio::sync::Notify::new()));
+    let (client, server) = UnixStream::pair().unwrap();
+    let serving = tokio::spawn(connection(server, d, CancellationToken::new()));
+    let mut wire = Wire::new(client, FrameCodec::default());
+    let mut native = hello();
+    if let ClientMessage::Hello { client, .. } = &mut native {
+        *client = ClientKind::App;
+    }
+    wire.send(json_frame(0, &native)).await.unwrap();
+    receive(&mut wire).await;
+    wire.send(json_frame(0, &request(100, "windows.next")))
+        .await
+        .unwrap();
+    wire.send(json_frame(7, &native)).await.unwrap();
+    assert!(matches!(
+        receive(&mut wire).await,
+        ServerMessage::Welcome { .. }
+    ));
+    for (id, method) in [
+        (1, "system.ping"),
+        (2, "windows.next"),
+        (3, "windows.prepare"),
+        (4, "windows.run"),
+        (5, "windows.output"),
+    ] {
+        wire.send(json_frame(7, &request(id, method)))
+            .await
+            .unwrap();
+        let response = receive(&mut wire).await;
+        assert!(
+            matches!(response, ServerMessage::Response { error: None, .. }) == (id == 1),
+            "{method}"
+        );
+    }
+    drop(wire);
+    bounded(serving).await.unwrap().unwrap();
+}

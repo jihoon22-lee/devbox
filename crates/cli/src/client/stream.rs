@@ -79,6 +79,13 @@ pub struct ClientStream {
     shutdown: CancellationToken,
 }
 impl ClientStream {
+    pub(crate) async fn read_chunk(&self) -> Result<Option<Bytes>, ClientError> {
+        let chunk = self.queue.read().await;
+        if let Some(chunk) = &chunk {
+            self.credit(chunk.len() as u32).await?;
+        }
+        Ok(chunk)
+    }
     /// Internal run helper only. A length prefix rejects disconnect/truncation before child spawn.
     pub(crate) async fn read_secret_payload(
         &self,

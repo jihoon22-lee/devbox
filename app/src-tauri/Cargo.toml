@@ -17,7 +17,7 @@ tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 zeroize = "1"
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "process", "net", "io-util", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2"
 tempfile = "3"

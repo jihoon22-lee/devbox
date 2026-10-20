@@ -9,6 +9,7 @@ pub struct PreparedGraph {
     pub(crate) schedule: Option<crate::schedule_model::ScheduleClaim>,
     pub(crate) worktree: Option<String>,
     pub(crate) nodes: Vec<RunDef>,
+    pub(crate) windows: std::collections::HashMap<String, crate::windows::PreparedCopy>,
     pub(crate) automatic_ports: std::collections::HashSet<String>,
 }
 impl PreparedGraph {
@@ -216,6 +217,7 @@ async fn prepare(
     }
     let root = canonical_directory(&p.id, Path::new(project)).await?;
     let mut nodes = Vec::new();
+    let mut windows = std::collections::HashMap::new();
     let mut automatic_ports = std::collections::HashSet::new();
     let mut port_guards = Vec::new();
     for id in ordered {
@@ -239,9 +241,7 @@ async fn prepare(
                 return Err(invalid(&id, "schedules are started by the scheduler").into());
             }
         };
-        if target != RunTarget::Linux {
-            return Err(invalid(&id, "Windows execution is not available yet").into());
-        }
+
         if command_secret {
             return Err(invalid(
                 &id,
@@ -258,6 +258,7 @@ async fn prepare(
                     "XDG_STATE_HOME",
                     "XDG_RUNTIME_DIR",
                     "DEVBOX_INSTANCE",
+                    "DEVBOX_RUN_ATTEMPT",
                     "DEVBOX_PORT",
                     "INVOCATION_ID",
                     "NOTIFY_SOCKET",
@@ -278,6 +279,7 @@ async fn prepare(
                 "XDG_STATE_HOME",
                 "XDG_RUNTIME_DIR",
                 "DEVBOX_INSTANCE",
+                "DEVBOX_RUN_ATTEMPT",
                 "INVOCATION_ID",
                 "NOTIFY_SOCKET",
                 "LISTEN_FDS",
@@ -309,6 +311,54 @@ async fn prepare(
         };
         let selected = canonical_directory(&id, &base.join(cwd.as_deref().unwrap_or("."))).await?;
         *cwd = Some(selected.to_string_lossy().into_owned());
+        if target == RunTarget::Windows {
+            let name = service
+                .projects
+                .get(&p.project_id)
+                .await
+                .map_err(project_error)?
+                .ok_or_else(|| invalid(&id, "project not found"))?
+                .name;
+            let root = service
+                .execution
+                .as_ref()
+                .and_then(|e| e.windows_root.as_deref())
+                .ok_or_else(|| invalid(&id, "config.local.toml windows.root is required"))?;
+            let windows_dir = crate::windows::target_directory(root, &name)
+                .map_err(|_| invalid(&id, "invalid Windows copy path"))?;
+            let relative = selected.strip_prefix(&base).map_err(|_| {
+                invalid(&id, "Windows working directory must be inside the project")
+            })?;
+            if !relative.components().all(|part| match part {
+                std::path::Component::Normal(name) => {
+                    name.to_str().is_some_and(crate::windows::valid_component)
+                }
+                _ => false,
+            }) {
+                return Err(invalid(&id, "invalid Windows working directory name").into());
+            }
+            let cwd = if relative.as_os_str().is_empty() {
+                windows_dir.clone()
+            } else {
+                format!(
+                    "{}\\{}",
+                    windows_dir,
+                    relative.to_string_lossy().replace('/', "\\")
+                )
+            };
+            let target = crate::windows::windows_to_wsl(&windows_dir)
+                .map_err(|_| invalid(&id, "invalid Windows copy path"))?;
+            windows.insert(
+                id.clone(),
+                crate::windows::PreparedCopy {
+                    source: base.clone(),
+                    target,
+                    cwd,
+                    relative_cwd: relative.to_path_buf(),
+                },
+            );
+        }
+
         let explicit = env
             .get("DEVBOX_PORT")
             .map(|v| {
@@ -356,6 +406,7 @@ async fn prepare(
         project_id: p.project_id.clone(),
         worktree: p.worktree.clone(),
         nodes,
+        windows,
         automatic_ports,
     })
 }

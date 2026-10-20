@@ -83,6 +83,7 @@ fn fake_run(graph: &PreparedGraph, state: RunState) -> Run {
         pid: None,
         port: None,
         attempt_id: None,
+        windows: None,
     }
 }
 async fn define_schedule(f: &Fixture, cron: &str, missed: MissedPolicy) {

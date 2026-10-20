@@ -11,6 +11,17 @@ use tauri::{AppHandle, Manager, ipc::InvokeResponseBody};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Default)]
+struct NativeQueue(std::collections::VecDeque<Vec<u8>>);
+impl Drop for NativeQueue {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        for frame in &mut self.0 {
+            frame.zeroize();
+        }
+    }
+}
+
 pub async fn run(
     app: &AppHandle,
     conn: &Connection,
@@ -201,9 +212,33 @@ async fn bridge_once(
     let mut ready = false;
     let mut native = NativeSecrets::default();
     let protector = super::secrets::CurrentUser;
+    let (windows_output, mut windows_events) =
+        mpsc::channel::<devbox_protocol::windows::WindowsEvent>(16);
+    let mut windows_tasks = tokio::task::JoinSet::new();
+    let mut windows_waiting = false;
+    let mut windows_runs = std::collections::HashMap::<(String, String), CancellationToken>::new();
+    let mut native_pending = NativeQueue::default();
+    let mut windows_request_id = 101_u32;
+    let mut windows_ack: Option<(u32, (String, String), bool)> = None;
     loop {
         tokio::select! {
             result=&mut drive=>return (result,ready),
+            Some(_) = windows_tasks.join_next(), if !windows_tasks.is_empty() => {}
+            permit = writer.reserve(), if !native_pending.0.is_empty() => {
+                match permit {
+                    Ok(permit) => permit.send(native_pending.0.pop_front().expect("queued native frame")),
+                    Err(_) => {bridge_cancel.cancel();}
+                }
+            }
+            Some(event) = windows_events.recv(), if native_pending.0.len() < 8 && windows_ack.is_none() => {
+                let finished = matches!(event.event, devbox_protocol::windows::WindowsOutput::Finished{..}|devbox_protocol::windows::WindowsOutput::Failed);
+                let key=(event.run_id.clone(),event.attempt_id.clone());
+                if !windows_runs.contains_key(&key) {continue;}
+                windows_ack = Some((windows_request_id,key,finished));
+                native_pending.0.push_back(crate::core::windows::output_request(windows_request_id, &event));
+                windows_request_id = match windows_request_id.checked_add(1) { Some(id) => id, None => {bridge_cancel.cancel();return (Err(ShellError::Invalid("Windows 실행 채널을 다시 연결합니다".into())),ready);} };
+
+            }
             event=incoming.recv()=>match event{
                 Some(Event::Ready)=>{
                     let opened={let mut state=conn.state();state.active_distro=Some(distro.into());state.writer=Some(writer.clone());state.open=true;state.bump();state.enqueue_reopens()};
@@ -215,15 +250,44 @@ async fn bridge_once(
                     }
                     ready=true;conn.gate(app,generation,"ready",None,None);conn.broadcast(app);
                 }
-                Some(Event::Frame(frame))=>{
+                Some(Event::Frame(mut frame))=>{
                     if secrets::is_native(&frame) {
-                        if let Some(outgoing) = native.receive(&frame, &protector)
-                            && let Err(error) = writer.try_send(outgoing)
-                        {
-                            use zeroize::Zeroize;
-                            error.into_inner().zeroize();
-                            native.abort();
+                        use zeroize::Zeroize;
+                        if let Some(request) = crate::core::windows::receive(&frame) {
+                            windows_waiting = false;
+                            if windows_runs.len() >= 4 {frame.zeroize();bridge_cancel.cancel();continue;}
+                            let token=bridge_cancel.child_token();
+                            windows_runs.insert((request.run_id.clone(),request.attempt_id.clone()),token.clone());
+                            windows_tasks.spawn(super::windows::run_windows(request,windows_output.clone(),token));
+                            if windows_runs.len() < 4 {
+                                native_pending.0.push_back(crate::core::windows::next_request());
+                                windows_waiting = true;
+                            }
+                            frame.zeroize();
+                            continue;
                         }
+                        #[derive(serde::Deserialize)]
+                        struct Meta<'a> {
+                            #[serde(rename="type")] kind: &'a str,
+                            id: Option<u32>,
+                            #[serde(borrow)] error: Option<&'a serde_json::value::RawValue>,
+                        }
+                        let meta = serde_json::from_slice::<Meta>(&frame[devbox_protocol::frame::HEADER_LEN..]).ok();
+                        let welcome = meta.as_ref().is_some_and(|m| m.kind == "welcome");
+                        if let Some(meta) = &meta && meta.kind == "response" && meta.id == windows_ack.as_ref().map(|a|a.0) && windows_ack.is_some() {
+                            let (_,key,finished)=windows_ack.take().expect("pending output ACK");
+                            if finished || meta.error.is_some() {
+                                crate::core::windows::finish_run(&mut windows_runs,&key);
+                                if !windows_waiting {native_pending.0.push_back(crate::core::windows::next_request());windows_waiting=true;}
+                            }
+                        }
+
+                        if let Some(outgoing) = native.receive(&frame, &protector) { native_pending.0.push_back(outgoing); }
+                        if welcome && !windows_waiting {
+                            native_pending.0.push_back(crate::core::windows::next_request());
+                            windows_waiting = true;
+                        }
+                        frame.zeroize();
                         continue;
                     }
                     // Only clone routing metadata while locked; IPC never runs inside the mutex.

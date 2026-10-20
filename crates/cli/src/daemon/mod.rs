@@ -14,6 +14,8 @@ pub mod state;
 mod streams;
 mod system;
 mod trust;
+mod windows_broker;
+mod windows_routes;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
 use state::Services;
@@ -90,6 +92,7 @@ fn build_services_with_runtime(
     ));
     let mut execution = devbox_runtime::ExecutionConfig::new(paths.clone());
     execution.readiness = observe::readiness();
+    execution.windows_root = config.windows.root.clone();
     execution.slice = std::env::var("DEVBOX_TEST_SLICE").ok().filter(|slice| {
         paths.instance.is_test() && slice.starts_with("devbox-test-") && slice.ends_with(".slice")
     });
@@ -120,6 +123,7 @@ fn build_services_with_runtime(
             .with_secrets(secrets.clone()),
     );
     Ok(Arc::new(Services {
+        windows: windows_broker::WindowsBroker::default(),
         runtime,
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
