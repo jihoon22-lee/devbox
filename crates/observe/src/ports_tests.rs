@@ -74,8 +74,11 @@ fn socket_inode_to_pid_and_unit_run_project_mapping() {
     fs::create_dir(temp.path().join("24")).unwrap(); // disappearing/denied fd tolerated
     fs::write(temp.path().join("24/fd"), "not a readable fd directory").unwrap();
     assert_eq!(
-        socket_inode_to_pid(temp.path(), &[42]).unwrap().get(&42),
-        Some(&23)
+        socket_inode_to_pid(temp.path(), &[42])
+            .unwrap()
+            .get(&42)
+            .map(|(pid, _)| *pid),
+        Some(23)
     );
     let roots = vec![ProjectRoot {
         id: "cwd-project".into(),
@@ -86,11 +89,31 @@ fn socket_inode_to_pid_and_unit_run_project_mapping() {
         run_id: "run-a".into(),
         project_id: "p".into(),
     }];
-    let rows = ports_snapshot(temp.path(), &roots, &runs).unwrap();
+    fs::write(temp.path().join("stat"), "btime 1000\n").unwrap();
+    let proc = crate::ProcFs::fixture(temp.path().into(), std::sync::Arc::new(|| 0), 100, 4096);
+    let rows = ports_snapshot(&proc, &roots, &runs).unwrap();
+    assert_eq!(
+        serde_json::to_value(&rows[0]).unwrap()["startTimeMs"],
+        1_000_090
+    );
     assert_eq!(rows[0].pid, Some(23));
     assert_eq!(rows[0].run_id.as_deref(), Some("run-a"));
     assert_eq!(rows[0].project_id.as_deref(), Some("p"));
     assert_eq!(rows[0].process.as_deref(), Some("worker (a) b)"));
+    fs::remove_file(temp.path().join("23/stat")).unwrap();
+    let rows = ports_snapshot(&proc, &roots, &runs).unwrap();
+    assert_eq!(rows[0].pid, Some(23));
+    assert_eq!(rows[0].start_time_ms, None);
+    fs::write(
+        temp.path().join("23/stat"),
+        crate::processes_tests::stat(23, 0, 9),
+    )
+    .unwrap();
+    fs::remove_file(temp.path().join("stat")).unwrap();
+    assert_eq!(
+        ports_snapshot(&proc, &roots, &runs).unwrap()[0].start_time_ms,
+        None
+    );
 }
 #[tokio::test]
 async fn owned_tcp_listener_is_observed_with_pid_without_docker() {
@@ -100,9 +123,17 @@ async fn owned_tcp_listener_is_observed_with_pid_without_docker() {
     let service = crate::ObserveService::new(temp.path().join("no-docker"));
     assert!(crate::is_listening(port));
     let rows = service.ports(vec![], vec![]).await.unwrap();
-    assert!(
-        rows.iter()
-            .any(|r| r.port == port && r.pid == Some(std::process::id()))
+    let row = rows
+        .iter()
+        .find(|r| r.port == port && r.pid == Some(std::process::id()))
+        .unwrap();
+    assert_eq!(
+        row.start_time_ms,
+        Some(
+            crate::processes::identity(std::process::id())
+                .unwrap()
+                .start_time_ms
+        )
     );
     service.shutdown().await;
 }

@@ -16,7 +16,7 @@ impl ObserveService {
         let proc = self.proc.clone();
         let work = tokio::task::spawn_blocking(move || {
             (
-                crate::ports::ports_snapshot(&proc.root, &projects, &runs),
+                crate::ports::ports_snapshot(&proc, &projects, &runs),
                 permit,
             )
         });

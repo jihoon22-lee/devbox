@@ -45,6 +45,7 @@ pub(crate) fn parse(text: &str) -> Option<Vec<PortInfo>> {
                     proto: proto.into(),
                     addr: addr.into(),
                     pid: None,
+                    start_time_ms: None,
                     process: None,
                     run_id: None,
                     container_id: Some(container.id.clone()),

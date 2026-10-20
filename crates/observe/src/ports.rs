@@ -1,6 +1,6 @@
 use crate::{
-    host::{pids, read_text},
-    processes::{parse_stat, project_for},
+    host::{ProcFs, pids, read_text},
+    processes::{Stat, parse_stat, project_for},
     *,
 };
 use std::{
@@ -95,11 +95,22 @@ pub(crate) fn unit_from_cgroup(text: &str) -> Option<String> {
         })
         .map(str::to_owned)
 }
-pub(crate) fn socket_inode_to_pid(root: &Path, wanted: &[u64]) -> R<HashMap<u64, u32>> {
+pub(crate) fn socket_inode_to_pid(
+    root: &Path,
+    wanted: &[u64],
+) -> R<HashMap<u64, (u32, Option<Stat>)>> {
     let mut result = HashMap::new();
     let wanted: std::collections::HashSet<_> = wanted.iter().copied().collect();
     let mut scanned = 0;
     for pid in pids(root)? {
+        let stat_path = root.join(pid.to_string()).join("stat");
+        let read_stat = || {
+            read_text(&stat_path, 65536)
+                .ok()
+                .and_then(|s| parse_stat(&s))
+        };
+        let before = read_stat();
+        let mut owned = vec![];
         let Ok(entries) = fs::read_dir(root.join(pid.to_string()).join("fd")) else {
             continue;
         };
@@ -121,28 +132,41 @@ pub(crate) fn socket_inode_to_pid(root: &Path, wanted: &[u64]) -> R<HashMap<u64,
                 continue;
             };
             if wanted.contains(&inode) {
-                result.entry(inode).or_insert(pid);
+                owned.push(inode);
             }
+        }
+        let after = read_stat();
+        let verified = before.filter(|before| {
+            after
+                .as_ref()
+                .is_some_and(|after| before.start_ticks == after.start_ticks)
+        });
+        for inode in owned {
+            result
+                .entry(inode)
+                .or_insert_with(|| (pid, verified.clone()));
         }
     }
     Ok(result)
 }
 pub(crate) fn ports_snapshot(
-    root: &Path,
+    proc: &ProcFs,
     projects: &[ProjectRoot],
     runs: &[UnitRun],
 ) -> R<Vec<PortInfo>> {
+    let root = &proc.root;
+    let boot = proc.boot_ms().ok();
     let rows = tcp_rows(root)?;
     let pids = socket_inode_to_pid(root, &rows.iter().map(|r| r.inode).collect::<Vec<_>>())?;
     let mut result = vec![];
     for row in rows {
-        let pid = pids.get(&row.inode).copied();
+        let owner = pids.get(&row.inode);
+        let pid = owner.map(|(pid, _)| *pid);
+        let stat = owner.and_then(|(_, stat)| stat.as_ref());
         let dir = pid.map(|pid| root.join(pid.to_string()));
-        let process = dir
-            .as_ref()
-            .and_then(|p| read_text(&p.join("stat"), 65536).ok())
-            .and_then(|s| parse_stat(&s))
-            .map(|s| s.name);
+        let process = stat.map(|stat| stat.name.clone());
+        let start_time_ms =
+            stat.and_then(|stat| boot.map(|boot| proc.start_ms(boot, stat.start_ticks)));
         let unit = dir
             .as_ref()
             .and_then(|p| read_text(&p.join("cgroup"), 65536).ok())
@@ -160,6 +184,7 @@ pub(crate) fn ports_snapshot(
             addr: row.addr,
             pid,
             process,
+            start_time_ms,
             run_id: run.map(|r| r.run_id.clone()),
             container_id: None,
             project_id,

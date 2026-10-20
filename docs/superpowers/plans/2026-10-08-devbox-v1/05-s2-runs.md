@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task1–15c 및 묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS(2026-10-21), 미해결0. 다음 Task16에서 설계 대비 관찰 UI 누락 보완·전체 검사·Windows accept 설치 수용·단일 PR을 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
+- 상태: Task1–15c 및 묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS(2026-10-21), 미해결0. Task16 관찰 UI 보완은 직접33개·독립 검토·Biome350 PASS로 로컬 완료했고, 다음 전체 검사·Windows accept 설치 수용·단일 PR을 수행한다. 기반 `main@4cb0e833`, 기존 인계 기록 `699d44e1` 보존.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -1111,6 +1111,13 @@ impl AppChannel {
 ---
 
 ### Task 16: S2 완료 — 전환점 확인
+
+**관찰 UI 통합 보완 (2026-10-21, 로컬 완료):**
+- 승인된 01-design §2·§8.2의 미연결 관찰 동작을 기존 실행 화면에 연결했다. `view=processes`는 현재 프로젝트를 전달하고 서버의 cwd 우선/나머지 CPU 상위50 순서를 유지한다. 포트·프로세스·WSL 화면은 실행 목록에서 이동하며, 숨김 상태 조회/3초 polling 및 프로젝트 변경 이전 응답 분리를 검증했다.
+- 포트 브라우저는 기존 `openExternal`을 사용하며 wildcard IPv4/IPv6를 해당 loopback으로 바꾼다. UDP/잘못된 주소·포트는 비활성화한다. `PortInfo.startTimeMs: number|null`은 소켓 fd 스캔 전후 동일 start_ticks에서 계산하므로 상위50 프로세스 조회에서 누락된 PID도 확인 가능하다. stat/boot 확인 불가·container 행은 종료 불가다.
+- 종료는 PID·이름·시작 시각을 보여 주고 고정한 snapshot으로 `observe.kill(term)`을 한 번 호출한다. stale 오류 뒤 자동 재시도하지 않고 조회 완료까지 버튼을 잠근 후 새 확인을 받는다. 본인 UID·PID 재사용 거절은 기존 백엔드 계약을 유지하며 시험은 소유 fixture/자식과 mock만 사용했다.
+- 실제 RED Rust1(시작 시각 null)·UI3(동작/조회 누락)를 보존했다. 첫 GREEN의 stale 갱신 전 재클릭 실패1을 수정했고, 직접 고유33개(프런트21·Rust12), TS 생성·앱 타입 검사가 PASS다. 생성 주석 때문에 생긴 whitespace는 원본 주석을 바꾸고 `pnpm gen`으로 재생성했다. 근거 `devbox-verification/s2-task16/observe-ui/`.
+- 이 기록은 관찰 UI 보완의 좁은 검증이다. 독립 검토 PASS·미해결0·완료 Biome350 PASS이며 제품21개·문서2개·artifact54개 해시를 대조했다. Biome0.896초·cgroup122,421,248B·swap0. 최종 문서/커밋은 `root-completion.json`에 기록한다. 첫 전체 검사·SC9·실제 Windows 설치 수용·필수 CI3·PR은 **미실행**이며 Task16/S2 완료로 표시하지 않는다.
 
 **단계별 실행(통합·수용 과제):**
 - [ ] **1 · 수용 실패 기준 고정:** 아래 12개 항목·SC9·필수 CI 3개·별도 검토·자동 리뷰 회차의 상태표를 artifact에 먼저 만들고 시작 상태를 `미실행`으로 둔다. Task 13의 E2E 2개와 기존 suite, 다중 로그/분리 창 부하, fallback·accept 불변 회귀를 포함한다. 제품 미구현/실패를 PASS로 바꾸지 않는다.

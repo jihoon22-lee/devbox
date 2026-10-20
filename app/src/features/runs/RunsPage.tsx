@@ -11,6 +11,7 @@ import { useCurrentProject } from "../projects/store";
 import { visibleTrustText } from "../projects/visibleTrustText";
 import { DefineDialog } from "./DefineDialog";
 import { LogView } from "./LogView";
+import { ObservationNavigation } from "./ObservationNavigation";
 import { usePinnedLogSources } from "./pinnedSources";
 import { RunChips } from "./RunChips";
 import { RunList, type RunSelection } from "./RunList";
@@ -31,7 +32,8 @@ export function RunsPage() {
     if (search.projectId) useCurrentProject.getState().set(search.projectId);
     setAppliedNavigation(navigationKey);
   }, [search.projectId, navigationKey]);
-  if (search.view) return <SystemOverview view={search.view} />;
+  if (search.view)
+    return <SystemOverview key={`${search.view}:${projectId}`} view={search.view} projectId={projectId} />;
   return projectId ? (
     <ProjectRuns
       key={`${projectId}:${navigationKey}`}
@@ -39,7 +41,10 @@ export function RunsPage() {
       target={search.projectId === projectId ? search : undefined}
     />
   ) : (
-    <EmptyState title="프로젝트를 선택하세요" body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
+    <>
+      <ObservationNavigation />
+      <EmptyState title="프로젝트를 선택하세요" body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
+    </>
   );
 }
 function targetSelection(target?: RunsSearch): RunSelection | undefined {
@@ -108,6 +113,7 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                 ]}
               />
             </header>
+            <ObservationNavigation />
             {list.isError && (
               <Banner
                 tone="danger"

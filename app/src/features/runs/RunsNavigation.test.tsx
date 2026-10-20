@@ -111,3 +111,17 @@ test("cold native run target selects its exact task when preflight produced no r
   expect(router.state.location.search).toMatchObject({ gateway: "ws://fixture", renderer: "dom" });
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("acknowledge_navigation", { sequence: 2 }));
 });
+
+test("run navigation exposes process observation using the selected project", async () => {
+  const wire = new RunWire();
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  await userEvent.click(await screen.findByRole("button", { name: "프로세스 목록" }));
+  expect(await screen.findByRole("heading", { name: "프로세스 목록" })).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ view: "processes" });
+  await waitFor(() => expect(wire.requests("observe.processes").length).toBeGreaterThan(0));
+  expect(wire.request("observe.processes", -1).params).toEqual({ projectId: "p" });
+  await userEvent.click(screen.getByRole("button", { name: "포트 목록" }));
+  expect(await screen.findByRole("heading", { name: "포트 목록" })).toBeVisible();
+});

@@ -19,6 +19,8 @@ pub struct PortInfo {
     pub addr: String,
     pub pid: Option<u32>,
     pub process: Option<String>,
+    // Identity sampled around the owning socket scan; absent when not verified.
+    pub start_time_ms: Option<u64>,
     pub run_id: Option<String>,
     pub container_id: Option<String>,
     pub project_id: Option<String>,

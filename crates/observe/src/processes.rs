@@ -9,6 +9,7 @@ use nix::{
 };
 use std::{collections::HashMap, fs, os::unix::fs::MetadataExt, path::Path};
 
+#[derive(Clone)]
 pub(crate) struct Stat {
     pub name: String,
     pub cpu_ticks: u64,

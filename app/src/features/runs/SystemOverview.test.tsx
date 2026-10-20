@@ -54,6 +54,7 @@ test("ports overview lists owners and retries failures without querying system m
         addr: "127.0.0.1",
         pid: 123,
         process: "owned",
+        startTimeMs: 1,
         projectId: "p",
         runId: "run-1",
         containerId: null,

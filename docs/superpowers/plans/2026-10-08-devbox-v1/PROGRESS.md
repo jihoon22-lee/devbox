@@ -13,10 +13,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 Task1–15c·묶음 O·P·Q·R 로컬 완료. Task15c 직접 고유79개·독립 검토·완료 Biome344 PASS, 미해결0 |
-| 다음 할 일 | Task16 설계 대비 관찰 UI 누락 보완·전체 검증·accept 설치 수용·단일 PR. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
+| 다음 할 일 | Task16 관찰 UI 보완·직접 고유33개·독립 검토·완료 Biome350 PASS. 다음 첫 전체 검증·accept 설치 수용·단일 PR. Codex 입력 대기 미검출은 비차단 이월. S2 수용 완료 아님 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-21 · Task15c 구현·직접79개·MSVC 좁은 compile·PowerShell 모의2 suite PASS. 제품30개·문서2개·artifact81개 해시 대조, 독립 검토·완료 Biome344 PASS |
+| 마지막 갱신 | 2026-10-21 · Task16 관찰 UI 보완: 프로젝트 우선 프로세스·TERM 확인, 포트 브라우저·시작 시각 검증 종료. 직접 고유33개·TS 생성/타입·독립 검토·완료 Biome350 PASS, 미해결0. 전체 검사·실제 Windows·CI/PR 미실행 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -628,6 +628,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-21 | Codex 하네스 구현·Secrets/MCP 분담 | Task15 기능 runId 전환·서버 가림 실패 로그·비밀 설정/복구·MCP 도구. 고유73개·타입/생성·변경 포맷 PASS | 독립 검토 PASS·미해결0·Biome337 PASS, 로컬 완료 커밋. 다음 Task15b. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·IndexDb/CodeView 분담 | Task15b 공용 색인 DB·코드 보기·검사 대기/독립 잠금·tmux 진단, 고유73개·타입/생성·직접 영향 검사 PASS | 독립 최종 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품29/문서2/artifact77 해시 일치, scripts1497줄/2 workflows, 다음 Task15c. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·WSL/패키징 분담 | Task15c 단일 채널 표·Windows/WSL 설치 격리·receipt 검증 구현, 고유79개·MSVC 좁은 compile·PowerShell 모의2 suite PASS | 독립 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품30/문서2/artifact81 해시 일치, scripts1500줄/2 workflows, 다음 Task16. 실제 Windows 설치·전체 검사·push/PR 미실행. 근거 `devbox-verification/s2-task15c/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
+| 2026-10-21 | Codex 하네스 관찰 UI 구현 | Task16 승인 설계 누락 보완: 프로세스 우선 목록·종료 확인, 포트 브라우저·소유자 종료. RED Rust1/UI3→직접 고유33개(프런트21·Rust12) PASS | `PortInfo.startTimeMs`는 fd 스캔 전후 시작 tick 일치에서 생성, 미확인/container는 종료 불가. 확인 snapshot 고정·stale 오류 후 갱신 완료까지 잠금/새 확인 회귀 PASS. 생성/타입·독립 검토·완료 Biome350 PASS, 미해결0. 제품21/문서2/artifact54 해시 일치, Biome0.896초·cgroup122,421,248B·swap0. 완료 커밋·문서 해시는 root-completion.json. 전체 검사·SC9·Windows·CI·PR 미실행. 근거 `devbox-verification/s2-task16/observe-ui/{summary,source-freeze,test-names,commands}.json` |
 
 
 ## 7. 착수 준비 검토

@@ -2,7 +2,7 @@ import type { SystemInfo } from "../../rpc/gen/rpc";
 import { useRpcQuery } from "../../rpc/query";
 import { usePageVisible } from "../../shell/visibility";
 
-export function useSystemMetrics(view: "system" | "ports" | "all" = "all") {
+export function useSystemMetrics(view: "system" | "ports" | "processes" | "all" = "all") {
   const visible = usePageVisible();
   const options = {
     enabled: visible,
@@ -10,8 +10,16 @@ export function useSystemMetrics(view: "system" | "ports" | "all" = "all") {
     refetchIntervalInBackground: true,
     staleTime: 0,
   };
-  const system = useRpcQuery("observe.system", {}, { ...options, enabled: visible && view !== "ports" });
-  const ports = useRpcQuery("observe.ports", {}, { ...options, enabled: visible && view !== "system" });
+  const system = useRpcQuery(
+    "observe.system",
+    {},
+    { ...options, enabled: visible && (view === "system" || view === "all") },
+  );
+  const ports = useRpcQuery(
+    "observe.ports",
+    {},
+    { ...options, enabled: visible && (view === "ports" || view === "all") },
+  );
   return { system, ports };
 }
 export function gigabytes(bytes: number) {

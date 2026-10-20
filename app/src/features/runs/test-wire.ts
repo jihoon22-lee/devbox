@@ -70,6 +70,7 @@ export class RunWire extends ProjectWire {
             addr: "127.0.0.1",
             pid: 111,
             process: "owned",
+            startTimeMs: 1,
             runId: "run-1",
             containerId: null,
             projectId: "p",

@@ -66,9 +66,14 @@ async fn typed_observe_routes_report_owned_listener_process_system_and_guard_kil
     let rows = bounded(f.client.call::<ObservePorts>(&ObserveQuery {}))
         .await
         .unwrap();
+    let owned = rows
+        .iter()
+        .find(|p| p.port == port && p.pid == Some(std::process::id()))
+        .unwrap();
     assert!(
-        rows.iter()
-            .any(|p| p.port == port && p.pid == Some(std::process::id()))
+        owned
+            .start_time_ms
+            .is_some_and(|start| start > 1_000_000_000_000)
     );
     let system = bounded(f.client.call::<ObserveSystem>(&ObserveQuery {}))
         .await
