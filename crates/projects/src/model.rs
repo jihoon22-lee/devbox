@@ -114,6 +114,8 @@ pub struct LaunchProject {
 #[derive(Debug, Default, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchResult {
+    pub services: u32,
+    pub run_ids: Vec<String>,
     pub terminals: u32,
     pub agents: u32,
     pub terminal_ids: Vec<String>,
@@ -158,7 +160,7 @@ domain_error! {
         InUse { id: String } = "projects.in_use",
         ConfigurationInvalid { message: String } = "projects.configuration_invalid",
         LaunchProfileNotFound { id: String } = "projects.launch_profile_not_found",
-        LaunchFailed { terminals: u32, agents: u32, message: String } = "projects.launch_failed",
+        LaunchFailed { terminals: u32, agents: u32, services: u32, run_ids: Vec<String>, message: String } = "projects.launch_failed",
         CloneInvalidUrl = "projects.clone_invalid_url",
         CloneTargetExists { path: String } = "projects.clone_target_exists",
         CloneFailed { path: String, message: String } = "projects.clone_failed",

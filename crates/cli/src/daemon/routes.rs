@@ -69,6 +69,21 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             s.projects.prompts(p).await
         });
     let router = router
+        .register::<devbox_runtime::RuntimeStart, _, _>(
+            |s, _, p| async move { s.runs.start(p).await },
+        )
+        .register::<devbox_runtime::RuntimeStop, _, _>(
+            |s, _, p| async move { s.runs.stop(p).await },
+        )
+        .register::<devbox_runtime::RuntimeRestart, _, _>(|s, _, p| async move {
+            s.runs.restart(p).await
+        })
+        .register::<devbox_runtime::RuntimeExited, _, _>(
+            |s, _, p| async move { s.runs.exited(p).await },
+        )
+        .register::<devbox_runtime::RuntimeRuns, _, _>(
+            |s, _, p| async move { s.runs.runs(p).await },
+        )
         .register::<devbox_runtime::RuntimeList, _, _>(
             |s, _, p| async move { s.runs.list(p).await },
         )
@@ -192,6 +207,7 @@ pub fn declared() -> NameCollector {
     devbox_terminal::export(&mut n);
     devbox_agents::export(&mut n);
     devbox_runtime::export(&mut n);
+    devbox_core::notify::export(&mut n);
     n
 }
 

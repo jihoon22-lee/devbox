@@ -2452,6 +2452,7 @@ version = "1.0.0-dev"
 dependencies = [
  "anyhow",
  "devbox-agents",
+ "devbox-core",
  "devbox-projects",
  "devbox-protocol",
  "devbox-runtime",

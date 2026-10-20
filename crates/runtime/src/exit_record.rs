@@ -21,22 +21,24 @@ pub enum ExitError {
     #[error("invalid run result: {0}")]
     Json(#[from] serde_json::Error),
 }
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum ExitSource {
     Wrapper,
     Systemd,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ExitRecord {
     pub attempt_id: String,
     pub code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub signal: Option<String>,
     pub ended_ms: u64,
     pub by: ExitSource,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub service_result: Option<String>,
 }
 /// Notification only identifies the durable result; Task 4 reconciles it with current run state.

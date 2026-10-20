@@ -63,11 +63,6 @@ fn build_services_with_runtime(
         projects.clone(),
         config.terminal,
     ));
-    let runs = Arc::new(devbox_runtime::RuntimeService::new(
-        db.clone(),
-        hub.clone(),
-        projects.clone(),
-    ));
     let profiles = devbox_agents::profile::configured(&config.agents)?;
     let executable = std::env::current_exe()?;
     let devbox_bin = executable
@@ -88,6 +83,31 @@ fn build_services_with_runtime(
             cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
         },
     ));
+    let mut execution = devbox_runtime::ExecutionConfig::new(paths.clone());
+    execution.slice = std::env::var("DEVBOX_TEST_SLICE").ok().filter(|slice| {
+        paths.instance.is_test() && slice.starts_with("devbox-test-") && slice.ends_with(".slice")
+    });
+    let worktree_agents = agents.clone();
+    execution.worktree = Some(Arc::new(move |project_id, agent_id| {
+        let agents = worktree_agents.clone();
+        Box::pin(async move {
+            agents
+                .run_worktree(&project_id, &agent_id)
+                .await
+                .map(|(path, port)| devbox_runtime::WorktreeLocation { path, port })
+                .map_err(|_| {
+                    devbox_protocol::Fail::Domain(devbox_runtime::RuntimeError::DefInvalid {
+                        id: agent_id,
+                        reason: "agent worktree is unavailable or does not belong to this project"
+                            .into(),
+                    })
+                })
+        })
+    }));
+    let runs = Arc::new(
+        devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
+            .with_execution(execution),
+    );
     Ok(Arc::new(Services {
         runtime,
         version: crate::VERSION,

@@ -469,3 +469,84 @@ async fn watch_does_not_duplicate_the_project_define_commit_event() {
         "watching adds no duplicate revision"
     );
 }
+
+#[tokio::test]
+async fn prepared_graph_requires_current_project_trust_but_local_only_does_not() {
+    let f = Fixture::new().await;
+    f.define("local", "true", SaveTo::ThisPc).await;
+    f.write("[[task]]\nid='repo'\ncommand='true'\n");
+    let p = |id: &str| StartRun {
+        project_id: f.project.clone(),
+        id: id.into(),
+        worktree: None,
+    };
+    let local = f
+        .runs
+        .authorize_run_graph(&p("local"))
+        .await
+        .expect("local consent");
+    assert_eq!(local.ids(), ["local"]);
+    assert!(matches!(
+        f.runs.authorize_run_graph(&p("repo")).await,
+        Err(devbox_protocol::Fail::Domain(
+            RuntimeError::ProjectTrustRequired { .. }
+        ))
+    ));
+    assert!(
+        f.runs
+            .runs(RunsQuery {
+                project_id: Some(f.project.clone()),
+                limit: 100
+            })
+            .await
+            .expect("runs")
+            .items
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn prepared_graph_preflights_every_dependency_before_execution() {
+    let f = Fixture::new().await;
+    f.define("first", "true", SaveTo::ThisPc).await;
+    f.runs
+        .define(DefineRun {
+            project_id: f.project.clone(),
+            save_to: SaveTo::ThisPc,
+            def: RunDef::Task(TaskDef {
+                id: "last".into(),
+                command: "true".into(),
+                depends_on: vec!["first".into()],
+                cwd: Some("absent-directory".into()),
+                ..Default::default()
+            }),
+        })
+        .await
+        .expect("define");
+    assert!(matches!(
+        f.runs
+            .authorize_run_graph(&StartRun {
+                project_id: f.project.clone(),
+                id: "last".into(),
+                worktree: None
+            })
+            .await,
+        Err(devbox_protocol::Fail::Domain(
+            RuntimeError::DefInvalid { .. }
+        ))
+    ));
+    assert!(
+        f.runs
+            .runs(RunsQuery {
+                project_id: None,
+                limit: 100
+            })
+            .await
+            .expect("runs")
+            .items
+            .is_empty()
+    );
+}
+
+#[path = "graph_tests.rs"]
+mod graph_tests;

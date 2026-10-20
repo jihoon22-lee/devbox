@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 mod agents;
+pub mod runtime;
 
 pub struct ChildGuard(pub Child);
 impl Drop for ChildGuard {

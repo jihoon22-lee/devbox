@@ -40,6 +40,12 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "프로젝트 실행 설정을 읽거나 저장할 수 없습니다.",
     action: ".devbox/devbox.toml의 내용과 쓰기 권한을 확인해 주세요.",
   },
+  "runtime.run_not_found": { title: "실행을 찾을 수 없습니다.", action: "실행 목록을 새로고침해 주세요." },
+  "runtime.not_ready": { title: "서비스가 준비되지 않았습니다.", action: "선행 서비스의 포트와 로그를 확인해 주세요." },
+  "runtime.dependency_failed": {
+    title: "선행 실행이 실패해 시작하지 않았습니다.",
+    action: "실패한 실행의 로그를 확인해 주세요.",
+  },
   "runtime.invalid_cursor": { title: "실행 목록 위치가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
   "terminal.command_too_long": {
     title: "터미널 명령이 너무 깁니다.",
@@ -218,7 +224,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "projects.launch_failed": {
     title: "시작 구성을 일부 실행하지 못했습니다.",
-    action: "이미 만든 터미널과 에이전트 작업을 확인한 뒤 다시 시도해 주세요.",
+    action: "이미 시작한 터미널·에이전트·서비스를 확인한 뒤 다시 시도해 주세요.",
   },
   "projects.clone_invalid_url": { title: "저장소 주소가 올바르지 않습니다." },
   "projects.clone_target_exists": (d) => ({ title: `복제 대상 폴더가 이미 있습니다: ${path(d)}` }),

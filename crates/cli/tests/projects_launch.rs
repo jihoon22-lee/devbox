@@ -27,7 +27,7 @@ fn fixture(config: &str) -> (TestDaemon, String) {
 #[tokio::test]
 async fn launch_creates_configured_terminals_and_inline_agent_and_summary_counts() {
     let (mut d, repo) = fixture(
-        "[launch]\nservices=['future-service']\nterminals=[{name='a'},{name='b',command='sleep 600'}]\nagents=[{tool='fake',prompt='initial instruction'}]\n",
+        "[launch]\nterminals=[{name='a'},{name='b',command='sleep 600'}]\nagents=[{tool='fake',prompt='initial instruction'}]\n",
     );
     d.launch();
     let c = d.client().await;
@@ -320,7 +320,7 @@ async fn launch_honors_worktree_and_repeated_launch_uses_distinct_branches() {
         );
         assert_eq!(
             result,
-            json!({"terminals":0,"agents":1,"terminalIds":[],"rev":result["rev"]})
+            json!({"terminals":0,"agents":1,"services":0,"runIds":[],"terminalIds":[],"rev":result["rev"]})
         );
     }
     let tasks = call(&c, "agents.list", json!({})).await;

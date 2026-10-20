@@ -16,8 +16,11 @@ pub struct RuntimeService {
     pub(crate) db: Db,
     pub(crate) hub: Arc<Hub>,
     pub(crate) projects: Arc<ProjectsService>,
+    pub(crate) execution: Option<crate::ExecutionConfig>,
+    pub(crate) run_locks: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     locks: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
     pub(crate) observation: AsyncMutex<HashMap<String, String>>,
+    pub(crate) run_watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
 }
 
@@ -28,9 +31,12 @@ impl RuntimeService {
             db,
             hub,
             projects,
+            execution: None,
+            run_locks: Mutex::default(),
             locks: Mutex::default(),
             observation: AsyncMutex::default(),
             watcher: AsyncMutex::default(),
+            run_watcher: AsyncMutex::default(),
         }
     }
 
@@ -59,7 +65,7 @@ impl RuntimeService {
         );
     }
 
-    async fn local(&self, id: &str) -> R<(Vec<RunDef>, u64)> {
+    pub(crate) async fn local(&self, id: &str) -> R<(Vec<RunDef>, u64)> {
         let id = id.to_owned();
         self.db
             .read(move |tx| Ok((store::definitions(tx, &id)?, current_rev(tx)?)))
@@ -97,11 +103,17 @@ impl RuntimeService {
                 })
             })
             .peekable();
+        let recent = self
+            .runs(RunsQuery {
+                project_id: Some(p.project_id.clone()),
+                limit: 32,
+            })
+            .await?;
         let mut page = DefinitionList {
             rev: rev.to_string(),
             defs: vec![],
             shadowed: vec![],
-            runs: vec![],
+            runs: recent.items,
             trust: state.trust,
             next_cursor: None,
         };

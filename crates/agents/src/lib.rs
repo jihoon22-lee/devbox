@@ -105,3 +105,5 @@ mod metrics;
 mod resources;
 mod send;
 mod watch;
+
+mod run_worktree;

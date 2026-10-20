@@ -21,10 +21,42 @@ pub fn validate_command_text(command: &str) -> Result<(), CommandTextError> {
     Ok(())
 }
 
+/// The exec wrapper counts every argv byte, including each argument's terminator.
+pub fn validate_command_argv<'a>(
+    arguments: impl IntoIterator<Item = &'a [u8]>,
+) -> Result<(), CommandTextError> {
+    let mut total = 0usize;
+    for argument in arguments {
+        if argument.contains(&0) {
+            return Err(CommandTextError::ContainsNul);
+        }
+        total = total.saturating_add(argument.len()).saturating_add(1);
+        if total > MAX_COMMAND_BYTES {
+            return Err(CommandTextError::TooLong {
+                limit_bytes: MAX_COMMAND_BYTES,
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn argv_budget_includes_all_arguments_and_terminators() {
+        let exact = vec![b'x'; MAX_COMMAND_BYTES - 1];
+        assert_eq!(validate_command_argv([exact.as_slice()]), Ok(()));
+        assert!(matches!(
+            validate_command_argv([b"a".as_slice(), exact.as_slice()]),
+            Err(CommandTextError::TooLong { .. })
+        ));
+        assert_eq!(
+            validate_command_argv([b"a\0b".as_slice()]),
+            Err(CommandTextError::ContainsNul)
+        );
+    }
     #[test]
     fn command_length_uses_utf8_bytes_at_the_exact_boundary() {
         for command in [

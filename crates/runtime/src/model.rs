@@ -44,17 +44,9 @@ pub struct DefinitionList {
     pub rev: String,
     pub defs: Vec<Definition>,
     pub shadowed: Vec<Definition>,
-    pub runs: Vec<RunSummary>,
+    pub runs: Vec<crate::Run>,
     pub trust: TrustPreviewStatus,
     pub next_cursor: Option<DefinitionCursor>,
-}
-
-/// Definitions precede execution in S2; Task 4 populates these run summaries.
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct RunSummary {
-    pub id: String,
-    pub definition_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
@@ -92,6 +84,9 @@ domain_error! {
         ProjectTrustRequired { id: String } = "projects.trust_required",
         ProjectConfigChanged { id: String } = "projects.trust_preview_stale",
         ProjectConfigInvalid { message: String } = "runtime.project_config_invalid",
+        RunNotFound { id: String } = "runtime.run_not_found",
+        NotReady { id: String } = "runtime.not_ready",
+        DependencyFailed { id: String } = "runtime.dependency_failed",
         InvalidCursor = "runtime.invalid_cursor",
     }
 }

@@ -9,12 +9,12 @@ import { ProjectSwitcher } from "./ProjectSwitcher";
 import { useCurrentProject } from "./store";
 import { ProjectWire, projects } from "./test-wire";
 
-test("services-only launch configuration offers no S1 start action", async () => {
+test("services-only launch configuration exposes its start action and service count", async () => {
   function ConfigResult() {
     const config = useRpcQuery("projects.config", { id: "a" }, { enabled: false });
     return config.data && <output>설정 확인 완료</output>;
   }
-  const wire = new ProjectWire();
+  const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <RpcProvider client={wire.client}>
       <ConfigResult />
@@ -30,8 +30,22 @@ test("services-only launch configuration offers no S1 start action", async () =>
     }),
   );
   await screen.findByText("설정 확인 완료");
-  expect(screen.queryByRole("button", { name: "devbox 시작 구성 실행" })).not.toBeInTheDocument();
-  expect(wire.requests("projects.launch")).toHaveLength(0);
+  const launch = screen.getByRole("button", { name: "devbox 시작 구성 실행" });
+  await userEvent.click(launch);
+  await waitFor(() => expect(wire.requests("projects.launch")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("projects.launch", {
+      terminals: 0,
+      agents: 0,
+      services: 1,
+      runIds: ["database-run"],
+      terminalIds: [],
+      rev: "2",
+    }),
+  );
+  await waitFor(() =>
+    expect(useToasts.getState().items.at(-1)?.title).toBe("터미널 0개 · 에이전트 0개 · 서비스 1개를 시작했습니다"),
+  );
 });
 
 test("cards show actual summary and launch once before selecting and navigating", async () => {
@@ -74,11 +88,18 @@ test("cards show actual summary and launch once before selecting and navigating"
   await userEvent.keyboard("{Escape}");
   expect(close).not.toHaveBeenCalled();
   await act(async () =>
-    wire.reply("projects.launch", { terminals: 1, agents: 0, terminalIds: ["launch-shell"], rev: "2" }),
+    wire.reply("projects.launch", {
+      terminals: 1,
+      agents: 0,
+      services: 0,
+      runIds: [],
+      terminalIds: ["launch-shell"],
+      rev: "2",
+    }),
   );
   await waitFor(() => expect(navigate).toHaveBeenCalledOnce());
   expect(useCurrentProject.getState().id).toBe("a");
-  expect(useToasts.getState().items.at(-1)?.title).toBe("터미널 1개 · 에이전트 0개를 시작했습니다");
+  expect(useToasts.getState().items.at(-1)?.title).toBe("터미널 1개 · 에이전트 0개 · 서비스 0개를 시작했습니다");
 });
 
 function Reopen() {

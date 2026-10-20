@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. 다음 Task 4, PR은 Task 16에서 한 번.
+- 상태: Task 1 상세화 완료(2026-10-20) · 별도 검토·Biome CI 통과, 로컬 커밋. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존. Task 2 실행 정의·신뢰 범위 2도 별도 검토·Biome CI 통과(2026-10-20). Task 3 실행 래퍼·영속 결과도 직접 검증·독립 재검토·Biome CI 통과(2026-10-20), 로컬 커밋 완료. Task 4 구현·직접 영향 검증·독립 최종 검토(미해결0)·Biome278 PASS 완료, root 로컬 커밋 뒤 다음 Task 5. PR은 Task 16에서 한 번.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -31,7 +31,7 @@ S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실�
 
 - S0b·S1의 Global Constraints를 따른다.
 - 작업 위치: S2 전체가 브랜치 `v1/s2-runs`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s2-runs` 하나다. 인계 기록 `699d44e1` 다음에 Task 1(상세화)을 커밋한다. PR은 Task 16에서 한 번 연다(00-roadmap §3).
-- 실행 unit 이름은 `devbox-<인스턴스>-run-<runId>`다. tmux·데몬 unit과 섞지 않는다. 테스트는 `devbox-test-<난수>.slice` 아래에서만 띄우고 끝나면 slice를 멈춘다(01-design §4.3).
+- 실행 unit 이름은 `devbox-<인스턴스>-run-<runId>`다. tmux·데몬 unit과 섞지 않는다. 테스트는 `devbox-test-<난수>.slice` 아래에서만 띄우고 끝나면 소유 unit/slice를 멈추고 정확한 소유 runtime drop-in 파일도 정리한다(01-design §4.3). 서비스 실패 unit은 관측·수동 reset까지 유지하고 정상 종료는 GC한다.
 - 재시작 주체는 systemd 하나다. 데몬은 재시작을 직접 하지 않는다. 표시와 알림만 한다.
 - 실행 결과의 원장은 `runs/<runId>.exit` 파일이다. transient unit은 끝나면 정리되므로 unit 상태를 결과로 쓰지 않는다.
 - 비밀 평문은 DB·로그·파일·프로세스 인자·MCP 응답·RPC 결과에 나가지 않는다. 실행에는 `systemd-run --setenv`가 아니라 래퍼의 표준 입력으로 넘긴다. 이유: 인자는 `ps`·`systemctl show`에 보인다.
@@ -263,14 +263,14 @@ write_exit_atomic(&paths, run_id, child.wait().await?).await?;
 ### Task 4: 실행 시작·중지·재시작·맞춤
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/runtime/src/launch_tests.rs · crates/cli/tests/runtime_lifecycle.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/runtime/src/launch_tests.rs · crates/cli/tests/runtime_lifecycle.rs`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let args = unit_args(&service_no_restart(), "r1", &paths, Some(&owned_slice));
 assert!(args.iter().any(|s| s == "Restart=no"));
 assert_eq!(start_with_stale_trust().await.created_units, 0);
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-runtime unit_args_for_service_with_restart_policy`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** `core::systemd`는 setup의 기존 systemctl 동작을 보존해 이동하고 transient/stop/reset_failed/show를 추가한다. `RuntimeService`를 `Services.runs`에 연결, start/restart는 `authorize_run_graph`의 출처 판정→필요한 `TrustOperation::Run` snapshot 확인→전 의존 입력 검사→unit 생성 순서다. thisPc-only 그래프는 프로젝트 승인을 요구하지 않는다. `Run`에 `ready`, PID, attempt와 `restarts`를 포함한다. systemd만 재시작하며 runtime은 exit·unit 상태와 DB를 reconcile한다. Task 14 알림의 작은 `notify.raised` 타입·발행자를 먼저 만들어 한도 초과를 한 번 발행한다. CLI launch는 서비스·터미널·에이전트 전체 snapshot으로 preflight한다. readiness는 주입 가능한 검사 함수로 Task 4의 순서·timeout을 완성하고 Task 8에서 실제 proc 구현을 연결한다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-runtime unit_args_for_service_with_restart_policy`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** `core::systemd`는 setup의 기존 systemctl 동작을 보존해 이동하고 transient/stop/reset_failed/show를 추가한다. `RuntimeService`를 `Services.runs`에 연결, start/restart는 `authorize_run_graph`의 출처 판정→필요한 `TrustOperation::Run` snapshot 확인→전 의존 입력 검사→unit 생성 순서다. thisPc-only 그래프는 프로젝트 승인을 요구하지 않는다. `Run`에 `ready`, PID, attempt와 `restarts`를 포함한다. systemd만 재시작하며 runtime은 exit·unit 상태와 DB를 reconcile한다. Task 14 알림의 작은 `notify.raised` 타입·발행자를 먼저 만들어 한도 초과를 한 번 발행한다. CLI launch는 서비스·터미널·에이전트 전체 snapshot으로 preflight한다. readiness는 주입 가능한 검사 함수로 Task 4의 순서·timeout을 완성하고 Task 8에서 실제 proc 구현을 연결한다.
 
 ```rust
 pub async fn start(&self, p: StartRun) -> Result<Run, Fail<RuntimeError>> {
@@ -282,19 +282,22 @@ pub async fn start(&self, p: StartRun) -> Result<Run, Fail<RuntimeError>> {
 // manual restart: authorize current snapshot → reset_failed → fresh attempt.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 순수 인자 시험 뒤 고유 slice L2를 실행한다. `exit 1`, burst 3, restart=no 10초/0회, daemon 재시작·수동 reset-failed, stale trust 자원 0, 3초 준비·2초 timeout을 그대로 검사한다. CI systemd 불가만 명시 ignore, WSL 실행은 필수다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): manage transient runs and reconcile service state`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 순수 인자 시험 뒤 고유 slice L2를 실행한다. `exit 1`, burst 3, restart=no 10초/0회, daemon 재시작·수동 reset-failed, stale trust 자원 0, 3초 준비·2초 timeout을 그대로 검사한다. CI systemd 불가만 명시 ignore, WSL 실행은 필수다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(runtime): manage transient runs and reconcile service state`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `crates/runtime/src/launch.rs`, `crates/runtime/src/reconcile.rs`, `crates/runtime/src/service.rs`
 - Create: `crates/core/src/systemd.rs`(S0b `crates/cli/src/setup.rs`의 `systemctl` 호출 helper를 이리로 옮기고 `run_transient`·`stop`·`reset_failed`·`show`를 더한다. 오류는 `CoreError`)
 
 **Interfaces:**
-- `Run { id, projectId, defId, kind: Task|Service|Scheduled, state: Starting|Running|Restarting|Exited|Failed|Stopped, exit?, startedMs, endedMs?, restarts, unit }`
+- `Run { id, projectId, defId, kind: Task|Service|Scheduled, state: Starting|Running|Restarting|Exited|Failed|Stopped, exit?, startedMs, endedMs?, restarts, unit, ready, pid?, port?, attemptId? }`
 - `launch::unit_args(def, run_id, paths, slice?) -> Vec<String>`
-  - 순수 함수다. 단위 테스트로 인자 배열을 고정한다.
+  - `unit_args_with_executable(..., executable)`는 순수 인자 빌더이며 기존 `unit_args`는 current_exe 편의 호출이다. daemon의 ExecutionConfig는 실제 실행 바이너리를 전달한다. 단위 테스트로 전체 배열을 고정한다.
   - 속성: `--unit`, `--collect`, `WorkingDirectory`, `EnvironmentFile=<paths.instance_config_dir>/env`, 비밀 없는 `Environment=PYTHONUNBUFFERED=1 FORCE_COLOR=1 DEVBOX_PORT=…`, `KillMode=control-group`, `MemoryAccounting=yes`, `ExecStopPost=<devbox> --instance <i> run-exited --run <id>`. EnvironmentFile은 setup::capture_env의 whitelist(PATH·LANG·LC_*·PNPM_HOME 등)만 담은 기존 인스턴스 env 파일을 쓴다. 비밀 평문을 env 파일에 추가하지 않는다.
-  - main exec·매 attempt helper·ExecStopPost 모두 global `--instance <paths.instance>`(또는 동일한 `DEVBOX_INSTANCE`)와 동일한 HOME/XDG_CONFIG_HOME/XDG_DATA_HOME/XDG_STATE_HOME/XDG_RUNTIME_DIR를 전달한다. 각 프로세스의 Paths 재계산 결과가 데몬과 같아야 하며 test/accept가 기본 prod 디렉터리·소켓·exit 파일을 읽거나 쓰면 안 된다. 단위 인자는 setup의 raw EnvironmentFile 경로/% 이스케이프 규칙을 재사용한다.
+  - main exec·매 attempt helper·ExecStopPost 모두 global `--instance <paths.instance>`(또는 동일한 `DEVBOX_INSTANCE`)와 동일한 HOME/XDG_CONFIG_HOME/XDG_DATA_HOME/XDG_STATE_HOME/XDG_RUNTIME_DIR를 전달한다. 각 프로세스의 Paths 재계산 결과가 데몬과 같아야 하며 test/accept가 기본 prod 디렉터리·소켓·exit 파일을 읽거나 쓰면 안 된다. unit-file용 setup의 raw 경로/% 이스케이프는 보존한다. transient D-Bus 인자는 `%`를 그대로 전달하고 단어의 따옴표/역슬래시만 quote한다(systemd가 파일 저장 때 specifier를 escape하므로 이중 escaping 금지).
+  - `--property=Type=exec`와 `--expand-environment=no`를 쓴다. 서비스는 `--collect`와 `CollectMode=inactive`를 함께 써 정상 종료만 GC하고 실패는 관측·수동 reset까지 보존한다. systemctl/systemd-run 제어 자식만 `/run/user/<uid>`를 사용하며 실행 unit의 HOME/XDG는 Paths 그대로다.
+  - captured EnvironmentFile은 그대로 두고 정의 env를 wrapper의 실제 child argv `/usr/bin/env -- KEY=VALUE ... /bin/bash -c command`에 최종 적용한다(EnvironmentFile이 Environment 속성보다 우선하기 때문). `child_args`와 core의 전체 argv 64KiB/NUL 검사를 preflight와 wrapper가 공유한다.
+  - `DEVBOX_PORT`는 명시 env/ports_hint → 선택 agent의 기존 port → main의 빈 loopback ephemeral port 순서다. env와 hint가 다르면 거절하고, 같은 그래프의 자동 포트는 중복 없이 골라 Run/인자에 고정한다. 자동 포트는 수동 재시작에도 보존한다. 임시 bind를 닫은 뒤 실제 서비스 bind까지의 경합은 일반 bind 실패로 처리한다.
   - 서비스는 `Restart`·`RestartSec=1s`·`RestartSteps=5`·`RestartMaxDelaySec=30s`·`StartLimitBurst`·`StartLimitIntervalSec`를 더한다(빠른 반복 종료의 간격이 1초 → 30초로 늘어남, AR-F14, IR-5). `restart = "no"`면 `Restart=no`다.
 - 메서드:
   - `runtime.start{ projectId, id, worktree? }`(mutation): 의존 작업을 순서대로 실행한다. 앞 단계가 실패하면 멈춘다.
@@ -304,8 +307,8 @@ pub async fn start(&self, p: StartRun) -> Result<Run, Fail<RuntimeError>> {
   - `runtime.runs{ projectId?, limit }`(query)
 - 데몬이 시작할 때 맞춘다: `systemctl --user list-units 'devbox-<i>-run-*' --output=json` + `.exit` 파일 → 상태를 갱신한다.
 - 서비스 재시작은 `systemctl show -p NRestarts,ActiveState,Result`를 실행 이벤트 때와 10초 간격(서비스가 있을 때만)으로 읽어 `restarts`를 갱신한다.
-- 한도 초과(`Result=start-limit-hit`)는 `failed`이고 `notify.raise`(Task 14)를 한 번 부른다.
-- 시작 구성의 `services`(S1에서 무시하던 것)를 이제 `projects.launch`에서 시작한다. 시작 구성 전체가 같은 승인 snapshot을 쓴다(S1 규칙).
+- 한도 초과는 `failed`이며 영속 start_limit_notified 표식과 `notify.raised`를 한 번 발행한다. `Result=start-limit-hit`를 우선하되 systemd 259가 이전 `exit-code` 등을 유지하는 경우, restart 정책·현재 종료 원인·failed/subfailed·NRestarts>=burst·burst/interval>0가 모두 맞을 때만 한도 초과로 판정한다([systemd #32203](https://github.com/systemd/systemd/issues/32203)). 재시작은 계속 systemd만 한다.
+- 시작 구성의 `services`를 `prepare_launch_snapshot`에서 같은 승인 snapshot과 한 번 읽은 local 정의로 합친 DAG로 만든다. 여러 root가 공유하는 의존은 1회만 생성한다. terminal/agent까지 전체 preflight를 끝낸 뒤 실행하며 `StartedRun` collector로 readiness/의존 실패에도 생성된 services/runIds를 LaunchFailed에 포함한다. runtime→agents 의존 없이 CLI 주입 resolver가 agent 소유 worktree/path/port를 확인한다.
 - `runtime.start`·`runtime.restart`·의존 작업 시작은 `authorize_run_graph`로 ProjectFile 노드가 있을 때만 unit 생성 전 신뢰를 확인하고 승인 snapshot의 정의로 `unit_args`를 만든다. thisPc-only 그래프는 같은 prepared graph 경로를 쓰되 승인 snapshot이 필요 없다. 승인이 없거나 낡으면 자원을 만들지 않고 `projects.trust_required`를 돌려준다. systemd `Restart=`의 자동 재시작은 확인하지 않는다(이미 만든 unit).
 
 **핵심 테스트(L2, 실제 systemd user):**
@@ -320,6 +323,8 @@ pub async fn start(&self, p: StartRun) -> Result<Run, Fail<RuntimeError>> {
 - 단위: `unit_args_for_service_with_restart_policy`(인자 배열 전체 비교. `RestartSteps=5`·`RestartMaxDelaySec=30s` 포함)
 - `unit_args_preserve_instance_environment_file`·`exec_helper_and_stop_post_share_instance_and_xdg_paths`: test/accept + 소유 XDG root fixture에서 EnvironmentFile·exec/helper/ExecStopPost의 인스턴스/경로 인자를 비교하고, 같은 Paths의 로그·exit·secret socket만 가리키며 prod 접근0을 확인한다.
 - systemd user 세션을 CI에서 못 쓰면(S0a 판정) L2 중 systemd 시험은 `#[ignore = "needs systemd user"]` + WSL 로컬 필수로 둔다(00-roadmap 실행 규칙).
+
+**Task 4 구현 경계:** 기본 readiness는 ports_hint 없는 실행만 준비 처리하고, 주입 검사로 실제 L2 3초 준비·2초 timeout/검사 정지·stop 경합을 검증한다. Task 8이 proc 관찰을 같은 Readiness 함수에 연결한다. Windows target(Task 12), secrets/`{{secret:...}}`(Task 11)은 현재 typed 사전 거절하며 무주입 Linux 실행으로 대체하지 않는다. Task 5 예약/Task 7 로그 RPC/Task 14 UI는 미구현 상태를 유지한다.
 
 ---
 

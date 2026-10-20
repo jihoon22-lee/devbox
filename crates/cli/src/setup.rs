@@ -121,25 +121,10 @@ pub fn render_units() -> Vec<(&'static str, String)> {
     ]
 }
 fn unit_quote(path: &Path) -> Result<String, String> {
-    let value = path.to_str().ok_or("unit path is not UTF-8")?;
-    if value.chars().any(char::is_control) {
-        return Err("unit path contains control characters".into());
-    }
-    Ok(format!(
-        "\"{}\"",
-        value
-            .replace('\\', "\\\\")
-            .replace('\"', "\\\"")
-            .replace('%', "%%")
-    ))
+    devbox_core::systemd::unit_quote(path).map_err(|error| error.to_string())
 }
-// EnvironmentFile and ListenStream consume raw rvalues, not shell-style words.
 fn raw_unit_path(path: &Path) -> Result<String, String> {
-    let value = path.to_str().ok_or("unit path is not UTF-8")?;
-    if value.chars().any(char::is_control) {
-        return Err("unit path contains control characters".into());
-    }
-    Ok(value.replace('%', "%%"))
+    devbox_core::systemd::raw_unit_path(path).map_err(|error| error.to_string())
 }
 fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, String)>, String> {
     let mut units: Vec<_> = render_units()
@@ -272,17 +257,9 @@ fn publish(path: &Path, body: &str, managed: bool) -> std::io::Result<()> {
     result
 }
 pub(crate) async fn command(cmd: &str, args: &[&str]) -> Result<std::process::Output, String> {
-    let mut command = tokio::process::Command::new(cmd);
-    command.args(args).kill_on_drop(true);
-    let out = tokio::time::timeout(std::time::Duration::from_secs(15), command.output())
+    devbox_core::systemd::command(cmd, args)
         .await
-        .map_err(|_| format!("{cmd} timed out"))?
-        .map_err(|_| format!("{cmd} could not run"))?;
-    if out.status.success() {
-        Ok(out)
-    } else {
-        Err(format!("{cmd} exited unsuccessfully"))
-    }
+        .map_err(|error| error.to_string())
 }
 trait Runner {
     async fn run(&self, cmd: &str, args: &[&str]) -> Result<Vec<u8>, String>;

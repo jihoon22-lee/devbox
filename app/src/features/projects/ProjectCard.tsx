@@ -36,7 +36,10 @@ export function ProjectCard({
   const config = useRpcQuery("projects.config", { id: project.id }, { enabled: true, staleTime: 30_000 });
   const profile = config.data?.config.launch;
   // The daemon returns an empty default launch object for an absent [launch].
-  const launchable = !config.data?.error && profile && (profile.terminals.length > 0 || profile.agents.length > 0);
+  const launchable =
+    !config.data?.error &&
+    profile &&
+    (profile.terminals.length > 0 || profile.agents.length > 0 || profile.services.length > 0);
   const native = "__TAURI_INTERNALS__" in window;
   const external = async (kind: "vscode" | "explorer" | "terminal") => {
     try {

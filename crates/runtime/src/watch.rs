@@ -12,8 +12,8 @@ use tokio::{sync::mpsc, task::JoinHandle, time::Instant};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) struct WatchHandle {
-    cancel: CancellationToken,
-    join: JoinHandle<()>,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) join: JoinHandle<()>,
 }
 
 pub(crate) fn fingerprint(digest: &str, trust: &TrustPreviewStatus) -> String {
@@ -31,6 +31,7 @@ impl RuntimeService {
         if slot.is_some() {
             return Ok(());
         }
+        self.initialize_runs().await?;
         // Any queued notification schedules a complete digest comparison, so one slot
         // coalesces bursts without retaining unbounded file event paths.
         let (send, mut receive) = mpsc::channel(1);
@@ -92,6 +93,10 @@ impl RuntimeService {
     }
 
     pub async fn shutdown(&self) {
+        if let Some(handle) = self.run_watcher.lock().await.take() {
+            handle.cancel.cancel();
+            let _ = handle.join.await;
+        }
         let handle = self.watcher.lock().await.take();
         if let Some(handle) = handle {
             handle.cancel.cancel();

@@ -185,13 +185,8 @@ fn validate_command(command: &[OsString]) -> Result<PathBuf, ExecError> {
     let Some(first) = command.first().filter(|s| !s.is_empty()) else {
         return Err(ExecError::Command);
     };
-    let mut total = 0usize;
-    for arg in command {
-        total = total.saturating_add(arg.as_bytes().len()).saturating_add(1);
-        if arg.as_bytes().contains(&0) || total > 64 * 1024 {
-            return Err(ExecError::Command);
-        }
-    }
+    devbox_core::input::validate_command_argv(command.iter().map(|arg| arg.as_bytes()))
+        .map_err(|_| ExecError::Command)?;
     let executable = |p: &std::path::Path| {
         std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     };
