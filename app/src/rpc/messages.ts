@@ -24,6 +24,20 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   daemon_restarting: { title: "다시 시작하는 중이라 실행하지 않았습니다.", action: "잠시 뒤 다시 시도해 주세요." },
   not_found: { title: "대상을 찾을 수 없습니다." },
   secrets_locked: { title: "비밀 값을 아직 열지 못했습니다.", action: "앱을 연 상태에서 다시 시도해 주세요." },
+  "secrets.key_mismatch": {
+    title: "이 PC의 비밀 키가 저장된 값과 다릅니다.",
+    action: "복구 문자열을 입력해 기존 키를 복구해 주세요.",
+  },
+  "secrets.invalid_input": { title: "비밀 이름이나 입력 형식이 올바르지 않습니다." },
+  "secrets.missing": { title: "이 PC에 비밀 값이 없습니다.", action: "설정에서 필요한 비밀 값을 입력해 주세요." },
+  "secrets.unavailable": {
+    title: "비밀 저장소를 사용할 수 없습니다.",
+    action: "앱 연결과 저장소 상태를 확인해 주세요.",
+  },
+  "runtime.secret_missing": {
+    title: "실행에 필요한 비밀 값이 없습니다.",
+    action: "설정에서 필요한 비밀 값을 입력해 주세요.",
+  },
   "debug.unsupported": {
     title: "시험용 스트림을 열 수 없습니다.",
     action: "시험 인스턴스의 연결 상태를 확인해 주세요.",

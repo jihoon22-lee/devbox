@@ -79,6 +79,28 @@ pub struct ClientStream {
     shutdown: CancellationToken,
 }
 impl ClientStream {
+    /// Internal run helper only. A length prefix rejects disconnect/truncation before child spawn.
+    pub(crate) async fn read_secret_payload(
+        &self,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, ClientError> {
+        let mut data = zeroize::Zeroizing::new(Vec::new());
+        while let Some(chunk) = self.queue.read().await {
+            if data.len() + chunk.len() > 1024 * 1024 + 4 {
+                return Err(ClientError::Protocol("secret payload limit"));
+            }
+            data.extend_from_slice(&chunk);
+            self.credit(chunk.len() as u32).await?;
+        }
+        if data.len() < 4 {
+            return Err(ClientError::ConnectionLost);
+        }
+        let size = u32::from_le_bytes(data[..4].try_into().expect("length prefix")) as usize;
+        if size != data.len() - 4 {
+            return Err(ClientError::ConnectionLost);
+        }
+        Ok(zeroize::Zeroizing::new(data[4..].to_vec()))
+    }
+
     async fn send(&self, frame: Frame) -> Result<(), ClientError> {
         let out = self.out.upgrade().ok_or(ClientError::ConnectionLost)?;
         let (sent, receipt) = oneshot::channel();

@@ -2,6 +2,7 @@
 use aho_corasick::{AhoCorasick, MatchKind};
 use std::{collections::BTreeMap, ffi::OsString, os::unix::ffi::OsStringExt};
 use tokio::io::AsyncReadExt;
+use zeroize::{Zeroize, Zeroizing};
 
 const MAX_INPUT: usize = 1024 * 1024;
 #[derive(Debug, thiserror::Error)]
@@ -16,24 +17,25 @@ pub enum SecretError {
 // Deliberately no Debug implementation: diagnostics must never format these values.
 #[derive(Default)]
 pub struct Secrets {
-    values: BTreeMap<String, Vec<u8>>,
+    values: BTreeMap<String, Zeroizing<Vec<u8>>>,
+    masks: Vec<Zeroizing<Vec<u8>>>,
 }
 impl Drop for Secrets {
     fn drop(&mut self) {
         for value in self.values.values_mut() {
-            value.fill(0);
+            value.zeroize();
         }
     }
 }
 impl Secrets {
     pub async fn read() -> Result<Self, SecretError> {
-        let mut bytes = Vec::new();
+        let mut bytes = Zeroizing::new(Vec::new());
         tokio::io::stdin()
             .take((MAX_INPUT + 1) as u64)
             .read_to_end(&mut bytes)
             .await?;
         let result = Self::parse(&bytes);
-        bytes.fill(0);
+        bytes.zeroize();
         result
     }
     fn parse(bytes: &[u8]) -> Result<Self, SecretError> {
@@ -41,11 +43,16 @@ impl Secrets {
             return Err(SecretError::Invalid);
         }
         let mut values = BTreeMap::new();
+        let mut masks = Vec::new();
         for record in bytes
             .strip_suffix(&[0])
             .into_iter()
             .flat_map(|b| b.split(|b| *b == 0))
         {
+            if let Some(mask) = record.strip_prefix(b"@=") {
+                masks.push(Zeroizing::new(mask.to_vec()));
+                continue;
+            }
             let split = record
                 .iter()
                 .position(|b| *b == b'=')
@@ -60,21 +67,22 @@ impl Secrets {
             {
                 return Err(SecretError::Invalid);
             }
-            values.insert(key.into(), record[split + 1..].to_vec());
+            values.insert(key.into(), Zeroizing::new(record[split + 1..].to_vec()));
         }
-        Ok(Self { values })
+        Ok(Self { values, masks })
     }
     pub fn envs(&self) -> impl Iterator<Item = (&str, OsString)> {
         self.values
             .iter()
-            .map(|(key, value)| (key.as_str(), OsString::from_vec(value.clone())))
+            .map(|(key, value)| (key.as_str(), OsString::from_vec(value.to_vec())))
     }
     pub fn redactor(&self) -> Result<Redactor, SecretError> {
         let patterns: Vec<&[u8]> = self
             .values
             .values()
+            .chain(self.masks.iter())
             .filter(|v| !v.is_empty())
-            .map(Vec::as_slice)
+            .map(|v| v.as_slice())
             .collect();
         let longest = patterns.iter().map(|p| p.len()).max().unwrap_or(0);
         let matcher = if patterns.is_empty() {
@@ -101,7 +109,7 @@ pub struct Redactor {
 }
 impl Drop for Redactor {
     fn drop(&mut self) {
-        self.pending.fill(0);
+        self.pending.zeroize();
     }
 }
 impl Redactor {
@@ -151,6 +159,22 @@ mod tests {
             assert!(!err.to_string().contains("owned-token"));
         }
         assert!(Secrets::parse(b"EMPTY=\0TOKEN=a=b\nsecond\0").is_ok());
+    }
+    #[test]
+    fn original_secret_is_masked_independently_of_composed_environment() {
+        let secrets =
+            Secrets::parse(b"@=owned-token\0HEADER=Bearer owned-token suffix\0").expect("payload");
+        assert_eq!(
+            secrets.envs().map(|(key, _)| key).collect::<Vec<_>>(),
+            vec!["HEADER"]
+        );
+        let text = b"owned-token Bearer owned-token suffix";
+        for split in 0..=text.len() {
+            let mut redactor = secrets.redactor().expect("redactor");
+            let mut output = redactor.push(&text[..split], false);
+            output.extend(redactor.push(&text[split..], true));
+            assert_eq!(output, b"[REDACTED] [REDACTED]");
+        }
     }
     #[test]
     fn secret_redaction_handles_every_chunk_and_multiline_boundary() {

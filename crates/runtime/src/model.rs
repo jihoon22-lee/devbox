@@ -91,5 +91,8 @@ domain_error! {
         DetectLimit { subject: String, limit: u32 } = "runtime.detect_limit",
         DetectIo { file: String, message: String } = "runtime.detect_io",
         InvalidCursor = "runtime.invalid_cursor",
+        SecretsLocked = "secrets_locked",
+        SecretKeyMismatch = "secrets.key_mismatch",
+        SecretMissing { names: Vec<String> } = "runtime.secret_missing",
     }
 }

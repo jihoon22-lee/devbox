@@ -7,6 +7,7 @@ pub mod observe;
 mod outbox;
 mod problems;
 pub mod routes;
+mod secret_routes;
 pub mod server;
 mod socket;
 pub mod state;
@@ -32,6 +33,7 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_terminal::MIGRATIONS,
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
+        devbox_secrets::MIGRATIONS,
     ]
     .concat()
 }
@@ -108,9 +110,14 @@ fn build_services_with_runtime(
                 })
         })
     }));
+    let secrets = Arc::new(devbox_secrets::SecretsService::new(
+        db.clone(),
+        paths.clone(),
+    ));
     let runs = Arc::new(
         devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
-            .with_execution(execution),
+            .with_execution(execution)
+            .with_secrets(secrets.clone()),
     );
     Ok(Arc::new(Services {
         runtime,
@@ -125,6 +132,7 @@ fn build_services_with_runtime(
         terminal,
         agents,
         runs,
+        secrets,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
     }))

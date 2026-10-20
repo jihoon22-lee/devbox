@@ -153,3 +153,20 @@ fn unit_args_preserve_literal_command_environment_and_working_directory() {
     );
     assert_eq!(args.last().expect("command"), &expected_command);
 }
+#[test]
+fn secret_env_never_enters_unit_environment_or_child_argv() {
+    let mut def = service(RestartPolicy::OnFailure);
+    if let RunDef::Service(d) = &mut def {
+        d.secrets = vec!["TOKEN".into()];
+        d.env.insert("TOKEN".into(), "plain-shadow".into());
+        d.env
+            .insert("HEADER".into(), "Bearer {{secret:TOKEN}}".into());
+    }
+    let args = unit_args(&def, "owned", &paths("test-secret"), None);
+    assert!(args.iter().any(|s| s == "exec-attempt"));
+    assert!(
+        !args
+            .iter()
+            .any(|s| s.contains("{{secret:") || s.contains("HEADER=") || s.contains("TOKEN="))
+    );
+}

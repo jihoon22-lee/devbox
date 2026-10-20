@@ -234,6 +234,7 @@ pub async fn drive(
                 .map_err(|_| ShellError::Invalid("화면 연결이 닫혔습니다".into()))?;
             let writer = async {
                 while let Some(frame) = writes.recv().await {
+                    let frame = zeroize::Zeroizing::new(frame);
                     stdin.write_all(&frame).await?;
                     stdin.flush().await?;
                 }
@@ -253,6 +254,12 @@ pub async fn drive(
     };
     let result =
         tokio::select! {biased;_=cancel.cancelled()=>Err(ShellError::Cancelled),r=operation=>r};
+    // Close before draining so cancelled transports also wipe queued unlocks.
+    writes.close();
+    while let Ok(mut frame) = writes.try_recv() {
+        use zeroize::Zeroize;
+        frame.zeroize();
+    }
     let _ = child.kill().await;
     let _ = child.wait().await;
     result

@@ -3,6 +3,7 @@ use crate::core::{
     bridge::{self, Event},
     connection::INSTANCE,
     process::ShellError,
+    secrets::{self, NativeSecrets},
     settings, wsl as selection,
 };
 use std::process::Stdio;
@@ -198,6 +199,8 @@ async fn bridge_once(
     let drive = bridge::drive(&mut child, writes, events, bridge_cancel.clone());
     tokio::pin!(drive);
     let mut ready = false;
+    let mut native = NativeSecrets::default();
+    let protector = super::secrets::CurrentUser;
     loop {
         tokio::select! {
             result=&mut drive=>return (result,ready),
@@ -205,9 +208,24 @@ async fn bridge_once(
                 Some(Event::Ready)=>{
                     let opened={let mut state=conn.state();state.active_distro=Some(distro.into());state.writer=Some(writer.clone());state.open=true;state.bump();state.enqueue_reopens()};
                     if let Err(e)=opened{bridge_cancel.cancel();let _=drive.await;return (Err(ShellError::Invalid(e.to_string())),ready);}
+                    if let Err(error) = writer.try_send(native.start(INSTANCE)) {
+                        use zeroize::Zeroize;
+                        error.into_inner().zeroize();
+                        native.abort();
+                    }
                     ready=true;conn.gate(app,generation,"ready",None,None);conn.broadcast(app);
                 }
                 Some(Event::Frame(frame))=>{
+                    if secrets::is_native(&frame) {
+                        if let Some(outgoing) = native.receive(&frame, &protector)
+                            && let Err(error) = writer.try_send(outgoing)
+                        {
+                            use zeroize::Zeroize;
+                            error.into_inner().zeroize();
+                            native.abort();
+                        }
+                        continue;
+                    }
                     // Only clone routing metadata while locked; IPC never runs inside the mutex.
                     let channel={let state=conn.state();state.mux.inbound(&frame).and_then(|label|state.channels.get(label)).map(|lease|lease.channel.clone())};
                     if let Some(channel)=channel && let Err(e)=channel.send(InvokeResponseBody::Raw(frame)){bridge_cancel.cancel();let _=drive.await;return (Err(ShellError::Invalid(e.to_string())),ready);}

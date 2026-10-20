@@ -17,3 +17,5 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub mod stream;
 pub use stream::StreamOpened;
 pub mod debug;
+
+pub mod secrets;

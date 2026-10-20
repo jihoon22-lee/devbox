@@ -107,3 +107,5 @@ pub use log_observation::{RunLogMetadata, RunLogPage};
 
 #[cfg(test)]
 mod containers_tests;
+
+pub mod secret_input;

@@ -426,6 +426,7 @@ async fn accumulated_history_limit_rejects_before_paste_and_preserves_the_full_h
         devbox_terminal::MIGRATIONS,
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
+        devbox_secrets::MIGRATIONS,
     ]
     .concat();
     let db = devbox_core::Db::open(
@@ -461,6 +462,7 @@ fn send_persistence_db(d: &TestDaemon) -> devbox_core::Db {
         devbox_terminal::MIGRATIONS,
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
+        devbox_secrets::MIGRATIONS,
     ]
     .concat();
     devbox_core::Db::open(

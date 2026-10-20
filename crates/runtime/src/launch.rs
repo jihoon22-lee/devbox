@@ -81,7 +81,10 @@ pub fn unit_args_with_executable(
             transient_quote(&format!("DEVBOX_PORT={port}"))
         ));
     }
-    for (key, value) in environment {
+    for (key, value) in environment
+        .iter()
+        .filter(|(key, value)| !crate::secret_input::injected_env(def, key, value))
+    {
         property(format!(
             "Environment={}",
             transient_quote(&format!("{key}={value}"))
@@ -114,7 +117,11 @@ pub fn unit_args_with_executable(
         executable.display().to_string(),
         "--instance".into(),
         instance.into(),
-        "exec".into(),
+        if crate::secret_input::requires(def) {
+            "exec-attempt".into()
+        } else {
+            "exec".into()
+        },
         "--run".into(),
         run_id.into(),
         "--".into(),
@@ -135,6 +142,7 @@ pub fn child_args(def: &RunDef) -> Vec<String> {
     args.extend(
         environment
             .iter()
+            .filter(|(key, value)| !crate::secret_input::injected_env(def, key, value))
             .map(|(key, value)| format!("{key}={value}")),
     );
     args.extend([

@@ -17,5 +17,6 @@ pub struct Services {
     pub agents: Arc<devbox_agents::AgentsService>,
     pub observe: Arc<devbox_observe::ObserveService>,
     pub containers: devbox_runtime::DockerContainers,
+    pub secrets: Arc<devbox_secrets::SecretsService>,
     pub runs: Arc<devbox_runtime::RuntimeService>,
 }

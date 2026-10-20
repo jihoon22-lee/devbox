@@ -242,8 +242,31 @@ async fn prepare(
         if target != RunTarget::Linux {
             return Err(invalid(&id, "Windows execution is not available yet").into());
         }
-        if !secrets.is_empty() || command_secret || env.values().any(|v| v.contains("{{secret:")) {
-            return Err(invalid(&id, "secret injection is not available yet").into());
+        if command_secret {
+            return Err(invalid(
+                &id,
+                "secret references are only supported in environment values",
+            )
+            .into());
+        }
+        if secrets.iter().any(|name| {
+            !devbox_secrets::valid_name(name)
+                || [
+                    "HOME",
+                    "XDG_CONFIG_HOME",
+                    "XDG_DATA_HOME",
+                    "XDG_STATE_HOME",
+                    "XDG_RUNTIME_DIR",
+                    "DEVBOX_INSTANCE",
+                    "DEVBOX_PORT",
+                    "INVOCATION_ID",
+                    "NOTIFY_SOCKET",
+                    "LISTEN_FDS",
+                    "LISTEN_PID",
+                ]
+                .contains(&name.as_str())
+        }) {
+            return Err(invalid(&id, "invalid secret name").into());
         }
         for (key, value) in env.iter() {
             if key.bytes().enumerate().any(|(n, c)| {
@@ -312,6 +335,7 @@ async fn prepare(
             port
         };
         env.insert("DEVBOX_PORT".into(), port.to_string());
+        let _secrets = service.secret_payload(&def).await?;
         let child = launch::child_args(&def);
         devbox_core::input::validate_command_argv(child.iter().map(|arg| arg.as_bytes()))
             .map_err(|_| invalid(&id, "complete child argv exceeds the execution input limit"))?;

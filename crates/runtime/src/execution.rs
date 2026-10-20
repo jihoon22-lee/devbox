@@ -204,6 +204,7 @@ impl RuntimeService {
                 RunDef::Schedule(_) => unreachable!("preflight rejects schedules"),
             };
             let mut value = StoredRun {
+                secret_definition: crate::secret_input::requires(def).then(|| def.clone()),
                 schedule: prepared.schedule.clone().filter(|_| final_node),
                 run: Run {
                     id: id.clone(),

@@ -10,6 +10,7 @@ pub struct Config {
     pub terminal: TerminalConfig,
     pub agents: AgentsConfig,
     pub mcp: McpConfig,
+    pub secrets: SecretsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -58,6 +59,12 @@ pub struct McpConfig {
     pub write: bool,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SecretsConfig {
+    pub names: Vec<String>,
+}
+
 fn config_error(path: &Path, message: impl ToString) -> CoreError {
     CoreError::Config {
         path: path.display().to_string(),
@@ -80,7 +87,7 @@ fn read_table(path: &Path) -> Result<toml::Table, CoreError> {
         .parse::<toml::Table>()
         .map_err(|error| config_error(path, error))?;
     // Serde structs also accept positional sequences; TOML sections must be tables.
-    for section in ["projects", "pc", "terminal", "agents", "mcp"] {
+    for section in ["projects", "pc", "terminal", "agents", "mcp", "secrets"] {
         if table.get(section).is_some_and(|value| !value.is_table()) {
             return Err(config_error(path, format!("{section} must be a table")));
         }
@@ -167,6 +174,28 @@ mod tests {
         std::fs::write(p.config_dir.join(file), text).expect("write fixture file");
     }
 
+    #[test]
+    fn secrets_names_are_shared_and_values_are_not_config_fields() {
+        let temp = tempfile::tempdir().expect("owned config");
+        let paths = paths_in(temp.path());
+        write(
+            &paths,
+            "config.toml",
+            "[secrets]\nnames=['TOKEN','OTHER']\n",
+        );
+        assert_eq!(
+            Config::load(&paths).expect("names").secrets.names,
+            vec!["TOKEN", "OTHER"]
+        );
+        for text in [
+            "secrets=['TOKEN']",
+            "[secrets]\nnames=[1]",
+            "[secrets]\nTOKEN='owned-token'",
+        ] {
+            write(&paths, "config.toml", text);
+            assert!(Config::load(&paths).is_err());
+        }
+    }
     #[test]
     fn defaults_when_files_are_missing_or_empty() {
         let t = tempfile::tempdir().expect("create fixture directory");

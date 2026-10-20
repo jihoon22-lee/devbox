@@ -655,15 +655,15 @@ docker.command(&args).await?; // fixed argv, no shell; tests use a fake adapter.
 ### Task 11: 비밀
 
 **단계별 실행:**
-- [ ] **1 · 실패 테스트:** `crates/secrets/src/{crypto,keystore,store}_tests.rs · crates/cli/tests/runtime_secrets.rs · Windows unlock 단위 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
+- [x] **1 · 실패 테스트:** `crates/secrets/src/{crypto,keystore,store}_tests.rs · crates/cli/tests/runtime_secrets.rs · Windows unlock 단위 시험`에 아래 출발 assertion과 이 과제의 핵심 테스트를 먼저 작성한다.
 ```rust
 let sealed = seal(&key, "TOKEN", &key_id, b"owned-token")?;
 assert_eq!(open(&key,"TOKEN",&key_id,&sealed)?.as_slice(), b"owned-token");
 assert!(open(&key,"OTHER",&key_id,&sealed).is_err());
 assert_eq!(restart_secret_fixture().await.child_ack_count, 2);
 ```
-- [ ] **2 · 실패 확인:** `cargo test -p devbox-secrets seal_open_round_trip_and_wrong_aad_fails`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
-- [ ] **3 · 구현:** 아래 DPAPI 계약으로 crypto·store·SecretsService·unlock·복구 CLI를 구현한다. Task 3 redactor에 실제 참조값을 주고 별도 비밀 stream→anonymous pipe→exec stdin으로 매 attempt 주입한다. systemd argv/env/property에는 runId·참조 이름만 남긴다. 키 잠김/데몬 없음/누락이면 실제 사용자 자식 실행 0이며 systemd 정책에 따른 재시도만 허용한다.
+- [x] **2 · 실패 확인:** `cargo test -p devbox-secrets seal_open_round_trip_and_wrong_aad_fails`를 자원 제한 아래 실행한다. 미구현 타입/행동 때문에 실패했는지 확인하고 RED 출력을 artifact에 남긴다(환경·잠금 실패는 RED가 아님).
+- [x] **3 · 구현:** 아래 DPAPI 계약으로 crypto·store·SecretsService·unlock·복구 CLI를 구현한다. Task 3 redactor에 실제 참조값을 주고 별도 비밀 stream→anonymous pipe→exec stdin으로 매 attempt 주입한다. systemd argv/env/property에는 runId·참조 이름만 남긴다. 키 잠김/데몬 없음/누락이면 실제 사용자 자식 실행 0이며 systemd 정책에 따른 재시도만 허용한다.
 
 ```rust
 // Each unit attempt invokes the owned helper, including systemd Restart attempts.
@@ -674,8 +674,8 @@ write_nul_pairs(writer, &values).await?;
 // Locked/unavailable/missing returns before user-child spawn; zeroize values after use.
 ```
 
-- [ ] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험 전체, 자동재시작 두 attempt에서 같은 비밀 재주입, daemon restart 후 재주입, daemon unavailable 자식0, split stdout chunk 비밀 가림을 확인한다. fallback은 interop 실패 주입으로 반드시 시험하고 실제 DPAPI/Windows 왕복은 Task 16에 남긴다.
-- [ ] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(secrets): seal per-machine secrets and inject them per run`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
+- [x] **4 · 통과:** 같은 RED 명령과 직접 영향 시험으로 GREEN을 확인한다. 핵심 시험 전체, 자동재시작 두 attempt에서 같은 비밀 재주입, daemon restart 후 재주입, daemon unavailable 자식0, split stdout chunk 비밀 가림을 확인한다. fallback은 interop 실패 주입으로 반드시 시험하고 실제 DPAPI/Windows 왕복은 Task 16에 남긴다.
+- [x] **5 · 검토·커밋:** 별도 검토·Biome CI 뒤 `feat(secrets): seal per-machine secrets and inject them per run`. 실패·미실행 항목을 PROGRESS에 구분해 기록한다.
 
 **Files:**
 - Create: `crates/secrets/{Cargo.toml,src/lib.rs,src/crypto.rs,src/keystore.rs,src/store.rs}`
@@ -721,6 +721,15 @@ write_nul_pairs(writer, &values).await?;
 - `recovery_string_restores_the_same_key_id`
 - `windows_app_unlocks_when_daemon_interop_is_unavailable`: 데몬 Windows 호출 실패를 주입 → 잠금 상태 유지 → Windows 앱 DPAPI 해제·`secrets.unlock` → 동일 key_id로 비밀을 쓰는 실행 성공, 로그·RPC 응답에는 키·비밀이 없음. fallback은 필수 핵심 회귀 테스트다. R10 성공은 한 로그인 세션에 한정되므로 이를 생략하는 근거가 아니다.
 - DPAPI blob 입출력 조립을 단위 검증하고, 직접 해제와 Windows 앱 fallback의 실제 왕복은 Task 16 에이전트 설치본 스모크에서 모두 확인한다.
+
+**Task 11 구현 계약·직접 검증(2026-10-20, 독립 최종 검토·Biome278 PASS, 로컬 완료):**
+- `devbox-secrets`가 XChaCha20-Poly1305 nonce24·AAD `name|key_id`, SHA256 전체32바이트 지문, PC별 `secrets_key/secrets_values` 테이블과 `[secrets] names`를 소유한다. 목록은 이름과 `hasValue`만 반환한다. `set/delete/import_key`와 명시적 `export_key`를 연결했고 export는 CLI 채널0만 허용한다. 복구 CLI 입력은 stdin, 출력은 사용자가 실행한 export만 예외다. 키·값·복구/입력 버퍼는 zeroize하며 mutation 멱등 저장소는 평문 params 대신 SHA256 지문을 보관한다.
+- 직접 DPAPI는 고정 절대 PowerShell·고정 script·binary stdin/stdout만 사용하고 입출력10초·종료대기2초/64KiB 상한·취소/기한/상한 이후 소유 자식 kill+wait를 적용한다. `keys/data.key.dpapi`에는 봉인 blob만 저장하고 기존 키를 bootstrap으로 덮지 않는다. direct unavailable은 locked, 실제 DPAPI/키 지문 불일치는 `keyMismatch`와 typed 오류로 구분한다. 정상 unlock/import 뒤 mismatch를 해제한다.
+- Windows native 연결은 기존 예약 채널0에서 Hello→Welcome→`secrets.key_status`를 수행한다. 기존 blob은 CurrentUser DPAPI로 해제하고, 최초 상태는 생성→봉인→`secrets.bootstrap`→`secrets.unlock` 순서다. 서버는 App+채널0을 요구하고 renderer는 Mux가 nonzero 채널로 다시 쓰며 native 응답은 화면에 전달하지 않는다. 키 상태는 blob·지문·locked/keyMismatch뿐, bootstrap/unlock 응답은 Done뿐이다.
+- `RunDef.secrets` 및 env의 `{{secret:NAME}}`만 지원한다. command template은 거절하고 비밀을 주입할 env 항목은 systemd Environment와 `/usr/bin/env` argv 양쪽에서 제외한다. Run 내부 snapshot에는 참조 정의만 저장한다. 매 systemd attempt의 `exec-attempt`가 기존 instance Unix socket의 내부 `secrets.run` stream(Cli+채널0)에서 길이 표기·1MiB 상한 payload를 받아 익명 pipe로 `exec --secrets-stdin`에 넘긴다. 원래 참조값의 별도 가림 record는 자식 환경에 넣지 않으며 조합된 env 값과 원래 비밀 모두를 청크 경계 전에 가린다.
+- 고유 **50개 PASS**: Rust48(crypto/store/keystore9·launch5·graph4·wrapper3·dedupe2·routes1·protocol router7·config1·native bridge5·native secrets7·실제 소유 systemd3·RPC/CLI1)+한국어 메시지2. TS 생성/확인·typecheck, `devbox-win` MSVC target 좁은 check도 PASS다. 앱의 실제 `NativeSecrets` production 상태 기계를 fake DPAPI와 live fixture 데몬 사이에 연결해 초기 bootstrap 및 daemon restart 후 같은 key_id unlock→비밀 Run 재주입을 확인했다. 자동재시작 ACK2, 값 누락/locked/unavailable 사용자 자식0, 기존 실행 유지, unit properties·helper/exec/자식 cmdline·로그·runtime.runs 비노출을 확인했다.
+- 독립 검토에서 실행 중 `secrets` 섹션이 scalar/array로 바뀌면 panic이 나는 P2를 재현했다. checked TableLike 접근으로 typed 오류를 반환하고 원본 파일·값 미저장을 보존한다. 잘못된 names 형식과 유효한 inline table 보존까지 secrets9개 GREEN, 별도 재검토 PASS·미해결0이다. 최초48개에 신규2개를 더한 고유50개이며 무관한 검사는 반복하지 않았다. 최종 Biome278 PASS(`biome-final.log`, 0.923초·cgroup130,469,888B·swap0).
+- 초기 crypto/native 미구현·unit helper 누락 RED3건, DPAPI stdin EOF가 닫히지 않아 fake 왕복이 10초 timeout 된 실제 실패1건을 보존했다. ChildStdin drop 후 왕복·복구 재봉인·취소/기한/출력 상한 소유 PID 회수 회귀가 PASS다. RawValue 변환 컴파일 오류1건은 행동 RED와 구분한다. 근거는 Git common-dir `devbox-verification/s2-task11/{summary,source-freeze,matrix-results,cleanup}.json`·raw log/resources다. 모든 검사는 common-dir 잠금·CPU4/nice10/jobs2/threads2/workers2·cgroup6/8GiB/swap1GiB로 실행했으며 소유 slice8개의 unit/drop-in 잔존0을 확인했다. 실제 Windows DPAPI/설치본 왕복·전체 check/clippy/build/E2E·push/PR은 Task16 전 미실행이다.
 
 ---
 

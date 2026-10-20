@@ -24,6 +24,7 @@ struct Daemon {
 }
 struct Channel {
     hello: bool,
+    client: Option<devbox_protocol::message::ClientKind>,
     generation: CancellationToken,
     inflight: Arc<Mutex<HashMap<u32, CancellationToken>>>,
     subscriptions: HashMap<u32, tokio::task::JoinHandle<()>>,
@@ -32,6 +33,7 @@ impl Default for Channel {
     fn default() -> Self {
         Self {
             hello: false,
+            client: None,
             generation: CancellationToken::new(),
             inflight: Arc::default(),
             subscriptions: HashMap::new(),
@@ -55,6 +57,11 @@ pub async fn serve(
     services: Arc<Services>,
     shutdown: CancellationToken,
 ) -> io::Result<()> {
+    services
+        .secrets
+        .initialize()
+        .await
+        .map_err(|_| io::Error::other("initialize secrets"))?;
     services
         .agents
         .initialize()
@@ -223,7 +230,7 @@ async fn handle(
             version,
             protocol,
             instance,
-            ..
+            client,
         } => {
             if state.hello || instance != d.services.paths.instance.as_str() {
                 return Err(invalid("duplicate hello or instance mismatch"));
@@ -253,6 +260,7 @@ async fn handle(
                 return Err(invalid("hello version or protocol mismatch"));
             }
             state.hello = true;
+            state.client = Some(client);
             send(tx, ch, &state.generation, welcome).await?;
         }
         ClientMessage::Request { id, .. } | ClientMessage::Subscribe { id, .. } if !state.hello => {
@@ -273,6 +281,44 @@ async fn handle(
             params,
             client_request_id,
         } => {
+            use devbox_protocol::message::ClientKind;
+            let native = super::secret_routes::native(&method);
+            let internal = super::secret_routes::internal(&method);
+            let allowed = if native {
+                ch == 0 && state.client == Some(ClientKind::App)
+            } else if method == "secrets.run" || method == "secrets.export_key" {
+                ch == 0 && state.client == Some(ClientKind::Cli)
+            } else {
+                true
+            };
+            if !allowed {
+                return send(
+                    tx,
+                    ch,
+                    &state.generation,
+                    response(
+                        id,
+                        Err(DispatchError::common(CommonError::MethodNotFound {
+                            method,
+                        })),
+                    ),
+                )
+                .await;
+            }
+            if internal {
+                let result = super::secret_routes::dispatch(
+                    d.services.clone(),
+                    &method,
+                    Ctx {
+                        channel: ch,
+                        cancel: state.generation.clone(),
+                        streams: Some(streams.opener(ch, state.generation.clone(), tx.clone())),
+                    },
+                    params,
+                )
+                .await;
+                return send(tx, ch, &state.generation, response(id, result)).await;
+            }
             let token = CancellationToken::new();
             {
                 let mut inflight = state.inflight.lock().expect("requests");

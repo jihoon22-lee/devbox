@@ -12,11 +12,11 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P 로컬 완료. Task10 Docker 목록·동작 고유13개·타입·독립 검토(미해결0)·Biome278 PASS |
-| 다음 할 일 | 묶음 Q Task11 비밀 저장·매 attempt 실행 주입·Windows 해제 fallback. Codex 입력 대기 미검출은 비차단 이월. Task 16 전 push·PR 없음 |
+| 단계 | S1·착수 보강 PR #641(`4cb0e833`) 머지. S2 묶음 O·P 및 Q Task11 로컬 완료. Task11 직접 고유50개·타입·독립 최종 검토(미해결0)·최종 Biome278 PASS |
+| 다음 할 일 | 묶음 Q Task12 Windows 대상 실행. Codex 입력 대기 미검출은 비차단 이월. Task16 전 push·PR 없음 |
 | 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
 | 작업 중인 브랜치·worktree | `v1/s2-runs` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@4cb0e833`, 기존 로컬 기록 `699d44e1` 보존. Task 1 상세화 `87fbd1e7`, Task 2 선행 분리 `b53a867b`. 기능 구현은 이 로컬 커밋에 기록. 원격 브랜치·S2 PR 없음. 원본 main 변경 없음 |
-| 마지막 갱신 | 2026-10-20 · Task10 독립 검토·Biome PASS, 묶음 P 로컬 완료 |
+| 마지막 갱신 | 2026-10-20 · Task11 고유50개·독립 최종 검토·최종 Biome278 PASS, 로컬 완료 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -50,7 +50,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0a | 02-s0a-spike | 완료(실기 미실행 기록 보존) | 2026-10-12 | 2026-10-12 | 결과 보고만 |
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
-| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P 로컬 완료. Task10 고유13개·타입·독립 검토(미해결0)·Biome278 PASS. 다음 묶음 Q Task11, 전체 검사·Windows·PR은 Task16 |
+| S2 | 05-s2-runs | 작업 중 | 2026-10-20 | | 묶음 O·P 및 Q Task11 로컬 완료. Task11 직접50개·타입·독립 최종 검토·Biome278 PASS. 다음 Task12, 전체 검사·Windows 실기는 Task16 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
@@ -99,7 +99,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | 상세화 | Task 1 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | 약 0.35h 경과(실측·상세화·별도 검토·수정). Biome276 통과, Codex 입력 대기 FAIL/PONG 미완료 유지. 증거 `devbox-verification/s2-task1-20261020/` |
 | S2 | O | Task 2–6 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task 2 선행 분리 `b53a867b`·기능 `c67e55eb`, Task 3 `0078c6a4`, Task 4 `167da8b5` 완료. Task 5 구현·고유51개 직접 검사·독립 최종 검토·Biome278 PASS, 로컬 커밋 완료. Task 6 구현·고유15개 직접 검사·독립 검토(미해결0)·Biome278 PASS, 묶음 O 로컬 완료 |
 | S2 | P | Task 7–10 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task7 로그·Task8 자원 관찰·Task9 문제 추출·Task10 컨테이너 완료. 과제별 직접 검사·독립 검토·Biome PASS, Task10 고유13개. 전체 검사·Windows·push/PR은 Task16 |
-| S2 | Q | Task 11–12 |  | 대기 | | | |
+| S2 | Q | Task 11–12 | `v1/s2-runs` | 작업 중 | 2026-10-20 | | Task11 직접50개·타입·독립 최종 검토·Biome278 PASS, 로컬 완료. 다음 Task12 |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) |  | 대기 | | | |
 | S2 | 마무리 | Task 16 → S2 PR |  | 대기 | | | |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
@@ -229,6 +229,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 정적 mutation(reversible) 및 stop 성공에만 start Undo 요청을 주는 결과 계약이다. Task13/14는 running 행에서만 stop을 표시/사용하며 결과.undo가 있을 때만 Undo를 제공한다. 외부 상태까지 원복하지 않는다. 목록3초·동작30초·stdout256KiB/stderr16KiB/1,024행 상한, 취소/future drop/timeout/overflow 때 소유 CLI kill+wait. 내부 stderr는 tracing에만 남기며 실제 Docker 상태 변경 취소를 보장하지 않는다.
 - 고유13개 PASS(runtime9·실제 typedRPC fakePATH1·라우터1·한국어 오류2), gen-ts/check·typecheck·Rust 포맷·diff 검사 PASS. 처음 미구현 모듈 RED1건과 생성 TS 주석 trailing whitespace 검사 실패1건을 원본으로 보존했다. 후자는 일반 주석으로만 교정한 뒤 생성/확인/typecheck/포맷/diff PASS이며 행동 RED로 세지 않는다.
 - 근거 `devbox-verification/s2-task10/{summary,source-freeze}.json`와 raw/resources. 비차단 공통 잠금·CPU4/nice10/jobs2/threads2/workers2·cgroup6/8GiB/swap1GiB를 적용했다. 모든 Docker 검사는 소유 fake CLI·임시 디렉터리/daemon만 사용하고 정리했다. 실제 Docker 설치/daemon/container/network 및 기존 서비스는 조작하지 않았다. 독립 검토 PASS(소스12·원본증거10 해시 일치, 미해결0)·최종 Biome278 PASS(cgroup peak111,382,528B·swap0)로 로컬 완료. 검토 뒤 완료 문서2개만 갱신한 근거는 `root-completion.json`이다. 전체 검사/Windows/push/PR은 Task16 전 미실행이다.
+
+### S2 Task 11 비밀 저장·매 attempt 주입 (2026-10-20)
+
+- XChaCha20-Poly1305·nonce24·AAD name/key_id, DPAPI 봉인 blob만의 key file, PC별 암호값 DB와 공유 이름 설정을 연결했다. typed list/set/delete·Base32 복구 export/import CLI와 키/값 zeroize를 구현했다. mutation 멱등 저장소는 평문 params 대신 SHA256 지문을 보관하고 기존 재시도·다른 입력 거절·취소 뒤 완료 의미를 유지한다.
+- native App+예약 채널0의 상태/blob→DPAPI→unlock과 최초 generate/seal→bootstrap→unlock을 구현했다. renderer/MCP/일반 CLI의 내부 키 요청을 거절하며 명시적 export만 CLI에 허용한다. unavailable은 locked, 실제 키/DPAPI 불일치는 keyMismatch·typed 오류로 유지하고 기존 키를 조용히 바꾸지 않는다.
+- 비밀 참조를 포함한 Run snapshot만 저장하고 매 systemd attempt helper가 기존 instance Unix stream→익명 pipe→exec stdin으로 새 값을 받는다. env 참조는 unit Environment/child argv에서 제외하고 원래 비밀값도 별도 가림 목록에 둔다. 비밀 누락/잠김/데몬 부재 시 새 사용자 자식0, 이미 실행 중인 자식 유지, systemd 재시작 정책만 사용한다.
+- 고유50개 PASS(Rust48·한국어2), TS 생성/확인·typecheck와 devbox-win MSVC target 좁은 check PASS. production NativeSecrets 상태 기계를 fake DPAPI·live fixture 데몬과 왕복시켜 최초 bootstrap 및 daemon restart 후 같은 key_id 해제→비밀 Run을 확인했다. 실제 소유 systemd3개 검사에서 자동재시작 ACK2, unit properties/프로세스 argv/로그/runtime.runs 비노출, locked/unavailable 자식0을 확인했다. 실제 Windows DPAPI/앱 설치본 왕복은 이 결과에 포함하지 않는다.
+- 독립 검토에서 실행 중 잘못된 secrets 섹션의 저장 panic을 RED로 확인했다. checked TableLike 접근·typed 오류로 원본 파일 및 값 미저장을 보존하고 유효한 inline table도 유지했다. 신규2개를 포함한 secrets9개 GREEN, 별도 재검토 PASS·미해결0이다. 초기48개 검증에 신규2개를 더한 고유50개이며 전체 matrix를 반복하지 않았다. 최종 Biome278 PASS(0.923초·cgroup130,469,888B·swap0), `review-config-red/green` 및 `biome-final` raw/resources 보존.
+- 초기 미구현/누락 RED3건 및 DPAPI stdin EOF 미폐쇄의 실제 timeout1건을 보존하고 ChildStdin drop 뒤 관련 회귀를 통과했다. RawValue 변환 컴파일 오류1건은 별도 authoring failure다. common-dir 잠금·CPU4/nice10/jobs2/threads2/workers2·cgroup6/8GiB/swap1GiB를 적용했고 소유 slice8개 unit/drop-in 잔존0이다. 근거 `devbox-verification/s2-task11/{summary,source-freeze,matrix-results,cleanup}.json`. 독립 최종 검토 PASS(미해결0), 소스67개·고정 증거74개 해시 일치와 최종 Biome278 PASS로 로컬 완료했다. 검토 뒤 완료 문서2개만 고친 최종 근거는 `root-completion.json`이다. 전체 check/clippy/build/E2E·Windows 실기·push/PR은 Task16 미실행이다.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
@@ -547,6 +556,8 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | Task 8 `9cd1eff3` 뒤 Task9 문제 추출·원시 ingest·source restart·메모리 query/topic/ACK 구현. 고유50개·타입·독립 최종 검토(미해결0)·Biome278 PASS | 로컬 완료 커밋. partial EOF 리뷰와 wrapper 경계를 실제 RED→GREEN으로 수정, 미구현·행동 RED7건·준비/컴파일 오류 보존. 다음 Task10, push/PR 없음. 근거 `devbox-verification/s2-task9/{summary,review}.json` |
 
 | 2026-10-20 | Codex 하네스 구현·별도 검토 | Task 9 `63023cb7` 뒤 Task10 Docker 목록·동작 구현, 고유13개·타입·독립 검토(미해결0)·Biome278 PASS | 묶음 P 로컬 완료 커밋. 근거 `devbox-verification/s2-task10/{summary,review,root-completion}.json`. 다음 묶음 Q Task11, push/PR 없음 |
+
+| 2026-10-20 | Codex 하네스 구현·Windows native 분담·별도 검토 | Task10 `37fff05b` 뒤 Task11 비밀 저장·매 attempt 주입·native fallback 구현, 고유50개·타입·독립 최종 검토·Biome278 PASS | 로컬 완료 커밋. 설정 타입 오류 panic RED→GREEN 수정, 미해결0·소스67/증거74 해시 일치. 근거 `devbox-verification/s2-task11/{summary,review,root-completion}.json`. 다음 Task12, Task16 전 push/PR 없음 |
 
 ## 7. 착수 준비 검토
 

@@ -9,6 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+zeroize.workspace = true
+devbox-secrets.workspace = true
 devbox-core.workspace = true
 devbox-projects.workspace = true
 devbox-protocol.workspace = true

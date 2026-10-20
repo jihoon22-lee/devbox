@@ -63,7 +63,7 @@ async fn graph_port_selection_preserves_explicit_hints_and_allocates_distinct_de
 }
 
 #[tokio::test]
-async fn graph_rejects_unconnected_windows_and_secret_inputs_before_run_creation() {
+async fn graph_rejects_windows_command_templates_reserved_env_and_locked_secrets() {
     let f = Fixture::new().await;
     for def in [
         TaskDef {
@@ -90,6 +90,7 @@ async fn graph_rejects_unconnected_windows_and_secret_inputs_before_run_creation
             ..Default::default()
         },
     ] {
+        let locked = !def.secrets.is_empty();
         f.runs
             .define(DefineRun {
                 project_id: f.project.clone(),
@@ -98,18 +99,27 @@ async fn graph_rejects_unconnected_windows_and_secret_inputs_before_run_creation
             })
             .await
             .expect("define");
-        assert!(matches!(
-            f.runs
-                .authorize_run_graph(&StartRun {
-                    project_id: f.project.clone(),
-                    id: "bad".into(),
-                    worktree: None
-                })
-                .await,
-            Err(devbox_protocol::Fail::Domain(
-                RuntimeError::DefInvalid { .. }
-            ))
-        ));
+        let result = f
+            .runs
+            .authorize_run_graph(&StartRun {
+                project_id: f.project.clone(),
+                id: "bad".into(),
+                worktree: None,
+            })
+            .await;
+        if locked {
+            assert!(matches!(
+                result,
+                Err(devbox_protocol::Fail::Domain(RuntimeError::SecretsLocked))
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(devbox_protocol::Fail::Domain(
+                    RuntimeError::DefInvalid { .. }
+                ))
+            ));
+        }
     }
     assert!(
         f.runs

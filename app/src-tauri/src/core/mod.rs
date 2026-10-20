@@ -32,3 +32,6 @@ pub mod notify;
 pub mod preferences;
 #[cfg(any(windows, test))]
 pub mod shortcuts;
+
+#[cfg(any(windows, test))]
+pub mod secrets;

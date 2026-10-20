@@ -1,3 +1,4 @@
+pub mod dpapi;
 pub mod taskbar;
 pub mod toast;
 
