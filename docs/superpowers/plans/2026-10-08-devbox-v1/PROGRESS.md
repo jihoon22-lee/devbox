@@ -13,11 +13,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S2 머지 완료** · [PR #642](https://github.com/jihoon22-lee/devbox/pull/642), squash `1e82e649`(2026-10-21 09:19 KST). 최종 소스 `f703a4b9`의 필수 CI3·E2E PASS, 자동 리뷰3회 처리. 설치 사전 검사 errno110 FAIL로 실기1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN은 유지 |
-| 다음 할 일 | 이번 세션은 사용자 요청대로 S2 결과 문서 PR·로컬 정리를 마무리한다. 정리 뒤 다음 세션은 깨끗한 main과 최신 origin/main을 확인하고 S3 Task1(기록 상세화)·S5-1(개발 도구 상세화)의 전용 worktree를 만들어 병렬 진행한다. S2 patch 이전은 필요 없으며 이번 세션에서 S3·S5 제품 구현은 시작하지 않음. 설치 검증 미실행·Codex waiting 미검출·§8 Windows 준비 귀속 후속을 이어받음 |
-| 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | 문서 인계용 `docs/s2-handoff` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@1e82e649`. 문서 PR 머지 후 이 worktree와 통합된 이전 작업·인계 브랜치를 정리하고 `/home/jihoon/projects/devbox` main을 ff-only 동기화할 예정. 정리 완료를 아직 주장하지 않으며 다음 세션은 실제 status·worktree·branch·열린 PR부터 대조한다 |
-| 마지막 갱신 | 2026-10-21 · 09:19 KST squash 확인. CI39517774250·Windows39517774148 PASS, Accept 산출물 SHA256 검증. 최종 잠금 내 설치 사전 검사20.647초 errno110 FAIL, 설치/소유 fixture 생성0. 결과 근거·머지 확인을 보존하고 사용자 요청에 따라 결과 문서 PR·로컬 근거 압축 보관·정리 준비 중 |
+| 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
+| 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. **S5-1 상세화 완료(로컬)**: [07b-s5-tools.md](07b-s5-tools.md) 작성·07 S5 절 축약, 별도 검토 2회(1차 차단5 수정 → 재검토 APPROVE). 다음: S5-2(`crates/api` HTTP 실행). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
+| 마지막 갱신 | 2026-10-21 · 트랙 2 S5-1 상세화 커밋. 빌드·시험 미실행(문서 과제), 완료 Biome CI 통과 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -44,6 +45,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 2026-10-13 | 사용자 결정 2026-10-13 · S3/S5 자원 | 사용자 | 동시 진행 유지. S2 Task 15b에서 전체 검사/E2E common-dir 잠금 --wait(최대60분 exit75) 구현, 기본 비차단 유지. 초과는 검사 대기 초과로 보고/재시도. 좁은 검사 잠금 없이 트랙당 jobs/threads/workers2·nice+10·지원 cgroup6/8GiB swap1GiB, S5 전용 target, 메모리 압박시 한 트랙 중단 |
 | 2026-10-13 | 사용자 결정 2026-10-13 · R1/R2 | 사용자 | 30분 유휴 유지·WSL shutdown 재연결은 S6 공개 직전 사용자 확인으로 이동. R2 경과시간 기록. 그 전까지 미실행 |
 | 2026-10-13 | PR #640 보안 권고: 저장소 명령의 신뢰 승인 | 사용자 · 00 §3.2 범위 변경 | 승인: 사용자가 “S1에 신뢰 확인 추가(권장)”를 선택했다. 프로젝트의 정규 경로·설정 내용 digest에 묶인 영속 승인과 setup/test/teardown/launch 명령 미리보기를 S1에 추가한다. 설정 변경 시 재승인하고 daemon의 직접 RPC·내부 실행 경로에도 적용한다. 실행은 승인된 불변 설정 snapshot을 사용하며 신뢰가 바뀐 teardown은 자원을 보존하고 오류를 보고한다. worktree/scope를 sandbox로 간주하지 않는다. 구현·회귀 검증·별도 검토 후 머지한다 |
+| 2026-10-21 | S5 수용 3: 외부 서비스에서 웹훅 수신(LAN 노출·포트 전달·방화벽 필요, AGENTS 금지 범위) | 사용자 | 대기(S5-9 수용에만 걸림): 기본안은 Windows 쪽 소유 `curl.exe`로 WSL 리스너 `127.0.0.1:<port>` 수신·기록·재전송까지 확인하고 외부 수신은 "사용자 결정 대기"로 기록. 전달이 안 되면 FAIL·근거만 남기고 `lan: true`·portproxy·방화벽은 바꾸지 않음(07b) |
+| 2026-10-21 | S5 수용 6: 개발 환경 점검의 빠진 도구 실제 설치(`sudo apt`·`npm -g`·`winget`) | 사용자 | 대기(S5-9 수용에만 걸림): 기본안은 [설치] 버튼과 `tools.install_command` 결과만 확인하고 누르지 않음. 실제 실행은 사용자 승인 뒤에만(07b). 제품의 설치는 확인 대화상자 [실행] 뒤에만 터미널을 연다 |
 
 ## 3. 하위 프로젝트
 
@@ -56,7 +59,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
-| S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
+| S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · S2 뒤 S3와 동시(트랙 2) | 작업 중 | 2026-10-21 | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
 ## 4. PR (모두 7개)
@@ -116,7 +119,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
-| S5 | 상세화 | S5-1 | `v1/s5-tools` | 대기 | | | |
+| S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 |  | 대기 | | | |
 | S5 | AB | S5-4 |  | 대기 | | | |
 | S5 | AC | S5-5 |  | 대기 | | | |
@@ -637,6 +640,15 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-1 상세화 결과 (2026-10-21, 트랙 2)
+
+- [07b-s5-tools.md](07b-s5-tools.md)에 S5-2–S5-9를 실패 시험 → 실패 확인 → 구현 → 직접 영향 검사 → 별도 검토 → 커밋 단계로 펼쳤고, 07 S5 절은 요약표·안내로 줄였다(작업 묶음 AA–AE·마무리 유지). 실제 S2 코드(`method!`/`topic!`/`domain_error!`는 protocol 정의·도메인 crate 선언, `Router::register`, `declared()`, 스트림 `end()`→`streams.close`→`tx.closed()` 취소, `IndexDb::ensure_domain`, `Services`에 index 없음, `SecretsService`, `system.doctor`, `Paths.config_dir`)를 대조했다. `crates/core`·`protocol`·`app/src/ui`·`.github`·`scripts` 수정 없음(`.github`+`scripts` 1500/1500줄이라 protoc 대신 `protox`, 시험 인증서 `rcgen`).
+- v0.9.0 이식 수(07b A–D 표): requests/lib 07 지정 84개(이식77·적응5·제외2)와 관련 144개(이식35·적응23·제외56·참고30), transforms 271개(이식·적응208·제외63, 21종 `apps/api-studio-tools.json` 행 대조), `http-client-engine` request.rs 67개(이식37·적응17→시험11·제외13), webhook-core 95개(이식28·적응18·제외49). CV-F04·F05, AR-F03·F06·F07·F08·F09, AU-AS-01·02·07을 시험 이름·입력·assertion으로 S5-2·3·5·7에 연결했다.
+- 계획과 달라진 점(에이전트 결정): `api.cancel` 없이 스트림 닫기로 취소(`cancel_aborts_the_in_flight_request` 유지) · 새 `tools.doctor` 대신 기존 `system.doctor` 유지·로직만 `crates/tools`로 이동(`OsProbe`·routes 기존 줄 불변) · 진단은 기존 `DiagnosticsSettings.tsx` 확장 · 실행기·가져오기·코드 생성은 01 §9.3·07대로 TS(01 §9 표와의 불일치) · 코드 생성 언어는 07 목록(C# 제외, axios·Rust 추가) · 웹훅은 hyper 1, 재전송은 화면→`api.send`(01 §2.7·§12) · `TerminalView.tsx`(300줄) 선행 분할 · 개인 컬렉션 `Paths.config_dir/api`(accept 분리) · 좁은 검사 `verify-resources.py --no-lock` · S5 E2E 3개 이하(현재 11) · MD5는 작은 TS 구현으로 유지(WebCrypto에 없음) · 프로젝트 컬렉션 비밀 재검토 `api_reviews`(CV-F04 입력 전제) · uninstall/`install_windows_tool`/`cleanup_wsl`/`redeploy_wsl`은 07 S5-8·01 §10 범위 · 오류는 기존 `secrets.key_mismatch` 재사용 · `tokio-tungstenite` 기능은 crate 쪽에서 켬 · MIGRATIONS는 S5-3.
+- 검토로 추가한 안전 규칙: 모든 저장 경로가 `sanitizeForStorage`를 지나 직접 입력 비밀을 가리고 가린 필드 위치(`masked`)로 송신을 막음(01 §9.1-14, v0.9.0 정화 시험 18개 적응, 웹훅 `Authorization` 평문 저장 금지). 기록(api-history)은 치환 전 snapshot·인증 종류/참조만, Basic·OAuth·`sensitive` 값 가림. 도구 설치는 확인 대화상자 [실행] 뒤에만 `bash -lc '<cmd>; exec bash -l'` 터미널(`terminal.create`는 명령을 즉시 실행). 지원 번들은 비밀 저장소가 열려 있으면 `has_value` 이름만 resolve해 aho-corasick 가림, 잠겨 있으면 로그·crash 제외(`logsOmitted`).
+- 트랙 간 주의: `Services.index`(IndexDb)는 S3와 하나만 둔다(먼저 머지된 쪽 필드 사용). workspace `members` 한 줄·`messages.ts`(합치면 600줄 근접)·생성 RPC·lockfile은 00 §3.6대로 양쪽 보존·재생성.
+- 검증: 문서 과제라 빌드·시험 미실행. 별도 검토 1차 CHANGES_REQUIRED(저장 정화 시험 누락·결정 분류·설치 즉시 실행·번들 시험 모순·environments/S5-9 실패 시험) → 수정 → 재검토 APPROVE, 비차단 권장 일부(설치 계획 `shellCommand`, `has_value`, `masked` 기준, fixture 참조 사용, redeploy 재시작 규칙) 반영. 완료 Biome CI 통과.
 
 ## 6. 세션 기록
 
