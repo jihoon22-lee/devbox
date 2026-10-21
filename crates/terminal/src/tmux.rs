@@ -140,7 +140,11 @@ impl Tmux {
                 .args([
                     "--user",
                     "start",
-                    &format!("devbox-tmux@{}.service", instance.as_str()),
+                    &format!(
+                        "{}@{}.service",
+                        instance.channel().config().tmux_unit,
+                        instance.as_str()
+                    ),
                 ])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())

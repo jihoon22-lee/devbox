@@ -167,3 +167,117 @@ async fn inflight_request_id_collision_closes_connection_and_cleans_state() {
     d.dedupe.tracker.close();
     bounded(d.dedupe.tracker.wait()).await;
 }
+
+#[tokio::test]
+async fn problems_subscription_ack_uses_memory_rev_even_when_db_rev_is_larger() {
+    use devbox_observe::{Problem, ProblemRun, ProblemSeverity};
+    let temp = tempfile::tempdir().expect("fixture result");
+    let d = daemon(&temp, Arc::new(tokio::sync::Notify::new()));
+    for _ in 0..8 {
+        d.services
+            .db
+            .write(|_| Ok(()))
+            .await
+            .expect("fixture result");
+    }
+    let (client, server) = UnixStream::pair().expect("fixture result");
+    let serving = tokio::spawn(connection(server, d.clone(), CancellationToken::new()));
+    let mut wire = Wire::new(client, FrameCodec::default());
+    wire.send(json_frame(0, &hello()))
+        .await
+        .expect("fixture result");
+    receive(&mut wire).await;
+    wire.send(json_frame(
+        0,
+        &ClientMessage::Subscribe {
+            id: 1,
+            topic: "observe.problems.changed".into(),
+            params: None,
+        },
+    ))
+    .await
+    .expect("fixture result");
+    assert!(matches!(receive(&mut wire).await,ServerMessage::Subscribed{rev,..} if rev=="0"));
+    d.services
+        .observe
+        .apply_problem_batch(
+            ProblemRun {
+                run_id: "one".into(),
+                project_id: "p".into(),
+                root: temp.path().into(),
+                source_cwd: Some(temp.path().into()),
+                windows_directory: None,
+                path: temp.path().join("one.log"),
+                attempt_id: Some("a".into()),
+                started_ms: 1,
+            },
+            vec![Problem {
+                file: "x.ts".into(),
+                line: 1,
+                col: None,
+                severity: ProblemSeverity::Error,
+                message: "example".into(),
+                source: String::new(),
+            }],
+            false,
+            &d.services.hub,
+        )
+        .expect("fixture result");
+    assert!(matches!(receive(&mut wire).await,ServerMessage::Event{rev,..} if rev=="1"));
+    assert!(d.services.db.rev() > d.services.observe.problem_rev());
+    drop(wire);
+    bounded(serving)
+        .await
+        .expect("fixture result")
+        .expect("fixture result");
+    d.dedupe.tracker.close();
+    bounded(d.dedupe.tracker.wait()).await;
+}
+
+#[tokio::test]
+async fn windows_native_long_poll_does_not_block_renderer_ping_and_routes_are_private() {
+    let temp = tempfile::tempdir().expect("fixture result");
+    let d = daemon(&temp, Arc::new(tokio::sync::Notify::new()));
+    let (client, server) = UnixStream::pair().expect("fixture result");
+    let serving = tokio::spawn(connection(server, d, CancellationToken::new()));
+    let mut wire = Wire::new(client, FrameCodec::default());
+    let mut native = hello();
+    if let ClientMessage::Hello { client, .. } = &mut native {
+        *client = ClientKind::App;
+    }
+    wire.send(json_frame(0, &native))
+        .await
+        .expect("fixture result");
+    receive(&mut wire).await;
+    wire.send(json_frame(0, &request(100, "windows.next")))
+        .await
+        .expect("fixture result");
+    wire.send(json_frame(7, &native))
+        .await
+        .expect("fixture result");
+    assert!(matches!(
+        receive(&mut wire).await,
+        ServerMessage::Welcome { .. }
+    ));
+    for (id, method) in [
+        (1, "system.ping"),
+        (2, "windows.next"),
+        (3, "windows.prepare"),
+        (4, "windows.run"),
+        (5, "windows.output"),
+    ] {
+        wire.send(json_frame(7, &request(id, method)))
+            .await
+            .expect("fixture result");
+        let response = receive(&mut wire).await;
+        assert!(
+            matches!(response, ServerMessage::Response { error: None, .. }) == (id == 1),
+            "{method}"
+        );
+    }
+    drop(wire);
+    bounded(serving)
+        .await
+        .expect("fixture result")
+        .expect("fixture result");
+}

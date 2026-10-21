@@ -18,6 +18,14 @@ export function shareByRevision(old: unknown, incoming: unknown): unknown {
   if (before !== undefined && after !== undefined && compareRev(after, before) <= 0) return old;
   return replaceEqualDeep(old, incoming);
 }
+/** DefineResult is a partial upsert at its saved rev. The following complete
+ * runtime.list snapshot must replace its stale trust/runs at that same rev. */
+export function shareRuntimeList(old: unknown, incoming: unknown): unknown {
+  const before = revOf(old),
+    after = revOf(incoming);
+  if (before !== undefined && after !== undefined && compareRev(after, before) < 0) return old;
+  return replaceEqualDeep(old, incoming);
+}
 /** tmux observations can change independently of terminal row revisions. */
 export function shareTerminalLive(old: unknown, incoming: unknown): unknown {
   const before = revOf(old),

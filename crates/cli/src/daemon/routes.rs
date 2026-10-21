@@ -69,6 +69,71 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             s.projects.prompts(p).await
         });
     let router = router
+        .register::<devbox_observe::ResolveLocation, _, _>(|s, _, p| async move {
+            super::locations::resolve(s, p).await
+        })
+        .register::<devbox_observe::ObserveProblems, _, _>(|s, _, p| async move {
+            super::problems::query(s, p).await
+        })
+        .register::<devbox_observe::ObservePorts, _, _>(|s, _, _| async move {
+            super::observe::ports(s).await
+        })
+        .register::<devbox_observe::ObserveProcesses, _, _>(|s, _, p| async move {
+            super::observe::processes(s, p).await
+        })
+        .register::<devbox_observe::ObserveKill, _, _>(
+            |s, _, p| async move { s.observe.kill(p).await },
+        )
+        .register::<devbox_observe::ObserveSystem, _, _>(|s, _, _| async move {
+            s.observe.system(s.paths.home.clone()).await
+        })
+        .register::<devbox_observe::LogsOpen, _, _>(|s, ctx, p| async move {
+            super::logs::open(s, ctx, p).await
+        })
+        .register::<devbox_observe::LogsSearch, _, _>(|s, ctx, p| async move {
+            super::logs::search(s, ctx, p).await
+        })
+        .register::<devbox_runtime::RuntimeContainers, _, _>(|s, ctx, _| async move {
+            s.containers.list(ctx.cancel).await
+        })
+        .register::<devbox_runtime::RuntimeContainerAction, _, _>(|s, ctx, p| async move {
+            s.containers.action(p, ctx.cancel).await
+        })
+        .register::<devbox_runtime::RuntimeStart, _, _>(
+            |s, _, p| async move { s.runs.start(p).await },
+        )
+        .register::<devbox_runtime::RuntimeStop, _, _>(
+            |s, _, p| async move { s.runs.stop(p).await },
+        )
+        .register::<devbox_runtime::RuntimeRestart, _, _>(|s, _, p| async move {
+            s.runs.restart(p).await
+        })
+        .register::<devbox_runtime::RuntimeExited, _, _>(
+            |s, _, p| async move { s.runs.exited(p).await },
+        )
+        .register::<devbox_runtime::RuntimeDetect, _, _>(
+            |s, _, p| async move { s.runs.detect(p).await },
+        )
+        .register::<devbox_runtime::RuntimeSchedules, _, _>(|s, _, p| async move {
+            s.runs.schedules(p).await
+        })
+        .register::<devbox_runtime::RuntimeGet, _, _>(|s, _, p| async move { s.runs.get(p).await })
+        .register::<devbox_runtime::RuntimeSummary, _, _>(|s, _, p| async move {
+            s.runs.summary(p).await
+        })
+        .register::<devbox_runtime::RuntimeRuns, _, _>(
+            |s, _, p| async move { s.runs.runs(p).await },
+        )
+        .register::<devbox_runtime::RuntimeList, _, _>(
+            |s, _, p| async move { s.runs.list(p).await },
+        )
+        .register::<devbox_runtime::RuntimeDefine, _, _>(
+            |s, _, p| async move { s.runs.define(p).await },
+        )
+        .register::<devbox_runtime::RuntimeUndefine, _, _>(|s, _, p| async move {
+            s.runs.undefine(p).await
+        });
+    let router = router
         .register::<devbox_terminal::TerminalAttach, _, _>(|s, ctx, p| async move {
             s.terminal.attach(ctx, p).await
         })
@@ -138,9 +203,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsDiscard, _, _>(|s, _, p| async move {
             s.agents.discard(p).await
         })
-        .register::<devbox_agents::AgentsTest, _, _>(
-            |s, _, p| async move { s.agents.test(&p.id).await },
-        )
+        .register::<devbox_agents::AgentsTest, _, _>(|s, _, p| async move {
+            super::agent_test::test_agent(s, &p.id).await
+        })
         .register::<devbox_agents::AgentsCleanupCandidates, _, _>(|s, _, p| async move {
             s.agents.cleanup_candidates(p).await
         })
@@ -165,6 +230,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsCommits, _, _>(|s, _, p| async move {
             s.agents.commits(&p.id).await
         });
+    let router = super::secret_routes::register(router);
     if test_instance {
         router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
             super::debug::echo(ctx, params)
@@ -181,6 +247,10 @@ pub fn declared() -> NameCollector {
     projects::export(&mut n);
     devbox_terminal::export(&mut n);
     devbox_agents::export(&mut n);
+    devbox_runtime::export(&mut n);
+    devbox_observe::export(&mut n);
+    devbox_secrets::export(&mut n);
+    devbox_core::notify::export(&mut n);
     n
 }
 

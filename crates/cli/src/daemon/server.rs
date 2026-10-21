@@ -22,8 +22,11 @@ struct Daemon {
     topics: HashSet<&'static str>,
     dedupe: Dedupe,
 }
+static NATIVE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 struct Channel {
+    native_generation: u64,
     hello: bool,
+    client: Option<devbox_protocol::message::ClientKind>,
     generation: CancellationToken,
     inflight: Arc<Mutex<HashMap<u32, CancellationToken>>>,
     subscriptions: HashMap<u32, tokio::task::JoinHandle<()>>,
@@ -31,7 +34,9 @@ struct Channel {
 impl Default for Channel {
     fn default() -> Self {
         Self {
+            native_generation: NATIVE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             hello: false,
+            client: None,
             generation: CancellationToken::new(),
             inflight: Arc::default(),
             subscriptions: HashMap::new(),
@@ -56,10 +61,18 @@ pub async fn serve(
     shutdown: CancellationToken,
 ) -> io::Result<()> {
     services
+        .secrets
+        .initialize()
+        .await
+        .map_err(|_| io::Error::other("initialize secrets"))?;
+    services
         .agents
         .initialize()
         .await
         .map_err(|error| io::Error::other(format!("initialize agents: {error:?}")))?;
+    services.runs.initialize().await.map_err(|error| {
+        io::Error::other(format!("initialize execution definitions: {error:?}"))
+    })?;
     let daemon = Arc::new(Daemon {
         router: routes::router(services.clone()),
         topics: routes::declared().topics.into_iter().collect(),
@@ -81,10 +94,13 @@ pub async fn serve(
         }
     };
     shutdown.cancel();
+    daemon.services.runs.begin_shutdown();
     while connections.join_next().await.is_some() {}
     daemon.dedupe.tracker.close();
     daemon.dedupe.tracker.wait().await;
     daemon.services.agents.shutdown().await;
+    daemon.services.runs.shutdown().await;
+    daemon.services.observe.shutdown().await;
     result
 }
 
@@ -218,7 +234,7 @@ async fn handle(
             version,
             protocol,
             instance,
-            ..
+            client,
         } => {
             if state.hello || instance != d.services.paths.instance.as_str() {
                 return Err(invalid("duplicate hello or instance mismatch"));
@@ -248,6 +264,7 @@ async fn handle(
                 return Err(invalid("hello version or protocol mismatch"));
             }
             state.hello = true;
+            state.client = Some(client);
             send(tx, ch, &state.generation, welcome).await?;
         }
         ClientMessage::Request { id, .. } | ClientMessage::Subscribe { id, .. } if !state.hello => {
@@ -268,6 +285,84 @@ async fn handle(
             params,
             client_request_id,
         } => {
+            use devbox_protocol::message::ClientKind;
+            let windows = super::windows_routes::internal(&method);
+            let native =
+                super::secret_routes::native(&method) || super::windows_routes::native(&method);
+            let internal = super::secret_routes::internal(&method);
+            let allowed = if native {
+                ch == 0 && state.client == Some(ClientKind::App)
+            } else if method == "secrets.export_key" {
+                (ch == 0 && state.client == Some(ClientKind::Cli))
+                    || (ch != 0 && state.client == Some(ClientKind::App))
+            } else if windows || method == "secrets.run" {
+                ch == 0 && state.client == Some(ClientKind::Cli)
+            } else {
+                true
+            };
+            if !allowed {
+                return send(
+                    tx,
+                    ch,
+                    &state.generation,
+                    response(
+                        id,
+                        Err(DispatchError::common(CommonError::MethodNotFound {
+                            method,
+                        })),
+                    ),
+                )
+                .await;
+            }
+            if windows {
+                let token = state.generation.child_token();
+                {
+                    let mut inflight = state.inflight.lock().expect("requests");
+                    if inflight.contains_key(&id) {
+                        return Err(invalid("duplicate inflight request id"));
+                    }
+                    inflight.insert(id, token.clone());
+                }
+                let (d, tx, generation, inflight, native_generation) = (
+                    d.clone(),
+                    tx.clone(),
+                    state.generation.clone(),
+                    state.inflight.clone(),
+                    state.native_generation,
+                );
+                let opener = streams.opener(ch, generation.clone(), tx.clone());
+                tokio::spawn(async move {
+                    let result = super::windows_routes::dispatch(
+                        d.services.clone(),
+                        &method,
+                        Ctx {
+                            channel: ch,
+                            cancel: token,
+                            streams: Some(opener),
+                        },
+                        native_generation,
+                        params,
+                    )
+                    .await;
+                    let _ = send(&tx, ch, &generation, response(id, result)).await;
+                    inflight.lock().expect("requests").remove(&id);
+                });
+                return Ok(());
+            }
+            if internal {
+                let result = super::secret_routes::dispatch(
+                    d.services.clone(),
+                    &method,
+                    Ctx {
+                        channel: ch,
+                        cancel: state.generation.clone(),
+                        streams: Some(streams.opener(ch, state.generation.clone(), tx.clone())),
+                    },
+                    params,
+                )
+                .await;
+                return send(tx, ch, &state.generation, response(id, result)).await;
+            }
             let token = CancellationToken::new();
             {
                 let mut inflight = state.inflight.lock().expect("requests");
@@ -339,7 +434,12 @@ async fn handle(
                 ServerMessage::Subscribed {
                     id,
                     sub_id,
-                    rev: d.services.db.rev().to_string(),
+                    rev: if topic == "observe.problems.changed" {
+                        d.services.observe.problem_rev()
+                    } else {
+                        d.services.db.rev()
+                    }
+                    .to_string(),
                 },
             )
             .await?;

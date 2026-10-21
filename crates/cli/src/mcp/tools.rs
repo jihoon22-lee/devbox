@@ -7,7 +7,7 @@ use devbox_protocol::message::ClientKind;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-const RPC_DEADLINE: Duration = Duration::from_secs(5);
+pub(super) const RPC_DEADLINE: Duration = Duration::from_secs(5);
 
 pub fn list(write: bool) -> Vec<Tool> {
     let mut tools = vec![
@@ -21,7 +21,8 @@ pub fn list(write: bool) -> Vec<Tool> {
     tools[1]
         .input_schema
         .properties
-        .insert("afterId", StringSchema { kind: "string" });
+        .insert("afterId", PropertySchema::String);
+    tools.extend(super::runs::tools());
     if write {
         tools.push(tool(
             "devbox_agent_send",
@@ -29,9 +30,16 @@ pub fn list(write: bool) -> Vec<Tool> {
             &["id", "text"],
         ));
     }
+    if write {
+        tools.push(tool(
+            "devbox_run_task",
+            "승인된 프로젝트 작업을 실행합니다.",
+            &["projectId", "id"],
+        ));
+    }
     tools
 }
-fn tool(name: &'static str, description: &'static str, fields: &[&'static str]) -> Tool {
+pub(super) fn tool(name: &'static str, description: &'static str, fields: &[&'static str]) -> Tool {
     Tool {
         name,
         description,
@@ -39,7 +47,7 @@ fn tool(name: &'static str, description: &'static str, fields: &[&'static str]) 
             kind: "object",
             properties: fields
                 .iter()
-                .map(|field| (*field, StringSchema { kind: "string" }))
+                .map(|field| (*field, PropertySchema::String))
                 .collect::<BTreeMap<_, _>>(),
             required: fields.to_vec(),
             additional_properties: false,
@@ -101,10 +109,13 @@ impl Server {
                     Err(error) => Ok(error),
                 }
             }
+            "devbox_runs" | "devbox_logs" | "devbox_problems" | "devbox_run_task" => {
+                self.call_run_tool(call).await
+            }
             _ => Err(ErrorKind::InvalidParams.into()),
         }
     }
-    async fn rpc<M: Method>(&mut self, args: &M::Params) -> Result<M::Output, ToolResult>
+    pub(super) async fn rpc<M: Method>(&mut self, args: &M::Params) -> Result<M::Output, ToolResult>
     where
         M::Output: serde::de::DeserializeOwned,
         M::Params: serde::Serialize,
@@ -155,6 +166,13 @@ fn message_for(error: &ClientError) -> &'static str {
             }
             "agents.invalid_input" | "invalid_params" => {
                 "에이전트 작업의 입력값이 올바르지 않습니다."
+            }
+            "projects.trust_required" | "projects.trust_preview_stale" => {
+                "projects.trust_required: 프로젝트 실행 명령의 신뢰 승인이 필요합니다. 앱에서 변경 내용을 확인하고 승인해 주세요."
+            }
+            "runtime.run_not_found" | "observe.run_not_found" => "실행을 찾을 수 없습니다.",
+            "runtime.project_not_found" | "observe.project_not_found" => {
+                "프로젝트를 찾을 수 없습니다."
             }
             "cancelled" => "요청이 취소되었습니다.",
             "daemon_restarting" => {

@@ -1,5 +1,5 @@
 # Called from an owned sync tree, or a disposable hosted runner checkout.
-param([ValidateSet('dev', 'build')][string]$Mode = 'build', [switch]$Verify)
+param([ValidateSet('dev', 'build')][string]$Mode = 'build', [switch]$Verify, [ValidateSet('prod', 'accept', 'dev')][string]$Channel = $(if ($Mode -eq 'dev') { 'dev' } else { 'prod' }))
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 if ($env:GITHUB_ACTIONS -ne 'true') {
@@ -12,12 +12,13 @@ function Run([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Command failed ($LASTEXITCODE)" }
 }
-$savedTarget = $env:CARGO_TARGET_DIR
-$savedJobs = $env:CARGO_BUILD_JOBS
-$savedThreads = $env:RUST_TEST_THREADS
+$saved = @{}
+foreach ($name in @('CARGO_TARGET_DIR', 'CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'DEVBOX_APP_CHANNEL', 'TAURI_CONFIG')) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 Push-Location $repo
 try {
-    $env:CARGO_TARGET_DIR = Join-Path $repo 'app\src-tauri\target'
+    $env:CARGO_TARGET_DIR = Join-Path $repo "app\src-tauri\target\$Channel"
+    $env:DEVBOX_APP_CHANNEL = $Channel
+    $env:TAURI_CONFIG = if ($Channel -eq 'prod') { '{}' } else { Get-Content "app/src-tauri/tauri.$Channel.conf.json" -Raw }
     $env:CARGO_BUILD_JOBS = '2'
     $env:RUST_TEST_THREADS = '2'
     foreach ($name in @('devbox-linux', 'devbox-version.txt')) {
@@ -33,27 +34,28 @@ try {
         Run cargo @('clippy', '-p', 'devbox-win', '--all-targets', '--locked', '--', '-D', 'warnings')
         Run cargo @('test', '--manifest-path', 'app/src-tauri/Cargo.toml', '--locked', '--lib')
     }
-    Run pnpm @('--filter', 'app', 'tauri', $Mode, '--', '--locked')
+    $configArgs = @(if ($Channel -ne 'prod') { @('--config', "src-tauri/tauri.$Channel.conf.json") })
+    Run pnpm (@('--filter', 'app', 'tauri', $Mode) + $configArgs + @('--', '--locked'))
     if ($Mode -eq 'build') {
         $release = Join-Path $env:CARGO_TARGET_DIR 'release'
         foreach ($name in @('Devbox.exe', 'devbox-linux', 'devbox-version.txt')) {
-            if (!(Test-Path -LiteralPath (Join-Path $release $name) -PathType Leaf)) { throw "Missing built file: $name" }
+            $file = Join-Path $release $name
+            if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing built file: $name" }
+            if ($name -ne 'Devbox.exe' -and (Get-FileHash $file).Hash -ne (Get-FileHash "app/src-tauri/resources/$name").Hash) { throw "Built resource differs: $name" }
         }
-        foreach ($name in @('devbox-linux', 'devbox-version.txt')) {
-            if ((Get-FileHash (Join-Path $release $name)).Hash -ne (Get-FileHash "app/src-tauri/resources/$name").Hash) { throw "Built resource differs: $name" }
-        }
-        $process = Start-Process -FilePath (Join-Path $release 'Devbox.exe') -ArgumentList '--self-check' -PassThru
+        $process = Start-Process -FilePath (Join-Path $release 'Devbox.exe') -ArgumentList @('--self-check', '--channel', $Channel) -PassThru
         $null = $process.Handle # Keep the process handle until ExitCode is collected (Windows PowerShell 5.1).
         if (!$process.WaitForExit(60000)) { $process.Kill(); throw 'Self-check timed out' }
         $process.Refresh()
         if ($process.ExitCode -ne 0) { throw "Self-check failed ($($process.ExitCode))" }
         $installers = @(Get-ChildItem -Path (Join-Path $release 'bundle\nsis\*.exe') -File)
         if (!$installers.Count) { throw 'NSIS installer missing' }
+        $hashes = @{}
+        foreach ($file in $installers) { $hashes[$file.Name] = (Get-FileHash $file.FullName).Hash.ToLowerInvariant() }
+        @{ channel = $Channel; source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID; repository = $env:GITHUB_REPOSITORY; workflow = '.github/workflows/windows.yml'; version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version; installers = $hashes } | ConvertTo-Json | Set-Content (Join-Path $release 'bundle\nsis\receipt.json') -Encoding utf8
         $installers | ForEach-Object { Write-Host $_.FullName }
     }
 } finally {
-    $env:CARGO_TARGET_DIR = $savedTarget
-    $env:CARGO_BUILD_JOBS = $savedJobs
-    $env:RUST_TEST_THREADS = $savedThreads
+    foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
     Pop-Location
 }

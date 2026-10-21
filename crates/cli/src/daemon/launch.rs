@@ -25,6 +25,8 @@ fn launch_failure<E: devbox_protocol::DomainError>(
     ProjectsError::LaunchFailed {
         terminals: result.terminals,
         agents: result.agents,
+        services: result.services,
+        run_ids: result.run_ids.clone(),
         message: format!("{resource}: {reason}"),
     }
     .into()
@@ -104,6 +106,11 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
             })?;
         Some(branch)
     };
+    let prepared_services = s
+        .runs
+        .prepare_launch_snapshot(&snapshot)
+        .await
+        .map_err(|error| launch_failure(error, &result, "service preflight"))?;
     for (index, terminal) in config.terminals.into_iter().enumerate() {
         let created = s
             .terminal
@@ -137,7 +144,20 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
             .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
         result.agents += 1;
     }
-    // Services are intentionally deferred to S2.
+    if let Some(prepared) = prepared_services {
+        let mut started = Vec::new();
+        let outcome = s
+            .runs
+            .start_prepared_graph_reporting(prepared, &mut started)
+            .await;
+        for run in started {
+            if run.kind == devbox_runtime::RunKind::Service {
+                result.services += 1;
+            }
+            result.run_ids.push(run.id);
+        }
+        outcome.map_err(|error| launch_failure(error, &result, "service"))?;
+    }
     result.rev = s.db.rev().to_string();
     Ok(result)
 }

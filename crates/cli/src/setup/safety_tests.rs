@@ -34,7 +34,8 @@ fn resolved_xdg_paths_are_bound_to_only_the_selected_instance() {
     )
     .expect("parse fixture instance");
     let root = temp.path().join("custom space%\"${HOME}");
-    paths.config_dir = root.join("config/devbox");
+    paths.xdg_config_home = root.join("config");
+    paths.config_dir = paths.xdg_config_home.join("devbox");
     paths.instance_config_dir = paths.config_dir.join("test-custom");
     paths.data_dir = root.join("data/devbox/test-custom");
     paths.bin_dir = root.join("data/devbox/bin");
@@ -84,14 +85,12 @@ fn unit_paths_without_xdg_parents_return_contextual_errors() {
     )
     .expect("resolve fixture paths");
     for (field, value, message) in [
-        ("config", "/", "config directory has no XDG parent"),
         ("data", "/devbox", "data directory has no XDG ancestor"),
         ("state", "/devbox", "state directory has no XDG ancestor"),
         ("socket", "/", "socket has no runtime parent"),
     ] {
         let mut invalid = paths.clone();
         match field {
-            "config" => invalid.config_dir = value.into(),
             "data" => invalid.data_dir = value.into(),
             "state" => invalid.state_dir = value.into(),
             _ => invalid.socket = value.into(),
@@ -295,10 +294,10 @@ async fn invalid_env_or_foreign_unit_prevents_reload() {
 
 #[test]
 fn tmux_unit_is_managed_foreground_and_independent_of_daemon_lifetime() {
-    let units = render_units();
+    let units = render_units(devbox_protocol::channel::AppChannel::Prod);
     let (_, body) = units
         .iter()
-        .find(|(name, _)| *name == "devbox-tmux@.service")
+        .find(|(name, _)| name == "devbox-tmux@.service")
         .expect("tmux unit");
     assert!(body.starts_with(MARKER));
     assert!(body.contains("Type=exec"));

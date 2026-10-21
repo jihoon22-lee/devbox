@@ -8,6 +8,8 @@ import { useToasts } from "../ui/Toast";
 import { useCommands } from "./commands";
 import { Shell } from "./Shell";
 
+vi.mock("../features/terminal/TerminalView", () => ({ TerminalView: () => <div>터미널 화면</div> }));
+
 test("title, Ctrl+Shift+O and registry open the project switcher", async () => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   const wire = new ProjectWire({ trustNotRequired: true });
@@ -58,7 +60,14 @@ test("launch selects project, navigates to terminal preserving search and keeps 
   await userEvent.click(await screen.findByRole("button", { name: "devbox 시작 구성 실행" }));
   await waitFor(() => expect(wire.requests("projects.launch")).toHaveLength(1));
   await act(async () =>
-    wire.reply("projects.launch", { terminals: 1, agents: 0, terminalIds: ["launch-shell"], rev: "2" }),
+    wire.reply("projects.launch", {
+      terminals: 1,
+      agents: 0,
+      services: 0,
+      runIds: [],
+      terminalIds: ["launch-shell"],
+      rev: "2",
+    }),
   );
   await waitFor(() => expect(window.location.pathname).toBe("/terminal"));
   expect(window.location.search).toContain("gateway=");
@@ -66,7 +75,7 @@ test("launch selects project, navigates to terminal preserving search and keeps 
   expect(useCurrentProject.getState().id).toBe("a");
   await waitFor(() => expect(wire.requests("terminal.list")).toHaveLength(1));
   await act(async () => wire.fail("terminal.list"));
-  expect(useToasts.getState().items.at(-1)?.title).toBe("터미널 1개 · 에이전트 0개를 시작했습니다");
+  expect(useToasts.getState().items.at(-1)?.title).toBe("터미널 1개 · 에이전트 0개 · 서비스 0개를 시작했습니다");
   expect(wire.requests("projects.launch")).toHaveLength(1);
   expect(screen.queryByRole("dialog", { name: "프로젝트" })).not.toBeInTheDocument();
 });

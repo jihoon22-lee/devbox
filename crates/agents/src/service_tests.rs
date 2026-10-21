@@ -1,12 +1,5 @@
 use super::*;
 #[test]
-fn allocate_port_skips_blocks_with_a_listening_port() {
-    let base = allocate_port(&[]).expect("available owned block");
-    let listener = std::net::TcpListener::bind(("127.0.0.1", base + 3)).expect("owned test port");
-    assert!(allocate_port_from(&[], base).expect("owned fixture") >= base + 10);
-    drop(listener);
-}
-#[test]
 fn same_state_session_metadata_and_closed_hooks() {
     let mut t = task();
     t.state = crate::state::AgentState::Running;

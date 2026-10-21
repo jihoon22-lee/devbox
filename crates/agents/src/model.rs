@@ -285,7 +285,7 @@ pub struct AgentRebaseStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTest {
-    pub terminal_id: String,
+    pub run_id: String,
 }
 
 domain_error! {

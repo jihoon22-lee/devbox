@@ -1,4 +1,5 @@
 use crate::CoreError;
+use devbox_protocol::channel::AppChannel;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +23,9 @@ impl Instance {
     }
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+    pub fn channel(&self) -> AppChannel {
+        AppChannel::for_instance(self.as_str())
     }
     pub fn is_test(&self) -> bool {
         self.0.starts_with("test-")
@@ -53,6 +57,7 @@ pub struct Paths {
     pub home: PathBuf,
     pub data_dir: PathBuf,
     pub state_dir: PathBuf,
+    pub xdg_config_home: PathBuf,
     pub config_dir: PathBuf,
     pub instance_config_dir: PathBuf,
     pub socket: PathBuf,
@@ -68,18 +73,21 @@ impl Paths {
         let home = absolute_env_path(env, "HOME").ok_or(CoreError::NoHome)?;
         let xdg =
             |key: &str, rel: &str| absolute_env_path(env, key).unwrap_or_else(|| home.join(rel));
-        let data_root = xdg("XDG_DATA_HOME", ".local/share").join("devbox");
+        let data_home = xdg("XDG_DATA_HOME", ".local/share");
+        let channel = instance.channel().config();
+        let data_root = data_home.join("devbox");
         let data_dir = data_root.join(instance.as_str());
         let state_dir = xdg("XDG_STATE_HOME", ".local/state")
             .join("devbox")
             .join(instance.as_str());
-        let config_dir = xdg("XDG_CONFIG_HOME", ".config").join("devbox");
+        let xdg_config_home = xdg("XDG_CONFIG_HOME", ".config");
+        let config_dir = xdg_config_home.join(channel.storage_name);
         let runtime = absolute_env_path(env, "XDG_RUNTIME_DIR")
             .unwrap_or_else(|| PathBuf::from(format!("/run/user/{}", env.uid())));
         Ok(Self {
             socket: runtime.join(format!("devbox-{}.sock", instance.as_str())),
             instance_config_dir: config_dir.join(instance.as_str()),
-            bin_dir: data_root.join("bin"),
+            bin_dir: data_home.join(channel.storage_name).join("bin"),
             log_dir: state_dir.join("logs"),
             db_path: data_dir.join("devbox.db"),
             index_db_path: data_dir.join("index.db"),
@@ -88,6 +96,7 @@ impl Paths {
             home,
             data_dir,
             state_dir,
+            xdg_config_home,
             config_dir,
         })
     }
@@ -180,13 +189,16 @@ mod tests {
             p.state_dir,
             PathBuf::from("/home/u/.local/state/devbox/dev")
         );
-        assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/devbox"));
+        assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/devbox-dev"));
         assert_eq!(
             p.instance_config_dir,
-            PathBuf::from("/home/u/.config/devbox/dev")
+            PathBuf::from("/home/u/.config/devbox-dev/dev")
         );
         assert_eq!(p.socket, PathBuf::from("/run/user/1000/devbox-dev.sock"));
-        assert_eq!(p.bin_dir, PathBuf::from("/home/u/.local/share/devbox/bin"));
+        assert_eq!(
+            p.bin_dir,
+            PathBuf::from("/home/u/.local/share/devbox-dev/bin")
+        );
         assert_eq!(
             p.db_path,
             PathBuf::from("/home/u/.local/share/devbox/dev/devbox.db")
@@ -276,7 +288,7 @@ mod tests {
                 p.state_dir,
                 PathBuf::from("/home/u/.local/state/devbox/dev")
             );
-            assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/devbox"));
+            assert_eq!(p.config_dir, PathBuf::from("/home/u/.config/devbox-dev"));
             assert_eq!(p.socket, PathBuf::from("/run/user/1000/devbox-dev.sock"));
         }
     }
@@ -348,5 +360,80 @@ mod tests {
             }
             error => panic!("unexpected error: {error}"),
         }
+    }
+    #[test]
+    fn channels_isolate_binaries_config_and_instance_state_under_xdg() {
+        let e = env(&[
+            ("HOME", "/owned"),
+            ("XDG_CONFIG_HOME", "/custom/config"),
+            ("XDG_DATA_HOME", "/custom/data"),
+        ]);
+        for (instance, storage) in [
+            ("prod", "devbox"),
+            ("accept", "devbox-accept"),
+            ("dev", "devbox-dev"),
+            ("test-owned", "devbox"),
+        ] {
+            let p = Paths::resolve(Instance::parse(instance).expect("fixture result"), &e)
+                .expect("fixture result");
+            assert_eq!(p.xdg_config_home, PathBuf::from("/custom/config"));
+            assert_eq!(p.config_dir, PathBuf::from("/custom/config").join(storage));
+            assert_eq!(p.instance_config_dir, p.config_dir.join(instance));
+            assert_eq!(
+                p.bin_dir,
+                PathBuf::from("/custom/data").join(storage).join("bin")
+            );
+            assert_eq!(
+                p.data_dir,
+                PathBuf::from("/custom/data/devbox").join(instance)
+            );
+            assert_eq!(
+                p.state_dir,
+                PathBuf::from("/owned/.local/state/devbox").join(instance)
+            );
+            assert_eq!(
+                crate::systemd::path_environment(&p)[1],
+                ("XDG_CONFIG_HOME", PathBuf::from("/custom/config").as_path())
+            );
+        }
+    }
+
+    #[test]
+    fn accept_config_does_not_load_prod_roots_or_secret_names() {
+        let temp = tempfile::tempdir().expect("fixture result");
+        let e = env(&[("HOME", temp.path().to_str().expect("fixture value"))]);
+        let prod = Paths::resolve(Instance::parse("prod").expect("fixture result"), &e)
+            .expect("fixture result");
+        let accept = Paths::resolve(Instance::parse("accept").expect("fixture result"), &e)
+            .expect("fixture result");
+        prod.ensure_dirs().expect("fixture result");
+        std::fs::write(
+            prod.config_dir.join("config.toml"),
+            "[secrets]\nnames=['PROD_SENTINEL']\n",
+        )
+        .expect("fixture result");
+        std::fs::write(
+            prod.config_dir.join("config.local.toml"),
+            "[windows]\nroot='C:\\prod-fixture'\n",
+        )
+        .expect("fixture result");
+        let config = crate::Config::load(&accept).expect("fixture result");
+        assert!(config.secrets.names.is_empty());
+        assert_eq!(config.windows.root, None);
+        accept.ensure_dirs().expect("fixture result");
+        std::fs::write(
+            accept.config_dir.join("config.local.toml"),
+            "[windows]\nroot='C:\\accept-fixture'\n[secrets]\nnames=['ACCEPT_SENTINEL']\n",
+        )
+        .expect("fixture result");
+        let config = crate::Config::load(&accept).expect("fixture result");
+        assert_eq!(config.windows.root.as_deref(), Some(r"C:\accept-fixture"));
+        assert_eq!(config.secrets.names, ["ACCEPT_SENTINEL"]);
+        let prod_config = crate::Config::load(&prod).expect("fixture result");
+        assert_eq!(
+            prod_config.windows.root.as_deref(),
+            Some(r"C:\prod-fixture")
+        );
+        assert_eq!(prod_config.secrets.names, ["PROD_SENTINEL"]);
     }
 }

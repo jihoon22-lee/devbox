@@ -1,5 +1,6 @@
 #[cfg(any(windows, test))]
 pub mod bridge;
+pub mod channel;
 #[cfg(any(windows, test))]
 pub mod connection;
 #[cfg(any(windows, test))]
@@ -32,3 +33,9 @@ pub mod notify;
 pub mod preferences;
 #[cfg(any(windows, test))]
 pub mod shortcuts;
+
+#[cfg(any(windows, test))]
+pub mod secrets;
+
+#[cfg(any(windows, test))]
+pub mod windows;

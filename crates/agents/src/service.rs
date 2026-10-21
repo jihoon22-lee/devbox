@@ -1,16 +1,19 @@
+pub(crate) use crate::events::{apply_event, changed};
+#[cfg(test)]
+use crate::tracker::Binding;
 use crate::{
-    AgentsAttentionTopic, AgentsChangedTopic,
     model::*,
     profile::ToolProfile,
-    state::{self, AgentEvent, AgentState},
+    state::{AgentEvent, AgentState},
     store,
-    tracker::Binding,
 };
 use devbox_core::{Db, Hub, Paths};
 use devbox_projects::ProjectsService;
 use devbox_protocol::{Done, Fail, Internal};
 use devbox_terminal::TerminalService;
-use std::{collections::HashSet, path::Path, sync::Arc};
+#[cfg(test)]
+use std::path::Path;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub(crate) type Result<T> = std::result::Result<T, Fail<AgentsError>>;
@@ -28,7 +31,7 @@ pub struct AgentsService {
     pub(crate) profiles: Vec<ToolProfile>,
     pub(crate) devbox_bin: String,
     pub(crate) use_scope: bool,
-    reservations: Mutex<()>,
+    pub(crate) reservations: Mutex<()>,
     pub(crate) actions: Mutex<()>,
     pub(crate) cleanup_after_close: bool,
     pub(crate) hook_files: Mutex<()>,
@@ -41,146 +44,6 @@ pub(crate) fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
-}
-pub(crate) fn changed(hub: &Hub, task: &AgentTask, rev: u64, entered_attention: bool) {
-    hub.publish::<AgentsChangedTopic>(
-        rev,
-        &AgentsChanged {
-            rev: rev.to_string(),
-            id: task.id.clone(),
-        },
-    );
-    if entered_attention && state::is_attention(task.state) {
-        hub.publish::<AgentsAttentionTopic>(
-            rev,
-            &AgentsAttention {
-                id: task.id.clone(),
-                state: task.state,
-                message: task
-                    .attention
-                    .as_ref()
-                    .map(|a| a.message.clone())
-                    .unwrap_or_default(),
-            },
-        );
-    }
-}
-pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bool {
-    if matches!(event, AgentEvent::OutputWaiting) && t.state != AgentState::Running {
-        return false;
-    }
-    if matches!(event, AgentEvent::OutputResumed)
-        && t.attention.as_ref().is_none_or(|a| a.kind != "output")
-    {
-        return false;
-    }
-    if t.state == AgentState::Closed {
-        return false;
-    }
-    let ended = matches!(
-        event,
-        AgentEvent::Exited { .. } | AgentEvent::SetupFailed { .. } | AgentEvent::SessionLost
-    );
-    if t.tool_exited
-        && !ended
-        && !matches!(event, AgentEvent::UserReview | AgentEvent::Closed { .. })
-    {
-        return false;
-    }
-    let exit_changed = ended && !t.tool_exited;
-    t.tool_exited |= ended;
-    let mut updated = exit_changed
-        || matches!(
-            event,
-            AgentEvent::PromptSubmitted | AgentEvent::UserInstructed
-        ) && matches!(
-            t.state,
-            AgentState::Running | AgentState::Waiting | AgentState::Idle
-        );
-    let mut transitioned = false;
-    if let AgentEvent::SessionStarted { session_id } = event
-        && t.session_id.as_ref() != Some(session_id)
-    {
-        t.session_id = Some(session_id.clone());
-        updated = true;
-    }
-    if let Some(next) = state::next(t.state, event) {
-        transitioned = true;
-        t.state = next;
-        t.reason = state::fail_reason(event);
-        updated = true;
-    }
-    let message = match event {
-        AgentEvent::NeedsInput { message } if t.state == AgentState::Waiting => {
-            Some(crate::limits::attention_message(message))
-        }
-        AgentEvent::TurnComplete { message } if t.state == AgentState::Idle => {
-            Some(crate::limits::attention_message(
-                message.as_deref().unwrap_or("다음 지시를 기다립니다"),
-            ))
-        }
-        AgentEvent::OutputWaiting if t.state == AgentState::Waiting => {
-            Some("입력을 기다립니다".into())
-        }
-        _ => None,
-    };
-    if state::is_attention(t.state) && (transitioned || message.is_some()) {
-        let message = message.unwrap_or_else(|| {
-            t.reason
-                .clone()
-                .unwrap_or_else(|| "다음 지시를 기다립니다".into())
-        });
-        let kind = match t.state {
-            AgentState::Waiting if matches!(event, AgentEvent::OutputWaiting) => "output",
-            AgentState::Waiting => "input",
-            AgentState::Idle => "idle",
-            _ => "failed",
-        };
-        let attention_changed = t
-            .attention
-            .as_ref()
-            .is_none_or(|a| a.message != message || a.kind != kind);
-        if attention_changed {
-            updated = true;
-        }
-        if transitioned || attention_changed {
-            t.attention = Some(Attention {
-                kind: kind.into(),
-                message,
-                at_ms: now,
-            });
-        }
-    } else if transitioned {
-        t.attention = None;
-    }
-    if updated {
-        t.activity_seq = t.activity_seq.wrapping_add(1);
-        t.updated_ms = now;
-    }
-    updated
-}
-pub(crate) fn allocate_port(tasks: &[AgentTask]) -> std::result::Result<u16, AgentsError> {
-    allocate_port_from(tasks, 20000)
-}
-fn allocate_port_from(tasks: &[AgentTask], start: u16) -> std::result::Result<u16, AgentsError> {
-    let used: HashSet<_> = tasks
-        .iter()
-        .filter(|t| t.state != AgentState::Closed)
-        .map(|t| t.port)
-        .collect();
-    for base in (u32::from(start)..=65520).step_by(10) {
-        let base = base as u16;
-        if used.contains(&base) {
-            continue;
-        }
-        let listeners: std::io::Result<Vec<_>> = (base..=base + 9)
-            .map(|p| std::net::TcpListener::bind(("127.0.0.1", p)))
-            .collect();
-        if listeners.is_ok() {
-            return Ok(base);
-        }
-    }
-    Err(AgentsError::InvalidInput)
 }
 impl AgentsService {
     pub fn new(
@@ -233,185 +96,6 @@ impl AgentsService {
             .ok_or(AgentsError::NotFound { id: missing })?;
         crate::limits::serialized(&task, crate::limits::STORED_TASK_BYTES)?;
         Ok(task)
-    }
-    pub async fn create(self: &Arc<Self>, p: CreateAgentTask) -> Result<AgentTask> {
-        let snapshot = self
-            .projects
-            .setup_snapshot(&p.project_id)
-            .await
-            .map_err(project_trust_failure)?;
-        self.create_with_snapshot(p, snapshot).await
-    }
-
-    /// Composite launch supplies the same approved configuration as its terminals.
-    pub async fn create_with_snapshot(
-        self: &Arc<Self>,
-        p: CreateAgentTask,
-        snapshot: devbox_projects::trust::SetupSnapshot,
-    ) -> Result<AgentTask> {
-        crate::limits::input(&p.prompt)?;
-        let title = crate::plan::checked_title(&p.title)?.to_owned();
-        let _reservation = self.reservations.lock().await;
-        let project = self
-            .projects
-            .get(&p.project_id)
-            .await
-            .map_err(|e| Fail::Internal(format!("agent project: {e:?}")))?
-            .ok_or_else(|| AgentsError::ProjectNotFound {
-                id: p.project_id.clone(),
-            })?;
-        let profile = crate::profile::resolve(&self.profiles, &p.profile).ok_or_else(|| {
-            AgentsError::ProfileNotFound {
-                id: p.profile.clone(),
-            }
-        })?;
-        if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
-            return Err(AgentsError::UnsafeWorktree.into());
-        }
-        let base = match p.base_branch {
-            Some(b) => b,
-            None => devbox_git::current_branch(Path::new(&project.path))
-                .await
-                .map_err(git_failure)?
-                .ok_or(AgentsError::InvalidInput)?,
-        };
-        devbox_git::run::resolve(Path::new(&project.path), &base)
-            .await
-            .map_err(|error| match error {
-                devbox_git::GitError::Failed { .. } => AgentsError::InvalidInput.into(),
-                other => git_failure(other),
-            })?;
-        let mut taken: HashSet<String> = devbox_git::branches(Path::new(&project.path))
-            .await
-            .map_err(git_failure)?
-            .into_iter()
-            .filter_map(|b| b.strip_prefix("agent/").map(str::to_owned))
-            .collect();
-        let now = now_ms();
-        let id = format!("a{}", uuid::Uuid::new_v4().simple());
-        let repo = std::path::PathBuf::from(&project.path);
-        let svc = self.clone();
-        let hub = self.hub.clone();
-        let handle = tokio::runtime::Handle::current();
-        let prep_project = project.clone();
-        let committed_reservation = self.background.token();
-        let committed = self
-            .db
-            .write_checked_with_commit(
-                move |tx| {
-                    let project_exists: bool = tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM projects_projects WHERE id=?1)",
-                        [&project.id],
-                        |row| row.get(0),
-                    )?;
-                    if !project_exists {
-                        return Ok(Err(AgentsError::ProjectNotFound { id: project.id }));
-                    }
-                    let existing = store::list(tx, i64::MIN)?;
-                    for task in &existing {
-                        if task.project_id == project.id
-                            && let Some(branch) = &task.branch
-                            && let Some(slug) = branch.strip_prefix("agent/")
-                        {
-                            taken.insert(slug.into());
-                        }
-                    }
-                    let (branch, worktree) = if p.worktree {
-                        let base_slug = crate::plan::slug(&title, now as u64);
-                        let selected = loop {
-                            let slug = match crate::plan::unique_slug(&base_slug, &taken) {
-                                Ok(v) => v,
-                                Err(e) => return Ok(Err(e)),
-                            };
-                            let path = match crate::plan::worktree_dir(&repo, &slug) {
-                                Ok(v) => v,
-                                Err(e) => return Ok(Err(e)),
-                            };
-                            if std::fs::symlink_metadata(&path).is_ok() {
-                                taken.insert(slug);
-                                continue;
-                            }
-                            break (slug, path);
-                        };
-                        (
-                            Some(
-                                crate::plan::branch_for(&selected.0)
-                                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                            ),
-                            Some(selected.1.to_string_lossy().into_owned()),
-                        )
-                    } else {
-                        (None, None)
-                    };
-                    let port = match allocate_port(&existing) {
-                        Ok(v) => v,
-                        Err(e) => return Ok(Err(e)),
-                    };
-                    let task = AgentTask {
-                        id,
-                        project_id: project.id,
-                        title,
-                        profile: profile.id.clone(),
-                        base_branch: base,
-                        branch,
-                        worktree_path: worktree.clone(),
-                        workdir: worktree.unwrap_or(project.path),
-                        session_id: None,
-                        terminal_id: None,
-                        tool_exited: false,
-                        state: AgentState::Preparing,
-                        reason: None,
-                        attention: None,
-                        port,
-                        prompt: p.prompt,
-                        follow_ups: vec![],
-                        tokens: None,
-                        pr_url: None,
-                        closed_how: None,
-                        created_ms: now,
-                        updated_ms: now,
-                        closed_ms: None,
-                        closed_commits: None,
-                        closed_head_oid: None,
-                        cleanup_error: None,
-                        tokens_truncated: false,
-                        activity_seq: 0,
-                    };
-                    if let Err(error) = crate::limits::serialized(&task, crate::limits::TASK_BYTES)
-                    {
-                        return Ok(Err(match error {
-                            Fail::Domain(error) => error,
-                            Fail::Internal(_) => AgentsError::InvalidInput,
-                        }));
-                    }
-                    store::put(tx, &task)?;
-                    let mut binding = Binding::new(now);
-                    binding.launch_id = Some(uuid::Uuid::new_v4().simple().to_string());
-                    store::put_binding(tx, &task.id, &binding)?;
-                    Ok(Ok((task, profile)))
-                },
-                move |(task, profile), rev| {
-                    let _tracked_reservation = committed_reservation;
-                    changed(&hub, task, rev, false);
-                    let task = task.clone();
-                    let profile = profile.clone();
-                    let background = svc.background.clone();
-                    let svc = svc.clone();
-                    let _entered = handle.enter();
-                    background.spawn(async move {
-                        if let Err(error) =
-                            svc.prepare(&task, &profile, &prep_project, &snapshot).await
-                        {
-                            tracing::error!(?error,agent=%task.id,"agent preparation failed");
-                            let _ = svc.preparation_failed(&task.id, &error).await;
-                        }
-                    });
-                },
-            )
-            .await
-            .internal("reserve agent")?
-            .map_err(Fail::Domain)?;
-        Ok(committed.0.0)
     }
     pub(crate) async fn update<F>(&self, id: &str, f: F) -> Result<Done>
     where

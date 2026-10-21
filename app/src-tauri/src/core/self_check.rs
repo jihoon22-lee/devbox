@@ -19,11 +19,41 @@ pub fn validate_resources(directory: &Path, expected_version: &str) -> io::Resul
     Ok(())
 }
 
+pub fn validate_channel(arguments: &[String]) -> io::Result<()> {
+    if let Some(index) = arguments.iter().position(|arg| arg == "--channel")
+        && arguments.get(index + 1).map(String::as_str)
+            != Some(super::channel::CHANNEL.config().instance)
+    {
+        return Err(io::Error::other("self-check requested a different channel"));
+    }
+    Ok(())
+}
+
 pub fn run() -> i32 {
     let result = std::env::current_exe().and_then(|exe| {
         let directory = exe
             .parent()
             .ok_or_else(|| io::Error::other("executable has no parent"))?;
+        validate_channel(&std::env::args().collect::<Vec<_>>())?;
+        #[cfg(windows)]
+        {
+            let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+            let config = context.config();
+            let protocols = &config.plugins.0["deep-link"]["desktop"]["schemes"];
+            let schemes: Vec<_> = protocols
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str())
+                .collect();
+            if !super::channel::CHANNEL.config().matches_tauri(
+                &config.identifier,
+                config.product_name.as_deref().unwrap_or_default(),
+                &schemes,
+            ) {
+                return Err(io::Error::other("compiled channel/Tauri identity mismatch"));
+            }
+        }
         validate_resources(directory, env!("CARGO_PKG_VERSION"))
     });
     match result {
@@ -41,6 +71,17 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn requested_channel_must_match_compiled_channel() {
+        for channel in ["prod", "accept", "dev", "invalid"] {
+            assert_eq!(
+                validate_channel(&["--channel".into(), channel.into()]).is_ok(),
+                channel == super::super::channel::CHANNEL.config().instance
+            );
+        }
+        assert!(validate_channel(&["--channel".into()]).is_err());
+    }
 
     #[test]
     fn requires_binary_and_matching_version_beside_executable() {

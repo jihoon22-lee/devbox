@@ -7,9 +7,14 @@ use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
+fn fingerprint(text: &str) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(text.as_bytes()).into()
+}
+
 type ResultValue = Result<Box<RawValue>, DispatchError>;
 struct Entry {
-    params: String,
+    params: [u8; 32],
     result: watch::Sender<Option<ResultValue>>,
     completed: Mutex<Option<Instant>>,
 }
@@ -45,7 +50,7 @@ impl Dedupe {
             });
             let key = (method.to_owned(), crid);
             if let Some(entry) = map.get(&key) {
-                if entry.params != params.get() {
+                if entry.params != fingerprint(params.get()) {
                     return Err(DispatchError::common(CommonError::InvalidParams {
                         reason: "clientRequestId was already used with different params".into(),
                     }));
@@ -53,7 +58,7 @@ impl Dedupe {
                 (entry.clone(), false)
             } else {
                 let entry = Arc::new(Entry {
-                    params: params.get().into(),
+                    params: fingerprint(params.get()),
                     result: watch::channel(None).0,
                     completed: Mutex::new(None),
                 });
@@ -63,7 +68,7 @@ impl Dedupe {
         } else {
             (
                 Arc::new(Entry {
-                    params: params.get().into(),
+                    params: fingerprint(params.get()),
                     result: watch::channel(None).0,
                     completed: Mutex::new(None),
                 }),
@@ -109,6 +114,94 @@ mod tests {
     use std::future::{Future, poll_fn};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[tokio::test]
+    async fn fingerprints_preserve_retry_identity_without_retaining_plaintext() {
+        let temp = tempfile::tempdir().expect("owned fixture");
+        let services = super::super::build_services_for_test(temp.path());
+        let count = Arc::new(AtomicUsize::new(0));
+        let set_count = count.clone();
+        let delete_count = count.clone();
+        let router = Router::new(services)
+            .register::<devbox_secrets::Set, _, _>(move |_, _, _| {
+                set_count.fetch_add(1, Ordering::SeqCst);
+                async { Ok(Done { rev: "1".into() }) }
+            })
+            .register::<devbox_secrets::Delete, _, _>(move |_, _, _| {
+                delete_count.fetch_add(1, Ordering::SeqCst);
+                async { Ok(Done { rev: "2".into() }) }
+            });
+        let dedupe = Dedupe::default();
+        let ctx = || Ctx {
+            channel: 1,
+            streams: None,
+            cancel: CancellationToken::new(),
+        };
+        let raw = || {
+            serde_json::value::to_raw_value(&devbox_secrets::SetSecret {
+                name: "TOKEN".into(),
+                value: "owned-private-value".into(),
+            })
+            .expect("params")
+        };
+        for _ in 0..2 {
+            dedupe
+                .dispatch(&router, "secrets.set", ctx(), raw(), Some("same".into()))
+                .await
+                .expect("same mutation");
+        }
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            dedupe.entries.lock().expect("entries")[&("secrets.set".into(), "same".into())].params,
+            fingerprint(raw().get())
+        );
+        let different = serde_json::value::to_raw_value(&devbox_secrets::SetSecret {
+            name: "TOKEN".into(),
+            value: "different-private-value".into(),
+        })
+        .expect("params");
+        assert_eq!(
+            dedupe
+                .dispatch(
+                    &router,
+                    "secrets.set",
+                    ctx(),
+                    different,
+                    Some("same".into())
+                )
+                .await
+                .expect_err("different params")
+                .error
+                .code,
+            "invalid_params"
+        );
+        dedupe
+            .dispatch(
+                &router,
+                "secrets.delete",
+                ctx(),
+                serde_json::value::to_raw_value(&devbox_secrets::Name {
+                    name: "TOKEN".into(),
+                })
+                .expect("delete"),
+                Some("same".into()),
+            )
+            .await
+            .expect("different method identity");
+        assert_eq!(count.load(Ordering::SeqCst), 2);
+        let bad = RawValue::from_string(r#"{"name":"TOKEN","value":123456789}"#.into())
+            .expect("bad input");
+        let error = router
+            .dispatch("secrets.set", ctx(), bad)
+            .await
+            .expect_err("invalid private input");
+        assert!(
+            !serde_json::to_string(&error.error)
+                .expect("error wire")
+                .contains("123456789")
+        );
+        dedupe.tracker.close();
+        dedupe.tracker.wait().await;
+    }
     #[tokio::test]
     async fn inflight_retry_coalesces_and_cancelled_waiter_retains_committed_result() {
         let temp = tempfile::tempdir().expect("create fixture directory");

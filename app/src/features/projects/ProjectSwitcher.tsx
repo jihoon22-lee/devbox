@@ -119,9 +119,10 @@ function Switcher({ onOpenChange, onLaunched }: { onOpenChange: (open: boolean) 
       if (!mounted.current) return;
       useTerminalLayout.getState().openLaunched(projectKey(project.id), result.terminalIds, result.rev);
       useCurrentProject.getState().set(project.id);
-      useToasts
-        .getState()
-        .push({ tone: "ok", title: `터미널 ${result.terminals}개 · 에이전트 ${result.agents}개를 시작했습니다` });
+      useToasts.getState().push({
+        tone: "ok",
+        title: `터미널 ${result.terminals}개 · 에이전트 ${result.agents}개 · 서비스 ${result.services}개를 시작했습니다`,
+      });
       void qc.invalidateQueries({ queryKey: ["terminal.list"] });
       void qc.invalidateQueries({ queryKey: ["agents.list"] });
       void qc.invalidateQueries({ queryKey: ["projects.summary"] });

@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { ProjectWire } from "../features/projects/test-wire";
+import { RpcProvider } from "../rpc/RpcProvider";
 import { SectionBoundary } from "./SectionBoundary";
 
 test("section error keeps navigation, supports retry and route reset", () => {
@@ -58,9 +60,11 @@ test("real frame activity navigation survives a throwing section", async () => {
     history: createMemoryHistory({ initialEntries: ["/agents"] }),
   });
   render(
-    <TooltipProvider>
-      <RouterProvider router={router} />
-    </TooltipProvider>,
+    <RpcProvider client={new ProjectWire().client}>
+      <TooltipProvider>
+        <RouterProvider router={router} />
+      </TooltipProvider>
+    </RpcProvider>,
   );
   await screen.findByText("화면을 표시하지 못했습니다");
   fireEvent.click(screen.getByRole("button", { name: "터미널" }));

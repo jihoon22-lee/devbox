@@ -7,6 +7,7 @@ pub mod start;
 pub mod state;
 pub mod store;
 pub mod tracker;
+pub use actions::AgentTestSpec;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
 pub use limits::input as validate_input;
@@ -84,6 +85,8 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.topic::<AgentsAttentionTopic>();
 }
 
+mod create;
+mod events;
 mod prepare;
 mod tool_lifecycle;
 
@@ -105,3 +108,5 @@ mod metrics;
 mod resources;
 mod send;
 mod watch;
+
+mod run_worktree;

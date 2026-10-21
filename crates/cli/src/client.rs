@@ -373,9 +373,8 @@ impl Client {
         M::Output: serde::de::DeserializeOwned,
         M::Params: serde::Serialize,
     {
-        Ok(serde_json::from_str(
-            &self.raw_call(M::NAME, params, None).await?,
-        )?)
+        let text = zeroize::Zeroizing::new(self.raw_call(M::NAME, params, None).await?);
+        Ok(serde_json::from_str(&text)?)
     }
     pub async fn subscribe(&self, topic: &str) -> Result<Subscription, ClientError> {
         let id = self.request_id()?;

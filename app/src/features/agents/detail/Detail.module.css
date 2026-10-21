@@ -97,3 +97,15 @@
   gap: 4px;
   margin: 8px 0;
 }
+
+.runTab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 100%;
+  padding: 8px;
+}
+.runLogs {
+  flex: 1;
+  min-height: 320px;
+}

@@ -108,11 +108,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-pub const INSTANCE: &str = if cfg!(debug_assertions) {
-    "dev"
-} else {
-    "prod"
-};
+pub const INSTANCE: &str = super::channel::CHANNEL.config().instance;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GateStatus {

@@ -81,3 +81,81 @@ test("startup and unmount badge zeros never become a proven empty task snapshot"
   expect(useNativeRuntime.getState().openTasks).toBe(1);
   expect(useNativeRuntime.getState().snapshotCurrent).toBe(false);
 });
+test("run failure deduplicates the event before both native toast and notification center", async () => {
+  mocks.attention.mockReset();
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <AttentionBridge />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  const sub = wire.sent.find((message) => message.topic === "notify.raised");
+  const emit = async (id: string, rev: string) =>
+    act(async () =>
+      wire.deliver({
+        type: "event",
+        subId: sub?.id ?? "absent-run-subscription",
+        rev,
+        payload: { id, projectId: "프로젝트/한글", runId: "run-1", task: "검사/test", reason: "startLimit" },
+      }),
+    );
+  await emit("event-1", "1");
+  await emit("event-1", "2");
+  expect(useNotifications.getState().items.filter((item) => item.target?.search?.runId === "run-1")).toHaveLength(1);
+  expect(mocks.attention).toHaveBeenCalledTimes(1);
+  expect(mocks.attention.mock.lastCall?.[0]).toMatchObject({
+    id: "event-1",
+    target: { to: "/runs", search: { projectId: "프로젝트/한글", runId: "run-1", task: "검사/test" } },
+  });
+  await emit("event-2", "3");
+  expect(mocks.attention).toHaveBeenCalledTimes(2);
+  expect(useNotifications.getState().items).toHaveLength(2);
+  act(() => useNotifications.getState().clear());
+  await emit("event-2", "4");
+  expect(mocks.attention).toHaveBeenCalledTimes(2);
+  expect(useNotifications.getState().items).toHaveLength(0);
+});
+test("preflight and trust failures retain the exact project and task without inventing a run", async () => {
+  mocks.attention.mockReset();
+  const wire = new ProjectWire();
+  const view = render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <AttentionBridge />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  const sub = wire.sent.find((message) => message.topic === "notify.raised")!;
+  for (const [index, reason] of ["schedule_failed", "schedule_trust_required"].entries()) {
+    await act(async () =>
+      wire.deliver({
+        type: "event",
+        subId: sub.id,
+        rev: String(index + 1),
+        payload: {
+          id: `null-${index}`,
+          projectId: "p/한글",
+          runId: null,
+          task: "테스트/한글",
+          reason,
+        },
+      }),
+    );
+    expect(useNotifications.getState().items[0]?.target).toEqual({
+      to: "/runs",
+      search: { projectId: "p/한글", task: "테스트/한글" },
+    });
+    expect(mocks.attention.mock.lastCall?.[0].target.search).not.toHaveProperty("runId");
+  }
+  expect(mocks.attention).toHaveBeenCalledTimes(2);
+  view.rerender(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>{null}</AgentDataProvider>
+    </RpcProvider>,
+  );
+  expect(wire.sent).toContainEqual({ type: "unsubscribe", subId: sub.id });
+});

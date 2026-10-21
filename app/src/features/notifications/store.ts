@@ -8,7 +8,7 @@ export interface NoticeTarget {
 export interface Notice {
   key: string;
   id?: string;
-  kind: "agent" | "error";
+  kind: "agent" | "run" | "error";
   title: string;
   body: string;
   atMs: number;
@@ -25,6 +25,10 @@ export function safeTarget(value: unknown): NoticeTarget | undefined {
   if (search && typeof search === "object" && !Array.isArray(search)) {
     const candidate = search as Record<string, unknown>;
     if (typeof candidate.id === "string" && candidate.id.trim()) cleaned.id = candidate.id;
+    if (to === "/runs") {
+      for (const key of ["projectId", "runId", "task"])
+        if (typeof candidate[key] === "string" && candidate[key].trim()) cleaned[key] = candidate[key];
+    }
     if (to === "/agents" && (candidate.view === "list" || candidate.view === "grid")) cleaned.view = candidate.view;
   }
   return { to: to as NoticeTarget["to"], ...(Object.keys(cleaned).length ? { search: cleaned } : {}) };
@@ -40,7 +44,7 @@ function notices(value: unknown): Notice[] {
       keys.has(item.key) ||
       typeof item.key !== "string" ||
       !item.key.trim() ||
-      (item.kind !== "agent" && item.kind !== "error") ||
+      (item.kind !== "agent" && item.kind !== "run" && item.kind !== "error") ||
       typeof item.title !== "string" ||
       typeof item.body !== "string" ||
       typeof item.atMs !== "number" ||
@@ -107,6 +111,7 @@ interface Store {
   items: Notice[];
   unread: number;
   push: (notice: NoticeInput) => void;
+  pushOnce: (notice: NoticeInput) => boolean;
   markRead: (key: string) => void;
   markAllRead: () => void;
   clear: () => void;
@@ -122,6 +127,13 @@ export const useNotifications = create<Store>()(
           ...latestItems(get().items).filter((item) => item.key !== notice.key),
         ]);
         set({ items, unread: unread(items) });
+      },
+      pushOnce: (notice) => {
+        const previous = latestItems(get().items);
+        if (previous.some((item) => item.key === notice.key)) return false;
+        const items = notices([{ ...notice, atMs: Date.now(), read: false }, ...previous]);
+        set({ items, unread: unread(items) });
+        return true;
       },
       markRead: (key) => {
         const items = latestItems(get().items).map((item) => (item.key === key ? { ...item, read: true } : item));

@@ -1,3 +1,2 @@
 #!/usr/bin/env bash
-set -euo pipefail
-exec python3 "$(dirname "$0")/dogfood.py" "$@"
+exec bash "$(dirname "$0")/verify-entry.sh" dogfood "$@"

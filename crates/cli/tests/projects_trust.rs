@@ -111,7 +111,7 @@ async fn direct_launch_denies_unapproved_terminal_before_creating_resources() {
 
 #[tokio::test]
 async fn unchanged_approval_executes_setup_test_teardown_and_survives_daemon_restart() {
-    let (mut d, repo) = fixture(false);
+    let (d, repo) = fixture(false);
     let teardown = d.home.path().join("teardown-ran");
     write(
         &repo,
@@ -124,7 +124,8 @@ async fn unchanged_approval_executes_setup_test_teardown_and_survives_daemon_res
             .expect("TOML string")
         ),
     );
-    d.launch();
+    let mut runtime = support::runtime::RuntimeFixture::with_daemon(d);
+    let d = &mut runtime.daemon;
     let c = d.client().await;
     let project = d.add_project(&c, &repo).await;
     d.approve_project(&c, &project).await;
@@ -233,7 +234,7 @@ async fn preview_approval_rejects_changed_bytes_path_and_scope_without_approving
         (
             view["canonicalPath"].clone(),
             view["digest"].clone(),
-            json!(2),
+            json!(devbox_projects::trust::SCOPE_VERSION + 1),
         ),
     ] {
         refused(&c,"projects.trust_approve",json!({"id":project,"expectedCanonicalPath":path,"expectedDigest":digest,"expectedScopeVersion":scope}),"projects.trust_preview_stale").await;

@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub projects: ProjectsConfig,
     pub pc: PcConfig,
+    pub windows: WindowsConfig,
     pub terminal: TerminalConfig,
     pub agents: AgentsConfig,
     pub mcp: McpConfig,
+    pub secrets: SecretsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -30,7 +32,12 @@ impl Default for ProjectsConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct PcConfig {
     pub name: Option<String>,
-    pub windows_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct WindowsConfig {
+    pub root: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -58,6 +65,12 @@ pub struct McpConfig {
     pub write: bool,
 }
 
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct SecretsConfig {
+    pub names: Vec<String>,
+}
+
 fn config_error(path: &Path, message: impl ToString) -> CoreError {
     CoreError::Config {
         path: path.display().to_string(),
@@ -80,7 +93,9 @@ fn read_table(path: &Path) -> Result<toml::Table, CoreError> {
         .parse::<toml::Table>()
         .map_err(|error| config_error(path, error))?;
     // Serde structs also accept positional sequences; TOML sections must be tables.
-    for section in ["projects", "pc", "terminal", "agents", "mcp"] {
+    for section in [
+        "projects", "pc", "terminal", "agents", "mcp", "secrets", "windows",
+    ] {
         if table.get(section).is_some_and(|value| !value.is_table()) {
             return Err(config_error(path, format!("{section} must be a table")));
         }
@@ -121,6 +136,12 @@ impl Config {
         let shared = paths.config_dir.join("config.toml");
         let local = paths.config_dir.join("config.local.toml");
         let mut table = read_table(&shared)?;
+        if table.contains_key("windows") {
+            return Err(config_error(
+                &shared,
+                "windows is only allowed in config.local.toml",
+            ));
+        }
         merge(&mut table, read_table(&local)?);
         toml::Value::Table(table)
             .try_into()
@@ -168,13 +189,58 @@ mod tests {
     }
 
     #[test]
+    fn secrets_names_are_shared_and_values_are_not_config_fields() {
+        let temp = tempfile::tempdir().expect("owned config");
+        let paths = paths_in(temp.path());
+        write(
+            &paths,
+            "config.toml",
+            "[secrets]\nnames=['TOKEN','OTHER']\n",
+        );
+        assert_eq!(
+            Config::load(&paths).expect("names").secrets.names,
+            vec!["TOKEN", "OTHER"]
+        );
+        for text in [
+            "secrets=['TOKEN']",
+            "[secrets]\nnames=[1]",
+            "[secrets]\nTOKEN='owned-token'",
+        ] {
+            write(&paths, "config.toml", text);
+            assert!(Config::load(&paths).is_err());
+        }
+    }
+    #[test]
+    fn windows_root_is_local_only_and_legacy_pc_field_is_rejected() {
+        let temp = tempfile::tempdir().expect("owned config");
+        let paths = paths_in(temp.path());
+        write(&paths, "config.toml", "[windows]\nroot='C:\\dev'\n");
+        assert!(Config::load(&paths).is_err());
+        write(&paths, "config.toml", "");
+        write(&paths, "config.local.toml", "[windows]\nroot='C:\\dev'\n");
+        assert_eq!(
+            Config::load(&paths)
+                .expect("fixture result")
+                .windows
+                .root
+                .as_deref(),
+            Some("C:\\dev")
+        );
+        write(
+            &paths,
+            "config.local.toml",
+            "[pc]\nwindows_root='C:\\dev'\n",
+        );
+        assert!(Config::load(&paths).is_err());
+    }
+    #[test]
     fn defaults_when_files_are_missing_or_empty() {
         let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
         let c = Config::load(&p).expect("load fixture config");
         assert_eq!(c.projects.roots, ["~/projects"]);
         assert_eq!(c.pc.name, None);
-        assert_eq!(c.pc.windows_root, None);
+        assert_eq!(c.windows.root, None);
         assert!(!p.config_dir.exists());
         write(&p, "config.toml", "[projects]\n[pc]\n");
         write(&p, "config.local.toml", "");
@@ -188,13 +254,17 @@ mod tests {
         write(
             &p,
             "config.toml",
-            "[projects]\nroots = ['~/a', '~/b']\n[pc]\nname = 'shared'\nwindows_root = 'C:\\dev'\n",
+            "[projects]\nroots = ['~/a', '~/b']\n[pc]\nname = 'shared'\n",
         );
-        write(&p, "config.local.toml", "[pc]\nname = 'desk'\n");
+        write(
+            &p,
+            "config.local.toml",
+            "[pc]\nname = 'desk'\n[windows]\nroot = 'C:\\dev'\n",
+        );
         let c = Config::load(&p).expect("load fixture config");
         assert_eq!(c.projects.roots, ["~/a", "~/b"]);
         assert_eq!(c.pc.name.as_deref(), Some("desk"));
-        assert_eq!(c.pc.windows_root.as_deref(), Some("C:\\dev"));
+        assert_eq!(c.windows.root.as_deref(), Some("C:\\dev"));
     }
 
     #[test]
@@ -222,11 +292,11 @@ mod tests {
     fn local_alone_is_supported() {
         let t = tempfile::tempdir().expect("create fixture directory");
         let p = paths_in(t.path());
-        write(&p, "config.local.toml", "[pc]\nwindows_root = 'D:\\work'\n");
+        write(&p, "config.local.toml", "[windows]\nroot = 'D:\\work'\n");
         let c = Config::load(&p).expect("load fixture config");
         assert_eq!(c.projects.roots, ["~/projects"]);
         assert_eq!(c.pc.name, None);
-        assert_eq!(c.pc.windows_root.as_deref(), Some("D:\\work"));
+        assert_eq!(c.windows.root.as_deref(), Some("D:\\work"));
     }
 
     #[test]
@@ -250,7 +320,7 @@ mod tests {
                 write(
                     &p,
                     "config.local.toml",
-                    "[projects]\nroots = []\n[pc]\nname = 'valid'\nwindows_root = 'valid'\n",
+                    "[projects]\nroots = []\n[pc]\nname = 'valid'\n",
                 );
                 write(&p, file, input);
                 match Config::load(&p).expect_err(input) {

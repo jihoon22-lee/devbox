@@ -19,6 +19,32 @@ CREATE TABLE projects_command_trust (
   approved_ms INTEGER NOT NULL
 );";
 
+pub(crate) struct ApprovalIdentity {
+    path: String,
+    digest: String,
+    scope: u32,
+    at: i64,
+}
+impl ApprovalIdentity {
+    pub(crate) fn stamp(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        for text in [&self.path, &self.digest] {
+            hash.update((text.len() as u64).to_le_bytes());
+            hash.update(text.as_bytes());
+        }
+        hash.update(self.scope.to_le_bytes());
+        hash.update(self.at.to_le_bytes());
+        format!("{:x}", hash.finalize())
+    }
+}
+pub(crate) fn approval_identity(
+    tx: &Transaction,
+    id: &str,
+) -> rusqlite::Result<Option<ApprovalIdentity>> {
+    tx.query_row("SELECT canonical_path,digest,scope_version,approved_ms FROM projects_command_trust WHERE project_id=?1",[id],|r|Ok(ApprovalIdentity{path:r.get(0)?,digest:r.get(1)?,scope:r.get(2)?,at:r.get(3)?})).optional()
+}
+
 pub(crate) fn approved(
     tx: &Transaction,
     id: &str,
@@ -26,7 +52,7 @@ pub(crate) fn approved(
     digest: &str,
     scope: u32,
 ) -> rusqlite::Result<bool> {
-    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects_command_trust WHERE project_id=?1 AND canonical_path=?2 AND digest=?3 AND scope_version=?4)", params![id,path,digest,scope], |row| row.get(0))
+    tx.query_row("SELECT EXISTS(SELECT 1 FROM projects_command_trust WHERE project_id=?1 AND canonical_path=?2 AND digest=?3 AND scope_version>=?4)", params![id,path,digest,scope], |row| row.get(0))
 }
 
 pub(crate) fn approve(
@@ -89,6 +115,24 @@ pub fn has_dependents(tx: &Transaction, id: &str) -> rusqlite::Result<bool> {
     if has_table("terminal_sessions")?
         && tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM terminal_sessions WHERE project_id=?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(true);
+    }
+    if has_table("runtime_definitions")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runtime_definitions WHERE project_id=?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )?
+    {
+        return Ok(true);
+    }
+    if has_table("runtime_runs")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.state') IN ('starting','running','restarting'))",
             [id],
             |row| row.get::<_, bool>(0),
         )?

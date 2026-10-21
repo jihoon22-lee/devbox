@@ -1,0 +1,11 @@
+marker := `touch detect-spawn-marker`
+# Read recipes without invoking just.
+default:
+    touch detect-spawn-marker
+[private]
+_build:
+    echo build
+serve: build
+    echo serve
+with-argument name:
+    echo {{name}}

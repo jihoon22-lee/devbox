@@ -1,7 +1,7 @@
 use std::sync::{Mutex, MutexGuard, Once};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
-use crate::core::notify::{Navigation, PendingNavigation, route_for};
+use crate::core::notify::{Navigation, NavigationTarget, PendingNavigation, route_for, run_uri};
 
 #[derive(Default)]
 pub struct Notifications(Mutex<PendingNavigation>);
@@ -67,6 +67,7 @@ pub struct Attention {
     title: String,
     body: String,
     visible: bool,
+    target: Option<NavigationTarget>,
 }
 
 // Synchronous Tauri commands run on the UI thread, keeping WinRT/COM and HWND work there.
@@ -78,7 +79,24 @@ pub fn notify_attention(app: AppHandle, window: WebviewWindow, a: Attention) {
     let Some(main) = app.get_webview_window("main") else {
         return;
     };
-    let uri = format!("devbox://agents/{}", a.id);
+    let (uri, tag, group) = match &a.target {
+        Some(NavigationTarget::Runs(search)) => {
+            let Some(uri) = run_uri(search) else {
+                return;
+            };
+            (uri, devbox_win::toast::run_tag_for(&a.id), "runs")
+        }
+        Some(NavigationTarget::Agents(_)) => return,
+        None => (
+            format!(
+                "{}://agents/{}",
+                crate::core::channel::CHANNEL.config().protocol,
+                a.id
+            ),
+            devbox_win::toast::tag_for(&a.id),
+            "agents",
+        ),
+    };
     if route_for(&uri).is_none() || (a.visible && main.is_focused().unwrap_or(false)) {
         return;
     }
@@ -88,12 +106,7 @@ pub fn notify_attention(app: AppHandle, window: WebviewWindow, a: Attention) {
         launch_uri: uri.clone(),
         actions: vec![("열기".into(), uri)],
     };
-    if let Err(error) = devbox_win::toast::show(
-        &app.config().identifier,
-        &spec,
-        &devbox_win::toast::tag_for(&a.id),
-        "agents",
-    ) {
+    if let Err(error) = devbox_win::toast::show(&app.config().identifier, &spec, &tag, group) {
         static REPORTED: Once = Once::new();
         REPORTED.call_once(|| {
             eprintln!("Windows toast unavailable (a registered installation is required): {error}")

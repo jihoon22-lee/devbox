@@ -26,7 +26,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
-                .app_name("io.github.jihoon22lee.devbox")
+                .app_name(core::channel::CHANNEL.config().identifier)
                 .arg("--minimized")
                 .build(),
         )
@@ -46,6 +46,7 @@ pub fn run() {
             connection::rpc_send,
             connection::rpc_detach,
             platform::external::open_external,
+            platform::external::open_file_location,
             platform::notify::notify_attention,
             platform::notify::set_badge,
             platform::notify::pending_navigation,

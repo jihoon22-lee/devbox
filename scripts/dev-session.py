@@ -14,7 +14,6 @@ import time
 import threading
 import urllib.request
 
-
 def hello(path):
     with socket.socket(socket.AF_UNIX) as sock:
         sock.settimeout(1)
@@ -38,7 +37,6 @@ def hello(path):
                 or welcome.get('protocol') != 1
                 or welcome.get('version') != json.loads(Path('app/package.json').read_text())['version']):
             raise OSError('daemon welcome required')
-
 
 def runtime_directory(env):
     candidate = Path(env.get("XDG_RUNTIME_DIR") or "")
@@ -128,7 +126,6 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(child.pid, signal.SIGKILL)
                 child.wait()
-
 
 if __name__ == '__main__':
     try:

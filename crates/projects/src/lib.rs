@@ -7,6 +7,8 @@ pub mod config;
 mod copy_target;
 pub mod model;
 mod prompts;
+pub mod run_config;
+mod run_edit;
 mod store;
 pub mod trust;
 
@@ -66,6 +68,9 @@ pub struct ProjectsService {
     hub: Arc<Hub>,
     home: PathBuf,
     roots: Vec<String>,
+    #[cfg(test)]
+    fail_run_write: std::sync::atomic::AtomicBool,
+    run_edits: tokio::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 fn now_ms() -> i64 {
@@ -170,6 +175,9 @@ impl ProjectsService {
             hub,
             home,
             roots,
+            run_edits: Default::default(),
+            #[cfg(test)]
+            fail_run_write: Default::default(),
         }
     }
 
@@ -261,6 +269,8 @@ impl ProjectsService {
     }
 }
 
+#[cfg(test)]
+mod run_ownership_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

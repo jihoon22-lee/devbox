@@ -1,12 +1,20 @@
+import type { Locator } from "@playwright/test";
 import { expect, test } from "./support";
+
+async function focusLiveTerminal(terminal: Locator) {
+  await expect(terminal.locator(".xterm-rows")).toBeVisible();
+  // A mounted pane can still cover the renderer while terminal.attach is pending.
+  await expect(terminal.getByRole("status")).toHaveCount(0);
+  await terminal.click();
+  await expect(terminal.locator(".xterm-helper-textarea")).toBeFocused();
+}
 
 test("terminal reload and daemon restart preserve scrollback and search", async ({ page, stack }) => {
   await page.goto(`/terminal?gateway=${encodeURIComponent(stack.gatewayUrl)}&renderer=dom`);
   await expect(page.getByText("데몬 연결됨")).toBeVisible();
   await page.getByRole("button", { name: "새 터미널", exact: true }).click();
   const terminal = page.locator("[data-terminal-page] [data-keyscope=terminal]").first();
-  await expect(terminal.locator(".xterm-rows")).toBeVisible();
-  await terminal.click();
+  await focusLiveTerminal(terminal);
   await page.keyboard.type("for i in $(seq 1 300); do printf 'history-%04d\\n' \"$i\"; done\n");
   await expect(terminal.locator(".xterm-rows")).toContainText("history-0300");
   await page.reload();
@@ -17,7 +25,7 @@ test("terminal reload and daemon restart preserve scrollback and search", async 
   expect(visibleRows).toBeGreaterThan(5);
   expect(visibleRows).toBeLessThan(100);
   const historyMarker = `history-${String(300 - Math.floor(visibleRows * 1.5)).padStart(4, "0")}`;
-  await terminal.click();
+  await focusLiveTerminal(terminal);
   await page.keyboard.press("Control+Shift+F");
   await page.getByRole("textbox", { name: "터미널 검색" }).fill(historyMarker);
   await page.keyboard.press("Enter");
@@ -30,7 +38,7 @@ test("terminal reload and daemon restart preserve scrollback and search", async 
   await stack.startDaemon();
   await expect(page.getByText("데몬 연결됨")).toBeVisible();
   await expect(terminal.locator(".xterm-rows")).toContainText("history-0300");
-  await terminal.click();
+  await focusLiveTerminal(terminal);
   await page.keyboard.type("echo restart-ready\n");
   await expect(terminal.locator(".xterm-rows")).toContainText("restart-ready");
   await expect(terminal.locator(".xterm-rows")).not.toContainText("discarded-while-offline");
@@ -46,10 +54,10 @@ test("split panes persist and closing a pane keeps its session available", async
   await page.getByRole("button", { name: "새 터미널", exact: true }).click();
   const panes = page.locator("[data-terminal-page] [data-keyscope=terminal]");
   await expect(panes).toHaveCount(1);
-  await panes.first().click();
+  await focusLiveTerminal(panes.first());
   await page.keyboard.press("Control+Shift+E");
   await expect(panes).toHaveCount(2);
-  await panes.nth(1).click();
+  await focusLiveTerminal(panes.nth(1));
   await page.keyboard.type("echo second-pane\n");
   await expect(panes.nth(1).locator(".xterm-rows")).toContainText("second-pane");
   const secondId = await page
@@ -59,7 +67,7 @@ test("split panes persist and closing a pane keeps its session available", async
   await page.reload();
   await expect(panes).toHaveCount(2);
   await expect(panes.nth(1).locator(".xterm-rows")).toContainText("second-pane");
-  await panes.nth(1).click();
+  await focusLiveTerminal(panes.nth(1));
   await page.keyboard.press("Control+Shift+W");
   await expect(panes).toHaveCount(1);
   // Open the persisted session through its list entry; pane closure does not end it.

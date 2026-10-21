@@ -1,0 +1,26 @@
+.editor {
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.row {
+  display: flex;
+  gap: var(--space-2);
+}
+.row input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  color: var(--fg);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+}
+.editor small {
+  color: var(--fg-muted);
+}

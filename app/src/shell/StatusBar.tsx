@@ -1,7 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAgentSummary } from "../features/agents/AgentData";
+import { memoryLabel, useSystemMetrics } from "../features/runs/systemMetrics";
 import { useConnection } from "../rpc/connection";
+import { useRpcQuery, useTopicInvalidation } from "../rpc/query";
 import { StatusDot } from "../ui";
+import { usePageVisible } from "./visibility";
 
 const LABEL = {
   connecting: "연결 중",
@@ -13,6 +16,12 @@ const TONE = { connecting: "progress", ready: "ok", reconnecting: "warn", versio
 
 export function StatusBar() {
   const agents = useAgentSummary();
+  const visible = usePageVisible();
+  const summary = useRpcQuery("runtime.summary", {}, { enabled: visible, staleTime: 0 });
+  useTopicInvalidation("runtime.changed", [["runtime.summary", {}]]);
+  const { system, ports } = useSystemMetrics();
+  const portNumbers = [...new Set(ports.data?.map((port) => port.port) ?? [])].sort((a, b) => a - b);
+  const actionStyle = { background: "transparent", border: 0, cursor: "pointer", color: "inherit" };
   const navigate = useNavigate();
   const { state, daemonVersion } = useConnection();
   return (
@@ -41,6 +50,23 @@ export function StatusBar() {
           에이전트 {agents.tasks.filter((task) => task.state !== "closed").length}(입력 대기 {agents.waiting})
         </button>
       )}
+      <button type="button" style={actionStyle} onClick={() => void navigate({ to: "/runs" })}>
+        실행 {summary.isError ? "조회 실패" : (summary.data?.active ?? "—")}
+      </button>
+      <button
+        type="button"
+        style={actionStyle}
+        onClick={() => void navigate({ to: "/runs", search: { view: "ports" } })}
+      >
+        포트 {ports.isError ? "조회 실패" : ports.data ? portNumbers.join(", ") || "없음" : "—"}
+      </button>
+      <button
+        type="button"
+        style={actionStyle}
+        onClick={() => void navigate({ to: "/runs", search: { view: "system" } })}
+      >
+        WSL {system.isError ? "조회 실패" : system.data ? memoryLabel(system.data) : "—"}
+      </button>
       <span style={{ flex: 1 }} />
       {daemonVersion && <span>데몬 {daemonVersion}</span>}
     </footer>

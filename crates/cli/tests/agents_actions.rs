@@ -66,7 +66,8 @@ async fn squash_merge_freezes_record_and_cleans_owned_worktree() {
 
 #[tokio::test]
 async fn instructions_review_resume_and_test_use_owned_sessions() {
-    let mut d = fixture(false);
+    let mut runtime = support::runtime::RuntimeFixture::with_daemon(fixture(false));
+    let d = &mut runtime.daemon;
     let repo = d.git_repo("projects/lifecycle");
     std::fs::create_dir_all(std::path::Path::new(&repo).join(".devbox")).expect("owned fixture");
     std::fs::write(
@@ -74,7 +75,6 @@ async fn instructions_review_resume_and_test_use_owned_sessions() {
         "[agent]\ntest='printf tested > test-result.txt'\n",
     )
     .expect("owned fixture");
-    d.launch();
     let c = d.client().await;
     let p = d.add_project(&c, &repo).await;
     let id = d.create_agent(&c, &p, "commit", true).await;
@@ -84,20 +84,49 @@ async fn instructions_review_resume_and_test_use_owned_sessions() {
     assert_eq!(task["followUps"][0]["text"], "one\ntwo");
     let review = call(&c, "agents.review", json!({"id":id})).await;
     assert_eq!(review["state"], "review");
-    let terminal = call(&c, "agents.test", json!({"id":id})).await;
-    assert_ne!(terminal["terminalId"], idle["terminalId"]);
+    let run = call(&c, "agents.test", json!({"id":id})).await;
+    assert!(run["runId"].is_string());
+    assert!(run.get("terminalId").is_none());
     let wt = std::path::Path::new(idle["worktreePath"].as_str().expect("owned fixture"));
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     while !wt.join("test-result.txt").exists() {
         assert!(std::time::Instant::now() < deadline);
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    d.kill_tmux_server();
+    let before_missing = call(&c, "agents.get", json!({"id":id})).await;
+    assert_eq!(before_missing["toolExited"], false);
+    // Remove only the expected binding while keeping the tool and server alive.
+    // kill-server completion races socket teardown and the tool's exit event.
+    let session = idle["terminalId"].as_str().expect("owned session");
+    assert!(
+        d.environment("tmux")
+            .args([
+                "-L",
+                &format!("devbox-{}", d.instance),
+                "rename-session",
+                "-t",
+                &format!("={session}"),
+                &format!("missing-{session}"),
+            ])
+            .status()
+            .expect("rename owned session")
+            .success()
+    );
     let error = c
         .raw_call("agents.send", json!({"id":id,"text":"lost"}), None)
         .await
         .expect_err("fixture operation must fail");
-    assert!(format!("{error:?}").contains("agents.session_missing"));
+    assert!(
+        matches!(
+            &error,
+            devbox_cli::client::ClientError::Rpc { code, .. } if code == "agents.session_missing"
+        ),
+        "missing session: {error:?}"
+    );
+    let after_missing = call(&c, "agents.get", json!({"id":id})).await;
+    assert_eq!(after_missing["followUps"], before_missing["followUps"]);
+    assert_eq!(after_missing["toolExited"], false);
+    d.kill_tmux_server();
     drop(c);
     d.restart();
     let c = d.client().await;

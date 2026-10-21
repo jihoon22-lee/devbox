@@ -10,7 +10,13 @@ name = "devbox"
 path = "src/main.rs"
 
 [dependencies]
+sha2.workspace = true
+devbox-secrets.workspace = true
+zeroize.workspace = true
+notify = "8.2"
 devbox-agents.workspace = true
+devbox-runtime.workspace = true
+devbox-observe.workspace = true
 devbox-git.workspace = true
 devbox-core.workspace = true
 devbox-protocol.workspace = true
@@ -30,6 +36,8 @@ tokio-util.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 libc.workspace = true
+aho-corasick = "1"
+nix = { version = "0.30", features = ["signal", "process"] }
 
 axum.workspace = true
 

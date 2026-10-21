@@ -24,10 +24,77 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   daemon_restarting: { title: "다시 시작하는 중이라 실행하지 않았습니다.", action: "잠시 뒤 다시 시도해 주세요." },
   not_found: { title: "대상을 찾을 수 없습니다." },
   secrets_locked: { title: "비밀 값을 아직 열지 못했습니다.", action: "앱을 연 상태에서 다시 시도해 주세요." },
+  "secrets.key_mismatch": {
+    title: "이 PC의 비밀 키가 저장된 값과 다릅니다.",
+    action: "복구 문자열을 입력해 기존 키를 복구해 주세요.",
+  },
+  "secrets.invalid_input": { title: "비밀 이름이나 입력 형식이 올바르지 않습니다." },
+  "secrets.missing": { title: "이 PC에 비밀 값이 없습니다.", action: "설정에서 필요한 비밀 값을 입력해 주세요." },
+  "secrets.unavailable": {
+    title: "비밀 저장소를 사용할 수 없습니다.",
+    action: "앱 연결과 저장소 상태를 확인해 주세요.",
+  },
+  "runtime.secret_missing": {
+    title: "실행에 필요한 비밀 값이 없습니다.",
+    action: "설정에서 필요한 비밀 값을 입력해 주세요.",
+  },
   "debug.unsupported": {
     title: "시험용 스트림을 열 수 없습니다.",
     action: "시험 인스턴스의 연결 상태를 확인해 주세요.",
   },
+  "runtime.def_invalid": {
+    title: "실행 정의가 올바르지 않습니다.",
+    action: "명령과 의존 관계, 예약 시각을 확인해 주세요.",
+  },
+  "runtime.project_not_found": {
+    title: "실행 정의의 프로젝트를 찾을 수 없습니다.",
+    action: "프로젝트를 다시 선택해 주세요.",
+  },
+  "runtime.project_config_invalid": {
+    title: "프로젝트 실행 설정을 읽거나 저장할 수 없습니다.",
+    action: ".devbox/devbox.toml의 내용과 쓰기 권한을 확인해 주세요.",
+  },
+  "runtime.run_not_found": { title: "실행을 찾을 수 없습니다.", action: "실행 목록을 새로고침해 주세요." },
+  "runtime.not_ready": { title: "서비스가 준비되지 않았습니다.", action: "선행 서비스의 포트와 로그를 확인해 주세요." },
+  "runtime.dependency_failed": {
+    title: "선행 실행이 실패해 시작하지 않았습니다.",
+    action: "실패한 실행의 로그를 확인해 주세요.",
+  },
+  "runtime.detect_parse": {
+    title: "작업 감지 파일의 형식이 올바르지 않습니다.",
+    action: "package.json의 scripts 항목과 JSON 문법을 확인해 주세요.",
+  },
+  "runtime.detect_io": {
+    title: "작업 감지 파일을 읽을 수 없습니다.",
+    action: "파일의 읽기 권한과 UTF-8 형식을 확인해 주세요.",
+  },
+  "runtime.detect_limit": {
+    title: "작업 감지 파일이나 제안 목록이 너무 큽니다.",
+    action: "파일은 1MiB, 제안 목록은 768KiB 이내로 줄여 주세요.",
+  },
+  "runtime.container_invalid_id": { title: "컨테이너 ID가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
+  "runtime.container_unavailable": {
+    title: "Docker를 사용할 수 없습니다.",
+    action: "Docker 설치와 실행 상태를 확인해 주세요.",
+  },
+  "runtime.container_failed": {
+    title: "컨테이너 작업에 실패했습니다.",
+    action: "Docker 상태를 확인하고 다시 시도해 주세요.",
+  },
+  "runtime.container_timeout": {
+    title: "Docker 응답 시간이 초과되었습니다.",
+    action: "목록을 새로고침하여 상태를 확인해 주세요.",
+  },
+  "runtime.container_output_limit": { title: "Docker 응답이 너무 큽니다.", action: "Docker 상태를 확인해 주세요." },
+  "runtime.container_invalid_output": {
+    title: "Docker 응답을 읽을 수 없습니다.",
+    action: "Docker 상태를 확인하고 다시 시도해 주세요.",
+  },
+  "runtime.container_cancelled": {
+    title: "컨테이너 요청이 취소되었습니다.",
+    action: "목록을 새로고침하여 상태를 확인해 주세요.",
+  },
+  "runtime.invalid_cursor": { title: "실행 목록 위치가 올바르지 않습니다.", action: "목록을 새로고침해 주세요." },
   "terminal.command_too_long": {
     title: "터미널 명령이 너무 깁니다.",
     action: "명령을 UTF-8 기준 64KiB 이내로 줄여 주세요.",
@@ -108,8 +175,8 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "프로젝트와 작업 폴더를 다시 선택해 주세요.",
   },
   "projects.in_use": {
-    title: "프로젝트에 에이전트 작업이나 터미널이 남아 있습니다.",
-    action: "열린 작업과 터미널을 끝내고 남은 작업 폴더와 브랜치를 정리한 뒤 다시 시도하세요.",
+    title: "프로젝트에 에이전트 작업, 터미널 또는 이 PC 실행 정의가 남아 있습니다.",
+    action: "열린 작업과 터미널을 끝내고 남은 작업 폴더, 브랜치와 이 PC 실행 정의를 정리한 뒤 다시 시도하세요.",
   },
   "agents.title_invalid": {
     title: "에이전트 작업 제목을 확인해 주세요.",
@@ -187,6 +254,23 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "셸 환경을 다시 읽지 못했습니다.",
     action: "로그인 셸 설정과 환경 파일 위치를 확인한 뒤 다시 시도해 주세요.",
   },
+  "observe.invalid_input": { title: "관찰 요청 입력값을 확인해 주세요." },
+  "observe.state_changed": { title: "프로세스가 바뀌었습니다.", action: "목록을 새로 고친 뒤 다시 확인해 주세요." },
+  "observe.permission_denied": { title: "이 프로세스를 종료할 권한이 없습니다." },
+  "observe.project_not_found": { title: "관찰할 프로젝트를 찾을 수 없습니다." },
+  "observe.invalid_regex": { title: "로그 검색 정규식이 올바르지 않습니다." },
+  "observe.file_outside_roots": { title: "등록한 프로젝트·노트 폴더·/var/log 안의 파일만 읽을 수 있습니다." },
+  "observe.source_unavailable": {
+    title: "관찰 정보를 읽을 수 없습니다.",
+    action: "프로세스·파일 경로와 컨테이너 상태를 확인해 주세요.",
+  },
+  "observe.run_not_found": { title: "실행 기록을 찾을 수 없습니다." },
+  "observe.invalid_cursor": { title: "로그 파일이 바뀌었습니다.", action: "처음부터 다시 검색해 주세요." },
+  "observe.limit_exceeded": {
+    title: "조회가 허용 크기를 넘었습니다.",
+    action: "조회 범위를 줄인 뒤 다시 시도해 주세요.",
+  },
+  "observe.stream_unsupported": { title: "이 연결에서는 실시간 로그를 볼 수 없습니다." },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,
@@ -205,7 +289,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "projects.launch_failed": {
     title: "시작 구성을 일부 실행하지 못했습니다.",
-    action: "이미 만든 터미널과 에이전트 작업을 확인한 뒤 다시 시도해 주세요.",
+    action: "이미 시작한 터미널·에이전트·서비스를 확인한 뒤 다시 시도해 주세요.",
   },
   "projects.clone_invalid_url": { title: "저장소 주소가 올바르지 않습니다." },
   "projects.clone_target_exists": (d) => ({ title: `복제 대상 폴더가 이미 있습니다: ${path(d)}` }),

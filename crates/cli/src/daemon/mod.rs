@@ -1,15 +1,23 @@
+mod agent_test;
 mod debug;
 mod dedupe;
 mod hostname;
 mod launch;
+mod locations;
+mod logs;
+pub mod observe;
 mod outbox;
+mod problems;
 pub mod routes;
+mod secret_routes;
 pub mod server;
 mod socket;
 pub mod state;
 mod streams;
 mod system;
 mod trust;
+mod windows_broker;
+mod windows_routes;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
 use state::Services;
@@ -28,6 +36,8 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_projects::MIGRATIONS,
         devbox_terminal::MIGRATIONS,
         devbox_agents::MIGRATIONS,
+        devbox_runtime::MIGRATIONS,
+        devbox_secrets::MIGRATIONS,
     ]
     .concat()
 }
@@ -82,7 +92,40 @@ fn build_services_with_runtime(
             cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
         },
     ));
+    let mut execution = devbox_runtime::ExecutionConfig::new(paths.clone());
+    execution.readiness = observe::readiness();
+    execution.windows_root = config.windows.root.clone();
+    execution.slice = std::env::var("DEVBOX_TEST_SLICE").ok().filter(|slice| {
+        paths.instance.is_test() && slice.starts_with("devbox-test-") && slice.ends_with(".slice")
+    });
+    let worktree_agents = agents.clone();
+    execution.worktree = Some(Arc::new(move |project_id, agent_id| {
+        let agents = worktree_agents.clone();
+        Box::pin(async move {
+            agents
+                .run_worktree(&project_id, &agent_id)
+                .await
+                .map(|(path, port)| devbox_runtime::WorktreeLocation { path, port })
+                .map_err(|_| {
+                    devbox_protocol::Fail::Domain(devbox_runtime::RuntimeError::DefInvalid {
+                        id: agent_id,
+                        reason: "agent worktree is unavailable or does not belong to this project"
+                            .into(),
+                    })
+                })
+        })
+    }));
+    let secrets = Arc::new(devbox_secrets::SecretsService::new(
+        db.clone(),
+        paths.clone(),
+    ));
+    let runs = Arc::new(
+        devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
+            .with_execution(execution)
+            .with_secrets(secrets.clone()),
+    );
     Ok(Arc::new(Services {
+        windows: windows_broker::WindowsBroker::default(),
         runtime,
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
@@ -94,6 +137,10 @@ fn build_services_with_runtime(
         projects,
         terminal,
         agents,
+        runs,
+        secrets,
+        containers: devbox_runtime::DockerContainers::default(),
+        observe: Arc::new(devbox_observe::ObserveService::default()),
     }))
 }
 

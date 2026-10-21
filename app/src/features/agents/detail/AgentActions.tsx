@@ -105,7 +105,7 @@ export function AgentActions({
       )
         return;
       const result = await test.mutateAsync({ id: task.id });
-      onTest?.(result.terminalId);
+      onTest?.(result.runId);
     });
   const createPr = () =>
     run(async () => {

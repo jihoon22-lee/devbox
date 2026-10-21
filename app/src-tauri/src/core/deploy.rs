@@ -25,7 +25,7 @@ mod tests {
         if let Some(data) = data {
             cmd.env("XDG_DATA_HOME", data);
         }
-        cmd.args(["-c", &install_script(), "sh", sha]);
+        cmd.args(["-c", &install_script_for(AppChannel::Prod), "sh", sha]);
         super::super::process::run(
             cmd,
             bytes.to_vec(),
@@ -33,6 +33,74 @@ mod tests {
             CancellationToken::new(),
         )
         .await
+    }
+    #[tokio::test]
+    async fn channel_install_and_exec_preserve_other_channel_bytes_and_mtimes() {
+        let fixture = tempfile::tempdir().unwrap();
+        let data = fixture.path().join("custom data");
+        let mut before = Vec::new();
+        for channel in [AppChannel::Prod, AppChannel::Accept, AppChannel::Dev] {
+            let binary = format!(
+                "#!/bin/sh\nprintf '%s\\n' '{}' \"$0\" \"$@\"\n",
+                channel.config().instance
+            );
+            let mut command = Command::new("sh");
+            command
+                .env("HOME", fixture.path())
+                .env("XDG_DATA_HOME", &data)
+                .args([
+                    "-c",
+                    &install_script_for(channel),
+                    "sh",
+                    &digest(binary.as_bytes()),
+                ]);
+            super::super::process::run(
+                command,
+                binary.as_bytes().to_vec(),
+                Duration::from_secs(3),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+            for (path, bytes, modified) in &before {
+                assert_eq!(std::fs::read(path).unwrap(), *bytes);
+                assert_eq!(
+                    std::fs::metadata(path).unwrap().modified().unwrap(),
+                    *modified
+                );
+            }
+            let path = data.join(channel.config().storage_name).join("bin/devbox");
+            before.push((
+                path.clone(),
+                std::fs::read(&path).unwrap(),
+                std::fs::metadata(&path).unwrap().modified().unwrap(),
+            ));
+            for action in ["setup", "doctor", "bridge", "hook"] {
+                let mut command = Command::new("sh");
+                command
+                    .env("HOME", fixture.path())
+                    .env("XDG_DATA_HOME", &data)
+                    .args(["-c", &exec_script_for(channel), "sh", action]);
+                let output = super::super::process::run(
+                    command,
+                    vec![],
+                    Duration::from_secs(3),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    String::from_utf8(output.stdout).unwrap(),
+                    format!(
+                        "{}\n{}\n{action}\n",
+                        channel.config().instance,
+                        path.display()
+                    )
+                );
+            }
+        }
+        assert!(install_script().contains(CHANNEL.config().storage_name));
+        assert!(exec_script().contains(CHANNEL.config().storage_name));
     }
     #[tokio::test]
     async fn absolute_xdg_publishes_in_custom_data_root_and_preserves_instance_data() {
@@ -115,7 +183,8 @@ mod tests {
                 if let Some(data) = data {
                     cmd.env("XDG_DATA_HOME", data);
                 }
-                cmd.args(["-c", &exec_script(), "sh"]).args(args);
+                cmd.args(["-c", &exec_script_for(AppChannel::Prod), "sh"])
+                    .args(args);
                 let output = super::super::process::run(
                     cmd,
                     vec![],
@@ -141,7 +210,12 @@ mod tests {
         cmd.current_dir(fixture.path())
             .env("HOME", "relative-home")
             .env_remove("XDG_DATA_HOME")
-            .args(["-c", &install_script(), "sh", &digest(bytes)]);
+            .args([
+                "-c",
+                &install_script_for(AppChannel::Prod),
+                "sh",
+                &digest(bytes),
+            ]);
         assert!(
             super::super::process::run(
                 cmd,
@@ -190,6 +264,7 @@ mod tests {
     }
 }
 
+use super::channel::{AppChannel, CHANNEL};
 use sha2::{Digest, Sha256};
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -201,7 +276,8 @@ pub fn digest(bytes: &[u8]) -> String {
 const PATHS_SCRIPT: &str = r#"set -eu
 case "${HOME-}" in /*) ;; *) printf '%s\n' 'HOME must be absolute' >&2; exit 62;; esac
 case "${XDG_DATA_HOME-}" in /*) data="$XDG_DATA_HOME";; *) data="$HOME/.local/share";; esac
-d="$data/devbox/bin"
+root="$data/@STORAGE@"
+d="$root/bin"
 check_path() {
  p="$1"
  while [ "$p" != / ] && [ "$p" != . ]; do
@@ -214,17 +290,25 @@ check_path "$d"
 "#;
 
 pub fn install_script() -> String {
-    format!("{PATHS_SCRIPT}\n{INSTALL_SCRIPT}")
+    install_script_for(CHANNEL)
 }
 pub fn exec_script() -> String {
-    format!("{PATHS_SCRIPT}\nexec \"$d/devbox\" \"$@\"")
+    exec_script_for(CHANNEL)
+}
+fn install_script_for(channel: AppChannel) -> String {
+    let paths = PATHS_SCRIPT.replace("@STORAGE@", channel.config().storage_name);
+    format!("{paths}\n{INSTALL_SCRIPT}")
+}
+fn exec_script_for(channel: AppChannel) -> String {
+    let paths = PATHS_SCRIPT.replace("@STORAGE@", channel.config().storage_name);
+    format!("{paths}\nexec \"$d/devbox\" \"$@\"")
 }
 
 const INSTALL_SCRIPT: &str = r#"umask 077
 case "$1" in *[!0-9a-f]*|'') exit 61;; esac
 [ "${#1}" = 64 ] || exit 61
-mkdir -p -- "$data/devbox"
-[ -d "$data/devbox" ] && [ ! -L "$data/devbox" ] || exit 62
+mkdir -p -- "$root"
+[ -d "$root" ] && [ ! -L "$root" ] || exit 62
 if mkdir "$d" 2>/dev/null; then printf '%s\n' 'devbox-desktop-bin-v1' > "$d/.owner"; fi
 [ ! -L "$d" ] && [ -d "$d" ] && [ "$(stat -c %u "$d")" = "$(id -u)" ] && [ "$(stat -c %a "$d")" = 700 ] || exit 63
 [ ! -L "$d/.owner" ] && [ -f "$d/.owner" ] && [ "$(cat "$d/.owner")" = devbox-desktop-bin-v1 ] || exit 63

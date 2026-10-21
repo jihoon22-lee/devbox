@@ -3,8 +3,10 @@ pub mod bridge;
 pub mod client;
 pub mod daemon;
 pub mod doctor;
+pub mod exec;
 pub mod gateway;
 pub mod mcp;
+pub mod run_exited;
 pub mod setup;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -28,3 +30,8 @@ pub fn paths() -> anyhow::Result<devbox_core::Paths> {
         &env,
     )?)
 }
+
+pub mod exec_attempt;
+pub mod secrets;
+
+pub mod windows_exec;

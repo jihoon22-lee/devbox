@@ -132,3 +132,37 @@ test("tray summary navigation accepts the list without selecting a task", async 
   expect(mocks.invoke).toHaveBeenCalledWith("acknowledge_navigation", { sequence: 1 });
   off();
 });
+test("run attention retains its typed target and warm run navigation wins over cold agent snapshot", async () => {
+  native();
+  const target = { to: "/runs" as const, search: { projectId: "프로젝트/1", runId: "run-1", task: "검사/test" } };
+  await nativeAttention({ id: "event-1", title: "예약 실행 실패", visible: false, target });
+  expect(mocks.invoke).toHaveBeenCalledWith("notify_attention", {
+    a: {
+      id: "event-1",
+      title: "예약 실행 실패",
+      body: "",
+      visible: false,
+      target,
+    },
+  });
+  const snapshot = deferred<unknown>();
+  let deliver!: (event: { payload: unknown }) => void;
+  mocks.listen.mockImplementation(async (_name, callback) => {
+    deliver = callback;
+    return vi.fn();
+  });
+  mocks.invoke.mockImplementation((name) => (name === "pending_navigation" ? snapshot.promise : Promise.resolve()));
+  const navigate = vi.fn().mockResolvedValue(undefined);
+  const off = subscribeNativeNavigation(navigate);
+  await tick();
+  deliver({ payload: { sequence: 2, ...target } });
+  await tick();
+  snapshot.resolve(intent(1));
+  await tick();
+  expect(navigate).toHaveBeenCalledExactlyOnceWith({ ...target, state: { runActivation: expect.any(String) } });
+  expect(mocks.invoke).toHaveBeenCalledWith("acknowledge_navigation", { sequence: 2 });
+  deliver({ payload: { sequence: 3, to: "/runs", search: { projectId: "p" } } });
+  await tick();
+  expect(navigate).toHaveBeenCalledTimes(1);
+  off();
+});

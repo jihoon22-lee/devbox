@@ -13,3 +13,7 @@ pub mod notify;
 pub mod preferences;
 pub mod shortcuts;
 pub mod tray;
+
+pub mod secrets;
+
+pub mod windows;

@@ -1,0 +1,77 @@
+.view {
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+  height: 100%;
+  min-width: 0;
+  gap: var(--space-2);
+}
+.toolbar,
+.sources,
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.toolbar input:not([type="checkbox"]),
+.toolbar select {
+  background: var(--bg-1);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+.toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+.source {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  height: 24px;
+  padding-inline: var(--space-2);
+  font: 12px / 24px var(--font-mono, monospace);
+}
+.time {
+  color: var(--fg-muted);
+  width: 19ch;
+  flex-shrink: 0;
+}
+.stream {
+  color: var(--fg-muted);
+  width: 6ch;
+  flex-shrink: 0;
+}
+.body {
+  white-space: pre;
+}
+.location {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.footer {
+  justify-content: space-between;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  min-height: 32px;
+}
+.truncated {
+  color: var(--fg-muted);
+}

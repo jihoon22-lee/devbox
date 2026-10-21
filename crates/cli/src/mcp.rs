@@ -1,6 +1,7 @@
 //! Minimal newline-framed MCP stdio server, with write access disabled by default.
 mod input;
 mod protocol;
+mod runs;
 mod tools;
 use crate::client::Client;
 use devbox_core::{Config, Paths};

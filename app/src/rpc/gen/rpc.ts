@@ -17,7 +17,7 @@ export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes
 export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
 export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
-export type AgentTest = { terminalId: string, };
+export type AgentTest = { runId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
@@ -36,17 +36,39 @@ export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
+export type ContainerAction = "start" | "stop" | "restart";
+export type ContainerActionParams = { id: string, action: ContainerAction, };
+export type ContainerActionResult = { id: string, action: ContainerAction, undo: ContainerActionParams | null, };
+export type ContainerError = { "code": "runtime.container_invalid_id" } | { "code": "runtime.container_unavailable" } | { "code": "runtime.container_failed" } | { "code": "runtime.container_timeout" } | { "code": "runtime.container_output_limit" } | { "code": "runtime.container_invalid_output" } | { "code": "runtime.container_cancelled" };
+export type ContainerInfo = { id: string, name: string, image: string, state: string, status: string, ports: string, composeProject?: string, };
+export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
+export type ContainersQuery = Record<symbol, never>;
+export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
 export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
 export type DebugError = { "code": "debug.unsupported" };
+export type DefineResult = { rev: string, definition: Definition, };
+export type DefineRun = { projectId: string, def: RunDef, saveTo: SaveTo, };
+export type Definition = { source: DefinitionSource, def: RunDef, };
+export type DefinitionCursor = { id: string, shadowed: boolean, };
+export type DefinitionKind = "task" | "service";
+export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: Array<Definition>, runs: Array<Run>, trust: TrustPreviewStatus, nextCursor: DefinitionCursor | null, };
+export type DefinitionSource = "projectFile" | "thisPc";
+export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
 export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
 export type DoctorReport = { checks: Array<Check>, };
 export type Done = { rev: string, };
 export type EchoParams = { bytes: number, };
+export type Empty = Record<symbol, never>;
+export type ExitRecord = { attemptId: string, code: number | null, signal?: string, endedMs: number, by: ExitSource, serviceResult?: string, };
+export type ExitSource = "wrapper" | "systemd";
+export type Exited = { runId: string, attemptId: string, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
+export type FileLocation = { path: string, line: number, column: number, };
+export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
@@ -54,19 +76,47 @@ export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
+export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
+export type KillResult = { pid: number, };
+export type KillSignal = "term" | "kill";
 export type LaunchAgent = { tool: string, worktree: boolean, prompt: string | null, };
 export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTerminal>, agents: Array<LaunchAgent>, };
 export type LaunchProject = { id: string, };
-export type LaunchResult = { terminals: number, agents: number, terminalIds: Array<string>, rev: string, };
+export type LaunchResult = { services: number, runIds: Array<string>, terminals: number, agents: number, terminalIds: Array<string>, rev: string, };
 export type LaunchTerminal = { name: string, command: string | null, };
 export type ListAgents = { includeClosedHours: number | null, afterId?: string, };
 export type ListProjects = Record<symbol, never>;
+export type ListRuns = { projectId: string, cursor: DefinitionCursor | null, };
 export type ListSessions = { projectId: string | null, afterId?: string, };
+export type LogFilter = { text?: string, regex?: string, streams?: Array<LogStream>, };
+export type LogFrom = Tail | { offset: number, };
+export type LogLine = { src: LogSource, ts: string, stream: LogStream, text: string, };
+export type LogSource = { "kind": "run", runId: string, } | { "kind": "file", path: string, } | { "kind": "container", id: string, };
+export type LogStream = "stdout" | "stderr" | "system";
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type MergeKind = "merge" | "squash" | "rebase";
+export type MissedPolicy = "skip" | "runOnce";
+export type Name = { name: string, };
+export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
+export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
+export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
+export type ObserveQuery = Record<symbol, never>;
+export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
+export type PortInfo = { port: number, proto: string, addr: string, pid: number | null, process: string | null, startTimeMs: number | null, runId: string | null, containerId: string | null, projectId: string | null, };
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
+export type Pressure = { some: PressureLine | null, full: PressureLine | null, };
+export type PressureLine = { avg10: number, avg60: number, avg300: number, totalUs: number, };
+export type Problem = { file: string, line: number, col: number | null, severity: ProblemSeverity, message: string, source: string, };
+export type ProblemSeverity = "error" | "warning" | "info";
+export type ProblemsChange = { rev: string, projectId: string, };
+export type ProblemsCursor = { rev: string, offset: number, };
+export type ProblemsQuery = { projectId: string, limit?: number, cursor?: ProblemsCursor, };
+export type ProblemsResult = { rev: string, items: Array<Problem>, nextCursor: ProblemsCursor | null, truncated: boolean, };
+export type ProcessExpectation = { startTimeMs: number, };
+export type ProcessInfo = { pid: number, name: string, uid: number, cwd: string | null, startTimeMs: number, cpuPercent: number, rssBytes: number, unit: string | null, runId: string | null, projectId: string | null, };
+export type ProcessesQuery = { projectId: string | null, };
 export type Project = { id: string, name: string, path: string, favorite: boolean, addedMs: number, };
 export type ProjectAgentCounts = { open: number, attention: number, };
 export type ProjectConfig = { agent: AgentConfig, launch: LaunchConfig, };
@@ -79,24 +129,63 @@ export type ProjectSummary = { id: string, branch?: string, dirty: boolean | nul
 export type ProjectSummaryIssue = { message: string, };
 export type ProjectSummaryList = { items: Array<ProjectSummary>, };
 export type ProjectsChanged = { rev: string, };
-export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
+export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
+export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
 export type RebaseResult = "done" | "conflict";
+export type Recovery = { recovery: string, };
 export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
+export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
+export type RestartPolicy = "no" | "onFailure" | "always";
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
+export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
+export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
+export type RunDetail = { rev: string, run: Run, };
+export type RunId = { runId: string, };
+export type RunKind = "task" | "service" | "scheduled" | "agentTest";
+export type RunState = "starting" | "running" | "restarting" | "exited" | "failed" | "stopped";
+export type RunSummary = { rev: string, active: number, };
+export type RunSummaryQuery = Record<symbol, never>;
+export type RunTarget = "linux" | "windows";
+export type RunsQuery = { projectId: string | null, limit: number, };
+export type RunsResult = { rev: string, items: Array<Run>, };
+export type RuntimeChange = { rev: string, projectId: string, };
+export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } };
+export type SaveTo = "project" | "thisPc";
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
+export type ScheduleDef = { id: string, task: string, cron: string, tz: string | null, missed: MissedPolicy, };
+export type ScheduleLast = { at: string, result: ScheduleOutcome, };
+export type ScheduleOutcome = "claimed" | "running" | "succeeded" | "failed" | "stopped" | "skippedMissed" | "skippedTrust";
+export type ScheduleStatus = { id: string, cron: string, next: string | null, last: ScheduleLast | null, };
+export type SchedulesQuery = { projectId: string, };
+export type SchedulesResult = { items: Array<ScheduleStatus>, };
+export type SearchCursor = { sources: Array<SourceCursor>, };
+export type SearchLogs = { sources: Array<LogSource>, query: string, regex: boolean, before?: SearchCursor, limit: number, };
+export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
+export type SecretInfo = { name: string, hasValue: boolean, };
+export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
 export type SendToAgent = { id: string, text: string, };
+export type ServiceDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, restart: RestartPolicy, restartSec: number, startLimit: StartLimit, portsHint: Array<number>, readyTimeoutSec: number, };
 export type SessionKind = "shell" | "agent";
 export type SessionList = { rev: string, items: Array<TerminalSession>, nextAfterId?: string, };
 export type SetFavorite = { id: string, favorite: boolean, };
+export type SetSecret = { name: string, value: string, };
+export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
+export type StartLimit = { burst: number, intervalSec: number, };
+export type StartRun = { projectId: string, id: string, worktree: string | null, };
 export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
+export type Suggestion = { id: string, command: string, kind: DefinitionKind, from: SuggestionSource, };
+export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
+export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
+export type Tail = "tail";
+export type TaskDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.command_too_long", "detail": { limit_bytes: number, } } | { "code": "terminal.command_invalid" } | { "code": "terminal.invalid_cursor" } | { "code": "terminal.list_changed" } | { "code": "terminal.title_too_long", "detail": { limit: number, } } | { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
@@ -106,10 +195,12 @@ export type TerminalSession = { id: string, projectId: string | null, title: str
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
 export type TrustApprove = { id: string, expectedCanonicalPath: string, expectedDigest: string, expectedScopeVersion: number, };
-export type TrustOperation = "create" | "test" | "launch" | "discard" | "merge" | "pr" | "cleanup";
-export type TrustPreview = { status: TrustPreviewStatus, projectId: string, projectName: string, canonicalPath: string, configPath: string, digest: string | null, scopeVersion: number, approved: boolean, requiresApproval: boolean, config: ProjectConfig | null, executionDirectories: Array<string>, };
+export type TrustOperation = "create" | "run" | "test" | "launch" | "discard" | "merge" | "pr" | "cleanup";
+export type TrustPreview = { status: TrustPreviewStatus, projectId: string, projectName: string, canonicalPath: string, configPath: string, digest: string | null, scopeVersion: number, approved: boolean, requiresApproval: boolean, config: ProjectConfig | null, executionDirectories: Array<string>, runDefinitions: Array<RunDef>, };
 export type TrustPreviewParams = { id: string, operation: TrustOperation, agentId: string | null, worktrees: Array<string>, worktree: boolean | null, };
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
+export type UndefineRun = { projectId: string, id: string, };
+export type WindowsRun = { directory: string, notice: string, };
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {
@@ -138,6 +229,14 @@ export interface Methods {
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
+  "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
+  "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
+  "observe.kill": { kind: "mutation"; confirm: "always"; params: KillProcess; result: KillResult; error: ObserveError };
+  "observe.ports": { kind: "query"; confirm: "none"; params: ObserveQuery; result: Array<PortInfo>; error: ObserveError };
+  "observe.problems": { kind: "query"; confirm: "none"; params: ProblemsQuery; result: ProblemsResult; error: ObserveError };
+  "observe.processes": { kind: "query"; confirm: "none"; params: ProcessesQuery; result: Array<ProcessInfo>; error: ObserveError };
+  "observe.resolve_location": { kind: "query"; confirm: "none"; params: ResolveFileLocation; result: FileLocation; error: ObserveError };
+  "observe.system": { kind: "query"; confirm: "none"; params: ObserveQuery; result: SystemInfo; error: ObserveError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.clone": { kind: "mutation"; confirm: "none"; params: CloneProject; result: Project; error: ProjectsError };
   "projects.config": { kind: "query"; confirm: "none"; params: GetProjectConfig; result: ProjectConfigResult; error: ProjectsError };
@@ -150,6 +249,27 @@ export interface Methods {
   "projects.summary": { kind: "query"; confirm: "none"; params: SummaryProjects; result: ProjectSummaryList; error: ProjectsError };
   "projects.trust_approve": { kind: "mutation"; confirm: "none"; params: TrustApprove; result: Done; error: ProjectsError };
   "projects.trust_preview": { kind: "query"; confirm: "none"; params: TrustPreviewParams; result: TrustPreview; error: ProjectsError };
+  "runtime.container_action": { kind: "mutation"; confirm: "reversible"; params: ContainerActionParams; result: ContainerActionResult; error: ContainerError };
+  "runtime.containers": { kind: "query"; confirm: "none"; params: ContainersQuery; result: ContainersResult; error: ContainerError };
+  "runtime.define": { kind: "mutation"; confirm: "none"; params: DefineRun; result: DefineResult; error: RuntimeError };
+  "runtime.detect": { kind: "query"; confirm: "none"; params: DetectRuns; result: Array<Suggestion>; error: RuntimeError };
+  "runtime.exited": { kind: "mutation"; confirm: "always"; params: Exited; result: Done; error: RuntimeError };
+  "runtime.get": { kind: "query"; confirm: "none"; params: RunId; result: RunDetail; error: RuntimeError };
+  "runtime.list": { kind: "query"; confirm: "none"; params: ListRuns; result: DefinitionList; error: RuntimeError };
+  "runtime.restart": { kind: "mutation"; confirm: "none"; params: RunId; result: Run; error: RuntimeError };
+  "runtime.runs": { kind: "query"; confirm: "none"; params: RunsQuery; result: RunsResult; error: RuntimeError };
+  "runtime.schedules": { kind: "query"; confirm: "none"; params: SchedulesQuery; result: SchedulesResult; error: RuntimeError };
+  "runtime.start": { kind: "mutation"; confirm: "none"; params: StartRun; result: Run; error: RuntimeError };
+  "runtime.stop": { kind: "mutation"; confirm: "reversible"; params: RunId; result: Run; error: RuntimeError };
+  "runtime.summary": { kind: "query"; confirm: "none"; params: RunSummaryQuery; result: RunSummary; error: RuntimeError };
+  "runtime.undefine": { kind: "mutation"; confirm: "always"; params: UndefineRun; result: Done; error: RuntimeError };
+  "secrets.delete": { kind: "mutation"; confirm: "always"; params: Name; result: Done; error: SecretsError };
+  "secrets.export_key": { kind: "query"; confirm: "none"; params: Empty; result: Recovery; error: SecretsError };
+  "secrets.import_key": { kind: "mutation"; confirm: "none"; params: Recovery; result: Done; error: SecretsError };
+  "secrets.list": { kind: "query"; confirm: "none"; params: Empty; result: Array<SecretInfo>; error: SecretsError };
+  "secrets.reset": { kind: "mutation"; confirm: "always"; params: Empty; result: Done; error: SecretsError };
+  "secrets.set": { kind: "mutation"; confirm: "none"; params: SetSecret; result: Done; error: SecretsError };
+  "secrets.status": { kind: "query"; confirm: "none"; params: Empty; result: PublicKeyStatus; error: SecretsError };
   "system.doctor": { kind: "query"; confirm: "none"; params: PingParams; result: DoctorReport; error: SystemError };
   "system.info": { kind: "query"; confirm: "none"; params: PingParams; result: DaemonInfo; error: SystemError };
   "system.ping": { kind: "query"; confirm: "none"; params: PingParams; result: Pong; error: SystemError };
@@ -167,7 +287,10 @@ export interface Methods {
 export interface Topics {
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
+  "notify.raised": Notification;
+  "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
+  "runtime.changed": RuntimeChange;
   "terminal.changed": TerminalChanged;
 }
 
@@ -197,6 +320,14 @@ export const METHOD_INFO = {
   "agents.test": { kind: "mutation", confirm: "none" },
   "agents.usage": { kind: "query", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
+  "logs.open": { kind: "stream", confirm: "none" },
+  "logs.search": { kind: "query", confirm: "none" },
+  "observe.kill": { kind: "mutation", confirm: "always" },
+  "observe.ports": { kind: "query", confirm: "none" },
+  "observe.problems": { kind: "query", confirm: "none" },
+  "observe.processes": { kind: "query", confirm: "none" },
+  "observe.resolve_location": { kind: "query", confirm: "none" },
+  "observe.system": { kind: "query", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.clone": { kind: "mutation", confirm: "none" },
   "projects.config": { kind: "query", confirm: "none" },
@@ -209,6 +340,27 @@ export const METHOD_INFO = {
   "projects.summary": { kind: "query", confirm: "none" },
   "projects.trust_approve": { kind: "mutation", confirm: "none" },
   "projects.trust_preview": { kind: "query", confirm: "none" },
+  "runtime.container_action": { kind: "mutation", confirm: "reversible" },
+  "runtime.containers": { kind: "query", confirm: "none" },
+  "runtime.define": { kind: "mutation", confirm: "none" },
+  "runtime.detect": { kind: "query", confirm: "none" },
+  "runtime.exited": { kind: "mutation", confirm: "always" },
+  "runtime.get": { kind: "query", confirm: "none" },
+  "runtime.list": { kind: "query", confirm: "none" },
+  "runtime.restart": { kind: "mutation", confirm: "none" },
+  "runtime.runs": { kind: "query", confirm: "none" },
+  "runtime.schedules": { kind: "query", confirm: "none" },
+  "runtime.start": { kind: "mutation", confirm: "none" },
+  "runtime.stop": { kind: "mutation", confirm: "reversible" },
+  "runtime.summary": { kind: "query", confirm: "none" },
+  "runtime.undefine": { kind: "mutation", confirm: "always" },
+  "secrets.delete": { kind: "mutation", confirm: "always" },
+  "secrets.export_key": { kind: "query", confirm: "none" },
+  "secrets.import_key": { kind: "mutation", confirm: "none" },
+  "secrets.list": { kind: "query", confirm: "none" },
+  "secrets.reset": { kind: "mutation", confirm: "always" },
+  "secrets.set": { kind: "mutation", confirm: "none" },
+  "secrets.status": { kind: "query", confirm: "none" },
   "system.doctor": { kind: "query", confirm: "none" },
   "system.info": { kind: "query", confirm: "none" },
   "system.ping": { kind: "query", confirm: "none" },
@@ -264,6 +416,17 @@ export const RPC_ERROR_CODES = [
   "invalid_params",
   "method_not_found",
   "not_found",
+  "observe.file_outside_roots",
+  "observe.invalid_cursor",
+  "observe.invalid_input",
+  "observe.invalid_regex",
+  "observe.limit_exceeded",
+  "observe.permission_denied",
+  "observe.project_not_found",
+  "observe.run_not_found",
+  "observe.source_unavailable",
+  "observe.state_changed",
+  "observe.stream_unsupported",
   "projects.already_exists",
   "projects.clone_failed",
   "projects.clone_invalid_url",
@@ -281,6 +444,28 @@ export const RPC_ERROR_CODES = [
   "projects.trust_preview_stale",
   "projects.trust_required",
   "projects.unsafe_prompt_path",
+  "runtime.container_cancelled",
+  "runtime.container_failed",
+  "runtime.container_invalid_id",
+  "runtime.container_invalid_output",
+  "runtime.container_output_limit",
+  "runtime.container_timeout",
+  "runtime.container_unavailable",
+  "runtime.def_invalid",
+  "runtime.dependency_failed",
+  "runtime.detect_io",
+  "runtime.detect_limit",
+  "runtime.detect_parse",
+  "runtime.invalid_cursor",
+  "runtime.not_ready",
+  "runtime.project_config_invalid",
+  "runtime.project_not_found",
+  "runtime.run_not_found",
+  "runtime.secret_missing",
+  "secrets.invalid_input",
+  "secrets.key_mismatch",
+  "secrets.missing",
+  "secrets.unavailable",
   "secrets_locked",
   "system.env_refresh_failed",
   "system.unavailable",

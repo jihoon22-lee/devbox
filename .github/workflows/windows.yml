@@ -29,24 +29,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ "$EVENT" = "workflow_dispatch" ] || { [ "$EVENT" = "push" ] && [ "$BASE" = "0000000000000000000000000000000000000000" ]; }; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-          else
-            if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}"; then
-              echo "Scope gate: missing or unreadable baseline commit: $BASE" >&2
-              exit 1
-            fi
-            # Count both sides of renames. Diff errors abort before classification.
-            git diff --no-renames --name-only "$BASE" HEAD > "$RUNNER_TEMP/devbox-changed-files"
-            status=0
-            grep -vE '^(docs/|[^/]+\.md$)' "$RUNNER_TEMP/devbox-changed-files" > /dev/null || status=$?
-            case "$status" in
-              0) echo "code=true" >> "$GITHUB_OUTPUT" ;;
-              1) echo "code=false" >> "$GITHUB_OUTPUT" ;;
-              *) echo "Scope gate: file classification failed (grep exit $status)" >&2; exit "$status" ;;
-            esac
-          fi
+        run: bash scripts/ci-scope.sh
   linux-bin:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -123,17 +106,18 @@ jobs:
           & ./scripts/tests/windows-package.ps1
           & ./scripts/tests/windows-dev.ps1
           & ./scripts/win-package.ps1 -Verify
-          $installers = @(Get-ChildItem app/src-tauri/target/release/bundle/nsis/*.exe -File)
-          if (!$installers.Count) { throw 'NSIS installers missing' }
-          $hashes = @{}
-          foreach ($file in $installers) { $hashes[$file.Name] = (Get-FileHash $file.FullName).Hash.ToLowerInvariant() }
-          @{ source_sha = $env:SOURCE_SHA; run_id = $env:GITHUB_RUN_ID; repository = $env:GITHUB_REPOSITORY; workflow = '.github/workflows/windows.yml'; version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version; installers = $hashes } | ConvertTo-Json | Set-Content app/src-tauri/target/release/bundle/nsis/receipt.json -Encoding utf8
+          if ('${{ github.event_name }}' -in @('pull_request', 'workflow_dispatch')) { & ./scripts/win-package.ps1 -Channel accept }
       - uses: actions/upload-artifact@v4
         if: needs.changes.outputs.code == 'true'
         with:
           name: devbox-setup
-          path: |
-            app/src-tauri/target/release/bundle/nsis/*.exe
-            app/src-tauri/target/release/bundle/nsis/receipt.json
+          path: app/src-tauri/target/prod/release/bundle/nsis/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.code == 'true' && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
+        with:
+          name: devbox-setup-accept
+          path: app/src-tauri/target/accept/release/bundle/nsis/
           if-no-files-found: error
           retention-days: 14

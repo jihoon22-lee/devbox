@@ -236,7 +236,23 @@ async fn bridge_binary_streaming_and_daemon_eof_with_stdin_open() {
 }
 #[tokio::test]
 async fn bridge_activation_once_stdout_clean_and_retry() {
-    let d = TestDaemon::fixture();
+    bridge_activation(None, "devbox").await;
+}
+#[tokio::test]
+async fn bridge_activation_uses_accept_and_dev_channel_units() {
+    bridge_activation(Some("accept"), "devbox-accept").await;
+    bridge_activation(Some("dev"), "devbox-dev").await;
+}
+async fn bridge_activation(instance: Option<&str>, unit: &str) {
+    let mut d = TestDaemon::fixture();
+    if let Some(instance) = instance {
+        d.instance = instance.to_owned();
+        d.socket = d
+            .socket
+            .parent()
+            .expect("fixture value")
+            .join(format!("devbox-{instance}.sock"));
+    }
     let bin = fake_systemctl(
         &d,
         "echo pollution\nprintf '%s\\n' \"$@\" >> \"$HOME/activation\"",
@@ -278,7 +294,7 @@ async fn bridge_activation_once_stdout_clean_and_retry() {
     );
     assert_eq!(
         std::fs::read_to_string(d.home.path().join("activation")).expect("read fixture text"),
-        format!("--user\nstart\ndevbox@{}.socket\n", d.instance)
+        format!("--user\nstart\n{unit}@{}.socket\n", d.instance)
     );
     let mut rest = Vec::new();
     output

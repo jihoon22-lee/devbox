@@ -3,18 +3,20 @@ use crate::{Project, ProjectsError, ProjectsService, R, config::*, model::*, sto
 use devbox_protocol::{Done, Internal};
 use sha2::{Digest, Sha256};
 
-pub const SCOPE_VERSION: u32 = 1;
+pub const SCOPE_VERSION: u32 = 2;
 
-struct Snapshot {
-    project: Project,
-    registered_path: String,
-    digest: String,
-    config: ProjectConfig,
+pub(crate) struct Snapshot {
+    pub(crate) project: Project,
+    pub(crate) registered_path: String,
+    pub(crate) digest: String,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) config: ProjectConfig,
 }
 
 /// Only projects can construct this whole-config capability. All fields remain immutable.
 #[derive(Debug, Clone)]
 pub struct AuthorizedConfig {
+    digest: String,
     project_id: String,
     canonical_path: String,
     config: ProjectConfig,
@@ -58,10 +60,14 @@ impl SetupSnapshot {
 pub struct LaunchSnapshot {
     preparation: SetupSnapshot,
     launch: LaunchConfig,
+    run_config: crate::run_config::RunConfig,
 }
 impl LaunchSnapshot {
     pub fn preparation(&self) -> &SetupSnapshot {
         &self.preparation
+    }
+    pub fn run_config(&self) -> &crate::run_config::RunConfig {
+        &self.run_config
     }
     pub fn launch(&self) -> &LaunchConfig {
         &self.launch
@@ -69,9 +75,23 @@ impl LaunchSnapshot {
 }
 
 fn launch_exec(config: &ProjectConfig) -> bool {
-    !config.launch.agents.is_empty() || config.launch.terminals.iter().any(|t| t.command.is_some())
+    !config.launch.services.is_empty()
+        || !config.launch.agents.is_empty()
+        || config.launch.terminals.iter().any(|t| t.command.is_some())
 }
-fn has_executable(config: &ProjectConfig) -> bool {
+pub fn required_scope_version(config: &ProjectConfig) -> Option<u32> {
+    if !config.raw_tasks.is_empty()
+        || !config.raw_services.is_empty()
+        || !config.raw_schedules.is_empty()
+    {
+        Some(2)
+    } else if has_scope_one_commands(config) {
+        Some(1)
+    } else {
+        None
+    }
+}
+fn has_scope_one_commands(config: &ProjectConfig) -> bool {
     !config.agent.setup.is_empty()
         || !config.agent.teardown.is_empty()
         || config.agent.test.is_some()
@@ -79,6 +99,7 @@ fn has_executable(config: &ProjectConfig) -> bool {
 }
 fn operation_exec(config: &ProjectConfig, operation: TrustOperation) -> bool {
     match operation {
+        TrustOperation::Run => !config.run_config().is_empty(),
         TrustOperation::Create => !config.agent.setup.is_empty(),
         TrustOperation::Test => config.agent.test.is_some(),
         TrustOperation::Launch => launch_exec(config),
@@ -90,7 +111,7 @@ fn operation_exec(config: &ProjectConfig, operation: TrustOperation) -> bool {
 }
 
 impl ProjectsService {
-    async fn trust_snapshot(&self, id: &str) -> R<Snapshot> {
+    pub(crate) async fn trust_snapshot(&self, id: &str) -> R<Snapshot> {
         let mut project = self
             .get(id)
             .await?
@@ -118,6 +139,7 @@ impl ProjectsService {
                 project,
                 registered_path,
                 digest: format!("{:x}", Sha256::digest(&bytes)),
+                bytes,
                 config,
             })
         })
@@ -125,21 +147,25 @@ impl ProjectsService {
         .internal("read command trust snapshot")?
     }
 
-    async fn snapshot_approved(&self, s: &Snapshot) -> R<bool> {
+    pub(crate) async fn snapshot_approved(&self, s: &Snapshot) -> R<bool> {
+        let Some(scope) = required_scope_version(&s.config) else {
+            return Ok(false);
+        };
         let id = s.project.id.clone();
         let path = s.project.path.clone();
         let digest = s.digest.clone();
         self.db
-            .read(move |tx| store::approved(tx, &id, &path, &digest, SCOPE_VERSION))
+            .read(move |tx| store::approved(tx, &id, &path, &digest, scope))
             .await
             .internal("read command trust approval")
     }
 
     async fn authorize_snapshot(&self, s: Snapshot) -> R<AuthorizedConfig> {
-        if has_executable(&s.config) && !self.snapshot_approved(&s).await? {
+        if required_scope_version(&s.config).is_some() && !self.snapshot_approved(&s).await? {
             return Err(ProjectsError::TrustRequired { id: s.project.id }.into());
         }
         Ok(AuthorizedConfig {
+            digest: s.digest,
             project_id: s.project.id,
             canonical_path: s.project.path,
             config: s.config,
@@ -149,6 +175,34 @@ impl ProjectsService {
     pub async fn authorized_config(&self, id: &str) -> R<AuthorizedConfig> {
         self.authorize_snapshot(self.trust_snapshot(id).await?)
             .await
+    }
+
+    pub async fn run_snapshot(&self, id: &str) -> R<AuthorizedConfig> {
+        self.authorized_config(id).await
+    }
+
+    pub async fn run_config_status(&self, id: &str) -> R<crate::run_config::RunConfigState> {
+        let s = self.trust_snapshot(id).await?;
+        let trust = if required_scope_version(&s.config).is_none() {
+            TrustPreviewStatus::NotRequired
+        } else if self.snapshot_approved(&s).await? {
+            TrustPreviewStatus::Approved
+        } else {
+            TrustPreviewStatus::ApprovalRequired
+        };
+        let project = id.to_owned();
+        let approval = self
+            .db
+            .read(move |tx| store::approval_identity(tx, &project))
+            .await
+            .internal("read approval change marker")?;
+        let approval_stamp = approval.map(|record| record.stamp());
+        Ok(crate::run_config::RunConfigState {
+            approval_stamp,
+            config: s.config.run_config(),
+            trust,
+            digest: s.digest,
+        })
     }
 
     pub async fn setup_snapshot(&self, id: &str) -> R<SetupSnapshot> {
@@ -172,12 +226,18 @@ impl ProjectsService {
             return Err(ProjectsError::TrustRequired { id: s.project.id }.into());
         }
         // No launch agents means the preparation fields are never passed to create.
+        let run_config = if s.config.launch.services.is_empty() {
+            Default::default()
+        } else {
+            s.config.run_config()
+        };
         let setup = if s.config.launch.agents.is_empty() {
             vec![]
         } else {
             s.config.agent.setup
         };
         Ok(LaunchSnapshot {
+            run_config,
             preparation: SetupSnapshot {
                 project_id: s.project.id,
                 canonical_path: s.project.path,
@@ -202,6 +262,20 @@ impl ProjectsService {
             return Ok(None);
         }
         self.authorize_snapshot(s).await.map(Some)
+    }
+
+    /// Reject a stale test capability before a delayed runner creates resources.
+    pub async fn validate_test_snapshot(&self, snapshot: &AuthorizedConfig) -> R<()> {
+        let current = self.test_snapshot(snapshot.project_id()).await?;
+        if current.is_none_or(|current| {
+            current.digest != snapshot.digest || current.canonical_path != snapshot.canonical_path
+        }) {
+            return Err(ProjectsError::TrustRequired {
+                id: snapshot.project_id.clone(),
+            }
+            .into());
+        }
+        Ok(())
     }
 
     /// `command_branch` is UI guidance only. Mutations never consume this decision.
@@ -229,6 +303,7 @@ impl ProjectsService {
                 approved: false,
                 requires_approval: false,
                 config: None,
+                run_definitions: vec![],
                 execution_directories,
             });
         }
@@ -257,6 +332,7 @@ impl ProjectsService {
             scope_version: SCOPE_VERSION,
             approved,
             requires_approval,
+            run_definitions: s.config.run_config().definitions(),
             config: Some(s.config),
             execution_directories,
         })
@@ -270,6 +346,7 @@ impl ProjectsService {
         {
             return Err(ProjectsError::TrustPreviewStale { id: p.id }.into());
         }
+        let hub = self.hub.clone();
         let (_, rev) = self
             .db
             .write_checked_with_commit(
@@ -289,7 +366,7 @@ impl ProjectsService {
                     )?;
                     Ok(Ok(()))
                 },
-                |_, _| {},
+                move |_, rev| crate::publish_changed(&hub, rev),
             )
             .await
             .internal("approve project commands")??;

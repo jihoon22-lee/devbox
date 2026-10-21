@@ -103,3 +103,22 @@ test("denied writes with readable old storage preserve successive memory notices
   window.dispatchEvent(new StorageEvent("storage", { key: "devbox.notifications", storageArea: localStorage }));
   expect(useNotifications.getState().items.map((item) => item.key)).toEqual(["two", "one", "old"]);
 });
+test("run event identity survives hydration and replay preserves read time and target", async () => {
+  const notice = {
+    key: "run:event-1",
+    kind: "run" as const,
+    title: "예약 실행 실패",
+    body: "검사/test",
+    target: { to: "/runs" as const, search: { projectId: "프로젝트/1", task: "검사/test", gateway: "ws://evil" } },
+  };
+  expect(useNotifications.getState().pushOnce(notice)).toBe(true);
+  useNotifications.getState().markAllRead();
+  const old = useNotifications.getState().items[0];
+  await useNotifications.persist.rehydrate();
+  expect(useNotifications.getState().pushOnce(notice)).toBe(false);
+  expect(useNotifications.getState().items[0]).toEqual(old);
+  expect(old?.target).toEqual({ to: "/runs", search: { projectId: "프로젝트/1", task: "검사/test" } });
+  expect(useNotifications.getState().unread).toBe(0);
+  expect(useNotifications.getState().pushOnce({ ...notice, key: "run:event-2" })).toBe(true);
+  expect(useNotifications.getState().items).toHaveLength(2);
+});

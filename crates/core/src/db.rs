@@ -17,10 +17,15 @@ pub struct Migration {
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
 #[derive(Clone)]
 pub struct Db {
+    connections: DbConnections,
+    rev: Arc<AtomicU64>,
+}
+/// Shared connection ownership for durable and rebuildable databases.
+#[derive(Clone)]
+pub(crate) struct DbConnections {
     writer: mpsc::Sender<Job>,
     readers: Arc<Mutex<Vec<Connection>>>,
     path: PathBuf,
-    rev: Arc<AtomicU64>,
 }
 const BASE: &str = "CREATE TABLE IF NOT EXISTS schema_versions (domain TEXT PRIMARY KEY, version INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS core_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL); INSERT OR IGNORE INTO core_meta(key,value) VALUES ('rev',0);";
 fn valid_version(version: &str) -> bool {
@@ -286,21 +291,8 @@ impl Db {
             tx.commit()?;
         }
         let rev = Arc::new(AtomicU64::new(revision(&conn)?));
-        let (writer, receiver) = mpsc::channel::<Job>();
-        std::thread::Builder::new()
-            .name("devbox-db-writer".into())
-            .spawn(move || {
-                while let Ok(job) = receiver.recv() {
-                    // A failed/panicking job drops its reply and rolls back its transaction.
-                    let _ =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut conn)));
-                }
-            })
-            .map_err(crate::io_err("spawn db writer"))?;
         Ok(Self {
-            writer,
-            readers: Arc::new(Mutex::new(Vec::new())),
-            path: path.to_owned(),
+            connections: DbConnections::new(path, conn)?,
             rev,
         })
     }
@@ -346,7 +338,8 @@ impl Db {
     {
         let (reply, wait) = oneshot::channel();
         let rev = self.rev.clone();
-        self.writer
+        self.connections
+            .writer
             .send(Box::new(move |conn| {
                 let result = (|| {
                     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -370,6 +363,37 @@ impl Db {
         wait.await.map_err(|_| CoreError::DbClosed)?
     }
     pub async fn read<T, F>(&self, f: F) -> Result<T, CoreError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Transaction<'_>) -> rusqlite::Result<T> + Send + 'static,
+    {
+        self.connections.read(f).await
+    }
+}
+impl DbConnections {
+    pub(crate) fn new(path: &Path, mut conn: Connection) -> Result<Self, CoreError> {
+        let (writer, receiver) = mpsc::channel::<Job>();
+        std::thread::Builder::new()
+            .name("devbox-db-writer".into())
+            .spawn(move || {
+                while let Ok(job) = receiver.recv() {
+                    // A failed/panicking job drops its reply and rolls back its transaction.
+                    let _ =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&mut conn)));
+                }
+            })
+            .map_err(crate::io_err("spawn db writer"))?;
+        Ok(Self {
+            writer,
+            readers: Arc::new(Mutex::new(Vec::new())),
+            path: path.to_owned(),
+        })
+    }
+
+    pub(crate) fn dispatch(&self, job: Job) -> Result<(), CoreError> {
+        self.writer.send(job).map_err(|_| CoreError::DbClosed)
+    }
+    pub(crate) async fn read<T, F>(&self, f: F) -> Result<T, CoreError>
     where
         T: Send + 'static,
         F: FnOnce(&Transaction<'_>) -> rusqlite::Result<T> + Send + 'static,

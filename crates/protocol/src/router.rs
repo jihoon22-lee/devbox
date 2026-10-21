@@ -81,9 +81,15 @@ impl<S: Send + Sync + 'static> Router<S> {
         let handler: Handler<S> = Arc::new(move |state, ctx, raw| {
             let f = f.clone();
             Box::pin(async move {
-                let params: M::Params = serde_json::from_str(raw.get()).map_err(|e| {
+                let text: Box<str> = raw.into();
+                let text = zeroize::Zeroizing::new(String::from(text));
+                let params: M::Params = serde_json::from_str(&text).map_err(|e| {
                     DispatchError::common(CommonError::InvalidParams {
-                        reason: e.to_string(),
+                        reason: if M::NAME.starts_with("secrets.") {
+                            "invalid secret request".into()
+                        } else {
+                            e.to_string()
+                        },
                     })
                 })?;
                 match f(state, ctx, params).await {

@@ -1,12 +1,10 @@
 import os
-import textwrap
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-
 
 class ScaffoldScripts(unittest.TestCase):
     def test_banned_words_detects_string_even_with_router_identifier(self):
@@ -42,22 +40,16 @@ class ScaffoldScripts(unittest.TestCase):
             cache.mkdir()
             artifact = cache / 'artifact'
             artifact.write_text('preserve')
-            result = subprocess.run(['bash', str(ROOT / 'scripts/sweep.sh'), str(cache)], capture_output=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(artifact.read_text(), 'preserve')
-            result = subprocess.run(['bash', str(ROOT / 'scripts/sweep.sh')], capture_output=True)
-            self.assertEqual(result.returncode, 0)
-            self.assertEqual(artifact.read_text(), 'preserve')
-
+            for args, expected in [([str(cache)], 2), ([], 0)]:
+                result = subprocess.run(['bash', str(ROOT / 'scripts/sweep.sh'), *args], capture_output=True)
+                self.assertEqual(result.returncode, expected)
+                self.assertEqual(artifact.read_text(), 'preserve')
 
 class WorkflowScope(unittest.TestCase):
     def run_scope(self, root, base, event="pull_request", path=None):
-        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        block = workflow.split("        run: |\n", 1)[1].split("  rust:\n", 1)[0]
-        windows = (ROOT / ".github/workflows/windows.yml").read_text()
-        windows_block = windows.split("        run: |\n", 1)[1].split("  linux-bin:\n", 1)[0]
-        self.assertEqual(block, windows_block, "Both required workflow scope gates must match")
-        script = textwrap.dedent(block)
+        for workflow in ['ci', 'windows']:
+            self.assertIn('run: bash scripts/ci-scope.sh', (ROOT / f'.github/workflows/{workflow}.yml').read_text())
+        script = (ROOT / 'scripts/ci-scope.sh').read_text()
         output = root / "output"
         output.unlink(missing_ok=True)
         env = dict(os.environ, BASE=base, EVENT=event, RUNNER_TEMP=str(root), GITHUB_OUTPUT=str(output))
@@ -113,7 +105,6 @@ class WorkflowScope(unittest.TestCase):
             result, output = self.run_scope(root, base, path=fake_bin)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(output, "")
-
 
 if __name__ == '__main__':
     unittest.main()

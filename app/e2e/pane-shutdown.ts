@@ -18,7 +18,9 @@ function processIdentity(pid: number): ProcessIdentity | undefined {
       throw new Error(`Invalid process identity for owned pane ${pid}`);
     return { pid, session: Number(fields[3]), started: fields[19]!, state: fields[0]! };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    const code = (error as NodeJS.ErrnoException).code;
+    // A process may disappear after stat is opened but before it is read.
+    if (code === "ENOENT" || code === "ESRCH") return;
     throw error;
   }
 }

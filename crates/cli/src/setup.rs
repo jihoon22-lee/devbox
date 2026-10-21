@@ -13,7 +13,7 @@ mod tests {
     }
     #[test]
     fn units_reference_instance() {
-        let units = render_units();
+        let units = render_units(devbox_protocol::channel::AppChannel::Prod);
         assert!(
             units[1]
                 .1
@@ -98,54 +98,43 @@ pub(crate) fn env_path(text: &str) -> Option<String> {
     }
     Some(out)
 }
-pub fn render_units() -> Vec<(&'static str, String)> {
+pub fn render_units(channel: devbox_protocol::channel::AppChannel) -> Vec<(String, String)> {
+    let config = channel.config();
+    let storage = config.storage_name;
+    let daemon = config.daemon_unit;
+    let tmux = config.tmux_unit;
     vec![
         (
-            "devbox@.socket",
+            format!("{daemon}@.socket"),
             format!(
                 "{MARKER}[Unit]\nDescription=devbox daemon socket (%i)\n\n[Socket]\nListenStream=%t/devbox-%i.sock\nSocketMode=0600\n\n[Install]\nWantedBy=sockets.target\n"
             ),
         ),
         (
-            "devbox@.service",
+            format!("{daemon}@.service"),
             format!(
-                "{MARKER}[Unit]\nDescription=devbox daemon (%i)\nRequires=devbox@%i.socket\nAfter=devbox@%i.socket\n\n[Service]\nType=notify\nEnvironmentFile=-%h/.config/devbox/%i/env\nEnvironment=DEVBOX_INSTANCE=%i\nExecStart=%h/.local/share/devbox/bin/devbox daemon\nRestart=on-failure\nRestartSec=1\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n"
+                "{MARKER}[Unit]\nDescription=devbox daemon (%i)\nRequires={daemon}@%i.socket\nAfter={daemon}@%i.socket\n\n[Service]\nType=notify\nEnvironmentFile=-%h/.config/{storage}/%i/env\nEnvironment=DEVBOX_INSTANCE=%i\nExecStart=%h/.local/share/{storage}/bin/devbox daemon\nRestart=on-failure\nRestartSec=1\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n"
             ),
         ),
         (
-            "devbox-tmux@.service",
+            format!("{tmux}@.service"),
             format!(
-                "{MARKER}[Unit]\nDescription=devbox tmux server (%i)\n\n[Service]\nType=exec\nEnvironmentFile=-%h/.config/devbox/%i/env\nUnsetEnvironment=TMUX TMUX_TMPDIR\nExecStart=/usr/bin/env tmux -D -L devbox-%i -f %h/.config/devbox/%i/tmux.conf\nExecStop=/usr/bin/env tmux -L devbox-%i kill-server\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
+                "{MARKER}[Unit]\nDescription=devbox tmux server (%i)\n\n[Service]\nType=exec\nEnvironmentFile=-%h/.config/{storage}/%i/env\nUnsetEnvironment=TMUX TMUX_TMPDIR\nExecStart=/usr/bin/env tmux -D -L devbox-%i -f %h/.config/{storage}/%i/tmux.conf\nExecStop=/usr/bin/env tmux -L devbox-%i kill-server\nKillMode=control-group\n\n[Install]\nWantedBy=default.target\n"
             ),
         ),
     ]
 }
 fn unit_quote(path: &Path) -> Result<String, String> {
-    let value = path.to_str().ok_or("unit path is not UTF-8")?;
-    if value.chars().any(char::is_control) {
-        return Err("unit path contains control characters".into());
-    }
-    Ok(format!(
-        "\"{}\"",
-        value
-            .replace('\\', "\\\\")
-            .replace('\"', "\\\"")
-            .replace('%', "%%")
-    ))
+    devbox_core::systemd::unit_quote(path).map_err(|error| error.to_string())
 }
-// EnvironmentFile and ListenStream consume raw rvalues, not shell-style words.
 fn raw_unit_path(path: &Path) -> Result<String, String> {
-    let value = path.to_str().ok_or("unit path is not UTF-8")?;
-    if value.chars().any(char::is_control) {
-        return Err("unit path contains control characters".into());
-    }
-    Ok(value.replace('%', "%%"))
+    devbox_core::systemd::raw_unit_path(path).map_err(|error| error.to_string())
 }
 fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, String)>, String> {
-    let mut units: Vec<_> = render_units()
-        .into_iter()
-        .map(|(n, b)| (n.into(), b))
-        .collect();
+    let channel = paths.instance.channel().config();
+    let daemon = channel.daemon_unit;
+    let tmux = channel.tmux_unit;
+    let mut units = render_units(paths.instance.channel());
     // Paths have already resolved XDG overrides; preserve them across the manager boundary.
     let body = (|| -> Result<String, String> {
         let mut body = format!(
@@ -155,13 +144,7 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
         );
         for (key, path) in [
             ("HOME", paths.home.as_path()),
-            (
-                "XDG_CONFIG_HOME",
-                paths
-                    .config_dir
-                    .parent()
-                    .ok_or("config directory has no XDG parent")?,
-            ),
+            ("XDG_CONFIG_HOME", paths.xdg_config_home.as_path()),
             (
                 "XDG_DATA_HOME",
                 paths
@@ -201,16 +184,16 @@ fn instance_units(paths: &devbox_core::paths::Paths) -> Result<Vec<(String, Stri
         .collect::<Vec<_>>()
         .join("\n");
     units.push((
-        format!("devbox@{}.service.d/paths.conf", paths.instance.as_str()),
+        format!("{daemon}@{}.service.d/paths.conf", paths.instance.as_str()),
         body,
     ));
     let socket = raw_unit_path(&paths.socket)?;
     units.push((
-        format!("devbox@{}.socket.d/paths.conf", paths.instance.as_str()),
+        format!("{daemon}@{}.socket.d/paths.conf", paths.instance.as_str()),
         format!("{MARKER}[Socket]\nListenStream=\nListenStream={socket}\n"),
     ));
     units.push((
-        format!("devbox-tmux@{}.service.d/paths.conf", paths.instance.as_str()),
+        format!("{tmux}@{}.service.d/paths.conf", paths.instance.as_str()),
         format!("{MARKER}[Service]\nEnvironmentFile=\nEnvironmentFile={}\nExecStart=\nExecStart=:/usr/bin/env tmux -D -L devbox-%i -f {}\n{environment}\n", raw_unit_path(&paths.instance_config_dir.join("env"))?, unit_quote(&paths.instance_config_dir.join("tmux.conf"))?),
     ));
     Ok(units)
@@ -272,17 +255,9 @@ fn publish(path: &Path, body: &str, managed: bool) -> std::io::Result<()> {
     result
 }
 pub(crate) async fn command(cmd: &str, args: &[&str]) -> Result<std::process::Output, String> {
-    let mut command = tokio::process::Command::new(cmd);
-    command.args(args).kill_on_drop(true);
-    let out = tokio::time::timeout(std::time::Duration::from_secs(15), command.output())
+    devbox_core::systemd::command(cmd, args)
         .await
-        .map_err(|_| format!("{cmd} timed out"))?
-        .map_err(|_| format!("{cmd} could not run"))?;
-    if out.status.success() {
-        Ok(out)
-    } else {
-        Err(format!("{cmd} exited unsuccessfully"))
-    }
+        .map_err(|error| error.to_string())
 }
 trait Runner {
     async fn run(&self, cmd: &str, args: &[&str]) -> Result<Vec<u8>, String>;
@@ -306,6 +281,9 @@ async fn refresh_with(paths: &devbox_core::Paths, runner: &impl Runner) -> Resul
 }
 async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> SetupReport {
     let mut report = SetupReport { steps: vec![] };
+    let channel = paths.instance.channel().config();
+    let daemon = channel.daemon_unit;
+    let tmux = channel.tmux_unit;
     if let Err(message) = instance_units(paths) {
         report.steps.push(Step {
             id: "units",
@@ -328,7 +306,7 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                     .iter()
                     .try_for_each(|(name, body)| {
                         publish(
-                            &paths.home.join(".config/systemd/user").join(name),
+                            &paths.xdg_config_home.join("systemd/user").join(name),
                             body,
                             true,
                         )
@@ -346,9 +324,9 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                         "--user",
                         "enable",
                         "--now",
-                        &format!("devbox@{}.socket", paths.instance.as_str()),
-                        &format!("devbox@{}.service", paths.instance.as_str()),
-                        &format!("devbox-tmux@{}.service", paths.instance.as_str()),
+                        &format!("{daemon}@{}.socket", paths.instance.as_str()),
+                        &format!("{daemon}@{}.service", paths.instance.as_str()),
+                        &format!("{tmux}@{}.service", paths.instance.as_str()),
                     ],
                 )
                 .await
@@ -359,7 +337,7 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                     &[
                         "--user",
                         "restart",
-                        &format!("devbox@{}.service", paths.instance.as_str()),
+                        &format!("{daemon}@{}.service", paths.instance.as_str()),
                     ],
                 )
                 .await

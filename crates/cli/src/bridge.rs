@@ -17,7 +17,11 @@ async fn connect(paths: &devbox_core::Paths) -> anyhow::Result<UnixStream> {
         Err(e) => return Err(e.into()),
     }
     let deadline = Instant::now() + Duration::from_secs(5);
-    let unit = format!("devbox@{}.socket", paths.instance.as_str());
+    let unit = format!(
+        "{}@{}.socket",
+        paths.instance.channel().config().daemon_unit,
+        paths.instance.as_str()
+    );
     let mut child = tokio::process::Command::new("systemctl")
         .args(["--user", "start", &unit])
         .stdin(Stdio::null())

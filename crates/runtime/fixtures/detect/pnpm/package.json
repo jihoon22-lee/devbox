@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc",
+    "start": "node server.js",
+    "serve": "vite preview"
+  }
+}

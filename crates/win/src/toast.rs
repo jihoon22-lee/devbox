@@ -65,6 +65,21 @@ pub fn tag_for(agent_id: &str) -> String {
     tag
 }
 
+/// Run event tags use a separate namespace; later failures of a reused run remain distinct.
+pub fn run_tag_for(event_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    if event_id.encode_utf16().count() <= 60 {
+        return format!("run-{event_id}");
+    }
+    let digest = Sha256::digest(event_id.as_bytes());
+    let mut tag = String::from("run#");
+    for byte in &digest[..30] {
+        use std::fmt::Write;
+        let _ = write!(tag, "{byte:02x}");
+    }
+    tag
+}
+
 #[cfg(windows)]
 pub fn show(aumid: &str, spec: &ToastSpec, tag: &str, group: &str) -> windows::core::Result<()> {
     use windows::Data::Xml::Dom::XmlDocument;
@@ -110,6 +125,24 @@ mod tests {
             actions: vec![],
         });
         assert!(x.contains("a�b�c�d�e\t\n\r😀"));
+    }
+
+    #[test]
+    fn run_tags_are_distinct_from_agent_tags_and_utf16_bounded() {
+        assert_eq!(run_tag_for("event-1"), "run-event-1");
+        assert_ne!(run_tag_for("event-1"), tag_for("event-1"));
+        for id in ["한글/".repeat(30), "😀".repeat(50)] {
+            assert!(run_tag_for(&id).encode_utf16().count() <= 64);
+            assert_eq!(run_tag_for(&id), run_tag_for(&id));
+            assert_ne!(
+                run_tag_for(&format!("{id}1")),
+                run_tag_for(&format!("{id}2"))
+            );
+        }
+        assert_eq!(
+            run_tag_for(&"😀".repeat(30)),
+            format!("run-{}", "😀".repeat(30))
+        );
     }
 
     #[test]

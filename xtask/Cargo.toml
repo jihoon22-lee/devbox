@@ -6,8 +6,12 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+devbox-secrets.workspace = true
+devbox-core.workspace = true
 anyhow.workspace = true
 devbox-agents.workspace = true
+devbox-runtime.workspace = true
+devbox-observe.workspace = true
 devbox-protocol.workspace = true
 devbox-projects.workspace = true
 devbox-terminal.workspace = true

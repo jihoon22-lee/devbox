@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub struct Services {
+    pub(super) windows: super::windows_broker::WindowsBroker,
     pub(super) runtime: super::system::Runtime,
     pub version: &'static str,
     pub daemon_id: String,
@@ -15,4 +16,8 @@ pub struct Services {
     pub projects: Arc<ProjectsService>,
     pub terminal: Arc<devbox_terminal::TerminalService>,
     pub agents: Arc<devbox_agents::AgentsService>,
+    pub observe: Arc<devbox_observe::ObserveService>,
+    pub containers: devbox_runtime::DockerContainers,
+    pub secrets: Arc<devbox_secrets::SecretsService>,
+    pub runs: Arc<devbox_runtime::RuntimeService>,
 }

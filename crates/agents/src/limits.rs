@@ -134,6 +134,7 @@ mod tests {
     fn input_uses_utf8_bytes_and_serialized_limit_includes_escaping() {
         assert!(input(&"가".repeat(INPUT_BYTES / 3)).is_ok());
         assert!(input(&"가".repeat(INPUT_BYTES / 3 + 1)).is_err());
+        assert!(input("\0").is_ok(), "agent input only checks length");
         assert!(serialized(&"\u{0}".repeat(10), 20).is_err());
     }
 }

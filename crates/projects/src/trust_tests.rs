@@ -143,12 +143,12 @@ async fn approval_requires_exact_path_digest_and_scope() {
     }
     approve(&s, &view).await;
     s.db.write(|tx| {
-        tx.execute("UPDATE projects_command_trust SET scope_version=2", [])?;
+        tx.execute("UPDATE projects_command_trust SET scope_version=3", [])?;
         Ok(())
     })
     .await
     .expect("future scope fixture");
-    assert!(s.authorized_config(&p.id).await.is_err());
+    assert!(s.authorized_config(&p.id).await.is_ok());
 }
 
 #[tokio::test]
@@ -178,9 +178,10 @@ async fn command_free_operations_never_issue_a_whole_config_capability() {
     assert!(s.authorized_config(&p.id).await.is_err());
     assert!(s.test_snapshot(&p.id).await.is_err());
     config(t.path(), "[[task]]\nid='future'\ncommand='deferred'\n");
-    s.authorized_config(&p.id)
-        .await
-        .expect("raw S2 definitions do not execute in scope 1");
+    assert!(
+        s.authorized_config(&p.id).await.is_err(),
+        "S2 definitions require scope two"
+    );
     std::fs::remove_file(t.path().join("project/.devbox/devbox.toml")).expect("owned file");
     s.authorized_config(&p.id)
         .await
@@ -253,4 +254,138 @@ async fn changed_canonical_target_invalidates_the_same_byte_approval() {
         .await,
         Err(Fail::Domain(ProjectsError::TrustPreviewStale { .. }))
     ));
+}
+
+#[tokio::test]
+async fn run_definitions_require_scope_two_approval() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    config(t.path(), "[[task]]\nid='build'\ncommand='echo build'\n");
+    let s = service(t.path());
+    let p = s
+        .add(AddProject {
+            path: t.path().join("project").display().to_string(),
+        })
+        .await
+        .expect("register");
+    let view = preview(&s, &p.id).await;
+    approve(&s, &view).await;
+    s.db.write(|tx| {
+        tx.execute("UPDATE projects_command_trust SET scope_version=1", [])?;
+        Ok(())
+    })
+    .await
+    .expect("old approval");
+    assert!(matches!(
+        s.authorized_config(&p.id).await,
+        Err(Fail::Domain(ProjectsError::TrustRequired { .. }))
+    ));
+}
+
+#[tokio::test]
+async fn scope_one_approval_stays_valid_without_run_definitions() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    config(t.path(), "[agent]\nsetup=['echo setup']\n");
+    let s = service(t.path());
+    let p = s
+        .add(AddProject {
+            path: t.path().join("project").display().to_string(),
+        })
+        .await
+        .expect("register");
+    let view = preview(&s, &p.id).await;
+    approve(&s, &view).await;
+    s.db.write(|tx| {
+        tx.execute("UPDATE projects_command_trust SET scope_version=1", [])?;
+        Ok(())
+    })
+    .await
+    .expect("old approval");
+    s.authorized_config(&p.id)
+        .await
+        .expect("scope one remains valid");
+}
+
+#[tokio::test]
+async fn run_preview_and_launch_snapshot_share_typed_approved_definitions() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    config(
+        t.path(),
+        "[[service]]\nid='web'\ncommand='serve'\ncwd='frontend'\nenv={PORT='3000'}\nsecrets=['TOKEN']\n[launch]\nservices=['web']\n",
+    );
+    let s = service(t.path());
+    let p = s
+        .add(AddProject {
+            path: t.path().join("project").display().to_string(),
+        })
+        .await
+        .expect("register");
+    assert!(matches!(
+        s.launch_snapshot(&p.id).await,
+        Err(Fail::Domain(ProjectsError::TrustRequired { .. }))
+    ));
+    let v = s
+        .trust_preview(
+            TrustPreviewParams {
+                id: p.id.clone(),
+                operation: TrustOperation::Run,
+                agent_id: None,
+                worktrees: vec![],
+                worktree: None,
+            },
+            true,
+            vec![],
+        )
+        .await
+        .expect("preview");
+    assert!(v.requires_approval);
+    let crate::run_config::RunDef::Service(service) = &v.run_definitions[0] else {
+        panic!("service preview")
+    };
+    assert_eq!(service.env["PORT"], "3000");
+    assert_eq!(service.secrets, ["TOKEN"]);
+    approve(&s, &v).await;
+    let frozen = s.launch_snapshot(&p.id).await.expect("approved launch");
+    config(t.path(), "[[service]]\nid='web'\ncommand='external'\n");
+    assert_eq!(frozen.run_config().services[0].command, "serve");
+    assert!(
+        s.launch_snapshot(&p.id)
+            .await
+            .expect("command-free launch")
+            .run_config()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn trust_approval_publishes_the_committed_project_revision() {
+    use std::future::Future;
+    let t = tempfile::tempdir().expect("owned fixture");
+    config(t.path(), "[[task]]\nid='build'\ncommand='echo build'\n");
+    let s = service(t.path());
+    let p = s
+        .add(AddProject {
+            path: t.path().join("project").display().to_string(),
+        })
+        .await
+        .expect("register");
+    let view = preview(&s, &p.id).await;
+    let mut events = s.hub.subscribe("projects.changed");
+    let done = s
+        .trust_approve(TrustApprove {
+            id: p.id,
+            expected_canonical_path: view.canonical_path,
+            expected_digest: view.digest.expect("digest"),
+            expected_scope_version: view.scope_version,
+        })
+        .await
+        .expect("approve");
+    // The commit callback must publish before the mutation response, without a timer.
+    let next = std::future::poll_fn(|cx| {
+        let mut future = std::pin::pin!(events.recv());
+        std::task::Poll::Ready(future.as_mut().poll(cx))
+    })
+    .await;
+    assert!(
+        matches!(next,std::task::Poll::Ready(Some(devbox_core::HubMessage::Event{rev,..})) if rev.to_string()==done.rev)
+    );
 }
