@@ -39,6 +39,7 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_api::MIGRATIONS,
     ]
     .concat()
 }
@@ -128,6 +129,12 @@ fn build_services_with_runtime(
         projects.clone(),
         secrets.clone(),
     )?);
+    let api_collections = Arc::new(devbox_api::CollectionsService::new(
+        db.clone(),
+        hub.clone(),
+        paths.clone(),
+        projects.clone(),
+    ));
     let runs = Arc::new(
         devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
             .with_execution(execution)
@@ -150,6 +157,7 @@ fn build_services_with_runtime(
         secrets,
         index,
         api,
+        api_collections,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
     }))

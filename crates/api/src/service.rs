@@ -19,29 +19,41 @@ pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 /// 인증 URL은 화면·브라우저로 그대로 나가므로 비밀 참조나 `sensitive` 변수 값을 담을 수 없다.
 /// `client_id`·`scope`도 같은 URL의 query로 실리므로 함께 검사한다.
+/// sensitive 변수는 원본 필드가 그 변수를 `{{NAME}}`·`${NAME}`으로 참조할 때만 막는다(짧은 값의 우연한 일치는 오탐).
+/// 치환은 한 번뿐이라 조립한 `{{NAME}}`은 값으로 풀리지 않으므로 원본 참조만 보면 된다.
 fn reject_secret_in_authorization_url(
+    original: &RequestSnapshot,
     filled: &RequestSnapshot,
     env: &EnvSnapshot,
 ) -> Result<(), ApiError> {
-    let Auth::Oauth2AuthCode {
-        authorization_url,
-        client_id,
-        scope,
-        ..
-    } = &filled.auth
+    fn parts(auth: &Auth) -> Option<[Option<&String>; 3]> {
+        let Auth::Oauth2AuthCode {
+            authorization_url,
+            client_id,
+            scope,
+            ..
+        } = auth
+        else {
+            return None;
+        };
+        Some([Some(authorization_url), Some(client_id), scope.as_ref()])
+    }
+    let (Some(filled_parts), Some(original_parts)) = (parts(&filled.auth), parts(&original.auth))
     else {
         return Ok(());
     };
-    let parts = [Some(authorization_url), Some(client_id), scope.as_ref()];
     let mut refs = std::collections::BTreeSet::new();
-    for part in parts.iter().flatten() {
+    for part in filled_parts.iter().flatten() {
         template::secret_names(part, &mut refs)?;
     }
-    let sensitive = env.variables.iter().any(|v| {
-        v.sensitive
-            && !v.value.is_empty()
-            && parts.iter().flatten().any(|part| part.contains(&v.value))
-    });
+    let mut used = std::collections::BTreeSet::new();
+    for part in original_parts.iter().flatten() {
+        template::variable_refs(part, &mut used);
+    }
+    let sensitive = env
+        .variables
+        .iter()
+        .any(|v| v.sensitive && used.contains(&v.name));
     if refs.is_empty() && !sensitive {
         return Ok(());
     }
@@ -203,8 +215,12 @@ impl ApiService {
             return Err(ApiError::input("runId", "too_long").into());
         }
         let mut filled = template::substitute(&p.snapshot, &p.env)?;
-        reject_secret_in_authorization_url(&filled, &p.env)?;
+        reject_secret_in_authorization_url(&p.snapshot, &filled, &p.env)?;
         let names = template::secrets_of(&filled)?;
+        let allowed = template::allowed_secrets(&p.snapshot, &p.env)?;
+        if names.iter().any(|name| !allowed.contains(name)) {
+            return Err(ApiError::input("secret", "composed_reference").into());
+        }
         let mut values = Vec::new();
         if !names.is_empty() {
             let resolved = self.secrets.resolve(&names).await.map_err(mapped)?;

@@ -347,6 +347,11 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "api.stream_unsupported": { title: "이 연결에서는 요청을 보낼 수 없습니다." },
   "api.history_not_found": { title: "요청 기록을 찾을 수 없습니다.", action: "기록 목록을 새로고침해 주세요." },
+  "api.collection_path_invalid": { title: "컬렉션 파일 경로가 올바르지 않습니다.", action: "이름을 확인해 주세요." },
+  "api.collection_conflict": { title: "파일이 바뀌었거나 이미 있습니다.", action: "다시 읽은 뒤 저장해 주세요." },
+  "api.collection_too_large": { title: "컬렉션 파일이 1MiB를 넘었습니다.", action: "파일을 나눠 주세요." },
+  "api.collection_not_found": { title: "컬렉션 파일을 찾을 수 없습니다.", action: "목록을 새로고침해 주세요." },
+  "api.project_not_found": { title: "등록된 프로젝트를 찾을 수 없습니다.", action: "프로젝트 목록을 확인해 주세요." },
 };
 export function messageFor(code: ErrorCode, detail?: unknown): Message {
   if (code === "connection_lost")

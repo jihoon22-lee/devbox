@@ -22,4 +22,5 @@ pub struct Services {
     pub runs: Arc<devbox_runtime::RuntimeService>,
     pub index: devbox_core::IndexDb,
     pub api: Arc<devbox_api::ApiService>,
+    pub api_collections: Arc<devbox_api::CollectionsService>,
 }

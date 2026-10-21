@@ -250,6 +250,22 @@ async fn oauth2_authorization_url_rejects_secret_references() {
             },
             &[("HINT", "sensitive-hint", true)],
         ),
+        // 리뷰 권장: 남은 조합(client_id + sensitive 변수, scope + 비밀 참조).
+        with_env(
+            RequestSnapshot {
+                auth: auth(authorize.clone(), "{{HINT}}", None),
+                ..snapshot("GET", &server.url("/me"))
+            },
+            &[("HINT", "sensitive-hint", true)],
+        ),
+        request(RequestSnapshot {
+            auth: auth(
+                authorize.clone(),
+                "devbox-app",
+                Some("read {{secret:AUTHZ}}"),
+            ),
+            ..snapshot("GET", &server.url("/me"))
+        }),
     ] {
         let err = api
             .send(send)
@@ -264,6 +280,22 @@ async fn oauth2_authorization_url_rejects_secret_references() {
     }
     assert_eq!(server.accepted_connections(), 0);
     assert_eq!(tokens.accepted_connections(), 0);
+    // 리뷰 권장(오탐): 인증 URL이 참조하지 않는 짧은·공백 sensitive 값이 우연히 들어 있어도 막지 않는다.
+    let sent = api
+        .send(with_env(
+            RequestSnapshot {
+                auth: auth(
+                    server.url("/authorize?prompt=a b"),
+                    "devbox-app",
+                    Some("read"),
+                ),
+                ..snapshot("GET", &server.url("/me"))
+            },
+            &[("SHORT", "a", true), ("SPACE", " ", true)],
+        ))
+        .await
+        .expect("unreferenced sensitive values do not block the authorization URL");
+    sent.close();
 }
 
 async fn get(port: u16, target: &str) -> Option<u16> {

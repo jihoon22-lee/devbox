@@ -23,7 +23,7 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
-export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.history_not_found" };
+export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.project_not_found" };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attention = { kind: string, message: string, atMs: number, };
 export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
@@ -37,7 +37,24 @@ export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>
 export type CloneProject = { url: string, dir: string | null, };
 export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
+export type CollectionExpect = { "kind": "digest", digest: string, } | { "kind": "absent" };
+export type CollectionFile = { path: string, size: number, digest: string | null, 
+/**
+ * 프로젝트 파일이 비밀 참조·파일 부분·stdio 명령을 쓰면 이 PC에서 그 digest를 검토했을 때만 참.
+ */
+reviewed: boolean, 
+/**
+ * 권한 등으로 읽지 못한 파일. 목록 전체를 실패시키지 않고 이 항목만 표시한다.
+ */
+unreadable: boolean, };
+export type CollectionList = { root: CollectionRoot, items: Array<CollectionFile>, 
+/**
+ * 루트당 2,000개를 넘으면 참.
+ */
+truncated: boolean, };
 export type CollectionRoot = { "kind": "personal" } | { "kind": "project", projectId: string, };
+export type CollectionsChange = { root: CollectionRoot, rev: string, };
+export type CollectionsQuery = { root: CollectionRoot, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
 export type ContainerAction = "start" | "stop" | "restart";
@@ -62,6 +79,7 @@ export type DefinitionCursor = { id: string, shadowed: boolean, };
 export type DefinitionKind = "task" | "service";
 export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: Array<Definition>, runs: Array<Run>, trust: TrustPreviewStatus, nextCursor: DefinitionCursor | null, };
 export type DefinitionSource = "projectFile" | "thisPc";
+export type DeleteFile = { root: CollectionRoot, path: string, digest: string, };
 export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
@@ -77,6 +95,8 @@ export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
 export type FileLocation = { path: string, line: number, column: number, };
+export type FileRef = { root: CollectionRoot, path: string, };
+export type FileText = { text: string, digest: string, reviewed: boolean, };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
@@ -165,6 +185,7 @@ export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
+export type ReviewFile = { root: CollectionRoot, path: string, digest: string, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunDetail = { rev: string, run: Run, };
@@ -229,6 +250,8 @@ export type TrustPreviewStatus = "not_required" | "approval_required" | "approve
 export type UndefineRun = { projectId: string, id: string, };
 export type WindowsRun = { directory: string, notice: string, };
 export type WireError = { code: string, detail?: unknown, };
+export type WriteFile = { root: CollectionRoot, path: string, text: string, expect: CollectionExpect, };
+export type Written = { digest: string, rev: string, };
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {
@@ -256,6 +279,11 @@ export interface Methods {
   "agents.send": { kind: "mutation"; confirm: "none"; params: SendToAgent; result: AgentTask; error: AgentsError };
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
+  "api.collection_delete": { kind: "mutation"; confirm: "always"; params: DeleteFile; result: Done; error: ApiError };
+  "api.collection_read": { kind: "query"; confirm: "none"; params: FileRef; result: FileText; error: ApiError };
+  "api.collection_review": { kind: "mutation"; confirm: "none"; params: ReviewFile; result: Done; error: ApiError };
+  "api.collection_write": { kind: "mutation"; confirm: "none"; params: WriteFile; result: Written; error: ApiError };
+  "api.collections": { kind: "query"; confirm: "none"; params: CollectionsQuery; result: CollectionList; error: ApiError };
   "api.cookies": { kind: "query"; confirm: "none"; params: CookieJarRef; result: CookieList; error: ApiError };
   "api.cookies_clear": { kind: "mutation"; confirm: "always"; params: CookieJarRef; result: Done; error: ApiError };
   "api.history": { kind: "query"; confirm: "none"; params: HistoryQuery; result: HistoryPage; error: ApiError };
@@ -320,6 +348,7 @@ export interface Methods {
 export interface Topics {
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
+  "api.collections_changed": CollectionsChange;
   "notify.raised": Notification;
   "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
@@ -352,6 +381,11 @@ export const METHOD_INFO = {
   "agents.send": { kind: "mutation", confirm: "none" },
   "agents.test": { kind: "mutation", confirm: "none" },
   "agents.usage": { kind: "query", confirm: "none" },
+  "api.collection_delete": { kind: "mutation", confirm: "always" },
+  "api.collection_read": { kind: "query", confirm: "none" },
+  "api.collection_review": { kind: "mutation", confirm: "none" },
+  "api.collection_write": { kind: "mutation", confirm: "none" },
+  "api.collections": { kind: "query", confirm: "none" },
   "api.cookies": { kind: "query", confirm: "none" },
   "api.cookies_clear": { kind: "mutation", confirm: "always" },
   "api.history": { kind: "query", confirm: "none" },
@@ -446,6 +480,10 @@ export const RPC_ERROR_CODES = [
   "agents.unsafe_worktree",
   "agents.worktree_add_partial",
   "agents.worktree_dirty",
+  "api.collection_conflict",
+  "api.collection_not_found",
+  "api.collection_path_invalid",
+  "api.collection_too_large",
   "api.file_missing",
   "api.history_not_found",
   "api.invalid_body",
@@ -456,6 +494,7 @@ export const RPC_ERROR_CODES = [
   "api.invalid_url",
   "api.network",
   "api.oauth_failed",
+  "api.project_not_found",
   "api.secret_missing",
   "api.stream_unsupported",
   "api.tls_invalid",

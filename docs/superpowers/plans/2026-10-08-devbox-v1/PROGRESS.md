@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, **S5-2 `crates/api` HTTP 실행 완료(로컬)**: 고유74개 GREEN(api 72 전체 10회·재검토 6회 반복)·별도 검토 2회(차단1 수정 → APPROVE)·musl static-pie 빌드 확인. 다음: S5-3(컬렉션·환경·가져오기·실행기·코드 생성). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `client_id`·`scope` 비밀 거부 `8c4a4cc9`), **S5-3a(v0.9.0 요청 lib 이식)·3b(컬렉션 파일·감시·비밀 재검토) 완료(로컬)**: 별도 검토 2회(차단3 수정 → APPROVE). 다음: S5-3c(파일 형식·저장 정화·실행기, 캡처 값 참조 해석 차단 먼저). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-22 · 트랙 2 S5-2 커밋. 좁은 시험·clippy/fmt(바꾼 범위)·gen --check·typecheck·musl check/build·완료 Biome CI PASS. 전체 check/E2E/Windows는 S5-9 |
+| 마지막 갱신 | 2026-10-22 · 트랙 2 S5-3a·3b 커밋. 좁은 시험(api 88·컬렉션 5회·vitest lib 110 3회)·clippy/fmt(바꾼 범위)·gen --check·typecheck·musl check(devbox-cli, 클린)·완료 Biome CI PASS. 전체 check/E2E/Windows는 S5-9 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -120,7 +120,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
-| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 작업 중 | 2026-10-21 | | S5-2 완료(로컬): 구현 약1.0h·검토2회 약0.5h·수정 약0.2h(사용량 한도 대기 제외). S5-3 대기 |
+| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 작업 중 | 2026-10-21 | | S5-2 완료(로컬): 구현 약1.0h·검토2회 약0.5h·수정 약0.2h(사용량 한도 대기 제외). S5-3a·3b 완료(로컬): 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. 3c·3d 대기 |
 | S5 | AB | S5-4 |  | 대기 | | | |
 | S5 | AC | S5-5 |  | 대기 | | | |
 | S5 | AD | S5-6 |  | 대기 | | | |
@@ -640,6 +640,16 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-3a·3b 요청 lib 이식·컬렉션 파일 결과 (2026-10-22, 트랙 2)
+
+- 3a: `app/src/features/tools/api/lib/**`(구현 43·시험 20·fixture 2, 최대 `openapi/shared.ts` 429줄)에 v0.9.0 요청 lib를 옮겼다. 시험 110개 = 이식 94·적응 7·새 9, 제외 2(Devbox 내보내기 형식, C# 인증서). A 표 대비 재분류 2건(index "detects only recognized formats" → Devbox 감지 `null`, bruno 비밀 분류 미리보기 모양). 의존성 `jsonc-parser 3.3.1`·`yaml 2.9.0`(v0.9.0과 같은 버전, 기존 버전 변경 0). 근거 `ported-tests.json`.
+- 3b: `crates/api/src/collections/{mod,model,files,reviews,watch}.rs`·`store.rs`, 시험 `collections.rs`·`collections_watch.rs`·`collection_fixture/`. `CollectionsService`를 `Services.api_collections`로 연결(`Services.index`는 열지 않음). 보호: `O_NOFOLLOW`·경로 조각 symlink·대소문자 충돌·digest CAS(쓰기·삭제)·hard link `link_new`·개인 폴더 0700·원래 권한 보존·1 MiB 초과 `too_large`·감시 재부착·디바운스(최대 1초)·읽지 못하는 파일은 그 항목만 `unreadable`. 재검토 판정(`reviews.rs`, fail-closed): 문자열 안 `{{secret:`, `kind` file·stdio·binary+`path`/`filePath`, `transport`·`command`, TLS 경로 3종, JSON이 아니거나 64단계 초과.
+- 검토로 고친 것: 1차 CHANGES_REQUIRED 3건 — B1 변수로 조립한 비밀 참조가 재검토를 우회해 송신(`template::allowed_secrets`: 원본 활성 필드 글자 그대로 참조와 값 전체가 참조인 env만 허용, 밖이면 연결 전 `api.invalid_input{secret, composed_reference}`) · B2 binary 본문 경로·TLS 경로를 재검토가 못 잡음 · 3a preview 환경 검증과 assertion 누락(v0.9.0 키 형식·토큰 모양 키·64 KiB·제어문자·U+2028/2029·중복 키 복원). 함께: OAuth sensitive 판정을 값 포함 대신 원본 필드의 `{{NAME}}`·`${NAME}` 참조로(오탐 제거) · codegen이 민감 이름·토큰 모양 값을 자리 표시로, `secret:` 이름 그림자 방지, axios `__proto__` 헤더 보존 · `graphql/mask` block string `\"""` 누출(v0.9.0부터) 수정. 2차 APPROVE(조립 변형 20개 누출 0).
+- 검증: RED 3a 스텁 107개 전부 assertion 실패, 3b 스텁 9/9, 보호별 무력화 RED(`red-3b-disabled`·`red-review-*`). GREEN: `devbox-api` 88, 컬렉션 바이너리 5회, cli `api_send`·`daemon::` 24, xtask 8, `gen-ts --check`, clippy `-D warnings`·fmt, vitest lib 110 3회, typecheck, musl `cargo check -p devbox-cli`(클린, 보존 래퍼), 완료 Biome CI. 미실행: 앱 전체 vitest·workspace 전체·E2E·Windows(S5-9). 근거 Git common-dir `devbox-verification/s5-3/`.
+- 계획과 달라진 점: `ApiService` 대신 별도 `CollectionsService` · `CollectionConflict{digest: Option}` · `DeleteFile.digest` 필수 · 쓰기 조건 타입 `CollectionExpect` · 목록 `digest`는 1 MiB 초과면 `null`(읽기·쓰기·삭제 모두 `too_large`라 CAS 우회 없음) · `references.ts`는 `{{secret:NAME}}`만 정확한 참조로 인정 · 미리보기 결과는 경로 없는 요청·환경 목록(파일 경로는 3c) · `lineDiff`·`importTransaction`은 3d, runner·persistence·fileCollection 시험은 3c.
+- 3c 착수 전 결정·계약: 응답 캡처 값이 `{{secret:X}}`로 풀리면 악성 서버가 비밀을 끌어낼 수 있음 → 캡처 값은 참조로 풀지 않거나 `EnvVar` 출처 표시, 시험부터 · TS 저장 결과를 데몬 `needs_review`에 넣는 계약 시험(binary는 `{kind:"binary", path}`·`filePath` 모양이어야 함).
+- 후속(비차단): 개인 env `x={{secret:GH}}`면 프로젝트 요청이 `{{x}}`로 그 비밀을 씀(v0.9.0과 같음, 수용 범위) · codegen 짧은 비밀 값 찾아 바꾸기가 다른 값을 깸(누출 아님, 최소 길이 권장) · 감시 rev는 DB와 별도 메모리 카운터(3d가 rev 비교 시 주의) · 루트 64개 한도·재생성 경합·목록 재읽기 비용 · `.json` FIFO에서 blocking 스레드 멈춤 · 중간 폴더 TOCTOU(같은 사용자 동시 변경, 위협 모델 밖) · 하위 폴더 자체를 못 읽으면 목록 전체 실패 · `api.collection_delete`가 `mutation(always)`라 3d 가져오기 롤백 확인 횟수 · `isExactVariableReference`가 `{{ghp_…}}`·개행 공백을 정확한 참조로 받음(v0.9.0, 3c storage) · GraphQL 주석은 가리지 않음 · `unreadable` 시험은 root에서 실패 · Windows 금지 이름은 3c TS가 검사.
 
 ### S5-2 `crates/api` HTTP 실행 결과 (2026-10-22, 트랙 2)
 

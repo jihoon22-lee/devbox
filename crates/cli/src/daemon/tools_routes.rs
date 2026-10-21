@@ -13,4 +13,19 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<devbox_api::ApiCookiesClear, _, _>(|s, _, p| async move {
             s.api.cookies_clear(p).await
         })
+        .register::<devbox_api::ApiCollections, _, _>(|s, _, p| async move {
+            s.api_collections.list(p).await
+        })
+        .register::<devbox_api::ApiCollectionRead, _, _>(|s, _, p| async move {
+            s.api_collections.read(p).await
+        })
+        .register::<devbox_api::ApiCollectionWrite, _, _>(|s, _, p| async move {
+            s.api_collections.write(p).await
+        })
+        .register::<devbox_api::ApiCollectionDelete, _, _>(|s, _, p| async move {
+            s.api_collections.delete(p).await
+        })
+        .register::<devbox_api::ApiCollectionReview, _, _>(|s, _, p| async move {
+            s.api_collections.review(p).await
+        })
 }

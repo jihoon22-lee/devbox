@@ -18,6 +18,11 @@ devbox_protocol::domain_error! {
         Network { kind: String } = "api.network",
         StreamUnsupported = "api.stream_unsupported",
         HistoryNotFound = "api.history_not_found",
+        CollectionPathInvalid = "api.collection_path_invalid",
+        CollectionConflict { digest: Option<String> } = "api.collection_conflict",
+        CollectionTooLarge { limit: u64 } = "api.collection_too_large",
+        CollectionNotFound = "api.collection_not_found",
+        ProjectNotFound = "api.project_not_found",
     }
 }
 

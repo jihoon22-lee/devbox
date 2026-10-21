@@ -221,6 +221,51 @@ pub(crate) fn secrets_of(snapshot: &RequestSnapshot) -> Result<Vec<String>, ApiE
     Ok(names.into_iter().collect())
 }
 
+/// 해석해도 되는 비밀 이름: 원본 활성 필드에 글자 그대로 있는 참조와, 값 전체가 비밀 참조인 환경 변수.
+/// 치환으로 `{{secret:` 조각을 이어 붙여 만든 참조(저장소 파일의 재검토 판정을 우회함)는 여기에 없다.
+pub(crate) fn allowed_secrets(
+    snapshot: &RequestSnapshot,
+    env: &EnvSnapshot,
+) -> Result<BTreeSet<String>, ApiError> {
+    let mut names = BTreeSet::new();
+    let mut copy = snapshot.clone();
+    visit_active(&mut copy, &mut |text| secret_names(text, &mut names))?;
+    for var in &env.variables {
+        let value = var.value.trim();
+        if is_reference(value) && value.starts_with(SECRET_OPEN) {
+            secret_names(value, &mut names)?;
+        }
+    }
+    Ok(names)
+}
+
+/// 활성 필드 글자 그대로의 `{{name}}`·`${name}` 변수 이름(치환 전 원본 기준).
+pub(crate) fn variable_refs(text: &str, out: &mut BTreeSet<String>) {
+    let mut rest = text;
+    while let Some(at) = rest.find(['{', '$']) {
+        let tail = &rest[at..];
+        let (open, close) = if tail.starts_with("{{") {
+            ("{{", "}}")
+        } else if tail.starts_with("${") {
+            ("${", "}")
+        } else {
+            rest = &tail[1..];
+            continue;
+        };
+        let body = &tail[open.len()..];
+        match body
+            .find(close)
+            .and_then(|end| variable_name(&body[..end]).map(|n| (n, end)))
+        {
+            Some((name, end)) => {
+                out.insert(name.to_owned());
+                rest = &body[end + close.len()..];
+            }
+            None => rest = body,
+        }
+    }
+}
+
 pub(crate) fn fill_secrets(snapshot: &mut RequestSnapshot, values: &BTreeMap<String, String>) {
     let _ = visit_active(snapshot, &mut |text| {
         if text.contains(SECRET_OPEN) {

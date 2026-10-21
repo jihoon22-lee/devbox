@@ -451,3 +451,58 @@ async fn two_streams_cancel_independently() {
     assert!(events.iter().any(|e| matches!(e, SendEvent::End { .. })));
 }
 use support::{Reply, Seen};
+
+/// 리뷰 3b-B1: 변수 치환으로 `{{secret:` 참조를 조립하면 저장소 파일의 재검토 판정(글자 그대로의 참조)을 우회한다.
+/// 원본 활성 필드에 글자 그대로 있거나, 값 전체가 참조인 환경 변수의 비밀만 해석한다.
+#[tokio::test]
+async fn composed_secret_reference_is_rejected_before_connecting() {
+    let api = Harness::new().await;
+    api.secret("GH", "gh-secret-value").await;
+    let server = Server::echo().await;
+    for send in [
+        with_env(
+            snapshot(
+                "GET",
+                &format!("{}?t={{{{o}}}}secret:GH}}}}", server.url("/p")),
+            ),
+            &[("o", "{{", false)],
+        ),
+        with_env(
+            RequestSnapshot {
+                headers: vec![header(0, "X-Token", "{{a}}{{b}}")],
+                ..snapshot("GET", &server.url("/p"))
+            },
+            &[("a", "{{secret:", false), ("b", "GH}}", false)],
+        ),
+        with_env(
+            RequestSnapshot {
+                headers: vec![header(0, "X-Token", "{{partial}}")],
+                ..snapshot("GET", &server.url("/p"))
+            },
+            &[("partial", "x {{secret:GH}}", false)],
+        ),
+    ] {
+        let err = api.send(send).await.err().expect("composed reference");
+        assert_eq!(
+            (err.code(), err.detail()["reason"].as_str()),
+            ("api.invalid_input", Some("composed_reference"))
+        );
+        assert!(!err.detail_text().contains("gh-secret-value"));
+    }
+    assert_eq!(server.accepted_connections(), 0);
+    // 값 전체가 참조인 환경 변수와 글자 그대로의 참조는 그대로 쓴다.
+    api.complete(with_env(
+        RequestSnapshot {
+            headers: vec![
+                header(0, "Authorization", "Bearer {{token}}"),
+                header(1, "X-Literal", "{{secret:GH}}"),
+            ],
+            ..snapshot("GET", &server.url("/p"))
+        },
+        &[("token", "{{secret:GH}}", true)],
+    ))
+    .await;
+    let seen = server.only();
+    assert_eq!(seen.header("authorization"), ["Bearer gh-secret-value"]);
+    assert_eq!(seen.header("x-literal"), ["gh-secret-value"]);
+}
