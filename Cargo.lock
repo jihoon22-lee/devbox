@@ -503,6 +503,7 @@ dependencies = [
  "clap",
  "devbox-agents",
  "devbox-core",
+ "devbox-documents",
  "devbox-git",
  "devbox-mux",
  "devbox-observe",
@@ -545,6 +546,26 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "ts-rs",
+]
+
+[[package]]
+name = "devbox-documents"
+version = "1.0.0-dev"
+dependencies = [
+ "devbox-core",
+ "devbox-protocol",
+ "notify",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ts-rs",
+ "uuid",
 ]
 
 [[package]]
@@ -2615,6 +2636,7 @@ dependencies = [
  "anyhow",
  "devbox-agents",
  "devbox-core",
+ "devbox-documents",
  "devbox-observe",
  "devbox-projects",
  "devbox-protocol",

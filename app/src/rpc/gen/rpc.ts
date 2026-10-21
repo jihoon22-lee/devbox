@@ -28,6 +28,8 @@ export type Attention = { kind: string, message: string, atMs: number, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
+export type ClaimDocument = { key: DocKey, policy: DocPolicy, windowId: string, };
+export type Claimed = { key: DocKey, leaseId: string | null, rev: DiskRev | null, text: string | null, eol: Eol, bom: boolean, readOnly: ReadOnly | null, journal: JournalView | null, };
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
 export type CleanupCandidates = { projectId: string, };
 export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, };
@@ -59,13 +61,24 @@ export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
 export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
+export type DiskDocument = { key: DocKey, rev: DiskRev | null, text: string | null, readOnly: ReadOnly | null, };
+export type DiskRev = { hash: string, size: number, mtimeNs: string, ino: string, };
+export type DocKey = { root: string, path: string, };
+export type DocKind = "note" | "code";
+export type DocPolicy = { kind: DocKind, };
 export type DoctorReport = { checks: Array<Check>, };
+export type DocumentChanged = { key: DocKey, rev: DiskRev | null, };
+export type DocumentMoved = { from: DocKey, to: DocKey, };
+export type DocumentsError = { "code": "documents.conflict", "detail": { rev: DiskRev | null, } } | { "code": "documents.lease_lost", "detail": { reason: LeaseLoss, } } | { "code": "documents.out_of_scope" } | { "code": "documents.not_found" } | { "code": "documents.exists" } | { "code": "documents.too_large", "detail": { limit: number, } } | { "code": "documents.stale_journal" } | { "code": "documents.unsupported" } | { "code": "documents.invalid_input" };
 export type Done = { rev: string, };
+export type DropJournal = { key: DocKey, uptoSeq: number, };
 export type EchoParams = { bytes: number, };
 export type Empty = Record<symbol, never>;
+export type Eol = "lf" | "crlf";
 export type ExitRecord = { attemptId: string, code: number | null, signal?: string, endedMs: number, by: ExitSource, serviceResult?: string, };
 export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
+export type Expect = "present" | "absent";
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
 export type FileLocation = { path: string, line: number, column: number, };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
@@ -76,6 +89,12 @@ export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
+export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
+export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
+/**
+ * True when `text` did not fit the response budget; read it with `documents.journal_read`.
+ */
+deferred: boolean, };
 export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
 export type KillResult = { pid: number, };
 export type KillSignal = "term" | "kill";
@@ -84,6 +103,9 @@ export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTer
 export type LaunchProject = { id: string, };
 export type LaunchResult = { services: number, runIds: Array<string>, terminals: number, agents: number, terminalIds: Array<string>, rev: string, };
 export type LaunchTerminal = { name: string, command: string | null, };
+export type LeaseLoss = "taken" | "expired";
+export type LeaseLost = { key: DocKey, leaseId: string, };
+export type LeaseRef = { leaseId: string, };
 export type ListAgents = { includeClosedHours: number | null, afterId?: string, };
 export type ListProjects = Record<symbol, never>;
 export type ListRuns = { projectId: string, cursor: DefinitionCursor | null, };
@@ -132,11 +154,22 @@ export type ProjectsChanged = { rev: string, };
 export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
+export type ReadDocument = { key: DocKey, 
+/**
+ * Defaults to `note`.
+ */
+policy?: DocPolicy, };
+export type ReadOnly = { reason: ReadOnlyReason, };
+export type ReadOnlyReason = "binary" | "encoding" | "too_large" | "leased_elsewhere";
 export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
 export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
+export type RenameDocument = { leaseId: string | null, key: DocKey, to: DocKey, };
 export type RenameSession = { id: string, title: string, };
+export type Renamed = { key: DocKey, };
+export type RenewLeases = { leaseIds: Array<string>, };
+export type Renewed = { lost: Array<string>, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
 export type RestartPolicy = "no" | "onFailure" | "always";
@@ -154,7 +187,9 @@ export type RunsQuery = { projectId: string | null, limit: number, };
 export type RunsResult = { rev: string, items: Array<Run>, };
 export type RuntimeChange = { rev: string, projectId: string, };
 export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } };
+export type SaveDocument = { leaseId: string, seq: number, baseRev: DiskRev | null, expect: Expect, text: string, };
 export type SaveTo = "project" | "thisPc";
+export type Saved = { rev: DiskRev, };
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type ScheduleDef = { id: string, task: string, cron: string, tz: string | null, missed: MissedPolicy, };
@@ -185,6 +220,11 @@ export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
 export type Tail = "tail";
+export type TakeDocument = { key: DocKey, windowId: string, 
+/**
+ * Defaults to `note`.
+ */
+policy?: DocPolicy, };
 export type TaskDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
@@ -201,6 +241,7 @@ export type TrustPreviewParams = { id: string, operation: TrustOperation, agentI
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
 export type WindowsRun = { directory: string, notice: string, };
+export type WriteJournal = { leaseId: string, seq: number, baseRev: DiskRev | null, text: string, };
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {
@@ -229,6 +270,16 @@ export interface Methods {
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
+  "documents.claim": { kind: "mutation"; confirm: "none"; params: ClaimDocument; result: Claimed; error: DocumentsError };
+  "documents.journal": { kind: "mutation"; confirm: "none"; params: WriteJournal; result: Done; error: DocumentsError };
+  "documents.journal_drop": { kind: "mutation"; confirm: "none"; params: DropJournal; result: Done; error: DocumentsError };
+  "documents.journal_read": { kind: "query"; confirm: "none"; params: LeaseRef; result: JournalText; error: DocumentsError };
+  "documents.read": { kind: "query"; confirm: "none"; params: ReadDocument; result: DiskDocument; error: DocumentsError };
+  "documents.release": { kind: "mutation"; confirm: "none"; params: LeaseRef; result: Done; error: DocumentsError };
+  "documents.rename": { kind: "mutation"; confirm: "none"; params: RenameDocument; result: Renamed; error: DocumentsError };
+  "documents.renew": { kind: "mutation"; confirm: "none"; params: RenewLeases; result: Renewed; error: DocumentsError };
+  "documents.save": { kind: "mutation"; confirm: "none"; params: SaveDocument; result: Saved; error: DocumentsError };
+  "documents.take": { kind: "mutation"; confirm: "none"; params: TakeDocument; result: Claimed; error: DocumentsError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
   "observe.kill": { kind: "mutation"; confirm: "always"; params: KillProcess; result: KillResult; error: ObserveError };
@@ -287,6 +338,9 @@ export interface Methods {
 export interface Topics {
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
+  "documents.changed": DocumentChanged;
+  "documents.lease_lost": LeaseLost;
+  "documents.moved": DocumentMoved;
   "notify.raised": Notification;
   "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
@@ -320,6 +374,16 @@ export const METHOD_INFO = {
   "agents.test": { kind: "mutation", confirm: "none" },
   "agents.usage": { kind: "query", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
+  "documents.claim": { kind: "mutation", confirm: "none" },
+  "documents.journal": { kind: "mutation", confirm: "none" },
+  "documents.journal_drop": { kind: "mutation", confirm: "none" },
+  "documents.journal_read": { kind: "query", confirm: "none" },
+  "documents.read": { kind: "query", confirm: "none" },
+  "documents.release": { kind: "mutation", confirm: "none" },
+  "documents.rename": { kind: "mutation", confirm: "none" },
+  "documents.renew": { kind: "mutation", confirm: "none" },
+  "documents.save": { kind: "mutation", confirm: "none" },
+  "documents.take": { kind: "mutation", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
   "observe.kill": { kind: "mutation", confirm: "always" },
@@ -411,6 +475,15 @@ export const RPC_ERROR_CODES = [
   "cancelled",
   "daemon_restarting",
   "debug.unsupported",
+  "documents.conflict",
+  "documents.exists",
+  "documents.invalid_input",
+  "documents.lease_lost",
+  "documents.not_found",
+  "documents.out_of_scope",
+  "documents.stale_journal",
+  "documents.too_large",
+  "documents.unsupported",
   "hello_required",
   "internal",
   "invalid_params",

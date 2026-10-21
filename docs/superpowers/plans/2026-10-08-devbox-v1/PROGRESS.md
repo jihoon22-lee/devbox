@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. **S3 Task 1 상세화 완료(로컬)**: [06-s3-knowledge.md](06-s3-knowledge.md) Task 2–12 단계 상세화, 별도 검토 3회(1차 차단7 → 2차 차단1 → 3차 APPROVE). 다음: S3 Task 2(`crates/documents`). 공유 파일 예외 1(`crates/core/src/config.rs`)은 §2 기록 후 Task 4 Step 0에서 진행 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, **Task 2 `crates/documents` 완료(로컬)**: 고유44개 GREEN·별도 검토 2회(차단3 수정 → APPROVE)·후속 2건 반영. 다음: Task 3(화면 `DocumentStore`·노트 편집기 바탕). 공유 파일 예외 1(`crates/core/src/config.rs`)은 §2 기록 후 Task 4 Step 0 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-21 · 트랙 1 S3 Task 1 상세화 커밋. 빌드·시험 미실행(문서 과제), 완료 Biome CI 통과 |
+| 마지막 갱신 | 2026-10-21 · 트랙 1 S3 Task 2 커밋. 좁은 시험·fmt/clippy(바꾼 범위)·gen --check·typecheck·musl check·완료 Biome CI PASS. 전체 check/E2E/Windows는 Task 12 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -110,7 +110,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
 | S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | 머지 | 2026-10-21 | 2026-10-21 | S2 커밋 구간 약17.2h(구현·검토 약15.0h, 최종 통합·CI·리뷰 약2.2h), PR 뒤 약1.05h·리뷰3회. 세션 대기 포함 경과이며 누적 CPU 시간이 아님. 최종 CI3 PASS·설치 사전 검사 FAIL/실기 미실행 |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.4h(상세화 약0.55h·검토3회 약0.35h·수정3회 약0.45h), 사용량 한도 대기 약3h 포함 경과 약5.5h. 별도 검토 1차 CHANGES_REQUIRED(차단7) → 2차(차단1: dedupe가 lease 토큰 교체) → 3차 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
-| S3 | S | Task 2–3 |  | 대기 | | | |
+| S3 | S | Task 2–3 | `v1/s3-knowledge` | 작업 중 | 2026-10-21 | | Task 2 완료(로컬): 구현·검토·수정 약1.9h(구현 약0.6h·검토2회 약0.25h·수정2회 약0.2h·세션 중단 대기 제외). Task 3 대기 |
 | S3 | T | Task 4–6 |  | 대기 | | | |
 | S3 | U | Task 7 |  | 대기 | | | |
 | S3 | V | Task 8–9 |  | 대기 | | | |
@@ -357,6 +357,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 2 `crates/documents` 결과 (2026-10-21, 트랙 1)
+
+- 새 crate `crates/documents`(scope·sys·ledger·lease·journal·watch·service·rename·startup + 시험 파일)와 데몬 `knowledge.rs`·`knowledge_routes.rs`·`tests/documents.rs`. 등록 파일(workspace members 한 줄·routes·state·mod·server.rs +33·xtask·messages.ts)은 줄 추가만, `rpc.ts`는 `pnpm gen`, Cargo.lock은 새 crate 항목만. 모든 파일 600줄 이하(최대 `service.rs` 537).
+- 검증: RED(빈 서비스에서 `save_with_stale_base_rev_returns_conflict` assertion 실패, 23/29 실패; 검토 수정별 RED `red-b1`·`red-b2-b3`·`red-b2-daemon`·`red-recommended`·`red-watch-leak`·`red-deny-bin-units`·`red-wants-link`; 우회 분기를 끈 데몬 통합 4개 실패). GREEN: `devbox-documents` 38개(3회 반복), `cli --test documents` 7개, `cli --lib daemon::` 24개(`every_declared_method_is_routed`), xtask 8, `gen-ts --check`, typecheck·`messages.test.ts`, fmt·clippy `-D warnings`(바꾼 범위), musl check, 완료 Biome CI. 근거 Git common-dir `devbox-verification/s3-task2/`.
+- 별도 검토 1차 CHANGES_REQUIRED: B1 충돌 되돌리기 경합이 외부 저장을 지움 → 우리 내용·base와 같다고 확인한 바이트만 지우고 나머지는 `<name>.devbox-conflict-<12hex>`로 보존·Conflict 응답. B2 `data` root가 데몬 내부 파일(db·keys·lock·journals)을 노출 → `data` root 미등록, `data_dir`·`state_dir`·`bin_dir`·이 인스턴스 systemd user unit/drop-in/`.wants` 링크는 어떤 root로 와도 `out_of_scope`(`config_dir`는 사용자 `config.toml` 편집 대상이라 제외). B3 범위 시험 assertion 고정(`..`·절대 경로 → `out_of_scope`). 권장: rename 대상에 lease·저널이 있으면 `exists`, 저널·장부 0600/폴더 0700, EOL 다수결(동률 LF), 새 폴더 문서는 첫 저장 뒤 감시, 감시 등록은 lease 상태 락 아래 `while_live`(저장 중 owner 종료 시 감시 누수 없음). 재검토 APPROVE.
+- 계획과 달라진 점: CAS 충돌 판정은 hash+size(`DiskRev::same_content`, touch만 한 경우 충돌 아님, CV-F02 유지) · take/read에 선택 `policy` · `DiskDocument.key` · 폴더 없는 문서 claim은 폴더를 만들지 않음 · 사유는 `lease_lost{taken|expired}` · `DocumentsService::new(DocumentsConfig)`(clock·12 MiB·hooks 주입) · `start()`는 `mod.rs::run()` · vault 감시는 시작 시점 vault만 · 데몬 시험 gate `DEVBOX_TEST_DOCUMENTS_GATE`+`instance.is_test()`(prod 불가) · 취소된 claim은 라우트 래퍼가 응답을 보류해 Router가 `cancelled` · `<data>/documents/dirs/` 장부로 sweep 범위 한정 · 임시 이름 uuid.
+- 후속(비차단, 해당 Task에서 판단): 복구 이름 이동까지 실패하면 `.devbox-tmp-*`로 남아 1시간 뒤 sweep될 수 있음(드문 ENOSPC/EIO 경합) · `.devbox-conflict-*` 사본을 화면에 알리는 방법과 Git 공유 vault 커밋 주의(Task 3·4·10) · 저널만 있는 대상 rename의 `exists` 문구가 실제 상황과 다름(Task 5·10) · 기존 0755 폴더 권한은 바꾸지 않음 · vault를 데몬 시작 뒤 만들면 재시작 전까지 감시 안 됨 · 노트를 `.trash/`로 옮기는 별도 API 필요(Task 4).
 
 ### S3 Task 1 상세화 결과 (2026-10-21, 트랙 1)
 

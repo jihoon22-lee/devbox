@@ -271,6 +271,26 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "조회 범위를 줄인 뒤 다시 시도해 주세요.",
   },
   "observe.stream_unsupported": { title: "이 연결에서는 실시간 로그를 볼 수 없습니다." },
+  "documents.conflict": {
+    title: "다른 곳에서 이 문서를 고쳤습니다.",
+    action: "디스크 내용과 비교한 뒤 어느 쪽을 남길지 골라 주세요. 편집 내용은 보존했습니다.",
+  },
+  "documents.lease_lost": (d) =>
+    d && typeof d === "object" && "reason" in d && d.reason === "taken"
+      ? { title: "다른 창이 이 문서를 가져갔습니다.", action: "[여기로 가져오기]로 편집을 이 창으로 옮길 수 있습니다." }
+      : { title: "이 창의 편집 권한이 만료되었습니다.", action: "문서를 다시 열어 주세요. 편집 내용은 보존했습니다." },
+  "documents.out_of_scope": {
+    title: "등록한 프로젝트·에이전트 작업 폴더·노트 폴더 안의 문서만 열거나 저장할 수 있습니다.",
+  },
+  "documents.not_found": { title: "문서를 찾을 수 없습니다." },
+  "documents.exists": { title: "같은 이름의 파일이 이미 있습니다.", action: "다른 이름을 골라 주세요." },
+  "documents.too_large": { title: "문서가 허용 크기를 넘었습니다.", action: "내용을 줄인 뒤 다시 시도해 주세요." },
+  "documents.stale_journal": { title: "더 새로운 임시 저장본이 이미 있습니다." },
+  "documents.unsupported": {
+    title: "이 폴더의 파일 시스템은 안전한 저장을 지원하지 않습니다.",
+    action: "WSL 안의 폴더(/home/...)에 문서를 두어 주세요.",
+  },
+  "documents.invalid_input": { title: "문서 요청 입력값을 확인해 주세요." },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,

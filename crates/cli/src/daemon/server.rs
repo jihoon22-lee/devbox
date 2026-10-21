@@ -363,6 +363,39 @@ async fn handle(
                 .await;
                 return send(tx, ch, &state.generation, response(id, result)).await;
             }
+            if super::knowledge_routes::channel_scoped(&method) {
+                // Leases live as long as this channel: skip dedupe, which detaches mutations
+                // from their caller. Cancel{id} only reaches the separate inflight token.
+                let request = CancellationToken::new();
+                {
+                    let mut inflight = state.inflight.lock().expect("requests");
+                    if inflight.contains_key(&id) {
+                        return Err(invalid("duplicate inflight request id"));
+                    }
+                    inflight.insert(id, request);
+                }
+                let (daemon, tx, inflight, generation) = (
+                    d.clone(),
+                    tx.clone(),
+                    state.inflight.clone(),
+                    state.generation.clone(),
+                );
+                let (owner, opener) = (
+                    generation.child_token(),
+                    streams.opener(ch, generation.clone(), tx.clone()),
+                );
+                d.dedupe.tracker.spawn(async move {
+                    let ctx = Ctx {
+                        channel: ch,
+                        cancel: owner,
+                        streams: Some(opener),
+                    };
+                    let result = daemon.router.dispatch(&method, ctx, params).await;
+                    let _ = send(&tx, ch, &generation, response(id, result)).await;
+                    inflight.lock().expect("requests").remove(&id);
+                });
+                return Ok(());
+            }
             let token = CancellationToken::new();
             {
                 let mut inflight = state.inflight.lock().expect("requests");

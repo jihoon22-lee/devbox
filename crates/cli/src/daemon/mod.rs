@@ -2,6 +2,8 @@ mod agent_test;
 mod debug;
 mod dedupe;
 mod hostname;
+mod knowledge;
+mod knowledge_routes;
 mod launch;
 mod locations;
 mod logs;
@@ -124,6 +126,7 @@ fn build_services_with_runtime(
             .with_execution(execution)
             .with_secrets(secrets.clone()),
     );
+    let knowledge = knowledge::build(&paths, &hub, &projects);
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -141,6 +144,7 @@ fn build_services_with_runtime(
         secrets,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
+        documents: knowledge.documents,
     }))
 }
 
@@ -173,6 +177,7 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let runtime = system::Runtime::new(!foreground);
     let shutdown = runtime.shutdown.clone();
     let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
+    let _documents_startup = services.documents.start();
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
     let s2 = shutdown.clone();

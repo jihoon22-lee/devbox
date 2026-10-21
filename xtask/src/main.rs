@@ -16,6 +16,7 @@ fn main() -> Result<()> {
     devbox_runtime::export(&mut exporter);
     devbox_observe::export(&mut exporter);
     devbox_secrets::export(&mut exporter);
+    devbox_documents::export(&mut exporter);
     devbox_core::notify::export(&mut exporter);
     // Request fields refine this shared type with literal TypeScript intersections.
     ts_rs::TypeVisitor::visit::<devbox_agents::ReviewExpect>(&mut exporter);
