@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "xtask"]
+members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "xtask", "crates/api"]
 exclude = ["app/src-tauri"]
 
 [workspace.package]
@@ -21,6 +21,7 @@ devbox-agents = { path = "crates/agents" }
 devbox-runtime = { path = "crates/runtime" }
 devbox-observe = { path = "crates/observe" }
 devbox-secrets = { path = "crates/secrets" }
+devbox-api = { path = "crates/api" }
 chacha20poly1305 = "0.10"
 zeroize = { version = "1", features = ["derive"] }
 data-encoding = "2"
@@ -47,6 +48,15 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 ts-rs = { version = "=12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+url = "2"
+cookie_store = "0.22"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

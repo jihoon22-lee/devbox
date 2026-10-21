@@ -20,4 +20,6 @@ pub struct Services {
     pub containers: devbox_runtime::DockerContainers,
     pub secrets: Arc<devbox_secrets::SecretsService>,
     pub runs: Arc<devbox_runtime::RuntimeService>,
+    pub index: devbox_core::IndexDb,
+    pub api: Arc<devbox_api::ApiService>,
 }

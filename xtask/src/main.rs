@@ -16,9 +16,12 @@ fn main() -> Result<()> {
     devbox_runtime::export(&mut exporter);
     devbox_observe::export(&mut exporter);
     devbox_secrets::export(&mut exporter);
+    devbox_api::export(&mut exporter);
     devbox_core::notify::export(&mut exporter);
     // Request fields refine this shared type with literal TypeScript intersections.
     ts_rs::TypeVisitor::visit::<devbox_agents::ReviewExpect>(&mut exporter);
+    // `api.send` 스트림 NDJSON 이벤트.
+    ts_rs::TypeVisitor::visit::<devbox_api::SendEvent>(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");
     update_file(&path, &out, check)?;

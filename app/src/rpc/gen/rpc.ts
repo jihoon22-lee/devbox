@@ -23,8 +23,11 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
+export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.history_not_found" };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attention = { kind: string, message: string, atMs: number, };
+export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
+export type Body = { "kind": "none" } | { "kind": "raw", text: string, contentType: string | null, } | { "kind": "json", text: string, } | { "kind": "form", fields: Array<Pair>, } | { "kind": "multipart", parts: Array<Part>, } | { "kind": "binary", path: string, } | { "kind": "graphql", query: string, variables: string, operationName: string | null, method: GraphqlMethod, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
@@ -34,6 +37,7 @@ export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>
 export type CloneProject = { url: string, dir: string | null, };
 export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
+export type CollectionRoot = { "kind": "personal" } | { "kind": "project", projectId: string, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
 export type ContainerAction = "start" | "stop" | "restart";
@@ -44,6 +48,9 @@ export type ContainerInfo = { id: string, name: string, image: string, state: st
 export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
 export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
+export type CookieInfo = { name: string, value: string, domain: string, path: string, secure: boolean, httpOnly: boolean, expiresMs: number | null, };
+export type CookieJarRef = { jar: string, };
+export type CookieList = { cookies: Array<CookieInfo>, };
 export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
@@ -63,6 +70,8 @@ export type DoctorReport = { checks: Array<Check>, };
 export type Done = { rev: string, };
 export type EchoParams = { bytes: number, };
 export type Empty = Record<symbol, never>;
+export type EnvSnapshot = { variables: Array<EnvVar>, };
+export type EnvVar = { name: string, value: string, sensitive: boolean, };
 export type ExitRecord = { attemptId: string, code: number | null, signal?: string, endedMs: number, by: ExitSource, serviceResult?: string, };
 export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
@@ -73,9 +82,19 @@ export type FollowUp = { atMs: number, text: string, instructionId?: string, del
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
+export type GraphqlMethod = "post" | "get";
+export type HeaderRow = { row: number, name: string, value: string, };
+export type HistoryEntry = { id: string, sentAtMs: number, method: string, url: string, snapshot: RequestSnapshot, tlsVerify: boolean, runId: string | null, origin: RequestOrigin | null, outcome: HistoryOutcome, error: WireError | null, response: HistoryResponse | null, bodyBase64: string, bodyTruncated: boolean, };
+export type HistoryId = { id: string, };
+export type HistoryOutcome = "ok" | "failed" | "cancelled";
+export type HistoryPage = { items: Array<HistorySummary>, next: string | null, };
+export type HistoryQuery = { before: string | null, limit: number, origin: RequestOrigin | null, };
+export type HistoryResponse = { status: number, reason: string, httpVersion: string, headers: Array<Pair>, redirects: Array<Redirect>, elapsedMs: number, sizeBytes: number, binary: boolean, };
+export type HistorySummary = { id: string, sentAtMs: number, method: string, url: string, status: number | null, elapsedMs: number, sizeBytes: number, outcome: HistoryOutcome, runId: string | null, origin: RequestOrigin | null, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
+export type KeyPlacement = "header" | "query";
 export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
 export type KillResult = { pid: number, };
 export type KillSignal = "term" | "kill";
@@ -102,6 +121,8 @@ export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_tr
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
 export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
+export type Pair = { name: string, value: string, };
+export type Part = { "kind": "text", name: string, value: string, contentType: string | null, } | { "kind": "file", name: string, path: string, fileName: string | null, contentType: string | null, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
 export type PortInfo = { port: number, proto: string, addr: string, pid: number | null, process: string | null, startTimeMs: number | null, runId: string | null, containerId: string | null, projectId: string | null, };
@@ -134,9 +155,12 @@ export type PromptList = { items: Array<ProjectPrompt>, };
 export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
 export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
+export type Redirect = { status: number, location: string, };
 export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
 export type RenameSession = { id: string, title: string, };
+export type RequestOrigin = { root: CollectionRoot, path: string, };
+export type RequestSnapshot = { method: string, url: string, query: Array<Pair>, headers: Array<HeaderRow>, cookies: Array<HeaderRow>, body: Body, auth: Auth, tls: TlsOptions, timeoutMs: number, followRedirects: boolean, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
 export type RestartPolicy = "no" | "onFailure" | "always";
@@ -168,6 +192,8 @@ export type SearchLogs = { sources: Array<LogSource>, query: string, regex: bool
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
 export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
+export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
+export type SendRequest = { snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
 export type SendToAgent = { id: string, text: string, };
 export type ServiceDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, restart: RestartPolicy, restartSec: number, startLimit: StartLimit, portsHint: Array<number>, readyTimeoutSec: number, };
 export type SessionKind = "shell" | "agent";
@@ -192,6 +218,7 @@ export type TerminalError = { "code": "terminal.command_too_long", "detail": { l
 export type TerminalProfile = { name: string, command: string, };
 export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
+export type TlsOptions = { verify: boolean, caPath: string | null, clientCertPath: string | null, clientKeyPath: string | null, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
 export type TrustApprove = { id: string, expectedCanonicalPath: string, expectedDigest: string, expectedScopeVersion: number, };
@@ -201,6 +228,7 @@ export type TrustPreviewParams = { id: string, operation: TrustOperation, agentI
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
 export type WindowsRun = { directory: string, notice: string, };
+export type WireError = { code: string, detail?: unknown, };
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {
@@ -228,6 +256,11 @@ export interface Methods {
   "agents.send": { kind: "mutation"; confirm: "none"; params: SendToAgent; result: AgentTask; error: AgentsError };
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
+  "api.cookies": { kind: "query"; confirm: "none"; params: CookieJarRef; result: CookieList; error: ApiError };
+  "api.cookies_clear": { kind: "mutation"; confirm: "always"; params: CookieJarRef; result: Done; error: ApiError };
+  "api.history": { kind: "query"; confirm: "none"; params: HistoryQuery; result: HistoryPage; error: ApiError };
+  "api.history_get": { kind: "query"; confirm: "none"; params: HistoryId; result: HistoryEntry; error: ApiError };
+  "api.send": { kind: "stream"; confirm: "none"; params: SendRequest; result: StreamOpened; error: ApiError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
@@ -319,6 +352,11 @@ export const METHOD_INFO = {
   "agents.send": { kind: "mutation", confirm: "none" },
   "agents.test": { kind: "mutation", confirm: "none" },
   "agents.usage": { kind: "query", confirm: "none" },
+  "api.cookies": { kind: "query", confirm: "none" },
+  "api.cookies_clear": { kind: "mutation", confirm: "always" },
+  "api.history": { kind: "query", confirm: "none" },
+  "api.history_get": { kind: "query", confirm: "none" },
+  "api.send": { kind: "stream", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
@@ -408,6 +446,21 @@ export const RPC_ERROR_CODES = [
   "agents.unsafe_worktree",
   "agents.worktree_add_partial",
   "agents.worktree_dirty",
+  "api.file_missing",
+  "api.history_not_found",
+  "api.invalid_body",
+  "api.invalid_cookie",
+  "api.invalid_header",
+  "api.invalid_input",
+  "api.invalid_method",
+  "api.invalid_url",
+  "api.network",
+  "api.oauth_failed",
+  "api.secret_missing",
+  "api.stream_unsupported",
+  "api.tls_invalid",
+  "api.too_large",
+  "api.variable_missing",
   "cancelled",
   "daemon_restarting",
   "debug.unsupported",

@@ -15,6 +15,14 @@ const cloneMessage = (detail: unknown) => {
     .replace(/([a-z]+:\/\/)[^\s/]*@/gi, "$1[인증 정보 숨김]@")
     .replace(/([?&](?:token|password|access_token)=)[^&\s]+/gi, "$1[숨김]")}`;
 };
+const field = (d: unknown, key: string) =>
+  d && typeof d === "object" && key in d ? (d as Record<string, unknown>)[key] : undefined;
+const row = (d: unknown) => (typeof field(d, "index") === "number" ? `${(field(d, "index") as number) + 1}행 ` : "");
+const names = (d: unknown) => {
+  const list = field(d, "names");
+  return Array.isArray(list) ? list.filter((n) => typeof n === "string").join(", ") : "";
+};
+const check = "입력란을 확인해 주세요.";
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   internal: { title: "예상하지 못한 문제가 생겼습니다.", action: "진단 ID를 복사해 두면 원인을 찾을 수 있습니다." },
   invalid_params: { title: "요청 형식이 맞지 않습니다.", action: "앱과 데몬 버전을 확인해 주세요." },
@@ -303,6 +311,42 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "파일은 50개 이내, 각 파일은 64 KiB 이내로 줄여 주세요.",
   },
   "projects.prompt_invalid_encoding": { title: "지시문 템플릿은 UTF-8 형식이어야 합니다." },
+  "api.invalid_header": (d) => ({
+    title: `헤더 ${row(d)}${field(d, "field") === "value" ? "값" : "이름"}이 올바르지 않습니다.`,
+    action: check,
+  }),
+  "api.invalid_cookie": (d) => ({ title: `쿠키 ${row(d)}이름이나 값이 올바르지 않습니다.`, action: check }),
+  "api.invalid_url": {
+    title: "요청 URL이 올바르지 않습니다.",
+    action: "http:// 또는 https://로 시작하고 사용자 정보가 없는지 확인해 주세요.",
+  },
+  "api.invalid_method": { title: "요청 메서드가 올바르지 않습니다.", action: check },
+  "api.invalid_body": { title: "요청 본문이 올바르지 않습니다.", action: check },
+  "api.invalid_input": { title: "요청 설정이 올바르지 않습니다.", action: check },
+  "api.variable_missing": (d) => ({
+    title: "정의되지 않은 변수가 있어 보내지 않았습니다.",
+    action: `환경에서 변수를 정의해 주세요: ${names(d)}`,
+  }),
+  "api.secret_missing": {
+    title: "요청에 필요한 비밀 값이 없어 보내지 않았습니다.",
+    action: "설정에서 필요한 비밀 값을 입력해 주세요.",
+  },
+  "api.file_missing": {
+    title: "보낼 파일을 찾을 수 없습니다.",
+    action: "WSL 안의 절대 경로와 파일이 있는지 확인해 주세요.",
+  },
+  "api.too_large": { title: "요청이 허용 크기를 넘었습니다.", action: "행 수나 본문 크기를 줄여 주세요." },
+  "api.tls_invalid": {
+    title: "TLS 인증서 설정을 사용할 수 없습니다.",
+    action: "CA·클라이언트 인증서·키 PEM 파일을 확인해 주세요.",
+  },
+  "api.oauth_failed": { title: "OAuth 토큰을 받지 못했습니다.", action: "토큰 URL과 클라이언트 설정을 확인해 주세요." },
+  "api.network": {
+    title: "요청 전송에 실패했습니다.",
+    action: "주소·네트워크·인증서와 요청 시간 제한을 확인해 주세요.",
+  },
+  "api.stream_unsupported": { title: "이 연결에서는 요청을 보낼 수 없습니다." },
+  "api.history_not_found": { title: "요청 기록을 찾을 수 없습니다.", action: "기록 목록을 새로고침해 주세요." },
 };
 export function messageFor(code: ErrorCode, detail?: unknown): Message {
   if (code === "connection_lost")

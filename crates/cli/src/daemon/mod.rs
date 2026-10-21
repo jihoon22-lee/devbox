@@ -15,6 +15,7 @@ mod socket;
 pub mod state;
 mod streams;
 mod system;
+mod tools_routes;
 mod trust;
 mod windows_broker;
 mod windows_routes;
@@ -119,6 +120,14 @@ fn build_services_with_runtime(
         db.clone(),
         paths.clone(),
     ));
+    let index = devbox_core::IndexDb::open(&paths.index_db_path)?;
+    let api = Arc::new(devbox_api::ApiService::new(
+        db.clone(),
+        index.clone(),
+        paths.clone(),
+        projects.clone(),
+        secrets.clone(),
+    )?);
     let runs = Arc::new(
         devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
             .with_execution(execution)
@@ -139,6 +148,8 @@ fn build_services_with_runtime(
         agents,
         runs,
         secrets,
+        index,
+        api,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
     }))

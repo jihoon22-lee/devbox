@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. **S5-1 상세화 완료(로컬)**: [07b-s5-tools.md](07b-s5-tools.md) 작성·07 S5 절 축약, 별도 검토 2회(1차 차단5 수정 → 재검토 APPROVE). 다음: S5-2(`crates/api` HTTP 실행). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, **S5-2 `crates/api` HTTP 실행 완료(로컬)**: 고유74개 GREEN(api 72 전체 10회·재검토 6회 반복)·별도 검토 2회(차단1 수정 → APPROVE)·musl static-pie 빌드 확인. 다음: S5-3(컬렉션·환경·가져오기·실행기·코드 생성). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-21 · 트랙 2 S5-1 상세화 커밋. 빌드·시험 미실행(문서 과제), 완료 Biome CI 통과 |
+| 마지막 갱신 | 2026-10-22 · 트랙 2 S5-2 커밋. 좁은 시험·clippy/fmt(바꾼 범위)·gen --check·typecheck·musl check/build·완료 Biome CI PASS. 전체 check/E2E/Windows는 S5-9 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -120,7 +120,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
-| S5 | AA | S5-2–S5-3 |  | 대기 | | | |
+| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 작업 중 | 2026-10-21 | | S5-2 완료(로컬): 구현 약1.0h·검토2회 약0.5h·수정 약0.2h(사용량 한도 대기 제외). S5-3 대기 |
 | S5 | AB | S5-4 |  | 대기 | | | |
 | S5 | AC | S5-5 |  | 대기 | | | |
 | S5 | AD | S5-6 |  | 대기 | | | |
@@ -640,6 +640,14 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-2 `crates/api` HTTP 실행 결과 (2026-10-22, 트랙 2)
+
+- 새 crate `crates/api`(model·validate·template·redact·events·cookies·tls·auth·oauth_loopback·http/{build,body,redirect,stream}·history/{files,index,sanitize}·service, 시험 http_send/body/graphql/redirect/auth/tls/logs/history)와 데몬 `tools_routes.rs`·`tests/api_send.rs`. 등록 파일(workspace members 한 줄·routes·state·mod·xtask·messages.ts)은 줄 추가만, `rpc.ts`는 `pnpm gen`, Cargo.lock은 cargo 생성(95개 추가, 기존 버전 변경 0, base64·windows-targets 중복 버전). 최대 파일 453줄. `Services.index`(IndexDb)는 데몬에서 한 번만 열어 공유(S3도 같은 필드 사용).
+- 검증: RED는 CV-F05 stub assertion 실패와, 검토 뒤 제품 동작을 임시로 끈 무력화 RED(기록 마스킹·비활성 본문/인증·form 인코딩·스트림 취소·로그 URL, 쿠키 행·OAuth 상한·authorizationUrl·0700)로 보완하고 원복을 해시·grep으로 확인. GREEN: `devbox-api` 72개(10회 연속, 재검토 6회), `http_logs` 단독 바이너리 반복, cli `api_send`·`every_declared_method_is_routed`, xtask 8, `gen-ts --check`, typecheck·`messages.test.ts`, clippy `-D warnings`·fmt, 보존된 musl 래퍼로 `devbox-api` check와 `devbox-cli` musl build(static-pie, ring C 컴파일 확인), aws-lc·openssl·native-tls 0개, 완료 Biome CI. 근거 Git common-dir `devbox-verification/s5-2/`.
+- 별도 검토 1차 CHANGES_REQUIRED: 로그 비노출 시험이 tracing 스레드 설정 경합으로 12회 중 9회 실패(구현자 GREEN 기록 재현 안 됨) → 전역 subscriber 한 번 설치하는 단독 바이너리 `tests/http_logs.rs`(필터 `info,devbox_api=trace`, 시각·ANSI 없음). 기록 시험이 Base64 본문 누출을 못 잡음 → 본문 디코딩 검색. 권장: OAuth 토큰 응답 64KiB 상한, 콜백 accept 오류 100ms backoff, `authorizationUrl`의 비밀 참조·sensitive 값 거부, `api-cookies` 0700, 쿠키 오류 index를 화면 행 번호(`HeaderRow`). 재검토 APPROVE.
+- 계획과 달라진 점: reqwest 0.13 `rustls-no-provider`+ring 직접(aws-lc·openssl 없이 musl·Windows), http2, gzip·brotli 미사용(응답 그대로 전달) · 새 오류 `api.invalid_cookie`·`api.invalid_input`(reason `secret_in_authorization_url` 등)·network kind `redirect`·`api.oauth_failed{token_too_large}` · 교차 origin 리디렉션+클라이언트 인증서는 차단(v0.9.0과 같음), 교차 origin에서 민감 헤더·비밀 값 헤더·본문 제거 · unit variant `none` 옆 숨은 초안 필드는 받아서 버림(serde 제약) · 이력 Authorization·Cookie·Proxy-Authorization은 scheme+참조 유지·리터럴 `[REDACTED]` · URL fragment는 GraphQL 거부·일반 요청은 떼고 전송 · multipart는 사용자 파일 이름만 · OAuth 토큰 시한 분리(브라우저 대기 뒤 요청 시한 시작) · 시험용 공개 hook(`with_clock`·`with_resolver`·`wait_ready`·`prune_history`, RPC 미연결) · `SendEvent::Failed`는 RawValue 제약으로 시험 helper가 해석 · 응답 가림은 이번 요청의 알려진 값만 · reqwest는 `HTTP(S)_PROXY`·`NO_PROXY`를 따름(의도).
+- 후속(비차단): 색인 재구성 `history::files::scan`이 전체를 메모리에 올림 · 기록 응답 헤더에 서버 `Set-Cookie` 값이 남음 · 직접 입력한 민감 리터럴(본문 `password`)을 서버가 에코하면 응답 본문 기록에 남음(요청 snapshot은 가림, 기록 0600) — 정화한 리터럴을 가림기에 넣는 강화 후보 · 데몬 `RUST_LOG=trace`에서 hyper_util이 호스트·포트를 로그 · `api.*` 파라미터 역직렬화 오류 reason에 사용자 값이 들어갈 수 있음(응답으로만, 로그 없음).
 
 ### S5-1 상세화 결과 (2026-10-21, 트랙 2)
 

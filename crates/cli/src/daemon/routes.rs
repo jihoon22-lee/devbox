@@ -231,6 +231,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             s.agents.commits(&p.id).await
         });
     let router = super::secret_routes::register(router);
+    let router = super::tools_routes::register(router);
     if test_instance {
         router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
             super::debug::echo(ctx, params)
@@ -250,6 +251,7 @@ pub fn declared() -> NameCollector {
     devbox_runtime::export(&mut n);
     devbox_observe::export(&mut n);
     devbox_secrets::export(&mut n);
+    devbox_api::export(&mut n);
     devbox_core::notify::export(&mut n);
     n
 }
