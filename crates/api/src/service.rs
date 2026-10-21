@@ -18,22 +18,30 @@ use std::sync::{Arc, OnceLock};
 pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
 
 /// 인증 URL은 화면·브라우저로 그대로 나가므로 비밀 참조나 `sensitive` 변수 값을 담을 수 없다.
+/// `client_id`·`scope`도 같은 URL의 query로 실리므로 함께 검사한다.
 fn reject_secret_in_authorization_url(
     filled: &RequestSnapshot,
     env: &EnvSnapshot,
 ) -> Result<(), ApiError> {
     let Auth::Oauth2AuthCode {
-        authorization_url, ..
+        authorization_url,
+        client_id,
+        scope,
+        ..
     } = &filled.auth
     else {
         return Ok(());
     };
+    let parts = [Some(authorization_url), Some(client_id), scope.as_ref()];
     let mut refs = std::collections::BTreeSet::new();
-    template::secret_names(authorization_url, &mut refs)?;
-    let sensitive = env
-        .variables
-        .iter()
-        .any(|v| v.sensitive && !v.value.is_empty() && authorization_url.contains(&v.value));
+    for part in parts.iter().flatten() {
+        template::secret_names(part, &mut refs)?;
+    }
+    let sensitive = env.variables.iter().any(|v| {
+        v.sensitive
+            && !v.value.is_empty()
+            && parts.iter().flatten().any(|part| part.contains(&v.value))
+    });
     if refs.is_empty() && !sensitive {
         return Ok(());
     }

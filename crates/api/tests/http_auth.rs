@@ -213,21 +213,39 @@ async fn oauth2_authorization_url_rejects_secret_references() {
     api.secret("AUTHZ", "authz-secret-value").await;
     let server = Server::ok().await;
     let tokens = Server::ok().await;
-    let auth = |authorization_url: String| Auth::Oauth2AuthCode {
-        authorization_url,
-        token_url: tokens.url("/token"),
-        client_id: "devbox-app".into(),
-        client_secret: None,
-        scope: None,
-    };
+    let auth =
+        |authorization_url: String, client_id: &str, scope: Option<&str>| Auth::Oauth2AuthCode {
+            authorization_url,
+            token_url: tokens.url("/token"),
+            client_id: client_id.into(),
+            client_secret: None,
+            scope: scope.map(Into::into),
+        };
+    let authorize = server.url("/authorize");
     for send in [
         request(RequestSnapshot {
-            auth: auth(server.url("/authorize?hint={{secret:AUTHZ}}")),
+            auth: auth(
+                server.url("/authorize?hint={{secret:AUTHZ}}"),
+                "devbox-app",
+                None,
+            ),
             ..snapshot("GET", &server.url("/me"))
         }),
         with_env(
             RequestSnapshot {
-                auth: auth(server.url("/authorize?hint={{HINT}}")),
+                auth: auth(server.url("/authorize?hint={{HINT}}"), "devbox-app", None),
+                ..snapshot("GET", &server.url("/me"))
+            },
+            &[("HINT", "sensitive-hint", true)],
+        ),
+        // client_id·scope도 브라우저로 가는 인증 URL에 실린다.
+        request(RequestSnapshot {
+            auth: auth(authorize.clone(), "{{secret:AUTHZ}}", None),
+            ..snapshot("GET", &server.url("/me"))
+        }),
+        with_env(
+            RequestSnapshot {
+                auth: auth(authorize.clone(), "devbox-app", Some("read {{HINT}}")),
                 ..snapshot("GET", &server.url("/me"))
             },
             &[("HINT", "sensitive-hint", true)],
