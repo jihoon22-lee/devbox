@@ -13,16 +13,20 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S2 머지 완료** · [PR #642](https://github.com/jihoon22-lee/devbox/pull/642), squash `1e82e649`(2026-10-21 09:19 KST). 최종 소스 `f703a4b9`의 필수 CI3·E2E PASS, 자동 리뷰3회 처리. 설치 사전 검사 errno110 FAIL로 실기1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN은 유지 |
-| 다음 할 일 | 이번 세션은 사용자 요청대로 S2 결과 문서 PR·로컬 정리를 마무리한다. 정리 뒤 다음 세션은 깨끗한 main과 최신 origin/main을 확인하고 S3 Task1(기록 상세화)·S5-1(개발 도구 상세화)의 전용 worktree를 만들어 병렬 진행한다. S2 patch 이전은 필요 없으며 이번 세션에서 S3·S5 제품 구현은 시작하지 않음. 설치 검증 미실행·Codex waiting 미검출·§8 Windows 준비 귀속 후속을 이어받음 |
-| 동시 진행 | S2 뒤 한 세션이 두 트랙을 동시에(00-roadmap §3.6). 그때는 아래에 "트랙 1(S3→S4) 위치"·"트랙 2(S5) 위치" 두 줄을 쓴다 |
-| 작업 중인 브랜치·worktree | 문서 인계용 `docs/s2-handoff` · `/home/jihoon/projects/devbox-wt/v1-s2-runs`, 기반 `origin/main@1e82e649`. 문서 PR 머지 후 이 worktree와 통합된 이전 작업·인계 브랜치를 정리하고 `/home/jihoon/projects/devbox` main을 ff-only 동기화할 예정. 정리 완료를 아직 주장하지 않으며 다음 세션은 실제 status·worktree·branch·열린 PR부터 대조한다 |
-| 마지막 갱신 | 2026-10-21 · 09:19 KST squash 확인. CI39517774250·Windows39517774148 PASS, Accept 산출물 SHA256 검증. 최종 잠금 내 설치 사전 검사20.647초 errno110 FAIL, 설치/소유 fixture 생성0. 결과 근거·머지 확인을 보존하고 사용자 요청에 따라 결과 문서 PR·로컬 근거 압축 보관·정리 준비 중 |
+| 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
+| 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. **S3 Task 1 상세화 완료(로컬)**: [06-s3-knowledge.md](06-s3-knowledge.md) Task 2–12 단계 상세화, 별도 검토 3회(1차 차단7 → 2차 차단1 → 3차 APPROVE). 다음: S3 Task 2(`crates/documents`). 공유 파일 예외 1(`crates/core/src/config.rs`)은 §2 기록 후 Task 4 Step 0에서 진행 |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
+| 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
+| 마지막 갱신 | 2026-10-21 · 트랙 1 S3 Task 1 상세화 커밋. 빌드·시험 미실행(문서 과제), 완료 Biome CI 통과 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-21 | S3 공유 파일 예외 1: 동결 `crates/core/src/config.rs`에 `[notes]`·`[search]`·`[activity]` 표 허용 | 에이전트 · 00 §3.6 기록 후 진행 | 기록: `Config`의 `deny_unknown_fields` 때문에 표가 있으면 데몬·MCP가 시작하지 못해 불가피. 최소안은 opaque `toml::Table` 세 필드(`#[serde(default)]`)와 `read_table` 목록 3이름(제품 약10·시험 약15줄), 키 검증은 각 도메인 crate. 규칙을 다른 파일로 옮기면 01 §7과 어긋나 채택 안 함. S5(07b)는 이 파일을 고치지 않으므로 S3 Task 4 Step 0 별도 커밋이 맡는다. 사용자가 막으면 Task 4 전에 멈춤 |
+| 2026-10-21 | S3 Task 8: `config.toml` 동시 쓰기 잠금(`crates/secrets` `save_name`과 `activity.set_rules`가 같은 flock·symlink 거부) | 에이전트 | 기록: `crates/secrets`는 동결 대상이 아니다. S5 트랙은 `save_name`을 고치지 않는다(07b). 루트 `README.md`에 잠금 파일 안내 한 줄(줄 추가만) |
+| 2026-10-21 | WSL→Windows interop: root 소유 `Relay` 프로세스 532개 누적(10-18 이후 약520개), 읽기 전용 PowerShell 조회가 `UtilAcceptVsock ... accept4 failed 110`으로 실패하며 1개 증가 | 사용자 | 관찰·대기: S2 설치 사전 검사 errno110과 같은 증상. sudo 없이 정리 불가, 호스트 설정·서비스 재시작은 하지 않음. 해소 후보는 사용자가 정한 시점의 `wsl --shutdown`(Docker·세션 모두 재시작 필요). 다음 Windows 설치본 수용 전에 연결 상태를 새로 확인한다 |
 | 2026-10-21 | 다음 세션을 위한 이전 로컬 작업 정리 | 사용자 | 결정: S2 결과 문서 3개를 `docs/s2-handoff` 문서 PR로 main에 반영한 뒤 통합된 브랜치/worktree와 소유 임시 산출물을 정리한다. 기능 PR 7개 밖의 사용자 지시 예외이며 S2 미커밋 결과를 S3로 넘기려던 방식을 대체한다. 원본 main ff-only 동기화는 허용하되 제품 작업은 전용 worktree에서 한다. 과거 검증 근거는 압축·manifest로 보관하고 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존. 문서 반영·정리는 진행 중이며 S3/S5 구현은 하지 않음 |
 | 2026-10-21 | S2 설치 수용의 WSL→Windows interop 시간 초과 | 에이전트 | 최종 f703a4b9/Windows39517774148 산출물 출처·해시 확인 후 windows-acceptance 잠금 안 ParseFile·Windows fingerprint가 errno110으로 실패(20.647초). caf16863의 앞선 시도와 네 live socket 조회도 같은 실패; Windows 원인은 미확정. 설치·소유 fixture/unit 생성0, 실기1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN. 호스트 설정 변경 없이 #642 머지. 연결 가능한 다음 소유 스모크에서 실제 설치 검증 필요 |
 | 2026-10-14 | S1 완료 검토(Claude Code) 후속 · 자동 리뷰 상한 | 사용자 | 결정: PR마다 자동 리뷰 3회까지 반영, 4회째부터 차단 기준(실제 데이터 손실·비밀 유출·승인하지 않은 실행)만 수정하고 나머지는 §8 후속 목록. 사용량이 3회 전에 소진되면 남은 회차는 하네스 별도 리뷰로 대신하고 "미실행(한도)"으로 기록(사용자 확인 2026-10-14: 이 기본값 유지). CONVENTIONS §8·AGENTS·00 §3 반영 |
@@ -54,7 +58,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
-| S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
+| S3 | [06-s3-knowledge](06-s3-knowledge.md) · S2 뒤 S5와 동시(트랙 1) | 작업 중 | 2026-10-21 | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
@@ -105,7 +109,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | Q | Task 11–12 | `v1/s2-runs` | 완료(로컬) | 2026-10-20 | 2026-10-20 | Task11 `4182a6f5` 및 Task12 로컬 완료. Task12 고유93개·타입·독립 최종 검토(미해결0)·Biome278 PASS |
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
 | S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | 머지 | 2026-10-21 | 2026-10-21 | S2 커밋 구간 약17.2h(구현·검토 약15.0h, 최종 통합·CI·리뷰 약2.2h), PR 뒤 약1.05h·리뷰3회. 세션 대기 포함 경과이며 누적 CPU 시간이 아님. 최종 CI3 PASS·설치 사전 검사 FAIL/실기 미실행 |
-| S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 대기 | | | |
+| S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.4h(상세화 약0.55h·검토3회 약0.35h·수정3회 약0.45h), 사용량 한도 대기 약3h 포함 경과 약5.5h. 별도 검토 1차 CHANGES_REQUIRED(차단7) → 2차(차단1: dedupe가 lease 토큰 교체) → 3차 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S3 | S | Task 2–3 |  | 대기 | | | |
 | S3 | T | Task 4–6 |  | 대기 | | | |
 | S3 | U | Task 7 |  | 대기 | | | |
@@ -353,6 +357,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 1 상세화 결과 (2026-10-21, 트랙 1)
+
+- [06-s3-knowledge.md](06-s3-knowledge.md)에 실제 코드 계약·검증 명령·공유 파일 경계·600/300줄 분할·v0.9.0 이식 표·계획과 달라진 점(06 "Task 1 결과" 표)을 두고 Task 2–12를 실패 시험 → 실패 확인 → 구현 → 통과 → 별도 검토·커밋으로 펼쳤다(429→약950줄). 00 §7의 CV-F02·F03·F06·F07·F08, AR-F10·F12·F13·D01과 AU-K2 idle 회귀를 입력 그대로 연결했다.
+- v0.9.0 이식: 그대로 37개(sessionizer6·idle4·privacy9·attribution6·markdown12, 원격 이미지 차단 새 시험1), 적응 25개(document.rs2·document_publish1·frontmatter7·wikilink5·templates5·assets5), 제외3(WSL1 대체1·Windows DACL2), 참고18(rename11·vault7). AU-K2는 수정본 시험2개 + 데몬 경로 `ingest_with_idle_tail_stores_end_at_last_input`.
+- 주요 달라진 점(06 표가 원장): `WriteScope`는 core가 아닌 `crates/documents/src/scope.rs`(root 목록은 CLI 주입) · 교체는 musl 배포·`unsafe_code=deny` 때문에 nix 대신 `rustix::fs::renameat_with`, 부모 dirfd 기준 `*at` · 해시 sha2(01에 blake3 명시 없음) · 충돌 오류는 `documents.conflict{rev}`+`documents.read`(16 MiB 프레임) · lease는 01 §5.1대로 채널 닫힘·연결 종료 때 해제: server.rs 일반 경로에서 `documents.claim`·`take`만 dedupe를 우회해 연결별 `Channel.generation` 자식 토큰을 owner로 쓰고(dedupe가 mutation 취소 토큰을 교체하기 때문, 동결 `Ctx`·`Router` 불변), 20초 renew·60초 만료는 반쯤 열린 연결 fallback · rename은 문서 락 안 저널 복사→NOREPLACE→lease 키 교체→옛 저널 삭제, 저장 `seq`로 저널 정리(CV-F03 교차 시험) · `journalDrop`은 서버+IndexedDB, 실패 시 tombstone 재시도(AR-F13) · 렌더는 v0.9.0 mermaid 자리표시 유지·원격 이미지만 차단, 응답 전체 12 MiB 예산 · 링크 해석 동률 규칙 · S3 알림은 `notify.raised` 대신 도메인 주제 → 화면 알림 센터 · ingest에 `lastInputMs`·`seq`, 결정적 세션 ID · 개인정보 규칙은 `devbox-activity` model 재사용(직접 path 의존) · 앱→데몬 활동은 네이티브 버퍼 → Tauri drain/ack → 메인 창 렌더러 ingest · Tree/Timeline은 `app/src/ui`가 아닌 feature 폴더 · 통합 검색은 `/search` 경로 · Tauri 경로 `src/platform/*`·`src/core/*` · v0.9.0 공존 안내는 `com.devbox.v08.knowledge.i*\active-stores.json` 존재 · `.gitignore`는 vault 첫 생성 때만 · `notes.tree` 256행·768 KiB 페이지와 rev snapshot.
+- 수용(Task 12): accept 설정에 소유 fixture vault를 설치 전 쓰고 마커 노트를 accept 인스턴스 `devbox mcp`로 확인한 뒤에만 vault 수용 시작, 빠른 캡처는 겹치지 않는 소유 키로 실제 판정. MSVC 좁은 compile은 무잠금 인라인 명령.
+- 트랙 간 주의: `Services.index`(IndexDb)는 S5와 하나만 둔다. 등록 파일(routes·state·xtask·sections/router·messages.ts·server.rs·README.md)은 줄 추가만, 생성 RPC·lockfile은 재생성.
+- 검증: 문서 과제라 빌드·시험 미실행. 완료 Biome CI 통과.
 
 실행 중 계획과 다르게 한 것을 적는다(컴파일 오류 수정, 이름 변경, 순서 변경 등). 다음 상세화 과제가 이 표를 읽는다.
 
