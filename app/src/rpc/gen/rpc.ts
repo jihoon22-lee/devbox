@@ -71,7 +71,12 @@ export type DocumentChanged = { key: DocKey, rev: DiskRev | null, };
 export type DocumentMoved = { from: DocKey, to: DocKey, };
 export type DocumentsError = { "code": "documents.conflict", "detail": { rev: DiskRev | null, } } | { "code": "documents.lease_lost", "detail": { reason: LeaseLoss, } } | { "code": "documents.out_of_scope" } | { "code": "documents.not_found" } | { "code": "documents.exists" } | { "code": "documents.too_large", "detail": { limit: number, } } | { "code": "documents.stale_journal" } | { "code": "documents.unsupported" } | { "code": "documents.invalid_input" };
 export type Done = { rev: string, };
-export type DropJournal = { key: DocKey, uptoSeq: number, };
+export type DropJournal = { key: DocKey, uptoSeq: number, 
+/**
+ * The caller's lease. While another live lease holds the key the drop is refused, so a
+ * read-only window can never remove the holder's journal.
+ */
+leaseId?: string, };
 export type EchoParams = { bytes: number, };
 export type Empty = Record<symbol, never>;
 export type Eol = "lf" | "crlf";

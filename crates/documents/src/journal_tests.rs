@@ -26,6 +26,7 @@ async fn journal_rejects_older_seq_and_drop_is_cas() -> T {
     let drop = |upto_seq| DropJournal {
         key: key("a.md"),
         upto_seq,
+        lease_id: c.lease_id.clone(),
     };
     fx.svc
         .journal_drop(drop(4))
@@ -68,6 +69,7 @@ async fn journal_survives_restart_and_dropped_journal_is_not_recovered() -> T {
         .journal_drop(DropJournal {
             key: recovered.key.clone(),
             upto_seq: 3,
+            lease_id: recovered.lease_id.clone(),
         })
         .await
         .map_err(|e| format!("{e:?}"))?;
@@ -134,5 +136,88 @@ async fn journal_and_ledger_files_are_private() -> T {
     assert_eq!(mode(&fx.data.join("documents")), 0o700);
     assert_eq!(mode(&fx.data.join("documents/tmp")), 0o700);
     ledger.remove(entry)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn journal_drop_is_refused_unless_the_caller_holds_the_lease() -> T {
+    let fx = Fx::new();
+    fx.write("a.md", "disk\n");
+    let w1 = claimed(&fx.svc, "a.md", "w1").await;
+    fx.svc
+        .journal(entry(&w1, 1, "w1 draft\n"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    let w2 = fx
+        .svc
+        .take(
+            tokio_util::sync::CancellationToken::new(),
+            TakeDocument {
+                key: key("a.md"),
+                window_id: "w2".into(),
+                policy: None,
+            },
+        )
+        .await
+        .map_err(|e| format!("{e:?}"))?
+        .expect("live owner");
+    fx.svc
+        .journal(entry(&w2, 2, "w2 draft\n"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    let drop = |lease_id: Option<String>| DropJournal {
+        key: key("a.md"),
+        upto_seq: 9,
+        lease_id,
+    };
+    // The read-only window (stale lease) and a lease-less caller cannot remove the holder's journal.
+    for lease in [w1.lease_id.clone(), None] {
+        let err = domain(fx.svc.journal_drop(drop(lease)).await);
+        assert_eq!(
+            err,
+            DocumentsError::LeaseLost {
+                reason: LeaseLoss::Taken
+            }
+        );
+        assert_eq!(fx.journals().len(), 1, "the holder's journal stays");
+    }
+    let id = w2.lease_id.clone().expect("lease");
+    fx.svc
+        .release(LeaseRef {
+            lease_id: id.clone(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    // Nobody holds it any more: a retried drop (offline tombstone) goes through.
+    fx.svc
+        .journal_drop(drop(None))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert!(fx.journals().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn journal_drop_by_the_holder_rejects_a_late_older_journal() -> T {
+    let fx = Fx::new();
+    fx.write("a.md", "disk\n");
+    let c = claimed(&fx.svc, "a.md", "w1").await;
+    fx.svc
+        .journal_drop(DropJournal {
+            key: key("a.md"),
+            upto_seq: 5,
+            lease_id: c.lease_id.clone(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    // A journal write that was in flight before the drop must not bring the draft back.
+    let err = domain(fx.svc.journal(entry(&c, 5, "late\n")).await);
+    assert_eq!(err, DocumentsError::StaleJournal);
+    assert!(fx.journals().is_empty());
+    fx.svc
+        .journal(entry(&c, 6, "newer\n"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(fx.journals().len(), 1);
     Ok(())
 }

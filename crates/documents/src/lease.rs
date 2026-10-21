@@ -236,6 +236,14 @@ impl Leases {
             f();
         }
     }
+    /// The live lease holding exactly `key`, if any (an expired one is evicted first).
+    pub fn holder(&self, key: &DocKey) -> Option<String> {
+        let now = (self.clock)();
+        let mut st = self.state.lock().expect("leases");
+        let id = st.by_key.get(key).cloned()?;
+        self.expire(&mut st, &id, now);
+        st.by_id.contains_key(&id).then_some(id)
+    }
     /// True when a live lease holds `key` or a document below it.
     pub fn occupied(&self, key: &DocKey) -> bool {
         let now = (self.clock)();

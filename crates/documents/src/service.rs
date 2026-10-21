@@ -431,6 +431,15 @@ impl DocumentsService {
     pub async fn journal_drop(&self, p: DropJournal) -> R<Done> {
         validate(&p.key).map_err(scope_fail)?;
         let _guard = self.s.leases.lock(&p.key).await;
+        // Only the lease holder (or anyone, once nobody holds it) may drop the journal.
+        match self.s.leases.holder(&p.key) {
+            Some(id) if p.lease_id.as_deref() != Some(id.as_str()) => {
+                return Err(lost(LeaseLoss::Taken));
+            }
+            // A journal write still in flight at or below the drop is stale from now on.
+            Some(id) => self.s.leases.saved(&id, p.upto_seq),
+            None => {}
+        }
         let s = self.s.clone();
         blocking(move || {
             s.journals

@@ -171,6 +171,11 @@ pub struct WriteJournal {
 pub struct DropJournal {
     pub key: DocKey,
     pub upto_seq: u64,
+    /// The caller's lease. While another live lease holds the key the drop is refused, so a
+    /// read-only window can never remove the holder's journal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lease_id: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
