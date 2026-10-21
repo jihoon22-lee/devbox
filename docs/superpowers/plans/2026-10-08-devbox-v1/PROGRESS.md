@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, **Task 2 `crates/documents` 완료(로컬)**: 고유44개 GREEN·별도 검토 2회(차단3 수정 → APPROVE)·후속 2건 반영. 다음: Task 3(화면 `DocumentStore`·노트 편집기 바탕). 공유 파일 예외 1(`crates/core/src/config.rs`)은 §2 기록 후 Task 4 Step 0 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, Task 2 `crates/documents` `60be7a94`, **Task 3 화면 `DocumentStore`·`EditorHost` 완료(로컬)**: 별도 검토 5회(차단3 → 1 → 1 → 1 → APPROVE), 서버 `journalDrop` lease 확인 별도 커밋. 다음: Task 4(노트 vault). 공유 파일 예외 1(`crates/core/src/config.rs`)은 §2 기록대로 Task 4 Step 0 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-21 · 트랙 1 S3 Task 2 커밋. 좁은 시험·fmt/clippy(바꾼 범위)·gen --check·typecheck·musl check·완료 Biome CI PASS. 전체 check/E2E/Windows는 Task 12 |
+| 마지막 갱신 | 2026-10-22 · 트랙 1 S3 Task 3 커밋. 좁은 시험(documents 폴더 3회)·typecheck·`devbox-documents`·`cli --test documents`·fmt/clippy(바꾼 범위)·gen --check·완료 Biome CI PASS. 전체 check/E2E/Windows는 Task 12 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -110,7 +110,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | R | Task 13–15c(동시 진행 준비·수용 전용 채널 포함) | `v1/s2-runs` | 로컬 완료 | 2026-10-20 | 2026-10-21 | Task13–15c 로컬 완료. Task15c 채널 격리·직접79개·독립 검토·완료 Biome344 PASS, 미해결0. 다음 Task16 전체 검증·설치 수용·PR |
 | S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | 머지 | 2026-10-21 | 2026-10-21 | S2 커밋 구간 약17.2h(구현·검토 약15.0h, 최종 통합·CI·리뷰 약2.2h), PR 뒤 약1.05h·리뷰3회. 세션 대기 포함 경과이며 누적 CPU 시간이 아님. 최종 CI3 PASS·설치 사전 검사 FAIL/실기 미실행 |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.4h(상세화 약0.55h·검토3회 약0.35h·수정3회 약0.45h), 사용량 한도 대기 약3h 포함 경과 약5.5h. 별도 검토 1차 CHANGES_REQUIRED(차단7) → 2차(차단1: dedupe가 lease 토큰 교체) → 3차 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
-| S3 | S | Task 2–3 | `v1/s3-knowledge` | 작업 중 | 2026-10-21 | | Task 2 완료(로컬): 구현·검토·수정 약1.9h(구현 약0.6h·검토2회 약0.25h·수정2회 약0.2h·세션 중단 대기 제외). Task 3 대기 |
+| S3 | S | Task 2–3 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-22 | Task 2 완료(로컬): 구현·검토·수정 약1.9h(구현 약0.6h·검토2회 약0.25h·수정2회 약0.2h·세션 중단 대기 제외). Task 3 완료(로컬): 구현 1회·별도 검토 5회(1차 차단3 → 2차 N1 → 3차 N2 → 4차 N3 → 5차 APPROVE)·수정 4회, 사용량 한도 대기 제외 약2.5h |
 | S3 | T | Task 4–6 |  | 대기 | | | |
 | S3 | U | Task 7 |  | 대기 | | | |
 | S3 | V | Task 8–9 |  | 대기 | | | |
@@ -357,6 +357,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 3 화면 `DocumentStore`·`EditorHost` 결과 (2026-10-22, 트랙 1)
+
+- 새 `app/src/features/documents/`: 순수 reducer `machine.ts`(`reduce(doc,event)→{doc,effects}`, 503줄)·`effects.ts`(RPC·저널 tick·tombstone 재시도)·Zustand `store.ts`·IndexedDB `offlineJournal.ts`(`idb-keyval`, 키별 직렬 큐·`putIf`·`move` rekey)·CodeMirror `EditorHost.tsx`(문서별 `EditorState` 보존, AU-K1)·`editorExtensions.ts`·`windowId.ts`, 시험 `machine{,.windows,.unsaved}.test.ts`·`store.test.ts`·`EditorHost.test.tsx`와 시험용 `machine-test-kit.ts`·`test-daemon.ts`. 의존성 `@codemirror/autocomplete`·`@codemirror/lang-markdown`·`idb-keyval`(lockfile 재생성). 모든 파일 600줄 이하.
+- 서버 변경(별도 커밋 `fix(documents)`, Task 2 계약 변화): `DropJournal.leaseId?` 추가. 다른 살아 있는 lease가 키를 잡고 있으면 drop을 `lease_lost{taken}`으로 거절(읽기 전용 창이 holder 저널을 못 지움). holder의 drop은 seq 하한을 올려 늦게 온 옛 저널을 `stale_journal`로 거절. `rpc.ts`는 `pnpm gen`.
+- 검토로 고친 손실 경로: 1차 B1 읽기 전용 창 닫기가 holder 저널 삭제 · B2 rename이 offline 사본·폴더 하위를 rekey하지 않음 · B3 reclaim seq·`stale_journal` → 2차 N1 [여기로 가져오기]가 다른 창 초안을 덮음(더 높은 seq·다른 내용이면 Recovering, 읽기 전용 창은 keep·save 거부, discard만 버퍼 버림) → 3차 N2 저장 안 한 편집이 있는 Recovering 닫기가 묻지 않고 버림(열린 채 `closeRequested`, 새 `CloseChoice` `discardAll`만 닫음, 진입 때 내 버퍼를 offline 초안으로 보관), Conflict 재claim도 더 높은 다른 창 저널을 비교에 올림 → 4차 N3 그 Recovering에서 디스크 재읽기가 버퍼를 덮음(`disk`에만 기록, 저장은 옛 base로 Conflict 재비교, 저장 안 한 편집이 있는 6개 상태×디스크 변경·삭제 표 시험). 다시 열 때 offline 초안과 서버 저널이 서로 다르면 `recovery.other`로 둘 다 보임.
+- 검증: RED(`red-machine`·`red-store`·`red-EditorHost`·`red-review-*`·`red-n1-*`·`red-n2-machine`·`red-n3-machine`·`red-b1-server`·`red-double-claim`·`red-strictmode`, 범위표 `scope-index.txt`). GREEN: machine 35·windows 6·unsaved 8·store 11·EditorHost 5, documents 폴더+`src/ui/code`+`messages.test.ts` 85/85 3회, typecheck, `devbox-documents` 40, `cli --test documents` 7, fmt·clippy(`-p devbox-documents`), `gen-ts --check`, 완료 Biome CI. 미실행: check.sh·E2E·Windows 빌드·앱 전체 vitest(Task 12). 근거 Git common-dir `devbox-verification/s3-task3/`.
+- 계획과 달라진 점: 닫기 선택 `discardAll` 추가(`CloseChoice`는 `machine.ts`에서 export) · 다른 창 초안이 있는 Recovering의 상태 이벤트 `discard`는 다른 창 초안만 버리고 내 버퍼는 Dirty로 다시 저널 · `restore{which:"other"}` · lease 없을 때 닫기·버림 범위는 `journalSeq`까지 · lease 없는 drop 재시도가 `lease_lost`면 tombstone 유지.
+- 후속(비차단): Task 10 화면은 Recovering에서 [다른 창 초안 쓰기]·[내 것 유지]·[모두 버리고 닫기]와 `recovery.other`가 있을 때의 선택지를 보여야 함 · 같은 seq의 offline 초안과 deferred 서버 저널이 함께 있으면 `journalLoaded`가 `recovery.text`를 덮어 offline 쪽이 후보에서 사라짐(같은 seq 다른 내용은 드묾, Task 10에서 `text === undefined`인 쪽만 채우고 같은 seq는 합침) · 표 시험 setup에 상태 도달 assert 추가, 두 초안 시험에 버림 범위·deferred `journalRead` 보강 · `stop()` 뒤 300ms 안 편집 손실 가능(Task 10 종료 흐름) · `.devbox-conflict-*` 사본 화면 안내(Task 4·10).
 
 ### S3 Task 2 `crates/documents` 결과 (2026-10-21, 트랙 1)
 
