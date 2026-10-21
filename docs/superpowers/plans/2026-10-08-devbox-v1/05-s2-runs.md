@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **구현 완료·PR #642 열림·3회차 수정 검증 완료**(2026-10-21). b24d99d5 Frontend/Rust workspace/E2E CI PASS, 3회차 코드1건·보안0건 완료. Run 프로젝트 귀속 수정2개·독립 검토·영향 strict Clippy PASS. 최종 SHA 필수 CI·설치 시도·머지는 대기한다. 설치 전 interop errno110으로 수용1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN은 보존하며 4회차 리뷰를 기다리지 않는다. 기반 `main@4cb0e833`, 인계 기록 `699d44e1` 보존.
+- 상태: **S2 머지 완료** · [PR #642](https://github.com/jihoon22-lee/devbox/pull/642), squash `1e82e649`(2026-10-21 09:19 KST). 최종 `f703a4b9` 필수 CI3·E2E PASS, 자동 리뷰3회 처리·상한 이후 비차단1건 PROGRESS §8 이월. 실제 설치는 interop errno110 사전 실패로 수용1–11 미실행·12 FAIL/prod 불변 NOT_PROVEN이다. 사용자 정리 지시에 따라 이 결과는 문서 전용 PR로 main에 반영한다(00 §3). 정리 뒤 다음 세션은 깨끗한 main에서 S3·S5 동시 상세화를 시작하며 S2 작업 사본 이전은 필요 없다.
 - 상세화 수준: 실제 S0b·S1 계약과 Task 2–16(15b·15c 포함)의 실패 테스트 → 실패 확인 → 구현 → 통과 → 커밋 순서를 확정했다. 각 코드 조각은 해당 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 테스트의 fixture helper는 해당 시험 파일에서 만든다. 구현 sketch는 전체 구현을 대체하지 않으며 `?`의 오류는 각 도메인의 typed `Fail<...>`로 매핑한다.
 
 **Goal:** 프로젝트의 작업·서비스·예약을 devbox가 띄우고 지켜보게 한다.
@@ -30,7 +30,7 @@ S2가 끝나면 **선택적 조기 사용 전환점**이다. 에이전트·실�
 ## Global Constraints
 
 - S0b·S1의 Global Constraints를 따른다.
-- 작업 위치: S2 전체가 브랜치 `v1/s2-runs`(origin/main에서) 하나와 worktree `../devbox-wt/v1-s2-runs` 하나다. 인계 기록 `699d44e1` 다음에 Task 1(상세화)을 커밋한다. PR은 Task 16에서 한 번 연다(00-roadmap §3).
+- S2 구현 당시 작업 위치는 브랜치 `v1/s2-runs`와 worktree `../devbox-wt/v1-s2-runs`였으며, 인계 기록 `699d44e1` 뒤 Task 1부터 Task 16까지 진행해 PR #642로 머지했다. 현재 결과 문서 반영·정리와 다음 세션 위치는 PROGRESS §1을 따른다.
 - 실행 unit 이름은 `devbox-<인스턴스>-run-<runId>`다. tmux·데몬 unit과 섞지 않는다. 테스트는 `devbox-test-<난수>.slice` 아래에서만 띄우고 끝나면 소유 unit/slice를 멈추고 정확한 소유 runtime drop-in 파일도 정리한다(01-design §4.3). 서비스 실패 unit은 관측·수동 reset까지 유지하고 정상 종료는 GC한다.
 - 재시작 주체는 systemd 하나다. 데몬은 재시작을 직접 하지 않는다. 표시와 알림만 한다.
 - 실행 결과의 원장은 `runs/<runId>.exit` 파일이다. transient unit은 끝나면 정리되므로 unit 상태를 결과로 쓰지 않는다.
@@ -1121,7 +1121,7 @@ impl AppChannel {
 
 **최종 로컬 검증 기록(2026-10-21):** 최초 전체 검사 Rust954 PASS/33 ignored·Vitest601 PASS/2 FAIL·E2E8 PASS/3 FAIL·Clippy FAIL을 보존했다. 원인별 수정 뒤 고유140개·strict Clippy·실패 E2E3·타입 PASS이며 통과한 무관한 검사는 반복하지 않았다. B1–B4 및 로그 초기 이력/진단 tmux PID/fixture를 고쳤고 제품75개 동결 digest `635d0359ebb1b4c83557d880b9e8c13bbb2244803ab207e2a022c31bfe486c9b`의 독립 검토 PASS·미해결0이다. SC9 60.000603초 CPU0.233331%·RSS39,899,136B PASS, 규모52,174줄·600/300 초과0·scripts1,500줄·workflow2·E2E11개다. 근거 `devbox-verification/s2-task16/{full,integration-fixes,branch-review,sc9}/` 및 PROGRESS §5. 실제 Windows PowerShell IPv6 회귀1개 PASS는 설치본 수용 PASS가 아니다. 수용 도구 지적4건은 수정·독립 재검토 PASS이며 Windows Parser2개도 PASS다. 최초 Windows CI39509088000은 native self_check의 collapsible_if1건으로 실패했고 같은 Windows-cfg strict Clippy RED→GREEN·기존 self-check3개 PASS로 보정했다. 새 SHA 실제 Windows CI·12개 설치 수용은 미완료다. 근거 `windows-clippy-fix/`와 PROGRESS §5.
 
-**PR 수용 기록:** caf16863 Windows run39510897220·receipt/hash는 PASS. 설치 driver는 읽기 전용 ParseFile/Windows fingerprint errno110으로 설치 전 FAIL했고 기능1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN이다. 소유 잔여0, 호스트 설정 변경 없음. #642 첫 코드 리뷰 scheduler1건과 CI 세션 assertion1건은 직접26개·영향 strict Clippy·독립 검토 PASS로 보완했다. 첫 보안 리뷰는 지적0건으로 완료됐으며 최종 CI·후속 리뷰·머지는 아직 완료되지 않았다. 자세한 근거와 회차 판정은 PROGRESS §5 및 `devbox-verification/s2-task16/pr/`를 따른다. 2회차는 코드3건·보안0건이며 readiness 귀속/선택 프로젝트/비밀키 DB 실패 복구와 CI3건을 보완했다. 직접 고유95개·독립 검토·영향 strict Clippy PASS, 3회차 리뷰·최종 CI/설치 시도·머지는 대기한다. 각 실패 원본과 소스 해시는 `pr/round2/`에 보존했다. 3회차는 코드1건·보안0건으로 완료했다. Run 프로젝트 귀속 우선 판정 수정은 직접2개·독립 검토·Clippy PASS이며 최종 SHA CI/설치 시도 뒤 squash한다. 자동 리뷰 상한3회를 채웠으므로 4회차를 기다리지 않고 차단 기준만 적용한다.
+**PR 수용·머지 기록:** 최종 f703a4b9의 CI39517774250·Windows39517774148에서 필수3개/E2E·native69개/Prod·Accept 패키징/self-check PASS, Accept receipt·SHA256 확인. 잠금 내 최종 설치 시도는20.647초에 읽기 전용 PowerShell Parser/fingerprint errno110으로 실패해 설치·fixture 생성0, 기능1–11 NOT_RUN·12 FAIL/prod 불변 NOT_PROVEN이다. 리뷰 완료3회(코드1/3/1·보안0/0/0)의5건은 모두 수정·별도 검토, 상한 이후 Windows 준비 귀속1건은 비차단 판정으로 §8에 이월했다. 보호 규칙 그대로 2026-10-21 09:19 KST squash1e82e649에 머지했고 검증head와 tree가 동일하다. 근거와 다음 S3/S5 인계는 PROGRESS §5 및 `s2-task16/pr/merged.json`, `pr/final-acceptance-review.json`, `handoff/`를 따른다.
 
 **단계별 실행(통합·수용 과제):**
 - [x] **1 · 수용 실패 기준 고정:** 아래 12개 항목·SC9·필수 CI 3개·별도 검토·자동 리뷰 회차의 상태표를 artifact에 먼저 만들고 시작 상태를 `미실행`으로 둔다. Task 13의 E2E 2개와 기존 suite, 다중 로그/분리 창 부하, fallback·accept 불변 회귀를 포함한다. 제품 미구현/실패를 PASS로 바꾸지 않는다.
@@ -1137,8 +1137,8 @@ gh workflow run windows.yml --ref v1/s2-runs
 # Open S2 PR only here, then require final CI + bounded review before squash merge.
 ```
 
-- [ ] **4 · 완료 커밋·설치 수용:** PROGRESS를 `구현 완료·PR 수용 대기`로 갱신하고 Biome CI 뒤 `chore(runs): record S2 verification and acceptance readiness`로 커밋한다. 최초 push→windows.yml dispatch→해당 SHA accept 산출물 검증→windows-acceptance 잠금 안 12개 스모크. 소유 리소스만 정리하며 수정이 필요하면 영향 검사·새 SHA 수용을 남긴다.
-- [ ] **5 · PR·판정·머지:** Task16에서 S2 PR을 처음 연다. 최종 SHA 필수 CI3개, 자동 리뷰 최대3회(한도면 별도리뷰/미실행 기록), 회차별 묶음 수정 push를 끝내고 보호 규칙 그대로 squash 머지한다. 하네스가 병합을 막으면 사용자에게 요청한다. 실제 머지 확인 뒤 PROGRESS를 갱신하고 S3·S5 동시 다음 단계를 안내한다.
+- [x] **4 · 완료 커밋·설치 수용 시도:** PROGRESS를 `구현 완료·PR 수용 대기`로 갱신하고 Biome CI 뒤 `chore(runs): record S2 verification and acceptance readiness`로 커밋한다. 최초 push→windows.yml dispatch→해당 SHA accept 산출물 검증→windows-acceptance 잠금 안 12개 스모크. 소유 리소스만 정리하며 수정이 필요하면 영향 검사·새 SHA 수용을 남긴다.
+- [x] **5 · PR·판정·머지:** Task16에서 S2 PR을 처음 연다. 최종 SHA 필수 CI3개, 자동 리뷰 최대3회(한도면 별도리뷰/미실행 기록), 회차별 묶음 수정 push를 끝내고 보호 규칙 그대로 squash 머지한다. 하네스가 병합을 막으면 사용자에게 요청한다. 실제 머지 확인 뒤 PROGRESS를 갱신하고 S3·S5 동시 다음 단계를 안내한다.
 
 **Files:**
 - Modify: 이 문서 상태 줄, `PROGRESS.md`(S2 완료·PR 행·현재 위치, 다음은 S3·S5 동시 시작), `python3 xtask/loc.py` 실행 결과를 PR 본문에 기록
