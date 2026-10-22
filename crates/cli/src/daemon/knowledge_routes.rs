@@ -67,4 +67,11 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<notes::NotesTemplates, _, _>(
             |s, _, p| async move { s.notes.templates(p).await },
         )
+        .register::<notes::NotesRename, _, _>(|s, _, p| async move { s.notes.rename(p).await })
+        .register::<notes::NotesRenameStatus, _, _>(|s, _, p| async move {
+            s.notes.rename_status(p).await
+        })
+        .register::<notes::NotesRewriteReply, _, _>(|s, _, p| async move {
+            s.notes.rewrite_reply(p).await
+        })
 }

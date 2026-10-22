@@ -1,5 +1,8 @@
 mod support;
-use devbox_notes::{CreateNote, NotesCreate};
+use devbox_notes::{
+    CreateNote, NotePath, NotesBacklinks, NotesCreate, NotesRename, NotesRenameStatus, RenameNote,
+    RenameOp, RenameState,
+};
 use std::time::{Duration, Instant};
 use support::TestDaemon;
 
@@ -89,4 +92,94 @@ fn unknown_notes_settings_stop_service_assembly() {
         let built = devbox_cli::daemon::build_services(d.paths.clone());
         assert!(built.is_err(), "{text}");
     }
+}
+
+/// AR-D01 through the real daemon: it stops right after moving the note (test hook,
+/// debug test instances only), is stopped, and the next start finishes the rewrites.
+#[tokio::test]
+async fn rename_resumes_after_daemon_restart() {
+    let mut d = TestDaemon::fixture();
+    let vault = d.home.path().join("notes");
+    std::fs::create_dir_all(&vault).expect("fixture vault");
+    for (rel, text) in [
+        ("a.md", "x\n"),
+        ("b.md", "[[a]]\n"),
+        ("c.md", "[a](a.md)\n"),
+    ] {
+        std::fs::write(vault.join(rel), text).expect("fixture note");
+    }
+    d.extra_env
+        .push(("DEVBOX_TEST_NOTES_STOP".into(), "after_move".into()));
+    d.launch();
+    let client = d.client().await;
+    // The first scan runs in the background; rename plans from the index.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let back = support::bounded(client.call::<NotesBacklinks>(&NotePath {
+            path: "a.md".into(),
+        }))
+        .await
+        .expect("notes.backlinks");
+        if back.items.len() == 2 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "first scan indexes both links");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let started = support::bounded(client.call::<NotesRename>(&RenameNote {
+        path: "a.md".into(),
+        new_path: "z/a2.md".into(),
+        rewrite_links: true,
+    }))
+    .await
+    .expect("notes.rename");
+    assert!(vault.join("z/a2.md").exists() && !vault.join("a.md").exists());
+    assert_eq!(
+        std::fs::read_to_string(vault.join("b.md")).expect("b"),
+        "[[a]]\n"
+    );
+    drop(client);
+    d.stop();
+    let journals = d.paths.data_dir.join("notes-rename");
+    assert_eq!(
+        std::fs::read_dir(&journals)
+            .expect("journal folder")
+            .count(),
+        1
+    );
+
+    d.extra_env.retain(|(k, _)| k != "DEVBOX_TEST_NOTES_STOP");
+    d.launch();
+    let client = d.client().await;
+    let op = RenameOp {
+        op_id: started.op_id,
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let status = support::bounded(client.call::<NotesRenameStatus>(&op)).await;
+        if matches!(&status, Ok(s) if s.state != RenameState::Running) {
+            assert_eq!(status.expect("status").state, RenameState::Done);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "resumed rename finishes: {status:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        std::fs::read_to_string(vault.join("b.md")).expect("b"),
+        "[[a2]]\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("c.md")).expect("c"),
+        "[a](z/a2.md)\n"
+    );
+    assert_eq!(
+        std::fs::read_dir(&journals)
+            .expect("journal folder")
+            .count(),
+        0
+    );
+    d.stop();
 }

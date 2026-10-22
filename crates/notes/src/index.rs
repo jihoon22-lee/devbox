@@ -16,7 +16,8 @@ CREATE TABLE notes_links(src TEXT NOT NULL, raw TEXT NOT NULL, key TEXT, heading
 CREATE INDEX notes_links_key ON notes_links(key);
 CREATE INDEX notes_links_src ON notes_links(src);
 CREATE TABLE notes_tags(path TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY(path, tag));";
-const SCHEMA_VERSION: u32 = 1;
+/// 2: links in code blocks and HTML comments are no longer indexed (rebuilds older indexes).
+const SCHEMA_VERSION: u32 = 2;
 
 /// Receives each indexed note so search can index note bodies (Task 7 connects it).
 pub trait NoteSink: Send + Sync {
@@ -232,6 +233,21 @@ impl NoteIndex {
                     ))
                 })?
                 .collect()
+            })
+            .await
+    }
+    /// Notes holding a link whose key is one of `keys`, sorted.
+    pub async fn sources(&self, keys: Vec<String>) -> Result<Vec<String>, CoreError> {
+        self.db
+            .read(move |tx| {
+                let mut st = tx.prepare("SELECT DISTINCT src FROM notes_links WHERE key = ?1")?;
+                let mut out = std::collections::BTreeSet::new();
+                for key in &keys {
+                    for src in st.query_map([key], |r| r.get::<_, String>(0))? {
+                        out.insert(src?);
+                    }
+                }
+                Ok(out.into_iter().collect())
             })
             .await
     }

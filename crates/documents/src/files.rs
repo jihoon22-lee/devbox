@@ -6,7 +6,16 @@ use crate::model::*;
 use crate::scope::{in_trash, is_internal};
 use crate::service::{DocumentsService, Located, blocking, sys_fail, write_checked};
 use crate::{CODE_LIMIT, R, sys};
+use devbox_protocol::Internal;
 use rustix::fs::FileType;
+
+/// Who edits a document right now: the live lease and its latest unsaved journal
+/// `(seq, text)`. A journal without a lease is a draft waiting for recovery.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EditState {
+    pub lease_id: Option<String>,
+    pub journal: Option<(u64, String)>,
+}
 
 impl DocumentsService {
     /// Reads a regular file (a final symlink is followed only inside the roots).
@@ -49,6 +58,27 @@ impl DocumentsService {
             return Err(DocumentsError::InvalidInput.into());
         }
         self.trash_move(from, to, false).await
+    }
+    /// [`Self::trash_entry`] for a regular file only (a folder is `invalid_input`).
+    pub async fn trash_file(&self, from: &DocKey, to: &DocKey) -> R<DocKey> {
+        if is_internal(&from.path) || !in_trash(&to.path) {
+            return Err(DocumentsError::InvalidInput.into());
+        }
+        self.trash_move(from, to, true).await
+    }
+    /// Lease holder and unsaved journal of `key` (other domains decide whether a
+    /// lease-less write would land behind an editor's back).
+    pub async fn edit_state(&self, key: &DocKey) -> R<EditState> {
+        let key = match self.locate(key.clone(), false, false).await? {
+            Located::At(r) => r.key,
+            Located::Missing(k) => k,
+        };
+        let lease_id = self.s.leases.holder(&key);
+        let s = self.s.clone();
+        let journal = blocking(move || s.journals.load(&key).internal("read document journal"))
+            .await?
+            .map(|j| (j.seq, j.text));
+        Ok(EditState { lease_id, journal })
     }
     /// Moves a trashed regular file back to a free, non-internal key.
     pub async fn restore_entry(&self, from: &DocKey, to: &DocKey) -> R<DocKey> {

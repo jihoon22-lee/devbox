@@ -13,6 +13,7 @@ mod startup;
 mod sys;
 mod watch;
 use devbox_protocol::{Done, Exporter, method, topic};
+pub use files::EditState;
 pub use model::*;
 pub use scope::{Root, WriteScope, in_trash, is_internal};
 pub use service::{Clock, DocumentsConfig, DocumentsService, Hook, Hooks, Roots};

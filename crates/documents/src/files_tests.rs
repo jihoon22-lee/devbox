@@ -263,3 +263,82 @@ async fn restore_moves_only_regular_files() -> T {
     assert!(fx.vault.join(".trash/2026-10-22/a.md").exists());
     Ok(())
 }
+
+#[tokio::test]
+async fn edit_state_reports_the_live_lease_and_its_unsaved_journal() -> T {
+    let fx = Fx::new();
+    fx.write("a.md", "a\n");
+    assert_eq!(
+        fx.svc
+            .edit_state(&key("a.md"))
+            .await
+            .map_err(|e| format!("{e:?}"))?,
+        EditState::default()
+    );
+    let c = claimed(&fx.svc, "a.md", "w1").await;
+    let lease = c.lease_id.clone().expect("lease");
+    let state = fx
+        .svc
+        .edit_state(&key("a.md"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(
+        (state.lease_id.as_deref(), state.journal),
+        (Some(lease.as_str()), None)
+    );
+    fx.svc
+        .journal(WriteJournal {
+            lease_id: lease.clone(),
+            seq: 2,
+            base_rev: c.rev.clone(),
+            text: "unsaved\n".into(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    let state = fx
+        .svc
+        .edit_state(&key("a.md"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(state.journal, Some((2, "unsaved\n".to_string())));
+    // The window closes without saving: the draft stays, nobody holds it.
+    fx.svc
+        .release(LeaseRef { lease_id: lease })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    let state = fx
+        .svc
+        .edit_state(&key("a.md"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(
+        (state.lease_id, state.journal),
+        (None, Some((2, "unsaved\n".to_string())))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn move_file_and_trash_file_refuse_a_folder_named_like_a_note() -> T {
+    let fx = Fx::new();
+    fx.write("x.md/inner.md", "inner\n");
+    let err = domain(fx.svc.move_file(&key("x.md"), &key("y.md")).await);
+    assert_eq!(err, DocumentsError::InvalidInput);
+    let err = domain(fx.svc.trash_file(&key("x.md"), &key(".trash/d/x.md")).await);
+    assert_eq!(err, DocumentsError::InvalidInput);
+    assert_eq!(fx.read("x.md/inner.md"), "inner\n");
+    assert!(!fx.vault.join("y.md").exists() && !fx.vault.join(".trash").exists());
+    // Regular files still move.
+    fx.write("a.md", "a\n");
+    fx.svc
+        .move_file(&key("a.md"), &key("z/b.md"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(fx.read("z/b.md"), "a\n");
+    fx.svc
+        .trash_file(&key("z/b.md"), &key(".trash/d/b.md"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(fx.read(".trash/d/b.md"), "a\n");
+    Ok(())
+}

@@ -305,6 +305,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "notes.invalid_input": { title: "노트 요청 입력값을 확인해 주세요." },
   "notes.busy": { title: "노트 링크를 고치는 중입니다.", action: "잠시 뒤 다시 시도해 주세요." },
+  "notes.target_unsaved": {
+    title: "새 이름의 노트에 저장하지 않은 편집이 있습니다.",
+    action: "그 노트를 열어 저장하거나 버린 뒤 다시 시도해 주세요.",
+  },
   "notes.stale_cursor": { title: "노트 목록이 바뀌었습니다.", action: "목록을 처음부터 다시 불러와 주세요." },
   "notes.too_large": { title: "노트가 허용 크기를 넘었습니다.", action: "내용을 줄인 뒤 다시 시도해 주세요." },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },

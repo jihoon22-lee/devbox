@@ -71,6 +71,15 @@ fn test_gate(paths: &Paths) -> Option<Hook> {
     }))
 }
 
+/// Debug builds of test instances may stop a note rename at a crash point
+/// (`DEVBOX_TEST_NOTES_STOP`, see `devbox_notes::StopAt::parse`).
+fn test_stop(paths: &Paths) -> Option<devbox_notes::StopAt> {
+    if !cfg!(debug_assertions) || !paths.instance.is_test() {
+        return None;
+    }
+    devbox_notes::StopAt::parse(&std::env::var("DEVBOX_TEST_NOTES_STOP").ok()?)
+}
+
 /// Daemon-owned files stay out of reach even when a project contains them: data,
 /// state, the installed binary and this instance's systemd user units (the names
 /// `setup::instance_units` and `render_units` publish). `config_dir` is not listed:
@@ -137,13 +146,16 @@ pub(super) fn build(
     documents_config.hooks.before_lease_insert = test_gate(paths);
     documents_config.private = private(paths);
     let documents = Arc::new(DocumentsService::new(documents_config));
-    let notes = NotesService::new(NotesConfig::new(
+    let mut notes_config = NotesConfig::new(
         settings,
         documents.clone(),
         index.clone(),
         hub.clone(),
         pc_name(pc),
-    ))?;
+        paths.data_dir.join("notes-rename"),
+    );
+    notes_config.stop = test_stop(paths);
+    let notes = NotesService::new(notes_config)?;
     Ok(Knowledge {
         documents,
         notes: Arc::new(notes),

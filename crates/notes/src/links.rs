@@ -67,6 +67,8 @@ pub fn parse_wikilinks(content: &str) -> Vec<ParsedWikilink> {
     if content.is_empty() {
         return Vec::new();
     }
+    let code = crate::code_spans::excluded(content);
+    links.retain(|l| !code.iter().any(|r| r.contains(&l.from_byte)));
     links
 }
 
@@ -268,6 +270,8 @@ pub struct ParsedMdLink {
     pub line: usize,
     pub from_utf16: usize,
     pub to_utf16: usize,
+    /// Byte range of the whole link in `content`.
+    pub span: std::ops::Range<usize>,
 }
 
 /// Line and UTF-16 positions with CRLF counted as one newline (CodeMirror).
@@ -379,6 +383,7 @@ pub fn parse_markdown_links(content: &str, from: Option<&str>) -> Vec<ParsedMdLi
             line,
             from_utf16,
             to_utf16,
+            span: base + range.start..base + range.end,
         });
         if links.len() >= MAX_WIKILINKS_PER_DOC {
             break;

@@ -200,7 +200,110 @@ domain_error! {
         InvalidImage { problem: ImageProblem } = "notes.invalid_image",
         InvalidInput = "notes.invalid_input",
         Busy = "notes.busy",
+        TargetUnsaved = "notes.target_unsaved",
         StaleCursor = "notes.stale_cursor",
         TooLarge { limit: u64 } = "notes.too_large",
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenameNote {
+    pub path: String,
+    pub new_path: String,
+    /// Rewrite links in other notes (and the note's own relative links) that would break.
+    pub rewrite_links: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenameStarted {
+    pub op_id: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RenameOp {
+    pub op_id: String,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum RenameState {
+    Running,
+    Done,
+    Incomplete,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum RewriteFailure {
+    /// The note changed after the rename planned it; it was not overwritten.
+    Conflict,
+    /// Open with unsaved edits and the window did not apply the request in time.
+    Open,
+    /// The note was gone when its turn came.
+    Missing,
+    /// A link form that cannot be rewritten safely (reference-style Markdown links).
+    Unsupported,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct FailedRewrite {
+    pub path: String,
+    pub reason: RewriteFailure,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RenameStatus {
+    pub state: RenameState,
+    pub failed: Vec<FailedRewrite>,
+    pub truncated: bool,
+    /// Why an `incomplete` rename stopped; `null` while running or when done.
+    pub reason: Option<IncompleteReason>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum IncompleteReason {
+    /// Some notes were left as they were (`failed` lists them).
+    Failed,
+    /// Resumed after an exit, but another note took the new name meanwhile.
+    TargetExists,
+    /// Resumed after an exit, but the note itself was gone.
+    SourceMissing,
+    /// Resumed after an exit, but the note could not be moved.
+    MoveFailed,
+    /// The progress journal could not be read; it was set aside as `<opId>.json.corrupt`.
+    Unreadable,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TextEdit {
+    pub from_utf16: u32,
+    pub to_utf16: u32,
+    pub text: String,
+}
+/// Sent to the window holding `leaseId` when the note has unsaved edits. The edits
+/// apply to the buffer saved as journal `journalSeq`; a window whose buffer moved on
+/// should answer `applied: false`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RewriteRequest {
+    pub op_id: String,
+    pub key: devbox_documents::DocKey,
+    pub lease_id: String,
+    pub journal_seq: u64,
+    pub edits: Vec<TextEdit>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RewriteReply {
+    pub op_id: String,
+    pub key: devbox_documents::DocKey,
+    /// True after the window applied the edits and saved the note.
+    pub applied: bool,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameIncomplete {
+    pub op_id: String,
+    /// Notes left as they were.
+    pub count: u32,
+    pub reason: IncompleteReason,
 }

@@ -126,7 +126,8 @@ fn build(
     let docs = Arc::new(DocumentsService::new(config));
     let index = IndexDb::open(&data.join("index.db")).expect("fixture index");
     let pc: PcName = Arc::new(|| Box::pin(async { "desk".to_string() }));
-    let mut config = NotesConfig::new(settings, docs.clone(), index, hub.clone(), pc);
+    let rename_dir = data.join("notes-rename");
+    let mut config = NotesConfig::new(settings, docs.clone(), index, hub.clone(), pc, rename_dir);
     let clock = now.clone();
     config.clock = Arc::new(move || clock.load(Ordering::SeqCst));
     config.today = Arc::new(|| ("2026-10-22".into(), "09:30".into()));
@@ -138,4 +139,98 @@ pub fn domain<X: std::fmt::Debug>(r: R<X>) -> NotesError {
         Err(devbox_protocol::Fail::Domain(e)) => e,
         other => panic!("expected a domain error, got {other:?}"),
     }
+}
+
+// Rename helpers (Task 5).
+pub fn rename(from: &str, to: &str) -> RenameNote {
+    RenameNote {
+        path: from.into(),
+        new_path: to.into(),
+        rewrite_links: true,
+    }
+}
+pub fn vault_key(path: &str) -> devbox_documents::DocKey {
+    devbox_documents::DocKey {
+        root: "vault".into(),
+        path: path.into(),
+    }
+}
+impl Nx {
+    /// Starts a rename and waits (bounded) until it is no longer running.
+    pub async fn renamed(&self, from: &str, to: &str) -> Result<RenameStatus, String> {
+        let op = self
+            .svc
+            .rename(rename(from, to))
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+        self.settled(&op.op_id).await
+    }
+    pub async fn settled(&self, op: &str) -> Result<RenameStatus, String> {
+        tokio::time::timeout(std::time::Duration::from_secs(10), self.svc.wait_rename(op))
+            .await
+            .map_err(|_| "rename still running after 10 s".to_string())?
+            .map_err(|e| format!("{e:?}"))
+    }
+    /// A daemon restart: new services, first scan, then the rename resume of `start`.
+    pub async fn reopen(&mut self) -> Result<(), String> {
+        self.restart();
+        self.svc.rescan().await.map_err(|e| format!("{e:?}"))?;
+        self.svc.resume().await.map_err(|e| format!("{e:?}"))
+    }
+    pub fn rename_journals(&self) -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(self.data.join("notes-rename")) else {
+            return Vec::new();
+        };
+        let mut out: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        out.sort();
+        out
+    }
+    /// `(inode, mtime ns)`: a rewrite replaces the file, so both change.
+    pub fn identity(&self, rel: &str) -> (u64, i64) {
+        use std::os::unix::fs::MetadataExt;
+        let m = std::fs::metadata(self.vault().join(rel)).expect("fixture note metadata");
+        (m.ino(), m.mtime_nsec() + m.mtime() * 1_000_000_000)
+    }
+    /// Opens `rel` in window `window`; with `draft`, also journals unsaved text.
+    pub async fn open_note(
+        &self,
+        rel: &str,
+        window: &str,
+        draft: Option<(u64, &str)>,
+    ) -> devbox_documents::Claimed {
+        let claimed = self
+            .docs
+            .claim(
+                tokio_util::sync::CancellationToken::new(),
+                devbox_documents::ClaimDocument {
+                    key: vault_key(rel),
+                    policy: devbox_documents::DocPolicy {
+                        kind: devbox_documents::DocKind::Note,
+                    },
+                    window_id: window.into(),
+                },
+            )
+            .await
+            .expect("claim fixture note")
+            .expect("fixture owner is live");
+        if let Some((seq, text)) = draft {
+            self.docs
+                .journal(devbox_documents::WriteJournal {
+                    lease_id: claimed.lease_id.clone().expect("fixture lease"),
+                    seq,
+                    base_rev: claimed.rev.clone(),
+                    text: text.into(),
+                })
+                .await
+                .expect("journal fixture draft");
+        }
+        claimed
+    }
+}
+pub fn failed(status: &RenameStatus) -> Vec<(&str, RewriteFailure)> {
+    status
+        .failed
+        .iter()
+        .map(|f| (f.path.as_str(), f.reason))
+        .collect()
 }

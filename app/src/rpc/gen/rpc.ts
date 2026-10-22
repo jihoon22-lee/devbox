@@ -106,6 +106,7 @@ export type ExitRecord = { attemptId: string, code: number | null, signal?: stri
 export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
 export type Expect = "present" | "absent";
+export type FailedRewrite = { path: string, reason: RewriteFailure, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
 export type FileLocation = { path: string, line: number, column: number, };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
@@ -116,6 +117,7 @@ export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type ImageProblem = "empty" | "too_large" | "unsupported" | "dimensions" | "encoding";
+export type IncompleteReason = "failed" | "target_exists" | "source_missing" | "move_failed" | "unreadable";
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
 export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
@@ -152,7 +154,7 @@ export type NoParams = Record<symbol, never>;
 export type NotePath = { path: string, };
 export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
 export type NotesChanged = { rev: string, paths: Array<string>, };
-export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } };
+export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } };
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
@@ -200,7 +202,25 @@ export type Recovery = { recovery: string, };
 export type RefreshEnvResult = { restarting: boolean, };
 export type RemoveProject = { id: string, };
 export type RenameDocument = { leaseId: string | null, key: DocKey, to: DocKey, };
+export type RenameIncomplete = { opId: string, 
+/**
+ * Notes left as they were.
+ */
+count: number, reason: IncompleteReason, };
+export type RenameNote = { path: string, newPath: string, 
+/**
+ * Rewrite links in other notes (and the note's own relative links) that would break.
+ */
+rewriteLinks: boolean, };
+export type RenameOp = { opId: string, };
 export type RenameSession = { id: string, title: string, };
+export type RenameStarted = { opId: string, };
+export type RenameState = "running" | "done" | "incomplete";
+export type RenameStatus = { state: RenameState, failed: Array<FailedRewrite>, truncated: boolean, 
+/**
+ * Why an `incomplete` rename stopped; `null` while running or when done.
+ */
+reason: IncompleteReason | null, };
 export type Renamed = { key: DocKey, };
 export type RenderNote = { 
 /**
@@ -225,6 +245,13 @@ export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type RestoreNote = { trashPath: string, path: string, };
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
+export type RewriteFailure = "conflict" | "open" | "missing" | "unsupported";
+export type RewriteReply = { opId: string, key: DocKey, 
+/**
+ * True after the window applied the edits and saved the note.
+ */
+applied: boolean, };
+export type RewriteRequest = { opId: string, key: DocKey, leaseId: string, journalSeq: number, edits: Array<TextEdit>, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunDetail = { rev: string, run: Run, };
@@ -288,6 +315,7 @@ export type TerminalError = { "code": "terminal.command_too_long", "detail": { l
 export type TerminalProfile = { name: string, command: string, };
 export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
+export type TextEdit = { fromUtf16: number, toUtf16: number, text: string, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
 export type Trashed = { trashPath: string, };
@@ -353,9 +381,12 @@ export interface Methods {
   "notes.backlinks": { kind: "query"; confirm: "none"; params: NotePath; result: Backlinks; error: NotesError };
   "notes.create": { kind: "mutation"; confirm: "none"; params: CreateNote; result: CreatedNote; error: NotesError };
   "notes.delete": { kind: "mutation"; confirm: "reversible"; params: NotePath; result: Trashed; error: NotesError };
+  "notes.rename": { kind: "mutation"; confirm: "none"; params: RenameNote; result: RenameStarted; error: NotesError };
+  "notes.rename_status": { kind: "query"; confirm: "none"; params: RenameOp; result: RenameStatus; error: NotesError };
   "notes.render": { kind: "query"; confirm: "none"; params: RenderNote; result: RenderedNote; error: NotesError };
   "notes.resolve": { kind: "query"; confirm: "none"; params: ResolveLink; result: ResolvedLink; error: NotesError };
   "notes.restore": { kind: "mutation"; confirm: "none"; params: RestoreNote; result: Done; error: NotesError };
+  "notes.rewrite_reply": { kind: "mutation"; confirm: "none"; params: RewriteReply; result: Done; error: NotesError };
   "notes.tags": { kind: "query"; confirm: "none"; params: NoParams; result: Tags; error: NotesError };
   "notes.templates": { kind: "query"; confirm: "none"; params: NoParams; result: Templates; error: NotesError };
   "notes.tree": { kind: "query"; confirm: "none"; params: TreeParams; result: NoteTree; error: NotesError };
@@ -419,6 +450,8 @@ export interface Topics {
   "documents.lease_lost": LeaseLost;
   "documents.moved": DocumentMoved;
   "notes.changed": NotesChanged;
+  "notes.rename_incomplete": RenameIncomplete;
+  "notes.rewrite_request": RewriteRequest;
   "notify.raised": Notification;
   "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
@@ -468,9 +501,12 @@ export const METHOD_INFO = {
   "notes.backlinks": { kind: "query", confirm: "none" },
   "notes.create": { kind: "mutation", confirm: "none" },
   "notes.delete": { kind: "mutation", confirm: "reversible" },
+  "notes.rename": { kind: "mutation", confirm: "none" },
+  "notes.rename_status": { kind: "query", confirm: "none" },
   "notes.render": { kind: "query", confirm: "none" },
   "notes.resolve": { kind: "query", confirm: "none" },
   "notes.restore": { kind: "mutation", confirm: "none" },
+  "notes.rewrite_reply": { kind: "mutation", confirm: "none" },
   "notes.tags": { kind: "query", confirm: "none" },
   "notes.templates": { kind: "query", confirm: "none" },
   "notes.tree": { kind: "query", confirm: "none" },
@@ -586,6 +622,7 @@ export const RPC_ERROR_CODES = [
   "notes.not_found",
   "notes.out_of_vault",
   "notes.stale_cursor",
+  "notes.target_unsaved",
   "notes.too_large",
   "observe.file_outside_roots",
   "observe.invalid_cursor",

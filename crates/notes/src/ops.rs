@@ -118,13 +118,16 @@ impl NotesService {
         if !vault::valid_note_path(&p.path) {
             return invalid();
         }
+        if self.rename_holds(&p.path) {
+            return Err(NotesError::Busy.into());
+        }
         let (date, _) = (self.s.today)();
         for n in 1..=MAX_TRIES {
             let trash = vault::trash_path(&date, &p.path, n);
             match self
                 .s
                 .docs
-                .trash_entry(&self.key(&p.path), &self.key(&trash))
+                .trash_file(&self.key(&p.path), &self.key(&trash))
                 .await
             {
                 Ok(_) => {
@@ -145,6 +148,9 @@ impl NotesService {
             || !vault::valid_note_path(&p.path)
         {
             return invalid();
+        }
+        if self.rename_holds(&p.path) {
+            return Err(NotesError::Busy.into());
         }
         self.s
             .docs

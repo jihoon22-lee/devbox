@@ -12,7 +12,7 @@ use devbox_documents::{DocKey, DocumentChanged, DocumentsError, DocumentsService
 use devbox_protocol::router::BoxFuture;
 use devbox_protocol::{Fail, Internal, Topic};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -37,6 +37,10 @@ pub struct NotesConfig {
     pub today: Today,
     pub pc: PcName,
     pub sink: Arc<dyn NoteSink>,
+    /// `<data>/notes-rename`: rename progress journals.
+    pub rename_dir: PathBuf,
+    /// Test instances only (see [`crate::StopAt`]).
+    pub stop: Option<crate::StopAt>,
 }
 impl NotesConfig {
     pub fn new(
@@ -45,6 +49,7 @@ impl NotesConfig {
         index: IndexDb,
         hub: Arc<Hub>,
         pc: PcName,
+        rename_dir: PathBuf,
     ) -> Self {
         let start = std::time::Instant::now();
         Self {
@@ -62,6 +67,8 @@ impl NotesConfig {
             }),
             pc,
             sink: Arc::new(crate::NoSink),
+            rename_dir,
+            stop: None,
         }
     }
 }
@@ -79,6 +86,9 @@ pub(crate) struct Inner {
     pub tree: Mutex<crate::tree::Snapshots>,
     /// Serializes index updates (scan, watch events, own writes).
     pub update: tokio::sync::Mutex<()>,
+    pub rename_dir: PathBuf,
+    pub stop: Option<crate::StopAt>,
+    pub renames: crate::rename::Renames,
 }
 
 #[derive(Clone)]
@@ -120,6 +130,9 @@ impl NotesService {
                 rev: AtomicU64::new(0),
                 tree: Mutex::default(),
                 update: tokio::sync::Mutex::new(()),
+                rename_dir: c.rename_dir,
+                stop: c.stop,
+                renames: Default::default(),
             }),
         })
     }
@@ -173,6 +186,13 @@ impl NotesService {
             if svc.rescan().await.is_err() {
                 tracing::warn!("note index scan failed");
             }
+            // Renames cut short by an earlier exit continue in the background.
+            let resume = svc.clone();
+            tokio::spawn(async move {
+                if resume.resume().await.is_err() {
+                    tracing::warn!("note rename journals were not resumed");
+                }
+            });
             drop(svc);
             tokio::spawn(async move {
                 while let Some(message) = changes.recv().await {

@@ -3,11 +3,16 @@
 //! Every write goes through `devbox-documents`. Note text, titles and paths are
 //! never written to logs or error details.
 pub mod attachments;
+mod code_spans;
 pub mod frontmatter;
 mod index;
 pub mod links;
 mod model;
 mod ops;
+mod rename;
+mod rename_edits;
+mod rename_journal;
+mod rename_resume;
 pub mod render;
 mod service;
 mod settings;
@@ -18,6 +23,7 @@ mod vault;
 use devbox_protocol::{Done, Exporter, method, topic};
 pub use index::{NOTES_SCHEMA, NoSink, NoteSink};
 pub use model::*;
+pub use rename::StopAt;
 pub use service::{Clock, NotesConfig, NotesService, PcName, Today};
 pub use settings::{NotesSettings, SettingsError};
 
@@ -31,7 +37,12 @@ method!(pub NotesResolve = "notes.resolve", query, ResolveLink => ResolvedLink, 
 method!(pub NotesRender = "notes.render", query, RenderNote => RenderedNote, NotesError);
 method!(pub NotesAttach = "notes.attach", mutation, AttachImage => Attached, NotesError);
 method!(pub NotesTemplates = "notes.templates", query, NoParams => Templates, NotesError);
+method!(pub NotesRename = "notes.rename", mutation, RenameNote => RenameStarted, NotesError);
+method!(pub NotesRenameStatus = "notes.rename_status", query, RenameOp => RenameStatus, NotesError);
+method!(pub NotesRewriteReply = "notes.rewrite_reply", mutation, RewriteReply => Done, NotesError);
 topic!(pub NotesChangedTopic = "notes.changed", NotesChanged);
+topic!(pub NotesRewriteRequestTopic = "notes.rewrite_request", RewriteRequest);
+topic!(pub NotesRenameIncompleteTopic = "notes.rename_incomplete", RenameIncomplete);
 
 pub fn export<X: Exporter>(x: &mut X) {
     x.method::<NotesTree>();
@@ -44,7 +55,12 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<NotesRender>();
     x.method::<NotesAttach>();
     x.method::<NotesTemplates>();
+    x.method::<NotesRename>();
+    x.method::<NotesRenameStatus>();
+    x.method::<NotesRewriteReply>();
     x.topic::<NotesChangedTopic>();
+    x.topic::<NotesRewriteRequestTopic>();
+    x.topic::<NotesRenameIncompleteTopic>();
 }
 
 pub(crate) type R<T> = Result<T, devbox_protocol::Fail<NotesError>>;
@@ -53,6 +69,10 @@ pub(crate) type R<T> = Result<T, devbox_protocol::Fail<NotesError>>;
 mod fixture;
 #[cfg(test)]
 mod index_tests;
+#[cfg(test)]
+mod rename_guard_tests;
+#[cfg(test)]
+mod rename_tests;
 #[cfg(test)]
 mod render_tests;
 #[cfg(test)]

@@ -17,14 +17,27 @@ fn moved_key(old: &DocKey, from: &DocKey, to: &DocKey) -> DocKey {
 
 impl DocumentsService {
     pub async fn rename(&self, p: RenameDocument) -> R<Renamed> {
-        let key = self.move_locked(p.lease_id.as_deref(), p.key, p.to).await?;
+        let key = self
+            .move_locked(p.lease_id.as_deref(), p.key, p.to, false)
+            .await?;
         Ok(Renamed { key })
     }
     /// Lease-less move for other domains (note renames, trash). Never replaces.
     pub async fn move_entry(&self, from: &DocKey, to: &DocKey) -> R<DocKey> {
-        self.move_locked(None, from.clone(), to.clone()).await
+        self.move_locked(None, from.clone(), to.clone(), false)
+            .await
     }
-    async fn move_locked(&self, lease_id: Option<&str>, from: DocKey, to: DocKey) -> R<DocKey> {
+    /// [`Self::move_entry`] for a regular file only (a folder is `invalid_input`).
+    pub async fn move_file(&self, from: &DocKey, to: &DocKey) -> R<DocKey> {
+        self.move_locked(None, from.clone(), to.clone(), true).await
+    }
+    async fn move_locked(
+        &self,
+        lease_id: Option<&str>,
+        from: DocKey,
+        to: DocKey,
+        file_only: bool,
+    ) -> R<DocKey> {
         let nested = to.path == from.path || to.path.starts_with(&format!("{}/", from.path));
         if from.root != to.root || nested {
             return Err(DocumentsError::InvalidInput.into());
@@ -32,8 +45,12 @@ impl DocumentsService {
         let Located::At(src) = self.locate(from, false, true).await? else {
             return Err(DocumentsError::NotFound.into());
         };
-        if src.kind.is_none() {
-            return Err(DocumentsError::NotFound.into());
+        match src.kind {
+            None => return Err(DocumentsError::NotFound.into()),
+            Some(kind) if file_only && kind != FileType::RegularFile => {
+                return Err(DocumentsError::InvalidInput.into());
+            }
+            Some(_) => {}
         }
         let Located::At(dst) = self.locate(to, true, true).await? else {
             return Err(DocumentsError::NotFound.into());
