@@ -37,7 +37,8 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
     placeholders.add(name);
     return `{{${name}}}`;
   };
-  const resolve = (source: string): string => {
+  // 민감한 위치(인증 헤더·쿠키·민감 이름 query·API key 값)의 참조는 비밀이 아닌 env 값이어도 자리 표시로 남긴다.
+  const resolve = (source: string, sensitive = false): string => {
     let value = source
       .replace(/%7B%7B((?:secret%3A)?[^%]*?)%7D%7D/gi, (_match, name: string) => `{{${name.replace(/%3A/gi, ":")}}}`)
       .replace(/%5BREDACTED%5D/gi, "[REDACTED]");
@@ -49,7 +50,9 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
       (_match, a: string, b: string) => {
         const name = a ?? b;
         const row = variables.get(name);
-        return row && !name.startsWith("secret:") && !hidden(row) && row.value ? row.value : placeholder(name);
+        return row && !sensitive && !name.startsWith("secret:") && !hidden(row) && row.value
+          ? row.value
+          : placeholder(name);
       },
     );
     for (const row of environment)
@@ -59,7 +62,7 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
   };
   const params = req.params
     .filter((row) => row.key)
-    .map((row): [string, string] => [resolve(row.key), resolve(row.value)]);
+    .map((row): [string, string] => [resolve(row.key), resolve(row.value, isSensitiveName(row.key))]);
   let body = req.body_kind === "none" ? "" : resolve(req.body);
   if (req.body_kind === "form") {
     const fields = new URLSearchParams();
@@ -97,18 +100,18 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
     .filter(
       (row) => !multipart || !["content-type", "content-length", "transfer-encoding"].includes(row.key.toLowerCase()),
     )
-    .map((row) => [singleLine(resolve(row.key)), singleLine(resolve(row.value))]);
+    .map((row) => [singleLine(resolve(row.key)), singleLine(resolve(row.value, isSensitiveName(row.key)))]);
   const addHeader = (key: string, value: string) => {
     if (!headers.some(([name]) => name.toLowerCase() === key.toLowerCase())) headers.push([key, singleLine(value)]);
   };
   const auth = req.auth;
-  if (auth?.kind === "bearer") addHeader("Authorization", `Bearer ${resolve(auth.token)}`);
+  if (auth?.kind === "bearer") addHeader("Authorization", `Bearer ${resolve(auth.token, true)}`);
   if (auth?.kind === "oauth2") addHeader("Authorization", `Bearer ${placeholder("access_token")}`);
   if (auth?.kind === "basic") addHeader("Authorization", `Basic ${placeholder("basic_credentials_base64")}`);
-  if (auth?.kind === "apikey") addHeader(singleLine(resolve(auth.api_key)), resolve(auth.api_value));
+  if (auth?.kind === "apikey") addHeader(singleLine(resolve(auth.api_key)), resolve(auth.api_value, true));
   const cookies = req.cookies
     .filter((row) => row.enabled !== false && row.name)
-    .map((row) => `${singleLine(resolve(row.name))}=${singleLine(resolve(row.value))}`);
+    .map((row) => `${singleLine(resolve(row.name))}=${singleLine(resolve(row.value, true))}`);
   if (cookies.length) addHeader("Cookie", cookies.join("; "));
   if (["json", "graphql"].includes(req.body_kind) && body) addHeader("Content-Type", "application/json");
   if (req.body_kind === "form") addHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -118,7 +121,10 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
         .map((part) => ({
           name: singleLine(resolve(part.name)),
           file: part.kind === "file",
-          value: part.kind === "file" ? placeholder(`file:${singleLine(part.name)}`) : resolve(part.value),
+          value:
+            part.kind === "file"
+              ? placeholder(`file:${singleLine(part.name)}`)
+              : resolve(part.value, isSensitiveName(part.name)),
           filename: singleLine(resolve(part.file_name || "file")),
           contentType: singleLine(part.content_type),
         }))

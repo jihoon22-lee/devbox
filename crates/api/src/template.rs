@@ -241,6 +241,21 @@ pub(crate) fn substitute(
     Ok(out)
 }
 
+/// 같은 이름이 환경과 캡처 두 출처로 오면 거절한다. 어느 쪽이 이기든 화면 의도와 다를 수 있고,
+/// 환경 쪽 전체 참조가 이기면 캡처 이름으로 비밀이 풀린다. 출처가 같은 중복은 뒤의 값이 이긴다.
+pub(crate) fn reject_mixed_origins(env: &EnvSnapshot) -> Result<(), ApiError> {
+    let mut seen: HashMap<&str, VarOrigin> = HashMap::new();
+    for var in &env.variables {
+        if seen
+            .insert(var.name.as_str(), var.origin)
+            .is_some_and(|before| before != var.origin)
+        {
+            return Err(ApiError::input("variable", "mixed_origin"));
+        }
+    }
+    Ok(())
+}
+
 /// 캡처 값 자리 표시. 비밀 해석(`secrets_of`·`fill_secrets`)은 자리 표시 상태에서 하므로
 /// 캡처 값 안의 `{{secret:` 조각은 참조가 되지 못하고, 해석 뒤 `restore`로 글자 그대로 돌아온다.
 pub(crate) struct Literals<'a> {

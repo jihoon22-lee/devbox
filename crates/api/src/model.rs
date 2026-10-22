@@ -186,6 +186,13 @@ pub struct EnvVar {
     pub origin: VarOrigin,
 }
 
+impl EnvVar {
+    /// 기록·응답에서 가릴 값인지. 캡처 값은 화면 표시와 상관없이 늘 가린다.
+    pub fn masked(&self) -> bool {
+        self.sensitive || self.origin == VarOrigin::Capture
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(
     tag = "kind",

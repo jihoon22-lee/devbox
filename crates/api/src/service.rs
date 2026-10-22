@@ -53,7 +53,7 @@ fn reject_secret_in_authorization_url(
     let sensitive = env
         .variables
         .iter()
-        .any(|v| v.sensitive && used.contains(&v.name));
+        .any(|v| v.masked() && used.contains(&v.name));
     if refs.is_empty() && !sensitive {
         return Ok(());
     }
@@ -214,6 +214,7 @@ impl ApiService {
         if p.run_id.as_ref().is_some_and(|r| r.len() > 128) {
             return Err(ApiError::input("runId", "too_long").into());
         }
+        template::reject_mixed_origins(&p.env)?;
         let (mut filled, literals) = template::substitute_marked(&p.snapshot, &p.env)?;
         reject_secret_in_authorization_url(&p.snapshot, &filled, &p.env)?;
         let names = template::secrets_of(&filled)?;
@@ -239,7 +240,11 @@ impl ApiService {
             p.env
                 .variables
                 .iter()
-                .filter(|v| v.sensitive && !template::is_reference(&v.value))
+                .filter(|v| match v.origin {
+                    // 캡처 값은 참조 모양이어도 글자 그대로 보낸 값이라 가린다.
+                    VarOrigin::Capture => !v.value.is_empty(),
+                    VarOrigin::Environment => v.sensitive && !template::is_reference(&v.value),
+                })
                 .map(|v| v.value.clone()),
         );
         let prepared = http::build::prepare(&filled)?;

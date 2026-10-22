@@ -6,10 +6,9 @@ import type { EnvVar, Pair, RequestSnapshot } from "../../../../rpc/gen/rpc";
 import { type AssertionResult, evaluateAssertions } from "../lib/assertions";
 import { applyCaptures } from "../lib/captures";
 import { isSensitiveName, looksLikeSecret } from "../lib/secretPatterns";
-import { stillMasked } from "../lib/storage";
 import type { ApiResponse } from "../lib/template";
 import { type RequestDraft, toSnapshot } from "../model/draft";
-import { toStored } from "../model/stored";
+import { redactedFields } from "../model/masked";
 import { latestProducer, planRun, type RunPlan } from "./plan";
 import type { Provenance, Session, SessionValue } from "./session";
 
@@ -19,8 +18,6 @@ export interface RunEntry {
   draft: RequestDraft;
   reviewNeeded: boolean;
   produces: string[];
-  /** 파일에 기록된 가린 필드 위치(`request.` 접두사 경로). */
-  masked?: string[];
 }
 
 export type StepStatus = "passed" | "failed" | "error" | "skipped";
@@ -130,8 +127,7 @@ function resolveVariables(
 function skipReason(entry: RunEntry, snapshot: RequestSnapshot): string | null {
   if (entry.reviewNeeded) return "비밀 검토가 필요합니다";
   if (needsFile(snapshot)) return "파일을 다시 선택해야 합니다";
-  const masked = (entry.masked ?? []).flatMap((path) => (path.startsWith("request.") ? [path.slice(8)] : []));
-  if (masked.length && stillMasked(toStored(entry.draft), masked).length) return "가린 값을 다시 입력해 주세요";
+  if (redactedFields(entry.draft).length) return "가린 값을 다시 입력해 주세요";
   return null;
 }
 

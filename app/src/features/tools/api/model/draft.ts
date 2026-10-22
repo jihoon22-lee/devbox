@@ -67,6 +67,8 @@ export interface RequestDraft {
   followRedirects: boolean;
   assertions: Assertion[];
   captures: Capture[];
+  /** 파일에서 읽은 가린 위치. 목록 행은 번호 대신 행 id(`request.headers.#<id>.value`)로 기억한다(`masked.ts`). */
+  masked: string[];
 }
 
 export function emptyDraft(): RequestDraft {
@@ -85,6 +87,7 @@ export function emptyDraft(): RequestDraft {
     followRedirects: true,
     assertions: [],
     captures: [],
+    masked: [],
   };
 }
 

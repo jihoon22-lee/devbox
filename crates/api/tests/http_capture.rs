@@ -24,7 +24,7 @@ async fn captured_secret_reference_is_sent_as_literal_text() {
     api.secret("GH", SECRET).await;
     let server = Server::echo().await;
     // ① 캡처 값 전체가 참조 ② 같은 요청에 글자 그대로의 참조(정당한 사용)가 함께 있음
-    // ③ 캡처 두 개를 이어 참조 모양을 만듦 ④ 본문 안의 캡처 값
+    // ③ 캡처 두 개를 이어 참조 모양을 만듦, 그리고 본문 안의 캡처 값
     let cases: Vec<(&str, SendRequest, &str)> = vec![
         (
             "① exact",
@@ -62,17 +62,6 @@ async fn captured_secret_reference_is_sent_as_literal_text() {
             ),
             "{{secret:GH}}",
         ),
-        (
-            "④ duplicate name: the capture after the environment wins",
-            with_captured(
-                headers(&server, &[("X-Echo", "{{token}}")]),
-                &[
-                    ("token", "{{secret:GH}}", false),
-                    ("token", "{{secret:GH}}", true),
-                ],
-            ),
-            "{{secret:GH}}",
-        ),
     ];
     for (case, send, expected) in cases {
         let before = server.requests().len();
@@ -98,7 +87,6 @@ async fn captured_secret_reference_is_sent_as_literal_text() {
 }
 
 /// 환경 값이 앞쪽 `{{secret:`를, 캡처 값이 나머지를 채우면 참조가 아니라 잘못된 참조로 거절한다.
-/// 원래 순서(캡처 먼저·환경 나중)는 환경 값이 이겨 정상 해석된다.
 #[tokio::test]
 async fn capture_cannot_complete_an_environment_reference() {
     let api = Harness::new().await;
@@ -121,15 +109,6 @@ async fn capture_cannot_complete_an_environment_reference() {
     assert_eq!(err.code(), "api.invalid_input");
     assert!(!err.detail_text().contains(SECRET));
     assert_eq!(server.accepted_connections(), 0);
-    api.complete(with_captured(
-        headers(&server, &[("X-Echo", "{{token}}")]),
-        &[
-            ("token", "{{secret:GH}}", true),
-            ("token", "{{secret:GH}}", false),
-        ],
-    ))
-    .await;
-    assert_eq!(server.only().header("x-echo"), [SECRET]);
 }
 
 /// 캡처 값의 개행은 헤더 검사(CV-F05)에 그대로 걸린다(자리 표시 상태로 검사하지 않음).
@@ -147,4 +126,75 @@ async fn captured_value_is_validated_after_substitution() {
         .expect("invalid header");
     assert_eq!(err.code(), "api.invalid_header");
     assert_eq!(server.accepted_connections(), 0);
+}
+
+/// 검토 권장(3c): 같은 이름이 환경과 캡처 두 출처로 오면 어느 쪽이 이기든 위험하다
+/// (환경 쪽 전체 참조가 이기면 비밀로 풀린다). 순서와 상관없이 연결 전에 거절한다.
+#[tokio::test]
+async fn mixed_origin_duplicate_names_are_rejected() {
+    let api = Harness::new().await;
+    api.secret("GH", SECRET).await;
+    let server = Server::echo().await;
+    for order in [[false, true], [true, false]] {
+        let err = api
+            .send(with_captured(
+                headers(&server, &[("X-Echo", "{{token}}")]),
+                &[
+                    ("token", "{{secret:GH}}", order[0]),
+                    ("token", "{{secret:GH}}", order[1]),
+                ],
+            ))
+            .await
+            .err()
+            .expect("mixed origins");
+        assert_eq!(
+            (err.code(), err.detail()["reason"].as_str()),
+            ("api.invalid_input", Some("mixed_origin"))
+        );
+        assert!(!err.detail_text().contains(SECRET));
+    }
+    assert_eq!(server.accepted_connections(), 0);
+    // 출처가 같은 중복 이름은 기존대로 뒤의 값이 이긴다(화면은 이름당 하나만 보낸다).
+    for (origin, expected) in [(false, SECRET), (true, "second")] {
+        let before = server.requests().len();
+        api.complete(with_captured(
+            headers(&server, &[("X-Echo", "{{token}}")]),
+            &[
+                ("token", "first", origin),
+                (
+                    "token",
+                    if origin { "second" } else { "{{secret:GH}}" },
+                    origin,
+                ),
+            ],
+        ))
+        .await;
+        assert_eq!(
+            server.requests().remove(before).header("x-echo"),
+            [expected]
+        );
+    }
+}
+
+/// 검토 권장(3c): 캡처 값은 화면이 `sensitive: false`로 보내도 기록에서 가린다.
+#[tokio::test]
+async fn captured_values_are_masked_in_history_regardless_of_the_flag() {
+    let api = Harness::new().await;
+    let server = Server::echo().await;
+    let mut send = with_captured(
+        RequestSnapshot {
+            body: Body::Json {
+                text: r#"{"t":"{{token}}"}"#.into(),
+            },
+            ..snapshot("POST", &format!("{}?t={{{{token}}}}", server.url("/p")))
+        },
+        &[("token", "captured-token-value", true)],
+    );
+    send.env.variables[0].sensitive = false;
+    api.complete(send).await;
+    assert_eq!(server.only().body_text(), r#"{"t":"captured-token-value"}"#);
+    api.only_history().await;
+    let bytes = api.history_bytes();
+    assert!(!contains(&bytes, "captured-token-value"));
+    assert!(contains(&bytes, "[REDACTED]"));
 }

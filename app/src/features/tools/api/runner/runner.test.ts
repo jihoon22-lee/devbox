@@ -5,6 +5,7 @@ import type { Assertion } from "../lib/assertions";
 import type { Capture } from "../lib/captures";
 import type { ApiResponse } from "../lib/template";
 import { emptyDraft, type RequestDraft, row, toSnapshot } from "../model/draft";
+import { draftMasks } from "../model/masked";
 import { variableUses } from "./plan";
 import { type RunDeps, type RunEntry, runCollection } from "./runner";
 import { Session } from "./session";
@@ -27,15 +28,15 @@ const status200: Assertion = {
 };
 
 function entry(id: string, url: string, extra: Partial<RequestDraft> & Partial<RunEntry> = {}): RunEntry {
-  const { reviewNeeded = false, produces, masked, ...draft } = extra;
+  const { reviewNeeded = false, produces, ...draft } = extra;
   const full: RequestDraft = { ...emptyDraft(), url, ...draft };
+  full.masked = draftMasks(full, full.masked);
   return {
     id,
     name: id,
     draft: full,
     reviewNeeded,
     produces: produces ?? full.captures.filter((c) => c.enabled).map((c) => c.variable),
-    ...(masked ? { masked } : {}),
   };
 }
 const ok = (body: string, status = 200): ApiResponse => ({

@@ -212,3 +212,29 @@ it("does not export inactive body or auth drafts and preserves form spaces", () 
     "q=+a%2Bb+%26x&q=%ED%95%9C%EA%B8%80&empty=",
   );
 });
+it("references_in_sensitive_headers_stay_placeholders_even_for_public_env_values", () => {
+  // 검토 권장(3c): 비밀이 아닌 env 값이라도 Authorization 등 민감 위치에는 넣지 않는다.
+  const publicEnv = [
+    { key: "auth", value: "plain-auth-value", secret: false },
+    { key: "cookieValue", value: "plain-cookie-value", secret: false },
+    { key: "q", value: "plain-query-value", secret: false },
+    { key: "host", value: "api.x.test", secret: false },
+  ];
+  const request: RequestTemplate = {
+    ...emptyRequest(),
+    url: "https://{{host}}/me",
+    params: [{ key: "access_token", value: "{{q}}" }],
+    headers: [
+      { key: "Authorization", value: "Bearer {{auth}}", enabled: true },
+      { key: "X-Api-Key", value: "{{auth}}", enabled: true },
+    ],
+    cookies: [{ name: "session", value: "{{cookieValue}}", enabled: true }],
+    auth: { kind: "apikey", username: "", password: "", token: "", api_key: "X-Key", api_value: "{{auth}}" },
+  };
+  for (const target of targets) {
+    const { code, placeholders } = generateCode(target, request, publicEnv);
+    expect(code, target).not.toMatch(/plain-(auth|cookie|query)-value/);
+    expect(code, target).toContain("api.x.test");
+    expect(placeholders, target).toEqual(expect.arrayContaining(["auth", "cookieValue", "q"]));
+  }
+});

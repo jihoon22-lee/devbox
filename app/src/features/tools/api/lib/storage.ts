@@ -3,6 +3,7 @@
  * 코드 생성·가져오기 미리보기는 `sanitizeRequestForPersistence`를, 파일 저장은 같은 규칙 위의 `sanitizeForStorage`를 쓴다.
  */
 
+import { visit } from "jsonc-parser";
 import type { Auth, CollectionRoot } from "../../../../rpc/gen/rpc";
 import type { StoredBody, StoredPart, StoredRequest, StoredRow } from "../model/stored";
 import { normalizeCookies } from "./cookies";
@@ -198,16 +199,29 @@ function sanitizeMultipartPart(
   };
 }
 
+/**
+ * 정화가 아무것도 가리지 않았으면 사용자가 쓴 원문을 돌려준다(형식만 바꾼 재직렬화로 원문을 바꾸지 않음).
+ * 단 원문 글자 자체에 토큰 모양이 없고, 중복 키처럼 파서가 버린 부분이 없을 때만이다(보안 0, parser differential).
+ */
+function unchangedOriginal(original: string, clean: string, normalized: string): boolean {
+  return clean === normalized && !hasDuplicateKeys(original) && redactKnownTokenPatterns(original) === original;
+}
+
 function sanitizeUrl(value: string): string {
   try {
     const url = new URL(value);
-    for (const key of [...url.searchParams.keys()]) {
-      const current = url.searchParams.get(key) ?? "";
-      if (isSensitiveName(key) && !isExactVariableReference(current)) url.searchParams.set(key, REDACTED);
+    const before = url.toString();
+    for (const key of new Set(url.searchParams.keys())) {
+      // 같은 키가 여러 번이면 모든 값을 본다(`get`은 첫 값만 돌려준다).
+      const values = url.searchParams.getAll(key);
+      if (isSensitiveName(key) && values.some((value) => !isExactVariableReference(value)))
+        url.searchParams.set(key, REDACTED);
     }
     if (url.username && !isExactVariableReference(url.username)) url.username = "REDACTED";
     if (url.password && !isExactVariableReference(url.password)) url.password = "REDACTED";
-    return redactKnownTokenPatterns(url.toString());
+    const after = url.toString();
+    // 가린 것이 없으면 원문 그대로(정규화만 한 URL로 바꾸지 않음). 원문의 토큰 모양은 여전히 가린다.
+    return redactKnownTokenPatterns(after === before ? value : after);
   } catch {
     const withoutCredentials = value.replace(
       /^([a-z][a-z0-9+.-]*:\/\/)([^/@]+)@/i,
@@ -231,7 +245,9 @@ function sanitizeBody(body: string, kind: string): string {
   if (kind === "json") {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return JSON.stringify(sanitizeJsonValue(parsed));
+      // 키 이름에 있는 토큰도 가린다(값만 보던 v0.9.0 누락).
+      const clean = redactKnownTokenPatterns(JSON.stringify(sanitizeJsonValue(parsed)));
+      return unchangedOriginal(body, clean, JSON.stringify(parsed)) ? body : clean;
     } catch {
       return redactKnownTokenPatterns(redactMalformedJsonFields(body));
     }
@@ -258,7 +274,12 @@ function sanitizeGraphqlRequest(
   let variables = request.variables;
   if (variables.trim()) {
     try {
-      variables = JSON.stringify(sanitizeGraphqlVariables(JSON.parse(variables) as unknown));
+      if (hasDuplicateKeys(variables)) variables = REDACTED;
+      else {
+        const parsed = JSON.parse(variables) as unknown;
+        const clean = JSON.stringify(sanitizeGraphqlVariables(parsed));
+        variables = unchangedOriginal(variables, clean, JSON.stringify(parsed)) ? variables : clean;
+      }
     } catch {
       variables = REDACTED;
     }
@@ -349,11 +370,33 @@ function normalizedUrl(value: string): string | undefined {
   }
 }
 function normalizedJson(value: string): string | undefined {
+  if (hasDuplicateKeys(value)) return undefined;
   try {
     return JSON.stringify(JSON.parse(value));
   } catch {
     return undefined;
   }
+}
+
+/** `JSON.parse`는 중복 키의 마지막 값만 본다. 정화가 보지 못한 앞 값이 원문에 남지 않게 따로 찾는다. */
+export function hasDuplicateKeys(text: string): boolean {
+  const stack: Set<string>[] = [];
+  let duplicate = false;
+  visit(text, {
+    onObjectBegin: () => {
+      stack.push(new Set());
+    },
+    onObjectEnd: () => {
+      stack.pop();
+    },
+    onObjectProperty: (property) => {
+      const keys = stack.at(-1);
+      if (!keys) return;
+      if (keys.has(property)) duplicate = true;
+      keys.add(property);
+    },
+  });
+  return duplicate;
 }
 
 /**
@@ -365,7 +408,11 @@ function normalizedJson(value: string): string | undefined {
 export function sanitizeForStorage(stored: StoredRequest, root: CollectionRoot): StorageResult {
   const masked: string[] = [];
   const mark: Mark = (path, original, sanitized, normalize) => {
-    if (sanitized === original || (normalize && sanitized === normalize(original))) return original;
+    if (sanitized === original) return original;
+    // 형식만 다르면 원문을 둔다. 단 원문 글자 자체에 토큰 모양이 없고 정규화가 원문 전체를 본 경우만
+    // (중복 키처럼 파서가 버린 부분이 있으면 `normalize`가 undefined다).
+    if (normalize && redactKnownTokenPatterns(original) === original && sanitized === normalize(original))
+      return original;
     masked.push(path);
     return sanitized;
   };

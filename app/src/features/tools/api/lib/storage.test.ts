@@ -153,6 +153,47 @@ describe("file storage sanitizer", () => {
     expect(sanitizeForStorage(plain, personal)).toEqual({ stored: plain, masked: [] });
   });
 
+  it("parser_differentials_do_not_keep_the_original_text", () => {
+    // 보안 0(c7a03682 자동 검토): 정규화 비교가 같다고 원문을 남기면 파서가 보지 않는 부분의 비밀이 남는다.
+    const cases: [string, StoredRequest][] = [
+      [
+        "json duplicate key",
+        stored({ body: { kind: "json", text: '{"password":"typed-secret","password":"{{secret:X}}"}' } }),
+      ],
+      [
+        "nested json duplicate key",
+        stored({ body: { kind: "json", text: '{"a":{"token":"typed-secret","token":"${T}"},"b":1}' } }),
+      ],
+      [
+        "graphql variables duplicate key",
+        stored({
+          body: {
+            kind: "graphql",
+            query: "query Q { me { id } }",
+            variables: '{"token":"typed-secret","token":"{{secret:X}}"}',
+            operationName: null,
+            method: "post",
+          },
+        }),
+      ],
+      [
+        "escaped duplicate key",
+        stored({ body: { kind: "json", text: '{"password":"typed-secret","pass\\u0077ord":"{{secret:X}}"}' } }),
+      ],
+      [
+        "duplicate key in an array object",
+        stored({ body: { kind: "json", text: '[{"k":1},{"token":"typed-secret","token":"${T}"}]' } }),
+      ],
+      ["url duplicate query key", stored({ url: "https://x.test/p?token={{T}}&token=typed-secret" })],
+      ["json token-shaped key", stored({ body: { kind: "json", text: '{"ghp_1234567890abcdef":1}' } })],
+    ];
+    const leaked = cases.flatMap(([name, request]) => {
+      const { stored: safe, masked } = sanitizeForStorage(request, project);
+      return /typed-secret|ghp_/.test(JSON.stringify(safe)) || masked.length !== 1 ? [name] : [];
+    });
+    expect(leaked).toEqual([]);
+  });
+
   it("form_token_and_password_fields_are_masked", () => {
     const { stored: safe, masked } = sanitizeForStorage(
       stored({
