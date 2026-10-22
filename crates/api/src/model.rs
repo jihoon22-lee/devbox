@@ -167,6 +167,15 @@ pub struct EnvSnapshot {
     pub variables: Vec<EnvVar>,
 }
 
+/// 변수 값의 출처. `Capture`(응답에서 캡처한 값)는 글자 그대로 넣고 `{{secret:…}}` 참조로 풀지 않는다.
+/// 악성 서버가 응답에 참조를 넣어 다음 요청에서 비밀을 끌어내지 못하게 한다(07b S5-3c).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum VarOrigin {
+    Environment,
+    Capture,
+}
+
 /// `sensitive`: 캡처 값·민감 이름·알려진 토큰 패턴이면 화면이 참으로 보낸다.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -174,6 +183,7 @@ pub struct EnvVar {
     pub name: String,
     pub value: String,
     pub sensitive: bool,
+    pub origin: VarOrigin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

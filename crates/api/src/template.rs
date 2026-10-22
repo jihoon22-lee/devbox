@@ -2,7 +2,7 @@
 //!
 //! 한 번만 치환한다(값 안의 변수는 다시 풀지 않음). 정의 안 된 `{{name}}`은 보내지 않고
 //! `api.variable_missing`으로, 정의 안 된 `${name}`은 v0.9.0처럼 글자 그대로 둔다.
-use crate::{ApiError, Auth, Body, EnvSnapshot, Part, RequestSnapshot};
+use crate::{ApiError, Auth, Body, EnvSnapshot, Part, RequestSnapshot, VarOrigin};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 fn variable_name(inner: &str) -> Option<&str> {
@@ -14,19 +14,54 @@ fn variable_name(inner: &str) -> Option<&str> {
     .then_some(name)
 }
 
+#[derive(Clone, Copy)]
+enum Value<'a> {
+    Text(&'a str),
+    /// 캡처 값: 표시 모드면 자리 표시(`Literals`)로 넣는다.
+    Literal(&'a str, usize),
+}
+
 pub(crate) struct Vars<'a> {
-    values: HashMap<&'a str, &'a str>,
+    values: HashMap<&'a str, Value<'a>>,
+    /// 있으면 캡처 값을 이 nonce의 자리 표시로 넣는다(비밀 해석이 끝난 뒤 `Literals::restore`).
+    nonce: Option<String>,
 }
 
 impl<'a> Vars<'a> {
-    /// 같은 이름이 여러 번 오면 뒤의 값(세션이 환경을 덮음)을 쓴다.
+    /// 같은 이름이 여러 번 오면 뒤의 값(세션이 환경을 덮음)을 쓴다. 캡처 값도 글자 그대로 넣는다.
+    #[cfg(test)]
     pub(crate) fn new(env: &'a EnvSnapshot) -> Self {
+        Self::build(env, None)
+    }
+
+    fn build(env: &'a EnvSnapshot, nonce: Option<String>) -> Self {
         Self {
             values: env
                 .variables
                 .iter()
-                .map(|v| (v.name.as_str(), v.value.as_str()))
+                .enumerate()
+                .map(|(i, v)| {
+                    let value = match v.origin {
+                        VarOrigin::Environment => Value::Text(v.value.as_str()),
+                        VarOrigin::Capture => Value::Literal(v.value.as_str(), i),
+                    };
+                    (v.name.as_str(), value)
+                })
                 .collect(),
+            nonce,
+        }
+    }
+
+    fn push(&self, out: &mut String, value: Value<'_>) {
+        match (value, &self.nonce) {
+            (Value::Text(text), _) | (Value::Literal(text, _), None) => out.push_str(text),
+            (Value::Literal(_, index), Some(nonce)) => {
+                out.push(LITERAL_OPEN);
+                out.push_str(nonce);
+                out.push(':');
+                out.push_str(&index.to_string());
+                out.push(LITERAL_CLOSE);
+            }
         }
     }
 
@@ -52,7 +87,7 @@ impl<'a> Vars<'a> {
             {
                 Some((name, end)) => {
                     match self.values.get(name) {
-                        Some(value) => out.push_str(value),
+                        Some(value) => self.push(&mut out, *value),
                         None => {
                             if braced {
                                 missing.insert(name.to_owned());
@@ -74,6 +109,8 @@ impl<'a> Vars<'a> {
 }
 
 const SECRET_OPEN: &str = "{{secret:";
+const LITERAL_OPEN: char = '\u{E000}';
+const LITERAL_CLOSE: char = '\u{E001}';
 
 /// `{{secret:NAME}}` 이름들. 닫히지 않았거나 이름이 틀리면 보내지 않는다.
 pub(crate) fn secret_names(text: &str, out: &mut BTreeSet<String>) -> Result<(), ApiError> {
@@ -193,12 +230,48 @@ pub(crate) fn visit_active(
     Ok(())
 }
 
-/// 변수 치환. 없는 `{{name}}`이 있으면 이름 목록으로 거절한다.
+/// 변수 치환. 없는 `{{name}}`이 있으면 이름 목록으로 거절한다. 캡처 값은 글자 그대로 넣는다.
+#[cfg(test)]
 pub(crate) fn substitute(
     snapshot: &RequestSnapshot,
     env: &EnvSnapshot,
 ) -> Result<RequestSnapshot, ApiError> {
-    let vars = Vars::new(env);
+    let (mut out, literals) = substitute_marked(snapshot, env)?;
+    literals.restore(&mut out);
+    Ok(out)
+}
+
+/// 캡처 값 자리 표시. 비밀 해석(`secrets_of`·`fill_secrets`)은 자리 표시 상태에서 하므로
+/// 캡처 값 안의 `{{secret:` 조각은 참조가 되지 못하고, 해석 뒤 `restore`로 글자 그대로 돌아온다.
+pub(crate) struct Literals<'a> {
+    marker: String,
+    values: Vec<(String, &'a str)>,
+}
+
+impl Literals<'_> {
+    pub(crate) fn restore(&self, snapshot: &mut RequestSnapshot) {
+        if self.values.is_empty() {
+            return;
+        }
+        let _ = visit_active(snapshot, &mut |text| {
+            if text.contains(&self.marker) {
+                for (token, value) in &self.values {
+                    if text.contains(token.as_str()) {
+                        *text = text.replace(token.as_str(), value);
+                    }
+                }
+            }
+            Ok(())
+        });
+    }
+}
+
+pub(crate) fn substitute_marked<'a>(
+    snapshot: &RequestSnapshot,
+    env: &'a EnvSnapshot,
+) -> Result<(RequestSnapshot, Literals<'a>), ApiError> {
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let vars = Vars::build(env, Some(nonce.clone()));
     let mut missing = BTreeSet::new();
     let mut out = snapshot.clone();
     visit_active(&mut out, &mut |text| {
@@ -210,7 +283,25 @@ pub(crate) fn substitute(
             names: missing.into_iter().collect(),
         });
     }
-    Ok(out)
+    let values = env
+        .variables
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.origin == VarOrigin::Capture)
+        .map(|(i, v)| {
+            (
+                format!("{LITERAL_OPEN}{nonce}:{i}{LITERAL_CLOSE}"),
+                v.value.as_str(),
+            )
+        })
+        .collect();
+    Ok((
+        out,
+        Literals {
+            marker: format!("{LITERAL_OPEN}{nonce}:"),
+            values,
+        },
+    ))
 }
 
 /// 치환한 snapshot의 활성 필드가 쓰는 비밀 이름.
@@ -222,6 +313,7 @@ pub(crate) fn secrets_of(snapshot: &RequestSnapshot) -> Result<Vec<String>, ApiE
 }
 
 /// 해석해도 되는 비밀 이름: 원본 활성 필드에 글자 그대로 있는 참조와, 값 전체가 비밀 참조인 환경 변수.
+/// 캡처 값(`VarOrigin::Capture`)은 참조로 보지 않는다.
 /// 치환으로 `{{secret:` 조각을 이어 붙여 만든 참조(저장소 파일의 재검토 판정을 우회함)는 여기에 없다.
 pub(crate) fn allowed_secrets(
     snapshot: &RequestSnapshot,
@@ -230,7 +322,11 @@ pub(crate) fn allowed_secrets(
     let mut names = BTreeSet::new();
     let mut copy = snapshot.clone();
     visit_active(&mut copy, &mut |text| secret_names(text, &mut names))?;
-    for var in &env.variables {
+    for var in env
+        .variables
+        .iter()
+        .filter(|v| v.origin == VarOrigin::Environment)
+    {
         let value = var.value.trim();
         if is_reference(value) && value.starts_with(SECRET_OPEN) {
             secret_names(value, &mut names)?;

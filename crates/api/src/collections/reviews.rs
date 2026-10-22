@@ -103,4 +103,28 @@ mod tests {
         let deep = format!("{}1{}", "[".repeat(80), "]".repeat(80));
         assert!(needs_review(deep.as_bytes()));
     }
+
+    /// 화면 저장 결과와의 계약(fixture는 `app/src/features/tools/api/model/reviewContract.test.ts`가 만든다).
+    #[test]
+    fn saved_ts_files_follow_the_review_contract() {
+        #[derive(serde::Deserialize)]
+        struct Row {
+            case: String,
+            review: bool,
+            text: String,
+        }
+        let rows: Vec<Row> =
+            serde_json::from_str(include_str!("../../tests/fixtures/review-contract.json"))
+                .expect("contract fixture");
+        assert!(rows.len() >= 10, "contract fixture has {} rows", rows.len());
+        assert!(rows.iter().any(|r| r.review) && rows.iter().any(|r| !r.review));
+        for row in rows {
+            assert_eq!(
+                needs_review(row.text.as_bytes()),
+                row.review,
+                "{}",
+                row.case
+            );
+        }
+    }
 }

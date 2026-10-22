@@ -214,7 +214,7 @@ impl ApiService {
         if p.run_id.as_ref().is_some_and(|r| r.len() > 128) {
             return Err(ApiError::input("runId", "too_long").into());
         }
-        let mut filled = template::substitute(&p.snapshot, &p.env)?;
+        let (mut filled, literals) = template::substitute_marked(&p.snapshot, &p.env)?;
         reject_secret_in_authorization_url(&p.snapshot, &filled, &p.env)?;
         let names = template::secrets_of(&filled)?;
         let allowed = template::allowed_secrets(&p.snapshot, &p.env)?;
@@ -233,6 +233,8 @@ impl ApiService {
             }
             template::fill_secrets(&mut filled, &text);
         }
+        // 캡처 값은 비밀 해석이 끝난 뒤 글자 그대로 넣는다(값 검사·송신은 그 뒤).
+        literals.restore(&mut filled);
         values.extend(
             p.env
                 .variables

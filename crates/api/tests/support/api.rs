@@ -419,6 +419,28 @@ pub fn with_env(snapshot: RequestSnapshot, vars: &[(&str, &str, bool)]) -> SendR
                     name: (*n).into(),
                     value: (*v).into(),
                     sensitive: *s,
+                    origin: VarOrigin::Environment,
+                })
+                .collect(),
+        },
+        ..request(snapshot)
+    }
+}
+/// 응답 캡처 출처 시험: `(이름, 값, 캡처 여부)`. 캡처 값은 화면이 sensitive로 보낸다.
+pub fn with_captured(snapshot: RequestSnapshot, vars: &[(&str, &str, bool)]) -> SendRequest {
+    SendRequest {
+        env: EnvSnapshot {
+            variables: vars
+                .iter()
+                .map(|(n, v, captured)| EnvVar {
+                    name: (*n).into(),
+                    value: (*v).into(),
+                    sensitive: *captured,
+                    origin: if *captured {
+                        VarOrigin::Capture
+                    } else {
+                        VarOrigin::Environment
+                    },
                 })
                 .collect(),
         },

@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `client_id`·`scope` 비밀 거부 `8c4a4cc9`), **S5-3a(v0.9.0 요청 lib 이식)·3b(컬렉션 파일·감시·비밀 재검토) 완료(로컬)**: 별도 검토 2회(차단3 수정 → APPROVE). 다음: S5-3c(파일 형식·저장 정화·실행기, 캡처 값 참조 해석 차단 먼저). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3a `1e7b7bee`·3b `634970c9`, **S5-3c(초안·저장 정화·실행기·캡처 출처) 완료(로컬)**: 별도 검토 1회 APPROVE. 다음: S5-3d(화면·E2E, 검토 권장 데몬 중복 이름·캡처 sensitive 먼저). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-22 · 트랙 2 S5-3a·3b 커밋. 좁은 시험(api 88·컬렉션 5회·vitest lib 110 3회)·clippy/fmt(바꾼 범위)·gen --check·typecheck·musl check(devbox-cli, 클린)·완료 Biome CI PASS. 전체 check/E2E/Windows는 S5-9 |
+| 마지막 갱신 | 2026-10-22 · 트랙 2 S5-3c 커밋. 좁은 시험(vitest tools 156 3회·api 92·캡처/컬렉션 3회)·clippy/fmt(바꾼 범위)·gen --check·typecheck·완료 Biome CI PASS. 전체 check/E2E/Windows는 S5-9 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -120,7 +120,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
-| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 작업 중 | 2026-10-21 | | S5-2 완료(로컬): 구현 약1.0h·검토2회 약0.5h·수정 약0.2h(사용량 한도 대기 제외). S5-3a·3b 완료(로컬): 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. 3c·3d 대기 |
+| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 작업 중 | 2026-10-21 | | S5-2 완료(로컬): 구현 약1.0h·검토2회 약0.5h·수정 약0.2h(사용량 한도 대기 제외). S5-3a·3b 완료(로컬): 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 완료(로컬): 구현 약0.4h·검토1회 약0.2h. 3d 대기 |
 | S5 | AB | S5-4 |  | 대기 | | | |
 | S5 | AC | S5-5 |  | 대기 | | | |
 | S5 | AD | S5-6 |  | 대기 | | | |
@@ -640,6 +640,15 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-3c 초안·저장 정화·실행기 결과 (2026-10-22, 트랙 2)
+
+- 새 TS `app/src/features/tools/api/model/{draft,stored,storedShape,requestFile}.ts`·`runner/{runner,plan,session}.ts`, 시험 `draft`·`requestFile`·`reviewContract`·`runner`·`lib/storage`. `lib/storage.ts`(493줄)에 `sanitizeForStorage`·`stillMasked`, `lib/references.ts`. 데몬 `crates/api`: `EnvVar.origin`(`environment`|`capture`, 필수·기본값 없음), `template.rs` 캡처 값은 요청마다 새 UUID 자리 표시로 치환해 비밀 해석 뒤 글자 그대로 복원(그 뒤 헤더·CRLF 검증), 환경·글자 `{{secret:` 조각과 캡처를 이으면 `invalid_input{reference}`, 시험 `tests/http_capture.rs`. 계약 시험: TS 저장 파일 13개 경우를 fixture `tests/fixtures/review-contract.json`으로 남기고 Rust `saved_ts_files_follow_the_review_contract`가 `needs_review`와 대조(`UPDATE_REVIEW_CONTRACT=1`로 재생성, CI 미사용).
+- 검증: RED 캡처 2/3(캡처한 `{{secret:GH}}`가 서버에 비밀 값으로 전달, 1개는 보호 시험), vitest 스텁 44/44(스텁 오류 3·시간 초과 1은 검토 무력화 8건으로 assertion 실패 확인), 계약 무력화, fail-open 고정 RED. GREEN: vitest `src/features/tools` 156 3회, typecheck, `devbox-api` 92, 캡처·컬렉션 바이너리 3회, cli `api_send`·`daemon::` 24, xtask 8, `gen-ts --check`, clippy `-D warnings`·fmt, 완료 Biome CI. 미실행: 앱 전체 vitest·workspace 전체·E2E·Windows·musl(새 의존성 없음). 근거 Git common-dir `devbox-verification/s5-3/`(`ported-tests-3c.json`).
+- 별도 검토 APPROVE: 캡처 값 13개 필드·조각 잇기 4종·자리 표시 위조·CRLF·`origin` 누락 모두 누출 0, 저장 정화 37입력 중 34 가림(나머지 3은 v0.9.0부터 있던 누락, 아래 후속), CV-F04 4·AU-AS-01·07·AR-F06 이름 그대로.
+- 계획과 달라진 점: runner 이식 9·적응 2 대신 이식 5·적응 6·제외 5(v1 출처 규칙·봉인 제거로 assertion 변경, 원본에서 지운 것은 seal 관련뿐) · AR-F06의 없는 비밀 참조는 비활성 GraphQL 초안 헤더 대신 variables(초안 모델에 종류별 헤더 없음) · `sanitizeForStorage` fail-open 수정(`[REDACTED]typed-secret` 평문 저장 → "정화로 바뀌면 가림") · 공유 `sanitizePair`가 scheme 뒤 단일 참조(`Bearer {{secret:X}}`)를 유지(codegen·preview에도 적용) · 프로젝트 루트는 binary 본문 경로도 지움 · 캡처 값 없으면 생산 요청 `error`(v0.9.0 passed) · 통과한 요청의 캡처만 세션 반영, 실패·건너뜀·취소의 이전 값 유지 · 파일 `masked` 경로·`RunEntry.masked`(남아 있으면 "가린 값을 다시 입력해 주세요"로 건너뜀) · v0.9.0 `SessionVariables` 봉인·되돌리기 제거 · `isExactVariableReference`는 개행 거절·토큰 모양 이름은 직접 입력 비밀 · GraphQL 주석은 토큰 패턴 단계만 · Windows 금지 이름은 TS `safeFileName`·`isSafeCollectionPath`.
+- 3d 먼저 할 것(검토 권장): 데몬이 출처가 섞인 같은 이름 변수를 거부하거나 캡처 우선(지금은 뒤 값이 이기고 환경 쪽 전체 참조면 비밀로 풀림, 화면은 이름당 하나라 실제 경로 없음) · 데몬이 캡처 출처를 늘 `sensitive`로 기록 가림 · `masked` 경로가 행 번호(`headers.N.value`)라 행 추가·삭제 시 어긋남 → 행 id 기준 · 가져오기 경로에서 preview가 이미 가린 값의 `masked` 기록과 `RunEntry.reviewNeeded` 합성 함수·시험.
+- 후속(비차단): codegen이 비밀 아닌 env 값을 `Authorization` 헤더 코드에 그대로 넣음(민감 이름 헤더 안 참조는 자리 표시 권장) · v0.9.0부터 있던 가림 누락: form-urlencoded raw 본문 `password=`, GraphQL 주석 `# token=`, 템플릿 scheme URL userinfo, `sanitizeUrl` 재직렬화가 다른 참조를 깨거나 `{{u}}:{{p}}@` 오탐 · runner가 `assertions.*` masked 경로 무시(누출 없음) · CV-F04 ③에서 취소된 생산 요청 status 미확인 · `Cookie: a={{secret:S}}`는 여전히 가림 · MCP 파일 형식 계약은 S5-5 · 웹훅 요청 Authorization 정화는 S5-6.
 
 ### S5-3a·3b 요청 lib 이식·컬렉션 파일 결과 (2026-10-22, 트랙 2)
 

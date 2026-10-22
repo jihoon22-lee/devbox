@@ -1,8 +1,10 @@
 /**
  * 저장 정화: v0.9.0 `persistence.ts`의 `sanitizeRequestForPersistence` 계열만 옮겼다(localStorage 영속·이전 형식 읽기는 이식하지 않음).
- * 코드 생성·가져오기 미리보기가 쓴다. 파일 저장용 `sanitizeForStorage(stored, root)`는 S5-3 3c에서 이 위에 더한다.
+ * 코드 생성·가져오기 미리보기는 `sanitizeRequestForPersistence`를, 파일 저장은 같은 규칙 위의 `sanitizeForStorage`를 쓴다.
  */
 
+import type { Auth, CollectionRoot } from "../../../../rpc/gen/rpc";
+import type { StoredBody, StoredPart, StoredRequest, StoredRow } from "../model/stored";
 import { normalizeCookies } from "./cookies";
 import { maskGraphqlQueryLiterals } from "./graphql/mask";
 import { isHeaderEnabled, normalizeHeaders } from "./headers";
@@ -125,10 +127,18 @@ export function containsReference(value: string): boolean {
   return /\{\{\s*[a-zA-Z0-9_.-]+\s*\}\}|\$\{\s*[a-zA-Z0-9_.-]+\s*\}/.test(value);
 }
 
+/** `Bearer {{secret:T}}`처럼 인증 scheme 뒤가 참조 하나뿐인 값(데몬 기록의 "scheme+참조 유지"와 같은 규칙). */
+function isSchemeReference(value: string): boolean {
+  const match = /^(?:Bearer|Basic|Token|Digest|ApiKey)[ \t]+(.+)$/i.exec(value);
+  return !!match && isExactVariableReference(match[1]!);
+}
+
 function sanitizePair(pair: KeyValue, mark: (original: string, sanitized: string) => string): KeyValue {
   const sensitive = isSensitiveName(pair.key);
   const value =
-    sensitive && pair.value && !isExactVariableReference(pair.value) ? REDACTED : redactKnownTokenPatterns(pair.value);
+    sensitive && pair.value && !isExactVariableReference(pair.value) && !isSchemeReference(pair.value)
+      ? REDACTED
+      : redactKnownTokenPatterns(pair.value);
   return { key: pair.key, value: mark(pair.value, value) };
 }
 
@@ -322,4 +332,162 @@ function looksLikeStoredSecret(value: string): boolean {
   if (/^AKIA[A-Z0-9]{16}$/.test(value)) return true;
   const jwt = value.split(".");
   return jwt.length === 3 && jwt.every((part) => part.length >= 10 && /^[A-Za-z0-9_-]+$/.test(part));
+}
+
+/** 파일 저장 정화 결과. `masked`는 가린 필드 위치(`StoredRequest` 기준 경로, 예 `headers.0.value`). */
+export interface StorageResult {
+  stored: StoredRequest;
+  masked: string[];
+}
+
+/** 형식만 다른 값(정규화한 URL·다시 쓴 JSON)은 가린 것이 아니다. */
+function normalizedUrl(value: string): string | undefined {
+  try {
+    return new URL(value).toString();
+  } catch {
+    return undefined;
+  }
+}
+function normalizedJson(value: string): string | undefined {
+  try {
+    return JSON.stringify(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 모든 파일 저장(저장·새 요청으로 저장·가져오기·웹훅에서 만든 요청)이 지나는 정화(01 §9.1-14).
+ * 직접 입력한 민감 값만 `[REDACTED]`로 바꾸고 `{{secret:NAME}}`·`{{name}}` 참조는 둔다.
+ * 정화로 바뀐 필드는 모두 가린 위치로 기록한다. 형식만 바뀐 필드는 사용자가 쓴 글자 그대로 둔다.
+ * 프로젝트 루트는 multipart 파일·binary 본문의 로컬 경로를 지운다(가림 수에는 넣지 않음).
+ */
+export function sanitizeForStorage(stored: StoredRequest, root: CollectionRoot): StorageResult {
+  const masked: string[] = [];
+  const mark: Mark = (path, original, sanitized, normalize) => {
+    if (sanitized === original || (normalize && sanitized === normalize(original))) return original;
+    masked.push(path);
+    return sanitized;
+  };
+  const secretField = (path: string, value: string) =>
+    mark(path, value, value && !isExactVariableReference(value) ? REDACTED : redactKnownTokenPatterns(value));
+  const pair = (path: string) => (r: StoredRow, index: number) => ({
+    ...r,
+    value: mark(`${path}.${index}.value`, r.value, sanitizePair({ key: r.name, value: r.value }, keep).value),
+  });
+  const url = mark("url", stored.url, sanitizeUrl(stored.url), normalizedUrl);
+  const query = stored.query.map(pair("query"));
+  const headers = stored.headers.map(pair("headers"));
+  const cookies = stored.cookies.map((r, index) => ({ ...r, value: secretField(`cookies.${index}.value`, r.value) }));
+  const shared = root.kind === "project";
+  const body = sanitizeStoredBody(stored.body, shared, mark, pair);
+  const auth = sanitizeStoredAuth(stored.auth, mark, secretField);
+  return {
+    stored: { ...stored, url, query, headers, cookies, body, auth, tls: { ...stored.tls } },
+    masked,
+  };
+}
+
+type Mark = (
+  path: string,
+  original: string,
+  sanitized: string,
+  normalize?: (value: string) => string | undefined,
+) => string;
+const keep = (_original: string, sanitized: string) => sanitized;
+
+function sanitizeStoredBody(
+  body: StoredBody,
+  shared: boolean,
+  mark: Mark,
+  pair: (path: string) => (r: StoredRow, index: number) => StoredRow,
+): StoredBody {
+  switch (body.kind) {
+    case "none":
+      return body;
+    case "raw":
+      return { ...body, text: mark("body.text", body.text, redactKnownTokenPatterns(body.text)) };
+    case "json":
+      return { ...body, text: mark("body.text", body.text, sanitizeBody(body.text, "json"), normalizedJson) };
+    case "form":
+      return { ...body, fields: body.fields.map(pair("body.fields")) };
+    case "binary":
+      return { ...body, path: shared ? "" : body.path };
+    case "graphql": {
+      const clean = sanitizeGraphqlRequest(
+        { query: body.query, variables: body.variables, operation_name: body.operationName ?? "" },
+        keep,
+      );
+      return {
+        ...body,
+        query: mark("body.query", body.query, clean.query),
+        variables: mark("body.variables", body.variables, clean.variables, normalizedJson),
+        operationName:
+          body.operationName === null ? null : mark("body.operationName", body.operationName, clean.operation_name),
+      };
+    }
+    case "multipart":
+      return {
+        ...body,
+        parts: body.parts.map((part, index): StoredPart => {
+          if (part.kind === "file") {
+            if (!shared) return { ...part };
+            return { ...part, path: "", fileName: safeMultipartFileName(part.fileName || part.path) || null };
+          }
+          const value = sanitizePair({ key: part.name, value: part.value }, keep).value;
+          return { ...part, value: mark(`body.parts.${index}.value`, part.value, value) };
+        }),
+      };
+  }
+}
+
+function sanitizeStoredAuth(auth: Auth, mark: Mark, secretField: (path: string, value: string) => string): Auth {
+  const tokens = (path: string, value: string) => mark(path, value, redactKnownTokenPatterns(value));
+  const url = (path: string, value: string) => mark(path, value, sanitizeUrl(value), normalizedUrl);
+  switch (auth.kind) {
+    case "none":
+      return auth;
+    case "basic":
+      return {
+        ...auth,
+        username: secretField("auth.username", auth.username),
+        password: secretField("auth.password", auth.password),
+      };
+    case "bearer":
+      return { ...auth, token: secretField("auth.token", auth.token) };
+    case "apiKey":
+      return { ...auth, name: tokens("auth.name", auth.name), value: secretField("auth.value", auth.value) };
+    case "oauth2ClientCredentials":
+      return {
+        ...auth,
+        tokenUrl: url("auth.tokenUrl", auth.tokenUrl),
+        clientId: tokens("auth.clientId", auth.clientId),
+        clientSecret: secretField("auth.clientSecret", auth.clientSecret),
+        scope: auth.scope === null ? null : tokens("auth.scope", auth.scope),
+      };
+    case "oauth2AuthCode":
+      return {
+        ...auth,
+        authorizationUrl: url("auth.authorizationUrl", auth.authorizationUrl),
+        tokenUrl: url("auth.tokenUrl", auth.tokenUrl),
+        clientId: tokens("auth.clientId", auth.clientId),
+        clientSecret: auth.clientSecret === null ? null : secretField("auth.clientSecret", auth.clientSecret),
+        scope: auth.scope === null ? null : tokens("auth.scope", auth.scope),
+      };
+  }
+}
+
+/** 경로(`headers.0.value`)의 문자열 값. 없으면 `undefined`. */
+export function valueAt(root: unknown, path: string): string | undefined {
+  let node = root;
+  for (const key of path.split(".")) {
+    if (!node || typeof node !== "object" || !Object.hasOwn(node, key)) return undefined;
+    node = (node as Record<string, unknown>)[key];
+  }
+  return typeof node === "string" ? node : undefined;
+}
+
+/** 기록한 가린 위치 중 아직 가린 값이 남은 것. 사용자가 다른 곳에 쓴 `[REDACTED]`는 보지 않는다. */
+export function stillMasked(stored: StoredRequest, masked: readonly string[]): string[] {
+  return masked.filter((path) => valueAt(stored, path)?.includes("REDACTED"));
 }

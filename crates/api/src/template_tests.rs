@@ -11,6 +11,7 @@ fn env(pairs: &[(&str, &str)]) -> EnvSnapshot {
                 name: (*n).into(),
                 value: (*v).into(),
                 sensitive: false,
+                origin: VarOrigin::Environment,
             })
             .collect(),
     }
