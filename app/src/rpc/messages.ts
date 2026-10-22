@@ -291,6 +291,22 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "WSL 안의 폴더(/home/...)에 문서를 두어 주세요.",
   },
   "documents.invalid_input": { title: "문서 요청 입력값을 확인해 주세요." },
+  "notes.not_found": { title: "노트를 찾을 수 없습니다." },
+  "notes.exists": { title: "같은 이름의 노트나 파일이 이미 있습니다.", action: "다른 이름을 골라 주세요." },
+  "notes.out_of_vault": { title: "노트 폴더 안의 파일만 다룰 수 있습니다." },
+  "notes.invalid_name": { title: "노트 이름으로 쓸 수 있는 글자가 없습니다.", action: "다른 제목을 입력해 주세요." },
+  "notes.invalid_template": {
+    title: "템플릿을 적용하지 못했습니다.",
+    action: "템플릿 파일과 변수 이름을 확인해 주세요.",
+  },
+  "notes.invalid_image": {
+    title: "이미지를 첨부하지 못했습니다.",
+    action: "2MB 이하의 PNG·JPEG·GIF·WebP만 첨부할 수 있습니다.",
+  },
+  "notes.invalid_input": { title: "노트 요청 입력값을 확인해 주세요." },
+  "notes.busy": { title: "노트 링크를 고치는 중입니다.", action: "잠시 뒤 다시 시도해 주세요." },
+  "notes.stale_cursor": { title: "노트 목록이 바뀌었습니다.", action: "목록을 처음부터 다시 불러와 주세요." },
+  "notes.too_large": { title: "노트가 허용 크기를 넘었습니다.", action: "내용을 줄인 뒤 다시 시도해 주세요." },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,

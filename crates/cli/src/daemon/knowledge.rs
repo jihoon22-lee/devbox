@@ -1,6 +1,8 @@
-//! S3 knowledge composition: document storage and the roots it may write.
-use devbox_core::{Hub, Paths};
+//! S3 knowledge composition: document storage, the roots it may write and the
+//! note vault on top of it.
+use devbox_core::{Hub, IndexDb, Paths};
 use devbox_documents::{DocumentsConfig, DocumentsService, Hook, Root, Roots};
+use devbox_notes::{NotesConfig, NotesService, NotesSettings, PcName};
 use devbox_projects::ProjectsService;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -8,6 +10,7 @@ use std::time::Duration;
 
 pub(super) struct Knowledge {
     pub documents: Arc<DocumentsService>,
+    pub notes: Arc<NotesService>,
 }
 
 /// `<parent>/<name>-agents`, the folder `devbox_agents::plan::worktree_dir` uses.
@@ -16,12 +19,10 @@ fn agents_dir(project: &Path) -> Option<PathBuf> {
     Some(project.parent()?.join(format!("{name}-agents")))
 }
 
-/// Registered projects, their agent folders and the vault, recomputed per
-/// request (like `logs::roots`). The data folder is not a root: no Task 2
+/// Registered projects, their agent folders and the configured vault, recomputed
+/// per request (like `logs::roots`). The data folder is not a root: no Task 2
 /// caller writes there, and a later task adds a dedicated subfolder if needed.
-fn roots(paths: &Paths, projects: Arc<ProjectsService>) -> Roots {
-    // D15 default; the configurable notes.vault belongs to S3 Task 4.
-    let vault = paths.home.join("notes");
+fn roots(vault: PathBuf, projects: Arc<ProjectsService>) -> Roots {
     Arc::new(move || {
         let (projects, vault) = (projects.clone(), vault.clone());
         Box::pin(async move {
@@ -105,15 +106,46 @@ fn private(paths: &Paths) -> Vec<PathBuf> {
     private
 }
 
-pub(super) fn build(paths: &Paths, hub: &Arc<Hub>, projects: &Arc<ProjectsService>) -> Knowledge {
-    let mut config = DocumentsConfig::new(
+/// `[pc] name`, else the host name, for `{{pc}}`.
+fn pc_name(configured: Option<String>) -> PcName {
+    Arc::new(move || {
+        let configured = configured.clone();
+        Box::pin(async move {
+            match configured {
+                Some(name) => name,
+                None => super::hostname::local_hostname()
+                    .await
+                    .unwrap_or_else(|| "pc".into()),
+            }
+        })
+    })
+}
+
+/// `pc` is `config.pc.name`.
+pub(super) fn build(
+    paths: &Paths,
+    (settings, pc): (NotesSettings, Option<String>),
+    index: &IndexDb,
+    hub: &Arc<Hub>,
+    projects: &Arc<ProjectsService>,
+) -> anyhow::Result<Knowledge> {
+    let mut documents_config = DocumentsConfig::new(
         paths.data_dir.clone(),
-        roots(paths, projects.clone()),
+        roots(settings.vault.clone(), projects.clone()),
         hub.clone(),
     );
-    config.hooks.before_lease_insert = test_gate(paths);
-    config.private = private(paths);
-    Knowledge {
-        documents: Arc::new(DocumentsService::new(config)),
-    }
+    documents_config.hooks.before_lease_insert = test_gate(paths);
+    documents_config.private = private(paths);
+    let documents = Arc::new(DocumentsService::new(documents_config));
+    let notes = NotesService::new(NotesConfig::new(
+        settings,
+        documents.clone(),
+        index.clone(),
+        hub.clone(),
+        pc_name(pc),
+    ))?;
+    Ok(Knowledge {
+        documents,
+        notes: Arc::new(notes),
+    })
 }

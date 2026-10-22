@@ -23,8 +23,20 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
+export type AttachImage = { notePath: string, name: string, 
+/**
+ * Standard base64 of the image bytes.
+ */
+data: string, };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
+export type Attached = { path: string, markdown: string, };
 export type Attention = { kind: string, message: string, atMs: number, };
+export type Backlink = { src: string, title: string, 
+/**
+ * 1-based line of the link in `src`.
+ */
+line: number, fromUtf16: number, toUtf16: number, };
+export type Backlinks = { rev: string, items: Array<Backlink>, truncated: boolean, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
@@ -47,7 +59,17 @@ export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
 export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
 export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
+export type CreateNote = { 
+/**
+ * Vault-relative folder, `""` for the vault root.
+ */
+folder: string, title: string, 
+/**
+ * Template name from `notes.templates`, or `null` for the default body.
+ */
+template: string | null, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
+export type CreatedNote = { path: string, rev: DiskRev, };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
 export type DebugError = { "code": "debug.unsupported" };
 export type DefineResult = { rev: string, definition: Definition, };
@@ -93,6 +115,7 @@ export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
+export type ImageProblem = "empty" | "too_large" | "unsupported" | "dimensions" | "encoding";
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
 export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
@@ -111,6 +134,7 @@ export type LaunchTerminal = { name: string, command: string | null, };
 export type LeaseLoss = "taken" | "expired";
 export type LeaseLost = { key: DocKey, leaseId: string, };
 export type LeaseRef = { leaseId: string, };
+export type LinkKind = "wiki" | "md";
 export type ListAgents = { includeClosedHours: number | null, afterId?: string, };
 export type ListProjects = Record<symbol, never>;
 export type ListRuns = { projectId: string, cursor: DefinitionCursor | null, };
@@ -124,6 +148,11 @@ export type MergeAgent = { id: string, strategy: MergeKind, message: string | nu
 export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
 export type Name = { name: string, };
+export type NoParams = Record<symbol, never>;
+export type NotePath = { path: string, };
+export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
+export type NotesChanged = { rev: string, paths: Array<string>, };
+export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } };
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
@@ -173,11 +202,28 @@ export type RemoveProject = { id: string, };
 export type RenameDocument = { leaseId: string | null, key: DocKey, to: DocKey, };
 export type RenameSession = { id: string, title: string, };
 export type Renamed = { key: DocKey, };
+export type RenderNote = { 
+/**
+ * Note whose folder anchors relative images; read from disk when `text` is `null`.
+ */
+path: string | null, text: string | null, };
+export type RenderedNote = { html: string, mermaid: Array<string>, };
 export type RenewLeases = { leaseIds: Array<string>, };
 export type Renewed = { lost: Array<string>, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
+export type ResolveLink = { 
+/**
+ * `[[target]]` text (`#heading`, `|alias` allowed) or a Markdown link destination.
+ */
+target: string, kind: LinkKind, 
+/**
+ * The note that contains the link; nearer candidates win ties. `null` = vault root.
+ */
+from: string | null, };
+export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
 export type RestartPolicy = "no" | "onFailure" | "always";
+export type RestoreNote = { trashPath: string, path: string, };
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
@@ -224,6 +270,8 @@ export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
+export type TagCount = { tag: string, count: number, };
+export type Tags = { rev: string, items: Array<TagCount>, truncated: boolean, };
 export type Tail = "tail";
 export type TakeDocument = { key: DocKey, windowId: string, 
 /**
@@ -231,6 +279,9 @@ export type TakeDocument = { key: DocKey, windowId: string,
  */
 policy?: DocPolicy, };
 export type TaskDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, };
+export type TemplateItem = { name: string, path: string, };
+export type TemplateProblem = "not_found" | "unknown_placeholder" | "invalid_content" | "invalid_target" | "invalid_title" | "invalid_date" | "invalid_time" | "output_too_large";
+export type Templates = { items: Array<TemplateItem>, };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.command_too_long", "detail": { limit_bytes: number, } } | { "code": "terminal.command_invalid" } | { "code": "terminal.invalid_cursor" } | { "code": "terminal.list_changed" } | { "code": "terminal.title_too_long", "detail": { limit: number, } } | { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
@@ -239,6 +290,17 @@ export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
+export type Trashed = { trashPath: string, };
+export type TreeItem = { 
+/**
+ * Vault-relative `/` path.
+ */
+path: string, dir: boolean, title: string, };
+export type TreeParams = { 
+/**
+ * `null` starts a new listing; otherwise the previous page's `nextCursor`.
+ */
+cursor: string | null, };
 export type TrustApprove = { id: string, expectedCanonicalPath: string, expectedDigest: string, expectedScopeVersion: number, };
 export type TrustOperation = "create" | "run" | "test" | "launch" | "discard" | "merge" | "pr" | "cleanup";
 export type TrustPreview = { status: TrustPreviewStatus, projectId: string, projectName: string, canonicalPath: string, configPath: string, digest: string | null, scopeVersion: number, approved: boolean, requiresApproval: boolean, config: ProjectConfig | null, executionDirectories: Array<string>, runDefinitions: Array<RunDef>, };
@@ -287,6 +349,16 @@ export interface Methods {
   "documents.take": { kind: "mutation"; confirm: "none"; params: TakeDocument; result: Claimed; error: DocumentsError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
+  "notes.attach": { kind: "mutation"; confirm: "none"; params: AttachImage; result: Attached; error: NotesError };
+  "notes.backlinks": { kind: "query"; confirm: "none"; params: NotePath; result: Backlinks; error: NotesError };
+  "notes.create": { kind: "mutation"; confirm: "none"; params: CreateNote; result: CreatedNote; error: NotesError };
+  "notes.delete": { kind: "mutation"; confirm: "reversible"; params: NotePath; result: Trashed; error: NotesError };
+  "notes.render": { kind: "query"; confirm: "none"; params: RenderNote; result: RenderedNote; error: NotesError };
+  "notes.resolve": { kind: "query"; confirm: "none"; params: ResolveLink; result: ResolvedLink; error: NotesError };
+  "notes.restore": { kind: "mutation"; confirm: "none"; params: RestoreNote; result: Done; error: NotesError };
+  "notes.tags": { kind: "query"; confirm: "none"; params: NoParams; result: Tags; error: NotesError };
+  "notes.templates": { kind: "query"; confirm: "none"; params: NoParams; result: Templates; error: NotesError };
+  "notes.tree": { kind: "query"; confirm: "none"; params: TreeParams; result: NoteTree; error: NotesError };
   "observe.kill": { kind: "mutation"; confirm: "always"; params: KillProcess; result: KillResult; error: ObserveError };
   "observe.ports": { kind: "query"; confirm: "none"; params: ObserveQuery; result: Array<PortInfo>; error: ObserveError };
   "observe.problems": { kind: "query"; confirm: "none"; params: ProblemsQuery; result: ProblemsResult; error: ObserveError };
@@ -346,6 +418,7 @@ export interface Topics {
   "documents.changed": DocumentChanged;
   "documents.lease_lost": LeaseLost;
   "documents.moved": DocumentMoved;
+  "notes.changed": NotesChanged;
   "notify.raised": Notification;
   "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
@@ -391,6 +464,16 @@ export const METHOD_INFO = {
   "documents.take": { kind: "mutation", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
+  "notes.attach": { kind: "mutation", confirm: "none" },
+  "notes.backlinks": { kind: "query", confirm: "none" },
+  "notes.create": { kind: "mutation", confirm: "none" },
+  "notes.delete": { kind: "mutation", confirm: "reversible" },
+  "notes.render": { kind: "query", confirm: "none" },
+  "notes.resolve": { kind: "query", confirm: "none" },
+  "notes.restore": { kind: "mutation", confirm: "none" },
+  "notes.tags": { kind: "query", confirm: "none" },
+  "notes.templates": { kind: "query", confirm: "none" },
+  "notes.tree": { kind: "query", confirm: "none" },
   "observe.kill": { kind: "mutation", confirm: "always" },
   "observe.ports": { kind: "query", confirm: "none" },
   "observe.problems": { kind: "query", confirm: "none" },
@@ -494,6 +577,16 @@ export const RPC_ERROR_CODES = [
   "invalid_params",
   "method_not_found",
   "not_found",
+  "notes.busy",
+  "notes.exists",
+  "notes.invalid_image",
+  "notes.invalid_input",
+  "notes.invalid_name",
+  "notes.invalid_template",
+  "notes.not_found",
+  "notes.out_of_vault",
+  "notes.stale_cursor",
+  "notes.too_large",
   "observe.file_outside_roots",
   "observe.invalid_cursor",
   "observe.invalid_input",

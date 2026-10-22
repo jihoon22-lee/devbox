@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, Task 2 `crates/documents` `60be7a94`, **Task 3 화면 `DocumentStore`·`EditorHost` 완료(로컬)**: 별도 검토 5회(차단3 → 1 → 1 → 1 → APPROVE), 서버 `journalDrop` lease 확인 별도 커밋. 다음: Task 4(노트 vault). 공유 파일 예외 1(`crates/core/src/config.rs`)은 §2 기록대로 Task 4 Step 0 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, Task 2 `60be7a94`, Task 3 `083e3777`·`ed2672ad`, 공유 파일 예외 1 `d31870f6`(config.rs), **Task 4 `crates/notes` 완료(로컬)**: 별도 검토 2회(차단1 → APPROVE). 다음: Task 5(여러 노트 링크 재작성, AR-D01) |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-22 · 트랙 1 S3 Task 3 커밋. 좁은 시험(documents 폴더 3회)·typecheck·`devbox-documents`·`cli --test documents`·fmt/clippy(바꾼 범위)·gen --check·완료 Biome CI PASS. 전체 check/E2E/Windows는 Task 12 |
+| 마지막 갱신 | 2026-10-22 · 트랙 1 S3 Task 4 커밋. 좁은 시험(notes 57·documents 48 각 3회)·cli notes/documents/daemon::·gen --check·typecheck·fmt/clippy·musl check·완료 Biome CI PASS. 전체 check/E2E/Windows는 Task 12 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -111,7 +111,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S2 | 마무리 | Task 16 → S2 PR | `v1/s2-runs` | 머지 | 2026-10-21 | 2026-10-21 | S2 커밋 구간 약17.2h(구현·검토 약15.0h, 최종 통합·CI·리뷰 약2.2h), PR 뒤 약1.05h·리뷰3회. 세션 대기 포함 경과이며 누적 CPU 시간이 아님. 최종 CI3 PASS·설치 사전 검사 FAIL/실기 미실행 |
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.4h(상세화 약0.55h·검토3회 약0.35h·수정3회 약0.45h), 사용량 한도 대기 약3h 포함 경과 약5.5h. 별도 검토 1차 CHANGES_REQUIRED(차단7) → 2차(차단1: dedupe가 lease 토큰 교체) → 3차 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S3 | S | Task 2–3 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-22 | Task 2 완료(로컬): 구현·검토·수정 약1.9h(구현 약0.6h·검토2회 약0.25h·수정2회 약0.2h·세션 중단 대기 제외). Task 3 완료(로컬): 구현 1회·별도 검토 5회(1차 차단3 → 2차 N1 → 3차 N2 → 4차 N3 → 5차 APPROVE)·수정 4회, 사용량 한도 대기 제외 약2.5h |
-| S3 | T | Task 4–6 |  | 대기 | | | |
+| S3 | T | Task 4–6 | `v1/s3-knowledge` | 작업 중 | 2026-10-22 | | Task 4 완료(로컬): Step 0 config 예외 별도 커밋, 구현 1회·별도 검토 2회(1차 차단1: symlink 비추종 회귀 시험 없음 → 2차 APPROVE)·수정 1회, 사용량 한도 대기 제외 약1.8h. Task 5–6 대기 |
 | S3 | U | Task 7 |  | 대기 | | | |
 | S3 | V | Task 8–9 |  | 대기 | | | |
 | S3 | W | Task 10–11 |  | 대기 | | | |
@@ -357,6 +357,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 4 `crates/notes` 결과 (2026-10-22, 트랙 1)
+
+- Step 0(공유 파일 예외 1, `d31870f6`): `crates/core/src/config.rs`에 opaque `toml::Table` 필드 `notes`·`search`·`activity`와 `read_table` 이름 3개, 시험 1개(+33/−1). §2 최소안과 같음. `config.local.toml` 깊은 병합으로 PC별 `[notes] vault` 가능.
+- 새 crate `crates/notes`(vault·frontmatter·links·index·templates·attachments·render·service·ops·tree·settings, 최대 `links.rs` 572줄), 렌더는 pulldown-cmark 0.13+ammonia 4(새 패키지 51, 기존 버전 변경 0, phf 0.12/0.14 공존). `crates/documents`에 `files.rs`(read_bytes·create_bytes·trash_entry·restore_entry)·`scope.rs in_trash`·`service.rs locate_with`. 데몬 `knowledge.rs`·`knowledge_routes.rs`(`notes.*` 10개)·`logs.rs`(`~/notes` 대신 설정 vault)·시험 `tests/notes.rs`.
+- 검증: v0.9.0 이식 34개(markdown12·frontmatter7·wikilink5·templates5·assets5) 이름 그대로. 구현을 먼저 쓴 과제라 RED는 구현 일시 되돌림(`red-notes-blank-title`·`red-cli-notes-log-root`)과 검토 보완 sabotage(`red-review-*` 11개)로 대신했고, 별도 검토가 보호 31+15건을 하나씩 꺼서 잡는 시험을 대조함(시험 없는 보호는 모두 다른 방어선이 같은 결과 보장). XSS 18 벡터·첨부/복원 범위 탈출 probe 통과. GREEN: `devbox-notes` 57×3, `devbox-documents` 48×3, cli `notes` 2·`documents` 7·`daemon::` 24·`run_logs` 3(+systemd 1 ignored), core config 19, `gen-ts --check`, typecheck, clippy·fmt, musl check(`devbox-cli`), 완료 Biome CI. 미실행: check.sh·E2E·Windows(Task 12). 근거 Git common-dir `devbox-verification/s3-task4/`.
+- 검토로 고친 것: 1차 차단 B1 색인의 symlink 비추종에 회귀 시험 없음 → `read_note`가 성분마다 `symlink_metadata`(중간 진짜 폴더·끝 일반 파일, refresh 경로의 폴더 symlink 추종도 막음)+`symlinked_files_and_folders_are_not_indexed`. 함께: 예산·개수 초과 이미지를 `not-found` 대신 `budget` · 같은 폴더 규칙 시험 · `RESPONSE_BUDGET == MAX_WIRE_TEXT` const assert · 이미지 root·trash 원본 키·`in_trash` 내부 이름 시험 · restore는 `.md`·일반 파일만.
+- 계획과 달라진 점: `notes.resolve`에 `from`·`kind` · tags·backlinks `truncated`(256행) · `notes.changed.paths` 256개 · 오류 세부 enum `TemplateProblem`·`ImageProblem` · 템플릿 없는 새 노트 본문 `# {title}\n` · `notes_links.line` · 이식 기대값 조정 3건(`[[Note#heading]]` key/heading 분리, 템플릿 파일 기반+`{{pc}}`, 첨부 `attachments/<12hex>-<이름>.<ext>`) · 이미지 예산 시험은 2 MiB 대신 2,000,000바이트 PNG(2 MiB 3개의 base64 합 8,388,612바이트가 8 MiB를 넘어 06 기대값 불가) · 휴지통 이동은 lease·저널을 옛 키에 둠(편집기엔 외부 삭제, 저장 시 재생성), 되돌리기는 NOREPLACE · 색인 읽기는 vault 직접 읽기(읽기 전용), 쓰기는 모두 documents · S3는 `Services.index` 필드를 만들지 않고 `let index = IndexDb::open`만 S5와 같은 자리(secrets 뒤)에 두며 NotesService가 핸들 복제본을 가짐(모의 병합: state.rs 충돌 0, mod.rs 충돌 1은 S5 쪽 유지로 해결, open 1회·`ensure_domain` notes/api 분리) · 등록 파일 예외: `mod.rs`의 S3 자체 `knowledge::build` 줄 수정, `state.rs`의 `pub runs` 줄 위치 이동(S5와 충돌 제거), workspace members 한 줄.
+- 후속(비차단): 큰 이미지가 예산을 넘긴 뒤 작은 이미지도 `budget`인지(`full` 표시) 시험 없음 · `notes.delete`는 `x.md` 이름의 폴더도 휴지통에 보내지만 되돌리기는 `InvalidInput`(손실 없음, delete에도 일반 파일 조건 권장, Task 5) · `read_note` 성분 검사와 읽기 사이 TOCTOU(읽기 전용) · Task 10: mermaid `securityLevel:'strict'`, `href="/\evil.com"` 링크 이동 가로채기, 휴지통 노트 저널이 복구 후보로 나올 때 안내, 키가 다시 생기면 restore `Exists` 안내, 기존 vault `.trash/` 무시 안내(`git check-ignore`), `.devbox-conflict-*` 안내 · 폴더째 vault로 들어온 노트(`git pull`)는 재스캔 전 미색인 · `NoteSink`의 search 연결은 Task 7, `notes.busy`는 Task 5.
 
 ### S3 Task 3 화면 `DocumentStore`·`EditorHost` 결과 (2026-10-22, 트랙 1)
 

@@ -54,6 +54,7 @@ fn build_services_with_runtime(
 ) -> anyhow::Result<Arc<Services>> {
     paths.ensure_dirs()?;
     let config = Config::load(&paths)?;
+    let notes = devbox_notes::NotesSettings::from_table(&config.notes, &paths.home)?;
     let db = Db::open(
         &paths.db_path,
         &paths.backups_dir,
@@ -121,12 +122,19 @@ fn build_services_with_runtime(
         db.clone(),
         paths.clone(),
     ));
+    let index = devbox_core::IndexDb::open(&paths.index_db_path)?;
     let runs = Arc::new(
         devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
             .with_execution(execution)
             .with_secrets(secrets.clone()),
     );
-    let knowledge = knowledge::build(&paths, &hub, &projects);
+    let knowledge = knowledge::build(
+        &paths,
+        (notes, config.pc.name.clone()),
+        &index,
+        &hub,
+        &projects,
+    )?;
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -145,6 +153,7 @@ fn build_services_with_runtime(
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
         documents: knowledge.documents,
+        notes: knowledge.notes,
     }))
 }
 
@@ -177,6 +186,8 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let runtime = system::Runtime::new(!foreground);
     let shutdown = runtime.shutdown.clone();
     let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
+    // Notes first: it creates a missing vault before documents starts watching it.
+    let _notes_startup = services.notes.start();
     let _documents_startup = services.documents.start();
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");

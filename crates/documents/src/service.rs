@@ -2,7 +2,7 @@ use crate::journal::{JournalFile, JournalStore};
 use crate::lease::{Acquired, Format, LeaseView, Leases};
 use crate::ledger::{ClaimedDirs, TmpLedger};
 use crate::model::*;
-use crate::scope::{Resolved, ScopeError, WriteScope, is_internal, validate};
+use crate::scope::{Resolved, ScopeError, WriteScope, in_trash, is_internal, validate};
 use crate::sys::{self, DiskFile, SysError, classify, encode_text, escaped_len};
 use crate::watch::Watch;
 use crate::{CODE_LIMIT, MAX_WIRE_TEXT, R};
@@ -171,7 +171,18 @@ impl DocumentsService {
         blocking(move || Ok(WriteScope::new(roots).deny(&private))).await
     }
     pub(crate) async fn locate(&self, key: DocKey, create: bool, entry: bool) -> R<Located> {
+        self.locate_with(key, create, entry, false).await
+    }
+    /// `trash`: a key under `.trash/` (and nothing else internal) is allowed.
+    pub(crate) async fn locate_with(
+        &self,
+        key: DocKey,
+        create: bool,
+        entry: bool,
+        trash: bool,
+    ) -> R<Located> {
         let (roots, private) = ((self.s.roots)().await, self.s.private.clone());
+        let refused = move |path: &str| is_internal(path) && !(trash && in_trash(path));
         blocking(move || {
             let scope = WriteScope::new(roots).deny(&private);
             let r = if entry {
@@ -180,9 +191,9 @@ impl DocumentsService {
                 scope.resolve(&key, create)
             };
             match r {
-                Ok(r) if is_internal(&r.key.path) => Err(DocumentsError::OutOfScope.into()),
+                Ok(r) if refused(&r.key.path) => Err(DocumentsError::OutOfScope.into()),
                 Ok(r) => Ok(Located::At(r)),
-                Err(ScopeError::Missing(k)) if !is_internal(&k.path) => Ok(Located::Missing(k)),
+                Err(ScopeError::Missing(k)) if !refused(&k.path) => Ok(Located::Missing(k)),
                 Err(e) => Err(scope_fail(e)),
             }
         })

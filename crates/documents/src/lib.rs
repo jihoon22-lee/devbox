@@ -1,6 +1,7 @@
 //! Document storage: write scope, edit leases, CAS saves with atomic exchange,
 //! data-folder journals, no-replace moves and external change observation.
 //! Document text, titles and paths are never written to logs or error details.
+mod files;
 mod journal;
 mod lease;
 mod ledger;
@@ -13,7 +14,7 @@ mod sys;
 mod watch;
 use devbox_protocol::{Done, Exporter, method, topic};
 pub use model::*;
-pub use scope::{Root, WriteScope, is_internal};
+pub use scope::{Root, WriteScope, in_trash, is_internal};
 pub use service::{Clock, DocumentsConfig, DocumentsService, Hook, Hooks, Roots};
 
 /// Note body limit in bytes on disk.
@@ -55,6 +56,8 @@ pub fn export<X: Exporter>(x: &mut X) {
 
 pub(crate) type R<T> = Result<T, devbox_protocol::Fail<DocumentsError>>;
 
+#[cfg(test)]
+mod files_tests;
 #[cfg(test)]
 mod fixture;
 #[cfg(test)]

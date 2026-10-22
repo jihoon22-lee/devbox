@@ -73,6 +73,12 @@ pub fn is_internal(rel: &str) -> bool {
         .any(|c| c.starts_with(".devbox-tmp-") || c == ".trash" || c == ".git")
 }
 
+/// `.trash/<rest>` where `<rest>` has no other internal component.
+pub fn in_trash(rel: &str) -> bool {
+    rel.strip_prefix(".trash/")
+        .is_some_and(|rest| !rest.is_empty() && !is_internal(rest))
+}
+
 pub(crate) fn validate(key: &DocKey) -> Result<(), ScopeError> {
     let path = key.path.as_str();
     let malformed = key.root.is_empty()

@@ -1,6 +1,7 @@
 use super::state::Services;
 use devbox_documents as documents;
 use devbox_documents::{Claimed, DocumentsError};
+use devbox_notes as notes;
 use devbox_protocol::{Fail, Router};
 
 /// Claim and take bind their lease to the requesting channel, so `server.rs`
@@ -52,4 +53,18 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<documents::DocumentsRename, _, _>(|s, _, p| async move {
             s.documents.rename(p).await
         })
+        .register::<notes::NotesTree, _, _>(|s, _, p| async move { s.notes.tree(p).await })
+        .register::<notes::NotesCreate, _, _>(|s, _, p| async move { s.notes.create(p).await })
+        .register::<notes::NotesDelete, _, _>(|s, _, p| async move { s.notes.delete(p).await })
+        .register::<notes::NotesRestore, _, _>(|s, _, p| async move { s.notes.restore(p).await })
+        .register::<notes::NotesTags, _, _>(|s, _, p| async move { s.notes.tags(p).await })
+        .register::<notes::NotesBacklinks, _, _>(
+            |s, _, p| async move { s.notes.backlinks(p).await },
+        )
+        .register::<notes::NotesResolve, _, _>(|s, _, p| async move { s.notes.resolve(p).await })
+        .register::<notes::NotesRender, _, _>(|s, _, p| async move { s.notes.render(p).await })
+        .register::<notes::NotesAttach, _, _>(|s, _, p| async move { s.notes.attach(p).await })
+        .register::<notes::NotesTemplates, _, _>(
+            |s, _, p| async move { s.notes.templates(p).await },
+        )
 }
