@@ -16,6 +16,7 @@ pub mod server;
 mod socket;
 pub mod state;
 mod streams;
+mod summary;
 mod system;
 mod trust;
 mod windows_broker;

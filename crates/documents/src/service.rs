@@ -504,6 +504,19 @@ impl DocumentsService {
         expect: Expect,
         text: &str,
     ) -> R<DiskRev> {
+        self.write_disk_within(key, base, expect, text, CODE_LIMIT)
+            .await
+    }
+    /// [`Self::write_disk`] refusing (`too_large`) when the bytes written, after
+    /// the file's own line endings and BOM, would exceed `limit`.
+    pub async fn write_disk_within(
+        &self,
+        key: &DocKey,
+        base: Option<DiskRev>,
+        expect: Expect,
+        text: &str,
+        limit: u64,
+    ) -> R<DiskRev> {
         self.check_text(text, DocKind::Code)?;
         let Located::At(r) = self.locate(key.clone(), true, false).await? else {
             return Err(DocumentsError::NotFound.into());
@@ -517,7 +530,11 @@ impl DocumentsService {
                 .and_then(|f| f.bytes.as_ref())
                 .and_then(sys::decode_text)
                 .map_or((Eol::Lf, false), |(_, eol, bom)| (eol, bom));
-            write_checked(&s, &r, &encode_text(&text, eol, bom), expect, base, false)
+            let bytes = encode_text(&text, eol, bom);
+            if bytes.len() as u64 > limit {
+                return Err(DocumentsError::TooLarge { limit }.into());
+            }
+            write_checked(&s, &r, &bytes, expect, base, false)
         })
         .await
     }

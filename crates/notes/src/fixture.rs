@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub type T = Result<(), Box<dyn std::error::Error>>;
+/// Local `(date, time)` shared with the services under test.
+pub type FixedToday = Arc<std::sync::Mutex<(String, String)>>;
 
 pub struct Nx {
     pub _tmp: tempfile::TempDir,
@@ -14,6 +16,8 @@ pub struct Nx {
     pub data: PathBuf,
     pub hub: Arc<Hub>,
     pub now: Arc<AtomicU64>,
+    /// Local `(date, time)` the services see.
+    pub today: FixedToday,
     pub docs: Arc<DocumentsService>,
     pub svc: NotesService,
 }
@@ -28,13 +32,15 @@ impl Nx {
         std::fs::create_dir_all(&data).expect("fixture data");
         let hub = Arc::new(Hub::new());
         let now = Arc::new(AtomicU64::new(1_000));
-        let (docs, svc) = build(&home, &data, &hub, &now);
+        let today = Arc::new(std::sync::Mutex::new(("2026-10-22".into(), "09:30".into())));
+        let (docs, svc) = build(&home, &data, &hub, (&now, &today));
         Self {
             _tmp: tmp,
             home,
             data,
             hub,
             now,
+            today,
             docs,
             svc,
         }
@@ -55,7 +61,8 @@ impl Nx {
     }
     /// Recreates both services over the same folders, like a daemon restart.
     pub fn restart(&mut self) {
-        (self.docs, self.svc) = build(&self.home, &self.data, &self.hub, &self.now);
+        let clocks = (&self.now, &self.today);
+        (self.docs, self.svc) = build(&self.home, &self.data, &self.hub, clocks);
     }
     pub async fn index_title(&self, path: &str) -> Result<String, String> {
         self.svc
@@ -98,7 +105,7 @@ fn build(
     home: &Path,
     data: &Path,
     hub: &Arc<Hub>,
-    now: &Arc<AtomicU64>,
+    (now, today): (&Arc<AtomicU64>, &FixedToday),
 ) -> (Arc<DocumentsService>, NotesService) {
     let settings =
         NotesSettings::from_table(&toml::Table::new(), home).expect("default note settings");
@@ -130,7 +137,8 @@ fn build(
     let mut config = NotesConfig::new(settings, docs.clone(), index, hub.clone(), pc, rename_dir);
     let clock = now.clone();
     config.clock = Arc::new(move || clock.load(Ordering::SeqCst));
-    config.today = Arc::new(|| ("2026-10-22".into(), "09:30".into()));
+    let today = today.clone();
+    config.today = Arc::new(move || today.lock().expect("fixture today").clone());
     (docs, NotesService::new(config).expect("notes service"))
 }
 

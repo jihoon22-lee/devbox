@@ -4,6 +4,8 @@
 //! never written to logs or error details.
 pub mod attachments;
 mod code_spans;
+mod daily;
+mod daily_ops;
 pub mod frontmatter;
 mod index;
 pub mod links;
@@ -20,6 +22,7 @@ pub mod templates;
 mod tree;
 mod vault;
 
+pub use daily::{SUMMARY_END, replace_summary, summary_start};
 use devbox_protocol::{Done, Exporter, method, topic};
 pub use index::{NOTES_SCHEMA, NoSink, NoteSink};
 pub use model::*;
@@ -40,6 +43,9 @@ method!(pub NotesTemplates = "notes.templates", query, NoParams => Templates, No
 method!(pub NotesRename = "notes.rename", mutation, RenameNote => RenameStarted, NotesError);
 method!(pub NotesRenameStatus = "notes.rename_status", query, RenameOp => RenameStatus, NotesError);
 method!(pub NotesRewriteReply = "notes.rewrite_reply", mutation, RewriteReply => Done, NotesError);
+method!(pub NotesDaily = "notes.daily", mutation, DailyParams => DailyNote, NotesError);
+method!(pub NotesAppend = "notes.append", mutation, AppendNote => Appended, NotesError);
+method!(pub NotesInsertSummary = "notes.insert_summary", mutation, InsertSummary => SummaryInserted, NotesError);
 topic!(pub NotesChangedTopic = "notes.changed", NotesChanged);
 topic!(pub NotesRewriteRequestTopic = "notes.rewrite_request", RewriteRequest);
 topic!(pub NotesRenameIncompleteTopic = "notes.rename_incomplete", RenameIncomplete);
@@ -58,6 +64,9 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<NotesRename>();
     x.method::<NotesRenameStatus>();
     x.method::<NotesRewriteReply>();
+    x.method::<NotesDaily>();
+    x.method::<NotesAppend>();
+    x.method::<NotesInsertSummary>();
     x.topic::<NotesChangedTopic>();
     x.topic::<NotesRewriteRequestTopic>();
     x.topic::<NotesRenameIncompleteTopic>();
@@ -65,6 +74,10 @@ pub fn export<X: Exporter>(x: &mut X) {
 
 pub(crate) type R<T> = Result<T, devbox_protocol::Fail<NotesError>>;
 
+#[cfg(test)]
+mod daily_guard_tests;
+#[cfg(test)]
+mod daily_tests;
 #[cfg(test)]
 mod fixture;
 #[cfg(test)]

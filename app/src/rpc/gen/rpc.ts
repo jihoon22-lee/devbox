@@ -23,6 +23,10 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
+export type AppendFormat = "plain" | "capture";
+export type AppendNote = { target: AppendTarget, text: string, format: AppendFormat, };
+export type AppendTarget = "inbox" | "daily";
+export type Appended = { path: string, rev: DiskRev, };
 export type AttachImage = { notePath: string, name: string, 
 /**
  * Standard base64 of the image bytes.
@@ -71,6 +75,12 @@ template: string | null, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
 export type CreatedNote = { path: string, rev: DiskRev, };
 export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
+export type DailyNote = { path: string, created: boolean, };
+export type DailyParams = { 
+/**
+ * `YYYY-MM-DD`; `null` is today (local).
+ */
+date: string | null, };
 export type DebugError = { "code": "debug.unsupported" };
 export type DefineResult = { rev: string, definition: Definition, };
 export type DefineRun = { projectId: string, def: RunDef, saveTo: SaveTo, };
@@ -118,6 +128,11 @@ export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type ImageProblem = "empty" | "too_large" | "unsupported" | "dimensions" | "encoding";
 export type IncompleteReason = "failed" | "target_exists" | "source_missing" | "move_failed" | "unreadable";
+export type InsertSummary = { 
+/**
+ * `YYYY-MM-DD`; `null` is today (local).
+ */
+date: string | null, };
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
 export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
@@ -154,7 +169,7 @@ export type NoParams = Record<symbol, never>;
 export type NotePath = { path: string, };
 export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
 export type NotesChanged = { rev: string, paths: Array<string>, };
-export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } };
+export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" };
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
@@ -245,7 +260,7 @@ export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type RestoreNote = { trashPath: string, path: string, };
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
-export type RewriteFailure = "conflict" | "open" | "missing" | "unsupported";
+export type RewriteFailure = "conflict" | "open" | "missing" | "unsupported" | "too_large";
 export type RewriteReply = { opId: string, key: DocKey, 
 /**
  * True after the window applied the edits and saved the note.
@@ -294,6 +309,7 @@ export type Status = "ok" | "warn" | "fail";
 export type StreamOpened = { streamId: number, };
 export type Suggestion = { id: string, command: string, kind: DefinitionKind, from: SuggestionSource, };
 export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
+export type SummaryInserted = { path: string, rev: DiskRev, };
 export type SummaryProjects = Record<symbol, never>;
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
@@ -377,10 +393,13 @@ export interface Methods {
   "documents.take": { kind: "mutation"; confirm: "none"; params: TakeDocument; result: Claimed; error: DocumentsError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
+  "notes.append": { kind: "mutation"; confirm: "none"; params: AppendNote; result: Appended; error: NotesError };
   "notes.attach": { kind: "mutation"; confirm: "none"; params: AttachImage; result: Attached; error: NotesError };
   "notes.backlinks": { kind: "query"; confirm: "none"; params: NotePath; result: Backlinks; error: NotesError };
   "notes.create": { kind: "mutation"; confirm: "none"; params: CreateNote; result: CreatedNote; error: NotesError };
+  "notes.daily": { kind: "mutation"; confirm: "none"; params: DailyParams; result: DailyNote; error: NotesError };
   "notes.delete": { kind: "mutation"; confirm: "reversible"; params: NotePath; result: Trashed; error: NotesError };
+  "notes.insert_summary": { kind: "mutation"; confirm: "none"; params: InsertSummary; result: SummaryInserted; error: NotesError };
   "notes.rename": { kind: "mutation"; confirm: "none"; params: RenameNote; result: RenameStarted; error: NotesError };
   "notes.rename_status": { kind: "query"; confirm: "none"; params: RenameOp; result: RenameStatus; error: NotesError };
   "notes.render": { kind: "query"; confirm: "none"; params: RenderNote; result: RenderedNote; error: NotesError };
@@ -497,10 +516,13 @@ export const METHOD_INFO = {
   "documents.take": { kind: "mutation", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
+  "notes.append": { kind: "mutation", confirm: "none" },
   "notes.attach": { kind: "mutation", confirm: "none" },
   "notes.backlinks": { kind: "query", confirm: "none" },
   "notes.create": { kind: "mutation", confirm: "none" },
+  "notes.daily": { kind: "mutation", confirm: "none" },
   "notes.delete": { kind: "mutation", confirm: "reversible" },
+  "notes.insert_summary": { kind: "mutation", confirm: "none" },
   "notes.rename": { kind: "mutation", confirm: "none" },
   "notes.rename_status": { kind: "query", confirm: "none" },
   "notes.render": { kind: "query", confirm: "none" },
@@ -614,14 +636,17 @@ export const RPC_ERROR_CODES = [
   "method_not_found",
   "not_found",
   "notes.busy",
+  "notes.conflict",
   "notes.exists",
   "notes.invalid_image",
   "notes.invalid_input",
   "notes.invalid_name",
   "notes.invalid_template",
   "notes.not_found",
+  "notes.open_unsaved",
   "notes.out_of_vault",
   "notes.stale_cursor",
+  "notes.summary_broken",
   "notes.target_unsaved",
   "notes.too_large",
   "observe.file_outside_roots",

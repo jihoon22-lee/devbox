@@ -8,7 +8,7 @@ use crate::rename_journal::{FilePlan, Journals, Plan, valid_op_id};
 use crate::service::{NotesService, docs_fail, invalid};
 use crate::vault::{hidden, is_note, valid_note_path};
 use crate::{NotesRewriteRequestTopic, R};
-use devbox_documents::{DocKey, DocKind, DocumentsError, Expect};
+use devbox_documents::{DocKey, DocKind, DocumentsError, Expect, NOTE_LIMIT};
 use devbox_protocol::{Done, Fail, Internal};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -48,7 +48,7 @@ pub(crate) struct Renames {
     /// One rename at a time (a resumed one included).
     pub(crate) lock: Arc<tokio::sync::Mutex<()>>,
     statuses: Mutex<(HashMap<String, RenameStatus>, VecDeque<String>)>,
-    replies: Mutex<HashMap<(String, DocKey), Option<bool>>>,
+    pub(crate) replies: Mutex<HashMap<(String, DocKey), Option<bool>>>,
     /// Notes the running rename moves or rewrites (`notes.delete`/`restore` wait).
     pub(crate) paths: Mutex<HashSet<String>>,
     /// Runs after planning, before the journal is written (tests edit files there).
@@ -404,10 +404,13 @@ impl NotesService {
         match self
             .s
             .docs
-            .write_disk(&key, Some(rev), Expect::Present, &next)
+            .write_disk_within(&key, Some(rev), Expect::Present, &next, NOTE_LIMIT)
             .await
         {
             Ok(_) => {}
+            Err(Fail::Domain(DocumentsError::TooLarge { .. })) => {
+                return Ok(Outcome::Failed(RewriteFailure::TooLarge));
+            }
             Err(Fail::Domain(DocumentsError::Conflict { .. })) => {
                 return Ok(Outcome::Failed(RewriteFailure::Conflict));
             }

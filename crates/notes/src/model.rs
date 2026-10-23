@@ -203,6 +203,9 @@ domain_error! {
         TargetUnsaved = "notes.target_unsaved",
         StaleCursor = "notes.stale_cursor",
         TooLarge { limit: u64 } = "notes.too_large",
+        OpenUnsaved = "notes.open_unsaved",
+        SummaryBroken = "notes.summary_broken",
+        Conflict = "notes.conflict",
     }
 }
 
@@ -242,6 +245,8 @@ pub enum RewriteFailure {
     Missing,
     /// A link form that cannot be rewritten safely (reference-style Markdown links).
     Unsupported,
+    /// The rewritten note would be larger than the note limit on disk.
+    TooLarge,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -306,4 +311,58 @@ pub struct RenameIncomplete {
     /// Notes left as they were.
     pub count: u32,
     pub reason: IncompleteReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct DailyParams {
+    /// `YYYY-MM-DD`; `null` is today (local).
+    pub date: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct DailyNote {
+    pub path: String,
+    pub created: bool,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum AppendTarget {
+    /// The `[notes] inbox` note.
+    Inbox,
+    /// Today's daily note (created when missing).
+    Daily,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum AppendFormat {
+    /// The text as it is, on its own line.
+    Plain,
+    /// `- hh:mm <text>`, later lines indented by two spaces.
+    Capture,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct AppendNote {
+    pub target: AppendTarget,
+    pub text: String,
+    pub format: AppendFormat,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct Appended {
+    pub path: String,
+    pub rev: DiskRev,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct InsertSummary {
+    /// `YYYY-MM-DD`; `null` is today (local).
+    pub date: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SummaryInserted {
+    pub path: String,
+    pub rev: DiskRev,
 }

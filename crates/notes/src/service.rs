@@ -89,6 +89,9 @@ pub(crate) struct Inner {
     pub rename_dir: PathBuf,
     pub stop: Option<crate::StopAt>,
     pub renames: crate::rename::Renames,
+    /// Runs after an append or summary read the note, before writing (tests edit there).
+    #[cfg(test)]
+    pub after_read: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 #[derive(Clone)]
@@ -133,6 +136,8 @@ impl NotesService {
                 rename_dir: c.rename_dir,
                 stop: c.stop,
                 renames: Default::default(),
+                #[cfg(test)]
+                after_read: Mutex::default(),
             }),
         })
     }

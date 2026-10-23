@@ -311,6 +311,15 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "notes.stale_cursor": { title: "노트 목록이 바뀌었습니다.", action: "목록을 처음부터 다시 불러와 주세요." },
   "notes.too_large": { title: "노트가 허용 크기를 넘었습니다.", action: "내용을 줄인 뒤 다시 시도해 주세요." },
+  "notes.open_unsaved": {
+    title: "노트에 저장하지 않은 편집이 있어 쓰지 않았습니다.",
+    action: "그 노트를 저장하거나 버린 뒤 다시 시도해 주세요.",
+  },
+  "notes.summary_broken": {
+    title: "일일 기록의 요약 표시가 깨져 있습니다.",
+    action: "<!-- devbox:summary:… --> 줄과 <!-- /devbox:summary --> 줄이 짝을 이루는지 확인해 주세요.",
+  },
+  "notes.conflict": { title: "노트가 계속 바뀌고 있어 쓰지 못했습니다.", action: "잠시 뒤 다시 시도해 주세요." },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,

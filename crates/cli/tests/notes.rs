@@ -1,7 +1,7 @@
 mod support;
 use devbox_notes::{
-    CreateNote, NotePath, NotesBacklinks, NotesCreate, NotesRename, NotesRenameStatus, RenameNote,
-    RenameOp, RenameState,
+    CreateNote, DailyParams, InsertSummary, NotePath, NotesBacklinks, NotesCreate, NotesDaily,
+    NotesInsertSummary, NotesRename, NotesRenameStatus, RenameNote, RenameOp, RenameState,
 };
 use std::time::{Duration, Instant};
 use support::TestDaemon;
@@ -181,5 +181,44 @@ async fn rename_resumes_after_daemon_restart() {
             .count(),
         0
     );
+    d.stop();
+}
+
+/// Task 6 through the real daemon: `notes.daily` creates once, `devbox note add
+/// --daily` appends at the end, and the summary lands under this PC's heading.
+#[tokio::test]
+async fn daily_and_append_round_trip() {
+    let mut d = with_config("[pc]\nname = \"pc-a\"\n");
+    d.launch();
+    let client = d.client().await;
+    let first = support::bounded(client.call::<NotesDaily>(&DailyParams { date: None }))
+        .await
+        .expect("notes.daily");
+    let again = support::bounded(client.call::<NotesDaily>(&DailyParams { date: None }))
+        .await
+        .expect("notes.daily again");
+    assert_eq!((first.created, again.created), (true, false));
+    assert_eq!(first.path, again.path);
+    assert!(first.path.starts_with("daily/") && first.path.ends_with(".md"));
+    let file = d.home.path().join("notes").join(&first.path);
+
+    let mut add = d.environment(env!("CARGO_BIN_EXE_devbox"));
+    add.args(["note", "add", "--daily", "hi"]);
+    let status = add.status().expect("run devbox note add");
+    assert!(status.success(), "devbox note add --daily hi");
+    let text = std::fs::read_to_string(&file).expect("daily note");
+    assert!(text.ends_with("\nhi\n"), "{text}");
+
+    let inserted =
+        support::bounded(client.call::<NotesInsertSummary>(&InsertSummary { date: None }))
+            .await
+            .expect("notes.insert_summary");
+    assert_eq!(inserted.path, first.path);
+    let text = std::fs::read_to_string(&file).expect("daily note");
+    assert!(
+        text.contains("\nhi\n\n## pc-a\n<!-- devbox:summary:pc-a -->\n### 오늘 한 일\n"),
+        "{text}"
+    );
+    assert!(text.ends_with("<!-- /devbox:summary -->\n"), "{text}");
     d.stop();
 }

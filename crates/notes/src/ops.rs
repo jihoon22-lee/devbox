@@ -28,7 +28,7 @@ fn image_problem(e: AssetError) -> Fail<NotesError> {
     };
     NotesError::InvalidImage { problem }.into()
 }
-fn template_problem(problem: TemplateProblem) -> Fail<NotesError> {
+pub(crate) fn template_problem(problem: TemplateProblem) -> Fail<NotesError> {
     NotesError::InvalidTemplate { problem }.into()
 }
 

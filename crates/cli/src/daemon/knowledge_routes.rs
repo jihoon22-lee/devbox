@@ -74,4 +74,7 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<notes::NotesRewriteReply, _, _>(|s, _, p| async move {
             s.notes.rewrite_reply(p).await
         })
+        .register::<notes::NotesDaily, _, _>(|s, _, p| async move { s.notes.daily(p).await })
+        .register::<notes::NotesAppend, _, _>(|s, _, p| async move { s.notes.append(p).await })
+        .register::<notes::NotesInsertSummary, _, _>(|s, _, p| super::summary::insert(s, p))
 }
