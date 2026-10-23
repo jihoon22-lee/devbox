@@ -4,6 +4,7 @@ use crate::frontmatter::{self, DocMeta};
 use crate::links::{note_link_keys, parse_markdown_links, parse_wikilinks};
 use crate::vault::file_stem;
 use devbox_core::{CoreError, IndexDb};
+use devbox_protocol::router::BoxFuture;
 use rusqlite::{OptionalExtension, params};
 use std::collections::HashMap;
 
@@ -17,17 +18,40 @@ CREATE INDEX notes_links_key ON notes_links(key);
 CREATE INDEX notes_links_src ON notes_links(src);
 CREATE TABLE notes_tags(path TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY(path, tag));";
 /// 2: links in code blocks and HTML comments are no longer indexed (rebuilds older indexes).
-const SCHEMA_VERSION: u32 = 2;
+/// 3: a leading BOM is not part of the analyzed text (titles, UTF-16 link offsets).
+const SCHEMA_VERSION: u32 = 3;
 
-/// Receives each indexed note so search can index note bodies (Task 7 connects it).
+/// A note as the index read it, for search (Task 7). `body` has no BOM.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SinkNote {
+    pub path: String,
+    pub title: String,
+    pub body: String,
+}
+/// Receives indexed notes so search can index note bodies. Calls are awaited
+/// under the index update lock, so they arrive in index order. `indexed` runs
+/// before the note index write and `removed` before the removal, so a daemon
+/// exit in between is repaired by the next scan. A sink that fails on its own
+/// (search logs a warning) is not retried: that note stays out of search until it changes.
 pub trait NoteSink: Send + Sync {
-    fn indexed(&self, path: &str, title: &str, body: &str);
-    fn removed(&self, path: &str);
+    fn indexed(&self, notes: Vec<SinkNote>) -> BoxFuture<()>;
+    /// Paths of notes or folders (everything below them is gone too).
+    fn removed(&self, paths: Vec<String>) -> BoxFuture<()>;
+    /// Ends a full feed (`NotesConfig::replay_sink`): `paths` are every note, so
+    /// anything else the sink holds is gone.
+    fn retain(&self, paths: Vec<String>) -> BoxFuture<()> {
+        let _ = paths;
+        Box::pin(async {})
+    }
 }
 pub struct NoSink;
 impl NoteSink for NoSink {
-    fn indexed(&self, _: &str, _: &str, _: &str) {}
-    fn removed(&self, _: &str) {}
+    fn indexed(&self, _: Vec<SinkNote>) -> BoxFuture<()> {
+        Box::pin(async {})
+    }
+    fn removed(&self, _: Vec<String>) -> BoxFuture<()> {
+        Box::pin(async {})
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

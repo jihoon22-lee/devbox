@@ -1,0 +1,158 @@
+use crate::fixture::*;
+use crate::*;
+use devbox_protocol::router::BoxFuture;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Seen {
+    Indexed(String, String, String),
+    Removed(Vec<String>),
+    Retain(Vec<String>),
+}
+#[derive(Default)]
+struct Recorder(Mutex<Vec<Seen>>);
+impl NoteSink for Recorder {
+    fn indexed(&self, notes: Vec<SinkNote>) -> BoxFuture<()> {
+        let mut seen = self.0.lock().expect("recorder");
+        seen.extend(
+            notes
+                .into_iter()
+                .map(|n| Seen::Indexed(n.path, n.title, n.body)),
+        );
+        Box::pin(async {})
+    }
+    fn removed(&self, paths: Vec<String>) -> BoxFuture<()> {
+        self.0.lock().expect("recorder").push(Seen::Removed(paths));
+        Box::pin(async {})
+    }
+    fn retain(&self, paths: Vec<String>) -> BoxFuture<()> {
+        self.0.lock().expect("recorder").push(Seen::Retain(paths));
+        Box::pin(async {})
+    }
+}
+impl Recorder {
+    fn take(&self) -> Vec<Seen> {
+        std::mem::take(&mut *self.0.lock().expect("recorder"))
+    }
+}
+fn indexed(path: &str, title: &str, body: &str) -> Seen {
+    Seen::Indexed(path.into(), title.into(), body.into())
+}
+
+#[tokio::test]
+async fn changed_and_removed_notes_reach_the_sink_once() -> T {
+    let mut n = fixture(&[]).await;
+    let sink = Arc::new(Recorder::default());
+    n.restart_with(sink.clone(), false);
+    n.write("a.md", "---\ntitle: \"\"\n---\nbody");
+    n.write(".trash/x.md", "hidden");
+    n.svc.rescan().await.map_err(|e| format!("{e:?}"))?;
+    assert_eq!(
+        sink.take(),
+        [indexed("a.md", "a", "---\ntitle: \"\"\n---\nbody")]
+    );
+    n.svc.rescan().await.map_err(|e| format!("{e:?}"))?;
+    assert_eq!(sink.take(), [], "unchanged notes are not sent again");
+    std::fs::remove_file(n.vault().join("a.md"))?;
+    n.svc.rescan().await.map_err(|e| format!("{e:?}"))?;
+    assert_eq!(sink.take(), [Seen::Removed(vec!["a.md".into()])]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn replay_feeds_every_note_after_the_first_scan() -> T {
+    let mut n = fixture(&[
+        ("a.md", "alpha"),
+        ("f/b.md", "beta"),
+        (".trash/c.md", "gone"),
+    ])
+    .await;
+    let sink = Arc::new(Recorder::default());
+    n.restart_with(sink.clone(), false);
+    n.svc.start().await?;
+    assert_eq!(sink.take(), [], "control: an unchanged vault sends nothing");
+    n.restart_with(sink.clone(), true);
+    n.svc.start().await?;
+    let seen = sink.take();
+    let (mut fed, last) = (
+        seen[..seen.len().saturating_sub(1)].to_vec(),
+        seen.last().cloned(),
+    );
+    fed.sort_by_key(|s| format!("{s:?}"));
+    assert_eq!(
+        fed,
+        [
+            indexed("a.md", "a", "alpha"),
+            indexed("f/b.md", "b", "beta")
+        ]
+    );
+    assert_eq!(
+        last,
+        Some(Seen::Retain(vec!["a.md".into(), "f/b.md".into()])),
+        "the feed ends with the full list"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_bom_note_is_indexed_without_the_bom() -> T {
+    let mut n = fixture(&[("b.md", "target")]).await;
+    let sink = Arc::new(Recorder::default());
+    n.restart_with(sink.clone(), false);
+    let text = "---\ntitle: Alpha\n---\nsee [[b]]";
+    n.write("a.md", format!("\u{feff}{text}"));
+    n.svc.rescan().await.map_err(|e| format!("{e:?}"))?;
+    assert_eq!(n.index_title("a.md").await?, "Alpha");
+    assert_eq!(sink.take(), [indexed("a.md", "Alpha", text)]);
+    let back = n
+        .svc
+        .backlinks(NotePath {
+            path: "b.md".into(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(back.items.len(), 1);
+    let at = "---\ntitle: Alpha\n---\nsee ".encode_utf16().count() as u32;
+    assert_eq!(back.items[0].from_utf16, at, "editor offsets have no BOM");
+    Ok(())
+}
+
+#[tokio::test]
+async fn bom_notes_indexed_by_schema_2_are_reindexed_and_other_domains_kept() -> T {
+    let mut n = Nx::empty();
+    std::fs::create_dir_all(n.vault())?;
+    n.write("a.md", "\u{feff}---\ntitle: Alpha\n---\nbody");
+    // The index as schema 2 left it: the BOM note under its file name title.
+    let index = devbox_core::IndexDb::open(&n.data.join("index.db"))?;
+    index.ensure_domain("notes", 2, NOTES_SCHEMA)?;
+    index.ensure_domain("api", 1, "CREATE TABLE api_y(v TEXT);")?;
+    index.ensure_domain("search", 1, "CREATE TABLE search_x(v TEXT);")?;
+    let (hash, _) = crate::vault::read_note(&n.vault(), "a.md").ok_or("fixture note")?;
+    index
+        .write(move |tx| {
+            tx.execute(
+                "INSERT INTO notes_files(path, title, hash) VALUES ('a.md', 'a', ?1)",
+                [hash],
+            )?;
+            tx.execute("INSERT INTO api_y VALUES ('kept')", [])?;
+            tx.execute("INSERT INTO search_x VALUES ('kept')", [])
+        })
+        .await?;
+    n.restart();
+    n.svc.rescan().await.map_err(|e| format!("{e:?}"))?;
+    assert_eq!(n.index_title("a.md").await?, "Alpha");
+    let count = |table: &'static str| {
+        let index = index.clone();
+        async move {
+            index
+                .read(move |tx| {
+                    tx.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| {
+                        r.get::<_, i64>(0)
+                    })
+                })
+                .await
+        }
+    };
+    assert_eq!((count("api_y").await?, count("search_x").await?), (1, 1));
+    Ok(())
+}

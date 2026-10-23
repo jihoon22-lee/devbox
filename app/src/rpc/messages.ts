@@ -320,6 +320,14 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "<!-- devbox:summary:… --> 줄과 <!-- /devbox:summary --> 줄이 짝을 이루는지 확인해 주세요.",
   },
   "notes.conflict": { title: "노트가 계속 바뀌고 있어 쓰지 못했습니다.", action: "잠시 뒤 다시 시도해 주세요." },
+  "search.invalid_regex": { title: "정규식이 올바르지 않습니다.", action: "괄호와 특수 문자를 확인해 주세요." },
+  "search.invalid_input": { title: "검색 입력값을 확인해 주세요.", action: "검색어 길이와 결과 개수를 줄여 보세요." },
+  "search.project_not_found": {
+    title: "검색할 프로젝트를 찾을 수 없습니다.",
+    action: "프로젝트 목록을 다시 확인해 주세요.",
+  },
+  "search.not_found": { title: "저장된 검색을 찾을 수 없습니다." },
+  "search.stream_unsupported": { title: "이 연결에서는 통합 검색을 쓸 수 없습니다.", action: "앱에서 검색해 주세요." },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,

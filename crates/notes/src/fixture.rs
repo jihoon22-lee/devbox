@@ -33,7 +33,7 @@ impl Nx {
         let hub = Arc::new(Hub::new());
         let now = Arc::new(AtomicU64::new(1_000));
         let today = Arc::new(std::sync::Mutex::new(("2026-10-22".into(), "09:30".into())));
-        let (docs, svc) = build(&home, &data, &hub, (&now, &today));
+        let (docs, svc) = build(&home, &data, &hub, (&now, &today), None);
         Self {
             _tmp: tmp,
             home,
@@ -62,7 +62,13 @@ impl Nx {
     /// Recreates both services over the same folders, like a daemon restart.
     pub fn restart(&mut self) {
         let clocks = (&self.now, &self.today);
-        (self.docs, self.svc) = build(&self.home, &self.data, &self.hub, clocks);
+        (self.docs, self.svc) = build(&self.home, &self.data, &self.hub, clocks, None);
+    }
+    /// [`Self::restart`] with a search sink; `replay` as in `NotesConfig::replay_sink`.
+    pub fn restart_with(&mut self, sink: Arc<dyn NoteSink>, replay: bool) {
+        let clocks = (&self.now, &self.today);
+        let sink = Some((sink, replay));
+        (self.docs, self.svc) = build(&self.home, &self.data, &self.hub, clocks, sink);
     }
     pub async fn index_title(&self, path: &str) -> Result<String, String> {
         self.svc
@@ -106,6 +112,7 @@ fn build(
     data: &Path,
     hub: &Arc<Hub>,
     (now, today): (&Arc<AtomicU64>, &FixedToday),
+    sink: Option<(Arc<dyn NoteSink>, bool)>,
 ) -> (Arc<DocumentsService>, NotesService) {
     let settings =
         NotesSettings::from_table(&toml::Table::new(), home).expect("default note settings");
@@ -139,6 +146,9 @@ fn build(
     config.clock = Arc::new(move || clock.load(Ordering::SeqCst));
     let today = today.clone();
     config.today = Arc::new(move || today.lock().expect("fixture today").clone());
+    if let Some((sink, replay)) = sink {
+        (config.sink, config.replay_sink) = (sink, replay);
+    }
     (docs, NotesService::new(config).expect("notes service"))
 }
 

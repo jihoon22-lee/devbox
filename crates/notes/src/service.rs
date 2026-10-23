@@ -1,7 +1,7 @@
 //! `NotesService`: owns the note index, keeps it current from the vault scan and
 //! `documents.changed`, and answers the read-side RPCs. Writes are in `ops.rs`,
 //! tree paging in `tree.rs`.
-use crate::index::{NoteIndex, NoteSink, analyze};
+use crate::index::{NoteIndex, NoteSink, SinkNote, analyze};
 use crate::links::{markdown_note_target, normalize_link_key, path_key, pick};
 use crate::model::*;
 use crate::settings::NotesSettings;
@@ -37,6 +37,8 @@ pub struct NotesConfig {
     pub today: Today,
     pub pc: PcName,
     pub sink: Arc<dyn NoteSink>,
+    /// After the first scan, send every note to `sink` (its index was rebuilt).
+    pub replay_sink: bool,
     /// `<data>/notes-rename`: rename progress journals.
     pub rename_dir: PathBuf,
     /// Test instances only (see [`crate::StopAt`]).
@@ -67,6 +69,7 @@ impl NotesConfig {
             }),
             pc,
             sink: Arc::new(crate::NoSink),
+            replay_sink: false,
             rename_dir,
             stop: None,
         }
@@ -82,6 +85,7 @@ pub(crate) struct Inner {
     pub today: Today,
     pub pc: PcName,
     pub sink: Arc<dyn NoteSink>,
+    pub replay_sink: bool,
     pub rev: AtomicU64,
     pub tree: Mutex<crate::tree::Snapshots>,
     /// Serializes index updates (scan, watch events, own writes).
@@ -130,6 +134,7 @@ impl NotesService {
                 today: c.today,
                 pc: c.pc,
                 sink: c.sink,
+                replay_sink: c.replay_sink,
                 rev: AtomicU64::new(0),
                 tree: Mutex::default(),
                 update: tokio::sync::Mutex::new(()),
@@ -191,6 +196,9 @@ impl NotesService {
             if svc.rescan().await.is_err() {
                 tracing::warn!("note index scan failed");
             }
+            if svc.s.replay_sink && svc.replay().await.is_err() {
+                tracing::warn!("notes were not replayed to search");
+            }
             // Renames cut short by an earlier exit continue in the background.
             let resume = svc.clone();
             tokio::spawn(async move {
@@ -247,12 +255,18 @@ impl NotesService {
         .await
         .internal("scan note vault")?;
         let mut changed: Vec<String> = fresh.iter().map(|n| n.path.clone()).collect();
-        for (note, body) in fresh.iter().zip(&bodies) {
-            self.s.sink.indexed(&note.path, &note.title, body);
-        }
         let mut fresh = fresh;
+        let mut bodies = bodies;
         while !fresh.is_empty() {
             let rest = fresh.split_off(fresh.len().min(BATCH));
+            let rest_bodies = bodies.split_off(bodies.len().min(BATCH));
+            let sink = fresh.iter().zip(bodies).map(|(n, body)| SinkNote {
+                path: n.path.clone(),
+                title: n.title.clone(),
+                body,
+            });
+            self.s.sink.indexed(sink.collect()).await;
+            bodies = rest_bodies;
             self.s
                 .index
                 .upsert(fresh)
@@ -260,17 +274,53 @@ impl NotesService {
                 .internal("write note index")?;
             fresh = rest;
         }
+        if !removed.is_empty() {
+            self.s.sink.removed(removed.clone()).await;
+        }
         let gone = self
             .s
             .index
             .remove(removed)
             .await
             .internal("write note index")?;
-        for path in &gone {
-            self.s.sink.removed(path);
-        }
         changed.extend(gone);
         self.changed(changed);
+        Ok(())
+    }
+
+    /// Sends every note to the sink, unchanged ones too (its index was rebuilt or
+    /// missed writes), then the full list so it drops the rest.
+    /// Holds the update lock, so no newer refresh is overtaken.
+    pub(crate) async fn replay(&self) -> R<()> {
+        let _guard = self.s.update.lock().await;
+        let vault = self.vault().to_path_buf();
+        let root = vault.clone();
+        let (files, _) = tokio::task::spawn_blocking(move || vault::scan(&root))
+            .await
+            .internal("scan note vault")?;
+        let mut sent = Vec::with_capacity(files.len());
+        for batch in files.chunks(BATCH) {
+            let (root, batch) = (vault.clone(), batch.to_vec());
+            let notes = tokio::task::spawn_blocking(move || {
+                batch
+                    .into_iter()
+                    .filter_map(|rel| {
+                        let (hash, text) = vault::read_note(&root, &rel)?;
+                        let title = analyze(&rel, hash, text.as_deref()).title;
+                        Some(SinkNote {
+                            path: rel,
+                            title,
+                            body: text.unwrap_or_default(),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .internal("read note vault")?;
+            sent.extend(notes.iter().map(|n| n.path.clone()));
+            self.s.sink.indexed(notes).await;
+        }
+        self.s.sink.retain(sent).await;
         Ok(())
     }
 
@@ -293,9 +343,12 @@ impl NotesService {
                         continue;
                     }
                     let note = analyze(&path, hash, text.as_deref());
-                    self.s
-                        .sink
-                        .indexed(&note.path, &note.title, text.as_deref().unwrap_or(""));
+                    let sink = SinkNote {
+                        path: note.path.clone(),
+                        title: note.title.clone(),
+                        body: text.unwrap_or_default(),
+                    };
+                    self.s.sink.indexed(vec![sink]).await;
                     self.s
                         .index
                         .upsert(vec![note])
@@ -305,11 +358,9 @@ impl NotesService {
                 }
                 Some(_) => {}
                 None => {
+                    self.s.sink.removed(vec![path.clone()]).await;
                     let gone = self.s.index.remove(vec![path]).await;
-                    for path in gone.internal("write note index")? {
-                        self.s.sink.removed(&path);
-                        changed.push(path);
-                    }
+                    changed.extend(gone.internal("write note index")?);
                 }
             }
         }

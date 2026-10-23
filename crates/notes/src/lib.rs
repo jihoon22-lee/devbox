@@ -24,7 +24,7 @@ mod vault;
 
 pub use daily::{SUMMARY_END, replace_summary, summary_start};
 use devbox_protocol::{Done, Exporter, method, topic};
-pub use index::{NOTES_SCHEMA, NoSink, NoteSink};
+pub use index::{NOTES_SCHEMA, NoSink, NoteSink, SinkNote};
 pub use model::*;
 pub use rename::StopAt;
 pub use service::{Clock, NotesConfig, NotesService, PcName, Today};
@@ -88,5 +88,7 @@ mod rename_guard_tests;
 mod rename_tests;
 #[cfg(test)]
 mod render_tests;
+#[cfg(test)]
+mod sink_tests;
 #[cfg(test)]
 mod vault_tests;

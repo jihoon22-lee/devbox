@@ -166,10 +166,17 @@ export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
 export type Name = { name: string, };
 export type NoParams = Record<symbol, never>;
+export type NoteHit = { path: string, title: string, snippet: string, rangesUtf16: Array<[number, number]>, };
+export type NoteHits = { rev: string, items: Array<NoteHit>, truncated: boolean, };
 export type NotePath = { path: string, };
 export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
 export type NotesChanged = { rev: string, paths: Array<string>, };
 export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" };
+export type NotesQuery = { text: string, 
+/**
+ * `1..=50`.
+ */
+limit: number, };
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
@@ -281,8 +288,13 @@ export type RunsResult = { rev: string, items: Array<Run>, };
 export type RuntimeChange = { rev: string, projectId: string, };
 export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } };
 export type SaveDocument = { leaseId: string, seq: number, baseRev: DiskRev | null, expect: Expect, text: string, };
+export type SaveSearch = { name: string, query: SearchQuery, };
 export type SaveTo = "project" | "thisPc";
 export type Saved = { rev: DiskRev, };
+export type SavedId = { id: string, };
+export type SavedRef = { id: string, rev: string, };
+export type SavedSearch = { id: string, name: string, query: SearchQuery, };
+export type SavedSearches = { rev: string, items: Array<SavedSearch>, };
 export type ScanProjects = Record<symbol, never>;
 export type ScanResult = { candidates: Array<Candidate>, };
 export type ScheduleDef = { id: string, task: string, cron: string, tz: string | null, missed: MissedPolicy, };
@@ -291,8 +303,54 @@ export type ScheduleOutcome = "claimed" | "running" | "succeeded" | "failed" | "
 export type ScheduleStatus = { id: string, cron: string, next: string | null, last: ScheduleLast | null, };
 export type SchedulesQuery = { projectId: string, };
 export type SchedulesResult = { items: Array<ScheduleStatus>, };
+export type Scope = "notes" | "files" | "code";
+export type SearchChanged = { rev: string, };
+export type SearchChunk = { scope: Scope, 
+/**
+ * Search index revision when the query started.
+ */
+rev: string, items: Array<SearchHit>, 
+/**
+ * The last chunk of the stream.
+ */
+done: boolean, 
+/**
+ * This scope stopped at `limit` (or a size cap).
+ */
+truncated: boolean, };
 export type SearchCursor = { sources: Array<SourceCursor>, };
+export type SearchError = { "code": "search.invalid_regex", "detail": { position: number, } } | { "code": "search.invalid_input" } | { "code": "search.project_not_found" } | { "code": "search.not_found" } | { "code": "search.stream_unsupported" };
+export type SearchHit = { root: string, path: string, 
+/**
+ * Note title (notes scope).
+ */
+title: string | null, 
+/**
+ * 1-based line (code scope).
+ */
+line: number | null, 
+/**
+ * A single-line excerpt (notes, code) or the path (files).
+ */
+snippet: string, 
+/**
+ * `[from, to)` UTF-16 offsets into `snippet`.
+ */
+rangesUtf16: Array<[number, number]>, };
 export type SearchLogs = { sources: Array<LogSource>, query: string, regex: boolean, before?: SearchCursor, limit: number, };
+export type SearchQuery = { text: string, 
+/**
+ * Results always arrive notes → files → code, whatever the order here.
+ */
+scopes: Array<Scope>, 
+/**
+ * `null`: every registered project (code and file names).
+ */
+projectIds: Array<string> | null, regex: boolean, caseSensitive: boolean, 
+/**
+ * Per scope, `1..=500`.
+ */
+limit: number, };
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
 export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
@@ -441,6 +499,11 @@ export interface Methods {
   "runtime.stop": { kind: "mutation"; confirm: "reversible"; params: RunId; result: Run; error: RuntimeError };
   "runtime.summary": { kind: "query"; confirm: "none"; params: RunSummaryQuery; result: RunSummary; error: RuntimeError };
   "runtime.undefine": { kind: "mutation"; confirm: "always"; params: UndefineRun; result: Done; error: RuntimeError };
+  "search.notes": { kind: "query"; confirm: "none"; params: NotesQuery; result: NoteHits; error: SearchError };
+  "search.query": { kind: "stream"; confirm: "none"; params: SearchQuery; result: StreamOpened; error: SearchError };
+  "search.save": { kind: "mutation"; confirm: "none"; params: SaveSearch; result: SavedRef; error: SearchError };
+  "search.saved": { kind: "query"; confirm: "none"; params: NoParams; result: SavedSearches; error: SearchError };
+  "search.unsave": { kind: "mutation"; confirm: "reversible"; params: SavedId; result: Done; error: SearchError };
   "secrets.delete": { kind: "mutation"; confirm: "always"; params: Name; result: Done; error: SecretsError };
   "secrets.export_key": { kind: "query"; confirm: "none"; params: Empty; result: Recovery; error: SecretsError };
   "secrets.import_key": { kind: "mutation"; confirm: "none"; params: Recovery; result: Done; error: SecretsError };
@@ -475,6 +538,7 @@ export interface Topics {
   "observe.problems.changed": ProblemsChange;
   "projects.changed": ProjectsChanged;
   "runtime.changed": RuntimeChange;
+  "search.changed": SearchChanged;
   "terminal.changed": TerminalChanged;
 }
 
@@ -564,6 +628,11 @@ export const METHOD_INFO = {
   "runtime.stop": { kind: "mutation", confirm: "reversible" },
   "runtime.summary": { kind: "query", confirm: "none" },
   "runtime.undefine": { kind: "mutation", confirm: "always" },
+  "search.notes": { kind: "query", confirm: "none" },
+  "search.query": { kind: "stream", confirm: "none" },
+  "search.save": { kind: "mutation", confirm: "none" },
+  "search.saved": { kind: "query", confirm: "none" },
+  "search.unsave": { kind: "mutation", confirm: "reversible" },
   "secrets.delete": { kind: "mutation", confirm: "always" },
   "secrets.export_key": { kind: "query", confirm: "none" },
   "secrets.import_key": { kind: "mutation", confirm: "none" },
@@ -695,6 +764,11 @@ export const RPC_ERROR_CODES = [
   "runtime.project_not_found",
   "runtime.run_not_found",
   "runtime.secret_missing",
+  "search.invalid_input",
+  "search.invalid_regex",
+  "search.not_found",
+  "search.project_not_found",
+  "search.stream_unsupported",
   "secrets.invalid_input",
   "secrets.key_mismatch",
   "secrets.missing",

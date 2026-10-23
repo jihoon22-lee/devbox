@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, Task 2 `60be7a94`, Task 3 `083e3777`·`ed2672ad`, 공유 파일 예외 1 `d31870f6`(config.rs), Task 4 `4e2b530c`, Task 5 `c252f557`, **Task 6 일일 기록·오늘 한 일 요약 완료(로컬)**: 별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE). 다음: Task 7(`crates/search`) |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, Task 2 `60be7a94`, Task 3 `083e3777`·`ed2672ad`, 공유 파일 예외 1 `d31870f6`(config.rs), Task 4 `4e2b530c`, Task 5 `c252f557`, Task 6 `0be54d1d`, **Task 7 `crates/search` 완료(로컬)**: 별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE). 다음: Task 8(`crates/activity`) |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-23 · 트랙 1 S3 Task 6 커밋. 좁은 시험(notes 109·documents 50·cli summary 7·notes 통합 4 각 3회)·`daemon::` 31·gen --check·typecheck·fmt/clippy·musl check·완료 Biome CI PASS(메모리 cgroup 미적용, §2). 전체 check/E2E/Windows는 Task 12 |
+| 마지막 갱신 | 2026-10-23 · 트랙 1 S3 Task 7 커밋. 좁은 시험(notes 113·search 48·cli search 7 각 3회)·`daemon::` 31·gen --check·typecheck·fmt/clippy·musl check·완료 Biome CI PASS(메모리 cgroup 미적용, §2). 전체 check/E2E/Windows는 Task 12 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -113,7 +113,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | 상세화 | Task 1 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.4h(상세화 약0.55h·검토3회 약0.35h·수정3회 약0.45h), 사용량 한도 대기 약3h 포함 경과 약5.5h. 별도 검토 1차 CHANGES_REQUIRED(차단7) → 2차(차단1: dedupe가 lease 토큰 교체) → 3차 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S3 | S | Task 2–3 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-21 | 2026-10-22 | Task 2 완료(로컬): 구현·검토·수정 약1.9h(구현 약0.6h·검토2회 약0.25h·수정2회 약0.2h·세션 중단 대기 제외). Task 3 완료(로컬): 구현 1회·별도 검토 5회(1차 차단3 → 2차 N1 → 3차 N2 → 4차 N3 → 5차 APPROVE)·수정 4회, 사용량 한도 대기 제외 약2.5h |
 | S3 | T | Task 4–6 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-22 | 2026-10-23 | Task 4: Step 0 config 예외 별도 커밋, 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.8h. Task 5: 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.5h. Task 6: 구현 1회·검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 약1.2h(세션 재시작·사용량 한도 대기 제외) |
-| S3 | U | Task 7 |  | 대기 | | | |
+| S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 |  | 대기 | | | |
 | S3 | W | Task 10–11 |  | 대기 | | | |
 | S3 | 마무리 | Task 12 → S3 PR |  | 대기 | | | |
@@ -358,6 +358,16 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 7 `crates/search` 결과 (2026-10-23, 트랙 1)
+
+- 새 crate `crates/search`(service 573·files·fts·code·model·snippet·saved·settings·matcher, 시험 service·fts·code·files·fixture), 데몬 `knowledge.rs`·`knowledge_routes.rs`·`mod.rs`·`routes.rs`·`state.rs`(`pub search` 한 줄)·`tests/search.rs`, notes `NoteSink` 비동기 배치(`SinkNote`)·`replay_sink`·`read_note` BOM 제거·색인 스키마 1→3. 새 패키지 14개(grep-searcher·ignore 계열, encoding_rs 의존 `core_detect`·`multiversion_no_op` 포함), rustix `process` 기능, aws-lc·openssl 0, musl check 통과.
+- IndexDb: S3는 `Services.index`를 만들지 않고 `mod.rs`가 한 번 연 `index` 복제본으로 `ensure_domain("search")`(`search_docs`·`search_notes`만). 모의 병합(S5 `becfd8d1`): `state.rs`·`messages.ts` 충돌 0, `mod.rs`·`routes.rs`·`Cargo.toml`·`cli/Cargo.toml`·`xtask`는 인접 줄 추가(양쪽 유지), 같은 `IndexDb::open` 줄은 한 번만 남음.
+- 보호: FTS 질의 인용·`"` 이중화(문법·열 지정자·`NEAR`·제어문자 모두 글자 그대로) · 한글 2-gram(단어 경계 넘지 않음, 덩어리 끝 마지막 음절) · R8 내용 해시가 같으면 rev 불변 · 숨김·`.trash`·tmp 거부·BOM 제거 · 조각 160·제목 256·줄 512자, 입력 상한(질의 1024B·NUL·limit·scopes·projectIds 256) · 정규식 UTF-16 위치·프로그램 1 MiB(ReDoS 탐침 선형) · walker hidden·private·symlink 비추종(`O_NOFOLLOW`+`is_file`)·`require_git(false)`·`!` 제외 glob·폴더형 exclude(상위 폴더 `is_dir` 검사)·1 MiB·이진 건너뜀 · limit·truncated·50건 즉시 전송 · 취소·스트림 닫힘 → 걷기 중단, 순위 계산 `spawn_blocking`·1024개마다 취소 · `git ls-files` `-c core.fsmonitor=false`·3초·이름 수/바이트 상한·`GIT_*` 위치 변수 제거·프로세스 그룹 kill · 저장된 검색·`[search] exclude` 검증 · 색인 쓰기 실패 시 `<data>/search-reindex` 표지 → 다음 시작에 전체 다시 넣기·`retain` 정리.
+- 검증: 사전 RED search 41/42(1개는 v0.9.0 이식 `handles_empty_input`)·notes sink 2/3·cli 5/5. 사후 `closing_the_stream_stops_the_code_walk`가 실제 결함(묶음을 다음 묶음까지 붙잡아 닫아도 걷기 계속)을 잡아 즉시 전송으로 수정. 검토 반영 RED `red-review-*`(폴더 exclude·순위 취소·실패 재삽입·BOM 스키마, 그룹 kill은 sabotage). sabotage 구현자 47+10건·검토 1차 11건·2차 12건. CLI `observed_time_only_changes_do_not_bump_the_rev`의 12회 중 1회 실패는 시험 쪽(`notes()`가 rev를 데이터보다 먼저 읽는 제품 순서, 새 데이터+옛 rev는 `search.changed`로 다시 읽힘) → 300ms 안정 대기, 반복 통과. GREEN: `devbox-notes` 113×3, `devbox-search` 48×3, cli `--test search` 7×3·notes 4·documents 7·`daemon::` 31, clippy `-D warnings`·fmt, `gen-ts --check`, typecheck·`messages.test.ts`, 완료 Biome CI. 메모리 cgroup 미적용(§2). 미실행: check.sh·E2E·Windows·S5와 실제 병합 빌드(Task 12). 근거 Git common-dir `devbox-verification/s3-task7/`.
+- 이식: 06 표에 Task 7 항목 없음. 표 밖 참고로 v0.9.0 `crates/search/src/lib.rs` `build_fts_query`와 시험 6개를 이름 그대로.
+- 계획과 달라진 점(해석 포함): FTS 표와 별도 `search_docs(id, path UNIQUE, hash)` · 조각·강조는 FTS5 `snippet()` 대신 Rust(한글은 `grams` 열에서만 일치) · 새 오류 `search.stream_unsupported` · `limit`은 범위별, 코드 결과는 즉시 전송하고 끝에 `truncated` 빈 묶음, `done`은 마지막 묶음만 · 정규식·대소문자 구분·구두점만 질의는 저장된 본문 훑기 · 노트 FTS는 코드블록·HTML 주석 안 글도 찾음(링크 기준과 다름, 시험 고정) · 숨김 성분 경로(`.github/…`·`.env.example`)는 코드·파일 이름 검색에서 제외(ripgrep 기본과 같음) · `[search] exclude` 기본 `[]`(06 `**/dist/**`는 형식 예시로 읽음) · Git이 아닌 프로젝트 파일 이름은 walker · xtask에 `SearchChunk` TypeVisitor 한 줄, notes·search `NoParams`는 생성물에서 하나로 합쳐짐 · 다시 넣기는 다음 시작 때만(rescan 때 아님).
+- 후속(비차단): 다시 넣는 도중 또 실패해도 표지가 남는지 시험 없음(X5) · 데몬 `replay_marker` 연결 줄 시험 없음(X11) · CLI 시험 300ms 대기를 `search.changed` 구독 뒤 rev 일치까지 반복 조회로 바꾸기 · 표지 자체를 쓰지 못하면 경고만 · 시험 없는 이중 방어(walker `is_internal` 단독·`O_NONBLOCK`·`parents(false)`·`GIT_CONFIG_*` 제거·`O_NOFOLLOW`/`is_file` 단독·`indexable` `..`/절대 경로) · 동시 코드 검색 수 제한 없음 · documents vault 감시가 시작 sweep 뒤 등록되어 그 사이 외부 쓰기는 다음 rescan까지 미색인(Task 7 이전부터) · 이 브랜치로 만든 색인의 BOM 노트는 스키마 3 재색인으로 정리 · Task 11 MCP `devbox_notes_search`·검색 화면.
 
 ### S3 Task 6 일일 기록·오늘 한 일 요약 결과 (2026-10-23, 트랙 1)
 

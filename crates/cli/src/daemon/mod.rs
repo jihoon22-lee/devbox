@@ -41,6 +41,7 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_search::MIGRATIONS,
     ]
     .concat()
 }
@@ -56,6 +57,7 @@ fn build_services_with_runtime(
     paths.ensure_dirs()?;
     let config = Config::load(&paths)?;
     let notes = devbox_notes::NotesSettings::from_table(&config.notes, &paths.home)?;
+    let search = devbox_search::SearchSettings::from_table(&config.search)?;
     let db = Db::open(
         &paths.db_path,
         &paths.backups_dir,
@@ -131,7 +133,8 @@ fn build_services_with_runtime(
     );
     let knowledge = knowledge::build(
         &paths,
-        (notes, config.pc.name.clone()),
+        (notes, search, config.pc.name.clone()),
+        &db,
         &index,
         &hub,
         &projects,
@@ -155,6 +158,7 @@ fn build_services_with_runtime(
         observe: Arc::new(devbox_observe::ObserveService::default()),
         documents: knowledge.documents,
         notes: knowledge.notes,
+        search: knowledge.search,
     }))
 }
 

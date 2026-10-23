@@ -121,6 +121,8 @@ pub fn scan(vault: &Path) -> (Vec<String>, bool) {
 /// Reads `vault/rel` for indexing (read only). Every folder on the way must be a
 /// real folder and the note a regular file: nothing reached through a symlink is
 /// indexed. `None`: not such a file (any more). Text is `None` when too large or not UTF-8.
+/// The hash covers the bytes; the text has no leading BOM, like the editor's
+/// (`documents::decode_text`), so titles and UTF-16 link offsets match it.
 pub fn read_note(vault: &Path, rel: &str) -> Option<(String, Option<String>)> {
     use sha2::{Digest, Sha256};
     let parts: Vec<&str> = rel.split('/').collect();
@@ -145,5 +147,8 @@ pub fn read_note(vault: &Path, rel: &str) -> Option<(String, Option<String>)> {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    Some((hash, String::from_utf8(bytes).ok()))
+    let text = String::from_utf8(bytes)
+        .ok()
+        .map(|t| t.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(t));
+    Some((hash, text))
 }

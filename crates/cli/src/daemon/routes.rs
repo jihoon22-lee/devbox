@@ -253,6 +253,7 @@ pub fn declared() -> NameCollector {
     devbox_secrets::export(&mut n);
     devbox_documents::export(&mut n);
     devbox_notes::export(&mut n);
+    devbox_search::export(&mut n);
     devbox_core::notify::export(&mut n);
     n
 }

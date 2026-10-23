@@ -1,9 +1,13 @@
-//! S3 knowledge composition: document storage, the roots it may write and the
-//! note vault on top of it.
-use devbox_core::{Hub, IndexDb, Paths};
+//! S3 knowledge composition: document storage, the roots it may write, the
+//! note vault on top of it and search, fed by the note index.
+use devbox_core::{Db, Hub, IndexDb, Paths};
 use devbox_documents::{DocumentsConfig, DocumentsService, Hook, Root, Roots};
-use devbox_notes::{NotesConfig, NotesService, NotesSettings, PcName};
+use devbox_notes::{NoteSink, NotesConfig, NotesService, NotesSettings, PcName, SinkNote};
 use devbox_projects::ProjectsService;
+use devbox_protocol::router::BoxFuture;
+use devbox_search::{
+    IndexedNote, ProjectRoot, ProjectRoots, SearchConfig, SearchService, SearchSettings,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,6 +15,55 @@ use std::time::Duration;
 pub(super) struct Knowledge {
     pub documents: Arc<DocumentsService>,
     pub notes: Arc<NotesService>,
+    pub search: Arc<SearchService>,
+}
+
+/// Note index results go to search (the two crates do not depend on each other).
+struct SearchSink(Arc<SearchService>);
+impl NoteSink for SearchSink {
+    fn indexed(&self, notes: Vec<SinkNote>) -> BoxFuture<()> {
+        let search = self.0.clone();
+        let notes = notes
+            .into_iter()
+            .map(|n| IndexedNote {
+                path: n.path,
+                title: n.title,
+                body: n.body,
+            })
+            .collect();
+        Box::pin(async move { search.index_notes(notes).await })
+    }
+    fn removed(&self, paths: Vec<String>) -> BoxFuture<()> {
+        let search = self.0.clone();
+        Box::pin(async move { search.remove_notes(paths).await })
+    }
+    fn retain(&self, paths: Vec<String>) -> BoxFuture<()> {
+        let search = self.0.clone();
+        Box::pin(async move { search.retain(paths).await })
+    }
+}
+
+/// Registered projects for code and file-name search, read per query.
+fn project_roots(projects: Arc<ProjectsService>) -> ProjectRoots {
+    Arc::new(move || {
+        let projects = projects.clone();
+        Box::pin(async move {
+            match projects.list(devbox_projects::ListProjects {}).await {
+                Ok(list) => list
+                    .items
+                    .into_iter()
+                    .map(|p| ProjectRoot {
+                        id: p.id,
+                        path: PathBuf::from(p.path),
+                    })
+                    .collect(),
+                Err(_) => {
+                    tracing::warn!("search ran without projects");
+                    Vec::new()
+                }
+            }
+        })
+    })
 }
 
 /// `<parent>/<name>-agents`, the folder `devbox_agents::plan::worktree_dir` uses.
@@ -133,7 +186,8 @@ fn pc_name(configured: Option<String>) -> PcName {
 /// `pc` is `config.pc.name`.
 pub(super) fn build(
     paths: &Paths,
-    (settings, pc): (NotesSettings, Option<String>),
+    (settings, search, pc): (NotesSettings, SearchSettings, Option<String>),
+    db: &Db,
     index: &IndexDb,
     hub: &Arc<Hub>,
     projects: &Arc<ProjectsService>,
@@ -146,6 +200,16 @@ pub(super) fn build(
     documents_config.hooks.before_lease_insert = test_gate(paths);
     documents_config.private = private(paths);
     let documents = Arc::new(DocumentsService::new(documents_config));
+    let mut search_config = SearchConfig::new(
+        search,
+        index.clone(),
+        db.clone(),
+        hub.clone(),
+        project_roots(projects.clone()),
+    );
+    search_config.private = private(paths);
+    search_config.replay_marker = Some(paths.data_dir.join("search-reindex"));
+    let search = Arc::new(SearchService::new(search_config)?);
     let mut notes_config = NotesConfig::new(
         settings,
         documents.clone(),
@@ -155,9 +219,13 @@ pub(super) fn build(
         paths.data_dir.join("notes-rename"),
     );
     notes_config.stop = test_stop(paths);
+    notes_config.sink = Arc::new(SearchSink(search.clone()));
+    // A new or rebuilt search domain gets every note after the first scan.
+    notes_config.replay_sink = search.rebuilt();
     let notes = NotesService::new(notes_config)?;
     Ok(Knowledge {
         documents,
         notes: Arc::new(notes),
+        search,
     })
 }
