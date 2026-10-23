@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3a `1e7b7bee`·3b `634970c9`, **S5-3c(초안·저장 정화·실행기·캡처 출처) 완료(로컬)**: 별도 검토 1회 APPROVE. 다음: S5-3d(화면·E2E, 검토 권장 데몬 중복 이름·캡처 sensitive 먼저). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3a `1e7b7bee`·3b `634970c9`·3c `c7a03682`·검토 보안 수정 `613a4c8a`, **S5-3d API 요청 화면 완료(로컬)**: 별도 검토 fix 1회·feat 4회(차단 송신 수명 → 저장 중 편집 dirty → 환경 편집 손실 → APPROVE). 다음: S5-4(WebSocket·SSE). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-22 · 트랙 2 S5-3c 커밋. 좁은 시험(vitest tools 156 3회·api 92·캡처/컬렉션 3회)·clippy/fmt(바꾼 범위)·gen --check·typecheck·완료 Biome CI PASS. 전체 check/E2E/Windows는 S5-9 |
+| 마지막 갱신 | 2026-10-23 · 트랙 2 S5-3d 커밋. 좁은 시험(vitest tools 197 3회·shell 69·api 94)·typecheck·`playwright --list`(api 2)·완료 Biome CI PASS(메모리 cgroup 미적용, 트랙 1 §2). E2E 실행·전체 check/Windows는 S5-9 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -120,7 +120,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
-| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 작업 중 | 2026-10-21 | | S5-2 완료(로컬): 구현 약1.0h·검토2회 약0.5h·수정 약0.2h(사용량 한도 대기 제외). S5-3a·3b 완료(로컬): 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 완료(로컬): 구현 약0.4h·검토1회 약0.2h. 3d 대기 |
+| S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
 | S5 | AB | S5-4 |  | 대기 | | | |
 | S5 | AC | S5-5 |  | 대기 | | | |
 | S5 | AD | S5-6 |  | 대기 | | | |
@@ -640,6 +640,16 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-3d API 요청 화면 결과 (2026-10-23, 트랙 2)
+
+- 검토 보안 수정 `613a4c8a`(fix): 자동 보안 검토가 짚은 `storage.ts mark()` parser differential — 중복 키 JSON(`{"password":"typed","password":"{{secret:X}}"}`)이 정규화 비교를 통과해 원문(평문 비밀)이 저장됨 → 원문은 중복 키 없음(jsonc-parser `visit`, 이스케이프 키 해석)·`redactKnownTokenPatterns(원문)===원문`·정규화 일치 셋을 모두 만족할 때만 유지, 아니면 정화 직렬화·가림. URL은 `getAll`. 영향: url·OAuth URL·JSON body·GraphQL variables·`sanitizeRequestForPersistence`(codegen·preview). 함께 3c 검토 권장: 데몬이 같은 이름의 `environment`·`capture` 변수를 `api.invalid_input{mixed_origin}`으로 거부(연결 0) · 캡처 값은 `sensitive`와 무관하게 기록 가림 · `masked` 경로를 행 id(`#<id>`) 기준 · 가져오기 preview가 가린 값의 `masked`와 `reviewNeeded`·`runEntryFromFile` · codegen이 민감 이름 헤더·쿠키 안 참조를 자리 표시로. 검토 우회 probe 50개 누출 0, fix 파일 16개만 둔 임시 worktree에서 vitest 163·typecheck·api 94·gen·clippy 통과(임시 worktree 제거). RED `red-3d-dup-key`(7사례)·`red-3d-review-daemon`·`red-3d-review-ui`.
+- feat: `app/src/features/tools/**` 요청 탭(dirty·닫기 확인)·편집기·응답 보기(출처 AR-F08·기록·비교)·컬렉션 트리·환경 편집·실행기(생산→소비·순서 변경·건너뛴 이유·변수 출처)·가져오기(`lineDiff`·`importTransaction`)·코드 생성·도구 목록 4묶음·명령 팔레트, E2E `app/e2e/api.spec.ts` 2개와 소유 fixture 서버(`127.0.0.1:0`). 등록 `app/src/shell/Shell.tsx`(+5줄)·`docs/ui-terms.md`(+7행)는 07b S5-3 Files 절 허용·줄 추가만. 컴포넌트 최대 `ImportDialog` 233줄.
+- 동작: 저장/새로 저장(digest 조건) · 직접 입력 비밀은 저장 전 [비밀로 옮기기]·[가리고 저장]·[취소](이미 있는 이름이면 `_2`) · 검토 안 한 프로젝트 파일은 배너, 첫 저장 때 [검토하고 저장]만 쓰기·검토 기록 · 저장 conflict는 [다시 읽기](dirty면 확인) · 가져오기 중간 실패는 확인 한 번 뒤 이번에 만든 같은 digest 파일만 삭제 · 진행 중 송신은 탭 id 기준 모듈 map(저장·탭 전환·닫기에도 응답·[취소] 유지, 닫기·`reset`은 abort) · 저장 완료 표시는 실제 쓴 snapshot 기준(저장 중 편집은 dirty 유지), 겹친 저장 guard · 환경 편집은 baseline dirty 표시·환경 전환/[새 환경] 확인·루트별 보존.
+- 검토: fix 1회 APPROVE. feat 1차 차단 송신 수명(저장·탭 전환 시 응답 유실·[취소] 무효) → 2차 차단 저장 RPC 중 편집의 dirty 소실(같은 종류: 비밀로 옮기기 덮어쓰기·EnvEditor 행 덮어쓰기도 수정) → 3차 차단 EnvEditor 미저장 편집이 환경 전환·[새 환경]·루트 변경에서 확인 없이 사라짐(+비밀로 옮기기 고아 비밀·평문 잔류 방지) → 4차 범위 축소 APPROVE. 1라운드부터 있던 결함을 앞 라운드가 놓친 것은 검토자가 밝힘.
+- 검증: RED `red-3d-ui`(16)·`red-3d-toolspage`(2)·`red-3d-model`·`red-3d-review-send`·`red-3d-review-dirty`·`red-3d-review-env`. GREEN: vitest `src/features/tools` 197 3회, `src/shell` 69, typecheck(e2e 포함), `devbox-api` 94(Rust는 fix 이후 불변), `playwright --list` 전체 13(api 2), 완료 Biome CI. 미실행: E2E 실제 실행·Windows·musl·workspace 전체(S5-9). 근거 Git common-dir `devbox-verification/s5-3/`(`green-3d-*`).
+- 계획과 달라진 점: 시험 기대값 2곳 수정(트리 이름은 파일 이름 앞부분, HAR은 호스트 폴더 경로 — 원래 기대값 오류) · 편집기 저장 시 파일 `requiresSecretReview` 제거(검토 확인 뒤) · 보조 모듈 `envFile`·`toTemplate`·`importPlan`·`moveSecrets`·`useSave`·`RunnerView`·`SaveDialogs`·`EnvEditor.test` · 롤백은 계획 변경 없이 확인 한 번.
+- 후속(비차단, S5-9 또는 해당 과제): 활성 환경(`useApiTabs.environment`)은 하나인데 환경 편집은 루트별로 남아, 편집기에 보이는 환경과 송신에 쓰는 환경이 어긋날 수 있음(프로젝트 환경 값으로 개인 요청 변수가 풀림, 사용자 선택이라 승인 없는 실행은 아님 — S5-9 전 정리 권장) · 환경 저장 baseline이 토큰 모양 값을 비우기 전 내용이라 저장 뒤 dirty가 꺼지고 그 값이 조용히 사라짐(안내는 뜸) · 비밀로 옮기는 그 필드를 사용자가 고치면 만든 비밀이 참조 없이 남음(안내에 이름 표시 권장) · 루트별 환경 편집 store 정리 경로 없음 · [비밀로 옮기기] 이름 경쟁은 `secrets.set` upsert(protocol 동결, `if_absent` 필요) · 짧은 캡처 값은 같은 글자를 모두 가림 · 트리는 평평한 목록 · 웹훅·변환·환경 점검은 자리 표시 화면(S5-6–8) · v0.9.0부터 있던 fail-open: 깨진 JSON 정규식 경로(trailing comma·홑따옴표·줄 주석), 깊이 2만 JSON RangeError 문구, URL `;` 구분·fragment `#access_token=`, 한 줄 `&` form · E2E에서 `HTTP(S)_PROXY`가 있으면 `NO_PROXY=127.0.0.1` 필요할 수 있음 · 보내는 중 Ctrl+Enter는 안내 후 무시.
 
 ### S5-3c 초안·저장 정화·실행기 결과 (2026-10-22, 트랙 2)
 

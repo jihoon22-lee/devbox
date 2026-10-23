@@ -23,6 +23,9 @@ import { BottomTerminal } from "../features/terminal/BottomTerminal";
 import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
 import { TerminalCommands } from "../features/terminal/TerminalCommands";
 import { TerminalPage } from "../features/terminal/TerminalPage";
+import { toolsSearch } from "../features/tools/search";
+import { ToolsCommands } from "../features/tools/ToolsCommands";
+import { ToolsPage } from "../features/tools/ToolsPage";
 import { ToastHost } from "../ui/Toast";
 import { registerBottomTab } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -53,6 +56,7 @@ export function Shell() {
           "/terminal": { component: TerminalPage },
           "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
+          "/tools": { component: ToolsPage, validateSearch: toolsSearch },
         },
         settings: SettingsPage,
         popouts: [
@@ -190,6 +194,7 @@ export function Shell() {
           }}
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
+        <ToolsCommands navigate={(search) => void router.navigate({ to: "/tools", search })} />
         <RunStopUndo />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />
