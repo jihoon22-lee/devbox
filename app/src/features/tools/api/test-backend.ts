@@ -63,6 +63,7 @@ export class FakeBackend implements ApiBackend {
       throw new SendFailure("api.collection_conflict", { digest: current?.digest ?? null });
     const digest = `d${++this.next}`;
     this.files.set(key(root, path), { text, digest });
+    // 데몬과 같다: 쓰기는 검토를 기록하지 않는다(검토는 `review`로만).
     return { digest, rev: String(this.next) };
   });
   remove = vi.fn(async (root: CollectionRoot, path: string, digest: string) => {

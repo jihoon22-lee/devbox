@@ -58,7 +58,7 @@ it("a_failure_in_the_middle_removes_only_the_files_this_import_created", async (
   expect([...backend.files.keys()]).toEqual(["~:keep.request.json"]);
 });
 
-it("keeping_created_files_lists_them_and_project_imports_record_review", async () => {
+it("keeping_created_files_lists_them_and_project_imports_do_not_record_review", async () => {
   const user = userEvent.setup();
   const backend = new FakeBackend();
   setup(backend, [
@@ -70,12 +70,11 @@ it("keeping_created_files_lists_them_and_project_imports_record_review", async (
   await user.click(screen.getByRole("button", { name: "가져오기" }));
   await waitFor(() => expect(backend.write).toHaveBeenCalledTimes(2));
   expect(backend.write.mock.calls.every((call) => call[0] === project && call[3].kind === "absent")).toBe(true);
-  // 사용자가 미리보기로 본 내용이므로 쓴 digest로 검토를 함께 기록한다.
-  await waitFor(() => expect(backend.review).toHaveBeenCalledTimes(2));
-  expect(backend.review.mock.calls.map((call) => [call[0], call[1]])).toEqual(
-    backend.write.mock.calls.map((call) => [project, call[1]]),
-  );
   expect(await screen.findByText("요청 2개를 가져왔습니다.")).toBeInTheDocument();
+  // 미리보기는 파일 내용을 보여 주지 않으므로 검토는 기록하지 않는다(파일을 열어 확인할 때 기록).
+  expect(backend.review).not.toHaveBeenCalled();
+  // 기준은 데몬이 돌려주는 검토 상태다(FakeBackend.write는 데몬 쓰기와 같게 동작).
+  for (const [, path] of backend.write.mock.calls) expect((await backend.read(project, path)).reviewed).toBe(false);
   // 다시 가져오면 같은 이름이 있어 실패 → 남기기를 고르면 남긴 파일을 보여 준다.
   backend.failWrite.add("x.test/GET -two.request.json");
   backend.files.clear();

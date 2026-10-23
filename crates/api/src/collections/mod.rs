@@ -173,7 +173,8 @@ impl CollectionsService {
         })
     }
 
-    /// 쓴 내용은 사용자가 화면에서 본 것이라 프로젝트 루트면 새 digest로 검토도 기록한다.
+    /// 쓰기는 검토를 기록하지 않는다. 가져오기처럼 사용자가 내용을 보지 않은 쓰기도 같은 경로라서,
+    /// 검토는 화면이 내용을 보인 뒤 `review`로 그 digest를 명시해 기록한다(07b 34행).
     pub async fn write(&self, p: WriteFile) -> R<Written> {
         let resolved = self.resolve(&p.root).await?;
         let _guard = self.writes.lock().await;
@@ -187,17 +188,7 @@ impl CollectionsService {
             files::write(&root, &path, text.as_bytes(), condition)
         })
         .await?;
-        let rev = match resolved.review_key.clone() {
-            Some(key) => {
-                let (path, recorded) = (p.path.clone(), digest.clone());
-                self.db
-                    .write(move |tx| store::record(tx, &key, &path, &recorded, now_ms()))
-                    .await
-                    .internal("record collection review")?
-                    .1
-            }
-            None => self.db.rev(),
-        };
+        let rev = self.db.rev();
         self.watch(&p.root, resolved);
         Ok(Written {
             digest,

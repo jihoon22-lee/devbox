@@ -33,6 +33,20 @@ export interface ApiTab {
   reviewed: boolean;
   /** 마지막 저장이 `api.collection_conflict`였음([다시 읽기]를 보인다). */
   conflict?: boolean;
+  /** 보내기 전에 검토 확인 창을 띄운다(검토하지 않은 프로젝트 파일·재검토 표시가 있는 파일). */
+  askSendReview?: boolean;
+}
+
+/** 실행기 `reviewNeeded`와 같은 기준: 이 PC에서 digest를 검토하지 않았거나 파일에 재검토 표시가 있음. */
+export function sendReviewNeeded(tab: ApiTab): boolean {
+  return !tab.reviewed || tab.parsed?.file.requiresSecretReview === true;
+}
+
+/** 고른 환경. `unreviewed`면 검토하지 않은 프로젝트 환경 파일이라 송신·실행에 쓰지 않는다. */
+export interface ActiveEnvironment {
+  name: string;
+  variables: Pair[];
+  unreviewed?: boolean;
 }
 
 const print = (draft: RequestDraft, name: string) => JSON.stringify(fileFromDraft(draft, name));
@@ -45,7 +59,7 @@ export function isDirty(tab: ApiTab): boolean {
 interface ApiTabs {
   tabs: ApiTab[];
   active?: string;
-  environment: { name: string; variables: Pair[] } | null;
+  environment: ActiveEnvironment | null;
   session: Session;
   openFile(root: CollectionRoot, path: string, text: string, digest: string, reviewed?: boolean): string;
   openNew(root: CollectionRoot): string;
@@ -60,7 +74,7 @@ interface ApiTabs {
   setDraft(key: string, draft: RequestDraft): void;
   /** 저장 완료. `saved`는 실제로 쓴 초안으로 계산한다(쓰는 동안 고친 내용은 dirty로 남는다). */
   markSaved(id: string, saved: { path: string; name: string; digest: string; text: string; draft: RequestDraft }): void;
-  setEnvironment(environment: { name: string; variables: Pair[] } | null): void;
+  setEnvironment(environment: ActiveEnvironment | null): void;
   reset(): void;
 }
 

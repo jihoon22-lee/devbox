@@ -83,7 +83,7 @@ export function RequestEditor({ tab }: { tab: ApiTab }) {
       </div>
       {!tab.reviewed && (
         <Banner tone="info">
-          이 PC에서 아직 검토하지 않은 파일입니다. 비밀 참조·파일 경로를 확인한 뒤 저장하면 검토로 기록합니다.
+          이 PC에서 아직 검토하지 않은 파일입니다. 비밀 참조·파일 경로를 확인한 뒤 저장하거나 보내면 검토로 기록합니다.
         </Banner>
       )}
       {tab.notice && (
@@ -125,6 +125,15 @@ export function RequestEditor({ tab }: { tab: ApiTab }) {
         tone="primary"
         onCancel={save.cancelReview}
         onConfirm={save.confirmReview}
+      />
+      <ConfirmDialog
+        open={tab.askSendReview === true}
+        title="검토하고 보낼까요?"
+        body="이 PC에서 검토하지 않았거나 비밀 재검토 표시가 있는 파일입니다. 비밀 참조·파일 경로·TLS 경로를 확인했으면 검토로 기록하고 보냅니다."
+        confirmLabel="검토하고 보내기"
+        tone="primary"
+        onCancel={() => sender.dismissReview(tab.id)}
+        onConfirm={() => void sender.confirmReview(tab.id)}
       />
       <ConfirmDialog
         open={confirmReload}

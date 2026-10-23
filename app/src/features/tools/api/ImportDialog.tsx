@@ -1,7 +1,8 @@
 /**
  * 가져오기: 붙여넣기·파일·OpenAPI URL → 미리보기(만들 파일·경고) → 저장할 곳 → `expect: absent`로 쓰기.
  * 중간에 실패하면 이번에 만든 파일만 지울지 한 번 묻는다(`api.collection_delete`는 확인 정책 always).
- * 프로젝트 루트는 사용자가 미리보기로 본 내용이므로 쓴 digest로 검토를 기록한다.
+ * 검토는 기록하지 않는다. 미리보기는 파일 내용을 보여 주지 않으므로, 비밀 참조·파일 경로가 있는 프로젝트 파일은
+ * 사용자가 열어 확인([검토하고 보내기]·[검토하고 저장])하기 전까지 송신·실행에 쓰이지 않는다(07b 34행).
  */
 import { useState } from "react";
 import type { CollectionRoot } from "../../../rpc/gen/rpc";
@@ -74,10 +75,6 @@ export function ImportDialog({
       setBusy(false);
     }
   };
-  const review = async (target: CollectionRoot, written: WrittenFile[]) => {
-    if (target.kind !== "project") return;
-    for (const file of written) await backend.review(target, file.path, file.digest);
-  };
   const run = async () => {
     if (!plan || !root) return;
     setBusy(true);
@@ -91,7 +88,6 @@ export function ImportDialog({
         else setError(reason);
         return;
       }
-      await review(root, result.written);
       const requests = plan.files.filter((file) => file.kind === "request").length;
       const environments = plan.files.length - requests;
       setNotice(
@@ -112,7 +108,6 @@ export function ImportDialog({
     setFailed(undefined);
     if (!current) return;
     if (!remove) {
-      await review(current.root, current.written).catch(() => {});
       setNotice(`남긴 파일: ${current.written.map((file) => file.path).join(", ")}`);
     } else {
       const { removed, kept } = await rollbackImport(backend, current.root, current.written);
