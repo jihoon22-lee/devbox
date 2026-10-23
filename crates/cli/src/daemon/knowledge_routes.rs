@@ -1,4 +1,5 @@
 use super::state::Services;
+use devbox_activity as activity;
 use devbox_documents as documents;
 use devbox_documents::{Claimed, DocumentsError};
 use devbox_notes as notes;
@@ -85,4 +86,23 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<search::SearchSaved, _, _>(|s, _, p| async move { s.search.saved(p).await })
         .register::<search::SearchSave, _, _>(|s, _, p| async move { s.search.save(p).await })
         .register::<search::SearchUnsave, _, _>(|s, _, p| async move { s.search.unsave(p).await })
+        .register::<activity::ActivityIngest, _, _>(
+            |s, _, p| async move { s.activity.ingest(p).await },
+        )
+        .register::<activity::ActivityGetStatus, _, _>(|s, _, p| async move {
+            s.activity.status(p).await
+        })
+        .register::<activity::ActivityRules, _, _>(
+            |s, _, p| async move { s.activity.rules(p).await },
+        )
+        .register::<activity::ActivitySetRules, _, _>(|s, _, p| async move {
+            s.activity.set_rules(p).await
+        })
+        .register::<activity::ActivityDay, _, _>(|s, _, p| async move { s.activity.day(p).await })
+        .register::<activity::ActivityRange, _, _>(
+            |s, _, p| async move { s.activity.range(p).await },
+        )
+        .register::<activity::ActivityExport, _, _>(
+            |s, _, p| async move { s.activity.export(p).await },
+        )
 }

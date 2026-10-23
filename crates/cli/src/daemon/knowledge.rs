@@ -183,6 +183,56 @@ fn pc_name(configured: Option<String>) -> PcName {
     })
 }
 
+/// Registered project folder names as activity attribution candidates.
+fn project_names(projects: Arc<ProjectsService>) -> devbox_activity::ProjectNames {
+    Arc::new(move || {
+        let projects = projects.clone();
+        Box::pin(async move {
+            match projects.list(devbox_projects::ListProjects {}).await {
+                Ok(list) => list
+                    .items
+                    .into_iter()
+                    .filter_map(|p| {
+                        let name = Path::new(&p.path).file_name()?.to_str()?.to_owned();
+                        Some(devbox_activity::model::attribution::ProjectMatch {
+                            project_id: p.id,
+                            basenames: vec![name],
+                        })
+                    })
+                    .collect(),
+                Err(_) => {
+                    tracing::warn!("activity attributed without projects");
+                    Vec::new()
+                }
+            }
+        })
+    })
+}
+
+/// Activity from `config.toml [activity]` (unreadable rules store no titles),
+/// stored in `devbox.db`, exported to `<data>/exports`.
+pub(super) fn activity(
+    paths: &Paths,
+    settings: devbox_activity::ActivitySettings,
+    db: &Db,
+    hub: &Arc<Hub>,
+    projects: &Arc<ProjectsService>,
+) -> Arc<devbox_activity::ActivityService> {
+    if !settings.readable {
+        tracing::warn!("[activity] settings are unreadable; titles are not stored");
+    }
+    Arc::new(devbox_activity::ActivityService::new(
+        devbox_activity::ActivityConfig::new(
+            db.clone(),
+            hub.clone(),
+            settings,
+            paths.config_dir.clone(),
+            paths.data_dir.join("exports"),
+            project_names(projects.clone()),
+        ),
+    ))
+}
+
 /// `pc` is `config.pc.name`.
 pub(super) fn build(
     paths: &Paths,

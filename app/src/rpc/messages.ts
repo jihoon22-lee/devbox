@@ -328,6 +328,19 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "search.not_found": { title: "저장된 검색을 찾을 수 없습니다." },
   "search.stream_unsupported": { title: "이 연결에서는 통합 검색을 쓸 수 없습니다.", action: "앱에서 검색해 주세요." },
+  "activity.invalid_rules": {
+    title: "개인정보 규칙에 고칠 항목이 있습니다.",
+    action: "표시된 규칙을 고친 뒤 다시 저장해 주세요.",
+  },
+  "activity.invalid_range": {
+    title: "활동 기록 기간이 올바르지 않습니다.",
+    action: "시작일과 종료일을 확인해 주세요.",
+  },
+  "activity.invalid_input": { title: "활동 기록 요청 입력값을 확인해 주세요." },
+  "activity.config_unavailable": {
+    title: "설정 파일에 규칙을 저장하지 못했습니다.",
+    action: "config.toml이 일반 파일인지, TOML 형식이 맞는지 확인해 주세요.",
+  },
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,

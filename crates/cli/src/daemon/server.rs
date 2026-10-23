@@ -297,6 +297,8 @@ async fn handle(
                     || (ch != 0 && state.client == Some(ClientKind::App))
             } else if windows || method == "secrets.run" {
                 ch == 0 && state.client == Some(ClientKind::Cli)
+            } else if method == "activity.ingest" {
+                ch != 0 && state.client == Some(ClientKind::App)
             } else {
                 true
             };

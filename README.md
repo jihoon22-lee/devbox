@@ -28,5 +28,6 @@ PR의 Windows CI 설치 파일을 `bash scripts/dogfood.sh`로 받는다. 정확
 Windows Downloads 아래 새 폴더에 저장하며, 설치는 자동 실행하지 않는다.
 
 Claude Code MCP 등록 예시: `claude mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`.
+설정 폴더(`~/.config/devbox`, accept는 `~/.config/devbox-accept`)의 빈 파일 `.config.toml.lock`은 `config.toml` 동시 쓰기 잠금이므로 지우지 말고, 그 폴더를 dotfiles로 Git 관리하면 ignore에 넣는다.
 
 필수 도구·상세 명령·검증 범위는 [앱 개발 안내](app/README.md)를 따른다.

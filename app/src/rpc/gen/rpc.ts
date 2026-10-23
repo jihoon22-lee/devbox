@@ -1,6 +1,17 @@
 // 이 파일은 `pnpm gen`이 만든다. 직접 고치지 않는다.
 /* eslint-disable */
 
+export type ActivityChanged = { rev: string, };
+export type ActivityError = { "code": "activity.invalid_rules", "detail": { problems: Array<InvalidRule>, } } | { "code": "activity.invalid_range" } | { "code": "activity.invalid_input" } | { "code": "activity.config_unavailable" };
+export type ActivityStatus = { rev: string, state: StorageState, 
+/**
+ * Closed sessions waiting to be written.
+ */
+pending: number, 
+/**
+ * Lost before storage: retry-queue overflow plus the app's offline drops.
+ */
+dropped: number, lastError: StorageProblem | null, };
 export type AddProject = { path: string, };
 export type AgentChanges = { base: string, ahead: number, behind: number, headOid: string, baseOid: string, files: Array<FileChange>, };
 export type AgentCommits = { items: Array<Commit>, };
@@ -23,6 +34,7 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
+export type AppMs = { app: string, ms: number, };
 export type AppendFormat = "plain" | "capture";
 export type AppendNote = { target: AppendTarget, text: string, format: AppendFormat, };
 export type AppendTarget = "inbox" | "daily";
@@ -81,6 +93,21 @@ export type DailyParams = {
  * `YYYY-MM-DD`; `null` is today (local).
  */
 date: string | null, };
+export type DayActivity = { rev: string, date: string, totalMs: number, apps: Array<AppMs>, projects: Array<ProjectMs>, 
+/**
+ * Top 50 non-empty titles.
+ */
+titles: Array<TitleMs>, 
+/**
+ * 24 local hours.
+ */
+hours: Array<HourMs>, };
+export type DayQuery = { 
+/**
+ * Local date `YYYY-MM-DD`.
+ */
+date: string, };
+export type DayTotal = { date: string, totalMs: number, };
 export type DebugError = { "code": "debug.unsupported" };
 export type DefineResult = { rev: string, definition: Definition, };
 export type DefineRun = { projectId: string, def: RunDef, saveTo: SaveTo, };
@@ -116,6 +143,13 @@ export type ExitRecord = { attemptId: string, code: number | null, signal?: stri
 export type ExitSource = "wrapper" | "systemd";
 export type Exited = { runId: string, attemptId: string, };
 export type Expect = "present" | "absent";
+export type ExportFormat = "csv" | "json";
+export type ExportQuery = { 
+/**
+ * Inclusive local dates, at most 366 days.
+ */
+from: string, to: string, format: ExportFormat, };
+export type Exported = { path: string, };
 export type FailedRewrite = { path: string, reason: RewriteFailure, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
 export type FileLocation = { path: string, line: number, column: number, };
@@ -126,14 +160,46 @@ export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
+export type HourMs = { 
+/**
+ * Local hour `0..=23`.
+ */
+hour: number, ms: number, };
 export type ImageProblem = "empty" | "too_large" | "unsupported" | "dimensions" | "encoding";
 export type IncompleteReason = "failed" | "target_exists" | "source_missing" | "move_failed" | "unreadable";
+export type Ingest = { 
+/**
+ * `null` outside the app's batch path: session ids are then random.
+ */
+batch: IngestBatch | null, 
+/**
+ * At most 1,000.
+ */
+events: Array<Observation>, 
+/**
+ * With `batch`: the run's cumulative count of observations its offline
+ * buffer dropped (resends repeat it; the daemon adds only the increase).
+ * Without: dropped since the previous call.
+ */
+dropped: number, };
+export type IngestBatch = { runId: string, upto: number, };
+export type Ingested = { 
+/**
+ * Events applied; `0` for a batch at or below the run's last `upto`.
+ */
+accepted: number, };
 export type InsertSummary = { 
 /**
  * `YYYY-MM-DD`; `null` is today (local).
  */
 date: string | null, };
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
+export type InvalidRule = { field: RuleField, 
+/**
+ * Zero-based position in the submitted list. `TooMany` reports the first
+ * entry beyond the limit.
+ */
+index: number, problem: RuleProblem, };
 export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
 export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
 /**
@@ -179,6 +245,20 @@ export type NotesQuery = { text: string,
 limit: number, };
 export type Notification = { id: string, projectId: string, runId: string | null, task: string | null, reason: NotificationReason, };
 export type NotificationReason = "startLimit" | "schedule_failed" | "schedule_trust_required";
+export type Observation = { 
+/**
+ * Per `runId` observation number, from 1.
+ */
+seq: number, atMs: number, kind: ObservationKind, app: string | null, 
+/**
+ * Already filtered by the app's privacy rules; the daemon applies them again.
+ */
+title: string | null, 
+/**
+ * Epoch ms of the latest user input.
+ */
+lastInputMs: number, };
+export type ObservationKind = "foreground" | "input" | "idle" | "pause";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
 export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
@@ -188,6 +268,23 @@ export type PortInfo = { port: number, proto: string, addr: string, pid: number 
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type Pressure = { some: PressureLine | null, full: PressureLine | null, };
 export type PressureLine = { avg10: number, avg60: number, avg300: number, totalUs: number, };
+export type PrivacyRules = { 
+/**
+ * Exact process names (case-insensitive). A match drops the session.
+ */
+excludedProcesses: Array<string>, 
+/**
+ * A match keeps the session but stores an empty title.
+ */
+excludedTitlePatterns: Array<string>, 
+/**
+ * Every match is replaced with `[redacted]`.
+ */
+redactTitlePatterns: Array<string>, 
+/**
+ * Never store any title.
+ */
+maskAllTitles: boolean, };
 export type Problem = { file: string, line: number, col: number | null, severity: ProblemSeverity, message: string, source: string, };
 export type ProblemSeverity = "error" | "warning" | "info";
 export type ProblemsChange = { rev: string, projectId: string, };
@@ -203,6 +300,7 @@ export type ProjectConfig = { agent: AgentConfig, launch: LaunchConfig, };
 export type ProjectConfigIssue = { message: string, };
 export type ProjectConfigResult = { config: ProjectConfig, error?: ProjectConfigIssue, };
 export type ProjectList = { rev: string, items: Array<Project>, };
+export type ProjectMs = { projectId: string, ms: number, };
 export type ProjectPrompt = { name: string, body: string, };
 export type ProjectPrompts = { id: string, };
 export type ProjectSummary = { id: string, branch?: string, dirty: boolean | null, ahead: number | null, behind: number | null, terminals: number, agents: ProjectAgentCounts, error?: ProjectSummaryIssue, };
@@ -212,6 +310,12 @@ export type ProjectsChanged = { rev: string, };
 export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
+export type RangeActivity = { rev: string, days: Array<DayTotal>, apps: Array<AppMs>, projects: Array<ProjectMs>, };
+export type RangeQuery = { 
+/**
+ * Inclusive local dates, at most 31 days.
+ */
+from: string, to: string, };
 export type ReadDocument = { key: DocKey, 
 /**
  * Defaults to `note`.
@@ -274,6 +378,10 @@ export type RewriteReply = { opId: string, key: DocKey,
  */
 applied: boolean, };
 export type RewriteRequest = { opId: string, key: DocKey, leaseId: string, journalSeq: number, edits: Array<TextEdit>, };
+export type RuleField = "excludedProcesses" | "excludedTitlePatterns" | "redactTitlePatterns";
+export type RuleProblem = "empty" | "too_long" | "too_many" | "syntax";
+export type RulesRev = { rev: string, };
+export type RulesView = { rev: string, rules: PrivacyRules, idleThresholdMs: number, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunDetail = { rev: string, run: Run, };
@@ -359,11 +467,18 @@ export type ServiceDef = { id: string, command: string, cwd: string | null, env:
 export type SessionKind = "shell" | "agent";
 export type SessionList = { rev: string, items: Array<TerminalSession>, nextAfterId?: string, };
 export type SetFavorite = { id: string, favorite: boolean, };
+export type SetRules = { rules: PrivacyRules, 
+/**
+ * `60_000..=86_400_000`.
+ */
+idleThresholdMs: number, };
 export type SetSecret = { name: string, value: string, };
 export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
 export type Status = "ok" | "warn" | "fail";
+export type StorageProblem = "disk_full" | "database";
+export type StorageState = "ok" | "storage_failed";
 export type StreamOpened = { streamId: number, };
 export type Suggestion = { id: string, command: string, kind: DefinitionKind, from: SuggestionSource, };
 export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
@@ -390,6 +505,7 @@ export type TerminalProfile = { name: string, command: string, };
 export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
 export type TextEdit = { fromUtf16: number, toUtf16: number, text: string, };
+export type TitleMs = { app: string, title: string, ms: number, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
 export type Trashed = { trashPath: string, };
@@ -414,6 +530,13 @@ export type WriteJournal = { leaseId: string, seq: number, baseRev: DiskRev | nu
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {
+  "activity.day": { kind: "query"; confirm: "none"; params: DayQuery; result: DayActivity; error: ActivityError };
+  "activity.export": { kind: "mutation"; confirm: "none"; params: ExportQuery; result: Exported; error: ActivityError };
+  "activity.ingest": { kind: "mutation"; confirm: "none"; params: Ingest; result: Ingested; error: ActivityError };
+  "activity.range": { kind: "query"; confirm: "none"; params: RangeQuery; result: RangeActivity; error: ActivityError };
+  "activity.rules": { kind: "query"; confirm: "none"; params: NoParams; result: RulesView; error: ActivityError };
+  "activity.set_rules": { kind: "mutation"; confirm: "none"; params: SetRules; result: RulesRev; error: ActivityError };
+  "activity.status": { kind: "query"; confirm: "none"; params: NoParams; result: ActivityStatus; error: ActivityError };
   "agents.changes": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentChanges; error: AgentsError };
   "agents.cleanup": { kind: "mutation"; confirm: "always"; params: CleanupAgents; result: Done; error: AgentsError };
   "agents.cleanup_candidates": { kind: "query"; confirm: "none"; params: CleanupCandidates; result: CleanupOptions; error: AgentsError };
@@ -526,6 +649,8 @@ export interface Methods {
 }
 
 export interface Topics {
+  "activity.changed": ActivityChanged;
+  "activity.status_changed": ActivityStatus;
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
   "documents.changed": DocumentChanged;
@@ -543,6 +668,13 @@ export interface Topics {
 }
 
 export const METHOD_INFO = {
+  "activity.day": { kind: "query", confirm: "none" },
+  "activity.export": { kind: "mutation", confirm: "none" },
+  "activity.ingest": { kind: "mutation", confirm: "none" },
+  "activity.range": { kind: "query", confirm: "none" },
+  "activity.rules": { kind: "query", confirm: "none" },
+  "activity.set_rules": { kind: "mutation", confirm: "none" },
+  "activity.status": { kind: "query", confirm: "none" },
   "agents.changes": { kind: "query", confirm: "none" },
   "agents.cleanup": { kind: "mutation", confirm: "always" },
   "agents.cleanup_candidates": { kind: "query", confirm: "none" },
@@ -655,6 +787,10 @@ export const METHOD_INFO = {
 } as const;
 
 export const RPC_ERROR_CODES = [
+  "activity.config_unavailable",
+  "activity.invalid_input",
+  "activity.invalid_range",
+  "activity.invalid_rules",
   "agents.bad_state",
   "agents.base_dirty",
   "agents.base_not_checked_out",

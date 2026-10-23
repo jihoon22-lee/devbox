@@ -10,6 +10,7 @@ devbox-secrets.workspace = true
 devbox-documents.workspace = true
 devbox-notes.workspace = true
 devbox-search.workspace = true
+devbox-activity.workspace = true
 devbox-core.workspace = true
 anyhow.workspace = true
 devbox-agents.workspace = true

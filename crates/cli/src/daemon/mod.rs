@@ -42,6 +42,7 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
         devbox_search::MIGRATIONS,
+        devbox_activity::MIGRATIONS,
     ]
     .concat()
 }
@@ -139,6 +140,8 @@ fn build_services_with_runtime(
         &hub,
         &projects,
     )?;
+    let activity = devbox_activity::ActivitySettings::from_table(&config.activity);
+    let activity = knowledge::activity(&paths, activity, &db, &hub, &projects);
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -159,6 +162,7 @@ fn build_services_with_runtime(
         documents: knowledge.documents,
         notes: knowledge.notes,
         search: knowledge.search,
+        activity,
     }))
 }
 
@@ -194,6 +198,8 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     // Notes first: it creates a missing vault before documents starts watching it.
     let _notes_startup = services.notes.start();
     let _documents_startup = services.documents.start();
+    let _activity_writer = services.activity.start();
+    let activity = services.activity.clone();
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
     let s2 = shutdown.clone();
@@ -204,6 +210,7 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
         s2.cancel();
     });
     server::serve(socket.listener, services, shutdown).await?;
+    activity.flush().await;
     tracing::info!("daemon stopped");
     if runtime.restart_requested() {
         anyhow::bail!("intentional daemon restart after environment refresh");

@@ -22,5 +22,6 @@ pub struct Services {
     pub documents: Arc<devbox_documents::DocumentsService>,
     pub notes: Arc<devbox_notes::NotesService>,
     pub search: Arc<devbox_search::SearchService>,
+    pub activity: Arc<devbox_activity::ActivityService>,
     pub runs: Arc<devbox_runtime::RuntimeService>,
 }
