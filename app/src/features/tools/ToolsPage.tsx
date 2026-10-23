@@ -9,6 +9,8 @@ import { ApiWorkspace } from "./api/ApiWorkspace";
 import { ApiBackendProvider, useApiBackend } from "./api/backend";
 import { ImportDialog } from "./api/ImportDialog";
 import { RunnerView } from "./api/RunnerView";
+import { SsePanel } from "./api/realtime/SsePanel";
+import { WsPanel } from "./api/realtime/WsPanel";
 import { rpcBackend } from "./api/rpcBackend";
 import { useApiTabs } from "./api/store";
 import { bumpCollections } from "./api/useCollections";
@@ -55,6 +57,10 @@ export function ToolsView({
       <EmptyState title={LATER[view] ?? "도구"} body="이 도구는 다음 단계에서 이 자리에 연결됩니다." />
     ) : search.tool === "runner" ? (
       <RunnerView root={rootOf(search.root)} />
+    ) : search.tool === "websocket" ? (
+      <WsPanel />
+    ) : search.tool === "sse" ? (
+      <SsePanel />
     ) : (
       <ApiWorkspace />
     );

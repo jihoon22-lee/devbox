@@ -10,9 +10,13 @@ import type {
   FileText,
   HistoryPage,
   Pair,
+  RealtimeEvent,
   RequestOrigin,
   SendRequest,
+  SseOpen,
   Written,
+  WsInput,
+  WsOpen,
 } from "../../../rpc/gen/rpc";
 
 export interface SentResponse {
@@ -53,6 +57,20 @@ export interface ApiBackend {
   historyBody(id: string): Promise<string>;
   secretNames(): Promise<string[]>;
   setSecret(name: string, value: string): Promise<void>;
+  /** 연결 전 검사 실패는 `SendFailure`로 거절한다(연결 실패는 `failed` 이벤트). */
+  openWs(params: WsOpen, handlers: RealtimeHandlers): Promise<RealtimeSession>;
+  openSse(params: SseOpen, handlers: RealtimeHandlers): Promise<RealtimeSession>;
+}
+
+/** WebSocket·SSE 세션 화면 쪽. `close`는 스트림을 닫는다(데몬이 연결을 끊고 다시 연결하지 않음). */
+export interface RealtimeHandlers {
+  onEvent(event: RealtimeEvent): void;
+  /** 데몬이 스트림을 끝냈거나(FIN) 화면이 닫음. */
+  onEnd(): void;
+}
+export interface RealtimeSession {
+  send(input: WsInput): void;
+  close(): void;
 }
 
 const Context = createContext<ApiBackend | null>(null);

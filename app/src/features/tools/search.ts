@@ -1,9 +1,14 @@
 /** 도구 화면 검색값: `{ view?, root?, path?, tool? }`(07b S5-3). `root`는 `personal` 또는 프로젝트 id. */
 export type ToolsView = "api" | "webhooks" | "transforms" | "env";
-export type ToolsSearch = { view?: ToolsView; root?: string; path?: string; tool?: "import" | "runner" };
+export type ToolsSearch = {
+  view?: ToolsView;
+  root?: string;
+  path?: string;
+  tool?: "import" | "runner" | "websocket" | "sse";
+};
 
 const VIEWS = new Set<string>(["api", "webhooks", "transforms", "env"]);
-const TOOLS = new Set<string>(["import", "runner"]);
+const TOOLS = new Set<string>(["import", "runner", "websocket", "sse"]);
 
 export function toolsSearch(search: Record<string, unknown>): ToolsSearch {
   const out: ToolsSearch = {};

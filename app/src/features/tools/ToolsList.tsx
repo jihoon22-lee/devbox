@@ -40,6 +40,12 @@ export function ToolsList({
           <Button size="sm" variant="ghost" onClick={() => navigate({ view: "api", tool: "import" })}>
             가져오기
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => navigate({ view: "api", tool: "websocket" })}>
+            WebSocket
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => navigate({ view: "api", tool: "sse" })}>
+            SSE
+          </Button>
         </div>
         <h3 className={s.muted}>개인</h3>
         <CollectionTree root={personal} label="개인 컬렉션" />

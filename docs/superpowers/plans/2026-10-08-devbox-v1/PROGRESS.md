@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3a `1e7b7bee`·3b `634970c9`·3c `c7a03682`·검토 보안 수정 `613a4c8a`, **S5-3d API 요청 화면 완료(로컬)**: 별도 검토 fix 1회·feat 4회(차단 송신 수명 → 저장 중 편집 dirty → 환경 편집 손실 → APPROVE). 다음: S5-4(WebSocket·SSE). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, **S5-4 WebSocket·SSE 완료(로컬)**: 별도 검토 2회(fix 차단1 → APPROVE, S5-4 APPROVE). 다음: S5-5(gRPC·MCP 클라이언트·OAuth 2.1). 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-23 · 트랙 2 S5-3d 커밋. 좁은 시험(vitest tools 197 3회·shell 69·api 94)·typecheck·`playwright --list`(api 2)·완료 Biome CI PASS(메모리 cgroup 미적용, 트랙 1 §2). E2E 실행·전체 check/Windows는 S5-9 |
+| 마지막 갱신 | 2026-10-23 · 트랙 2 S5-4 커밋. 좁은 시험(api 133·realtime 4바이너리 3회·cli `api_realtime`/`api_send`/`daemon::`·vitest tools 225 3회)·fix 단독 임시 worktree 검증·clippy/fmt·gen --check·typecheck·musl check·완료 Biome CI PASS(메모리 cgroup 미적용, 트랙 1 §2). E2E 실행·전체 check/Windows는 S5-9 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -121,7 +121,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
-| S5 | AB | S5-4 |  | 대기 | | | |
+| S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
 | S5 | AC | S5-5 |  | 대기 | | | |
 | S5 | AD | S5-6 |  | 대기 | | | |
 | S5 | AE | S5-7–S5-8 |  | 대기 | | | |
@@ -640,6 +640,15 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-4 WebSocket·SSE와 검토 게이트 보안 수정 결과 (2026-10-23, 트랙 2)
+
+- 검토 게이트 보안 수정 `7f4de376`: 자동 보안 검토가 `becfd8d1`에서 짚은 3건 — (HIGH) 편집기 단건 송신이 `tab.reviewed`·`requiresSecretReview`를 보지 않음 → 실행기 `reviewNeeded`와 같은 기준으로 막고 확인하면 `collection_review` 기록 뒤 송신, 기록 뒤 key·digest가 그대로일 때만 송신(TOCTOU), 기록 실패 시 미송신 · (MED) 가져오기 자동 검토 기록 → 별도 검토에서 데몬 `collections::write()`가 프로젝트 쓰기마다 검토를 기록해 UI 수정만으로는 우회가 남음을 재현(HAR `X-Key: {{secret:GH}}` → 보내기가 확인 없이 송신) → `write()`는 검토를 기록하지 않고 `api.collection_review`(digest 명시)만 기록, FakeBackend도 같은 동작, UI 시험은 `read().reviewed`로 판정 · (MED) 검토 안 된 프로젝트 env가 그대로 적용 → 배너, 송신·실행기·WS/SSE에서 그 env 변수 미사용, 실행기 항목 `reviewNeeded`. 07b S5-3의 "가져오기는 쓴 digest로 검토 기록"을 바꿈(계획 변경). 데몬 쪽 송신 출처 강제는 실행기 `origin: null`·env 값만 전달 구조라 send·runner·env 계약 변경이 필요해 설계만(UI 차단, 위협 모델은 저장소 내용·클라이언트 신뢰). fix 패치(`fix.patch`, 11개 파일)를 `becfd8d1`에 단독 적용한 임시 worktree에서 vitest 207·typecheck·biome·api 95·cli `api_send`·`daemon::`·gen·clippy 통과.
+- S5-4 데몬 `24358624`: `crates/api/src/realtime/{mod,buffer,sse_parse,sse,ws}.rs`, 시험 `realtime`·`realtime_limits`·`realtime_sse`·`realtime_logs`·`support/realtime.rs`, cli `tests/api_realtime.rs`(실데몬 WS 왕복·Ping·SSE·예약 헤더 거절). URL·헤더·TLS는 `api.send`와 같은 `resolve`(출처 혼합·조립 참조·캡처·`sensitive`), WS 메시지는 치환하지 않음. 큐 상한 1000건·4 MiB와 버린 수 보고 · 세션 32개·닫으면 자리 반환·스트림 닫힘 → 소켓 닫힘 · SSE 이벤트 없는 연속 5회 + 60초 30회 재연결 상한, 재시도 대기 중 닫으면 즉시 종료, 줄 상한 · WS 메시지 4 MiB · 텍스트·이진·close reason·SSE data/id/event 가림, 로그에 URL·헤더·메시지 없음 · wss는 요청 TLS(CA·검증 끄기·클라이언트 인증서, 세션마다 rustls 설정) · aws-lc·openssl·native-tls 0.
+- S5-4 화면(이 커밋): `app/src/features/tools/api/realtime/*`(WS·SSE 패널·메시지 목록·작성기·대상 필드), `backend.tsx`·`rpcBackend.ts`·`test-backend.ts`, `search.ts`·`ToolsPage.tsx`·`ToolsList.tsx`, `docs/ui-terms.md`. 화면 목록 상한·이전 연결의 늦은 이벤트 무시·화면을 떠나면 닫기, 실패 원인은 정해 둔 kind만 "(원인: …)"(`failureText`).
+- 검증: 구현 전 RED lib 13·realtime 11·sse 7·logs 1·검토 게이트 6·가져오기 자동 검토 4(+Rust)·TOCTOU 1·실패 원인 2. 사후 sabotage 구현자 27건+α, 검토 1차 14건·2차 7건(UI realtime 시험 RED는 모두 사후). RED 뒤 기대값 수정 4곳(buffer·SSE data 상한·base64·retry-cancel)은 검토가 설계 일치·강도 유지 확인. flaky `ws_slow_client_drops_and_reports_count`는 서버 쓰기 완료만 기다린 시험 동기화 가정이 원인(데몬 결함 아님) → 데몬 Close 응답 수신(`ended()==1`)까지 대기, 30/30(원래 실패는 재현 안 됨). GREEN: `devbox-api` 133, realtime 바이너리 4개 3회, cli `api_realtime` 2·`api_send` 1·`daemon::` 24, vitest tools 225 3회, typecheck, gen, clippy `-D warnings`·fmt, musl check, 완료 Biome CI. 미실행: E2E·Windows·workspace 전체(S5-9). 근거 Git common-dir `devbox-verification/s5-4/`.
+- 계획과 달라진 점: eventsource-stream 대신 v0.9.0 상한 있는 파서 이식 · webpki-roots 대신 native-roots+platform verifier(HTTPS와 같은 신뢰) · 실시간 세션은 history 미기록 · 저장 메시지(`savedMessages`)는 메모리만(파일 저장 후속) · 버린 수 알림은 열림 이벤트와 쓰던 메시지 1건 뒤 · 새 오류 `api.stream_rejected`·`api.too_many_streams` · WS는 프록시 미사용 · 받은 메시지 가림 v0.9.0 시험은 "아는 값만 가림" 정책과 맞지 않아 제외 · `tls_stream_configuration_is_not_silently_ignored`는 거절 대신 적용으로 적응.
+- 후속(비차단): SSE 60초 30회 상한은 연결마다 이벤트 하나 보내고 끊으며 `retry` ≤2초인 정상 서버도 끊을 수 있음(설계 결정) · SSE Open·Reconnecting 제어 이벤트는 버리지 않음(화면이 멈춘 채 위 서버면 쌓임, 화면 즉시 ack로 위험 낮음) · WS가 `sink.send`를 기다리는 동안 소켓 읽기 정지(01 §5.1 문구와 다름) · `api.invalid_url` 문구가 http/https만 언급 · `useSave`에서 write 성공·review 실패면 `markSaved`가 불리지 않아 다음 저장이 conflict(fail-closed, 안내 문구 권장) · FakeBackend·데몬 동작 일치는 주석과 데몬 시험뿐(한쪽만 바뀌는 회귀 시험 없음) · 새 송신 진입점(S5-5 gRPC·MCP, S5-6 재전송, S5-7 선택 보내기)마다 같은 검토 게이트 필요, MCP stdio 명령 실행은 데몬 쪽 확인 권장 · `support/realtime.rs` 586줄(600 근접).
 
 ### S5-3d API 요청 화면 결과 (2026-10-23, 트랙 2)
 

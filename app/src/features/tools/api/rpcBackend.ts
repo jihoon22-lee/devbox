@@ -1,7 +1,8 @@
 /** 실제 데몬 RPC로 만든 `ApiBackend`. 변경 RPC는 호출마다 새 clientRequestId를 쓴다. */
 import { type RpcClient, RpcError } from "../../../rpc/client";
-import type { ClientStream } from "../../../rpc/client-streams";
-import type { ApiBackend } from "./backend";
+import type { ClientStream, StreamHandlers } from "../../../rpc/client-streams";
+import type { RealtimeEvent } from "../../../rpc/gen/rpc";
+import type { ApiBackend, RealtimeHandlers, RealtimeSession } from "./backend";
 import { SendFailure } from "./backend";
 import { SendCollector } from "./sendEvents";
 
@@ -14,6 +15,55 @@ async function rpc<T>(run: () => Promise<T>): Promise<T> {
   } catch (error) {
     throw failure(error);
   }
+}
+
+/** NDJSON 줄을 `RealtimeEvent`로. 잘못된 줄은 버리지 않고 실패 이벤트로 알린다. */
+function lineReader(onEvent: (event: RealtimeEvent) => void) {
+  const decoder = new TextDecoder();
+  let pending = "";
+  return (bytes: Uint8Array) => {
+    pending += decoder.decode(bytes, { stream: true });
+    let at = pending.indexOf("\n");
+    while (at >= 0) {
+      const line = pending.slice(0, at).trim();
+      pending = pending.slice(at + 1);
+      if (line) {
+        let event: RealtimeEvent;
+        try {
+          event = JSON.parse(line) as RealtimeEvent;
+        } catch {
+          event = { type: "failed", error: { code: "internal" } };
+        }
+        onEvent(event);
+      }
+      at = pending.indexOf("\n");
+    }
+  };
+}
+
+/** 스트림 하나를 세션으로. 입력은 NDJSON 한 줄씩 쓴다. */
+function realtime(
+  open: (handlers: StreamHandlers) => Promise<ClientStream>,
+  handlers: RealtimeHandlers,
+): Promise<RealtimeSession> {
+  const read = lineReader(handlers.onEvent);
+  const encoder = new TextEncoder();
+  return rpc(async () => {
+    const stream = await open({
+      onData(bytes, ack) {
+        try {
+          read(bytes);
+        } finally {
+          ack();
+        }
+      },
+      onEnd: handlers.onEnd,
+    });
+    return {
+      send: (input) => stream.write(encoder.encode(`${JSON.stringify(input)}\n`)),
+      close: () => stream.end(),
+    };
+  });
 }
 
 export function rpcBackend(client: RpcClient): ApiBackend {
@@ -39,6 +89,8 @@ export function rpcBackend(client: RpcClient): ApiBackend {
     setSecret: async (name, value) => {
       await rpc(() => client.call("secrets.set", { name, value }, id()));
     },
+    openWs: (params, handlers) => realtime((h) => client.openStream("api.ws_open", params, h), handlers),
+    openSse: (params, handlers) => realtime((h) => client.openStream("api.sse_open", params, h), handlers),
     send: (request, signal) =>
       new Promise((resolve, reject) => {
         const collector = new SendCollector();

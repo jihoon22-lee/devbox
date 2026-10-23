@@ -1,7 +1,16 @@
 /** 화면 시험용 가짜 데몬: 메모리 파일·digest CAS·송신 기록. */
 import { vi } from "vitest";
-import type { CollectionExpect, CollectionRoot, HistoryPage, SendRequest } from "../../../rpc/gen/rpc";
-import { type ApiBackend, SendFailure, type SentResponse } from "./backend";
+import type {
+  CollectionExpect,
+  CollectionRoot,
+  HistoryPage,
+  RealtimeEvent,
+  SendRequest,
+  SseOpen,
+  WsInput,
+  WsOpen,
+} from "../../../rpc/gen/rpc";
+import { type ApiBackend, type RealtimeHandlers, SendFailure, type SentResponse } from "./backend";
 
 const key = (root: CollectionRoot, path: string) => `${root.kind === "project" ? root.projectId : "~"}:${path}`;
 
@@ -20,6 +29,23 @@ export function textResponse(body: string, status = 200, extra: Partial<SentResp
     binary: false,
     ...extra,
   };
+}
+
+/** 가짜 실시간 세션: 시험이 데몬 이벤트를 넣고(`emit`) 화면이 보낸 입력·닫기를 확인한다. */
+export class FakeRealtime {
+  sent: WsInput[] = [];
+  closed = false;
+  constructor(
+    readonly method: "ws" | "sse",
+    readonly params: WsOpen | SseOpen,
+    private handlers: RealtimeHandlers,
+  ) {}
+  emit(event: RealtimeEvent) {
+    this.handlers.onEvent(event);
+  }
+  end() {
+    this.handlers.onEnd();
+  }
 }
 
 export class FakeBackend implements ApiBackend {
@@ -78,6 +104,23 @@ export class FakeBackend implements ApiBackend {
   send = vi.fn((request: SendRequest, signal: AbortSignal) => this.reply(request, signal));
   history = vi.fn(async (): Promise<HistoryPage> => ({ items: [], next: null }));
   historyBody = vi.fn(async () => "");
+  realtime: FakeRealtime[] = [];
+  rejectOpen: SendFailure | null = null;
+  private open(method: "ws" | "sse", params: WsOpen | SseOpen, handlers: RealtimeHandlers) {
+    if (this.rejectOpen) return Promise.reject(this.rejectOpen);
+    const session = new FakeRealtime(method, params, handlers);
+    this.realtime.push(session);
+    return Promise.resolve({
+      send: (input: WsInput) => session.sent.push(input),
+      close: () => {
+        if (session.closed) return;
+        session.closed = true;
+        handlers.onEnd();
+      },
+    });
+  }
+  openWs = vi.fn((params: WsOpen, handlers: RealtimeHandlers) => this.open("ws", params, handlers));
+  openSse = vi.fn((params: SseOpen, handlers: RealtimeHandlers) => this.open("sse", params, handlers));
   secretNames = vi.fn(async () => [...this.secrets.keys()]);
   setSecret = vi.fn(async (name: string, value: string) => {
     this.secrets.set(name, value);
