@@ -5,6 +5,12 @@ use devbox_protocol::Router;
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
     router
         .register::<devbox_api::ApiSend, _, _>(|s, ctx, p| async move { s.api.send(ctx, p).await })
+        .register::<devbox_api::ApiWsOpen, _, _>(
+            |s, ctx, p| async move { s.api.ws_open(ctx, p).await },
+        )
+        .register::<devbox_api::ApiSseOpen, _, _>(|s, ctx, p| async move {
+            s.api.sse_open(ctx, p).await
+        })
         .register::<devbox_api::ApiHistory, _, _>(|s, _, p| async move { s.api.history(p).await })
         .register::<devbox_api::ApiHistoryGet, _, _>(
             |s, _, p| async move { s.api.history_get(p).await },

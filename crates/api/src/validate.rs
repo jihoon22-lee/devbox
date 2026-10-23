@@ -72,11 +72,16 @@ pub(crate) fn cookie(index: u32, name: &str, value: &str) -> Result<(), ApiError
 
 /// http/https 절대 URL. userinfo는 거절하고 fragment는 보내지 않는다.
 pub(crate) fn url(text: &str) -> Result<url::Url, ApiError> {
+    url_with(text, &["http", "https"])
+}
+
+/// `schemes` 중 하나인 절대 URL(WebSocket은 `ws`·`wss`). 나머지 규칙은 `url`과 같다.
+pub(crate) fn url_with(text: &str, schemes: &[&str]) -> Result<url::Url, ApiError> {
     if text.len() > MAX_URL_BYTES {
         return Err(ApiError::url("too_long"));
     }
     let mut url = url::Url::parse(text.trim()).map_err(|_| ApiError::url("parse"))?;
-    if !matches!(url.scheme(), "http" | "https") {
+    if !schemes.contains(&url.scheme()) {
         return Err(ApiError::url("scheme"));
     }
     if url.host_str().is_none_or(str::is_empty) {

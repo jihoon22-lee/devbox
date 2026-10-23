@@ -8,6 +8,7 @@ mod history;
 mod http;
 mod model;
 mod oauth_loopback;
+mod realtime;
 mod redact;
 mod service;
 mod store;
@@ -24,10 +25,13 @@ use devbox_protocol::{Exporter, method, topic};
 pub use error::ApiError;
 pub use history::API_INDEX_VERSION;
 pub use model::*;
+pub use realtime::{Direction, MAX_SESSIONS, MessageKind, RealtimeEvent, SseOpen, WsInput, WsOpen};
 pub use service::{ApiOptions, ApiService, Clock};
 pub use store::MIGRATIONS;
 
 method!(pub ApiSend = "api.send", stream, SendRequest => devbox_protocol::StreamOpened, ApiError);
+method!(pub ApiWsOpen = "api.ws_open", stream, WsOpen => devbox_protocol::StreamOpened, ApiError);
+method!(pub ApiSseOpen = "api.sse_open", stream, SseOpen => devbox_protocol::StreamOpened, ApiError);
 method!(pub ApiHistory = "api.history", query, HistoryQuery => HistoryPage, ApiError);
 method!(pub ApiHistoryGet = "api.history_get", query, HistoryId => HistoryEntry, ApiError);
 method!(pub ApiCookies = "api.cookies", query, CookieJarRef => CookieList, ApiError);
@@ -41,6 +45,8 @@ topic!(pub ApiCollectionsChanged = "api.collections_changed", CollectionsChange)
 
 pub fn export<X: Exporter>(x: &mut X) {
     x.method::<ApiSend>();
+    x.method::<ApiWsOpen>();
+    x.method::<ApiSseOpen>();
     x.method::<ApiHistory>();
     x.method::<ApiHistoryGet>();
     x.method::<ApiCookies>();

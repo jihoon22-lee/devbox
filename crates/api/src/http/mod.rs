@@ -40,7 +40,7 @@ impl std::fmt::Display for DnsFailed {
 impl std::error::Error for DnsFailed {}
 
 /// `io::Error::source()`는 감싼 오류를 건너뛰므로 `get_ref()`로 내려가며 rustls 오류를 찾는다.
-fn is_tls(mut e: &(dyn std::error::Error + 'static)) -> bool {
+pub(crate) fn is_tls(mut e: &(dyn std::error::Error + 'static)) -> bool {
     loop {
         if e.is::<rustls::Error>() {
             return true;

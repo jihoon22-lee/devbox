@@ -1,6 +1,7 @@
 //! 소유 fixture: 127.0.0.1:0 hyper 1 서버(받은 요청·연결 수·지연·리디렉션·에코)와 스트림을 읽는 가짜 화면.
 #![allow(dead_code)]
 pub mod api;
+pub mod realtime;
 pub mod tls;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody};

@@ -22,6 +22,8 @@ fn main() -> Result<()> {
     ts_rs::TypeVisitor::visit::<devbox_agents::ReviewExpect>(&mut exporter);
     // `api.send` 스트림 NDJSON 이벤트.
     ts_rs::TypeVisitor::visit::<devbox_api::SendEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::RealtimeEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::WsInput>(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");
     update_file(&path, &out, check)?;

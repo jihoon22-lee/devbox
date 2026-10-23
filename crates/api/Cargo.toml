@@ -22,11 +22,13 @@ notify = "8.2"
 reqwest.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true
+rustls-platform-verifier.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
 tokio-util = { workspace = true, features = ["io"] }
 tracing.workspace = true
 ts-rs.workspace = true
@@ -42,6 +44,7 @@ rcgen.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls.workspace = true
+rustls-platform-verifier.workspace = true
 tracing-subscriber.workspace = true
 
 [lints]

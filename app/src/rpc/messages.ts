@@ -346,6 +346,14 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "주소·네트워크·인증서와 요청 시간 제한을 확인해 주세요.",
   },
   "api.stream_unsupported": { title: "이 연결에서는 요청을 보낼 수 없습니다." },
+  "api.stream_rejected": (d) => ({
+    title: `서버가 연결을 받지 않았습니다${field(d, "reason") === "status" ? `(HTTP ${field(d, "status")})` : field(d, "reason") === "content_type" ? "(이벤트 스트림 아님)" : "(하위 프로토콜 불일치)"}.`,
+    action: "주소·헤더·하위 프로토콜을 확인해 주세요.",
+  }),
+  "api.too_many_streams": {
+    title: "동시에 열 수 있는 실시간 연결 수를 넘었습니다.",
+    action: "다른 연결을 닫은 뒤 다시 시도해 주세요.",
+  },
   "api.history_not_found": { title: "요청 기록을 찾을 수 없습니다.", action: "기록 목록을 새로고침해 주세요." },
   "api.collection_path_invalid": { title: "컬렉션 파일 경로가 올바르지 않습니다.", action: "이름을 확인해 주세요." },
   "api.collection_conflict": { title: "파일이 바뀌었거나 이미 있습니다.", action: "다시 읽은 뒤 저장해 주세요." },

@@ -108,6 +108,9 @@ struct Inner {
     rebuild: AtomicBool,
     ready: tokio::sync::watch::Sender<bool>,
     background: OnceLock<()>,
+    /// 열린 WebSocket·SSE 세션 수 상한(`MAX_SESSIONS`).
+    sessions: Arc<tokio::sync::Semaphore>,
+    clock: Clock,
 }
 
 pub struct ApiService {
@@ -148,7 +151,8 @@ impl ApiService {
         options: ApiOptions,
     ) -> Result<Self, devbox_core::CoreError> {
         let clock = options.clock.unwrap_or_else(|| Arc::new(system_ms));
-        let (history, rebuild) = History::open(paths.data_dir.join("api-history"), index, clock)?;
+        let (history, rebuild) =
+            History::open(paths.data_dir.join("api-history"), index, clock.clone())?;
         let service = Self {
             db,
             secrets,
@@ -161,6 +165,8 @@ impl ApiService {
                 rebuild: AtomicBool::new(rebuild),
                 ready: tokio::sync::watch::channel(false).0,
                 background: OnceLock::new(),
+                sessions: Arc::new(tokio::sync::Semaphore::new(crate::realtime::MAX_SESSIONS)),
+                clock,
             }),
         };
         service.start_background();
@@ -209,16 +215,18 @@ impl ApiService {
             .map_err(|_| devbox_protocol::Fail::Internal("prune api history".into()))
     }
 
-    /// 송신 전 검사 ①–⑤. 여기서 실패하면 스트림을 열지 않는다.
-    async fn prepare(&self, p: SendRequest) -> R<Job> {
-        if p.run_id.as_ref().is_some_and(|r| r.len() > 128) {
-            return Err(ApiError::input("runId", "too_long").into());
-        }
-        template::reject_mixed_origins(&p.env)?;
-        let (mut filled, literals) = template::substitute_marked(&p.snapshot, &p.env)?;
-        reject_secret_in_authorization_url(&p.snapshot, &filled, &p.env)?;
+    /// 변수 치환·비밀 해석(`api.send`·`api.ws_open`·`api.sse_open` 공통). 돌려주는 값 목록은 가림 대상이다.
+    /// 출처가 섞인 변수, 조립한 비밀 참조, 인증 URL의 비밀은 여기서 거절한다(연결 전).
+    pub(crate) async fn resolve(
+        &self,
+        snapshot: &RequestSnapshot,
+        env: &EnvSnapshot,
+    ) -> R<(RequestSnapshot, Vec<String>)> {
+        template::reject_mixed_origins(env)?;
+        let (mut filled, literals) = template::substitute_marked(snapshot, env)?;
+        reject_secret_in_authorization_url(snapshot, &filled, env)?;
         let names = template::secrets_of(&filled)?;
-        let allowed = template::allowed_secrets(&p.snapshot, &p.env)?;
+        let allowed = template::allowed_secrets(snapshot, env)?;
         if names.iter().any(|name| !allowed.contains(name)) {
             return Err(ApiError::input("secret", "composed_reference").into());
         }
@@ -237,8 +245,7 @@ impl ApiService {
         // 캡처 값은 비밀 해석이 끝난 뒤 글자 그대로 넣는다(값 검사·송신은 그 뒤).
         literals.restore(&mut filled);
         values.extend(
-            p.env
-                .variables
+            env.variables
                 .iter()
                 .filter(|v| match v.origin {
                     // 캡처 값은 참조 모양이어도 글자 그대로 보낸 값이라 가린다.
@@ -247,6 +254,15 @@ impl ApiService {
                 })
                 .map(|v| v.value.clone()),
         );
+        Ok((filled, values))
+    }
+
+    /// 송신 전 검사 ①–⑤. 여기서 실패하면 스트림을 열지 않는다.
+    async fn prepare(&self, p: SendRequest) -> R<Job> {
+        if p.run_id.as_ref().is_some_and(|r| r.len() > 128) {
+            return Err(ApiError::input("runId", "too_long").into());
+        }
+        let (filled, mut values) = self.resolve(&p.snapshot, &p.env).await?;
         let prepared = http::build::prepare(&filled)?;
         values.extend(prepared.seeds.iter().cloned());
         let client = tls::client(&prepared.tls, true, self.inner.resolver.as_ref())?;
@@ -276,6 +292,63 @@ impl ApiService {
             drop(ends.input);
             run(inner, job, ends.tx).await;
         });
+        Ok(StreamOpened { stream_id })
+    }
+
+    /// WebSocket·SSE 세션 자리. 검사가 끝난 뒤에 잡으므로 거절된 요청은 자리를 쓰지 않는다.
+    fn session_slot(&self) -> R<tokio::sync::OwnedSemaphorePermit> {
+        self.inner
+            .sessions
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                ApiError::TooManyStreams {
+                    limit: crate::realtime::MAX_SESSIONS as u32,
+                }
+                .into()
+            })
+    }
+
+    /// WebSocket 세션. 검사·비밀 해석·TLS 재료 확인을 연결 전에 끝내고, 실패는 RPC 오류다.
+    /// 화면 입력(`WsInput` NDJSON)은 스트림 입력으로 받는다. 세션은 기록하지 않는다.
+    pub async fn ws_open(&self, ctx: Ctx, p: WsOpen) -> R<StreamOpened> {
+        let snapshot = crate::realtime::ws::snapshot(&p);
+        let (filled, values) = self.resolve(&snapshot, &p.env).await?;
+        let prepared = crate::realtime::ws::prepare(&filled, &p.subprotocols)?;
+        let permit = self.session_slot()?;
+        let ends = ctx.open_stream().map_err(|_| ApiError::StreamUnsupported)?;
+        let stream_id = ends.id;
+        tokio::spawn(crate::realtime::ws::run(crate::realtime::ws::Session {
+            prepared,
+            tx: ends.tx,
+            input: ends.input,
+            redactor: crate::redact::Redactor::new(&values),
+            clock: self.inner.clock.clone(),
+            _permit: permit,
+        }));
+        Ok(StreamOpened { stream_id })
+    }
+
+    /// SSE 세션. 끊기면 `retry`(없으면 3초) 뒤 최대 5회 `Last-Event-ID`로 다시 연결한다. 기록하지 않는다.
+    pub async fn sse_open(&self, ctx: Ctx, p: SseOpen) -> R<StreamOpened> {
+        let snapshot = crate::realtime::sse::snapshot(&p);
+        let (filled, values) = self.resolve(&snapshot, &p.env).await?;
+        let prepared = crate::realtime::sse::prepare(
+            &filled,
+            p.last_event_id.as_deref(),
+            self.inner.resolver.as_ref(),
+        )?;
+        let permit = self.session_slot()?;
+        let ends = ctx.open_stream().map_err(|_| ApiError::StreamUnsupported)?;
+        let stream_id = ends.id;
+        drop(ends.input);
+        tokio::spawn(crate::realtime::sse::run(crate::realtime::sse::Session {
+            prepared,
+            tx: ends.tx,
+            redactor: crate::redact::Redactor::new(&values),
+            clock: self.inner.clock.clone(),
+            _permit: permit,
+        }));
         Ok(StreamOpened { stream_id })
     }
 

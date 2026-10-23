@@ -1,5 +1,6 @@
 //! 요청 단위 TLS: CA·클라이언트 인증서·키 PEM(WSL 절대 경로), 검증 끔. 연결 전에 모두 검사한다.
 use crate::{ApiError, TlsOptions};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::sync::{Arc, OnceLock};
 
 const MAX_PEM: u64 = 1024 * 1024;
@@ -16,6 +17,9 @@ pub(crate) struct PreparedTls {
     pub(crate) verify: bool,
     roots: Vec<reqwest::Certificate>,
     identity: Option<reqwest::Identity>,
+    /// WebSocket(rustls 직접)용 같은 재료. reqwest 형식에서는 다시 꺼낼 수 없어 따로 둔다.
+    roots_der: Vec<CertificateDer<'static>>,
+    identity_der: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>,
 }
 
 impl PreparedTls {
@@ -41,7 +45,6 @@ fn read_pem(path: &str) -> Result<Vec<u8>, ApiError> {
 
 pub(crate) fn prepare(options: &TlsOptions) -> Result<PreparedTls, ApiError> {
     use rustls::pki_types::pem::PemObject;
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
     let ca = options.ca_path.as_deref().map(read_pem).transpose()?;
     let cert = options
         .client_cert_path
@@ -54,6 +57,7 @@ pub(crate) fn prepare(options: &TlsOptions) -> Result<PreparedTls, ApiError> {
         .map(read_pem)
         .transpose()?;
     let mut roots = vec![];
+    let mut roots_der = vec![];
     if let Some(ca) = ca {
         let certs = CertificateDer::pem_slice_iter(&ca)
             .collect::<Result<Vec<_>, _>>()
@@ -69,8 +73,10 @@ pub(crate) fn prepare(options: &TlsOptions) -> Result<PreparedTls, ApiError> {
             roots.push(
                 reqwest::Certificate::from_der(&der).map_err(|_| ApiError::tls("invalid_ca"))?,
             );
+            roots_der.push(der);
         }
     }
+    let mut identity_der = None;
     let identity = match (cert, key) {
         (None, None) => None,
         (Some(cert), Some(key)) => {
@@ -92,8 +98,9 @@ pub(crate) fn prepare(options: &TlsOptions) -> Result<PreparedTls, ApiError> {
             .with_safe_default_protocol_versions()
             .map_err(|_| ApiError::tls("client"))?
             .with_root_certificates(rustls::RootCertStore::empty())
-            .with_client_auth_cert(certs, parsed)
+            .with_client_auth_cert(certs.clone(), parsed.clone_key())
             .map_err(|_| ApiError::tls("invalid_certificate"))?;
+            identity_der = Some((certs, parsed));
             let mut pem = cert;
             pem.push(b'\n');
             pem.extend_from_slice(&key);
@@ -105,6 +112,8 @@ pub(crate) fn prepare(options: &TlsOptions) -> Result<PreparedTls, ApiError> {
         verify: options.verify,
         roots,
         identity,
+        roots_der,
+        identity_der,
     })
 }
 
@@ -130,4 +139,75 @@ pub(crate) fn client(
         builder = builder.dns_resolver(resolver.clone());
     }
     builder.build().map_err(|_| ApiError::tls("client"))
+}
+
+/// WebSocket 연결용 rustls 설정(ring). reqwest와 같은 규칙: 검증 켬은 플랫폼 검증기(+ 지정 CA),
+/// 검증 끔은 인증서를 받아들이고, 클라이언트 인증서가 있으면 보낸다. 어느 필드도 조용히 무시하지 않는다.
+pub(crate) fn rustls_config(tls: &PreparedTls) -> Result<Arc<rustls::ClientConfig>, ApiError> {
+    provider();
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let builder = rustls::ClientConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .map_err(|_| ApiError::tls("client"))?
+        .dangerous();
+    let builder = if tls.verify {
+        let verifier = if tls.roots_der.is_empty() {
+            rustls_platform_verifier::Verifier::new(provider)
+        } else {
+            rustls_platform_verifier::Verifier::new_with_extra_roots(
+                tls.roots_der.iter().cloned(),
+                provider,
+            )
+        }
+        .map_err(|_| ApiError::tls("client"))?;
+        builder.with_custom_certificate_verifier(Arc::new(verifier))
+    } else {
+        builder.with_custom_certificate_verifier(Arc::new(AcceptAny(
+            rustls::crypto::ring::default_provider().signature_verification_algorithms,
+        )))
+    };
+    let mut config = match &tls.identity_der {
+        Some((certs, key)) => builder
+            .with_client_auth_cert(certs.clone(), key.clone_key())
+            .map_err(|_| ApiError::tls("invalid_certificate"))?,
+        None => builder.with_no_client_auth(),
+    };
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    Ok(Arc::new(config))
+}
+
+/// 검증 끔(사용자 선택). 서명 확인 알고리즘 목록만 공급자 것을 쓴다.
+#[derive(Debug)]
+struct AcceptAny(rustls::crypto::WebPkiSupportedAlgorithms);
+
+impl rustls::client::danger::ServerCertVerifier for AcceptAny {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.0)
+    }
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.0)
+    }
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.0.supported_schemes()
+    }
 }

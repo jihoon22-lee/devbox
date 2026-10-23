@@ -17,6 +17,8 @@ devbox_protocol::domain_error! {
         OauthFailed { stage: String } = "api.oauth_failed",
         Network { kind: String } = "api.network",
         StreamUnsupported = "api.stream_unsupported",
+        StreamRejected { status: u16, reason: String } = "api.stream_rejected",
+        TooManyStreams { limit: u32 } = "api.too_many_streams",
         HistoryNotFound = "api.history_not_found",
         CollectionPathInvalid = "api.collection_path_invalid",
         CollectionConflict { digest: Option<String> } = "api.collection_conflict",
