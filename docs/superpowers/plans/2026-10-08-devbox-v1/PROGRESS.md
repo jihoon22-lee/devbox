@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. S5-7b `b762b582`. S5-7c 감지·선택 보내기 완료(로컬)·독립 재검토 APPROVE. S5-7c `d55cd7c6`. S5-8a1 기존 환경 점검 이동 완료(로컬)·독립 검토 APPROVE. 다음: S5-8a2 점검 확장. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. S5-7b `b762b582`. S5-7c 감지·선택 보내기 완료(로컬)·독립 재검토 APPROVE. S5-7c `d55cd7c6`. S5-8a1 기존 환경 점검 이동 완료(로컬)·독립 검토 APPROVE. S5-8a1 `de7a04dd`. S5-8a2 점검 확장·설치 제안 완료(로컬)·독립 재검토 APPROVE. 다음: S5-8b 설치 동작·지원 번들·WSL 정리. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-8a1 동작 보존 이동 완료·독립 검토 APPROVE. 이동 전 CLI doctor5/라우팅1, 이동 후 tools doctor4/CLI doctor2/라우팅1·rustfmt·Biome PASS. S5-8a2/8b 미착수 |
+| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-8a2 구현·검토 수정 완료·최종 APPROVE. 검토 수정 후 doctor12/CLI doctor10·rustfmt/Biome PASS(앞선 설치 RPC/라우팅/gen/typecheck/messages PASS 유지), 최신 검증 memory_enforced=true. 설치 실행·번들·정리8b 미착수 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -124,7 +124,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
 | S5 | AC | S5-5 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-24 | 구현 1회·별도 검토 4회·수정 3회(차단 2건: stdio env 주입 실행·SSE 64KiB), 사용량 한도 대기 제외 약3.5h |
 | S5 | AD | S5-6 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 웹훅 수신기·규칙·기록·이진 재전송, 검토 3회(수정 요청2 → APPROVE). 좁은 검증 §5, 전체 수용 S5-9 |
-| S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 작업 중(S5-8a1 완료) | 2026-10-24 | | S5-7a `2acd3eee` 완료, S5-7b `b762b582` 완료, S5-7c `d55cd7c6` 완료. S5-8a1 이동 승인, 확장/8b 미착수 |
+| S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 작업 중(S5-8a2 완료) | 2026-10-24 | | S5-7a `2acd3eee` 완료, S5-7b `b762b582` 완료, S5-7c `d55cd7c6` 완료. S5-8a1 `de7a04dd` 완료, S5-8a2 최종 승인. 8b 미착수 |
 | S5 | 마무리 | S5-9 → S5 PR |  | 대기 | | | |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
 | S6 | AF | S6-1b–S6-2 |  | 대기 | | | |
@@ -640,6 +640,20 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-8a2 환경 점검 확장·설치 제안 (2026-10-24, 트랙 2 · 독립 검토 승인)
+
+- 최종 재검토 APPROVE(`s5-8a2/review-1/final-review.txt`). gh 미지원 기능을 인증 실패와 구분하며 실제 인증을 실행하지 않은 fixture 검증 근거를 보존한다. 완료 커밋에 포함한다.
+
+- 이동 커밋 `de7a04dd` clean 상태에서 시작. 기존 id 12개를 유지하고 WSL 유휴 설정·Rust·Docker CLI/데몬·gh 인증·Claude/Codex 인증 파일·hook 설정 항목8개를 추가했다. `OsProbe{env_file,hook_binary}` 필드·`system.doctor` 핸들러는 그대로다. Probe는 결과/누락/시한/사용 불가/형식 오류를 구분하며, 기존 항목도 시간 초과를 FAIL로 오인하지 않고 WARN "확인하지 못함"으로 알린다.
+- doctor 전용 runner는 probe마다 2초, stdout/설정 파일64KiB, stderr 폐기, 인증 상태 명령 stdout도 폐기한다. 소유 자식 process group만 생성·종료하며, 파일 작업은 timeout 뒤에도 permit을 유지하는 최대2개 blocking 작업으로 제한한다. 설정은 일반 파일만 읽고 symlink는 따라가지 않으며 인증 파일은 metadata만 확인한다. 실제 점검은 읽기 전용이고 시험은 FakeProbe·소유 임시 파일·`/bin/sh` 자식 fixture만 사용했다. 실제 Docker·사용자 인증·Windows interop probe는 실행하지 않았다.
+- 공식 근거: [WSL 설정](https://learn.microsoft.com/en-us/windows/wsl/wsl-config)의 `[general] instanceIdleTimeout`·`[wsl2] vmIdleTimeout`을 분리하고, [gh auth status](https://cli.github.com/manual/gh_auth_status)가 인증을 갱신하지 않도록 로컬 도움말에서 지원을 확인한 경우에만 `--no-refresh`로 조회한다. [rustup 환경 변수](https://rust-lang.github.io/rustup/environment-variables.html)의 `RUSTUP_AUTO_INSTALL=0`, [Claude 환경 변수](https://code.claude.com/docs/en/env-vars)의 자동 업데이트/비필수 통신 비활성화를 probe 자식에만 적용한다. 전역 환경/설정은 바꾸지 않는다.
+- [Codex 인증 저장소](https://learn.chatgpt.com/docs/auth#credential-storage)·[Claude 인증 파일](https://code.claude.com/docs/en/authentication#credential-management)을 확인해 CODEX_HOME/CLAUDE_CONFIG_DIR의 절대 경로 override를 따른다. 파일 존재는 인증 유효성이라고 표시하지 않으며, 파일이 없어도 keyring/API-key 인증이 가능해 WARN이다. hook은 기존 설치 확인 함수가 없어 설정의 실제 hook/notify 필드와 devbox 실행 파일 이름을 검사한다. 버전은 숫자 부분만 표시해 경로/진단을 반향하지 않는다. 실제 설정 적용·hook 실행·인증 유효성은 확인했다고 주장하지 않는다.
+- `tools.install_command` query와 `CheckRef`/`InstallPlan`/`WindowsPackage`/`ToolsError` 선언·라우팅·TS 생성을 추가했다. 07b의 정적 allowlist만 WSL 명령·DockerDesktop enum·수동 안내를 반환하고 알 수 없는 id는 None이다. WSL 제안은 작은따옴표를 escape한 `bash -lc '<command>; exec bash -l'`로 유지한다. 이 단계에는 설치 실행·확인 UI·winget·지원 번들·uninstall 구현이 없다. 의존성은 기존 workspace의 serde/serde_json/toml/ts-rs/thiserror 간선만 추가했고 새 외부 package/version은 없다.
+- 검증: 새 doctor **4 FAIL/5 PASS RED → GREEN**, 실제 runner의 무제한3초 대기 **1 FAIL/2 PASS RED → 2초 시한 GREEN**, 설치 API 미구현 RED, 유사 실행 파일 이름 hook 오인 **1 FAIL RED → GREEN**. 최종 tools doctor/install **14 PASS**, CLI doctor **7 PASS**(실제 timeout·자식 종료·출력 상한 포함), 설치 query dispatch **1 PASS**, 선언/라우팅 완전성 **1 PASS**. 마지막 hook 수정 뒤 직접 hook1 PASS, gen/gen-check·typecheck·messages2·대상 rustfmt·diff check·Biome PASS. 전체 check/clippy/build/E2E·Windows 실기는 S5-9로 미실행.
+- 별도 검토 1회 REQUEST_CHANGES(B1): 설치된 gh의 공개 도움말에는 `--no-refresh`가 없어 옵션 오류를 인증 실패로 오인했다. `gh auth status --help`를 먼저 읽고 실제 옵션 행에서 지원할 때만 상태를 조회한다. 미지원이면 `UnsupportedCapability` → WARN "확인하지 못함"·업데이트/지원 확인 안내로 끝나며, refresh 가능한 명령으로 대체하지 않는다. 실제 로컬 help55줄을 fixture로 보존하고, 지원 버전은 합성 fixture로 성공/인증 실패/기타 종료 코드를 구분했다. 도움말+인증은 한 번의2초 시한, 인증 출력은 계속 폐기한다. 호환성3 + 안내1 **RED → GREEN**, 직접 영향 tools doctor **12 PASS**·CLI doctor **10 PASS**, rustfmt·diff·Biome PASS. RPC/TS 선언·생성물 해시는 변함없어 gen/typecheck는 반복하지 않았다. 실제 인증 조회는 실행하지 않았으며 근거 `s5-8a2/review-fix/`, 재검토·커밋 대기.
+- 자원: 이후 supervisor에 `XDG_RUNTIME_DIR=/run/user/1000`, `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 지정해 기존 사용자 관리자와 연결, 최신 검사 **memory_enforced=true(6GiB high/8GiB max/swap1GiB)**를 확인했다. 기존 서비스 변경 없이 CPU4/nice+10/jobs2/test-threads2/workers2/no-lock·전용 S5 target을 유지하며, 앞선 false 기록은 그대로다.
+- 근거 `devbox-verification/s5-8a2/`(RED/GREEN·공식 자료·파일 해시·경계 보존). 별도 검토·커밋 대기, **8b 미착수**. 커밋 예정 `feat(tools): check development tools and suggest installs`.
 
 ### S5-8a1 기존 환경 점검 이동 (2026-10-24, 트랙 2 · 독립 검토 승인)
 

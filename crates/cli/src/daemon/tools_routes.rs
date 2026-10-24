@@ -4,6 +4,9 @@ use devbox_protocol::Router;
 
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
     router
+        .register::<devbox_tools::ToolsInstallCommand, _, _>(|_, _, p| async move {
+            devbox_tools::install::install_command(p)
+        })
         .register::<devbox_api::ApiSend, _, _>(|s, ctx, p| async move { s.api.send(ctx, p).await })
         .register::<devbox_api::ApiWsOpen, _, _>(
             |s, ctx, p| async move { s.api.ws_open(ctx, p).await },
@@ -70,4 +73,33 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<devbox_webhooks::WebhooksFixtureSave, _, _>(|s, _, p| async move {
             s.webhooks.fixture_save(p).await
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use devbox_protocol::{Ctx, Method};
+    #[tokio::test]
+    async fn tools_install_command_routes_a_static_plan_without_execution() {
+        let temp = tempfile::tempdir().expect("owned fixture");
+        let router =
+            super::super::routes::router(super::super::build_services_for_test(temp.path()));
+        let result = router
+            .dispatch(
+                devbox_tools::ToolsInstallCommand::NAME,
+                Ctx {
+                    channel: 1,
+                    cancel: tokio_util::sync::CancellationToken::new(),
+                    streams: None,
+                },
+                serde_json::value::RawValue::from_string(r#"{"id":"tool.tmux"}"#.into())
+                    .expect("fixture params"),
+            )
+            .await
+            .expect("install suggestion query");
+        let plan: devbox_tools::InstallPlan =
+            serde_json::from_str(result.get()).expect("typed install plan");
+        assert!(
+            matches!(plan, devbox_tools::InstallPlan::Wsl { command, .. } if command == "sudo apt install tmux")
+        );
+    }
 }

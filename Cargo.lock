@@ -891,6 +891,11 @@ name = "devbox-tools"
 version = "1.0.0-dev"
 dependencies = [
  "devbox-protocol",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "toml",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3939,6 +3944,7 @@ dependencies = [
  "devbox-runtime",
  "devbox-secrets",
  "devbox-terminal",
+ "devbox-tools",
  "devbox-webhooks",
  "serde",
  "tempfile",

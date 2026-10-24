@@ -9,6 +9,7 @@ publish.workspace = true
 devbox-secrets.workspace = true
 devbox-api.workspace = true
 devbox-webhooks.workspace = true
+devbox-tools.workspace = true
 devbox-core.workspace = true
 anyhow.workspace = true
 devbox-agents.workspace = true

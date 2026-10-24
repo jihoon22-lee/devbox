@@ -28,6 +28,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "본문에 비밀 값이 있거나 저장 형식을 확인할 수 없습니다.",
     action: "JSON 형식을 확인하고 비밀 값은 참조({{secret:NAME}})나 [REDACTED]로 바꿔 주세요.",
   },
+  "tools.invalid_input": { title: "환경 점검 항목을 확인해 주세요." },
   "webhooks.invalid_input": { title: "웹훅 입력을 확인해 주세요." },
   "webhooks.not_found": { title: "수신 기록을 찾을 수 없습니다." },
   "webhooks.bind_failed": { title: "포트를 열 수 없습니다. 다른 포트를 선택해 주세요." },

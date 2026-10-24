@@ -9,30 +9,30 @@ impl Probe for Fake {
     fn daemon_path(&self) -> String {
         "/daemon/bin".into()
     }
-    fn hook_executable(&self) -> bool {
-        false
+    fn hook_executable(&self) -> Probed<bool> {
+        Ok(false)
     }
-    fn pid1(&self) -> String {
-        "systemd".into()
+    fn pid1(&self) -> Probed<String> {
+        Ok("systemd".into())
     }
-    fn user_manager_available(&self) -> bool {
-        self.available
+    fn user_manager_available(&self) -> Probed<bool> {
+        Ok(self.available)
     }
-    fn linger(&self) -> String {
-        "Linger=no".into()
+    fn linger(&self) -> Probed<String> {
+        Ok("Linger=no".into())
     }
-    fn tmux_version(&self) -> Option<String> {
-        Some("tmux 3.3a".into())
+    fn tmux_version(&self) -> Probed<Option<String>> {
+        Ok(Some("tmux 3.3a".into()))
     }
-    fn inotify_instances(&self) -> String {
-        "1024".into()
+    fn inotify_instances(&self) -> Probed<String> {
+        Ok("1024".into())
     }
-    fn env_path_valid(&self) -> bool {
-        self.env_path_valid
+    fn env_path_valid(&self) -> Probed<bool> {
+        Ok(self.env_path_valid)
     }
-    fn which(&self, tool: &str, path: &str) -> bool {
+    fn which(&self, tool: &str, path: &str) -> Probed<bool> {
         assert_eq!(path, "/daemon/bin");
-        !matches!(tool, "claude" | "codex" | "gh")
+        Ok(!matches!(tool, "claude" | "codex" | "gh"))
     }
 }
 

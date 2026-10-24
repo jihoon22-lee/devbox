@@ -32,6 +32,7 @@ export type Candidate = { path: string, name: string, isGit: boolean, registered
 export type CatalogSource = "reflection" | "protoFiles";
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
+export type CheckRef = { id: string, };
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
 export type CleanupCandidates = { projectId: string, };
 export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, };
@@ -145,6 +146,7 @@ export type HistoryResponse = { status: number, reason: string, httpVersion: str
 export type HistorySummary = { id: string, sentAtMs: number, method: string, url: string, status: number | null, elapsedMs: number, sizeBytes: number, outcome: HistoryOutcome, runId: string | null, origin: RequestOrigin | null, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
+export type InstallPlan = { "kind": "wsl", command: string, title: string, shellCommand: string, } | { "kind": "windows", package: WindowsPackage, } | { "kind": "manual", text: string, } | { "kind": "none" };
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type KeyPlacement = "header" | "query";
 export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
@@ -294,6 +296,7 @@ export type TerminalSession = { id: string, projectId: string | null, title: str
 export type TlsOptions = { verify: boolean, caPath: string | null, clientCertPath: string | null, clientKeyPath: string | null, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
+export type ToolsError = { "code": "tools.invalid_input" };
 export type TrustApprove = { id: string, expectedCanonicalPath: string, expectedDigest: string, expectedScopeVersion: number, };
 export type TrustOperation = "create" | "run" | "test" | "launch" | "discard" | "merge" | "pr" | "cleanup";
 export type TrustPreview = { status: TrustPreviewStatus, projectId: string, projectName: string, canonicalPath: string, configPath: string, digest: string | null, scopeVersion: number, approved: boolean, requiresApproval: boolean, config: ProjectConfig | null, executionDirectories: Array<string>, runDefinitions: Array<RunDef>, };
@@ -317,6 +320,7 @@ export type WebhookSaveFixture = { receivedId: string, name: string, };
 export type WebhookStartListener = { port: number, lan: boolean, };
 export type WebhookUpsertRule = { listenerId: string, rule: ResponseRule, };
 export type WebhooksError = { "code": "webhooks.invalid_input" } | { "code": "webhooks.not_found" } | { "code": "webhooks.bind_failed" } | { "code": "webhooks.limit_reached" } | { "code": "webhooks.storage" };
+export type WindowsPackage = "dockerDesktop";
 export type WindowsRun = { directory: string, notice: string, };
 export type WireError = { code: string, detail?: unknown, };
 export type WriteFile = { root: CollectionRoot, path: string, text: string, expect: CollectionExpect, };
@@ -427,6 +431,7 @@ export interface Methods {
   "terminal.rename": { kind: "mutation"; confirm: "none"; params: RenameSession; result: Done; error: TerminalError };
   "terminal.resize": { kind: "mutation"; confirm: "none"; params: ResizeStream; result: Done; error: TerminalError };
   "terminal.zellij_list": { kind: "query"; confirm: "none"; params: PingParams; result: ZellijSessions; error: TerminalError };
+  "tools.install_command": { kind: "query"; confirm: "none"; params: CheckRef; result: InstallPlan; error: ToolsError };
   "webhooks.fixture_save": { kind: "mutation"; confirm: "none"; params: WebhookSaveFixture; result: WebhookFixture; error: WebhooksError };
   "webhooks.history": { kind: "query"; confirm: "none"; params: WebhookHistoryQuery; result: WebhookReceivedPage; error: WebhooksError };
   "webhooks.history_get": { kind: "query"; confirm: "none"; params: WebhookReceivedId; result: WebhookReceivedDetail; error: WebhooksError };
@@ -544,6 +549,7 @@ export const METHOD_INFO = {
   "terminal.rename": { kind: "mutation", confirm: "none" },
   "terminal.resize": { kind: "mutation", confirm: "none" },
   "terminal.zellij_list": { kind: "query", confirm: "none" },
+  "tools.install_command": { kind: "query", confirm: "none" },
   "webhooks.fixture_save": { kind: "mutation", confirm: "none" },
   "webhooks.history": { kind: "query", confirm: "none" },
   "webhooks.history_get": { kind: "query", confirm: "none" },
@@ -686,6 +692,7 @@ export const RPC_ERROR_CODES = [
   "terminal.project_not_found",
   "terminal.stream_unavailable",
   "terminal.title_too_long",
+  "tools.invalid_input",
   "webhooks.bind_failed",
   "webhooks.invalid_input",
   "webhooks.limit_reached",
