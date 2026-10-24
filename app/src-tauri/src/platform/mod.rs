@@ -17,3 +17,6 @@ pub mod tray;
 pub mod secrets;
 
 pub mod windows;
+
+pub mod install;
+pub mod wsl_cleanup;

@@ -37,6 +37,11 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// 이 앱 채널의 서비스·실행 파일만 정리하고 데이터·설정은 보존한다.
+    Uninstall {
+        #[arg(long)]
+        json: bool,
+    },
     /// 환경을 점검한다.
     Doctor {
         #[arg(long)]
@@ -147,6 +152,7 @@ fn main() -> anyhow::Result<()> {
                 token,
             } => devbox_cli::gateway::run(port, origin, token).await,
             Cmd::Setup { json } => devbox_cli::setup::run(json).await,
+            Cmd::Uninstall { json } => devbox_cli::setup::uninstall::run(json).await,
             Cmd::Doctor { json } => devbox_cli::doctor::run(json).await,
             Cmd::Agent {
                 cmd:

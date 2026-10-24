@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 pub type FrameChannel = Channel<InvokeResponseBody>;
 struct Shared {
     state: Mutex<State<FrameChannel>>,
+    attempt: crate::core::maintenance::AttemptControl,
     retry: watch::Sender<Option<String>>,
     stop: CancellationToken,
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
@@ -22,6 +23,7 @@ impl Default for Connection {
         let (tx, _) = watch::channel(None);
         Self(Arc::new(Shared {
             state: Mutex::new(State::default()),
+            attempt: crate::core::maintenance::AttemptControl::default(),
             retry: tx,
             stop: CancellationToken::new(),
             task: Mutex::new(None),
@@ -30,6 +32,23 @@ impl Default for Connection {
     }
 }
 impl Connection {
+    pub(super) fn operation_cancel(&self) -> CancellationToken {
+        self.0.stop.child_token()
+    }
+    pub(super) async fn pause_for_cleanup(&self) -> Result<(), IpcError> {
+        self.0
+            .attempt
+            .pause(std::time::Duration::from_secs(15))
+            .await
+            .map_err(|_| IpcError::new("연결을 닫지 못해 WSL 정리를 실행하지 않았습니다"))?;
+        if self.0.stop.is_cancelled() {
+            return Err(IpcError::new(
+                "앱 종료 중에는 WSL 정리를 시작할 수 없습니다",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn state(&self) -> std::sync::MutexGuard<'_, State<FrameChannel>> {
         self.0.state.lock().expect("connection state")
     }
@@ -114,6 +133,9 @@ async fn supervise(app: AppHandle, conn: Connection) {
             let app = app.clone();
             let conn = conn.clone();
             async move {
+                let Some(_completed) = conn.0.attempt.begin(cancel.clone()) else {
+                    return;
+                };
                 conn.state().generation = generation;
                 super::supervisor::run(&app, &conn, generation, forced, cancel).await;
             }
@@ -136,6 +158,8 @@ pub fn gate_retry(
     {
         return Err(IpcError::new("잘못된 배포판 이름"));
     }
+    let _guard = super::deploy::maintenance_lock()?;
+    conn.0.attempt.resume();
     conn.0.retry.send_replace(distro);
     Ok(())
 }

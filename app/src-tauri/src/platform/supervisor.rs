@@ -120,22 +120,9 @@ pub async fn run(
     }
     conn.gate(app, generation, "deploying", None, None);
     let setup = async {
-        let path = app
-            .path()
-            .resolve("devbox-linux", tauri::path::BaseDirectory::Resource)
-            .map_err(|e| ShellError::Invalid(e.to_string()))?;
-        let resource_dir = path
-            .parent()
-            .ok_or_else(|| ShellError::Invalid("내장 리소스 경로 없음".into()))?;
-        crate::core::self_check::validate_resources(resource_dir, env!("CARGO_PKG_VERSION"))?;
-        let bytes = std::fs::read(path)?;
-        if bytes.is_empty() {
-            return Err(ShellError::Invalid("내장 바이너리가 비어 있습니다".into()));
-        }
-        // The script validates the existing digest even when the package version is unchanged.
-        deploy::install(&distro, bytes, cancel.clone()).await?;
-        // Per-instance setup is independent of the shared binary and restarts only this instance.
-        deploy::setup(&distro, INSTANCE, cancel.clone()).await
+        let _guard = deploy::maintenance_wait(cancel.clone()).await?;
+        let bytes = deploy::bundled_binary(app)?;
+        deploy::apply(&distro, INSTANCE, bytes, cancel.clone()).await
     }
     .await;
     if let Err(e) = setup {

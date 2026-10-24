@@ -283,6 +283,7 @@ export type StreamOpened = { streamId: number, };
 export type Suggestion = { id: string, command: string, kind: DefinitionKind, from: SuggestionSource, };
 export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
 export type SummaryProjects = Record<symbol, never>;
+export type SupportBundle = { path: string, sizeBytes: number, logsOmitted?: string, };
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
 export type Tail = "tail";
@@ -296,7 +297,9 @@ export type TerminalSession = { id: string, projectId: string | null, title: str
 export type TlsOptions = { verify: boolean, caPath: string | null, clientCertPath: string | null, clientKeyPath: string | null, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
-export type ToolsError = { "code": "tools.invalid_input" };
+export type ToolsDiagnosticsInfo = { logDir: string, };
+export type ToolsEmpty = Record<symbol, never>;
+export type ToolsError = { "code": "tools.invalid_input" } | { "code": "tools.support_failed" } | { "code": "tools.support_too_large" };
 export type TrustApprove = { id: string, expectedCanonicalPath: string, expectedDigest: string, expectedScopeVersion: number, };
 export type TrustOperation = "create" | "run" | "test" | "launch" | "discard" | "merge" | "pr" | "cleanup";
 export type TrustPreview = { status: TrustPreviewStatus, projectId: string, projectName: string, canonicalPath: string, configPath: string, digest: string | null, scopeVersion: number, approved: boolean, requiresApproval: boolean, config: ProjectConfig | null, executionDirectories: Array<string>, runDefinitions: Array<RunDef>, };
@@ -431,7 +434,9 @@ export interface Methods {
   "terminal.rename": { kind: "mutation"; confirm: "none"; params: RenameSession; result: Done; error: TerminalError };
   "terminal.resize": { kind: "mutation"; confirm: "none"; params: ResizeStream; result: Done; error: TerminalError };
   "terminal.zellij_list": { kind: "query"; confirm: "none"; params: PingParams; result: ZellijSessions; error: TerminalError };
+  "tools.diagnostics": { kind: "query"; confirm: "none"; params: ToolsEmpty; result: ToolsDiagnosticsInfo; error: ToolsError };
   "tools.install_command": { kind: "query"; confirm: "none"; params: CheckRef; result: InstallPlan; error: ToolsError };
+  "tools.support_bundle": { kind: "mutation"; confirm: "none"; params: ToolsEmpty; result: SupportBundle; error: ToolsError };
   "webhooks.fixture_save": { kind: "mutation"; confirm: "none"; params: WebhookSaveFixture; result: WebhookFixture; error: WebhooksError };
   "webhooks.history": { kind: "query"; confirm: "none"; params: WebhookHistoryQuery; result: WebhookReceivedPage; error: WebhooksError };
   "webhooks.history_get": { kind: "query"; confirm: "none"; params: WebhookReceivedId; result: WebhookReceivedDetail; error: WebhooksError };
@@ -549,7 +554,9 @@ export const METHOD_INFO = {
   "terminal.rename": { kind: "mutation", confirm: "none" },
   "terminal.resize": { kind: "mutation", confirm: "none" },
   "terminal.zellij_list": { kind: "query", confirm: "none" },
+  "tools.diagnostics": { kind: "query", confirm: "none" },
   "tools.install_command": { kind: "query", confirm: "none" },
+  "tools.support_bundle": { kind: "mutation", confirm: "none" },
   "webhooks.fixture_save": { kind: "mutation", confirm: "none" },
   "webhooks.history": { kind: "query", confirm: "none" },
   "webhooks.history_get": { kind: "query", confirm: "none" },
@@ -693,6 +700,8 @@ export const RPC_ERROR_CODES = [
   "terminal.stream_unavailable",
   "terminal.title_too_long",
   "tools.invalid_input",
+  "tools.support_failed",
+  "tools.support_too_large",
   "webhooks.bind_failed",
   "webhooks.invalid_input",
   "webhooks.limit_reached",

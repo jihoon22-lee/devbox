@@ -39,3 +39,8 @@ pub mod secrets;
 
 #[cfg(any(windows, test))]
 pub mod windows;
+
+#[cfg(any(windows, test))]
+pub mod install;
+#[cfg(any(windows, test))]
+pub mod maintenance;

@@ -1,3 +1,4 @@
+pub mod uninstall;
 #[cfg(test)]
 mod tests {
     use super::*;

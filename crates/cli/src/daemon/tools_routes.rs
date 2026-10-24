@@ -4,6 +4,31 @@ use devbox_protocol::Router;
 
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
     router
+        .register::<devbox_tools::ToolsDiagnostics, _, _>(|s, _, _| async move {
+            Ok(devbox_tools::ToolsDiagnosticsInfo {
+                log_dir: s.paths.log_dir.to_string_lossy().into_owned(),
+            })
+        })
+        .register::<devbox_tools::ToolsSupportBundle, _, _>(|s, _, _| async move {
+            let probe = crate::doctor::OsProbe {
+                env_file: s.paths.instance_config_dir.join("env"),
+                hook_binary: s.paths.bin_dir.join("devbox"),
+            };
+            let checks = tokio::task::spawn_blocking(move || crate::doctor::checks(&probe))
+                .await
+                .map_err(|_| {
+                    devbox_protocol::Fail::from(devbox_tools::ToolsError::SupportFailed)
+                })?;
+            devbox_tools::support::create_bundle(
+                devbox_tools::support::BundleInput {
+                    paths: s.paths.clone(),
+                    doctor: devbox_protocol::system::DoctorReport { checks },
+                    version: s.version.into(),
+                },
+                &s.secrets,
+            )
+            .await
+        })
         .register::<devbox_tools::ToolsInstallCommand, _, _>(|_, _, p| async move {
             devbox_tools::install::install_command(p)
         })
@@ -101,5 +126,27 @@ mod tests {
         assert!(
             matches!(plan, devbox_tools::InstallPlan::Wsl { command, .. } if command == "sudo apt install tmux")
         );
+    }
+    #[tokio::test]
+    async fn tools_diagnostics_returns_the_actual_state_log_directory() {
+        let temp = tempfile::tempdir().expect("owned fixture");
+        let services = super::super::build_services_for_test(temp.path());
+        let expected = services.paths.log_dir.to_string_lossy().into_owned();
+        let router = super::super::routes::router(services);
+        let result = router
+            .dispatch(
+                devbox_tools::ToolsDiagnostics::NAME,
+                Ctx {
+                    channel: 1,
+                    cancel: tokio_util::sync::CancellationToken::new(),
+                    streams: None,
+                },
+                serde_json::value::RawValue::from_string("{}".into()).expect("params"),
+            )
+            .await
+            .expect("diagnostics query");
+        let info: devbox_tools::ToolsDiagnosticsInfo =
+            serde_json::from_str(result.get()).expect("typed info");
+        assert_eq!(info.log_dir, expected);
     }
 }

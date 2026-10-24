@@ -10,6 +10,8 @@ rust-version = "1.98"
 publish = false
 
 [workspace.dependencies]
+zip = { version = "=8.6.0", default-features = false }
+aho-corasick = "1"
 devbox-protocol = { path = "crates/protocol" }
 devbox-mux = { path = "crates/mux" }
 devbox-core = { path = "crates/core" }

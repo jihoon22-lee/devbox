@@ -3,8 +3,8 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useRpc } from "../../rpc/RpcProvider";
 import { SectionLayout } from "../../shell/SectionLayout";
-import { EmptyState } from "../../ui";
 import { useCurrentProject } from "../projects/store";
+import { DiagnosticsSettings } from "../settings/DiagnosticsSettings";
 import { ApiWorkspace } from "./api/ApiWorkspace";
 import { ApiBackendProvider, useApiBackend } from "./api/backend";
 import { GrpcPanel } from "./api/grpc/GrpcPanel";
@@ -23,12 +23,6 @@ import { WebhooksPanel } from "./webhooks/WebhooksPanel";
 const TransformsPage = lazy(() =>
   import("./transforms/TransformsPage").then((module) => ({ default: module.TransformsPage })),
 );
-
-const LATER: Record<string, string> = {
-  webhooks: "웹훅",
-  transforms: "변환 도구",
-  env: "개발 환경 점검",
-};
 
 export function ToolsView({
   search,
@@ -66,8 +60,8 @@ export function ToolsView({
       <Suspense fallback={<p>변환 도구를 여는 중…</p>}>
         <TransformsPage toolId={search.tool} onSelect={(tool) => navigate({ view: "transforms", tool })} />
       </Suspense>
-    ) : view !== "api" ? (
-      <EmptyState title={LATER[view] ?? "도구"} body="이 도구는 다음 단계에서 이 자리에 연결됩니다." />
+    ) : view === "env" ? (
+      <DiagnosticsSettings />
     ) : search.tool === "runner" ? (
       <RunnerView root={rootOf(search.root)} />
     ) : search.tool === "websocket" ? (
