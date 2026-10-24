@@ -208,8 +208,25 @@ impl ActivityService {
         tokio::spawn(self.writer.clone().run())
     }
 
-    /// Writes everything queued now (tests, shutdown).
+    /// Writes already closed sessions without splitting the live foreground run.
     pub async fn flush(&self) {
+        self.writer.flush().await;
+    }
+
+    /// Finalizes the run after ingress has drained. Never counts the idle tail.
+    /// Once taken from the sessionizer, every closed interval enters the writer
+    /// before the next await. Failed writes remain queued for a later retry.
+    /// This is graceful finalization, not durability across abrupt termination.
+    pub async fn shutdown(&self) {
+        let projects = (self.projects)().await;
+        {
+            let mut runs = self.runs.lock().expect("activity runs");
+            if let Some(mut run) = runs.take() {
+                let ended = run.sessionizer.close_at_last_input(run.last_input);
+                let closed = run.identify(ended, true);
+                self.writer.push(self.finish(closed, &projects));
+            }
+        }
         self.writer.flush().await;
     }
 

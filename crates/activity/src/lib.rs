@@ -58,4 +58,6 @@ mod ingest_tests;
 #[cfg(all(test, feature = "daemon"))]
 mod service_tests;
 #[cfg(all(test, feature = "daemon"))]
+mod shutdown_tests;
+#[cfg(all(test, feature = "daemon"))]
 mod store_tests;

@@ -156,7 +156,7 @@ export function createEffectRunner(deps: EffectDeps) {
       case "readDisk":
         try {
           const disk = await client.call("documents.read", { key: e.key, policy: e.policy });
-          dispatch(id, { type: "diskLoaded", rev: disk.rev, text: disk.text });
+          dispatch(id, { type: "diskLoaded", rev: disk.rev, text: disk.text, readOnly: disk.readOnly });
         } catch {
           // The next change event or reconnect reads again.
         }

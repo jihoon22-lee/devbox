@@ -209,8 +209,9 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
         s2.cancel();
     });
-    server::serve(socket.listener, services, shutdown).await?;
-    activity.flush().await;
+    let served = server::serve(socket.listener, services, shutdown).await;
+    activity.shutdown().await;
+    served?;
     tracing::info!("daemon stopped");
     if runtime.restart_requested() {
         anyhow::bail!("intentional daemon restart after environment refresh");

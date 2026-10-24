@@ -232,3 +232,36 @@ async fn replayed_batch_is_ignored() {
         (local_ms(10), local_ms(11))
     );
 }
+
+#[tokio::test]
+async fn graceful_owned_daemon_shutdown_finalizes_the_open_activity_run() {
+    use nix::sys::signal::{Signal, kill};
+    use nix::unistd::Pid;
+    let mut d = TestDaemon::start();
+    let mut batch = ingest();
+    batch.events[1].kind = ObservationKind::Input;
+    batch.events[1].app = Some("code.exe".into());
+    assert_eq!(
+        accepted(renderer_send(&d, &batch, "activity-open-shutdown").await),
+        2
+    );
+    assert!(
+        stored(&d).await.is_empty(),
+        "ordinary writer flush cannot see the open session"
+    );
+    let child = d.child.take().expect("owned foreground fixture child");
+    kill(Pid::from_raw(child.0.id() as i32), Signal::SIGTERM).expect("term only owned fixture PID");
+    assert!(support::exits(child).success(), "graceful fixture shutdown");
+    d.launch();
+    let rows = stored(&d).await;
+    assert_eq!(
+        rows.len(),
+        1,
+        "daemon shutdown finalized the interval before restart"
+    );
+    assert_eq!(
+        (rows[0].start_ms, rows[0].end_ms),
+        (local_ms(10), local_ms(11))
+    );
+    assert_eq!(rows[0].title, TITLE);
+}

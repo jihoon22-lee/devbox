@@ -383,3 +383,52 @@ async fn daemon_private_folders_are_refused_through_any_root() -> T {
     assert_eq!(fx.read("a.md"), "a\n");
     Ok(())
 }
+
+#[tokio::test]
+async fn unreadable_external_files_report_their_classification_without_a_new_lease() -> T {
+    for (bytes, reason) in [
+        (b"external\0binary".to_vec(), ReadOnlyReason::Binary),
+        (vec![255, 254, 253], ReadOnlyReason::Encoding),
+        (
+            vec![b'x'; NOTE_LIMIT as usize + 1],
+            ReadOnlyReason::TooLarge,
+        ),
+    ] {
+        let (fx, root) = fixture_with_note("a.md", "readable initial note");
+        let c = claimed(&fx.svc, "a.md", "w1").await;
+        std::fs::write(root.join("a.md"), &bytes)?;
+        let refreshed = fx
+            .svc
+            .read_disk(&key("a.md"), DocKind::Note)
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+        assert!(refreshed.text.is_none());
+        assert_eq!(refreshed.read_only.expect("classification").reason, reason);
+        assert!(refreshed.rev.is_some());
+        let taken = fx
+            .svc
+            .take(
+                Default::default(),
+                TakeDocument {
+                    key: key("a.md"),
+                    window_id: "w2".into(),
+                    policy: Some(note()),
+                },
+            )
+            .await
+            .map_err(|e| format!("{e:?}"))?
+            .expect("live caller");
+        assert!(taken.lease_id.is_none());
+        assert_eq!(taken.read_only.expect("take classification").reason, reason);
+        assert!(matches!(
+            domain(
+                fx.svc
+                    .save(save(&c, c.rev.clone(), "stale typed replacement"))
+                    .await
+            ),
+            DocumentsError::Conflict { .. }
+        ));
+        assert_eq!(std::fs::read(root.join("a.md"))?, bytes);
+    }
+    Ok(())
+}

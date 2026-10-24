@@ -26,7 +26,9 @@ export interface Doc {
   inflight?: { seq: number; baseRev: DiskRev | null; expect: Expect };
   pendingExternal: (DiskRev | null)[];
   conflictRev?: DiskRev | null;
-  disk?: { rev: DiskRev | null; text: string | null };
+  disk?: { rev: DiskRev | null; text: string | null; readOnly?: ReadOnly };
+  /** Disk content refusal is independent of another window holding the lease. */
+  diskReadOnly?: ReadOnly;
   /** A draft to offer; `other` is a second, different draft (this device vs the daemon) offered too. */
   recovery?: Draft & { other?: Draft };
   text: string;
@@ -62,7 +64,7 @@ export type DocEvent =
   | { type: "reconnected" }
   | { type: "resync" }
   | { type: "external"; rev: DiskRev | null }
-  | { type: "diskLoaded"; rev: DiskRev | null; text: string | null }
+  | { type: "diskLoaded"; rev: DiskRev | null; text: string | null; readOnly?: ReadOnly | null }
   | { type: "restore"; which?: "other" }
   | { type: "discard" }
   | { type: "resolve"; choice: "mine" | "disk" | "merged"; text?: string }
@@ -136,6 +138,8 @@ const drop = (d: Doc, uptoSeq: number): Effect =>
     ? { type: "journalDrop", key: d.key, uptoSeq, leaseId: d.leaseId }
     : { type: "journalDrop", key: d.key, uptoSeq };
 const apply = (text: string): Effect => ({ type: "applyText", text, undoable: true });
+const fileRefusal = (reason?: ReadOnly | null) =>
+  reason?.reason === "leased_elsewhere" ? undefined : (reason ?? undefined);
 const unsaved = (d: Doc) => d.editSeq > d.savedSeq;
 const autosave = (d: Doc): Effect[] => (d.policy.kind === "note" ? [{ type: "scheduleSave", ms: 1000 }] : []);
 const release = (d: Doc): Effect[] => (d.leaseId ? [{ type: "release", leaseId: d.leaseId }] : []);
@@ -159,7 +163,8 @@ function offline(d: Doc, baseRev: DiskRev | null = d.diskRev): Step {
 
 function loseLease(d: Doc, reason: LeaseLoss): Step {
   const base = { ...d, leaseId: undefined, inflight: undefined };
-  if (reason === "taken") return out({ ...base, state: "ReadOnly", readOnly: { reason: "leased_elsewhere" } });
+  if (reason === "taken")
+    return out({ ...base, state: "ReadOnly", readOnly: d.diskReadOnly ?? { reason: "leased_elsewhere" } });
   if (d.state === "Closed" || d.state === "ReadOnly") return out(base);
   return out({ ...base, state: d.state === "Saving" ? "Dirty" : d.state, retry: d.retry || d.state === "Saving" }, [
     claim(d),
@@ -184,7 +189,7 @@ function journalTick(d: Doc): Step {
 
 /** Loading → Clean, Recovering or ReadOnly. Sequences continue above every journal already written. */
 function loaded(d: Doc, c: Claimed, entry: OfflineEntry | undefined): Step {
-  const format = { diskRev: c.rev, eol: c.eol, bom: c.bom, error: undefined };
+  const format = { diskRev: c.rev, eol: c.eol, bom: c.bom, error: undefined, diskReadOnly: fileRefusal(c.readOnly) };
   if (c.readOnly || !c.leaseId)
     return out({ ...d, ...format, state: "ReadOnly", readOnly: c.readOnly ?? undefined, text: c.text ?? "" });
   const disk = c.text ?? "";
@@ -260,16 +265,31 @@ function reclaimed(d: Doc, c: Claimed): Step {
   if (c.readOnly || !c.leaseId) {
     const keep = unsaved(d) || d.state === "Recovering";
     const text = keep ? d.text : (c.text ?? d.text);
-    const next: Doc = { ...d, state: "ReadOnly", leaseId: undefined, readOnly: c.readOnly ?? undefined, text };
-    return out(keep ? next : { ...next, diskRev: c.rev }, text === d.text ? [] : [apply(text)]);
+    const diskReadOnly = fileRefusal(c.readOnly);
+    const next: Doc = {
+      ...d,
+      state: "ReadOnly",
+      leaseId: undefined,
+      readOnly: c.readOnly ?? undefined,
+      diskReadOnly,
+      text,
+    };
+    return out(keep || diskReadOnly ? next : { ...next, diskRev: c.rev }, text === d.text ? [] : [apply(text)]);
   }
-  let next: Doc = { ...d, leaseId: c.leaseId, readOnly: undefined, error: undefined, ...above(d, c.journal?.seq ?? 0) };
+  let next: Doc = {
+    ...d,
+    leaseId: c.leaseId,
+    readOnly: undefined,
+    diskReadOnly: undefined,
+    error: undefined,
+    ...above(d, c.journal?.seq ?? 0),
+  };
   const offered = foreignJournal(next, d, c);
   if (offered) return offered;
   if (d.state === "ReadOnly") next = { ...next, state: unsaved(d) ? "Dirty" : "Clean" };
   if (next.state === "Recovering" && next.recovery?.text === undefined)
     return out(next, [{ type: "journalRead", leaseId: c.leaseId }]);
-  if (next.state === "Clean" && !sameRev(c.rev, d.diskRev)) {
+  if (next.state === "Clean" && (d.state === "ReadOnly" || !sameRev(c.rev, d.diskRev))) {
     if (!c.rev) return out({ ...next, state: "Orphaned", diskRev: null });
     const text = c.text ?? "";
     return out({ ...next, diskRev: c.rev, text }, text === d.text ? [] : [apply(text)]);
@@ -296,43 +316,56 @@ function external(d: Doc, rev: DiskRev | null): Step {
     case "Conflict":
       return out({ ...d, conflictRev: rev, disk: undefined }, [readDisk(d)]);
     case "Recovering":
-      return sameRev(rev, d.diskRev) ? out(d) : out(d, [readDisk(d)]);
+      return sameRev(rev, d.diskRev) && !d.diskReadOnly ? out(d) : out(d, [readDisk(d)]);
     case "ReadOnly":
-      return unsaved(d) || sameRev(rev, d.diskRev) ? out(d) : out(d, [readDisk(d)]);
+      return sameRev(rev, d.diskRev) && !d.diskReadOnly ? out(d) : out(d, [readDisk(d)]);
     default:
       return out(d);
   }
 }
 
-function diskLoaded(d: Doc, rev: DiskRev | null, text: string | null): Step {
+function diskLoaded(d: Doc, rev: DiskRev | null, text: string | null, readOnly?: ReadOnly | null): Step {
   const changed = !sameRev(rev, d.diskRev);
+  const diskReadOnly = fileRefusal(readOnly);
+  const disk = { rev, text, readOnly: diskReadOnly };
+  const classified = { ...d, diskReadOnly };
+  // A present file with no text is never an empty editable document. Keep the
+  // last readable base/buffer until classification or a successful claim resolves it.
+  if (rev && text === null && !diskReadOnly) return out(d);
   switch (d.state) {
     case "Clean":
+      if (diskReadOnly) return out({ ...classified, state: "ReadOnly", readOnly: diskReadOnly, disk, retry: false });
+      if (!changed) return out(d);
+      if (!rev) return out({ ...classified, state: "Orphaned", diskRev: null });
+      return out({ ...classified, diskRev: rev, text: text ?? "" }, text === d.text ? [] : [apply(text ?? "")]);
     case "Recovering":
-    case "ReadOnly": {
-      if (!changed) return out(d);
-      // Unsaved edits are never replaced: keep the old base so the next save compares (Conflict).
-      if (d.state === "Recovering" && unsaved(d)) return out({ ...d, disk: { rev, text } });
-      if (d.state === "ReadOnly" && unsaved(d)) return out(d);
-      if (!rev && d.state === "Clean") return out({ ...d, state: "Orphaned", diskRev: null });
-      const next = text ?? "";
-      return out({ ...d, diskRev: rev, text: next }, next === d.text ? [] : [apply(next)]);
-    }
+      // Recovery drafts and their old CAS base survive unreadable external content.
+      if (diskReadOnly || unsaved(d)) return out({ ...classified, disk });
+      if (!changed) return out({ ...classified, disk: undefined });
+      return out(
+        { ...classified, disk: undefined, diskRev: rev, text: text ?? "" },
+        text === d.text ? [] : [apply(text ?? "")],
+      );
+    case "ReadOnly":
+      if (diskReadOnly) return out({ ...classified, readOnly: diskReadOnly, disk, retry: false });
+      // Readable again: claim proves the current lease/format before enabling edits.
+      if (d.diskReadOnly) return out({ ...d, disk }, [claim(d)]);
+      if (unsaved(d) || !changed) return out(d);
+      return out({ ...classified, diskRev: rev, text: text ?? "" }, text === d.text ? [] : [apply(text ?? "")]);
     case "Dirty":
-      if (!changed) return out(d);
-      if (!rev) return out({ ...d, state: "Orphaned", diskRev: null });
-      return out({ ...d, state: "Conflict", conflictRev: rev, disk: { rev, text } });
+      if (!changed && !diskReadOnly) return out(d);
+      if (!rev) return out({ ...classified, state: "Orphaned", diskRev: null });
+      return out({ ...classified, state: "Conflict", conflictRev: rev, disk });
     case "Orphaned":
       if (!rev) return out(d);
-      if (!unsaved(d)) return diskLoaded({ ...d, state: "Clean" }, rev, text);
-      return out({ ...d, state: "Conflict", conflictRev: rev, disk: { rev, text } });
+      if (!unsaved(d)) return diskLoaded({ ...d, state: "Clean" }, rev, text, readOnly);
+      return out({ ...classified, state: "Conflict", conflictRev: rev, disk });
     case "Conflict":
-      // The disk already holds our text (a retried save whose reply was lost): nothing to compare.
-      if (rev && text === d.text) {
-        const done: Doc = { ...d, state: "Clean", diskRev: rev, savedSeq: d.editSeq, retry: false };
+      if (!diskReadOnly && rev && text === d.text) {
+        const done: Doc = { ...classified, state: "Clean", diskRev: rev, savedSeq: d.editSeq, retry: false };
         return out({ ...done, conflictRev: undefined, disk: undefined }, [drop(d, d.journalSeq)]);
       }
-      return out({ ...d, conflictRev: rev, disk: { rev, text } });
+      return out({ ...classified, conflictRev: rev, disk });
     default:
       return out(d);
   }
@@ -373,17 +406,26 @@ function saveFailed(d: Doc, e: DocEvent & { type: "saveFailed" }): Step {
 function resolve(d: Doc, e: DocEvent & { type: "resolve" }): Step {
   if (d.state !== "Conflict") return out(d);
   const rev = d.conflictRev ?? null;
-  if (e.choice === "mine") return startSave({ ...d, diskRev: rev, disk: undefined, conflictRev: undefined });
+  if (e.choice === "mine")
+    return startSave({ ...d, diskRev: rev, disk: undefined, diskReadOnly: undefined, conflictRev: undefined });
   if (e.choice === "merged") {
     const text = e.text ?? d.text;
-    const next: Doc = { ...d, state: "Dirty", text, diskRev: rev, editSeq: d.editSeq + 1, disk: undefined };
+    const next: Doc = {
+      ...d,
+      state: "Dirty",
+      text,
+      diskRev: rev,
+      editSeq: d.editSeq + 1,
+      disk: undefined,
+      diskReadOnly: undefined,
+    };
     return out({ ...next, conflictRev: undefined }, [
       apply(text),
       { type: "scheduleJournal", ms: 300 },
       ...autosave(d),
     ]);
   }
-  if (d.disk?.text == null) return out(d);
+  if (d.disk?.text == null || d.disk.readOnly) return out(d);
   const text = d.disk.text;
   const next: Doc = { ...d, state: "Clean", text, diskRev: d.disk.rev, savedSeq: d.editSeq, retry: false };
   // The rejected draft must not come back as a recovery candidate (AR-F13).
@@ -472,7 +514,7 @@ export function reduce(d: Doc, e: DocEvent): Step {
     case "external":
       return external(d, e.rev);
     case "diskLoaded":
-      return diskLoaded(d, e.rev, e.text);
+      return diskLoaded(d, e.rev, e.text, e.readOnly);
     case "restore": {
       const text = e.which === "other" ? d.recovery?.other?.text : d.recovery?.text;
       if (d.state !== "Recovering" || text === undefined) return out(d);
@@ -488,13 +530,18 @@ export function reduce(d: Doc, e: DocEvent): Step {
         const next: Doc = { ...d, state: "Dirty", recovery: undefined, editSeq: d.editSeq + 1 };
         return out(next, [drop(d, theirs), { type: "scheduleJournal", ms: 300 }, ...autosave(d)]);
       }
-      return out({ ...d, state: "Clean", recovery: undefined }, [drop(d, d.journalSeq)]);
+      return out(
+        { ...d, state: d.diskReadOnly ? "ReadOnly" : "Clean", readOnly: d.diskReadOnly, recovery: undefined },
+        [drop(d, d.journalSeq)],
+      );
     case "resolve":
       return resolve(d, e);
     case "leaseLost":
       return loseLease(d, e.reason);
     case "take":
-      return d.state === "ReadOnly" && d.readOnly?.reason === "leased_elsewhere" ? out(d, [claim(d, true)]) : out(d);
+      return d.state === "ReadOnly" && d.readOnly?.reason === "leased_elsewhere" && !d.diskReadOnly
+        ? out(d, [claim(d, true)])
+        : out(d);
     case "moved":
       return d.state === "Closed" ? out(d) : out({ ...d, key: e.to });
     case "close":

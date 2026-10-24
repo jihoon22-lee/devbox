@@ -15,15 +15,16 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. Task 1–11 완료, **Task 12 · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) 자동 리뷰 1회차 수정·독립 검토 완료**. `9ac34522` 코드3·보안0 완료, 별도 재현에서 세 건 모두 데이터 손실 차단으로 판정. 폴더 이동 journal·exchange crash sweep·노트 popout close 한 묶음 수정·최종 독립 검토 APPROVE. 소스 변경 뒤 새 CI·직접 영향 Windows 검증 필요 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. **Task 12 · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) 자동 리뷰 2회차 수정·독립 검토 완료**. 1회차 세 수정은 독립 APPROVE 후 `4640f779` commit/push·CI3/E2E PASS. 2회차 코드2·보안0 완료, 읽을 수 없는 외부 파일의 autosave 덮어쓰기와 정상 종료 활동 기록 소실을 실제 데이터 손실로 재현했다. 두 수정과 복구 상태 전이 보완이 독립 검토 APPROVE를 받아 한 묶음으로 push한다. 새 SHA CI·3회차 리뷰·직접 영향 native 수용을 이어간다 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · PR #644 1회차 코드3/보안0 수정·재검토 완료. 최초 전체 check FAIL·수정별 PASS 및 `9ac34522` 설치 실기6 PASS/3 helper FAIL/사례6·SC2 NOT_RUN 원본 보존. 이번 수정은 독립 검토 승인, 새 SHA 필수 CI·Windows 영향 수용 대기 |
+| 마지막 갱신 | 2026-10-24 · PR #644 2/3회차(코드2·보안0) 수정·직접 영향 검증·최종 독립 APPROVE. `4640f779` CI3/E2E PASS는 수정 전 근거이며 새 SHA 검사/설치 수용 대기. 1회차·이전 native 원본 결과와 실패를 보존한다 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-24 | S3 PR #644 2회차 공유 파일 예외: `crates/cli/src/daemon/mod.rs`의 기존 serve 후 activity flush 두 줄을 serve 결과 보관 → 명시적 activity shutdown → 원래 serve 오류 반환 순서로 보정 | 사용자 승인 범위 내 에이전트 · 독립 재현 실제 데이터 손실, 부모 하네스 명시 승인 | 등록 확장 없이 기존 종료 조립만 수정. 열린 활동 session이 정상 재시작에도 두 시간 분량 소실됨을 실제 SQLite fixture에서 확인. 수정 전 예외 기록, S5에 경계 통지 |
 | 2026-10-21 | S3 공유 파일 예외 1: 동결 `crates/core/src/config.rs`에 `[notes]`·`[search]`·`[activity]` 표 허용 | 에이전트 · 00 §3.6 기록 후 진행 | 기록: `Config`의 `deny_unknown_fields` 때문에 표가 있으면 데몬·MCP가 시작하지 못해 불가피. 최소안은 opaque `toml::Table` 세 필드(`#[serde(default)]`)와 `read_table` 목록 3이름(제품 약10·시험 약15줄), 키 검증은 각 도메인 crate. 규칙을 다른 파일로 옮기면 01 §7과 어긋나 채택 안 함. S5(07b)는 이 파일을 고치지 않으므로 S3 Task 4 Step 0 별도 커밋이 맡는다. 사용자가 막으면 Task 4 전에 멈춤 |
 | 2026-10-21 | S3 Task 8: `config.toml` 동시 쓰기 잠금(`crates/secrets` `save_name`과 `activity.set_rules`가 같은 flock·symlink 거부) | 에이전트 | 기록: `crates/secrets`는 동결 대상이 아니다. S5 트랙은 `save_name`을 고치지 않는다(07b). 루트 `README.md`에 잠금 파일 안내 한 줄(줄 추가만) |
 | 2026-10-22 | 자원 제한: WSL 재시작(23:36) 뒤 `user@1000.service`가 `failed (Result: signal)`, `loginctl` 세션 0·`/run/user/1000` 없음이라 `verify-resources.py`의 `systemd-run --user --scope` 시험이 실패해 메모리 cgroup(high 6/max 8 GiB·swap 1 GiB)이 걸리지 않음(`memory_enforced:false`). jobs·CPU·nice는 적용 | 사용자 | 관찰·대기: 시스템 설정은 바꾸지 않음. 복구 후보는 사용자가 로그인 세션을 다시 열거나 user 서비스를 재시작. 그동안 available 메모리를 보고 2 GiB 아래면 무거운 빌드를 멈추며, 실행 결과에 미적용을 기록 |
@@ -73,7 +74,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
-| S3 | `v1/s3-knowledge` | S3 Task 1–12 | PR 열림 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 자동 리뷰 1회차(코드3·보안0), 데이터 손실3건 수정·별도 검토 중 |
+| S3 | `v1/s3-knowledge` | S3 Task 1–12 | PR 열림 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 자동 리뷰 2회차(코드2·보안0), 데이터 손실2건 수정·최종 독립 APPROVE. 1회차3건 `4640f779` 반영 완료 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 대기 | | |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
@@ -116,7 +117,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-24 | Task 8: 구현 1회·검토 2회·수정 1회 약1.5h, Task 9: 구현 1회·검토 2회·수정 1회 약1.5h(사용량 한도 대기 제외). 실제 Windows 훅 미실행 |
 | S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
-| S3 | 마무리 | Task 12 → S3 PR | `v1/s3-knowledge` | 작업 중 | 2026-10-24 | | PR #644 1회차 코드3·보안0 완료. 데이터 손실3건 수정·직접 영향 검증·독립 검토 APPROVE, 새 SHA CI/Windows 영향 수용 대기 |
+| S3 | 마무리 | Task 12 → S3 PR | `v1/s3-knowledge` | 작업 중 | 2026-10-24 | | PR #644 2회차 코드2·보안0 완료. 데이터 손실2건 수정·직접 영향 검증·독립 APPROVE, 최종 3회차 리뷰/CI/Windows 영향 수용 대기 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
@@ -359,6 +360,19 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
 
+### S3 Task 12 PR #644 2회차 수정 (2026-10-24, 독립 검토 승인)
+
+- 최종 독립 검토 APPROVE(`s3-task12/pr-review-2/independent/fixes-review-final.json`). 같은 내용의 readable 복원에서도 분류가 갱신되고 복구 초안은 선택 전까지 보존됨을 확인했다. 소스11/근거22 해시 일치. 원래 두 데이터 손실 경로 수정·활동 종료 정리는 앞선 검토 승인을 유지하며 새 SHA CI·native 영향 검증은 별도다.
+
+- 자동 리뷰 2/3회: `4640f779` 코드2건·보안0건 완료. 독립 검토가 [외부 unreadable refresh](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366645546)와 [활동 shutdown](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366645548)을 실제 데이터 손실로 판정했다(`s3-task12/pr-review-2/independent/review.json`). 두 수정은 독립 검토 뒤 한 번 commit/push하며 3회차를 기다린다.
+- DocumentStore: `documents.read.readOnly`를 effect→machine으로 전달하고 파일 분류를 다른 창의 lease read-only와 구분한다. clean 외부 binary/encoding/too_large는 기존 buffer/base를 보존한 비편집 상태이며 null을 빈 편집 문서로 채택하지 않는다. dirty/conflict/recovery draft는 유지하고, unreadable revision을 save base로 쓰는 것은 사용자의 명시적 conflict `mine`/`merged` 선택뿐이다. 읽을 수 있는 내용으로 돌아오면 claim으로 현재 lease/텍스트를 확인한다. 이전 base와 같은 바이트로 되돌려도 file refusal은 해제될 수 있으며 take/lease-lost가 파일 분류를 우회하지 못한다. generic documents CAS 계약은 변경하지 않았다.
+- ActivityService: 일반 `flush`는 기존 writer-only 동작을 유지하고, 새 `shutdown`은 ingress drain 뒤 열린 run과 pending 구간을 last input으로 닫아 기존 identity·privacy·attribution·finish 경로를 거쳐 queue에 넣은 다음 flush한다. run을 꺼낸 뒤 queue에 넣기 전 await가 없다. daemon의 기존 serve 결과를 먼저 보관해 성공·오류 모두 shutdown을 수행한 뒤 원래 오류를 반환한다(공유 줄 예외 §2 사전 기록). 실패 batch는 같은 ID로 재시도 큐에 남아 중복 저장을 막는다.
+- 원인 RED: 실제 store 세 분류가 editable Clean/빈 text가 되던 실패3개, 실제 SQLite에서 240 input heartbeat(2시간) ACK 뒤 정상 종료/restart가 0행이던 실패를 보존했다. 추가로 unreadable 뒤 원래 readable 바이트로 되돌릴 때와 readable re-claim 실패 뒤 resync의 stale classification RED도 수정했다.
+- 현재 직접 검증: frontend affected87 PASS 뒤 독립 검토가 지적한 Recovering same-content 분류 해제 회귀를 추가(새 store 회귀14개: 세 분류·dirty/conflict/recovery·lease take·same-content 복원·실패 claim 뒤 resync). ActivityService 새 shutdown4·기존 포함48 PASS(실제 SQLite, idle tail/pending·반복 shutdown·현재 privacy/귀속·저장 실패/lost reply queue). 실제 DocumentsService 파일 계약1개(3분류) PASS. 소유 foreground TestDaemon만 SIGTERM→restart한 CLI activity3 PASS로 조립 경로를 검증했다(호스트 서비스 변경 없음). typecheck·activity/documents/CLI all-target strict Clippy·MSVC accept all-target strict Clippy PASS. 완료 Biome454 PASS. 새 검증은 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB 적용(`memory_enforced=true`). 전체 check·무관한 E2E는 반복하지 않는다.
+- 2회차 delta 검토: 원래 데이터 손실2건·activity 수정은 승인되었고, Recovering → unreadable → 원래 readable 바이트 복원 → recovery discard가 잘못 ReadOnly를 남기는 작은 상태 전이를 추가 재현했다. revision 내용이 같아도 최신 분류를 반영하고 오래된 disk 비교 상태를 비우되 recovery candidate/journal은 명시 선택 전까지 보존한다. RED→직접 상태/store69·typecheck·Biome454 PASS 뒤 빠른 재검토로 넘기며 변경 없는 Rust/MSVC는 반복하지 않는다.
+- 한계 정정: Task8의 “최대 1초분” 손실 평가는 잘못되었다. 1초는 writer 주기일 뿐이며 열린 세션과 실패 큐가 나타내는 시간에는 상한이 없다. 정상 종료는 이번에 닫고 저장하지만 강제 종료·크래시·계속되는 DB 쓰기 실패의 durable spool은 구현하지 않았다. 실패 큐 재시도 PASS를 DB 실패 상태에서의 종료 보존 PASS로 보고하지 않는다.
+- 다음: 두 수정 독립 검토 → 묶음 commit/push → 최종 3회차·필수 CI 및 새 SHA 직접 영향 Windows 검증. 외부 targeted helper의 미완성 변경은 별도 artifact에 보존했으며 실제 설치·추가 dispatch는 하지 않았다.
+
 ### S3 Task 12 PR #644 1회차 수정 (2026-10-24, 독립 검토 승인)
 
 - 최종 독립 검토 APPROVE(`s3-task12/pr-review-1/independent/fixes-review.json`). 검토자가 폴더 이동3·교환12·닫기9를 재검증 PASS했고 소스17/근거17 해시 일치를 확인했다. Windows native close는 아직 미실행이며 새 SHA의 필수 CI·직접 영향 수용을 이어간다.
@@ -369,7 +383,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - popout close: Windows native handler가 JS listener 설치 전부터 close를 막고, renderer는 입력을 잠근 뒤 실제 store의 이전 effect와 최신 buffer save 완료·안전한 상태·lease release 완료까지 기다린 다음 좁게 허용된 native destroy를 요청한다. 오류/충돌/lease loss는 버퍼를 남기고 편집을 재개한다. pending write·100ms close·중복 close·destroy 실패를 actual store와 close callback에서 검사했다.
 - 현재 근거: `pr-review-1/red-folder-journal.txt`·`red-exchange-sweep.txt` 원인 RED 보존, documents57 PASS와 추가 일반 동시성 검사, popout 관련25 PASS·typecheck·MSVC accept lib compile PASS. 직접 영향 notes118·CLI documents7/MCP notes2/notes4 PASS, documents/notes all-target strict Clippy 및 MSVC accept all-target strict Clippy PASS. Clippy 최초 unused import 실패는 보존하고 수정 뒤 PASS를 별도 기록했다. 완료 Biome453 PASS. 모든 새 검증은 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB 적용(`memory_enforced=true`). 전체 check·무관한 E2E를 반복하지 않는다. native 실제 close는 NOT_RUN이다.
 - 이전 설치 근거는 `s3-task12/native-acceptance-final-assessment.json`에 원본5회·hash chain·최종6 PASS(1·2·3·5·9·10)/3 helper전제 FAIL(4·7·8)/사례6·SC2 NOT_RUN을 보존했다. 모든 소유 정리·prod 불변 PASS, retained[]. Windows `40072532925` 산출물은 수정 전 `9ac34522`의 근거이며 새 변경의 PASS로 재사용하지 않는다. SC2 native 측정이 없고 browser/단위 timing으로 대체하지 않는다. foreground 필요 사용자 click/설정 우회는 하지 않는다.
-- 다음: 세 수정의 별도 독립 검토 → 한 번의 commit/push → 새 SHA 필수 CI와 변경에 직접 영향받는 Windows 검증. 자동 리뷰 회차·원본 실패를 보존하며 현재 PR 수용/머지 완료가 아니다.
+- 완료: `pr-review-1/independent/fixes-review.json` 독립 APPROVE 후 `4640f779` 한 번 commit/push. CI40080706972·Windows40080706995 필수3종/E2E PASS. 이어진 2회차 지적2건은 별도 수정 중이며 PR 수용/머지 완료가 아니다.
 
 ### S3 Task 12 제품 검증 결과 (2026-10-24, 트랙 1 · 제품 코드 독립 검토 승인)
 
@@ -422,7 +436,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 검증: 이식 25개는 이식 직후 GREEN(RED 아님). RED: 새 시험 10개(`todo!()` 단계, 검토가 단언 구분력은 sabotage로 보충), secrets 잠금, 데몬 `ingest_is_app_only` 2회(등록 전·server 분기 전 `Cli: Ok`), `input_heartbeat_extends_the_open_session`, fix-1 N1·N2·N6 3개. sabotage 구현자 14+9건(못 잡은 1건 S1b는 이중 방어), 검토 1차 6건 중 4건 못 잡음 → 시험 추가 → 검토 2차 10/10. GREEN: activity 44, `--no-default-features model` 25(트리에 core·rusqlite 없음), secrets 17·`save_name` 2, cli `--test activity` 1·search 7·notes 4·secrets_rpc 1·runtime_secrets 25, `daemon::` 31, clippy `-D warnings`·fmt, `gen-ts --check`, typecheck·messages 2, musl check, `--no-default-features` MSVC check(검토), 완료 Biome CI. 메모리 cgroup 미적용(§2). 미실행: check.sh·E2E·Windows 실기(Task 12). 근거 Git common-dir `devbox-verification/s3-task8/`(`fix-1/`·`review-1/`·`review-2/`).
 - 이식: v0.9.0 `crates/activity-engine/src/core/{sessionizer,idle,privacy,attribution}.rs`와 시험 25개. 검토가 diff로 동작 불변 확인(import·rustfmt·`unwrap`→`expect`·idle cfg 제거·clippy allow 1개만).
 - 계획과 달라진 점(해석 포함): `[activity]` 키 snake_case(RPC `PrivacyRules`는 camelCase) · 새 오류 `activity.config_unavailable`(symlink·비일반·TOML 아님·잠금 symlink) · idle 임계값 범위 밖 `activity.invalid_input` · 깨진 `[activity]`에도 데몬은 fail-closed로 시작, `activity.rules`는 가리기 규칙 또는 원래 규칙 반환 · 규칙·상태 rev는 시각에서 시작한 메모리 카운터라 `activity.changed`에 DB rev와 섞임(조회마다 rev 비교라 무해) · 세션을 연 seq는 서비스가 따로 추적(sessionizer 불변) · 규칙·귀속은 닫힌 세션에, 귀속은 규칙 뒤 제목으로 · 길이 0 세션 저장 안 함 · `input`은 열린 세션 우선 연장 · **`dropped`는 묶음이 있으면 runId별 누적값, 서버가 늘어난 만큼만 더함(새 run은 0부터, `batch=null`이면 그 호출 수) → Task 9 네이티브 `OfflineBuffer`가 따를 계약** · `runs` 상태 칸은 하나(인스턴스당 앱 하나 전제) · day·range 집계는 `export.rs` · 파일 추가 `dto.rs`·`fixture.rs`·`ingest_tests.rs` · `daemon` 기능 선택 의존 toml·rustix·sha2·tracing·uuid · secrets `save_name`은 연관 함수, `create_dir_all`을 잠금 앞으로.
-- 후속(비차단): 모르는 키로 설정을 못 읽을 때 `set_rules`가 그 키를 남겨 재시작하면 다시 fail-closed · `config.local.toml` `[activity]` 깊은 병합이 덮어쓸 수 있음 · `flock` 시간 제한 없음 · `serve(...).await?` 오류 종료 때 flush 건너뜀(메모리 큐 최대 1초분, 기존 줄 수정이 필요해 보류) · runId가 번갈아 오거나 중간 `batch=null`이면 run 상태 초기화(이론상, Task 9는 늘 batch) · 잠금 안 symlink 검사와 읽기 사이 작은 경합 창(rename이라 대상 불변) · 일일 요약(Task 6 `summary.rs`) 활동 합계 줄을 맡은 과제가 계획에 없음 → Task 10 또는 11에서 판정 · `pause` 저장 실패 무관 처리 전용 시험 없음 · 재시작 경계 열린 세션 일부 손실은 계획의 알려진 한계.
+- 후속(비차단): 모르는 키로 설정을 못 읽을 때 `set_rules`가 그 키를 남겨 재시작하면 다시 fail-closed · `config.local.toml` `[activity]` 깊은 병합이 덮어쓸 수 있음 · `flock` 시간 제한 없음 · `serve(...).await?` 오류 종료 누락과 열린 세션 정상 종료 소실은 PR #644 2회차 수정 대상. **당시 “메모리 큐 최대 1초분”은 잘못된 평가로 정정한다**: 1초는 writer 실행 주기일 뿐, 열린 세션과 실패 재시도 큐가 나타내는 활동 시간은 수 시간 이상일 수 있고 시간 상한이 없다 · runId가 번갈아 오거나 중간 `batch=null`이면 run 상태 초기화(이론상, Task 9는 늘 batch) · 잠금 안 symlink 검사와 읽기 사이 작은 경합 창(rename이라 대상 불변) · 일일 요약(Task 6 `summary.rs`) 활동 합계 줄을 맡은 과제가 계획에 없음 → Task 10 또는 11에서 판정 · `pause` 저장 실패 무관 처리 전용 시험 없음 · 정상 drain 종료의 열린 세션은 이번 명시적 shutdown으로 저장한다. 강제 종료·크래시 또는 저장소 실패가 지속된 채 종료하면 열린 세션/메모리 재시도 큐는 durable하지 않아 시간 손실 상한이 없으며, 이번 수정이 crash durability를 해결한 것은 아니다.
 
 ### S3 Task 7 `crates/search` 결과 (2026-10-23, 트랙 1)
 

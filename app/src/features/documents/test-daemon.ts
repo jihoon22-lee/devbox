@@ -1,5 +1,5 @@
 import { type ClientState, RpcError } from "../../rpc/client";
-import type { DiskRev, DocKey, Methods, Topics } from "../../rpc/gen/rpc";
+import type { DiskRev, DocKey, Methods, ReadOnly, Topics } from "../../rpc/gen/rpc";
 import { keyId } from "./offlineJournal";
 import type { DocumentsClient } from "./store";
 
@@ -35,6 +35,7 @@ export class FakeDocumentsDaemon implements DocumentsClient {
   state: ClientState = "ready";
   files = new Map<string, { rev: DiskRev; text: string }>();
   journals = new Map<string, Journal>();
+  readOnlyFiles = new Map<string, ReadOnly>();
   leases = new Map<string, { key: DocKey; window: string; floor: number }>();
   calls: Call[] = [];
   /** Methods that fail with this code while set (for example `documents.journal_drop`). */
@@ -46,6 +47,7 @@ export class FakeDocumentsDaemon implements DocumentsClient {
 
   write(key: DocKey, text: string): DiskRev {
     const rev = revOf(text);
+    this.readOnlyFiles.delete(keyId(key));
     this.files.set(keyId(key), { rev, text });
     return rev;
   }
@@ -129,6 +131,18 @@ export class FakeDocumentsDaemon implements DocumentsClient {
       case "documents.take": {
         const key = p.key;
         const file = this.files.get(keyId(key));
+        const readOnly = this.readOnlyFiles.get(keyId(key));
+        if (readOnly)
+          return {
+            key,
+            leaseId: null,
+            rev: file?.rev ?? null,
+            text: null,
+            eol: "lf",
+            bom: false,
+            readOnly,
+            journal: null,
+          };
         const holder = [...this.leases].find(([, l]) => keyId(l.key) === keyId(key));
         if (holder && holder[1].window !== p.windowId && method === "documents.claim")
           return {
@@ -197,7 +211,8 @@ export class FakeDocumentsDaemon implements DocumentsClient {
       case "documents.read": {
         const key = p.key;
         const file = this.files.get(keyId(key));
-        return { key, rev: file?.rev ?? null, text: file?.text ?? null, readOnly: null };
+        const readOnly = this.readOnlyFiles.get(keyId(key)) ?? null;
+        return { key, rev: file?.rev ?? null, text: readOnly ? null : (file?.text ?? null), readOnly };
       }
       case "documents.release":
         this.leases.delete(p.leaseId);
