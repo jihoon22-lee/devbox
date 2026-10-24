@@ -70,7 +70,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-9 로컬 검증·설치 수용 판정 완료·PR 대기 | 2026-10-25 | | 현재5/8 PASS·과거1/6 PASS·2/3/4/7 NOT_RUN, 미머지 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-9 로컬 검증·설치 수용 판정 완료·PR #646 CI/리뷰 진행 | 2026-10-25 | | 현재5/8 PASS·과거1/6 PASS·2/3/4/7 NOT_RUN, 미머지 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -84,7 +84,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
-| S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
+| S4 | `v1/s4-editor-git` | S4-1–S4-9 | PR 열림 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
 
@@ -130,7 +130,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
 | S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-25 | S4-2 fa86bc8b·S4-3 0cb5a24f·통합 e56a76e8·S4-4 e12fcacf, R1 별도 재검토 APPROVE·Biome800 PASS |
 | S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-25 | 2026-10-25 | S4-5 1416acbe·S4-6 804143bc·S4-7 1736d0ad, 각각 별도 재검토 APPROVE·Biome PASS |
-| S4 | Z | S4-8–S4-9 → S4 PR | `v1/s4-editor-git` | S4-9 로컬 검증·설치 수용 판정 완료·PR 대기 | 2026-10-25 | | 제품 e6304a7e·Windows40129996971 설치5/8 PASS. 1/6은07ebb413 과거 PASS, 2/3/4/7 NOT_RUN. 최종 감사 APPROVE·문서 커밋·S4 PR 하나 진행 예정 |
+| S4 | Z | S4-8–S4-9 → S4 PR | `v1/s4-editor-git` | S4-9 로컬 검증·설치 수용 판정 완료·PR #646 CI/리뷰 진행 | 2026-10-25 | | 제품 e6304a7e·Windows40129996971 설치5/8 PASS. 1/6은07ebb413 과거 PASS, 2/3/4/7 NOT_RUN. 최종 감사 APPROVE·문서1293999f·PR #646 열림 |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
@@ -181,6 +181,12 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 로컬 전체 최초 실패와 범위 수정, TLS 보정 전07ebb Rust1624 PASS/34 ignored, frontend 최초1554 PASS+영향8 PASS(중복 합산 금지), E2E20 PASS+실패 범위3 PASS, TLS RED→deps44/CLI2 및 두 native 실행의 한계는 `s4-final/final-assessment.json`과 bounded artifact manifest에 결속한다. 최종 제품 LOC는 **121277/160000**, 제품600줄 초과0(`loc-after-native-fix.log`)다. 이 문서 갱신에서 검사·빌드·설치·제품 수정은 반복하지 않았다. **S4-9 로컬 검증·수용 판정은 완료, 최종 감사 APPROVE·문서 커밋·S4 PR 하나·필수 CI3·최대3회 리뷰·squash는 대기**이며 S4 머지 완료가 아니다.
 
 - 최종 근거 감사(`final-independent-audit.json`)와 LOC/검증 시점/승인 시점 표현 보정 확인(`final-metadata-audit.json`) 모두 APPROVE다. 검증한 제품 소스는 e6304a7e로 유지하며 다음은 결과 문서 커밋·S4 PR이다.
+
+
+**PR #646 최초 Linux CI 실패 보정(2026-10-25, 별도 검토 APPROVE)**
+- head `1293999ff9215facc8776920343fcd5b5e5d55ec` / CI40132707734의 Rust 실패는 `source_safety::config_warning_lists_keys_without_values_or_synthetic_override`의 초기 경고 없음 assertion이었다(`s4-final/pr-ci-first-failure.log`). 소유 임시 global LFS 설정을 child 환경으로 전달해 같은 line7 실패를 RED로 재현했다. 실제 hosted runner의 전역 설정 내용을 관찰했다고 주장하지 않는다.
+- 원인은 fixture 생성 Git 명령만 global/system 설정을 격리했지만 제품 warnings는 의도대로 전역 설정도 읽는 환경 불일치다. 제품은 수정하지 않고 해당 시험만 owned empty/global-LFS 설정의 별도 child에서 실행한다. 각각 정확한 전역/로컬 key 집합과 값 비노출, command-scope의 synthetic fsmonitor override 제외를 보존하며 parent 환경·실제 host/global config는 바꾸지 않는다.
+- source_safety2 PASS(경고 시험 안 empty/global-LFS 두 child가 각각1개 시험 실행함도 확인), targeted clippy·fmt·Biome 결과와 RED 원본은 `s4-final/pr-ci-fix/`에 보존한다. 이 수정은 test-only이며 native/전체 suite는 반복하지 않는다. 독립 검토 APPROVE(`pr-ci-fix/independent-review.json`). 최초 Windows40132707735·Frontend·E2E는 PASS. 자동 리뷰는 아직 응답/한도 안내가 없어 완료 회차0으로 유지하며, 검토된 CI 시험 보정을 먼저 반영한다. 새 SHA의 필수 CI 성공·자동 리뷰 처리·머지는 아직이다.
 
 ### S4-8 소스 화면 통합 (2026-10-25 · 00be638d 로컬 완료·별도 재검토 APPROVE)
 
