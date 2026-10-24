@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { Methods, NotificationReason } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { useNativeRuntime } from "../../shell/nativeRuntime";
+import { useActivityHealth } from "../activity/useActivityStatus";
 import { useAgentData } from "../agents/AgentData";
 import { STATE_LABEL } from "../agents/model";
 import { nativeAttention, nativeBadge, type RunNavigation } from "./native";
@@ -24,6 +25,24 @@ export function AttentionBridge({
 }) {
   const { client, qc, state } = useRpcSession();
   const data = useAgentData();
+  useActivityHealth();
+  useEffect(
+    () =>
+      client.subscribe(
+        "notes.rename_incomplete",
+        (_revision, event) => {
+          useNotifications.getState().pushOnce({
+            key: `notes:rename:${event.opId}`,
+            kind: "error",
+            title: `링크를 고치지 못한 노트 ${event.count}개`,
+            body: "고치지 못한 노트를 확인하고 다시 시도하세요.",
+            target: { to: "/notes", search: { rename: event.opId } },
+          });
+        },
+        () => {},
+      ),
+    [client],
+  );
   useEffect(
     () =>
       client.subscribe(

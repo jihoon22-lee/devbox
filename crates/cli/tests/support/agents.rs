@@ -14,6 +14,8 @@ impl TestDaemon {
             .chain(devbox_agents::MIGRATIONS)
             .chain(devbox_runtime::MIGRATIONS)
             .chain(devbox_secrets::MIGRATIONS)
+            .chain(devbox_search::MIGRATIONS)
+            .chain(devbox_activity::MIGRATIONS)
             .copied()
             .collect::<Vec<_>>();
         let db = devbox_core::Db::open(

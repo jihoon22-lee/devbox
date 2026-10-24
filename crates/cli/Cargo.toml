@@ -12,6 +12,11 @@ path = "src/main.rs"
 [dependencies]
 sha2.workspace = true
 devbox-secrets.workspace = true
+devbox-documents.workspace = true
+devbox-notes.workspace = true
+devbox-search.workspace = true
+devbox-activity.workspace = true
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 zeroize.workspace = true
 notify = "8.2"
 devbox-agents.workspace = true

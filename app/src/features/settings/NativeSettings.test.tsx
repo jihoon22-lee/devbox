@@ -13,6 +13,8 @@ beforeEach(() => {
           bottomTerminal: null,
           paletteError: "다른 프로그램이 쓰는 중",
           bottomTerminalError: null,
+          capture: "Ctrl+Alt+Shift+N",
+          captureError: null,
         },
   );
 });
@@ -46,6 +48,8 @@ test("shortcut errors are shown and failed reconfiguration retains editable draf
     bottomTerminal: "Ctrl+Alt+T",
     paletteError: null,
     bottomTerminalError: null,
+    capture: "Ctrl+Alt+Shift+N",
+    captureError: null,
   });
   await userEvent.type(screen.getByLabelText("하단 터미널 전역 단축키"), "Ctrl+Alt+T");
   await userEvent.click(screen.getByRole("button", { name: "전역 단축키 저장" }));
@@ -53,6 +57,7 @@ test("shortcut errors are shown and failed reconfiguration retains editable draf
     expect(mocks.invoke).toHaveBeenLastCalledWith("configure_shortcuts", {
       palette: "Ctrl+Alt+P",
       bottomTerminal: "Ctrl+Alt+T",
+      capture: "Ctrl+Alt+Shift+N",
     }),
   );
 });
@@ -72,7 +77,14 @@ test("pending shortcut saves are disabled and status load failure can be retried
   await userEvent.click(screen.getByRole("button", { name: "전역 단축키 저장" }));
   expect(screen.getByRole("button", { name: "전역 단축키 저장" })).toBeDisabled();
   await act(async () =>
-    finish({ palette: "Ctrl+Alt+Shift+Space", bottomTerminal: null, paletteError: null, bottomTerminalError: null }),
+    finish({
+      palette: "Ctrl+Alt+Shift+Space",
+      bottomTerminal: null,
+      paletteError: null,
+      bottomTerminalError: null,
+      capture: "Ctrl+Alt+Shift+N",
+      captureError: null,
+    }),
   );
 });
 test("native returned registration errors preserve attempted shortcut text instead of implying a saved configuration", async () => {
@@ -85,10 +97,41 @@ test("native returned registration errors preserve attempted shortcut text inste
     bottomTerminal: null,
     paletteError: "다른 프로그램이 쓰는 중",
     bottomTerminalError: null,
+    capture: "Ctrl+Alt+Shift+N",
+    captureError: null,
   });
   await userEvent.click(screen.getByRole("button", { name: "전역 단축키 저장" }));
   await waitFor(() =>
-    expect(mocks.invoke).toHaveBeenCalledWith("configure_shortcuts", { palette: "Ctrl+Alt+P", bottomTerminal: null }),
+    expect(mocks.invoke).toHaveBeenCalledWith("configure_shortcuts", {
+      palette: "Ctrl+Alt+P",
+      bottomTerminal: null,
+      capture: "Ctrl+Alt+Shift+N",
+    }),
   );
   expect(palette).toHaveValue("Ctrl+Alt+P");
+});
+
+test("capture shortcut can be customized and registration failure preserves the attempted key", async () => {
+  render(<NativeShortcutSettings />);
+  const input = await screen.findByLabelText("빠른 캡처 전역 단축키");
+  await userEvent.clear(input);
+  await userEvent.type(input, "Ctrl+Alt+Shift+F9");
+  mocks.invoke.mockResolvedValueOnce({
+    palette: "Ctrl+Alt+Shift+Space",
+    bottomTerminal: null,
+    capture: "Ctrl+Alt+Shift+N",
+    captureError: "다른 단축키와 같습니다",
+    paletteError: null,
+    bottomTerminalError: null,
+  });
+  await userEvent.click(screen.getByRole("button", { name: "전역 단축키 저장" }));
+  await waitFor(() =>
+    expect(mocks.invoke).toHaveBeenCalledWith("configure_shortcuts", {
+      palette: "Ctrl+Alt+Shift+Space",
+      bottomTerminal: null,
+      capture: "Ctrl+Alt+Shift+F9",
+    }),
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent("빠른 캡처");
+  expect(input).toHaveValue("Ctrl+Alt+Shift+F9");
 });

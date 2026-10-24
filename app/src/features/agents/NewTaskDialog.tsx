@@ -10,6 +10,7 @@ import { useProjectTrust } from "../projects/useProjectTrust";
 import { AGENT_KEYS } from "./AgentData";
 import s from "./Agents.module.css";
 import { fillTemplate, previewBranch } from "./model";
+import { useAgentsUi } from "./ui";
 
 interface Props {
   open: boolean;
@@ -41,7 +42,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const [title, setTitle] = useState(""),
     [baseBranch, setBaseBranch] = useState("");
   const [worktree, setWorktree] = useState(true),
-    [prompt, setPrompt] = useState("");
+    [prompt, setPrompt] = useState(() => useAgentsUi.getState().draft?.prompt ?? "");
   const project = projects.data?.items.find((p) => p.id === projectId);
   const options = profiles.data?.items ?? [];
   const profile = options.find((p) => p.id === chosenProfile) ?? options[0];
@@ -217,6 +218,9 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
               </Button>
             ))}
           </div>
+          {useAgentsUi.getState().draft?.truncated && (
+            <p role="status">노트 내용이 길어 처음 64 KiB만 지시문에 넣었습니다.</p>
+          )}
           <label htmlFor={`${uid}-prompt`}>지시문</label>
           <TextArea
             id={`${uid}-prompt`}

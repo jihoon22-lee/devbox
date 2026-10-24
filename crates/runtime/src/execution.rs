@@ -133,6 +133,41 @@ impl RuntimeService {
             .internal("save execution state")??;
         Ok(rev)
     }
+    pub(crate) async fn save_starting_run(&self, value: &StoredRun) -> R<u64> {
+        let dir = self.execution()?.paths.data_dir.join("runs");
+        let store = crate::exit_record::ExitStore::new(&dir, &value.run.id)
+            .internal("resolve starting run log")?;
+        std::fs::create_dir_all(&dir).internal("create run log directory")?;
+        if !std::fs::symlink_metadata(&dir)
+            .internal("inspect run log directory")?
+            .file_type()
+            .is_dir()
+        {
+            return Err(Fail::Internal(
+                "run log directory is not a directory".into(),
+            ));
+        }
+        // Publish only after the source exists. The wrapper may start later;
+        // create_new never follows a replacement symlink or truncates old output.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(store.log_path())
+        {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                if !std::fs::symlink_metadata(store.log_path())
+                    .internal("inspect existing run log")?
+                    .file_type()
+                    .is_file()
+                {
+                    return Err(Fail::Internal("run log is not a regular file".into()));
+                }
+            }
+            Err(error) => return Err(Fail::Internal(format!("prepare run log: {error}"))),
+        }
+        self.save_run(value).await
+    }
     pub async fn get(&self, p: RunId) -> R<RunDetail> {
         let id = p.run_id.clone();
         let (run, rev) = self
@@ -289,7 +324,7 @@ impl RuntimeService {
                         .internal("reset execution start limit")?;
                 }
             }
-            self.save_run(&value).await?;
+            self.save_starting_run(&value).await?;
             let args = launch::unit_args_with_executable(
                 def,
                 &id,

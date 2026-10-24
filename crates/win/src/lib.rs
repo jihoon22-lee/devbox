@@ -1,3 +1,6 @@
+#[cfg(any(windows, test))]
+pub mod activity;
+pub mod activity_buffer;
 pub mod dpapi;
 pub mod taskbar;
 pub mod toast;

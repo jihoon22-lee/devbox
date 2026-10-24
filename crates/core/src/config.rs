@@ -12,6 +12,10 @@ pub struct Config {
     pub agents: AgentsConfig,
     pub mcp: McpConfig,
     pub secrets: SecretsConfig,
+    // Opaque here; each knowledge domain crate validates its own keys.
+    pub notes: toml::Table,
+    pub search: toml::Table,
+    pub activity: toml::Table,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -94,7 +98,8 @@ fn read_table(path: &Path) -> Result<toml::Table, CoreError> {
         .map_err(|error| config_error(path, error))?;
     // Serde structs also accept positional sequences; TOML sections must be tables.
     for section in [
-        "projects", "pc", "terminal", "agents", "mcp", "secrets", "windows",
+        "projects", "pc", "terminal", "agents", "mcp", "secrets", "windows", "notes", "search",
+        "activity",
     ] {
         if table.get(section).is_some_and(|value| !value.is_table()) {
             return Err(config_error(path, format!("{section} must be a table")));
@@ -495,6 +500,33 @@ mod tests {
                 matches!(Config::load(&paths),Err(CoreError::Config { path, .. }) if path == paths.config_dir.join("config.toml").display().to_string()),
                 "{input}"
             );
+        }
+    }
+
+    #[test]
+    fn knowledge_sections_are_tables_and_left_to_their_domains() {
+        let temp = tempfile::tempdir().expect("owned home");
+        let paths = paths_in(temp.path());
+        write(
+            &paths,
+            "config.toml",
+            "[notes]\nvault=\"~/n\"\n[search]\nany=1\n[activity]\nrules={}\n",
+        );
+        let config = Config::load(&paths).expect("knowledge sections load");
+        assert_eq!(
+            config.notes.get("vault").and_then(toml::Value::as_str),
+            Some("~/n")
+        );
+        assert!(config.search.contains_key("any"));
+        assert!(config.activity.contains_key("rules"));
+        for section in ["notes", "search", "activity"] {
+            write(&paths, "config.toml", &format!("{section} = 1\n"));
+            match Config::load(&paths).expect_err(section) {
+                CoreError::Config { message, .. } => {
+                    assert_eq!(message, format!("{section} must be a table"));
+                }
+                e => panic!("unexpected error for {section}: {e}"),
+            }
         }
     }
 }

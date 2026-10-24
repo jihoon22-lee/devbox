@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "xtask"]
+members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "crates/documents", "crates/notes", "crates/search", "crates/activity", "xtask"]
 exclude = ["app/src-tauri"]
 
 [workspace.package]
@@ -21,16 +21,28 @@ devbox-agents = { path = "crates/agents" }
 devbox-runtime = { path = "crates/runtime" }
 devbox-observe = { path = "crates/observe" }
 devbox-secrets = { path = "crates/secrets" }
+devbox-documents = { path = "crates/documents" }
+devbox-notes = { path = "crates/notes" }
+devbox-search = { path = "crates/search" }
+devbox-activity = { path = "crates/activity" }
 chacha20poly1305 = "0.10"
 zeroize = { version = "1", features = ["derive"] }
 data-encoding = "2"
 anyhow = "1"
+ammonia = "4"
 axum = { version = "0.8", features = ["ws"] }
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 futures = "0.3"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+ignore = "0.4"
 libc = "0.2"
 mimalloc = "0.1"
+regex-syntax = "0.8"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+rustix = { version = "1.1", features = ["fs"] }
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }

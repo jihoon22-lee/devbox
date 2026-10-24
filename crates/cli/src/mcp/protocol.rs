@@ -171,6 +171,7 @@ pub struct InputSchema {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum PropertySchema {
     String,
+    Boolean,
     Integer { minimum: u32, maximum: u32 },
 }
 #[derive(Serialize)]

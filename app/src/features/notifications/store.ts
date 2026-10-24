@@ -29,6 +29,9 @@ export function safeTarget(value: unknown): NoticeTarget | undefined {
       for (const key of ["projectId", "runId", "task"])
         if (typeof candidate[key] === "string" && candidate[key].trim()) cleaned[key] = candidate[key];
     }
+    if (to === "/notes" && typeof candidate.rename === "string" && /^[0-9a-f]{1,64}$/.test(candidate.rename))
+      cleaned.rename = candidate.rename;
+    if (to === "/settings" && candidate.tab === "activity") cleaned.tab = "activity";
     if (to === "/agents" && (candidate.view === "list" || candidate.view === "grid")) cleaned.view = candidate.view;
   }
   return { to: to as NoticeTarget["to"], ...(Object.keys(cleaned).length ? { search: cleaned } : {}) };

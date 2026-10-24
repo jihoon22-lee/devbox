@@ -222,3 +222,55 @@ async fn accept_save_name_preserves_prod_config_bytes_and_mtime() {
         );
     }
 }
+
+/// `save_name` and `activity.set_rules` share `<config_dir>/.config.toml.lock`:
+/// while another writer holds it, `set` waits, then keeps what that writer added.
+#[tokio::test]
+async fn save_name_holds_the_config_lock() {
+    use rustix::fs::{FlockOperation, Mode, OFlags};
+    let (_t, db, p) = fixture();
+    let config = p.config_dir.join("config.toml");
+    std::fs::write(&config, "# owned comment\n").expect("fixture config");
+    let held = rustix::fs::open(
+        p.config_dir.join(".config.toml.lock"),
+        OFlags::CREATE | OFlags::RDWR | OFlags::CLOEXEC,
+        Mode::from_raw_mode(0o600),
+    )
+    .expect("fixture lock file");
+    rustix::fs::flock(&held, FlockOperation::LockExclusive).expect("fixture holds the lock");
+    let service = std::sync::Arc::new(
+        SecretsService::with_key(db, p.clone(), crypto::Key::from_bytes([7; 32]))
+            .await
+            .expect("fixture key"),
+    );
+    let setter = service.clone();
+    let set = tokio::spawn(async move {
+        setter
+            .set(SetSecret {
+                name: "TOKEN".into(),
+                value: "owned-value".into(),
+            })
+            .await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!set.is_finished(), "save_name waits for the config lock");
+    std::fs::write(
+        &config,
+        "# owned comment\n[activity]\nmask_all_titles = true\n",
+    )
+    .expect("the other writer's change");
+    drop(held);
+    tokio::time::timeout(std::time::Duration::from_secs(5), set)
+        .await
+        .expect("set finishes after the lock is released")
+        .expect("set task")
+        .expect("set");
+    let text = std::fs::read_to_string(&config).expect("config");
+    assert!(text.contains("# owned comment"));
+    assert!(
+        text.contains("[activity]\nmask_all_titles = true"),
+        "{text}"
+    );
+    assert!(text.contains("TOKEN"), "{text}");
+    assert!(!text.contains("owned-value"));
+}

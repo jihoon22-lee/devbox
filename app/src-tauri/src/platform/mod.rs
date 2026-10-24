@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod window;
 
 pub mod connection;
@@ -17,3 +18,7 @@ pub mod tray;
 pub mod secrets;
 
 pub mod windows;
+
+pub mod capture;
+
+pub mod quit;

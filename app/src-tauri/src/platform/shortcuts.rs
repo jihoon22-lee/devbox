@@ -2,7 +2,9 @@ use crate::core::{
     connection::IpcError,
     intents::AppIntent,
     settings,
-    shortcuts::{self, Registration, ShortcutStatus, parse_accelerator},
+    shortcuts::{
+        self, Registration, ShortcutAction, ShortcutOwners, ShortcutStatus, parse_accelerator,
+    },
 };
 use std::{io, sync::Mutex};
 use tauri::{AppHandle, Manager, State, WebviewWindow};
@@ -14,6 +16,7 @@ pub struct Shortcuts(Mutex<Bindings>);
 struct Bindings {
     status: ShortcutStatus,
     registered: Vec<String>,
+    owners: ShortcutOwners,
 }
 struct Backend<'a>(&'a AppHandle);
 impl Registration for Backend<'_> {
@@ -40,29 +43,23 @@ pub fn pressed(
     }
     let state = app.state::<Shortcuts>();
     let bindings = state.0.lock().unwrap_or_else(|error| error.into_inner());
-    let is = |key: &str| {
-        key.parse::<Shortcut>()
-            .is_ok_and(|key| key.id == shortcut.id)
-    };
-    if !bindings.registered.iter().any(|key| is(key)) {
-        return;
-    }
-    let intent = if is(&bindings.status.palette) {
-        Some(AppIntent::Palette)
-    } else if bindings.status.bottom_terminal.as_deref().is_some_and(is) {
-        Some(AppIntent::BottomTerminal {
+    let action = bindings.owners.action(shortcut.id, &bindings.registered);
+    drop(bindings);
+    let intent = match action {
+        Some(ShortcutAction::Capture) => {
+            super::capture::show(app);
+            return;
+        }
+        Some(ShortcutAction::Palette) => AppIntent::Palette,
+        Some(ShortcutAction::BottomTerminal) => AppIntent::BottomTerminal {
             was_focused: app
                 .get_webview_window("main")
                 .is_some_and(|main| main.is_focused().unwrap_or(false)),
-        })
-    } else {
-        None
+        },
+        None => return,
     };
-    drop(bindings);
-    if let Some(intent) = intent {
-        super::window::focus_main(app);
-        super::intents::dispatch(app, intent);
-    }
+    super::window::focus_main(app);
+    super::intents::dispatch(app, intent);
 }
 pub fn initialize(app: &AppHandle) {
     let state = app.state::<Shortcuts>();
@@ -83,6 +80,10 @@ pub fn initialize(app: &AppHandle) {
         .palette
         .unwrap_or_else(|| shortcuts::default_palette(cfg!(debug_assertions)).into());
     bindings.status.bottom_terminal = settings.global_shortcuts.bottom_terminal;
+    bindings.status.capture = settings
+        .global_shortcuts
+        .capture
+        .unwrap_or_else(|| shortcuts::default_capture(cfg!(debug_assertions)).into());
     let mut backend = Backend(app);
     let mut register = |key: &str| -> io::Result<String> {
         let canonical = parse_accelerator(key)?;
@@ -92,6 +93,7 @@ pub fn initialize(app: &AppHandle) {
     match register(&bindings.status.palette) {
         Ok(key) => {
             bindings.status.palette = key.clone();
+            bindings.owners.record(key.clone(), ShortcutAction::Palette);
             bindings.registered.push(key);
         }
         Err(error) => bindings.status.palette_error = Some(error.to_string()),
@@ -108,11 +110,20 @@ pub fn initialize(app: &AppHandle) {
         match result {
             Ok(key) => {
                 bindings.status.bottom_terminal = Some(key.clone());
+                bindings
+                    .owners
+                    .record(key.clone(), ShortcutAction::BottomTerminal);
                 bindings.registered.push(key);
             }
             Err(error) => bindings.status.bottom_terminal_error = Some(error.to_string()),
         }
     }
+    let Bindings {
+        status,
+        registered,
+        owners,
+    } = &mut *bindings;
+    shortcuts::register_capture(&mut Backend(app), registered, status, owners);
     super::tray::set_shortcut_status(app, &bindings.status);
 }
 #[tauri::command]
@@ -134,6 +145,7 @@ pub fn configure_shortcuts(
     window: WebviewWindow,
     state: State<'_, Shortcuts>,
     palette: String,
+    capture: String,
     bottom_terminal: Option<String>,
 ) -> Result<ShortcutStatus, IpcError> {
     super::preferences::main_only(&window)?;
@@ -165,12 +177,32 @@ pub fn configure_shortcuts(
         super::tray::set_shortcut_status(&app, &bindings.status);
         return Ok(bindings.status.clone());
     }
-    let mut next = vec![palette.clone()];
-    next.extend(bottom.iter().cloned());
+    let capture = match shortcuts::capture_binding(&palette, bottom.as_deref(), &capture) {
+        Ok(key) => key,
+        Err(error) => {
+            bindings.status.capture_error = Some(error.to_string());
+            super::tray::set_shortcut_status(&app, &bindings.status);
+            return Ok(bindings.status.clone());
+        }
+    };
+    let mut next = vec![
+        (palette.clone(), ShortcutAction::Palette),
+        (capture.clone(), ShortcutAction::Capture),
+    ];
+    next.extend(
+        bottom
+            .iter()
+            .cloned()
+            .map(|key| (key, ShortcutAction::BottomTerminal)),
+    );
     let mut backend = Backend(&app);
     let result = settings::with_settings(&path, |settings| {
-        shortcuts::replace_bindings(&mut backend, &mut bindings.registered, &next, || {
+        let Bindings {
+            registered, owners, ..
+        } = &mut *bindings;
+        shortcuts::replace_action_bindings(&mut backend, registered, owners, &next, || {
             settings.global_shortcuts.palette = Some(palette.clone());
+            settings.global_shortcuts.capture = Some(capture.clone());
             settings.global_shortcuts.bottom_terminal = bottom.clone();
             settings::save(&path, settings)
         })
@@ -179,6 +211,8 @@ pub fn configure_shortcuts(
         Ok(()) => {
             bindings.status = ShortcutStatus {
                 palette,
+                capture,
+                capture_error: None,
                 bottom_terminal: bottom,
                 palette_error: None,
                 bottom_terminal_error: None,
@@ -188,6 +222,7 @@ pub fn configure_shortcuts(
             // Keep configured values and report failure; registered tracks the actual rollback result.
             let reason = Some(error.to_string());
             bindings.status.palette_error = reason.clone();
+            bindings.status.capture_error = reason.clone();
             if bottom.is_some() || bindings.status.bottom_terminal.is_some() {
                 bindings.status.bottom_terminal_error = reason;
             }

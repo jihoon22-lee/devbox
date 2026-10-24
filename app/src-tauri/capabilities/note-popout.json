@@ -1,0 +1,6 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "note-popout",
+  "windows": ["popout-note-*"],
+  "permissions": ["core:window:allow-destroy"]
+}

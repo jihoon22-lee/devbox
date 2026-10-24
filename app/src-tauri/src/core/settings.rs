@@ -8,10 +8,19 @@ pub struct Settings {
     pub autostart: bool,
     pub tray_notice_shown: bool,
     pub global_shortcuts: GlobalShortcuts,
+    pub activity: ActivitySettings,
+}
+/// Activity collection consent and pause (01 §6.2); both off until chosen.
+#[derive(Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(default)]
+pub struct ActivitySettings {
+    pub consent: bool,
+    pub paused: bool,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlobalShortcuts {
+    pub capture: Option<String>,
     pub palette: Option<String>,
     pub bottom_terminal: Option<String>,
 }
@@ -23,6 +32,7 @@ impl Default for Settings {
             autostart: true,
             tray_notice_shown: false,
             global_shortcuts: GlobalShortcuts::default(),
+            activity: ActivitySettings::default(),
         }
     }
 }
@@ -81,6 +91,32 @@ mod tests {
         std::fs::write(&path, b"malformed").unwrap();
         assert!(update(&path, |settings| settings.distro = None).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"malformed");
+    }
+    #[test]
+    fn activity_consent_defaults_off_and_survives_older_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, br#"{"distro":"Ubuntu","activity":{"consent":true}}"#).unwrap();
+        let saved = load(&path).unwrap();
+        assert_eq!(
+            saved.activity,
+            ActivitySettings {
+                consent: true,
+                paused: false
+            }
+        );
+        std::fs::write(&path, br#"{"distro":"Ubuntu"}"#).unwrap();
+        assert_eq!(load(&path).unwrap().activity, ActivitySettings::default());
+        update(&path, |s| s.activity.paused = true).unwrap();
+        let saved = load(&path).unwrap();
+        assert_eq!(saved.distro.as_deref(), Some("Ubuntu"));
+        assert_eq!(
+            saved.activity,
+            ActivitySettings {
+                consent: false,
+                paused: true
+            }
+        );
     }
     #[test]
     fn atomic_save_reports_errors_and_preserves_previous_settings() {
