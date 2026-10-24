@@ -112,6 +112,7 @@ fn canonical_project(path: String) -> R<Project> {
         path: canonical,
         favorite: false,
         added_ms: now_ms(),
+        git_warnings: None,
     })
 }
 
@@ -212,9 +213,13 @@ impl ProjectsService {
     }
 
     pub async fn add(&self, p: AddProject) -> R<Project> {
-        let project = tokio::task::spawn_blocking(move || canonical_project(p.path))
+        let mut project = tokio::task::spawn_blocking(move || canonical_project(p.path))
             .await
             .internal("validate project path")??;
+        let warnings = devbox_git::safety::warnings(std::path::Path::new(&project.path))
+            .await
+            .unwrap_or_default();
+        project.git_warnings = (!warnings.is_empty()).then_some(warnings);
         let row = project.clone();
         let hub = self.hub.clone();
         let _ = self

@@ -20,7 +20,7 @@ fn safe_path(path: &Path) -> bool {
 }
 
 impl AgentsService {
-    pub(crate) async fn owned_worktree(
+    pub async fn owned_worktree(
         &self,
         task: &AgentTask,
     ) -> Result<(devbox_projects::Project, PathBuf, String)> {

@@ -16,6 +16,7 @@ mod secret_routes;
 pub mod server;
 mod socket;
 mod source_external;
+mod source_git;
 mod source_routes;
 pub mod state;
 mod streams;
@@ -166,6 +167,7 @@ fn build_services_with_runtime(
     )?;
     let activity = devbox_activity::ActivitySettings::from_table(&config.activity);
     let activity = knowledge::activity(&paths, activity, &db, &hub, &projects);
+    let git = source_git::service(&hub);
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -188,6 +190,7 @@ fn build_services_with_runtime(
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
         lsp: Arc::new(devbox_lsp::LspService::default()),
+        git,
         documents: knowledge.documents,
         notes: knowledge.notes,
         search: knowledge.search,
@@ -239,8 +242,10 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
         s2.cancel();
     });
+    let git = services.git.clone();
     let served = server::serve(socket.listener, services, shutdown).await;
     lsp.shutdown().await;
+    git.shutdown().await;
     activity.shutdown().await;
     served?;
     tracing::info!("daemon stopped");

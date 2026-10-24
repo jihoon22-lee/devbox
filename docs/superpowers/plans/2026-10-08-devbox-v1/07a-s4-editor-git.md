@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE, S4-5–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -153,12 +153,21 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - 프로젝트 등록 때 `core.fsmonitor`, `core.hooksPath`, `filter.*`, `diff.external` 설정 경고를 반환/표시한다. 이 경고는 실행 승인이나 Git hook 전면 차단을 의미하지 않는다. PROGRESS §8의 S1 명시적 hook 실행 한계를 숨기지 않는다. 읽기 전용 diff의 외부 driver 차단은 유지한다.
 
 **순서·실패 검사**
-1. [ ] 소유 임시 repo에 서로 떨어진 두 hunk → 첫 hunk stage/unstage/discard 후 다른 hunk·index 보존. stale hunk/hash면 변경 0. `stage_and_unstage_a_single_hunk`, `discard_hunk_restores_only_that_hunk` RED→GREEN.
-2. [ ] `amend_keeps_author`, unborn commit, branch create/checkout/delete-stale, stash push/apply/pop/drop, path log/blame, binary/rename fixture를 먼저 실패시킨 뒤 구현. CLI `source_git` 등록·always/reversible metadata를 시험한다.
-3. [ ] AR-F01: bare 원격 refs snapshot → A 상태 확인 → 외부 B checkout → push(A expect) → typed state_changed·**전체 remote refs 동일**. 정상 A 양성 대조군. pull도 checkout/HEAD/upstream config 각각 변화 주입, 작업 시작/remote 호출 0.
-4. [ ] `push_force_with_lease_refuses_when_remote_moved`: 별도 clone이 bare ref를 옮긴 뒤 이전 expect로 force push → 거절. 확인 이후 HEAD 이동도 거절하고 refspec에 확인한 OID만 쓰는 argv/실제 bare 시험을 둔다.
-5. [ ] 외부 commit/index/packed-refs·linked worktree 변경 이벤트, 위험 Git 설정 경고와 암묵 checkout 보호, 정리 보호 fixture를 실행한다. 실제 사용 repo·원격에는 쓰지 않는다.
-6. [ ] `cargo test -p devbox-git --test source_hunks` 등 새 타깃과 바뀐 함수의 S1 기존 시험, CLI source_git, 생성 검사. 별도 검토(원격 ref 증거·expect·취소·보호 정리) → Biome → `feat(git): add source operations and guarded remotes`.
+1. [x] 소유 임시 repo에 서로 떨어진 두 hunk → 첫 hunk stage/unstage/discard 후 다른 hunk·index 보존. stale hunk/hash면 변경 0. `stage_and_unstage_a_single_hunk`, `discard_hunk_restores_only_that_hunk` RED→GREEN.
+2. [x] `amend_keeps_author`, unborn commit, branch create/checkout/delete-stale, stash push/apply/pop/drop, path log/blame, binary/rename fixture를 먼저 실패시킨 뒤 구현. CLI `source_git` 등록·always/reversible metadata를 시험한다.
+3. [x] AR-F01: bare 원격 refs snapshot → A 상태 확인 → 외부 B checkout → push(A expect) → typed state_changed·**전체 remote refs 동일**. 정상 A 양성 대조군. pull도 checkout/HEAD/upstream config 각각 변화 주입, 작업 시작/remote 호출 0.
+4. [x] `push_force_with_lease_refuses_when_remote_moved`: 별도 clone이 bare ref를 옮긴 뒤 이전 expect로 force push → 거절. 확인 이후 HEAD 이동도 거절하고 refspec에 확인한 OID만 쓰는 argv/실제 bare 시험을 둔다.
+5. [x] 외부 commit/index/packed-refs·linked worktree 변경 이벤트, 위험 Git 설정 경고와 암묵 checkout 보호, 정리 보호 fixture를 실행한다. 실제 사용 repo·원격에는 쓰지 않는다.
+6. [x] `cargo test -p devbox-git --test source_hunks` 등 새 타깃과 바뀐 함수의 S1 기존 시험, CLI source_git, 생성 검사. 별도 검토(원격 ref 증거·expect·취소·보호 정리) → Biome → `feat(git): add source operations and guarded remotes`.
+
+**구현 계약 (S4-5, R1 수정·별도 재검토 APPROVE)**
+- `worktreeId`는 agent task ID다. CLI는 등록 project·service에서 조회한 task의 projectId를 비교하고 기존 DB `Resources::Owned`·정규 경로·등록/lock·common-dir 검증을 재사용한다. agents의 변경은 §2 사전 승인한 `owned_worktree` visibility 한 줄뿐이다. `git.cleanup`은 `{target,candidates:[{path,branch,oid}]}`를 재검증한 뒤 기존 agents cleanup/compare-and-delete로 위임한다.
+- `SourceExpect`는 branch/HEAD/upstream snapshot과 index hash·working tree hash다. file 기대값은 선택 경로·HEAD·index blob/mode·disk bytes/mode(rename의 두 endpoint 포함)에 묶는다. hunk ID는 daemon diff에서만 만들고 재생성한 기대값/ID 일치 후 stdin patch를 적용한다. stdin 쓰기와 두 출력의 bounded drain을 동시에 수행하며 기존 process-group timeout/cancel 정리를 유지한다. binary·rename·추가/삭제·mode-only는 file-only다.
+- `git.stash`의 typed payload는 `{action:"push",message,includeUntracked}` / `{action:"apply"|"pop",oid}`이고 drop은 별도 always 메서드다. stage/unstage는 reversible, discard/branch_delete/stash_drop/cleanup/pull/push는 always다. `git.state_changed`는 source에서 `{current:RemoteExpect}`로 내보내며 기존 unit GitError는 TS export에 노출하지 않는다.
+- push의 `<branch>`는 **확인한 upstream.destinationRef의 원격 branch**다(부모 하네스 확인). local branch 이름과 같아야 한다는 제약은 없다. 목적지는 `refs/heads/` prefix와 `git check-ref-format`을 검증하고 `headOid:destinationRef` 및 `--force-with-lease=destinationRef:upstreamOid`를 명시한다. local `feature`→remote `main` fixture에서 main만 변경하고 다른 원격 ref를 보존한다. `--no-follow-tags`·`--recurse-submodules=no`로 설정이 미확인 tag/submodule 원격까지 확장하지 못하게 한다. pull은 fetch 전 전체 expect를 비교하고 fetch 뒤 branch/HEAD/upstream 설정·예상 밖 tracking 이동을 다시 거절한다. 외부 Git과 원자성을 주장하지 않는다.
+- 원격 작업은 ID와 running/succeeded/failed/cancelled 상태·`operation_changed`를 갖는다. 취소 뒤 owned group을 종료하고 로컬 상태를 다시 읽으며 push는 실행 전 private하게 캡처한 단일 effective push URL(credential 포함 가능, wire/log 비노출)의 설정 불변을 검사한 뒤 15초 한도 `ls-remote`로 그 정확한 목적 ref를 확인한다. fetch URL과 push URL이 달라도 push URL을 조회한다. 이미 확인한 OID가 반영됐으면 succeeded, 설정 변경·복수 push URL·URL rewrite 규칙·조회 실패처럼 목적 정합성이 불확실하면 `completionUnknown:true`로 반환한다. fetch/pull 취소는 로컬 상태를 읽었더라도 완료/미완료의 증거가 아니므로 `completionUnknown:true`를 유지한다(R1). post-merge hook 대기 중 취소돼 HEAD/파일이 이미 갱신된 경우도 실제 snapshot을 보존하고 완료를 단정하지 않는다. stderr/body는 source 오류·이벤트·로그로 전달하지 않으며 credential helper는 유지하고 SSH batch/askpass 비대화형 경계를 재사용한다.
+- watcher는 추가 의존 없이 gitdir/common-dir의 HEAD/index/refs/packed-refs를 100ms bounded polling·300ms debounce로 감시한다. 첫 source 접근에서 시작하고 daemon shutdown에서 정리한다. 연결 단절/resync의 snapshot 재조회 UI 조립은 S4-8이다. 프로젝트 add/clone 응답의 선택적 `gitWarnings`는 설정 **key만** 전달하며 기존 추가 dialog toast에 표시한다(새 source UI 아님). 경고는 승인이나 hook/filter 전면 차단이 아니다.
+- `s4-task5/`에 behavioral RED와 수정 후 좁은 시험·resource 기록을 모두 보존한다. 전체 check/clippy/제품 build/E2E·실제 Windows 앱·호스트 설치·실제 사용자 원격 쓰기는 미실행이다. 별도 재검토 APPROVE(지적0) 후 부모 하네스가 완료 커밋을 진행한다.
 
 ## 7. S4-6 — 충돌 해결과 CV-F01
 

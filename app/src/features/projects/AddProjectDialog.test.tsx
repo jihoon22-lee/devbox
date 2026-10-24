@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { RpcProvider } from "../../rpc/RpcProvider";
+import { useToasts } from "../../ui";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { useCurrentProject } from "./store";
 import { ProjectWire, projects } from "./test-wire";
@@ -98,3 +99,30 @@ test.each([false, true])(
     else expect(retryId).toBe(first.clientRequestId);
   },
 );
+
+test("registration displays Git execution warnings without blocking the added project", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <Harness />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("projects.scan")).toHaveLength(1));
+  await act(async () => wire.reply("projects.scan", { candidates: [] }));
+  await userEvent.type(screen.getByRole("textbox"), "/fixture/new");
+  await userEvent.click(screen.getByRole("button", { name: "추가" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("projects.add", {
+      ...projects[0],
+      gitWarnings: [{ key: "core.hookspath" }, { key: "filter.owned.clean" }],
+    }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(useCurrentProject.getState().id).toBe("a");
+  expect(useToasts.getState().items.at(-1)).toMatchObject({
+    tone: "warn",
+    title: "외부 명령을 실행할 수 있는 Git 설정이 있습니다",
+  });
+  expect(useToasts.getState().items.at(-1)?.body).toContain("core.hookspath");
+});

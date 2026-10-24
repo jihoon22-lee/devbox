@@ -10,6 +10,9 @@ pub struct Project {
     pub path: String,
     pub favorite: bool,
     pub added_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub git_warnings: Option<Vec<devbox_git::safety::GitConfigWarning>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]

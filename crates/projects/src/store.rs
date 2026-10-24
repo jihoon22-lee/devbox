@@ -76,6 +76,7 @@ pub fn all(tx: &Transaction) -> rusqlite::Result<Vec<Project>> {
             path: r.get(2)?,
             favorite: r.get::<_, i64>(3)? != 0,
             added_ms: r.get(4)?,
+            git_warnings: None,
         })
     })?;
     rows.collect()
@@ -165,6 +166,7 @@ pub fn get(tx: &Transaction, id: &str) -> rusqlite::Result<Option<Project>> {
                 path: row.get(2)?,
                 favorite: row.get::<_, i64>(3)? != 0,
                 added_ms: row.get(4)?,
+                git_warnings: None,
             })
         },
     )

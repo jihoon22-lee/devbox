@@ -8,6 +8,8 @@ publish.workspace = true
 [dependencies]
 devbox-protocol.workspace = true
 serde.workspace = true
+sha2.workspace = true
+uuid.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
 tokio.workspace = true

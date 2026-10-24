@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+devbox-git.workspace = true
 devbox-lsp.workspace = true
 devbox-secrets.workspace = true
 devbox-api.workspace = true

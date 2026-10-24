@@ -34,6 +34,7 @@ fn main() -> Result<()> {
     devbox_search::export(&mut exporter);
     devbox_activity::export(&mut exporter);
     devbox_lsp::export(&mut exporter);
+    devbox_git::rpc::export(&mut exporter);
     // `search.query` stream lines (JSON Lines of this type).
     ts_rs::TypeVisitor::visit::<devbox_search::SearchChunk>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_lsp::RelayMessage>(&mut exporter);

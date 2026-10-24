@@ -2,6 +2,7 @@
 //! Read-only queries disable external diff drivers.
 //! File paths are repository-root-relative even when `dir` is a repository subdirectory.
 pub mod diff;
+pub mod hunks;
 pub mod mutate;
 pub mod run;
 pub mod status;
@@ -34,3 +35,14 @@ domain_error! {
         GhMissing = "git.gh_missing",
     }
 }
+pub mod blame;
+pub mod branches;
+pub mod cleanup;
+pub mod model;
+pub mod remote;
+pub mod rpc;
+pub mod safety;
+pub mod service;
+pub mod source_queries;
+pub mod stash;
+pub mod watch;

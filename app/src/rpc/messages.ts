@@ -24,6 +24,14 @@ const names = (d: unknown) => {
 };
 const check = "입력란을 확인해 주세요.";
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
+  "git.invalid_target": { title: "Git 저장소를 찾을 수 없습니다." },
+  "git.source_invalid_input": { title: "Git 요청이 올바르지 않습니다." },
+  "git.source_failed": { title: "Git 작업을 완료하지 못했습니다. 저장소 상태와 인증 설정을 확인해 주세요." },
+  "git.source_limit_exceeded": { title: "Git 요청의 크기 또는 작업 수가 한도를 넘었습니다." },
+  "git.source_timed_out": { title: "Git 작업 시간이 초과되었습니다. 현재 상태를 확인해 주세요." },
+  "git.state_changed": { title: "Git 상태가 변경되었습니다. 새로 확인한 뒤 다시 시도해 주세요." },
+  "git.source_busy": { title: "이 저장소에서 다른 Git 작업이 진행 중입니다." },
+  "git.unsafe_source": { title: "현재 상태에서는 이 Git 작업을 실행할 수 없습니다." },
   "lsp.invalid_input": { title: "언어 서버 요청이 올바르지 않습니다." },
   "lsp.project_not_found": { title: "언어 서버를 실행할 프로젝트를 찾을 수 없습니다." },
   "lsp.missing_server": { title: "언어 서버가 설치되어 있지 않습니다." },
