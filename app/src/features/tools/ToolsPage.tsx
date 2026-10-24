@@ -7,6 +7,7 @@ import { EmptyState } from "../../ui";
 import { useCurrentProject } from "../projects/store";
 import { ApiWorkspace } from "./api/ApiWorkspace";
 import { ApiBackendProvider, useApiBackend } from "./api/backend";
+import { GrpcPanel } from "./api/grpc/GrpcPanel";
 import { ImportDialog } from "./api/ImportDialog";
 import { RunnerView } from "./api/RunnerView";
 import { SsePanel } from "./api/realtime/SsePanel";
@@ -61,6 +62,8 @@ export function ToolsView({
       <WsPanel />
     ) : search.tool === "sse" ? (
       <SsePanel />
+    ) : search.tool === "grpc" ? (
+      <GrpcPanel roots={roots} />
     ) : (
       <ApiWorkspace />
     );

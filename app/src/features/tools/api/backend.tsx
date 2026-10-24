@@ -8,6 +8,10 @@ import type {
   CollectionList,
   CollectionRoot,
   FileText,
+  GrpcCall,
+  GrpcCatalog,
+  GrpcEvent,
+  GrpcTarget,
   HistoryPage,
   Pair,
   RealtimeEvent,
@@ -60,14 +64,21 @@ export interface ApiBackend {
   /** 연결 전 검사 실패는 `SendFailure`로 거절한다(연결 실패는 `failed` 이벤트). */
   openWs(params: WsOpen, handlers: RealtimeHandlers): Promise<RealtimeSession>;
   openSse(params: SseOpen, handlers: RealtimeHandlers): Promise<RealtimeSession>;
+  /** gRPC 서비스 목록(reflection 또는 proto 파일). 연결 전 검사 실패는 `SendFailure`. */
+  grpcDescribe(params: GrpcTarget): Promise<GrpcCatalog>;
+  /** gRPC 호출 하나. `close`는 호출 스트림을 닫는다(데몬이 호출을 취소). */
+  openGrpc(params: GrpcCall, handlers: LineHandlers<GrpcEvent>): Promise<{ close(): void }>;
 }
 
-/** WebSocket·SSE 세션 화면 쪽. `close`는 스트림을 닫는다(데몬이 연결을 끊고 다시 연결하지 않음). */
-export interface RealtimeHandlers {
-  onEvent(event: RealtimeEvent): void;
+/** 스트림 하나의 NDJSON 이벤트 받기. */
+export interface LineHandlers<E> {
+  onEvent(event: E): void;
   /** 데몬이 스트림을 끝냈거나(FIN) 화면이 닫음. */
   onEnd(): void;
 }
+
+/** WebSocket·SSE 세션 화면 쪽. `close`는 스트림을 닫는다(데몬이 연결을 끊고 다시 연결하지 않음). */
+export type RealtimeHandlers = LineHandlers<RealtimeEvent>;
 export interface RealtimeSession {
   send(input: WsInput): void;
   close(): void;

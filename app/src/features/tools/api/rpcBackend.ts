@@ -1,8 +1,8 @@
 /** 실제 데몬 RPC로 만든 `ApiBackend`. 변경 RPC는 호출마다 새 clientRequestId를 쓴다. */
 import { type RpcClient, RpcError } from "../../../rpc/client";
 import type { ClientStream, StreamHandlers } from "../../../rpc/client-streams";
-import type { RealtimeEvent } from "../../../rpc/gen/rpc";
-import type { ApiBackend, RealtimeHandlers, RealtimeSession } from "./backend";
+import type { GrpcEvent, RealtimeEvent, WsInput } from "../../../rpc/gen/rpc";
+import type { ApiBackend, LineHandlers } from "./backend";
 import { SendFailure } from "./backend";
 import { SendCollector } from "./sendEvents";
 
@@ -17,8 +17,8 @@ async function rpc<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** NDJSON 줄을 `RealtimeEvent`로. 잘못된 줄은 버리지 않고 실패 이벤트로 알린다. */
-function lineReader(onEvent: (event: RealtimeEvent) => void) {
+/** NDJSON 줄을 이벤트로. 잘못된 줄은 버리지 않고 실패 이벤트로 알린다. */
+function lineReader<E>(onEvent: (event: E) => void) {
   const decoder = new TextDecoder();
   let pending = "";
   return (bytes: Uint8Array) => {
@@ -28,11 +28,11 @@ function lineReader(onEvent: (event: RealtimeEvent) => void) {
       const line = pending.slice(0, at).trim();
       pending = pending.slice(at + 1);
       if (line) {
-        let event: RealtimeEvent;
+        let event: E;
         try {
-          event = JSON.parse(line) as RealtimeEvent;
+          event = JSON.parse(line) as E;
         } catch {
-          event = { type: "failed", error: { code: "internal" } };
+          event = { type: "failed", error: { code: "internal" } } as E;
         }
         onEvent(event);
       }
@@ -42,10 +42,10 @@ function lineReader(onEvent: (event: RealtimeEvent) => void) {
 }
 
 /** 스트림 하나를 세션으로. 입력은 NDJSON 한 줄씩 쓴다. */
-function realtime(
+function realtime<E extends RealtimeEvent | GrpcEvent, I = WsInput>(
   open: (handlers: StreamHandlers) => Promise<ClientStream>,
-  handlers: RealtimeHandlers,
-): Promise<RealtimeSession> {
+  handlers: LineHandlers<E>,
+): Promise<{ send(input: I): void; close(): void }> {
   const read = lineReader(handlers.onEvent);
   const encoder = new TextEncoder();
   return rpc(async () => {
@@ -91,6 +91,8 @@ export function rpcBackend(client: RpcClient): ApiBackend {
     },
     openWs: (params, handlers) => realtime((h) => client.openStream("api.ws_open", params, h), handlers),
     openSse: (params, handlers) => realtime((h) => client.openStream("api.sse_open", params, h), handlers),
+    grpcDescribe: (params) => rpc(() => client.call("api.grpc_describe", params)),
+    openGrpc: (params, handlers) => realtime((h) => client.openStream("api.grpc_call", params, h), handlers),
     send: (request, signal) =>
       new Promise((resolve, reject) => {
         const collector = new SendCollector();

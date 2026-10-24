@@ -23,12 +23,13 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
-export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.project_not_found" };
+export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attention = { kind: string, message: string, atMs: number, };
 export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
 export type Body = { "kind": "none" } | { "kind": "raw", text: string, contentType: string | null, } | { "kind": "json", text: string, } | { "kind": "form", fields: Array<Pair>, } | { "kind": "multipart", parts: Array<Part>, } | { "kind": "binary", path: string, } | { "kind": "graphql", query: string, variables: string, operationName: string | null, method: GraphqlMethod, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
+export type CatalogSource = "reflection" | "protoFiles";
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
@@ -104,6 +105,36 @@ export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
 export type GraphqlMethod = "post" | "get";
+export type GrpcCall = { target: string, 
+/**
+ * `package.Service/Method`(목록의 `fullName`).
+ */
+method: string, 
+/**
+ * 요청 메시지 JSON 텍스트(변수·비밀 참조 가능).
+ */
+json: string, metadata: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot, timeoutMs: number, protoFiles: Array<string> | null, origin: RequestOrigin | null, };
+export type GrpcCatalog = { source: CatalogSource, services: Array<GrpcService>, };
+export type GrpcEvent = { "type": "headers", metadata: Array<Pair>, } | { "type": "message", json: string, } | { "type": "trailers", code: number, message: string, metadata: Array<Pair>, } | { "type": "failed", error: WireError, };
+export type GrpcMethod = { name: string, 
+/**
+ * `package.Service/Method`.
+ */
+fullName: string, clientStreaming: boolean, serverStreaming: boolean, 
+/**
+ * 입력 메시지 기본값(JSON 텍스트).
+ */
+inputDefault: string, };
+export type GrpcService = { name: string, methods: Array<GrpcMethod>, };
+export type GrpcTarget = { 
+/**
+ * `http://host:port`(평문 h2c) 또는 `https://host:port`(요청 TLS 설정). 변수·비밀 참조 가능.
+ */
+target: string, metadata: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot, 
+/**
+ * 있으면 reflection 대신 이 `.proto` 파일들(WSL 절대 경로)을 protox로 해석한다.
+ */
+protoFiles: Array<string> | null, };
 export type HeaderRow = { row: number, name: string, value: string, };
 export type HistoryEntry = { id: string, sentAtMs: number, method: string, url: string, snapshot: RequestSnapshot, tlsVerify: boolean, runId: string | null, origin: RequestOrigin | null, outcome: HistoryOutcome, error: WireError | null, response: HistoryResponse | null, bodyBase64: string, bodyTruncated: boolean, };
 export type HistoryId = { id: string, };
@@ -309,6 +340,8 @@ export interface Methods {
   "api.collections": { kind: "query"; confirm: "none"; params: CollectionsQuery; result: CollectionList; error: ApiError };
   "api.cookies": { kind: "query"; confirm: "none"; params: CookieJarRef; result: CookieList; error: ApiError };
   "api.cookies_clear": { kind: "mutation"; confirm: "always"; params: CookieJarRef; result: Done; error: ApiError };
+  "api.grpc_call": { kind: "stream"; confirm: "none"; params: GrpcCall; result: StreamOpened; error: ApiError };
+  "api.grpc_describe": { kind: "query"; confirm: "none"; params: GrpcTarget; result: GrpcCatalog; error: ApiError };
   "api.history": { kind: "query"; confirm: "none"; params: HistoryQuery; result: HistoryPage; error: ApiError };
   "api.history_get": { kind: "query"; confirm: "none"; params: HistoryId; result: HistoryEntry; error: ApiError };
   "api.send": { kind: "stream"; confirm: "none"; params: SendRequest; result: StreamOpened; error: ApiError };
@@ -413,6 +446,8 @@ export const METHOD_INFO = {
   "api.collections": { kind: "query", confirm: "none" },
   "api.cookies": { kind: "query", confirm: "none" },
   "api.cookies_clear": { kind: "mutation", confirm: "always" },
+  "api.grpc_call": { kind: "stream", confirm: "none" },
+  "api.grpc_describe": { kind: "query", confirm: "none" },
   "api.history": { kind: "query", confirm: "none" },
   "api.history_get": { kind: "query", confirm: "none" },
   "api.send": { kind: "stream", confirm: "none" },
@@ -512,6 +547,7 @@ export const RPC_ERROR_CODES = [
   "api.collection_path_invalid",
   "api.collection_too_large",
   "api.file_missing",
+  "api.grpc",
   "api.history_not_found",
   "api.invalid_body",
   "api.invalid_cookie",

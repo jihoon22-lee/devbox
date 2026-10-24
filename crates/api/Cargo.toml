@@ -19,6 +19,9 @@ http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 notify = "8.2"
+prost.workspace = true
+prost-reflect.workspace = true
+protox.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true
@@ -27,6 +30,10 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
+tower.workspace = true
+tokio-rustls.workspace = true
 tokio.workspace = true
 tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
 tokio-util = { workspace = true, features = ["io"] }
@@ -43,7 +50,9 @@ nix = { version = "0.30", features = ["fs"] }
 rcgen.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
-tokio-rustls.workspace = true
+tonic = { workspace = true, features = ["server", "router"] }
+tonic-reflection = { workspace = true, features = ["server"] }
+tonic-prost.workspace = true
 rustls-platform-verifier.workspace = true
 tracing-subscriber.workspace = true
 

@@ -97,6 +97,13 @@ function cases(): Case[] {
       extra: { "x-mcp": { transport: "stdio", command: "node server.js" } },
       review: true,
     },
+    {
+      case: "grpc proto files kept in an unknown field",
+      root: project,
+      draft: base(),
+      extra: { "x-grpc": { protoFiles: ["/home/u/echo.proto"] } },
+      review: true,
+    },
   ];
 }
 

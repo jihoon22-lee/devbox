@@ -100,17 +100,17 @@ impl ApiOptions {
     }
 }
 
-struct Inner {
+pub(crate) struct Inner {
     history: History,
     jars: Jars,
     tokens: TokenCache,
-    resolver: Option<Resolver>,
+    pub(crate) resolver: Option<Resolver>,
     rebuild: AtomicBool,
     ready: tokio::sync::watch::Sender<bool>,
     background: OnceLock<()>,
     /// 열린 WebSocket·SSE 세션 수 상한(`MAX_SESSIONS`).
-    sessions: Arc<tokio::sync::Semaphore>,
-    clock: Clock,
+    pub(crate) sessions: Arc<tokio::sync::Semaphore>,
+    pub(crate) clock: Clock,
 }
 
 pub struct ApiService {
@@ -118,7 +118,7 @@ pub struct ApiService {
     secrets: Arc<devbox_secrets::SecretsService>,
     /// S5-3 프로젝트 컬렉션이 쓴다.
     _projects: Arc<devbox_projects::ProjectsService>,
-    inner: Arc<Inner>,
+    pub(crate) inner: Arc<Inner>,
 }
 
 struct Job {
@@ -296,7 +296,7 @@ impl ApiService {
     }
 
     /// WebSocket·SSE 세션 자리. 검사가 끝난 뒤에 잡으므로 거절된 요청은 자리를 쓰지 않는다.
-    fn session_slot(&self) -> R<tokio::sync::OwnedSemaphorePermit> {
+    pub(crate) fn session_slot(&self) -> R<tokio::sync::OwnedSemaphorePermit> {
         self.inner
             .sessions
             .clone()

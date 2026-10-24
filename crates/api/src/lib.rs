@@ -4,6 +4,7 @@ mod collections;
 mod cookies;
 mod error;
 mod events;
+mod grpc;
 mod history;
 mod http;
 mod model;
@@ -23,6 +24,9 @@ pub use collections::model::{
 };
 use devbox_protocol::{Exporter, method, topic};
 pub use error::ApiError;
+pub use grpc::{
+    CatalogSource, GrpcCall, GrpcCatalog, GrpcEvent, GrpcMethod, GrpcService, GrpcTarget,
+};
 pub use history::API_INDEX_VERSION;
 pub use model::*;
 pub use realtime::{Direction, MAX_SESSIONS, MessageKind, RealtimeEvent, SseOpen, WsInput, WsOpen};
@@ -32,6 +36,8 @@ pub use store::MIGRATIONS;
 method!(pub ApiSend = "api.send", stream, SendRequest => devbox_protocol::StreamOpened, ApiError);
 method!(pub ApiWsOpen = "api.ws_open", stream, WsOpen => devbox_protocol::StreamOpened, ApiError);
 method!(pub ApiSseOpen = "api.sse_open", stream, SseOpen => devbox_protocol::StreamOpened, ApiError);
+method!(pub ApiGrpcDescribe = "api.grpc_describe", query, GrpcTarget => GrpcCatalog, ApiError);
+method!(pub ApiGrpcCall = "api.grpc_call", stream, GrpcCall => devbox_protocol::StreamOpened, ApiError);
 method!(pub ApiHistory = "api.history", query, HistoryQuery => HistoryPage, ApiError);
 method!(pub ApiHistoryGet = "api.history_get", query, HistoryId => HistoryEntry, ApiError);
 method!(pub ApiCookies = "api.cookies", query, CookieJarRef => CookieList, ApiError);
@@ -47,6 +53,8 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<ApiSend>();
     x.method::<ApiWsOpen>();
     x.method::<ApiSseOpen>();
+    x.method::<ApiGrpcDescribe>();
+    x.method::<ApiGrpcCall>();
     x.method::<ApiHistory>();
     x.method::<ApiHistoryGet>();
     x.method::<ApiCookies>();

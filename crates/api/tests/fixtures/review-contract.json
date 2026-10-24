@@ -63,5 +63,10 @@
     "case": "stdio command kept in an unknown field",
     "review": true,
     "text": "{\n  \"version\": 1,\n  \"name\": \"stdio command kept in an unknown field\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": [],\n  \"x-mcp\": {\n    \"transport\": \"stdio\",\n    \"command\": \"node server.js\"\n  }\n}\n"
+  },
+  {
+    "case": "grpc proto files kept in an unknown field",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"grpc proto files kept in an unknown field\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": [],\n  \"x-grpc\": {\n    \"protoFiles\": [\n      \"/home/u/echo.proto\"\n    ]\n  }\n}\n"
   }
 ]

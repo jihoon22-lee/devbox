@@ -25,6 +25,7 @@ devbox_protocol::domain_error! {
         CollectionTooLarge { limit: u64 } = "api.collection_too_large",
         CollectionNotFound = "api.collection_not_found",
         ProjectNotFound = "api.project_not_found",
+        Grpc { reason: String } = "api.grpc",
     }
 }
 
@@ -59,6 +60,11 @@ impl ApiError {
     }
     pub(crate) fn network(kind: &str) -> Self {
         Self::Network { kind: kind.into() }
+    }
+    pub(crate) fn grpc(reason: &str) -> Self {
+        Self::Grpc {
+            reason: reason.into(),
+        }
     }
     pub(crate) fn oauth(stage: &str) -> Self {
         Self::OauthFailed {

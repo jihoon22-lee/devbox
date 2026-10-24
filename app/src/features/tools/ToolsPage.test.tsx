@@ -3,6 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import { ApiBackendProvider } from "./api/backend";
 import { useApiTabs } from "./api/store";
 import { FakeBackend } from "./api/test-backend";
+import { toolsSearch } from "./search";
 import { ToolsView } from "./ToolsPage";
 
 afterEach(() => {
@@ -46,4 +47,25 @@ it("request_and_response_stack_vertically_below_1100px", () => {
     "aria-orientation",
     "horizontal",
   );
+});
+
+it("grpc_tool_opens_from_the_list_and_search", async () => {
+  const seen: unknown[] = [];
+  const { rerender } = render(
+    <ApiBackendProvider backend={new FakeBackend()}>
+      <ToolsView search={{ view: "api" }} projectId={undefined} navigate={(next) => seen.push(next)} />
+    </ApiBackendProvider>,
+  );
+  const list = screen.getByRole("complementary", { name: "목록" });
+  within(list).getByRole("button", { name: "gRPC" }).click();
+  expect(seen).toEqual([{ view: "api", tool: "grpc" }]);
+  expect(toolsSearch({ view: "api", tool: "grpc" })).toEqual({ view: "api", tool: "grpc" });
+  for (const [tool, label] of [["grpc", "gRPC 대상"]] as const) {
+    rerender(
+      <ApiBackendProvider backend={new FakeBackend()}>
+        <ToolsView search={{ view: "api", tool }} projectId={undefined} navigate={() => {}} />
+      </ApiBackendProvider>,
+    );
+    expect(await screen.findByLabelText(label)).toBeInTheDocument();
+  }
 });

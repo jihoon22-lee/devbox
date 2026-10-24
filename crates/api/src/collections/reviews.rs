@@ -7,6 +7,7 @@
 //! - 객체의 `kind`가 `"binary"`이면서 `path`가 빈 문자열이 아니면(binary 본문 파일) 검토 필요
 //! - `caPath`·`clientCertPath`·`clientKeyPath`(또는 `ca_path`·`client_cert_path`·`client_key_path`) 값이
 //!   빈 문자열이 아니면(TLS 인증서·키 파일) 검토 필요
+//! - `protoFiles`·`proto_files`가 비지 않은 배열이면(gRPC proto 파일, S5-5) 검토 필요
 //! - UTF-8이 아니거나 JSON으로 읽히지 않거나 너무 깊으면 검토 필요
 use serde_json::Value;
 
@@ -38,6 +39,15 @@ fn non_empty(value: Option<&Value>) -> bool {
     value.and_then(Value::as_str).is_some_and(|s| !s.is_empty())
 }
 
+/// 배열이 비지 않았거나 배열이 아닌 값(모양이 틀리면 보수적으로 검토).
+fn listed(value: Option<&Value>) -> bool {
+    match value {
+        None | Some(Value::Null) => false,
+        Some(Value::Array(items)) => !items.is_empty(),
+        Some(_) => true,
+    }
+}
+
 fn risky(value: &Value, depth: usize) -> bool {
     if depth > MAX_DEPTH {
         return true;
@@ -55,6 +65,8 @@ fn risky(value: &Value, depth: usize) -> bool {
                 || non_empty(map.get("command"))
                 || (tag("kind") == Some("binary") && non_empty(map.get("path")))
                 || TLS_PATHS.iter().any(|key| non_empty(map.get(*key)))
+                || listed(map.get("protoFiles"))
+                || listed(map.get("proto_files"))
             {
                 return true;
             }
@@ -80,6 +92,9 @@ mod tests {
         assert!(!needs_review(
             br#"{"body":{"kind":"binary","path":""},"tls":{"caPath":null,"verify":true}}"#
         ));
+        assert!(!needs_review(
+            br#"{"grpc":{"protoFiles":[],"target":"http://x"}}"#
+        ));
         for risky in [
             r#"{"h":"Bearer {{secret:T}}"}"#,
             r#"{"h":"\u007b\u007bsecret:T}}"}"#,
@@ -95,6 +110,9 @@ mod tests {
             r#"{"request":{"tls":{"client_key_path":"/home/u/k.pem"}}}"#,
             r#"{"request":{"tls":{"ca_path":"/etc/x.pem"}}}"#,
             r#"{"request":{"tls":{"client_cert_path":"/home/u/c.pem"}}}"#,
+            // S5-5: gRPC proto 파일도 데몬이 로컬 파일을 읽는다.
+            r#"{"kind":"grpc","grpc":{"protoFiles":["/home/u/x.proto"]}}"#,
+            r#"{"grpc":{"proto_files":["/home/u/x.proto"]}}"#,
             "{broken",
         ] {
             assert!(needs_review(risky.as_bytes()), "{risky}");

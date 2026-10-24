@@ -3,6 +3,10 @@ import { vi } from "vitest";
 import type {
   CollectionExpect,
   CollectionRoot,
+  GrpcCall,
+  GrpcCatalog,
+  GrpcEvent,
+  GrpcTarget,
   HistoryPage,
   RealtimeEvent,
   SendRequest,
@@ -10,7 +14,7 @@ import type {
   WsInput,
   WsOpen,
 } from "../../../rpc/gen/rpc";
-import { type ApiBackend, type RealtimeHandlers, SendFailure, type SentResponse } from "./backend";
+import { type ApiBackend, type LineHandlers, type RealtimeHandlers, SendFailure, type SentResponse } from "./backend";
 
 const key = (root: CollectionRoot, path: string) => `${root.kind === "project" ? root.projectId : "~"}:${path}`;
 
@@ -44,6 +48,27 @@ export class FakeRealtime {
     this.handlers.onEvent(event);
   }
   end() {
+    this.handlers.onEnd();
+  }
+}
+
+/** 가짜 gRPC 호출: 시험이 이벤트를 넣고 화면이 보낸 입력·닫기를 본다. */
+export class FakeStream<E, P, I = never> {
+  sent: I[] = [];
+  closed = false;
+  constructor(
+    readonly params: P,
+    private handlers: LineHandlers<E>,
+  ) {}
+  emit(event: E) {
+    this.handlers.onEvent(event);
+  }
+  end() {
+    this.handlers.onEnd();
+  }
+  close() {
+    if (this.closed) return;
+    this.closed = true;
     this.handlers.onEnd();
   }
 }
@@ -124,5 +149,17 @@ export class FakeBackend implements ApiBackend {
   secretNames = vi.fn(async () => [...this.secrets.keys()]);
   setSecret = vi.fn(async (name: string, value: string) => {
     this.secrets.set(name, value);
+  });
+  grpcCatalog: GrpcCatalog = { source: "reflection", services: [] };
+  grpcDescribe = vi.fn(async (_params: GrpcTarget) => {
+    if (this.rejectOpen) throw this.rejectOpen;
+    return this.grpcCatalog;
+  });
+  grpcCalls: FakeStream<GrpcEvent, GrpcCall>[] = [];
+  openGrpc = vi.fn(async (params: GrpcCall, handlers: LineHandlers<GrpcEvent>) => {
+    if (this.rejectOpen) throw this.rejectOpen;
+    const call = new FakeStream<GrpcEvent, GrpcCall>(params, handlers);
+    this.grpcCalls.push(call);
+    return { close: () => call.close() };
   });
 }

@@ -72,6 +72,10 @@ pub struct ServerTls {
 }
 
 pub fn acceptor(tls: ServerTls) -> tokio_rustls::TlsAcceptor {
+    acceptor_alpn(tls, &[b"http/1.1"])
+}
+
+pub fn acceptor_alpn(tls: ServerTls, alpn: &[&[u8]]) -> tokio_rustls::TlsAcceptor {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let certs = CertificateDer::pem_slice_iter(tls.cert_pem.as_bytes())
         .collect::<Result<Vec<_>, _>>()
@@ -100,6 +104,6 @@ pub fn acceptor(tls: ServerTls) -> tokio_rustls::TlsAcceptor {
         None => builder.with_no_client_auth(),
     };
     let mut config = builder.with_single_cert(certs, key).expect("server config");
-    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    config.alpn_protocols = alpn.iter().map(|p| p.to_vec()).collect();
     tokio_rustls::TlsAcceptor::from(Arc::new(config))
 }

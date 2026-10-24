@@ -144,6 +144,14 @@ pub(crate) fn client(
 /// WebSocket 연결용 rustls 설정(ring). reqwest와 같은 규칙: 검증 켬은 플랫폼 검증기(+ 지정 CA),
 /// 검증 끔은 인증서를 받아들이고, 클라이언트 인증서가 있으면 보낸다. 어느 필드도 조용히 무시하지 않는다.
 pub(crate) fn rustls_config(tls: &PreparedTls) -> Result<Arc<rustls::ClientConfig>, ApiError> {
+    rustls_config_alpn(tls, &[b"http/1.1"])
+}
+
+/// 같은 규칙에 ALPN만 고른다(gRPC는 `h2`).
+pub(crate) fn rustls_config_alpn(
+    tls: &PreparedTls,
+    alpn: &[&[u8]],
+) -> Result<Arc<rustls::ClientConfig>, ApiError> {
     provider();
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let builder = rustls::ClientConfig::builder_with_provider(provider.clone())
@@ -172,7 +180,7 @@ pub(crate) fn rustls_config(tls: &PreparedTls) -> Result<Arc<rustls::ClientConfi
             .map_err(|_| ApiError::tls("invalid_certificate"))?,
         None => builder.with_no_client_auth(),
     };
-    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    config.alpn_protocols = alpn.iter().map(|p| p.to_vec()).collect();
     Ok(Arc::new(config))
 }
 
