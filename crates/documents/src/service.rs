@@ -77,6 +77,7 @@ pub(crate) struct Shared {
 #[derive(Clone)]
 pub struct DocumentsService {
     pub(crate) s: Arc<Shared>,
+    root_constraints: Vec<String>,
 }
 
 pub(crate) fn scope_fail(e: ScopeError) -> Fail<DocumentsError> {
@@ -150,6 +151,7 @@ impl DocumentsService {
         ));
         let data = c.data_dir;
         Self {
+            root_constraints: Vec::new(),
             s: Arc::new(Shared {
                 roots: c.roots,
                 hub: c.hub,
@@ -166,8 +168,22 @@ impl DocumentsService {
         }
     }
 
+    /// A domain-scoped handle sharing the same leases, journals and CAS state.
+    /// Roots are filtered before descriptor resolution (including folder creation).
+    pub fn scoped_to(&self, root: &str) -> Self {
+        let mut scoped = self.clone();
+        scoped.root_constraints.push(root.into());
+        scoped
+    }
+    async fn roots(&self) -> Vec<crate::Root> {
+        (self.s.roots)()
+            .await
+            .into_iter()
+            .filter(|root| self.root_constraints.iter().all(|id| id == &root.id))
+            .collect()
+    }
     pub async fn scope(&self) -> R<WriteScope> {
-        let (roots, private) = ((self.s.roots)().await, self.s.private.clone());
+        let (roots, private) = (self.roots().await, self.s.private.clone());
         blocking(move || Ok(WriteScope::new(roots).deny(&private))).await
     }
     pub(crate) async fn locate(&self, key: DocKey, create: bool, entry: bool) -> R<Located> {
@@ -181,7 +197,7 @@ impl DocumentsService {
         entry: bool,
         trash: bool,
     ) -> R<Located> {
-        let (roots, private) = ((self.s.roots)().await, self.s.private.clone());
+        let (roots, private) = (self.roots().await, self.s.private.clone());
         let refused = move |path: &str| is_internal(path) && !(trash && in_trash(path));
         blocking(move || {
             let scope = WriteScope::new(roots).deny(&private);

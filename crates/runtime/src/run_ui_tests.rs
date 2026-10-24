@@ -183,3 +183,78 @@ async fn ui_definition_pages_are_bounded_and_include_later_definitions() {
         "task-269"
     );
 }
+
+#[tokio::test]
+async fn published_start_has_a_readable_log_before_the_wrapper_and_restart_preserves_bytes() {
+    use std::io::{Read, Write};
+    let f = Fixture::new().await;
+    struct E(String);
+    impl devbox_core::Env for E {
+        fn var(&self, key: &str) -> Option<String> {
+            matches!(key, "HOME" | "XDG_RUNTIME_DIR").then(|| self.0.clone())
+        }
+        fn uid(&self) -> u32 {
+            1000
+        }
+    }
+    let paths = devbox_core::Paths::resolve(
+        devbox_core::Instance::parse("test-log-start").expect("instance"),
+        &E(f.root.path().display().to_string()),
+    )
+    .expect("paths");
+    let runs = RuntimeService::new(f.db.clone(), f.hub.clone(), f.projects.clone())
+        .with_execution(ExecutionConfig::new(paths));
+    let mut events = f.hub.subscribe("runtime.changed");
+    let run = recorded(&f.project, 1, "task", RunState::Starting);
+    // No wrapper exists yet: publication must make the stream source available.
+    runs.save_starting_run(&run)
+        .await
+        .expect("publish starting");
+    tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+        .await
+        .expect("published start");
+    let path = runs.log_path(&run.run.id).await.expect("recorded log");
+    let mut reader = std::fs::File::open(&path).expect("published run log is already readable");
+    let mut before = String::new();
+    reader
+        .read_to_string(&mut before)
+        .expect("read empty source");
+    assert!(before.is_empty());
+    // The late wrapper appends to the same file already opened by a log consumer.
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .expect("wrapper opens")
+        .write_all(b"late wrapper output\n")
+        .expect("wrapper writes");
+    reader
+        .read_to_string(&mut before)
+        .expect("follow late output");
+    assert_eq!(before, "late wrapper output\n");
+    runs.save_starting_run(&run)
+        .await
+        .expect("restart publication");
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("retained history"),
+        before
+    );
+    // An externally replaced log must not redirect preparation outside the owned file.
+    std::fs::remove_file(&path).expect("replace owned fixture");
+    let outside = f.root.path().join("outside");
+    std::fs::write(&outside, "preserve").expect("outside fixture");
+    std::os::unix::fs::symlink(&outside, &path).expect("link fixture");
+    tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+        .await
+        .expect("restart event");
+    assert!(runs.save_starting_run(&run).await.is_err());
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), events.recv())
+            .await
+            .is_err(),
+        "failed preparation never publishes"
+    );
+    assert_eq!(
+        std::fs::read_to_string(outside).expect("preserved"),
+        "preserve"
+    );
+}

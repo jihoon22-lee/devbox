@@ -385,7 +385,7 @@ mod tests {
             owners.record(key.clone(), action);
             register_capture(&mut backend, &mut registered, &mut status, &mut owners);
             assert!(status.capture_error.is_some());
-            assert_eq!(backend.registered, [key.clone()]);
+            assert_eq!(backend.registered.as_slice(), std::slice::from_ref(&key));
             let pressed = "Control+Alt+N".parse::<HotKey>().unwrap().id;
             assert_eq!(owners.action(pressed, &registered), Some(action));
         }

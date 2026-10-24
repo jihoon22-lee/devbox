@@ -21,6 +21,9 @@ pub struct Collector {
     /// `None`: not received from the daemon yet, or failed to compile.
     rules: Option<CompiledRules>,
     buffer: OfflineBuffer,
+    /// Nameless stop control retained outside the evictable observation queue.
+    /// It must reach the daemon before any observation after renewed consent.
+    withdrawal: Option<Observation>,
     last_input_ms: i64,
     /// The foreground is an excluded process and its boundary is queued.
     excluded: bool,
@@ -55,13 +58,25 @@ impl Collector {
         self.paused
     }
 
-    /// Withdrawing consent empties the queue.
+    /// Withdraw all unsent names/titles, but close any already-ingested session.
+    /// A newer seq invalidates an uncertain uplink batch. Until ACK, keep the
+    /// earliest cutoff: repeated off/on cannot turn unconfirmed time into activity.
     pub fn set_consent(&mut self, consent: bool) -> Hook {
         let was = self.running();
+        let withdrawing = self.consent && !consent;
         self.consent = consent;
         self.excluded = false;
         if !consent {
             self.buffer.clear();
+            if withdrawing {
+                let cutoff = self
+                    .withdrawal
+                    .as_ref()
+                    .map_or(self.last_input_ms, |boundary| boundary.last_input_ms);
+                self.boundary(ObservationKind::Idle, cutoff, cutoff);
+                self.withdrawal = self.buffer.drain(1).events.pop();
+                self.buffer.clear();
+            }
         }
         self.transition(was)
     }
@@ -155,16 +170,31 @@ impl Collector {
     }
 
     pub fn drain(&self, max: usize) -> Batch {
-        self.buffer.drain(max)
+        let boundary = self.withdrawal.as_ref().filter(|_| max > 0);
+        let mut batch = self
+            .buffer
+            .drain(max.saturating_sub(usize::from(boundary.is_some())));
+        if let Some(boundary) = boundary {
+            batch.events.insert(0, boundary.clone());
+            batch.upto = batch.events.last().map_or(0, |event| event.seq);
+        }
+        batch
     }
 
     pub fn ack(&mut self, upto: u64) {
         self.buffer.ack(upto);
+        if self
+            .withdrawal
+            .as_ref()
+            .is_some_and(|event| event.seq <= upto)
+        {
+            self.withdrawal = None;
+        }
     }
 
     #[cfg(test)]
     pub fn pending(&self) -> usize {
-        self.buffer.len()
+        self.buffer.len() + usize::from(self.withdrawal.is_some())
     }
 }
 
@@ -487,11 +517,11 @@ mod tests {
         assert_eq!(c.set_paused(false, 4_000), Hook::Start);
         c.accept(fg("code.exe", "c", 4_000));
         assert_eq!(c.set_consent(false), Hook::Stop);
-        assert_eq!(c.pending(), 0, "withdrawal empties the queue");
+        assert_eq!(c.pending(), 1, "withdrawal keeps only a nameless boundary");
         assert!(c.accept(fg("code.exe", "d", 5_000)).is_none());
         assert_eq!(c.set_consent(true), Hook::Start);
         // Numbering continues within the run: the daemon skips `seq <= upto`.
-        assert_eq!(c.accept(fg("code.exe", "e", 6_000)), Some(4));
+        assert_eq!(c.accept(fg("code.exe", "e", 6_000)), Some(5));
 
         let (restored, hook) = Collector::restore(true, true);
         assert_eq!(
@@ -524,8 +554,8 @@ mod tests {
         assert_eq!((tries, hooks.clone()), (SAVE_ATTEMPTS, vec![Hook::Stop]));
         let c = lock(&collector);
         assert!(
-            !c.consent() && !c.running() && c.pending() == 0,
-            "stopped and emptied anyway"
+            !c.consent() && !c.running() && c.pending() == 1,
+            "stopped with only a nameless boundary"
         );
         drop(c);
 
@@ -642,3 +672,7 @@ mod tests {
         assert!(legacy_knowledge(root), "one suffixed store is enough");
     }
 }
+
+#[cfg(test)]
+#[path = "activity_consent_tests.rs"]
+mod consent_tests;

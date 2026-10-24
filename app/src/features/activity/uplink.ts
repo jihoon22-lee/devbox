@@ -65,7 +65,8 @@ export function startActivityUplink(client: UplinkClient): () => void {
     if (stale) await configure();
     const fresh = await invoke<Drained>("activity_drain", { max: MAX_EVENTS });
     // Resend an uncertain batch only while the native queue still holds it:
-    // a withdrawn consent empties the queue, and that must never be sent.
+    // withdrawal replaces observations with a newer nameless boundary; the old
+    // titled payload must never be sent again.
     const first = fresh.events[0]?.seq;
     const batch = held && fresh.runId === held.runId && first !== undefined && first <= held.upto ? held : fresh;
     held = null;

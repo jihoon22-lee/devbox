@@ -240,3 +240,37 @@ test("stop ends the loop", async () => {
   await tick();
   expect(mocks.invoke.mock.calls.length).toBe(before);
 });
+
+test("withdrawal sends only its new nameless boundary, retries it after reconnect, then ACKs renewed observations", async () => {
+  const titled = { ...batch(2), events: [event(1), { ...event(2), title: "discarded private title" }] };
+  const stopEvent = { ...event(3), kind: "idle" as const, app: null, title: null, lastInputMs: 2000 };
+  const stopBatch = { ...batch(3), events: [stopEvent] };
+  const renewed = { ...batch(4), events: [event(4)] };
+  drains(titled, stopBatch, { ...batch(4), events: [stopEvent, event(4)] }, renewed);
+  const c = client();
+  let sent = 0;
+  c.call.mockImplementation(async (method: string) => {
+    if (method === "activity.rules") return rules;
+    if (++sent <= 2) throw new RpcError("connection_lost");
+    return { accepted: 1 };
+  });
+  const stop = startActivityUplink(c as UplinkClient);
+  await tick();
+  c.set("reconnecting");
+  await tick();
+  c.set("ready");
+  await tick();
+  expect(ingests(c)[1]?.[1]).toEqual({ batch: { runId: "r1", upto: 3 }, events: [stopEvent], dropped: 3 });
+  expect(calls("activity_ack")).toEqual([]);
+  await tick();
+  expect(ingests(c)[2]).toEqual(ingests(c)[1]);
+  expect(calls("activity_ack")).toEqual([["activity_ack", { upto: 3 }]]);
+  await tick();
+  expect(ingests(c)[3]?.[1]).toEqual({ batch: { runId: "r1", upto: 4 }, events: [event(4)], dropped: 3 });
+  expect(calls("activity_ack")).toEqual([
+    ["activity_ack", { upto: 3 }],
+    ["activity_ack", { upto: 4 }],
+  ]);
+  expect(JSON.stringify(ingests(c).slice(1))).not.toContain("discarded private title");
+  stop();
+});

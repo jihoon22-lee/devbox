@@ -691,6 +691,7 @@ dependencies = [
  "devbox-protocol",
  "pulldown-cmark",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

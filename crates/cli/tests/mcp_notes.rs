@@ -9,11 +9,11 @@ use support::TestDaemon;
 fn note_reads_stay_in_fixture_vault_and_write_is_hidden_and_rejected_by_default() {
     let mut d = TestDaemon::fixture();
     let vault = d.home.path().join("notes");
-    std::fs::create_dir_all(&vault).unwrap();
-    std::fs::write(vault.join("a.md"), "owned note").unwrap();
+    std::fs::create_dir_all(&vault).expect("owned fixture");
+    std::fs::write(vault.join("a.md"), "owned note").expect("owned fixture");
     let outside = d.home.path().join("outside.md");
-    std::fs::write(&outside, "outside private fixture").unwrap();
-    std::os::unix::fs::symlink(&outside, vault.join("escape.md")).unwrap();
+    std::fs::write(&outside, "outside private fixture").expect("owned fixture");
+    std::os::unix::fs::symlink(&outside, vault.join("escape.md")).expect("owned fixture");
     d.launch();
     let mut m = Mcp::start(&d);
     let listed = names(&m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})));
@@ -46,11 +46,11 @@ fn enabled_note_add_appends_to_inbox_or_daily_and_search_is_bounded() {
             .contains(&"devbox_note_add".into())
     );
     let added = body(&m.tool("devbox_note_add", json!({"text":"owned capture"})));
-    let path = added["path"].as_str().unwrap();
+    let path = added["path"].as_str().expect("owned fixture");
     assert!(
         body(&m.tool("devbox_note_read", json!({"path":path})))["text"]
             .as_str()
-            .unwrap()
+            .expect("owned fixture")
             .contains("owned capture")
     );
     let daily = body(&m.tool(
@@ -59,11 +59,11 @@ fn enabled_note_add_appends_to_inbox_or_daily_and_search_is_bounded() {
     ));
     assert_ne!(daily["path"], added["path"]);
     let result = body(&m.tool("devbox_notes_search", json!({"text":"owned"})));
-    assert!(result["items"].as_array().unwrap().len() <= 20);
+    assert!(result["items"].as_array().expect("owned fixture").len() <= 20);
     assert!(
         result["items"]
             .as_array()
-            .unwrap()
+            .expect("owned fixture")
             .iter()
             .any(|hit| hit["path"] == path)
     );

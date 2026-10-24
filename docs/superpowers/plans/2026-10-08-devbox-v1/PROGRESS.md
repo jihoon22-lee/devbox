@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1–9 완료(Task 9 `93316caa`). **Task 10 노트 섹션 화면 완료(로컬)**: 별도 검토 REQUEST_CHANGES(3건) → Mermaid 추가 우회 수정 → 최종 APPROVE. 노트 편집·충돌/복구·분리 창·일일 활동 요약과 네트워크 없는 Mermaid 미리보기. Task 10 `f469c2b0` 보존. **Task 11 검토 수정·좁은 검증 완료, 재검토 대기**(통합 검색·빠른 캡처·활동 화면·MCP). 다음: Task 11 재검토 뒤 묶음 W 커밋·Task 12 통합 수용 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. Task 1–11 완료(로컬), Task 10 `f469c2b0`·Task 11 `468e4925`. **Task 12 제품 검증·브랜치 검토 완료, 설치 수용·PR 대기**: 최초 전체 check FAIL와 실패별 수정·직접 영향 PASS를 모두 보존. vault 경계·동의 철회 구간 보정 재검토 APPROVE. 다음: 완료 SHA Windows CI 산출물 생성, 외부 수용 helper 완성·독립 검토 후 accept 설치 수용. S5 미머지, main 통합 불필요 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 Task 11 검토 수정·좁은 검증 완료, 재검토 대기. UI 통합52/12파일·MCP notes2 및 기존7(실패2개 재검사)·native shortcuts7·vault read1·라우트1·gen-check·최종 typecheck·Biome451·MSVC 좁은 check PASS. 전체 check/E2E·Windows 실기/SC2는 Task 12 미실행 |
+| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 제품 코드 최종 독립 검토 APPROVE(`s3-task12/whole-branch-review/delta-approval.txt`). 좁은 실패 보정·영향 검증 PASS, 최초 전체 FAIL 기록 유지. Windows 읽기 전용 preflight PASS, 설치 수용10·SC2·최종 CI·PR 리뷰는 미실행 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -115,8 +115,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | T | Task 4–6 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-22 | 2026-10-23 | Task 4: Step 0 config 예외 별도 커밋, 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.8h. Task 5: 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.5h. Task 6: 구현 1회·검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 약1.2h(세션 재시작·사용량 한도 대기 제외) |
 | S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-24 | Task 8: 구현 1회·검토 2회·수정 1회 약1.5h, Task 9: 구현 1회·검토 2회·수정 1회 약1.5h(사용량 한도 대기 제외). 실제 Windows 훅 미실행 |
-| S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 독립 검토 지적 수정·재검토 APPROVE. 전체 검증·설치본 수용 Task 12 |
-| S3 | 마무리 | Task 12 → S3 PR |  | 대기 | | | |
+| S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
+| S3 | 마무리 | Task 12 → S3 PR | `v1/s3-knowledge` | 작업 중 | 2026-10-24 | | 제품 검증·브랜치 전체 검토 완료, Windows 산출물·외부 helper·설치 수용·PR 대기 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
@@ -359,7 +359,21 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
 
-### S3 Task 11 구현 결과 (2026-10-24, 트랙 1 · 검토 수정 후 재검토 대기)
+### S3 Task 12 제품 검증 결과 (2026-10-24, 트랙 1 · 제품 코드 독립 검토 승인)
+
+- 최종 독립 재검토 APPROVE: `s3-task12/whole-branch-review/delta-approval.txt`. 이 승인은 제품 코드에 한정되며 Windows 설치 수용·SC2·준비 중 외부 helper의 실행 승인은 아니다. 최초 전체 검사는 FAIL로 보존하고 수정 뒤 직접 영향 PASS와 결합해 로컬 검증을 완료했다. Windows 읽기 전용 연결 성공(`run-f573e0ab2c3c4eda957c8b2ce95d25b2.json`)은 설치 수용 PASS가 아니다.
+
+- `origin/main` fetch 결과 `329b2ee9` 유지, S5 미머지여서 통합 없음. `scripts/check.sh`는 한 번 실행해 **FAIL**(787.155초)을 보존했다. 최초 Rust CLI fixture 8개 실패·Clippy unwrap8개·E2E14/16(실패2)을 전체 PASS로 바꾸어 기록하지 않는다. 같은 실행에서 frontend768/148파일·typecheck·Biome451·build 및 나머지 통과 단계는 재실행하지 않는다.
+- CLI agent fixture migration에 search/activity를 빠뜨린 3곳을 보완했고, MCP 테스트 unwrap을 expect로 수정했다. 실패한 agents·agents_codex·agents_watch·agents_review_regressions·projects_launch 대상 및 CLI strict Clippy 좁은 재검사 PASS. 검색 E2E는 첫 heading을 제목으로 가정한 fixture가 원인: 명시 frontmatter title로 고친 뒤 검색2/2 PASS.
+- 실행 로그 E2E는 수동 재시도 통과를 회복으로 세지 않았다. 수동 진단 wire에서 `logs.open → observe.source_unavailable` 2/10 실패 확인. `Starting` 발행 뒤 wrapper가 log를 만드는 순서로, wrapper가 아직 없는 결정적 회귀에서 ENOENT RED를 재현했다. 시작 발행 전 `create_new`로 소유 log를 준비하고 기존 일반 파일은 수정 없이 보존한다. log/디렉터리 symlink는 거절. 지연 wrapper append·재시작 byte 보존·거절 시 발행 없음 및 기존 run UI4 PASS. 임시 진단 test는 artifact로 보존 후 제품 트리에서 제거했다.
+- 크기·번들: scripts+.github1,500줄·workflow2개·제품 TSX300줄 초과0, Mermaid는 빌드 main에서 `import("./mermaid.core-DmwmBppd.js")`로 분리됨(`size-bundle-audit.json`). 전체 제품 LOC와 최종 좁은 결과는 같은 근거 디렉터리의 `loc-final.txt`·`validation-summary.json`을 따른다.
+- 전체 브랜치 별도 검토 `whole-branch-review/result.txt` REQUEST_CHANGES2를 반영했다. B1: 일반 documents의 등록 project root 허용을 notes 권한으로 오인해 read가 내용을 반환하고 append가 project 파일을 수정하는 RED가 확인됐다. NotesService에 vault만 허용하는 documents handle을 주며 공유 leases/journals/CAS는 유지한다. root 필터는 같은 descriptor 해석·부모 생성 전에 적용하고 모든 notes read/render/template/daily/append/create/attachment/rename/trash 경로가 이 handle을 쓴다. index read의 metadata 확인 뒤 bare read도 nofollow fd 순회로 바꾸었다. 기존 정책대로 indexing은 vault 안 링크도 건너뛰며, 일반 document 작업의 등록 root 간 링크는 유지한다. 새 read/create RED2·review append RED와 후속 경로 치환 회귀·index parent 교체 시험을 보존했다. notes118·documents50 및 CLI notes4/MCP notes2/documents7 PASS.
+- B2: 실제 Collector→Sessionizer에서 동의 철회 구간이 210,000ms로 합쳐지는 RED를 재현했다(`red-consent-boundary.txt`, 신규3실패). 철회는 미전송 이름/제목을 버리고 마지막 입력의 nameless Idle 경계만 새 seq로 보존한다. 이 제어 항목은 일반 1,000관측 큐의 eviction 밖에 있어 재연결·overflow에도 ACK 전 사라지지 않는다. 이전 ACK는 새 seq를 지우지 못하며 held 제목 batch는 더 새 경계가 보이면 재전송하지 않는다. ACK 불명 상태에서 다시 철회하면 최초 미확인 경계를 유지하므로 미확인 동의 구간 일부를 보수적으로 버릴 수 있으나 철회 구간은 집계하지 않는다. 실제 Collector+Sessionizer의 동일/다른 전경·ACK 손실·철회 반복·이전 ACK·1,100관측 overflow 및 기존 native activity10, uplink 재연결/경계 재전송9 PASS. MSVC accept cfg 좁은 compile PASS이며 Windows 실행 증거가 아니다.
+- 검토 수정 최종 영향 검사: notes/search E2E5 PASS, notes/documents/CLI all-target strict Clippy 및 native app all-target strict Clippy PASS, typecheck·Biome451 PASS. Clippy 첫 실패(신규 fixture 불필요 borrow2·기존 shortcut 시험 clone1)는 시험 표현만 보완하고 해당 Clippy 재실행했다. 상세 `review-fixes-summary.json`; 전체 check.sh는 재실행하지 않았다. 제품72,165줄/120,000·600줄 초과0, 기존 scripts/workflow 제한 유지.
+- 수용 helper는 **준비 소스이며 아직 실행 가능한 orchestration이 아님**. S2 원본을 보관 manifest 해시로 검증했고, 설치 전 `[notes].vault`·소유 마커·별도 키 계획과 실패 우선 판정의 pure tests7 PASS. native UI 시나리오·최종 artifact provenance 연결·cleanup 원본 S2 전용 동작 제거·별도 검토를 마친 뒤에만 설치 실행한다. 루트의 읽기 전용 Windows preflight는 `DEVBOX_S3_PREFLIGHT_OK` PASS(`run-f573e0ab2c3c4eda957c8b2ce95d25b2.json`); 과거 errno110을 현재 blocker로 주장하지 않는다. 설치본 수용10·SC2는 모두 NOT_RUN.
+- 근거: Git common-dir `devbox-verification/s3-task12/`의 최초 full-check·좁은 재검사·diagnose JSON·acceptance-matrix·helper preparation-manifest. 메모리 cgroup 미적용은 유지되며 jobs/workers/threads2·CPU4·nice10 적용. commit/push/PR·Windows 설치 및 수용은 이 단계에서 실행하지 않았다.
+
+### S3 Task 11 결과 (2026-10-24, 트랙 1 · 독립 검토 승인)
 
 - 통합 검색(`/search`): 노트·코드·파일 이름 범위, 정규식·대소문자, 저장한 검색, 그룹별 결과·선택, 코드 읽기 전용 미리보기. JSON-line 스트림의 분할 UTF-8·종료·취소·상한 처리. 같은 `search.changed.rev`는 무시하고 더 큰 revision만 새로 조회하며 갱신 중 이전 성공 결과·선택 유지(CV-F07). Ctrl+Shift+F는 터미널·IME에 양보.
 - 빠른 캡처: 숨긴 `popout-capture-main` 사전 생성(520×220·항상 위·장식 없음·가속키 비활성), 전역 키(일반 Ctrl+Alt+N / 개발 Ctrl+Alt+Shift+N)·트레이, 사용자 지정 키의 저장·충돌 검증. 네이티브는 메인 창을 거치지 않고 직접 표시하며 `capture-ready elapsed_ms`만 기록. 화면은 IME Enter·Shift+Enter 보호, 중복 제출 방지, 실패 시 내용 유지, Esc/sessionStorage 초안, 성공 뒤 숨김. Windows 실행·SC2 측정은 미실행.

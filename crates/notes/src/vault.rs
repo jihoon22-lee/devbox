@@ -125,24 +125,20 @@ pub fn scan(vault: &Path) -> (Vec<String>, bool) {
 /// (`documents::decode_text`), so titles and UTF-16 link offsets match it.
 pub fn read_note(vault: &Path, rel: &str) -> Option<(String, Option<String>)> {
     use sha2::{Digest, Sha256};
-    let parts: Vec<&str> = rel.split('/').collect();
-    let mut abs = vault.to_path_buf();
-    let mut meta = None;
-    for (i, part) in parts.iter().enumerate() {
-        abs.push(part);
-        let m = std::fs::symlink_metadata(&abs).ok()?;
-        let last = i + 1 == parts.len();
-        if (last && !m.is_file()) || (!last && !m.is_dir()) {
-            return None;
-        }
-        meta = Some(m);
-    }
-    let meta = meta?;
+    use std::io::Read;
+    let file = open_note(vault, rel)?;
+    let meta = file.metadata().ok()?;
     if meta.len() > devbox_documents::NOTE_LIMIT {
         let hash = format!("large:{}", meta.len());
         return Some((hash, None));
     }
-    let bytes = std::fs::read(&abs).ok()?;
+    let mut bytes = Vec::new();
+    file.take(devbox_documents::NOTE_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > devbox_documents::NOTE_LIMIT {
+        return Some((format!("large:{}", bytes.len()), None));
+    }
     let hash = Sha256::digest(&bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -151,4 +147,64 @@ pub fn read_note(vault: &Path, rel: &str) -> Option<(String, Option<String>)> {
         .ok()
         .map(|t| t.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(t));
     Some((hash, text))
+}
+
+/// Pin the file before reading any metadata/content; a parent replacement cannot
+/// redirect the subsequent read. Indexing never follows even an in-vault link.
+fn open_note(vault: &Path, rel: &str) -> Option<std::fs::File> {
+    use rustix::fs::{CWD, Mode, OFlags, openat};
+    let parts: Vec<_> = rel.split('/').collect();
+    if parts
+        .iter()
+        .any(|part| part.is_empty() || *part == "." || *part == "..")
+    {
+        return None;
+    }
+    let dir_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut dir = openat(
+        CWD,
+        std::fs::canonicalize(vault).ok()?,
+        dir_flags,
+        Mode::empty(),
+    )
+    .ok()?;
+    for part in &parts[..parts.len() - 1] {
+        dir = openat(&dir, *part, dir_flags, Mode::empty()).ok()?;
+    }
+    let file = std::fs::File::from(
+        openat(
+            &dir,
+            *parts.last()?,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK | OFlags::NOCTTY,
+            Mode::empty(),
+        )
+        .ok()?,
+    );
+    file.metadata().ok()?.is_file().then_some(file)
+}
+
+#[cfg(test)]
+mod descriptor_tests {
+    use super::*;
+    use std::io::Read;
+    #[test]
+    fn index_read_is_pinned_and_never_follows_final_or_parent_links() {
+        let root = tempfile::tempdir().expect("fixture");
+        let vault = root.path().join("vault");
+        let external = root.path().join("project");
+        std::fs::create_dir_all(vault.join("folder")).expect("vault");
+        std::fs::create_dir(&external).expect("project");
+        std::fs::write(vault.join("folder/a.md"), "owned").expect("note");
+        std::fs::write(external.join("a.md"), "foreign private").expect("foreign");
+        let mut pinned = open_note(&vault, "folder/a.md").expect("pin old file");
+        std::fs::rename(vault.join("folder"), vault.join("old")).expect("swap parent");
+        std::os::unix::fs::symlink(&external, vault.join("folder")).expect("parent link");
+        let mut text = String::new();
+        pinned.read_to_string(&mut text).expect("read pinned");
+        assert_eq!(text, "owned");
+        assert!(read_note(&vault, "folder/a.md").is_none());
+        std::os::unix::fs::symlink(external.join("a.md"), vault.join("a.md")).expect("final link");
+        assert!(read_note(&vault, "a.md").is_none());
+        assert!(read_note(&vault, "../project/a.md").is_none());
+    }
 }

@@ -128,7 +128,7 @@ impl NotesService {
             s: Arc::new(Inner {
                 index: NoteIndex::open(c.index)?,
                 settings: c.settings,
-                docs: c.documents,
+                docs: Arc::new(c.documents.scoped_to(VAULT)),
                 hub: c.hub,
                 clock: c.clock,
                 today: c.today,

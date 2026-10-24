@@ -94,3 +94,6 @@ mod render_tests;
 mod sink_tests;
 #[cfg(test)]
 mod vault_tests;
+
+#[cfg(test)]
+mod scope_tests;

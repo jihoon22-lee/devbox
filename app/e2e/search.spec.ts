@@ -7,7 +7,7 @@ const searchUrl = (gateway: string) => `/search?gateway=${encodeURIComponent(gat
 test("Hangul partial note search opens the matching note", async ({ page, stack }) => {
   const vault = join(stack.home, "notes");
   mkdirSync(vault, { recursive: true });
-  writeFileSync(join(vault, "restart.md"), "# owned note\n데몬재시작을 확인합니다.\n");
+  writeFileSync(join(vault, "restart.md"), "---\ntitle: owned note\n---\n데몬재시작을 확인합니다.\n");
   await expect
     .poll(async () => (await stack.rpc("search.notes", { text: "재시작", limit: 20 })).items.length, { timeout: 10000 })
     .toBeGreaterThan(0);

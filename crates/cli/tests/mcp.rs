@@ -272,10 +272,10 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
     assert_eq!(
         tools["result"]["tools"]
             .as_array()
-            .unwrap()
+            .expect("owned fixture")
             .iter()
             .find(|tool| tool["name"] == "devbox_agent_send")
-            .unwrap()["inputSchema"]["required"],
+            .expect("owned fixture")["inputSchema"]["required"],
         json!(["id", "text"])
     );
     m.send(json!({"jsonrpc":"2.0","method":"tools/call","params":{"name":"devbox_agent_send","arguments":{"id":id,"text":"notification must not send"}}}));

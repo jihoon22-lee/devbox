@@ -17,6 +17,7 @@ pulldown-cmark.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 data-encoding.workspace = true
 rusqlite.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
