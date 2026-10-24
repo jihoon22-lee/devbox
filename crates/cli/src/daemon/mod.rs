@@ -2,6 +2,8 @@ mod agent_test;
 mod debug;
 mod dedupe;
 mod hostname;
+mod knowledge;
+mod knowledge_routes;
 mod launch;
 mod locations;
 mod logs;
@@ -14,6 +16,7 @@ pub mod server;
 mod socket;
 pub mod state;
 mod streams;
+mod summary;
 mod system;
 mod tools_routes;
 mod trust;
@@ -41,6 +44,8 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_secrets::MIGRATIONS,
         devbox_api::MIGRATIONS,
         devbox_webhooks::MIGRATIONS,
+        devbox_search::MIGRATIONS,
+        devbox_activity::MIGRATIONS,
     ]
     .concat()
 }
@@ -55,6 +60,8 @@ fn build_services_with_runtime(
 ) -> anyhow::Result<Arc<Services>> {
     paths.ensure_dirs()?;
     let config = Config::load(&paths)?;
+    let notes = devbox_notes::NotesSettings::from_table(&config.notes, &paths.home)?;
+    let search = devbox_search::SearchSettings::from_table(&config.search)?;
     let db = Db::open(
         &paths.db_path,
         &paths.backups_dir,
@@ -146,6 +153,16 @@ fn build_services_with_runtime(
             .with_execution(execution)
             .with_secrets(secrets.clone()),
     );
+    let knowledge = knowledge::build(
+        &paths,
+        (notes, search, config.pc.name.clone()),
+        &db,
+        &index,
+        &hub,
+        &projects,
+    )?;
+    let activity = devbox_activity::ActivitySettings::from_table(&config.activity);
+    let activity = knowledge::activity(&paths, activity, &db, &hub, &projects);
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -167,6 +184,10 @@ fn build_services_with_runtime(
         webhooks,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
+        documents: knowledge.documents,
+        notes: knowledge.notes,
+        search: knowledge.search,
+        activity,
     }))
 }
 
@@ -199,6 +220,11 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let runtime = system::Runtime::new(!foreground);
     let shutdown = runtime.shutdown.clone();
     let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
+    // Notes first: it creates a missing vault before documents starts watching it.
+    let _notes_startup = services.notes.start();
+    let _documents_startup = services.documents.start();
+    let _activity_writer = services.activity.start();
+    let activity = services.activity.clone();
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
     let s2 = shutdown.clone();
@@ -208,7 +234,9 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
         s2.cancel();
     });
-    server::serve(socket.listener, services, shutdown).await?;
+    let served = server::serve(socket.listener, services, shutdown).await;
+    activity.shutdown().await;
+    served?;
     tracing::info!("daemon stopped");
     if runtime.restart_requested() {
         anyhow::bail!("intentional daemon restart after environment refresh");

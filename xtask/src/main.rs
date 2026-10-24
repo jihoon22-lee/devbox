@@ -29,6 +29,12 @@ fn main() -> Result<()> {
     ts_rs::TypeVisitor::visit::<devbox_api::GrpcEvent>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_api::McpEvent>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_api::McpInput>(&mut exporter);
+    devbox_documents::export(&mut exporter);
+    devbox_notes::export(&mut exporter);
+    devbox_search::export(&mut exporter);
+    devbox_activity::export(&mut exporter);
+    // `search.query` stream lines (JSON Lines of this type).
+    ts_rs::TypeVisitor::visit::<devbox_search::SearchChunk>(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");
     update_file(&path, &out, check)?;

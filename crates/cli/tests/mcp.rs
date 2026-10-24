@@ -30,7 +30,9 @@ fn offline_initialize_notifications_and_eof_keep_stdout_protocol_only() {
             "devbox_agents",
             "devbox_runs",
             "devbox_logs",
-            "devbox_problems"
+            "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read"
         ]
     );
     let unavailable = m.tool("devbox_projects", json!({}));
@@ -114,7 +116,9 @@ fn oversized_and_invalid_utf8_lines_are_bounded_and_recover() {
             "devbox_agents",
             "devbox_runs",
             "devbox_logs",
-            "devbox_problems"
+            "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read"
         ]
     );
     m.finish();
@@ -136,7 +140,9 @@ fn local_false_overrides_shared_write_true() {
             "devbox_agents",
             "devbox_runs",
             "devbox_logs",
-            "devbox_problems"
+            "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read"
         ]
     );
     assert_eq!(
@@ -191,6 +197,8 @@ async fn read_tools_return_projects_and_only_open_tasks_and_denied_send_has_no_e
         devbox_secrets::MIGRATIONS,
         devbox_api::MIGRATIONS,
         devbox_webhooks::MIGRATIONS,
+        devbox_search::MIGRATIONS,
+        devbox_activity::MIGRATIONS,
     ]
     .concat();
     let db = devbox_core::Db::open(
@@ -256,12 +264,20 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
             "devbox_runs",
             "devbox_logs",
             "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read",
+            "devbox_note_add",
             "devbox_agent_send",
             "devbox_run_task"
         ]
     );
     assert_eq!(
-        tools["result"]["tools"][5]["inputSchema"]["required"],
+        tools["result"]["tools"]
+            .as_array()
+            .expect("owned fixture")
+            .iter()
+            .find(|tool| tool["name"] == "devbox_agent_send")
+            .expect("owned fixture")["inputSchema"]["required"],
         json!(["id", "text"])
     );
     m.send(json!({"jsonrpc":"2.0","method":"tools/call","params":{"name":"devbox_agent_send","arguments":{"id":id,"text":"notification must not send"}}}));
@@ -366,7 +382,9 @@ async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
             "devbox_agents",
             "devbox_runs",
             "devbox_logs",
-            "devbox_problems"
+            "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read"
         ]
     );
     m.finish();

@@ -2,11 +2,16 @@ import { RouterProvider } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useState } from "react";
+import { ActivityUplink } from "../features/activity/uplink";
 import { AgentCommands } from "../features/agents/AgentCommands";
 import { AgentDataProvider } from "../features/agents/AgentData";
 import { PopoutAgentGrid } from "../features/agents/AgentGrid";
 import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { PopoutAgent } from "../features/agents/detail/AgentDetail";
+import { CaptureWindow } from "../features/capture/CaptureWindow";
+import { NotesCommands } from "../features/notes/NotesCommands";
+import { NotesRoute, notesSearch } from "../features/notes/NotesPage";
+import { PopoutNote } from "../features/notes/PopoutNote";
 import { AttentionBridge } from "../features/notifications/AttentionBridge";
 import { subscribeNativeNavigation } from "../features/notifications/native";
 import { ProblemsPanel } from "../features/problems/ProblemsPanel";
@@ -16,9 +21,11 @@ import { BottomLogs } from "../features/runs/BottomLogs";
 import { RunStopUndo } from "../features/runs/RunStopUndo";
 import { RunsPage } from "../features/runs/RunsPage";
 import { runsSearch } from "../features/runs/search";
+import { SearchCommands } from "../features/search/SearchCommands";
+import { SearchRoute } from "../features/search/SearchPage";
 import { openSettings, registerSettingsNavigation } from "../features/settings/open";
 import { restorePreferences } from "../features/settings/preferences";
-import { SettingsPage } from "../features/settings/SettingsPage";
+import { SettingsRoute } from "../features/settings/SettingsPage";
 import { BottomTerminal } from "../features/terminal/BottomTerminal";
 import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
 import { TerminalCommands } from "../features/terminal/TerminalCommands";
@@ -57,12 +64,16 @@ export function Shell() {
           "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
           "/tools": { component: ToolsPage, validateSearch: toolsSearch },
+          "/search": { component: SearchRoute },
+          "/notes": { component: NotesRoute, validateSearch: notesSearch },
         },
-        settings: SettingsPage,
+        settings: SettingsRoute,
         popouts: [
           { path: "/popout/terminal/$id", component: PopoutTerminal },
           { path: "/popout/agent/$id", component: PopoutAgent },
           { path: "/popout/agents-grid", component: PopoutAgentGrid },
+          { path: "/popout/note/$key", component: PopoutNote },
+          { path: "/popout/capture", component: CaptureWindow },
         ],
       }),
     [],
@@ -178,6 +189,7 @@ export function Shell() {
     <ProjectDataProvider>
       <AgentDataProvider>
         {ownsAttention && <AttentionBridge location={attentionLocation} />}
+        <ActivityUplink />
         <RouterProvider router={router} />
         <AgentCommands
           navigate={(id) =>
@@ -195,6 +207,8 @@ export function Shell() {
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
         <ToolsCommands navigate={(search) => router.navigate({ to: "/tools", search })} />
+        {ownsAttention && <SearchCommands navigate={() => void router.navigate({ to: "/search" })} />}
+        <NotesCommands navigate={() => void router.navigate({ to: "/notes" })} />
         <RunStopUndo />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />

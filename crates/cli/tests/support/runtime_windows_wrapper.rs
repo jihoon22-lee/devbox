@@ -15,6 +15,8 @@ async fn insert(f: &RuntimeFixture, project: &str, id: &str, def: &RunDef) -> Ru
             devbox_secrets::MIGRATIONS,
             devbox_api::MIGRATIONS,
             devbox_webhooks::MIGRATIONS,
+            devbox_search::MIGRATIONS,
+            devbox_activity::MIGRATIONS,
         ]
         .concat(),
     )

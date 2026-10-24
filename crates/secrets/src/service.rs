@@ -238,7 +238,10 @@ impl SecretsService {
         let key = key.as_ref().expect("initialized key");
         let id = key.id();
         let blob = crypto::seal(key, &input.name, &id, input.value.as_bytes())?;
-        self.save_name(&input.name)?;
+        let (config_dir, name) = (self.paths.config_dir.clone(), input.name.clone());
+        tokio::task::spawn_blocking(move || Self::save_name(&config_dir, &name))
+            .await
+            .internal("save secret name")??;
         let name = input.name.clone();
         let (_, rev) = self
             .db
@@ -356,10 +359,13 @@ impl SecretsService {
         }
         Ok(values)
     }
-    fn save_name(&self, name: &str) -> R<()> {
+    /// Blocking. Holds the shared config lock (`activity.set_rules` takes it too).
+    fn save_name(config_dir: &std::path::Path, name: &str) -> R<()> {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
-        let path = self.paths.config_dir.join("config.toml");
+        std::fs::create_dir_all(config_dir).internal("create config directory")?;
+        let _lock = lock_config(config_dir).map_err(|_| SecretsError::Unavailable)?;
+        let path = config_dir.join("config.toml");
         if std::fs::symlink_metadata(&path)
             .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
         {
@@ -394,7 +400,6 @@ impl SecretsService {
             return Ok(());
         }
         names.push(name);
-        std::fs::create_dir_all(&self.paths.config_dir).internal("create config directory")?;
         let temp = path.with_extension(format!("secret-names-{}", std::process::id()));
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -409,4 +414,17 @@ impl SecretsService {
         let _ = std::fs::remove_file(temp);
         result.map_err(|_| Fail::Domain(SecretsError::Unavailable))
     }
+}
+/// `config.toml` writers hold `<config_dir>/.config.toml.lock` exclusively for
+/// read → edit → rename, so concurrent writers keep each other's changes.
+fn lock_config(dir: &std::path::Path) -> std::io::Result<rustix::fd::OwnedFd> {
+    use rustix::fs::{FlockOperation, Mode, OFlags};
+    let flags = OFlags::CREATE | OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW;
+    let fd = rustix::fs::open(
+        dir.join(".config.toml.lock"),
+        flags,
+        Mode::from_raw_mode(0o600),
+    )?;
+    rustix::fs::flock(&fd, FlockOperation::LockExclusive)?;
+    Ok(fd)
 }

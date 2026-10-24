@@ -38,7 +38,10 @@ pub fn run() {
         .manage(platform::notify::Notifications::default())
         .manage(platform::shortcuts::Shortcuts::default())
         .manage(platform::intents::Intents::default())
+        .manage(platform::quit::QuitState::default())
         .manage(connection::Connection::default())
+        .manage(platform::activity::Activity::default())
+        .manage(platform::capture::Capture::default())
         .invoke_handler(tauri::generate_handler![
             connection::gate_status,
             connection::gate_retry,
@@ -61,7 +64,18 @@ pub fn run() {
             platform::intents::app_intents_ready,
             platform::intents::app_intents_not_ready,
             platform::intents::hide_main,
-            platform::intents::quit_app
+            platform::quit::quit_app,
+            platform::quit::quit_window_ready,
+            platform::quit::quit_window_not_ready,
+            platform::quit::quit_prepared,
+            platform::activity::activity_state,
+            platform::activity::activity_set,
+            platform::activity::activity_configure,
+            platform::activity::activity_drain,
+            platform::activity::activity_ack,
+            platform::capture::capture_hide,
+            platform::capture::capture_ready,
+            platform::activity::activity_tray
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -70,6 +84,8 @@ pub fn run() {
                 eprintln!("Cannot create tray; closing main will exit: {error}");
             }
             platform::shortcuts::initialize(app.handle());
+            platform::activity::initialize(app.handle());
+            platform::capture::initialize(app.handle());
             let focus = platform::notify::handle_arguments(
                 app.handle(),
                 &std::env::args().collect::<Vec<_>>(),
@@ -81,18 +97,37 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Keep note buffers alive even before the renderer's listener is ready.
+            // Its explicit destroy happens only after the latest save has completed.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
-                && platform::tray::available(window.app_handle(), window.label())
+                && window.label().starts_with("popout-note-")
             {
-                match window.hide() {
-                    Ok(()) => {
-                        api.prevent_close();
-                        platform::tray::show_notice(window.app_handle());
+                api.prevent_close();
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == platform::capture::LABEL
+                && window.hide().is_ok()
+            {
+                api.prevent_close();
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == "main"
+            {
+                api.prevent_close();
+                if platform::tray::available(window.app_handle(), window.label()) {
+                    match window.hide() {
+                        Ok(()) => platform::tray::show_notice(window.app_handle()),
+                        Err(error) => eprintln!("Cannot hide main window: {error}"),
                     }
-                    Err(error) => eprintln!("Cannot hide main window: {error}"),
+                } else {
+                    platform::intents::dispatch(
+                        window.app_handle(),
+                        core::intents::AppIntent::Quit,
+                    );
                 }
             }
             if let tauri::WindowEvent::Destroyed = event {
+                platform::quit::destroyed(window.app_handle(), window.label());
                 if window.label() == "main" {
                     platform::intents::disconnect(window.app_handle());
                 }
@@ -105,12 +140,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("devbox app failed to start")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { api, .. } = event
-                && app
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if !platform::quit::approved(app) {
+                    api.prevent_exit();
+                    platform::intents::dispatch(app, core::intents::AppIntent::Quit);
+                } else if app
                     .state::<connection::Connection>()
                     .begin_exit(app.clone())
-            {
-                api.prevent_exit();
+                {
+                    api.prevent_exit();
+                }
             }
         });
     #[cfg(not(windows))]

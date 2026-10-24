@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod window;
 
 pub mod connection;
@@ -20,3 +21,6 @@ pub mod windows;
 
 pub mod install;
 pub mod wsl_cleanup;
+pub mod capture;
+
+pub mod quit;

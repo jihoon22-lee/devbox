@@ -57,3 +57,26 @@ test("badge fallback deduplicates equal values", () => {
   expect(setter).toHaveBeenCalledTimes(2);
   expect(document.title).toBe("devbox");
 });
+
+test("incomplete note rename links its one notice to the rename report", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <AttentionBridge />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.sent.some((m) => m.topic === "notes.rename_incomplete")).toBe(true));
+  const sub = wire.sent.find((m) => m.topic === "notes.rename_incomplete")!;
+  act(() => {
+    for (let i = 0; i < 2; i++)
+      wire.deliver({ type: "event", subId: sub.id, rev: "2", payload: { opId: "abc123", count: 2, reason: "busy" } });
+  });
+  const notices = useNotifications.getState().items.filter((n) => n.key === "notes:rename:abc123");
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({
+    title: "링크를 고치지 못한 노트 2개",
+    target: { to: "/notes", search: { rename: "abc123" } },
+  });
+});

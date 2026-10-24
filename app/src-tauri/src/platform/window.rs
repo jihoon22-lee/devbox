@@ -35,7 +35,7 @@ pub fn configure_main(app: &AppHandle, focus: bool, minimized: bool) -> tauri::R
     )
 }
 
-fn disable_browser_accelerators_and_show(
+pub(crate) fn disable_browser_accelerators_and_show(
     window: &tauri::WebviewWindow,
     focus: bool,
     reveal: bool,
@@ -63,8 +63,12 @@ fn disable_browser_accelerators_and_show(
             ready_window.app_handle().exit(1);
             return;
         }
-        if focus {
-            focus_main(ready_window.app_handle());
+        if focus
+            && let Err(error) = ready_window
+                .unminimize()
+                .and_then(|()| ready_window.set_focus())
+        {
+            eprintln!("Cannot focus window: {error}");
         }
     })
 }

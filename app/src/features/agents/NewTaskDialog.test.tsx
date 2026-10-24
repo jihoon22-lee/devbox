@@ -264,3 +264,17 @@ test("removing the target while preview is pending cancels the frozen creation",
   expect(wire.requests("agents.create")).toHaveLength(0);
   expect(screen.queryByRole("dialog", { name: "프로젝트 명령 실행 승인" })).toBeNull();
 });
+
+test("a note draft fills the prompt without sending or bypassing the normal form", async () => {
+  const { useAgentsUi } = await import("./ui");
+  useAgentsUi.getState().setCreating(true, { prompt: "selected note text", truncated: true });
+  try {
+    const { wire } = await dialog();
+    expect(screen.getByLabelText("지시문")).toHaveValue("selected note text");
+    expect(screen.getByText("노트 내용이 길어 처음 64 KiB만 지시문에 넣었습니다.")).toBeVisible();
+    expect(wire.requests("agents.create")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
+  } finally {
+    useAgentsUi.getState().setCreating(false);
+  }
+});

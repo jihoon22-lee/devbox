@@ -87,8 +87,23 @@ enum Cmd {
         #[arg(long)]
         attempt: Option<String>,
     },
+    /// 노트에 글을 덧붙인다.
+    Note {
+        #[command(subcommand)]
+        cmd: NoteCmd,
+    },
     /// 버전만 출력한다.
     Version,
+}
+
+#[derive(Subcommand)]
+enum NoteCmd {
+    /// 받은 글 노트(기본) 또는 오늘 일일 기록 끝에 덧붙인다.
+    Add {
+        #[arg(long)]
+        daily: bool,
+        text: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -190,6 +205,9 @@ fn main() -> anyhow::Result<()> {
             Cmd::ExecAttempt { .. } => unreachable!("attempt handled before runtime teardown"),
             Cmd::Exec { .. } => unreachable!("exec handled before runtime teardown"),
             Cmd::RunExited { run, attempt } => devbox_cli::run_exited::run(run, attempt).await,
+            Cmd::Note {
+                cmd: NoteCmd::Add { daily, text },
+            } => devbox_cli::note::add(daily, text).await,
             Cmd::Version => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 Ok(())

@@ -1,5 +1,14 @@
 import { create } from "zustand";
-export const SETTINGS_TABS = ["general", "agents", "secrets", "shortcuts", "diagnostics", "about"] as const;
+export const SETTINGS_TABS = [
+  "general",
+  "notes",
+  "activity",
+  "agents",
+  "secrets",
+  "shortcuts",
+  "diagnostics",
+  "about",
+] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export const useSettingsUi = create<{ tab: SettingsTab; setTab(tab: SettingsTab): void }>((set) => ({
   tab: "general",

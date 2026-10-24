@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod exec;
 pub mod gateway;
 pub mod mcp;
+pub mod note;
 pub mod run_exited;
 pub mod setup;
 

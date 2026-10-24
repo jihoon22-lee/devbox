@@ -1,4 +1,6 @@
 #[cfg(any(windows, test))]
+pub mod activity;
+#[cfg(any(windows, test))]
 pub mod bridge;
 pub mod channel;
 #[cfg(any(windows, test))]
@@ -44,3 +46,5 @@ pub mod windows;
 pub mod install;
 #[cfg(any(windows, test))]
 pub mod maintenance;
+#[cfg(any(windows, test))]
+pub mod quit;

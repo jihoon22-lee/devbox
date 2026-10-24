@@ -70,6 +70,7 @@ export function NativeAutostartSettings() {
 export function NativeShortcutSettings() {
   const [status, setStatus] = useState<ShortcutStatus | null>(null);
   const [palette, setPalette] = useState("");
+  const [capture, setCapture] = useState("");
   const [bottom, setBottom] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,6 +79,7 @@ export function NativeShortcutSettings() {
   const apply = (value: ShortcutStatus) => {
     setStatus(value);
     setPalette(value.palette);
+    setCapture(value.capture);
     setBottom(value.bottomTerminal ?? "");
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt explicitly reloads native state.
@@ -101,8 +103,8 @@ export function NativeShortcutSettings() {
     setBusy(true);
     setError(null);
     try {
-      const value = await configureShortcuts(palette.trim(), bottom.trim() || null);
-      if (value.paletteError || value.bottomTerminalError) setStatus(value);
+      const value = await configureShortcuts(palette.trim(), bottom.trim() || null, capture.trim());
+      if (value.paletteError || value.bottomTerminalError || value.captureError) setStatus(value);
       else apply(value);
     } catch {
       setError("단축키를 저장하지 못했습니다. Ctrl·Alt·Shift 조합과 다른 프로그램의 사용 여부를 확인하세요.");
@@ -141,6 +143,17 @@ export function NativeShortcutSettings() {
           {status.bottomTerminalError && (
             <p role="alert" style={{ color: "var(--danger)" }}>
               하단 터미널: {status.bottomTerminalError}
+            </p>
+          )}
+          <p>
+            <label>
+              빠른 캡처 전역 단축키{" "}
+              <input value={capture} disabled={busy} onChange={(event) => setCapture(event.target.value)} />
+            </label>
+          </p>
+          {status.captureError && (
+            <p role="alert" style={{ color: "var(--danger)" }}>
+              빠른 캡처: {status.captureError}
             </p>
           )}
           <p>Ctrl·Alt·Shift 중 하나를 포함하세요. 하단 터미널은 비워 두면 사용하지 않습니다.</p>

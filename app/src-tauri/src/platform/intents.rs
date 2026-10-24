@@ -82,9 +82,3 @@ pub fn hide_main(app: AppHandle, window: WebviewWindow) -> Result<(), IpcError> 
     main.hide()
         .map_err(|error| IpcError::new(error.to_string()))
 }
-#[tauri::command]
-pub fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
-    super::preferences::main_only(&window)?;
-    app.exit(0);
-    Ok(())
-}

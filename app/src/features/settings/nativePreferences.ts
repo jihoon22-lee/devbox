@@ -6,6 +6,8 @@ export interface NativePreferences {
 }
 export interface ShortcutStatus {
   palette: string;
+  capture: string;
+  captureError: string | null;
   bottomTerminal: string | null;
   paletteError: string | null;
   bottomTerminalError: string | null;
@@ -15,5 +17,5 @@ export const appPreferences = () => invoke<NativePreferences>("app_preferences")
 export const setAutostart = (enabled: boolean, firstRun = false) =>
   invoke<NativePreferences>("set_autostart", { enabled, firstRun });
 export const shortcutStatus = () => invoke<ShortcutStatus>("shortcut_status");
-export const configureShortcuts = (palette: string, bottomTerminal: string | null) =>
-  invoke<ShortcutStatus>("configure_shortcuts", { palette, bottomTerminal });
+export const configureShortcuts = (palette: string, bottomTerminal: string | null, capture: string) =>
+  invoke<ShortcutStatus>("configure_shortcuts", { palette, bottomTerminal, capture });
