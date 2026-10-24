@@ -13,12 +13,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
+| 단계 | **S3 PR #644 squash 머지 완료**(`e91c9b22`, 2026-10-24). 검증 소스e56c3096와 merge tree 동일, 원본 main ff-only 동기화·clean 확인. 다음 트랙1 S4-1 상세화, 트랙2 S5는 PR #645 R2 수정 로컬 승인 뒤 S3 main 통합 준비 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. **Task 12 · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) 정상 자동 리뷰 3/3회 반영(`9567fdb8`) 뒤 상한 예외 실제 데이터 손실1건 수정·독립 검토 APPROVE**. 트레이 종료가 메인/팝아웃 노트의 300ms journal·1s autosave 전에 transport를 끊어 버퍼를 잃는 경로를 별도 재현했다. 정상 리뷰를 다시 기다리지 않으며 최종 SHA 필수 CI·직접 영향 native 수용은 별도 진행 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 별도 검토 승인**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, 제품 S4-2–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작하며 S3 결과 문서를 첫 상세화 커밋에 인계 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 상한 이후 지적4366874346을 독립 `BLOCKING_CONFIRMED`로 판정해 종료 전 모든 노트 창 durable save/ACK 조정을 추가. 제품 수정 독립 검토 APPROVE(12소스/19근거 해시 확인). helper 작업은 중지·보존, commit/push·최종 SHA CI/native 수용 전 |
+| 마지막 갱신 | 2026-10-24 · S3 최종 근거 정확성 감사 APPROVE, 수정확인7review threads 해결·보호규칙유지·exacthead squash 완료(e91c9b22,12:15:54UTC). main tree=검증e56 tree, main clean. 소유 설치자원 잔여없음. S4 상세화와 S5 main 통합을 이어간다 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -61,8 +61,8 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0b | 03-s0b-skeleton · 03b-s0b-app | 머지 | 2026-10-12 | 2026-10-13 | 실사용은 선택, 대기 없음 |
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
-| S3 | [06-s3-knowledge](06-s3-knowledge.md) · S2 뒤 S5와 동시(트랙 1) | 작업 중 | 2026-10-21 | | 완료·검증 결과 보고 |
-| S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
+| S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-1 상세화 완료(로컬) | 2026-10-24 | | 제품 구현 미착수 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -75,7 +75,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
-| S3 | `v1/s3-knowledge` | S3 Task 1–12 | PR 열림 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 정상 자동 리뷰3회 반영 완료(`9567fdb8`). 상한 이후 실제 종료 버퍼 손실1건 독립 재현·예외 수정 중, 추가 정상 리뷰 대기 없음 |
+| S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 대기 | | |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
@@ -118,8 +118,8 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-24 | Task 8: 구현 1회·검토 2회·수정 1회 약1.5h, Task 9: 구현 1회·검토 2회·수정 1회 약1.5h(사용량 한도 대기 제외). 실제 Windows 훅 미실행 |
 | S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
-| S3 | 마무리 | Task 12 → S3 PR | `v1/s3-knowledge` | 작업 중 | 2026-10-24 | | PR #644 3/3회차 코드1·보안0 완료. saved-note index 수정·직접 영향 검증 뒤 독립 검토·묶음 push, 필수 CI/Windows 영향 수용 대기. 4회차 정상 리뷰는 기다리지 않음 |
-| S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
+| S3 | 마무리 | Task12 → S3 PR | `v1/s3-knowledge` | 머지 | 2026-10-24 | 2026-10-24 | #644 → e91c9b22. e56 필수CI3/E2E PASS·선택native9/합성daemon1 assertion PASS, 원래4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. 정리/prod불변 PASS, 정상3회+확정손실예외1건 수정·최종감사승인 |
+| S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
@@ -136,6 +136,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S4-1 상세화 (2026-10-24, 트랙1 · 별도 검토 APPROVE)
+
+- `07a-s4-editor-git.md`에 실제 S3 기반 `useDocuments`·EditorHost·DocKey/DocPolicy·documents RPC·검색 스트림·observe 문제·DiffView·TerminalView·openPopout을 대조하고 S4-2–9 파일/새 계약/RED→GREEN/별도 검토/Conventional Commit 단위를 작성했다. CV-F01 파일/index 변경과 해결안 보존·AR-F01 A→외부 B checkout의 remote refs 무변화 및 양성 대조를 00 §7에 연결했다.
+- 파일 위치 보정: S5 소유 `crates/tools/src/deps.rs` 대신 독립 `crates/deps`(`devbox-deps`, RPC `deps.list/audit` 유지). 동결 ui를 고치지 않고 source feature의 SourceDiff/MergeView를 agent와 공유. 공용 CodeView/theme/languages는 재사용. S5 코드 이름에 의존하지 않으며 API→노트/코드선택→변환은 S6-1b다.
+- 실제 추가 필요: Git 함수 모음 위 source RPC Service, run 문제와 분리된 LSP source/URI 교체·generation 계약, code popout/native quit 등록. 기존 prepareWindowClose는 code도 무조건 저장하므로 S4-2에서 code 저장/버림/초안 유지/취소와 내구 ACK를 먼저 처리하고 S3 note/in-flight 보호를 유지한다. 공용 preview는 notes feature 안에서 렌더 결과 컴포넌트를 추출한다.
+- 공유 등록은 줄 추가, 생성/lock 재생성, 동결 파일 예외는 사전 §2 기록 규칙. main/S5 통합·commit/push/PR은 root 조율이며 S4 PR은 S4-9 한 번이다. S3 인계 dirty 문서 2개를 보존했다.
+- 계획 별도 검토 보완1: S4-4 LSP hover·completion documentation·signature help의 별도 HTML sink에 필수 sanitizeHTML·링크/이미지 정책을 추가했다. 기본 window/logMessage 원문 console 처리를 override하고 악성 응답 세 종류·본문 sentinel 로그 억제의 RED→GREEN 계획을 명시했다. 제품 구현은 없다. 보완 뒤 좁은 문서 검사 8개 PASS(`run-919c75d86fa94da3b0eb2aae99b97c15.json`, 0.275초·cgroup peak16,236,544B·swap0). Biome 대상 파일 변경이 없어 기존 458파일 PASS를 유지한다.
+- 검증: 문서 과제/Conventional Commit 8개·CV/AR 입력·상대 Markdown 링크·변경범위·07 S5/S6 보존·diff 공백 검사 PASS. 최초 링크 검사에서 기존 S5 버튼 설명을 링크로 오인한 checker FAIL을 기록하고 Markdown 파일 링크로 범위를 바로잡았다. Biome 2.5.14(기존 S3 node_modules 읽기 전용 PATH 참조, S4 cwd의 pnpm9 exec) 458파일 PASS, 0.829초·cgroup peak131,739,648B·swap0. 근거 common-dir `devbox-verification/s4-task1/`, resource `run-cd2dd953090d4dfc8058d6b86d5cc24e.json`. 새 의존성 설치 없음. 전체 check/build/E2E/Windows는 문서 과제 범위가 아니어서 미실행. 별도 검토는 보완1 반영 뒤 APPROVE(`independent-review.json`). 첫 문서 커밋으로 S3 인계와 S4 상세화를 고정하고 다음 S4-2를 진행한다.
 
 ### S2 착수 요약 (2026-10-14, S2 Task 1이 먼저 읽는다)
 
@@ -361,24 +370,33 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
 
-### S3 Task 12 PR #644 상한 이후 차단 수정1 (2026-10-24, 독립 검토 전)
+### S3 Task12 최종 소스 설치 수용 결과 (2026-10-24 ·e56c3096)
+
+- 소스 **e56c3096880487b371d07694534f9c0b04ce8245**, 필수CI3/E2E **PASS**(CI40088653122, Windows40088653235). 제품 LOC72929/120000, 제품600줄 초과0. 정상 자동리뷰3/3회(코드3→2→1, 보안각0) 수정 승인과 상한 예외 실제 종료 손실1건 수정 승인을 마쳤다. 추가 정상 리뷰를 기다리지 않으며 최종 근거 감사 APPROVE 뒤 #644를 e91c9b22로 squash 머지하고 검증e56와 tree 동일성을 확인했다.
+- 같은 소스의 선택 실행3회: `e56c3096-dfb52a9a` 전체FAIL221.052초(저장/재시작·unreadable·app-global-quit PASS, notes시작 중복PowerShell EPERM, popout시간증명부족NOT_RUN, 합성활동권한검사FAIL); `e56c3096-492e5bfe` 전체FAIL137.177초(2·5·9·10·popout-close·activity-shutdown PASS,3 helper제목기대값FAIL); `e56c3096-13f952b5` 선택3 PASS85.558초. 원본FAIL은 그대로 보존하고 통과·미실행은 실행별/항목별로 구분한다. 각 helper delta는 exactsource/run/selected/hash 별도승인 뒤 실행했다.
+- 원래 수용 항목:1 저장/앱전체재시작 보존 PASS(dfb52a9a),2외부편집 비교 PASS(492e5bfe),3새링크 저장ACK 직후이름변경/새frontmatter제목·본문FTS/옛검색제거 PASS(13f952b5),5일일요약·다른PC블록보존/9통합검색/10선택에이전트생성 PASS(492e5bfe). **1의 자동저장 관찰은1384ms이며 strict≤1000ms를 입증하지 않는다.** 원래4이미지붙여넣기·7/8실제활동수집/마스킹은 새소스 미실행이며 이전 helper foreground 전제 실패만 확인했다. 6전역캡처·SC2도 새소스 미실행으로, 이전 PowerShell spawn EPERM의 직접 원인과 실제 단축키 동작/지연은 확인하지 못했다. 이전9ac의 관련helperFAIL/NOT_RUN을 PASS로 바꾸지 않는다.
+- 추가 실제Windows회귀: popout-close는 input→nativeWM_CLOSE117.5ms(보수상한244.7532ms), close뒤50.2ms saveACK·최신bytes보존·실제창파괴/childexit PASS. app-global-quit는 main/popout 입력→nativeprepare23/18.8ms(보수상한37.6063ms), 사전journal/autosave없음·실제ACK·pinned nativeexit0·새프로세스재시작raw/UI 보존 PASS. unreadable-refresh는 binary/잘못된UTF8/>2MiB의원본bytes보존·동일base복구뒤편집가능 PASS.
+- **activity-shutdown은 installed-daemon-synthetic**: 소유 App채널 합성관찰241건/2시간(7200000ms)이 실제 소유daemon 정상stop/restart 뒤 유지됨을 확인했다. OS수집기/전역훅 수용7/8 PASS가 아니며 crash내구성을 주장하지 않는다. exactsealedunit/socket 관계·실제daemon/listener·사용자DBusmanager/SO_PEERCRED로 소유권을 증명하고 보호된managerFD의권한을바꾸지 않았다.
+- 세 실행 모두 tracked Node/필요한child 종료와 앱·WSL·Windows·다운로드 정리, prod 전후비교 PASS·잔여[]. 원본자료/전용출처/199개artifact해시는 `s3-task12/native-acceptance-e56-final-assessment.json`, `acceptance/runs/e56c3096-*`에 있다. 최종독립 근거 감사 APPROVE(`native-acceptance-e56-independent-final-review.json`)이며 원래 미실행항목을 면제/전체PASS로 보지 않는다. 결과 문서는 다음 작업 브랜치에 인계한다.
+
+### S3 Task 12 PR #644 상한 이후 차단 수정1 (2026-10-24, 독립 검토 승인)
 
 - 정상 자동 리뷰3회 처리 완료 뒤 도착한 [4366874346](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366874346)은 `post-cap-1/independent-classification.json`의 별도 실제 store/effects 재현으로 **BLOCKING_CONFIRMED(사용자 데이터 손실)**다. 메인·팝아웃에서 편집100ms 뒤 트레이 종료 시 prepare/save/journal0, offline journal빈 값, disk옛 내용인데 두 buffer가 파괴됐다. `quit_app → app.exit → ExitRequested → begin_exit`가 per-window CloseRequested를 우회하는 native source 경계도 함께 보존했다. 일반 개선이나 4회차 정상 리뷰 반영이 아니다.
 - `NativeQuitPreparation`은 ConnectionGate 바깥에서 main·popout-note 창을 등록한다. noWSL/setup의 빈 store도 ACK할 수 있고, 편집 창이 등록되기 전에는 native 실제 창 snapshot이 종료를 거부한다. 각 창은 기존 `prepareWindowClose`로 입력을 동결하고 기존 in-flight 저장 뒤 최신 buffer의 durable save와 lease release까지 기다린다. 별도 저장 정책·RPC를 만들지 않았다.
 - native coordinator는 round·호출 창 label·등록 lease가 모두 맞는 ACK만 받는다. 중복 quit·이전 round/다른 창 ACK는 exit를 승인하지 않는다. 실패·30초 timeout·창 추가/재등록/파괴는 종료를 취소하며 rollback event를 보낸다. 성공 직전 UI thread에서 창 집합을 재검사한 뒤에만 `app.exit`를 호출한다. 승인 전 모든 ExitRequested는 transport를 유지하며 기존 quit intent로 보낸다. main close-to-tray 유지, tray가 없는 main close도 저장 절차를 거친다.
 - rollback은 저장 중인 창을 먼저 해동하지 않는다. 해당 준비가 끝난 뒤 `cancelWindowClose`가 이미 닫힌 문서를 다시 claim해 편집을 재개한다. 실제 두 store 회귀에서 한 창 save/release 성공·다른 창 save 실패 뒤 실패 buffer 유지와 성공창 reopen을 확인했고, **두 창 모두 새 입력을 넣어 다음 round에서 최신 내용을 저장**했다. 100ms 편집·deferred 이전 RPC·중복 요청·stale round/lease·ACK 응답 오류·시작 화면·timeout rollback을 직접 검증한다.
 - 근거 `devbox-verification/s3-task12/post-cap-1/`: 원본 독립 재현과 새 RED(모듈 미구현), frontend 고유35개 PASS(영향34 + startup1), native lifecycle4개 PASS, 최종 타입 검사·Windows cfg all-target check/strict Clippy·완료 Biome458 PASS. 모든 새 resource wrapper는 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB(`memory_enforced=true`)다. 최초 native manifest 지정 오류·MSVC channel/config 지정 오류·테스트 타입 오류 로그도 보존한다. Windows cfg 확인은 실제 Windows 앱 실행 PASS가 아니다.
-- 다음: 이 한 수정의 별도 검토 → 완료 Biome → 부모 하네스 commit/push → 최종 필수 CI·global exit(편집300ms/1s 이전, main+popout) 직접 native 수용. 전체 check/E2E·무관한 검사 재실행·실제 설치/실행은 하지 않았다. 외부 helper 미완성 파일은 보존·중지하며 제품 검토와 fresh SHA 뒤 갱신한다.
+- 위는 수정 직후 검증 기록이다. 이후 독립 검토 APPROVE·e56c3096 commit/push·필수CI 및 위 실제globalexit 수용을 완료했다. 전체 로컬check·무관한 검사는 반복하지 않았다. 최종 승인과 큐된RequestExit 사이 등록 경계의 방어적 후속은 실제 손실 미재현으로 §8에 남겼다.
 
-### S3 Task 12 PR #644 3회차 수정 (2026-10-24, 마지막 정상 리뷰 · 검토 전)
+### S3 Task 12 PR #644 3회차 수정 (2026-10-24, 마지막 정상 리뷰 · 독립 검토 승인)
 
 - 자동 리뷰 3/3회: `cdb8a9bc` [코드1건](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366765812)·보안0건 완료. `pr-review-3/independent/review.json`이 실제 DocumentsService·NotesService·inotify·index.db로 재현했다. 새 `[[target]]`가 durable save ACK 뒤 index에 없어서 rewrite-enabled rename이 Done/failed0으로 끝나도 링크를 바꾸지 않았다. **노트 본문 삭제가 아니라 지속된 링크의 참조 손상**이며 정상 사용의 차단 대상이다.
 - Documents는 renderer용 `documents.changed`와 분리된 내부 commit revision/path history(256개)를 갖는다. 성공한 save의 watch hash·lease 상태를 갱신한 뒤 ACK 전에 동기 기록하며 index callback을 await하지 않는다. watch 알림은 coalesce해도 history cursor로 놓친 경로를 찾고, history를 넘긴 lag는 rescan이 필요하다고 명시한다. core/protocol 동결 파일·RPC schema·renderer 이벤트 계약은 변경하지 않았다.
 - Notes는 초기 scan **전에** internal save feed를 구독한다. update mutex 아래에서 snapshot까지 경로를 refresh하거나 lag이면 전체 rescan하며, **IO 전에 잡은 revision만** 적용 완료로 기록한다. startup/lag scan 도중 새 save는 다음 refresh에 남는다. rename은 destructive plan을 만들기 전에 같은 catchup barrier를 직접 실행하므로 background listener가 전혀 실행되지 않아도 save ACK→즉시 rename이 최신 링크를 포함한다. bounded scan이 잘려 lag를 완전히 복구할 수 없으면 plan 전 오류로 멈춘다.
 - 잠금: save는 Docs namespace/per-document guard 아래 동기 history 기록만 한다. Notes catchup은 Notes update lock과 짧은 commit-log mutex를 쓰고, index callback을 기다리는 Docs save나 Notes mutation callback을 만들지 않는다. 따라서 rewrite 요청에 응답하는 client save가 Notes rename lock을 기다리는 순환이 없다. 기존 scan/refresh/replay를 `updates.rs`로 분리해 파일600줄 제한을 지켰다.
 - 원인 RED2 보존(`red-editor-index.txt`): index/title 갱신 대기 timeout, listener 없이 ACK 직후 rename이 `[[target]]`를 그대로 남김. GREEN: title/tag/backlink/NoteSink + self external echo 없음, listener 없는 즉시 rename, 256 history overflow rescan, gated startup/lag scan 중 새 save가 cursor 뒤에 남는 seam. 실제 CLI composition의 SearchSink→FTS에서 새 body/title 검색과 옛 body 제거 PASS.
-- 현재 직접 검증: documents59·notes122 PASS, CLI documents7/notes4/search8 PASS(실제 FTS 새 회귀 포함). documents/notes/CLI all-target strict Clippy PASS. 완료 Biome454 PASS. 새 검증은 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB 적용(`memory_enforced=true`). 전체 check·무관한 E2E·변경 없는 frontend/MSVC를 반복하지 않는다. 새 source의 Windows 설치 수용은 아직 NOT_RUN이다.
-- 다음: 이 한 수정의 별도 독립 검토 → 한 번 commit/push → 최종 필수 CI·대상 native 수용. **정상 자동 리뷰는 3회 상한에 도달했으므로 4회차를 기다리지 않는다.** 이후 도착한 지적은 실제 데이터 손실·비밀 유출·승인하지 않은 실행 차단 기준만 고치며 나머지는 §8에 남긴다. 외부 native helper 작업은 제품 검토 뒤에 재개하며 이전 source의 PASS를 새 source 검증으로 바꾸지 않는다.
+- 현재 직접 검증: documents59·notes122 PASS, CLI documents7/notes4/search8 PASS(실제 FTS 새 회귀 포함). documents/notes/CLI all-target strict Clippy PASS. 완료 Biome454 PASS. 새 검증은 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB 적용(`memory_enforced=true`). 전체 check·무관한 E2E·변경 없는 frontend/MSVC를 반복하지 않는다. 이 수정 직후에는 새 source Windows 설치 수용이 NOT_RUN이었고, 이후 최종e56c3096의 위 단계별case3가 PASS했다.
+- 이후 이 수정은 독립 승인·9567fdb8 commit/push·필수CI를 통과했고 최종e56c3096 대상 native 수용도 위에서 확인했다. **정상 자동 리뷰는 3회 상한에 도달했으므로 4회차를 기다리지 않는다.** 이후 도착한 지적은 실제 데이터 손실·비밀 유출·승인하지 않은 실행 차단 기준만 고치며 나머지는 §8에 남긴다. 외부 native helper 작업은 제품 검토 뒤에 재개하며 이전 source의 PASS를 새 source 검증으로 바꾸지 않는다.
 
 ### S3 Task 12 PR #644 2회차 수정 (2026-10-24, 독립 검토 승인)
 
@@ -884,7 +902,7 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 
 | 날짜 | PR · 회차 | 지적(링크) | 별도 검토 판정 | 처리 |
 |---|---|---|---|---|
-| 2026-10-24 | #644 · 상한 예외 수정 별도 검토 | 종료 최종 승인 뒤 `app.exit()`가 실제 `RequestExit`를 처리하기 전 창 등록 경계 | `finish` 승인 뒤 register/invalidate가 승인을 취소하지 않는 방어적 보완 가능성은 있으나 일반 사용의 실제 버퍼 손실은 재현하지 못함. 확인된 트레이100ms 손실은 all-window prepare barrier로 해결; 이 잔여 경계는 NON_BLOCKING. 근거 `s3-task12/post-cap-1/fix-independent-review.json` | 추가 제품 수정 안 함·이월 판정, PR 머지 대기. S6-1에서 후속 필요성 판단. 이후 모든 창 생성이 불가능하다고 주장하지 않음 |
+| 2026-10-24 | #644 · 상한 예외 수정 별도 검토 | 종료 최종 승인 뒤 `app.exit()`가 실제 `RequestExit`를 처리하기 전 창 등록 경계 | `finish` 승인 뒤 register/invalidate가 승인을 취소하지 않는 방어적 보완 가능성은 있으나 일반 사용의 실제 버퍼 손실은 재현하지 못함. 확인된 트레이100ms 손실은 all-window prepare barrier로 해결; 이 잔여 경계는 NON_BLOCKING. 근거 `s3-task12/post-cap-1/fix-independent-review.json` | 추가 제품 수정 안 함·이월 판정, #644 머지 완료. S6-1에서 후속 필요성 판단. 이후 모든 창 생성이 불가능하다고 주장하지 않음 |
 | 2026-10-21 | #642 · 상한 이후 4회차 | [Windows 포트 준비 확인의 프로세스 귀속](https://github.com/jihoon22-lee/devbox/pull/642#discussion_r4331589592) | 직접/native의 port-only loopback probe가 무관한 listener를 준비됨으로 오인할 수 있는 기능 결함(코드 확인). 승인된 graph의 의존 순서 오류이며 실제 데이터 손실·비밀 유출·미승인 실행 재현 없음. Windows 설치본 재현은 interop 불가로 미실행. 별도 검토 NON_BLOCKING | 이번 PR 수정 안 함. S6-1 상세화에서 Windows PID/후손 소켓 귀속과 unrelated-listener 회귀를 후속 판정. 근거 `s2-task16/pr/out-of-cap/finding-4331589592.json`; 이 문서에 이월 판정을 보존 |
 
 - S3 Windows 파일명 충돌 수정 최종 독립 검토 APPROVE: `s3-task12/windows-case-collision/review.txt`. helper 바이트 동일·호출부 import만 변경, 관련 시험6·typecheck·완료 Biome451 PASS. 실패 run40070649576은 보존하며 새 SHA 산출물로 수용한다.
