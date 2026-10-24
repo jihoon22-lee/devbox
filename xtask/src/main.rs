@@ -33,6 +33,7 @@ fn main() -> Result<()> {
     devbox_notes::export(&mut exporter);
     devbox_search::export(&mut exporter);
     devbox_activity::export(&mut exporter);
+    devbox_deps::export(&mut exporter);
     devbox_lsp::export(&mut exporter);
     devbox_git::rpc::export(&mut exporter);
     // `search.query` stream lines (JSON Lines of this type).

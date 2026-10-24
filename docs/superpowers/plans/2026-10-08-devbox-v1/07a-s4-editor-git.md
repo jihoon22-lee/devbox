@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7 R1/R2 수정·별도 재검토 APPROVE. S4-8–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -205,12 +205,27 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - 생성: `features/source/deps/{DependencyLens.tsx,model.ts}`/시험; CLI source 등록·Services 조립·workspace 의존성 추가. `crates/tools`에는 쓰지 않는다.
 
 **계약·순서**
-1. [ ] `deps.list {projectId}` → `{ecosystem,name,versions[],direct}`. pnpm-lock.yaml/package-lock.json/yarn.lock/Cargo.lock/go.sum/poetry.lock/uv.lock의 소유 fixture를 먼저 시험한다. lock schema별 지원/미지원 오류를 구분하고 파일 크기/항목 수를 제한한다.
-2. [ ] direct는 lock이 제공하는 importer/root package 관계로 판정하고 부족하면 같은 프로젝트의 package.json/Cargo.toml/go.mod/pyproject.toml을 읽는다. 이름만으로 direct를 추측하지 않는다. pnpm importer 여러 개, scoped name·peer suffix, Cargo 같은 이름 여러 버전·git dependency, go.sum의 /go.mod 줄 중복, Python 정규화 사례를 포함한다.
-3. [ ] `deps.audit {projectId}` → 작업 ID, 조회/완료/오류 상태와 진행 이벤트. OSV querybatch를 ecosystem/name/version으로 묶고 조회 결과는 **정규화한 의존성 집합 hash + endpoint** 기준 30분 캐시한다. 다른 프로젝트/변경 lock 결과를 잘못 재사용하지 않는다. upstream 응답은 typed model로 가공한다.
-4. [ ] 네트워크 실패는 “조회 실패 · 다시 시도”, 마지막 성공 데이터는 시각/오래됨을 표시하고 취약점 없음으로 바꾸지 않는다. 중복 버전·direct/transitive·취약점 링크를 표시한다. deps.dev/자동 업데이트/취약점 자동 수정은 범위 밖.
-5. [ ] OSV 고정 응답과 fake clock/HTTP adapter로 querybatch 매핑·부분 누락·오류·30분 경계·lock 변경 캐시 무효화를 RED→GREEN. 실제 OSV 네트워크는 단위/통합 시험에 사용하지 않는다.
-6. [ ] `cargo test -p devbox-deps`, CLI deps subset, source deps Vitest와 생성/영향 typecheck. 별도 검토 후 Biome → `feat(source): add dependency inventory and OSV audit`.
+1. [x] `deps.list {projectId}` → `{ecosystem,name,versions[],direct}`. pnpm-lock.yaml/package-lock.json/yarn.lock/Cargo.lock/go.sum/poetry.lock/uv.lock의 소유 fixture를 먼저 시험한다. lock schema별 지원/미지원 오류를 구분하고 파일 크기/항목 수를 제한한다.
+2. [x] direct는 lock이 제공하는 importer/root package 관계로 판정하고 부족하면 같은 프로젝트의 package.json/Cargo.toml/go.mod/pyproject.toml을 읽는다. 이름만으로 direct를 추측하지 않는다. pnpm importer 여러 개, scoped name·peer suffix, Cargo 같은 이름 여러 버전·git dependency, go.sum의 /go.mod 줄 중복, Python 정규화 사례를 포함한다.
+3. [x] `deps.audit {projectId}` → 작업 ID, 조회/완료/오류 상태와 진행 이벤트. OSV querybatch를 ecosystem/name/version으로 묶고 조회 결과는 **정규화한 의존성 집합 hash + endpoint** 기준 30분 캐시한다. 다른 프로젝트/변경 lock 결과를 잘못 재사용하지 않는다. upstream 응답은 typed model로 가공한다.
+4. [x] 네트워크 실패는 “조회 실패 · 다시 시도”, 마지막 성공 데이터는 시각/오래됨을 표시하고 취약점 없음으로 바꾸지 않는다. 중복 버전·direct/transitive·취약점 링크를 표시한다. deps.dev/자동 업데이트/취약점 자동 수정은 범위 밖.
+5. [x] OSV 고정 응답과 fake clock/HTTP adapter로 querybatch 매핑·부분 누락·오류·30분 경계·lock 변경 캐시 무효화를 RED→GREEN. 실제 OSV 네트워크는 단위/통합 시험에 사용하지 않는다.
+6. [x] `cargo test -p devbox-deps`, CLI deps subset, source deps Vitest와 생성/영향 typecheck. 별도 검토 후 Biome → `feat(source): add dependency inventory and OSV audit`.
+
+**구현 계약 (2026-10-25, R1/R2 수정·별도 재검토 APPROVE)**
+- `deps.list`는 `{fingerprint,locks,dependencies:[{ecosystem,name,versions:[{version,source,direct}],direct}]}` snapshot이다. 동일 이름의 버전·출처를 보존한다. `deps.audit`는 `{id,projectId,fingerprint,state,completed,total,cached,error,result,lastSuccess}` 작업을 반환하고 `deps.audit_status`/가벼운 `deps.audit_changed` 진행 이벤트로 완료를 확인한다. 등록 project scope의 DocumentsService byte reader와 agent 폴더 제외를 재사용하며 패키지 관리자·설치·자동 수정을 실행하지 않는다.
+- 지원 schema는 pnpm9(여러 YAML 문서/importer와 boot package-manager 참조), npm package-lock2/3, Yarn Classic1 단일 프로젝트, Cargo3/4 명시 workspace member, go.sum+go.mod, Poetry1.1/2.0/2.1, uv1(revision≤3)다. pnpm 양수 registry revision·Yarn Berry/workspace·Cargo glob member·Go replace block·uv root 관계 누락·Python 동일 이름의 모호한 root 해석은 지원하지 않음으로 거절한다. 미지 schema·불완전 manifest/root 참조는 빈 목록 성공으로 취급하지 않는다. uv optional/dev 관계도 root 참조로 판정한다.
+- 파일2MiB/전체 입력16MiB/의존 버전10,000개/Cargo 추가 manifest64개. YAML deserialize-only `serde-saphyr`2의 depth32·nodes100,000·events200,000·documents4 예산, alias/anchor0·중복 key/미지원 tag 거절을 사용하며 include resolver를 연결하지 않는다. pnpm peer suffix·scoped name/여러 importer, Cargo 여러 버전/Git, Go checksum 중복, Python 이름 정규화를 보존한다. Git/로컬/출처 불명은 목록에 남기고 OSV 조회 제외 수를 표시한다.
+- [OSV querybatch 공식 계약](https://google.github.io/osv.dev/post-v1-querybatch/)의 positional mapping과 개별 pagination을 따른다. 정규화 ecosystem/name/version+endpoint에 project와 입력 fingerprint를 함께 결속한 30분 캐시다. 성공만 저장하며 30분 경계/lock·manifest 변경은 재조회한다. 누락/오류 항목·반복 token·페이지 초과는 성공으로 바꾸지 않는다. batch100·최대16페이지/batch·응답2MiB·advisory4,096개·HTTP20초/작업180초·active4/history32/cache16 제한이다.
+- 완료 직후 동일 scoped reader로 입력을 재확인하고 바뀌면 `inputChanged` 실패다. 실패는 마지막 성공 결과/시각을 유지한다. 화면은 현재 fingerprint·시각·조회 상태가 맞을 때만 현재 결과로 표시하고, 오래됨/실패/목록 재조회 오류는 이전 결과로 표시한다. 이벤트/재연결/진행 중 polling과 project/job ID·요청 세대로 늦은 응답을 거절한다. 링크는 검증된 advisory ID에서 OSV URL을 만들어 명시 클릭의 openExternal로만 연다.
+- 검증은 소유 파일과 fake HTTP/clock만 사용한다. 실제 OSV·Windows 설치본·전체 check/clippy/build/E2E는 미실행이며 S4-9의 실제 수용과 구분한다. DependencyLens는 S4-8에서 SourcePage에 조립한다. 직접 검증·실패 원본·최종 동결 hash는 common-dir `s4-task7`에 보존한다.
+
+- 직접 Rust37+renderer5=42 고유 PASS·생성/--check·typecheck·fmt·Biome810 PASS. 최초 검토 이후 단계6의 독립 재검토 APPROVE(지적0)를 받았으며 완료 커밋 단계다. 마지막 pnpm boot/revision 수정은 RED2/control2 뒤 직접4 PASS이며 이전 경계 검증은 변경 없이 유지한다.
+
+**R1/R2 선언 대조 보정 (2026-10-25, 별도 재검토 APPROVE)**
+- Cargo ordinary/dev/build/target manifest 선언은 해당 lock root의 dependency 참조에 있어야 한다. alias와 명시 workspace 상속은 실제 package 이름으로 대조하며, 불명확한 상속/선언은 명시 거절한다. 버전 범위·feature/platform 해석을 수행하는 package-manager solver는 아니다. 선언/root 참조 각각10,000개 제한과 참조 이름 집합을 사용한다.
+- 지원하는 Poetry1.1의 `tool.poetry.dev-dependencies`도 현대 group/dependencies와 같은 이름 정규화·직접 관계·누락 검사를 적용한다. Cargo dependency-free/정상/alias/상속 및 Poetry 현대 group 양성 대조군을 유지했다.
+- 독립 재현3 RED와 신규 회귀 RED6/control2 보존. 신규8+기존22 직접30 PASS, 누적 고유50. 제품 두 parser와 신규 시험만 바뀌어 이전 CLI/생성/타입/UI 근거를 유지하며 R1 fmt/Biome810 PASS·동결 hash와 delta를 `s4-task7`에 기록한다.
 
 ## 9. S4-8 — 소스 섹션 화면 통합
 

@@ -1,0 +1,17 @@
+version = 4
+[[package]]
+name = "owned"
+version = "0.1.0"
+dependencies = ["crate-a 1.2.3", "git-crate"]
+[[package]]
+name = "crate-a"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+[[package]]
+name = "crate-a"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+[[package]]
+name = "git-crate"
+version = "0.2.0"
+source = "git+https://example.invalid/owned#012345"

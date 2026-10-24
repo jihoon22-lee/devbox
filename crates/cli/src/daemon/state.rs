@@ -18,6 +18,7 @@ pub struct Services {
     pub agents: Arc<devbox_agents::AgentsService>,
     pub observe: Arc<devbox_observe::ObserveService>,
     pub git: Arc<devbox_git::service::GitService>,
+    pub deps: Arc<devbox_deps::service::DepsService>,
     pub lsp: Arc<devbox_lsp::LspService>,
     pub containers: devbox_runtime::DockerContainers,
     pub secrets: Arc<devbox_secrets::SecretsService>,

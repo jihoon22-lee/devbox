@@ -3,7 +3,7 @@ use super::state::Services;
 use devbox_projects::{FilesCreate, FilesDelete, FilesService, FilesStat, FilesTree};
 use devbox_protocol::Router;
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
-    super::source_git::register(router)
+    super::source_deps::register(super::source_git::register(router))
         .register::<devbox_projects::FilesPreview, _, _>(|s, _, p| async move {
             FilesService::new(s.documents.clone()).preview(p).await
         })

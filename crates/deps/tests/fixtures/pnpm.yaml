@@ -1,0 +1,16 @@
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      '@scope/pkg': {specifier: ^1, version: 1.2.3(peer@2.0.0)}
+  app:
+    devDependencies:
+      other: {specifier: ^2, version: 2.0.0}
+packages:
+  '@scope/pkg@1.2.3': {resolution: {integrity: sha512-fixture}}
+  '@scope/pkg@1.1.0': {resolution: {integrity: sha512-old}}
+  other@2.0.0: {resolution: {integrity: sha512-other}}
+snapshots:
+  '@scope/pkg@1.2.3(peer@2.0.0)': {}
+  '@scope/pkg@1.1.0': {}
+  other@2.0.0: {}

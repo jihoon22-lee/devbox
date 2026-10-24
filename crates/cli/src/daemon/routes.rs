@@ -261,6 +261,7 @@ pub fn declared() -> NameCollector {
     devbox_notes::export(&mut n);
     devbox_search::export(&mut n);
     devbox_activity::export(&mut n);
+    devbox_deps::export(&mut n);
     devbox_lsp::export(&mut n);
     devbox_git::rpc::export(&mut n);
     devbox_core::notify::export(&mut n);

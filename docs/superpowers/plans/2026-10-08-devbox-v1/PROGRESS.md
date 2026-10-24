@@ -13,12 +13,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 1416acbe 로컬 완료. S4-6 R1 수정·별도 재검토 APPROVE·완료 커밋 단계 |
+| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 1416acbe 로컬 완료. S4-6 804143bc 로컬 완료. S4-7 R1/R2 수정·별도 재검토 APPROVE·완료 커밋 단계 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 1416acbe 로컬 완료·별도 재검토 APPROVE, S4-6 구현·직접 검증·별도 재검토 APPROVE, S4-7–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 1416acbe 로컬 완료·별도 재검토 APPROVE, S4-6 804143bc 로컬 완료·별도 재검토 APPROVE, S4-7 R1/R2 수정·별도 재검토 APPROVE, S4-8–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 최종 제품 `b18bc740`, Rust target `~/.cache/targets/devbox-s5`. **구현·리뷰 수정·필수 CI3/E2E·영향 설치 수용1·2 완료, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 머지 완료**. 정상 자동 리뷰3회 및 상한 예외4367201426 수정·독립 승인 완료, 4367201424는 §8 이월. 현재 소스 설치1·2 PASS, 429 소스3·4 PASS는 과거 근거, 5·6 NOT_RUN 유지. 상세 §5 |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-25 · S4-5 재검토 APPROVE·Biome800 뒤 1416acbe 로컬 커밋 완료. S4-6 충돌 해결 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7 이후·전체/E2E/native 미착수, S5 기록 보존 |
+| 마지막 갱신 | 2026-10-25 · S4-6 804143bc 로컬 완료. S4-7 R1/R2 수정·직접30 PASS(누적50)·별도 재검토 APPROVE. S4-8 이후·전체/E2E/native 미착수, S5 기록 보존 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -69,7 +69,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-6 구현·직접 검증·별도 재검토 APPROVE | 2026-10-25 | | S4-7–9 미착수 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-6 로컬 완료·S4-7 R1/R2 수정·별도 재검토 APPROVE | 2026-10-25 | | S4-8–9 미착수 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -128,7 +128,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | 마무리 | Task12 → S3 PR | `v1/s3-knowledge` | 머지 | 2026-10-24 | 2026-10-24 | #644 → e91c9b22. e56 필수CI3/E2E PASS·선택native9/합성daemon1 assertion PASS, 원래4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. 정리/prod불변 PASS, 정상3회+확정손실예외1건 수정·최종감사승인 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
 | S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-25 | S4-2 fa86bc8b·S4-3 0cb5a24f·통합 e56a76e8·S4-4 e12fcacf, R1 별도 재검토 APPROVE·Biome800 PASS |
-| S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | S4-5 완료(로컬)·S4-6 별도 재검토 APPROVE | 2026-10-25 | | S4-5 1416acbe 별도 재검토 APPROVE·Biome800. S4-6 구현·직접 검사 완료, S4-7 대기 |
+| S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | S4-5/6 완료(로컬)·S4-7 별도 재검토 APPROVE | 2026-10-25 | | S4-5 1416acbe, S4-6 804143bc. S4-7 누적50/R1 직접30 PASS, 미커밋 |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
@@ -143,6 +143,21 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S4-7 Dependency Lens (2026-10-25 · R1/R2 수정·별도 재검토 APPROVE)
+
+- root가 S4-6 별도 재검토 APPROVE·최종 Biome806 뒤 `804143bcfd4b82afa196cdee6606e9b5c7e9d745`로 로컬 커밋했다(`s4-task6/commit.json`). 착수 시 HEAD/clean 확인. 07a §8만 새 `crates/deps`에서 구현하며 S5 tools는 변경하지 않는다. lock/manifest parser RED, fake HTTP/clock OSV querybatch/캐시, source UI 순서이며 실제 OSV 요청은 시험에 사용하지 않는다.
+- YAML lock의 typed·bounded parsing에 `serde-saphyr`2(deserialize만, include/filesystem 기능 없음)를 새 crate 의존성으로 사용할 예정이다. 수기 YAML 파서는 문법/별칭/중복 key 안전성을 보장하기 어렵고 기존 workspace에 YAML parser가 없다. 선택 이유는 typed schema, duplicate-key 거부, parser 예산 API다. 기존 serde/json/toml/reqwest를 재사용하며 추가 실행 프로그램·사용자 설치는 없다. Rust1.89 MSRV가 현재1.98 아래이고 설치된 crate source/API와 lock을 직접 확인한다. 동결 경로 예외는 현재 필요 없으며 등록된 CLI/workspace/generated/messages 연결만 사용한다.
+
+- `crates/deps`에 7종 bounded lock parser·typed OSV querybatch/cache·job/status/progress와 CLI 등록 project reader를 구현했다. renderer는 버전/직접·간접 관계·조회/오류/재시도·마지막 성공 시각과 오래됨을 표시한다. SourcePage 조립은 S4-8이다. 상세 wire/지원 schema·상한·명시 거절은 07a §8의 구현 계약을 따른다.
+- parser 빈 성공·로컬 link 누락·uv optional/dev 관계·미해결 root 참조, OSV partial/cache/network, service 실패 이력, CLI 미등록, renderer 늦은 응답의 behavioral RED를 각각 보존하고 수정했다. 실제 OSV 호출 없이 fake HTTP/clock과 소유 fixture만 사용했다. 최종 좁은 검사/생성·타입·형식·Biome와 별도 검토 결과를 이어 기록한다.
+- `gen` 오타 실행 실패, 중복 generator의 build-lock 대기 중 중단, Vitest4가 지원하지 않는 `--minWorkers` 인자 실패는 숨기지 않는다. 올바른 `gen-ts`와 `--maxWorkers=2`로 직접 재검증했고 중단 뒤 해당 프로세스가 남지 않았음을 확인했다. 전체 검사·native/Windows·호스트 설치·실제 사용자 저장소/원격 변경·commit/push/PR은 수행하지 않았다.
+
+- 최종 고유 직접 검증은 Rust37(새 deps34·CLI deps2·전체 메서드 등록1)+renderer5=42 PASS다. `deps-complete`32 뒤 pnpm boot importer/양수 revision RED2→GREEN4로 신규2를 더했으며, 마지막 수정은 pnpm parser/회귀만이다. 생성/--check·영향 typecheck·fmt·Biome810 PASS. 무관 검사는 반복하지 않았고 기존 CLI/renderer/생성 근거는 경계가 바뀌지 않아 유지했다.
+- 최종 source/doc hash·scope audit·외부 문서/설치 parser 출처·모든 실패/자원 기록은 common-dir `s4-task7/{summary,source-freeze,documentation-freeze,scope-audit,api-provenance,artifact-hashes}.json`에 동결한다. 최초 검토 R1/R2 수정 후 별도 재검토 APPROVE(지적0)를 받았으며 완료 커밋·push·PR은 아직 미실행이다.
+
+- 독립 검토 `independent-review.json`의 P2 두 건(R1 Cargo manifest 일반 의존성 누락이 빈 성공, R2 Poetry1.1의 legacy dev 선언 누락)을 수정했다. Cargo ordinary/dev/build/target 선언을 해당 lock root 참조와 대조하고 alias 및 명시 workspace 상속은 실제 package 이름으로 확인한다. 상속 불명확/지원하지 않는 선언은 명시 거절하며 버전·feature solver는 구현하지 않는다. Poetry `tool.poetry.dev-dependencies`를 기존 정규화/직접 관계/누락 검증에 합쳤다.
+- 최초 검토 재현3 RED 및 영구 회귀 RED6/control2를 보존했다. 신규8+기존 parser22=직접30 PASS, 누적 고유50(기존42+신규8)이며 이번에50개를 재실행한 것은 아니다. 제품 수정은 `locks/cargo.rs`·`locks/python.rs` 두 파일, 신규 시험 `tests/declarations.rs` 한 파일이다. CLI/RPC/schema/renderer가 그대로여서 이전 생성·타입/UI/CLI 근거를 유지한다. R1 fmt/Biome810 PASS, 최종 source/doc 동결 및 review-delta를 기록했다. 별도 재검토(`independent-rereview.json`)는 소스43/문서2 hash와 parser30·형식·Biome PASS를 확인했으며 완료 커밋 직전 Biome을 실행한다.
 
 ### S4-6 충돌 해결 (2026-10-25 · R1 수정·별도 재검토 APPROVE)
 

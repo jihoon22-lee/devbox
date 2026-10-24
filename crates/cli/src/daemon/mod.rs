@@ -15,6 +15,7 @@ pub mod routes;
 mod secret_routes;
 pub mod server;
 mod socket;
+mod source_deps;
 mod source_external;
 mod source_git;
 mod source_routes;
@@ -168,6 +169,7 @@ fn build_services_with_runtime(
     let activity = devbox_activity::ActivitySettings::from_table(&config.activity);
     let activity = knowledge::activity(&paths, activity, &db, &hub, &projects);
     let git = source_git::service(&hub);
+    let deps = source_deps::service(&hub);
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -191,6 +193,7 @@ fn build_services_with_runtime(
         observe: Arc::new(devbox_observe::ObserveService::default()),
         lsp: Arc::new(devbox_lsp::LspService::default()),
         git,
+        deps,
         documents: knowledge.documents,
         notes: knowledge.notes,
         search: knowledge.search,

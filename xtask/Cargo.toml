@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 devbox-git.workspace = true
 devbox-lsp.workspace = true
+devbox-deps.workspace = true
 devbox-secrets.workspace = true
 devbox-api.workspace = true
 devbox-webhooks.workspace = true

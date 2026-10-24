@@ -13,6 +13,7 @@ pending: number,
  */
 dropped: number, lastError: StorageProblem | null, };
 export type AddProject = { path: string, };
+export type Advisory = { id: string, url: string, };
 export type AgentChanges = { base: string, ahead: number, behind: number, headOid: string, baseOid: string, files: Array<FileChange>, };
 export type AgentCommits = { items: Array<Commit>, };
 export type AgentConfig = { copy: Array<string>, setup: Array<string>, teardown: Array<string>, test: string | null, };
@@ -48,6 +49,12 @@ data: string, };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attached = { path: string, markdown: string, };
 export type Attention = { kind: string, message: string, atMs: number, };
+export type AuditFailure = "network" | "http" | "invalidResponse" | "incomplete" | "limitExceeded" | "inputChanged";
+export type AuditJob = { id: string, projectId: string, fingerprint: string, state: AuditState, completed: number, total: number, cached: boolean, error: AuditFailure | null, result: AuditReport | null, lastSuccess: AuditReport | null, };
+export type AuditPackage = { ecosystem: Ecosystem, name: string, version: string, advisories: Array<Advisory>, };
+export type AuditProgress = { id: string, projectId: string, state: AuditState, completed: number, total: number, };
+export type AuditReport = { fingerprint: string, completedAtMs: number, packages: Array<AuditPackage>, skipped: number, };
+export type AuditState = "running" | "succeeded" | "failed";
 export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
 export type Backlink = { src: string, title: string, 
 /**
@@ -152,6 +159,11 @@ export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: A
 export type DefinitionSource = "projectFile" | "thisPc";
 export type DeleteFile = { root: CollectionRoot, path: string, digest: string, };
 export type DeleteSourceFile = { key: DocKey, expect: DiskRev, };
+export type Dependency = { ecosystem: Ecosystem, name: string, versions: Array<DependencyVersion>, direct: boolean, };
+export type DependencyInventory = { fingerprint: string, locks: Array<LockKind>, dependencies: Array<Dependency>, };
+export type DependencySource = "registry" | "git" | "local" | "unknown";
+export type DependencyVersion = { version: string, source: DependencySource, direct: boolean, };
+export type DepsError = { "code": "deps.invalid_project" } | { "code": "deps.no_lockfile" } | { "code": "deps.unsupported_lock", "detail": { lock: LockKind, } } | { "code": "deps.malformed_lock", "detail": { lock: LockKind, } } | { "code": "deps.missing_manifest", "detail": { lock: LockKind, } } | { "code": "deps.limit_exceeded" } | { "code": "deps.unsafe_path" } | { "code": "deps.read_failed" } | { "code": "deps.busy" } | { "code": "deps.job_not_found" };
 export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiffSnapshot = { path: string, oldPath: string | null, staged: boolean, patch: string, hunks: Array<Hunk>, fileOnly: boolean, expect: FileExpect, };
@@ -175,6 +187,7 @@ export type DropJournal = { key: DocKey, uptoSeq: number,
  */
 leaseId?: string, };
 export type EchoParams = { bytes: number, };
+export type Ecosystem = "npm" | "cargo" | "go" | "python";
 export type Empty = Record<symbol, never>;
 export type EntryInfo = { key: DocKey, kind: EntryKind, rev: DiskRev, readOnly: ReadOnly | null, };
 export type EntryKind = "file" | "directory" | "symlink";
@@ -314,6 +327,7 @@ export type InvalidRule = { field: RuleField,
  * entry beyond the limit.
  */
 index: number, problem: RuleProblem, };
+export type JobQuery = { projectId: string, id: string, };
 export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
 export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
 /**
@@ -338,6 +352,7 @@ export type ListAgents = { includeClosedHours: number | null, afterId?: string, 
 export type ListProjects = Record<symbol, never>;
 export type ListRuns = { projectId: string, cursor: DefinitionCursor | null, };
 export type ListSessions = { projectId: string | null, afterId?: string, };
+export type LockKind = "pnpm" | "npm" | "yarn" | "cargo" | "go" | "poetry" | "uv";
 export type LogFilter = { text?: string, regex?: string, streams?: Array<LogStream>, };
 export type LogFrom = Tail | { offset: number, };
 export type LogLine = { src: LogSource, ts: string, stream: LogStream, text: string, };
@@ -433,6 +448,7 @@ export type ProjectList = { rev: string, items: Array<Project>, };
 export type ProjectMs = { projectId: string, ms: number, };
 export type ProjectPrompt = { name: string, body: string, };
 export type ProjectPrompts = { id: string, };
+export type ProjectQuery = { projectId: string, };
 export type ProjectSummary = { id: string, branch?: string, dirty: boolean | null, ahead: number | null, behind: number | null, terminals: number, agents: ProjectAgentCounts, error?: ProjectSummaryIssue, };
 export type ProjectSummaryIssue = { message: string, };
 export type ProjectSummaryList = { items: Array<ProjectSummary>, };
@@ -782,6 +798,9 @@ export interface Methods {
   "api.sse_open": { kind: "stream"; confirm: "none"; params: SseOpen; result: StreamOpened; error: ApiError };
   "api.ws_open": { kind: "stream"; confirm: "none"; params: WsOpen; result: StreamOpened; error: ApiError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
+  "deps.audit": { kind: "mutation"; confirm: "none"; params: ProjectQuery; result: AuditJob; error: DepsError };
+  "deps.audit_status": { kind: "query"; confirm: "none"; params: JobQuery; result: AuditJob; error: DepsError };
+  "deps.list": { kind: "query"; confirm: "none"; params: ProjectQuery; result: DependencyInventory; error: DepsError };
   "documents.claim": { kind: "mutation"; confirm: "none"; params: ClaimDocument; result: Claimed; error: DocumentsError };
   "documents.journal": { kind: "mutation"; confirm: "none"; params: WriteJournal; result: Done; error: DocumentsError };
   "documents.journal_drop": { kind: "mutation"; confirm: "none"; params: DropJournal; result: Done; error: DocumentsError };
@@ -922,6 +941,7 @@ export interface Topics {
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
   "api.collections_changed": CollectionsChange;
+  "deps.audit_changed": AuditProgress;
   "documents.changed": DocumentChanged;
   "documents.lease_lost": LeaseLost;
   "documents.moved": DocumentMoved;
@@ -988,6 +1008,9 @@ export const METHOD_INFO = {
   "api.sse_open": { kind: "stream", confirm: "none" },
   "api.ws_open": { kind: "stream", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
+  "deps.audit": { kind: "mutation", confirm: "none" },
+  "deps.audit_status": { kind: "query", confirm: "none" },
+  "deps.list": { kind: "query", confirm: "none" },
   "documents.claim": { kind: "mutation", confirm: "none" },
   "documents.journal": { kind: "mutation", confirm: "none" },
   "documents.journal_drop": { kind: "mutation", confirm: "none" },
@@ -1188,6 +1211,16 @@ export const RPC_ERROR_CODES = [
   "cancelled",
   "daemon_restarting",
   "debug.unsupported",
+  "deps.busy",
+  "deps.invalid_project",
+  "deps.job_not_found",
+  "deps.limit_exceeded",
+  "deps.malformed_lock",
+  "deps.missing_manifest",
+  "deps.no_lockfile",
+  "deps.read_failed",
+  "deps.unsafe_path",
+  "deps.unsupported_lock",
   "documents.conflict",
   "documents.exists",
   "documents.invalid_input",

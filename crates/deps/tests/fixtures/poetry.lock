@@ -1,0 +1,10 @@
+[[package]]
+name = "Some_Package"
+version = "1.2.3"
+optional = false
+python-versions = "*"
+files = []
+[metadata]
+lock-version = "2.1"
+python-versions = "^3.12"
+content-hash = "owned"

@@ -1,0 +1,11 @@
+version = 1
+revision = 3
+[[package]]
+name = "owned"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [{ name = "some-package" }]
+[[package]]
+name = "Some_Package"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
