@@ -16,6 +16,15 @@ const cloneMessage = (detail: unknown) => {
     .replace(/([?&](?:token|password|access_token)=)[^&\s]+/gi, "$1[숨김]")}`;
 };
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
+  "documents.not_empty": { title: "빈 폴더만 삭제할 수 있습니다." },
+  "files.editor_unavailable": { title: "편집기를 찾지 못했습니다. 편집기 설치와 WSL 연결을 확인하세요." },
+  "files.invalid_input": { title: "파일 이름이나 경로가 올바르지 않습니다." },
+  "files.out_of_scope": { title: "이 프로젝트에서 열 수 없는 경로입니다." },
+  "files.not_found": { title: "파일이나 폴더를 찾을 수 없습니다." },
+  "files.exists": { title: "같은 이름의 파일이 이미 있습니다." },
+  "files.state_changed": { title: "파일 상태가 바뀌었습니다. 새로고침한 뒤 다시 확인하세요." },
+  "files.not_empty": { title: "빈 폴더만 삭제할 수 있습니다." },
+  "files.limit_exceeded": { title: "폴더 항목이 너무 많습니다. 하위 폴더를 열어 주세요." },
   internal: { title: "예상하지 못한 문제가 생겼습니다.", action: "진단 ID를 복사해 두면 원인을 찾을 수 있습니다." },
   invalid_params: { title: "요청 형식이 맞지 않습니다.", action: "앱과 데몬 버전을 확인해 주세요." },
   method_not_found: { title: "이 기능을 사용할 수 없습니다.", action: "앱을 다시 시작해 주세요." },

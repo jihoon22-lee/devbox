@@ -1,7 +1,9 @@
 import { type ErrorCode, RpcError } from "../../rpc/client";
 import type { DiskRev, DocKey, LeaseLoss } from "../../rpc/gen/rpc";
+import { durableClose } from "./durableClose";
+import { journalWriter } from "./journalWriter";
 import type { DocEvent, Effect } from "./machine";
-import { entrySeq, type OfflineJournal } from "./offlineJournal";
+import { entrySeq, type OfflineEntry, type OfflineJournal } from "./offlineJournal";
 import type { DocumentsClient } from "./store";
 
 export interface Timers {
@@ -19,6 +21,7 @@ export interface EffectDeps {
   windowId: string;
   timers: Timers;
   dispatch(id: string, event: DocEvent): void;
+  isLoading(id: string): boolean;
   applyText(id: string, text: string): void;
 }
 
@@ -56,6 +59,7 @@ export function movedKey(key: DocKey, from: DocKey, to: DocKey): DocKey | undefi
 /** Runs reducer effects against the daemon and this device's journal, feeding results back as events. */
 export function createEffectRunner(deps: EffectDeps) {
   const { client, journal, timers, dispatch } = deps;
+  const writer = journalWriter(journal);
   const journalTimers = new Map<string, unknown>();
   const saveTimers = new Map<string, unknown>();
   const pending = new Set<Promise<unknown>>();
@@ -71,6 +75,9 @@ export function createEffectRunner(deps: EffectDeps) {
         e.take ? client.call("documents.take", params) : client.call("documents.claim", params),
         journal.get(e.key).catch(() => undefined),
       ]);
+      // Only Loading consumes this snapshot as recovery. Reclaim keeps an existing buffer
+      // and ignores offline, so it cannot grant permission to replace an unseen foreign draft.
+      if (claimed.leaseId && deps.isLoading(id)) writer.observed(e.key, offline);
       dispatch(id, { type: "claimed", claimed, offline });
     } catch (error) {
       dispatch(id, { type: "claimFailed", code: codeOf(error) });
@@ -79,16 +86,16 @@ export function createEffectRunner(deps: EffectDeps) {
 
   /** Tombstone first, then the daemon drop; the tombstone goes only after the daemon confirmed (AR-F13). */
   async function dropBoth(key: DocKey, uptoSeq: number, leaseId?: string) {
+    const tombstone = { kind: "tombstone", dropUpto: uptoSeq } as const;
     try {
-      const tombstone = { kind: "tombstone", dropUpto: uptoSeq } as const;
-      await journal.putIf(key, tombstone, (existing) => !existing || entrySeq(existing) <= uptoSeq);
+      if (!(await writer.put(key, tombstone, (existing) => !existing || entrySeq(existing) <= uptoSeq))) return;
     } catch {
       // Without IndexedDB there is nothing on this device to resurrect; still drop on the daemon.
     }
-    await daemonDrop(key, uptoSeq, leaseId);
+    await daemonDrop(key, uptoSeq, leaseId, tombstone);
   }
   /** On success, or when another window holds the lease (its journal is not ours to drop), the tombstone goes. */
-  async function daemonDrop(key: DocKey, uptoSeq: number, leaseId?: string) {
+  async function daemonDrop(key: DocKey, uptoSeq: number, leaseId?: string, expected?: OfflineEntry) {
     try {
       await client.call("documents.journal_drop", leaseId ? { key, uptoSeq, leaseId } : { key, uptoSeq });
     } catch (error) {
@@ -97,13 +104,13 @@ export function createEffectRunner(deps: EffectDeps) {
       // drop made with a lease clears it.
       if (codeOf(error) !== "documents.lease_lost" || !leaseId) return;
     }
-    await journal.drop(key, uptoSeq).catch(() => undefined);
+    if (expected) await writer.drop(key, expected).catch(() => undefined);
   }
 
   async function keepOffline(e: Effect & { type: "offlineJournal" }) {
     try {
       const draft = { kind: "draft", seq: e.seq, baseRev: e.baseRev, text: e.text } as const;
-      await journal.putIf(e.key, draft, (existing) => !existing || entrySeq(existing) < e.seq);
+      await writer.put(e.key, draft, (existing) => !existing || entrySeq(existing) < e.seq);
     } catch {
       // The edit stays in the open buffer; the daemon journal is retried on the next tick.
     }
@@ -188,6 +195,7 @@ export function createEffectRunner(deps: EffectDeps) {
   }
 
   return {
+    durable: durableClose(client, journal, writer),
     run(id: string, effects: Effect[]) {
       for (const effect of effects) track(perform(id, effect));
     },
@@ -195,12 +203,18 @@ export function createEffectRunner(deps: EffectDeps) {
     async flushTombstones() {
       const entries = await journal.list().catch(() => []);
       for (const { key, entry } of entries) {
-        if (entry.kind === "tombstone") await daemonDrop(key, entry.dropUpto);
+        if (entry.kind === "tombstone") await daemonDrop(key, entry.dropUpto, undefined, entry);
       }
     },
     /** Carries this device's journal entries along a rename (CV-F03): new key first, then the old one goes. */
     async moveOffline(from: DocKey, to: DocKey) {
-      await journal.move((key) => movedKey(key, from, to)).catch(() => undefined);
+      await journal
+        .move((key) => {
+          const moved = movedKey(key, from, to);
+          if (moved) writer.move(key, moved);
+          return moved;
+        })
+        .catch(() => undefined);
     },
     track,
     cancel(id: string) {

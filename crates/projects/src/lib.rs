@@ -1,5 +1,13 @@
 //! 프로젝트 목록 도메인.
 mod actions;
+mod external_editor;
+mod file_model;
+pub use external_editor::{SourceEditor, editor_arguments};
+mod files;
+pub use file_model::*;
+pub use files::{
+    FilesCreate, FilesDelete, FilesExternalEditor, FilesService, FilesStat, FilesTree,
+};
 #[cfg(target_os = "linux")]
 mod clone_target;
 mod cloning;
@@ -46,6 +54,7 @@ method!(pub ProjectsTrustApprove = "projects.trust_approve", mutation, TrustAppr
 topic!(pub ProjectsChangedTopic = "projects.changed", ProjectsChanged);
 
 pub fn export<X: Exporter>(x: &mut X) {
+    files::export(x);
     x.method::<ProjectsList>();
     x.method::<ProjectsAdd>();
     x.method::<ProjectsRemove>();
@@ -275,3 +284,6 @@ mod run_ownership_tests;
 mod tests;
 #[cfg(test)]
 mod trust_tests;
+
+#[cfg(test)]
+mod files_tests;

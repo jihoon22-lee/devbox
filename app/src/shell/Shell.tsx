@@ -26,6 +26,11 @@ import { SearchRoute } from "../features/search/SearchPage";
 import { openSettings, registerSettingsNavigation } from "../features/settings/open";
 import { restorePreferences } from "../features/settings/preferences";
 import { SettingsRoute } from "../features/settings/SettingsPage";
+import { sourceSearch } from "../features/source/editor/location";
+import { PopoutCode } from "../features/source/PopoutCode";
+import { SourceCommands } from "../features/source/SourceCommands";
+import { SourceRoute } from "../features/source/SourcePage";
+import { SourceSession } from "../features/source/session";
 import { BottomTerminal } from "../features/terminal/BottomTerminal";
 import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
 import { TerminalCommands } from "../features/terminal/TerminalCommands";
@@ -57,6 +62,7 @@ export function Shell() {
           <Frame project={<ProjectTitle onOpen={() => setProjects(true)} />} onOpenPalette={() => setPalette(true)} />
         ),
         pages: {
+          "/source": { component: SourceRoute, validateSearch: sourceSearch },
           "/terminal": { component: TerminalPage },
           "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
@@ -70,6 +76,7 @@ export function Shell() {
           { path: "/popout/agents-grid", component: PopoutAgentGrid },
           { path: "/popout/note/$key", component: PopoutNote },
           { path: "/popout/capture", component: CaptureWindow },
+          { path: "/popout/code/$key", component: PopoutCode },
         ],
       }),
     [],
@@ -140,7 +147,19 @@ export function Shell() {
   useKeymap(bindings);
   useEffect(() => registerBottomTab({ id: "terminal", label: "터미널", render: () => <BottomTerminal /> }), []);
   useEffect(() => registerBottomTab({ id: "logs", label: "로그", render: () => <BottomLogs /> }), []);
-  useEffect(() => registerBottomTab({ id: "problems", label: "문제", render: () => <ProblemsPanel /> }), []);
+  useEffect(
+    () =>
+      registerBottomTab({
+        id: "problems",
+        label: "문제",
+        render: () => (
+          <ProblemsPanel
+            onOpenCode={(key, location) => void router.navigate({ to: "/source", search: { ...key, ...location } })}
+          />
+        ),
+      }),
+    [router],
+  );
   useEffect(() => {
     const cleanupPreferences = restorePreferences();
     const onMouse = (event: MouseEvent) => {
@@ -204,6 +223,8 @@ export function Shell() {
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
         {ownsAttention && <SearchCommands navigate={() => void router.navigate({ to: "/search" })} />}
         <NotesCommands navigate={() => void router.navigate({ to: "/notes" })} />
+        <SourceSession />
+        <SourceCommands navigate={() => void router.navigate({ to: "/source" })} />
         <RunStopUndo />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />

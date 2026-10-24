@@ -732,10 +732,12 @@ name = "devbox-projects"
 version = "1.0.0-dev"
 dependencies = [
  "devbox-core",
+ "devbox-documents",
  "devbox-git",
  "devbox-protocol",
  "nix 0.30.1",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

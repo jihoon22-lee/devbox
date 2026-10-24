@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). 제품 구현 S4-2–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -65,12 +65,19 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - 외부 편집기: enum `code|cursor|zed`, argv/경로/배포판 검증 후 WSL interop, 실패 시 native `open_external_editor`. 임의 shell 문자열은 전달하지 않는다. 미설치/WSL 배포판 누락은 한국어 오류; 개인 전역 editor 설정 변경 없음.
 
 **순서·실패 검사**
-1. [ ] 언어/shebang·점수·preview→edit→pin·dirty close·그룹 이동 reducer 시험을 먼저 실패시킨다. `가😀.ts`, 공백 파일명, 같은 basename 두 root를 포함한다.
-2. [ ] 소유 임시 프로젝트에서 tree pagination·hidden·scope escape·create-existing·delete-stale·dirty rename 저널 rekey를 실패시킨 뒤 files RPC/등록/생성한다. `crates/cli/tests/source_files.rs`에서 실제 RPC 경로를 검증한다.
-3. [ ] CodeEditor/탭/빠른 열기·파일 트리·이동·외부 실행을 연결한다. 가짜 native launcher로 argv를 검증하고 실제 개인 editor를 띄우지 않는다.
-4. [ ] `EditorHost` 인접 회귀: A 편집→B 편집→A Ctrl+Z는 A만 복원; 탭 reorder/split/section 이동 후 동일. code 1초 경과 자동 저장 0회, Ctrl+S 후 파일 내용·EOL/BOM/mode 보존; lease 이동/재연결 중 dirty 보존. native code popout quit 실패/성공 시험도 직접 실행한다.
-5. [ ] 좁은 Vitest source/editor + 변경한 documents/quit/popout 시험, `cargo test -p devbox-projects files`, CLI source_files, 생성 `--check`와 영향 typecheck. E2E 여정 파일은 작성하되 실행은 S4-9에 모은다.
-6. [ ] 별도 검토: S3 lease/CAS/undo/quit 회귀와 동결 파일 경계. Biome → `feat(source): add code editing and file navigation`.
+1. [x] 언어/shebang·점수·preview→edit→pin·dirty close·그룹 이동 reducer 시험을 먼저 실패시킨다. `가😀.ts`, 공백 파일명, 같은 basename 두 root를 포함한다.
+2. [x] 소유 임시 프로젝트에서 tree pagination·hidden·scope escape·create-existing·delete-stale·dirty rename 저널 rekey를 실패시킨 뒤 files RPC/등록/생성한다. `crates/cli/tests/source_files.rs`에서 실제 RPC 경로를 검증한다.
+3. [x] CodeEditor/탭/빠른 열기·파일 트리·이동·외부 실행을 연결한다. 가짜 native launcher로 argv를 검증하고 실제 개인 editor를 띄우지 않는다.
+4. [x] `EditorHost` 인접 회귀: A 편집→B 편집→A Ctrl+Z는 A만 복원; 탭 reorder/split/section 이동 후 동일. code 1초 경과 자동 저장 0회, Ctrl+S 후 파일 내용·EOL/BOM/mode 보존; lease 이동/재연결 중 dirty 보존. native code popout quit 실패/성공 시험도 직접 실행한다.
+5. [x] 좁은 Vitest source/editor + 변경한 documents/quit/popout 시험, `cargo test -p devbox-projects files`, CLI source_files, 생성 `--check`와 영향 typecheck. E2E 여정 파일은 작성하되 실행은 S4-9에 모은다.
+6. [x] 별도 검토: S3 lease/CAS/undo/quit 회귀와 동결 파일 경계. Biome → `feat(source): add code editing and file navigation`.
+
+**실제 구현 보정(2026-10-24, 최종 독립 검토 APPROVE)**
+- `projects::FilesService`는 CLI `source_routes.rs`에서 기존 DocumentsService를 주입받는다. stat/create/delete의 dirfd·namespace/lease 잠금을 공유하기 위해 `documents/{entries,entry_model}.rs`와 handle `excluding`을 추가했다. `files.external_editor`가 고정 editor argv의 WSL 실행을 먼저 시도하고 `{opened,path}`를 반환하며 native `open_external_editor`가 fallback을 맡는다. 새 외부 패키지 없음.
+- `documents/policy_scope.rs`는 project code claim/read/save와 project rename을 같은 root·agent 제외 경계로 묶는다. 다른 등록 root로의 symlink claim RED와 nested agents claim/read/move 거부·같은 project alias 허용을 검증했다. vault note 정책은 유지한다.
+- 단일 문서 탭 소유: split은 복제가 아닌 이동이다. 최초 오른쪽 drop 영역·그룹 사이 drag·재정렬·키보드/버튼 이동을 제공한다. EditorState는 문서 세션 pool에 두어 section unmount 뒤에도 undo가 남는다. S4-8 전에 검증 가능한 파일 전용 SourcePage를 먼저 연결했다.
+- `closeSafely`는 code 선택 전 자동 저장하지 않는다. 온라인 keep은 daemon lease CAS·journal ACK, 오프라인 keep은 IndexedDB ACK를 확인한다. ReadOnly로 lease를 잃은 창은 keep을 거절하고 명시적 버림은 자기 buffer만 닫아 새 owner의 공유 저널을 보존한다. native code popout 등록·X·전역 quit 모두 내구 준비를 기다린다.
+- 상세 결과·실패 원본·최종 소스 범위는 PROGRESS §5 S4-2 및 Git common-dir `devbox-verification/s4-task2/summary.json`에 기록한다. 과제 커밋·S4-3 착수는 별도 검토 뒤다. E2E 1개는 작성만 했으며 S4-9에서 실행한다.
 
 ## 4. S4-3 — LSP 서버 수명·중계·진단
 

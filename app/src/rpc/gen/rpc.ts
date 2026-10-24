@@ -116,6 +116,7 @@ export type DefinitionCursor = { id: string, shadowed: boolean, };
 export type DefinitionKind = "task" | "service";
 export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: Array<Definition>, runs: Array<Run>, trust: TrustPreviewStatus, nextCursor: DefinitionCursor | null, };
 export type DefinitionSource = "projectFile" | "thisPc";
+export type DeleteFile = { key: DocKey, expect: DiskRev, };
 export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
@@ -128,7 +129,7 @@ export type DocPolicy = { kind: DocKind, };
 export type DoctorReport = { checks: Array<Check>, };
 export type DocumentChanged = { key: DocKey, rev: DiskRev | null, };
 export type DocumentMoved = { from: DocKey, to: DocKey, };
-export type DocumentsError = { "code": "documents.conflict", "detail": { rev: DiskRev | null, } } | { "code": "documents.lease_lost", "detail": { reason: LeaseLoss, } } | { "code": "documents.out_of_scope" } | { "code": "documents.not_found" } | { "code": "documents.exists" } | { "code": "documents.too_large", "detail": { limit: number, } } | { "code": "documents.stale_journal" } | { "code": "documents.unsupported" } | { "code": "documents.invalid_input" };
+export type DocumentsError = { "code": "documents.conflict", "detail": { rev: DiskRev | null, } } | { "code": "documents.lease_lost", "detail": { reason: LeaseLoss, } } | { "code": "documents.out_of_scope" } | { "code": "documents.not_found" } | { "code": "documents.not_empty" } | { "code": "documents.exists" } | { "code": "documents.too_large", "detail": { limit: number, } } | { "code": "documents.stale_journal" } | { "code": "documents.unsupported" } | { "code": "documents.invalid_input" };
 export type Done = { rev: string, };
 export type DropJournal = { key: DocKey, uptoSeq: number, 
 /**
@@ -138,6 +139,8 @@ export type DropJournal = { key: DocKey, uptoSeq: number,
 leaseId?: string, };
 export type EchoParams = { bytes: number, };
 export type Empty = Record<symbol, never>;
+export type EntryInfo = { key: DocKey, kind: EntryKind, rev: DiskRev, readOnly: ReadOnly | null, };
+export type EntryKind = "file" | "directory" | "symlink";
 export type Eol = "lf" | "crlf";
 export type ExitRecord = { attemptId: string, code: number | null, signal?: string, endedMs: number, by: ExitSource, serviceResult?: string, };
 export type ExitSource = "wrapper" | "systemd";
@@ -152,7 +155,13 @@ from: string, to: string, format: ExportFormat, };
 export type Exported = { path: string, };
 export type FailedRewrite = { path: string, reason: RewriteFailure, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
+export type FileEntry = { key: DocKey, name: string, kind: EntryKind, };
+export type FileKey = { key: DocKey, };
 export type FileLocation = { path: string, line: number, column: number, };
+export type FileTree = { entries: Array<FileEntry>, nextCursor: FileTreeCursor | null, };
+export type FileTreeCursor = { after: string, rev: string, };
+export type FileTreeQuery = { projectId: string, dir: string, showHidden: boolean, cursor: FileTreeCursor | null, };
+export type FilesError = { "code": "files.invalid_input" } | { "code": "files.out_of_scope" } | { "code": "files.not_found" } | { "code": "files.exists" } | { "code": "files.state_changed" } | { "code": "files.not_empty" } | { "code": "files.limit_exceeded" } | { "code": "files.editor_unavailable" };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
@@ -263,6 +272,7 @@ export type ObservationKind = "foreground" | "input" | "idle" | "pause";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
 export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
+export type OpenSourceEditor = { key: DocKey, editor: SourceEditor, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
 export type PortInfo = { port: number, proto: string, addr: string, pid: number | null, process: string | null, startTimeMs: number | null, runId: string | null, containerId: string | null, projectId: string | null, };
@@ -475,6 +485,8 @@ export type SetRules = { rules: PrivacyRules,
 idleThresholdMs: number, };
 export type SetSecret = { name: string, value: string, };
 export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
+export type SourceEditor = "code" | "cursor" | "zed";
+export type SourceEditorOpened = { opened: boolean, path: string, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
 export type Status = "ok" | "warn" | "fail";
@@ -573,6 +585,11 @@ export interface Methods {
   "documents.renew": { kind: "mutation"; confirm: "none"; params: RenewLeases; result: Renewed; error: DocumentsError };
   "documents.save": { kind: "mutation"; confirm: "none"; params: SaveDocument; result: Saved; error: DocumentsError };
   "documents.take": { kind: "mutation"; confirm: "none"; params: TakeDocument; result: Claimed; error: DocumentsError };
+  "files.create": { kind: "mutation"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
+  "files.delete": { kind: "mutation"; confirm: "always"; params: DeleteFile; result: Done; error: FilesError };
+  "files.external_editor": { kind: "mutation"; confirm: "none"; params: OpenSourceEditor; result: SourceEditorOpened; error: FilesError };
+  "files.stat": { kind: "query"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
+  "files.tree": { kind: "query"; confirm: "none"; params: FileTreeQuery; result: FileTree; error: FilesError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
   "notes.append": { kind: "mutation"; confirm: "none"; params: AppendNote; result: Appended; error: NotesError };
@@ -712,6 +729,11 @@ export const METHOD_INFO = {
   "documents.renew": { kind: "mutation", confirm: "none" },
   "documents.save": { kind: "mutation", confirm: "none" },
   "documents.take": { kind: "mutation", confirm: "none" },
+  "files.create": { kind: "mutation", confirm: "none" },
+  "files.delete": { kind: "mutation", confirm: "always" },
+  "files.external_editor": { kind: "mutation", confirm: "none" },
+  "files.stat": { kind: "query", confirm: "none" },
+  "files.tree": { kind: "query", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
   "notes.append": { kind: "mutation", confirm: "none" },
@@ -833,11 +855,20 @@ export const RPC_ERROR_CODES = [
   "documents.exists",
   "documents.invalid_input",
   "documents.lease_lost",
+  "documents.not_empty",
   "documents.not_found",
   "documents.out_of_scope",
   "documents.stale_journal",
   "documents.too_large",
   "documents.unsupported",
+  "files.editor_unavailable",
+  "files.exists",
+  "files.invalid_input",
+  "files.limit_exceeded",
+  "files.not_empty",
+  "files.not_found",
+  "files.out_of_scope",
+  "files.state_changed",
   "hello_required",
   "internal",
   "invalid_params",

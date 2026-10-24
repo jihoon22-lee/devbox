@@ -13,12 +13,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 PR #644 squash 머지 완료**(`e91c9b22`, 2026-10-24). 검증 소스e56c3096와 merge tree 동일, 원본 main ff-only 동기화·clean 확인. 다음 트랙1 S4-1 상세화, 트랙2 S5는 PR #645 R2 수정 로컬 승인 뒤 S3 main 통합 준비 |
+| 단계 | **S3 PR #644 squash 머지 완료**(`e91c9b22`, 2026-10-24). 검증 소스e56c3096와 merge tree 동일, 원본 main ff-only 동기화·clean 확인. 트랙1 S4-2 R1/R2/R3 및 reconnect 수정·최종 독립 검토 APPROVE. 트랙2 최신 상태는 해당 브랜치 PROGRESS 참조 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 별도 검토 승인**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, 제품 S4-2–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작하며 S3 결과 문서를 첫 상세화 커밋에 인계 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c 완료 → S4-2 최종 독립 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2 제품 변경은 아직 커밋하지 않았으며 S4-3–9는 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · S3 최종 근거 정확성 감사 APPROVE, 수정확인7review threads 해결·보호규칙유지·exacthead squash 완료(e91c9b22,12:15:54UTC). main tree=검증e56 tree, main clean. 소유 설치자원 잔여없음. S4 상세화와 S5 main 통합을 이어간다 |
+| 마지막 갱신 | 2026-10-24 · S4-2 지적3 및 reconnect 수정·직접 검증·최종 독립 검토 APPROVE. S4-3/전체 check·E2E·Windows 실기·push/PR 미실행. S3 머지와 미실행·미입증 근거는 기존 §5 기록을 보존 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -62,7 +62,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-1 상세화 완료(로컬) | 2026-10-24 | | 제품 구현 미착수 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-2 최종 독립 검토 APPROVE | 2026-10-24 | | S4-3–9 미착수 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -120,7 +120,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
 | S3 | 마무리 | Task12 → S3 PR | `v1/s3-knowledge` | 머지 | 2026-10-24 | 2026-10-24 | #644 → e91c9b22. e56 필수CI3/E2E PASS·선택native9/합성daemon1 assertion PASS, 원래4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. 정리/prod불변 PASS, 정상3회+확정손실예외1건 수정·최종감사승인 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
-| S4 | X | S4-2–S4-4 |  | 대기 | | | |
+| S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | S4-2 최종 독립 검토 APPROVE | 2026-10-24 | | 최종 검토 승인, 과제 커밋 뒤 S4-3 |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 대기 | | | |
@@ -136,6 +136,20 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S4-2 코드 편집·파일 작업 (2026-10-24, 트랙1 · 수정·최종 독립 검토 APPROVE)
+
+- 기반 `18fefe4c`(S4-1 승인 문서 커밋), 같은 S4 전용 worktree. 코드 정책 CodeEditor, 문서별 undo 세션 pool, preview→편집 pin, 단일 문서 탭 소유·drag 순서/분할 이동, 확장자/파일명/shebang 언어·들여쓰기/끝 공백·Ctrl+F/H/G/S, files 범위의 quick open·최근 파일, 프로젝트 파일 트리/생성/rename/always 삭제, 검색·문제 위치 이동, code popout과 native quit 준비, 외부 code/cursor/zed 실행·fallback을 연결했다. SourcePage는 S4-8 Git UI 이전의 파일 전용 화면이다.
+- 파일/계약 보정: `projects/{files,file_model,external_editor}.rs`·CLI `source_routes/source_external`가 files.tree/stat/create/delete/external_editor를 등록한다. `documents/{entries,entry_model,policy_scope}.rs`가 기존 namespace/lease/dirfd를 공유하며 삭제는 확인한 rev 비교·소유 sibling 이동 후 재검사·단일 entry unlink만 한다. nonempty 폴더·stale·scope escape 거부, symlink 삭제는 target 보존. generic `documents.rename`을 재사용하며 project 경로는 code claim/read/save와 같은 root/agent 제외를 적용한다. note vault 정책은 유지한다.
+- 데이터 보존 RED→GREEN: code 기본 quit의 무승인 저장, section unmount undo 소실, 수동 저장의 잘못된 “저장 중” 문구, clean code release 실패 ACK/읽기 실패 빈 창 닫기, 프로젝트 symlink의 다른 등록 root 이동, lease를 잃은 old window keep의 새 owner 공유 IndexedDB 덮기를 각각 재현·수정했다. 온라인 keep은 daemon lease CAS/ACK, 오프라인 keep은 IndexedDB ACK이며 lease를 잃으면 keep 거절·버림은 그 창 buffer만 닫는다. 선택 전 code 디스크 저장 0, close 중 이전 in-flight 뒤 최신 buffer 저장과 late lease transfer 시 buffer 보존을 확인했다.
+- 독립 검토 `independent-review.json` REQUEST_CHANGES의 R1/P1(lease_lost 통지 전 stale discard가 다른 창 ACK 초안을 tombstone으로 덮음), R2/P1(낮거나 같은 seq의 다른 창 ACK 초안을 offline keep이 덮음), R3/P2(rename 뒤 원래 경로 재생성 시 탭 id 충돌)를 3RED로 보존하고 수정했다. renderer가 쓴 마지막 값/claim에서 본 복구 snapshot과 현재 journal이 정확히 같을 때만 CAS하며, IndexedDB의 read+조건부 write/delete는 renderer 간 단일 readwrite transaction이다. background journaling·tombstone 정리도 같은 snapshot 보호를 공유한다. rename 탭 identity는 유지하고 새 탭 생성 시 충돌 없는 suffix를 부여한다.
+- 재검증: 직접 영향16파일115 PASS(낮은/같은 seq, 독립 writer 동시 keep, 실패 buffer 보존·reconnect/reopen 복구, own keep, 파일/폴더 rename 뒤 양쪽 group의 선택/drag/close, 실제 CodeMirror undo 보존). owned Chromium 두 독립 page의 실제 IndexedDB에서 20회 동시 keep 경쟁과 20회 원자 putIf 경쟁은 정확히 한 ACK와 후속 stale 쓰기 거절·원문 보존 PASS(`review-indexeddb-final`). HEAD의 기존 backend만 제공한 동일 브라우저 fixture는 putIf가 두 writer에 true를 반환해 실제 RED(`review-indexeddb-baseline-red`), 제품 파일은 fault로 수정하지 않았다. TypeScript·Biome497 PASS. 전체 E2E/Windows 실기와 구분한다. 추가 acceptance fixture의 복구 시점·전체 배열 대 group 배열 기대 오류3은 실패 로그를 남기고 fixture 수정 뒤 영향7 PASS했다.
+- 별도 재검토는 R1/R2 직접 경로·R3·실제 IDB CAS를 해결로 확인했으나 `S4-2-R2-reconnect` P1을 추가 확인했다(`independent-rereview.json` REQUEST_CHANGES). 기존 dirty 문서 reconnect가 reducer에서 보여 주지 않은 외부 offline 초안을 writer snapshot으로 채택해 이후 keep/discard/background journal로 덮었다. 세 경로 3RED를 보존하고, claim 응답 시 현재 상태가 Loading이며 lease가 있을 때만 복구 snapshot을 채택하도록 좁게 수정했다. 기존 문서 reclaim은 이전 자기 snapshot을 유지한다. own offline journal→reconnect→다음 offline keep 및 기존 recovery/readOnly/실패 경로를 포함한 직접3파일32·TypeScript·Biome497 PASS. 수정본 최종 별도 재검토는 APPROVE(`independent-final-review.json`)다. 최초 REQUEST_CHANGES와 RED는 보존하며 root가 최종 승인 해시를 확인했다.
+- 경합 판별 보완: 삭제 namespace 잠금을 제거한 첫 fault는 같은 파일 lease 잠금 때문에 기존 시험이 잡지 못했다. 부모 폴더 rename 경합으로 넓힌 fault는 실제 FAIL, 소스를 복원한 원본은 PASS다. `initial-red-fault-entry-namespace.*`·`red-fault-entry-namespace-parent.*`·복원 hash를 보존한다. 이 실험을 제품 실패나 최초 RED로 혼동하지 않는다.
+- 최종 검증: Documents64, projects files4·외부 argv1, 실제 owned daemon source_files3(수동 저장·BOM/CRLF/mode·dirty rename→저널 rekey→save→reopen·stale delete·fake launcher literal argv/fallback), Linux에서 native core external8/quit4 PASS. 프론트 직접 영향43파일209 PASS 뒤 최종 close/drag 변경 영향21·최종 close12 PASS(중복 포함, 합산하지 않음). TypeScript·생성 `gen-ts --check` PASS, Biome494 PASS(1.471초·cgroup peak137,367,552B·swap0). 최종 CLI3 cgroup peak1,824,460,800B·swap585,728B, 감독 CPU4/nice10/jobs2/threads2/workers2·6/8GiB/swap1GiB 적용.
+- 실패 원본 유지: scaffold import/type RED, 최초 RPC method_not_found, 잘못 쓴 RenameDocument fixture 필드·Testing Library exact/줄 이동 label·fake launcher PATH의 시스템 도구 누락은 수정 후 해당 좁은 검사로 확인했다. jsdom의 scrollTo/canvas 미지원 안내는 실제 Windows 실행 근거가 아니다.
+- 동결/통합: core/protocol/ui/scripts/.github 변경 없음. messages는 새 오류 문구 추가, RPC는 생성기 출력, Cargo.lock은 projects의 기존 workspace documents/rustix 의존 2줄 추가이며 새 외부 패키지 없음. pnpm9 frozen/offline 설치(405개 reuse, download0) 후 S4 자체 node_modules를 사용한다. S5 checkout/코드/상태 행은 수정하지 않았고 main 통합은 root 조율이다.
+- 근거: Git common-dir `devbox-verification/s4-task2/{summary,source-freeze,documentation-freeze,scope-audit}.json`과 named command `.log/.json`. 최초 독립 검토 REQUEST_CHANGES와 3RED를 보존하며 수정본 별도 재검토·커밋·push/PR은 아직 하지 않았다. 새 E2E1은 작성만 했고 전체 check/build/clippy/E2E·실제 Windows 앱/외부 editor 실행은 S4-9 미실행이다. S3 미실행/strict 자동저장 미입증을 PASS로 바꾸지 않는다.
 
 ### S4-1 상세화 (2026-10-24, 트랙1 · 별도 검토 APPROVE)
 

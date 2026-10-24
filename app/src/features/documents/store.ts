@@ -14,11 +14,18 @@ export interface DocumentsDeps {
   /** Lease renewal period; the daemon expires a lease after 60 s without use. */
   renewMs?: number;
 }
+export type ClosePrompt = (docs: Doc[], signal: AbortSignal) => Promise<Record<string, CloseChoice> | undefined>;
+export const needsCloseChoice = (doc: Doc) =>
+  doc.editSeq > doc.savedSeq || doc.state === "Recovering" || doc.state === "Conflict" || doc.state === "Orphaned";
+
 export interface DocumentsStore {
   docs: Record<string, Doc>;
   windowClosing: boolean;
+  closingDocs: Record<string, boolean>;
+  closeSafely(key: DocKey, choice?: CloseChoice): Promise<boolean>;
+  abortWindowClose(): void;
   /** Freeze edits and await actual saves, including older in-flight writes. False keeps buffers visible. */
-  prepareWindowClose(): Promise<boolean>;
+  prepareWindowClose(choose?: ClosePrompt): Promise<boolean>;
   cancelWindowClose(): void;
   /** Binds the store to one daemon session. Returns the disconnect function, which forgets every document. */
   connect(client: DocumentsClient, deps?: DocumentsDeps): () => void;
@@ -48,12 +55,13 @@ const findIn = (docs: Record<string, Doc>, key: DocKey) => {
 export const useDocuments = create<DocumentsStore>((set, get) => {
   let runner: EffectRunner | undefined;
   let nextId = 1;
+  let closeRequest: AbortController | undefined;
   let closedForWindow: { key: DocKey; policy: DocPolicy }[] = [];
   const editors = new Set<(id: string, text: string) => void>();
 
   const dispatch = (id: string, event: DocEvent) => {
     const doc = get().docs[id];
-    if (!doc || (get().windowClosing && event.type === "edit")) return;
+    if (!doc || ((get().windowClosing || get().closingDocs[id]) && event.type === "edit")) return;
     const step = reduce(doc, event);
     if (step.doc.state === "Closed") {
       const { [id]: _closed, ...rest } = get().docs;
@@ -73,15 +81,71 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
   return {
     docs: {},
     windowClosing: false,
+    closingDocs: {},
+    abortWindowClose() {
+      closeRequest?.abort();
+    },
+    async closeSafely(key, choice) {
+      const initial = get().find(key);
+      if (!initial) return true;
+      if (get().closingDocs[initial.id]) return false;
+      const own = runner;
+      if (!own) return false;
+      const id = initial.id;
+      set({ closingDocs: { ...get().closingDocs, [id]: true } });
+      own.cancel(id);
+      try {
+        await own.settled();
+        const doc = get().docs[id];
+        if (!doc) return true;
+        if (runner !== own || keyId(doc.key) !== keyId(key)) return false;
+        if (needsCloseChoice(doc)) {
+          if (!choice) return false;
+          if (doc.state === "Recovering" && doc.editSeq > doc.savedSeq && choice !== "discardAll") return false;
+          if (choice === "save") {
+            if (doc.state !== "Dirty" && doc.state !== "Orphaned" && doc.state !== "Clean") return false;
+            if (doc.state !== "Clean") dispatch(id, { type: "save" });
+            await own.settled();
+            const saved = get().docs[id];
+            if (!saved || saved.state !== "Clean" || saved.editSeq > saved.savedSeq) return false;
+          } else {
+            const durable = choice === "keep" ? await own.durable.keep(doc) : await own.durable.discard(doc);
+            if (!durable) return false;
+          }
+        }
+        const current = get().docs[id];
+        if (
+          !current ||
+          runner !== own ||
+          keyId(current.key) !== keyId(doc.key) ||
+          current.editSeq !== doc.editSeq ||
+          current.leaseId !== doc.leaseId
+        )
+          return false;
+        if (!(await own.durable.release(current))) return false;
+        const latest = get().docs[id];
+        if (runner !== own || !latest || keyId(latest.key) !== keyId(current.key) || latest.editSeq !== current.editSeq)
+          return false;
+        const { [id]: _closed, ...rest } = get().docs;
+        set({ docs: rest });
+        own.cancel(id);
+        return true;
+      } finally {
+        const { [id]: _closing, ...rest } = get().closingDocs;
+        set({ closingDocs: rest });
+      }
+    },
     cancelWindowClose() {
       set({ windowClosing: false });
       const reopen = closedForWindow;
       closedForWindow = [];
       for (const doc of reopen) get().open(doc.key, doc.policy);
     },
-    async prepareWindowClose() {
+    async prepareWindowClose(choose) {
       if (get().windowClosing) return false;
       set({ windowClosing: true });
+      const request = new AbortController();
+      closeRequest = request;
       const own = runner;
       const fail = () => {
         get().cancelWindowClose();
@@ -91,8 +155,19 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
       // save the latest buffer; never use journalSeq (scheduled, not durable) as an ACK.
       await own?.settled();
       if (runner !== own) return fail();
+      const code = Object.values(get().docs).filter((doc) => doc.policy.kind === "code");
+      const dirty = code.filter(needsCloseChoice);
+      const choices = dirty.length && choose ? await choose(dirty, request.signal).catch(() => undefined) : undefined;
+      if ((dirty.length && !choices) || request.signal.aborted || runner !== own) return fail();
+      for (const doc of code) {
+        if (request.signal.aborted || (needsCloseChoice(doc) && !choices?.[doc.id])) return fail();
+        if (!(await get().closeSafely(doc.key, choices?.[doc.id]))) return fail();
+        closedForWindow.push({ key: doc.key, policy: doc.policy });
+      }
+      if (request.signal.aborted) return fail();
       for (const doc of Object.values(get().docs)) {
-        if (doc.state === "Dirty" || doc.state === "Orphaned") dispatch(doc.id, { type: "save" });
+        if (doc.policy.kind === "note" && (doc.state === "Dirty" || doc.state === "Orphaned"))
+          dispatch(doc.id, { type: "save" });
       }
       await own?.settled();
       if (runner !== own) return fail();
@@ -101,7 +176,7 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
       );
       if (!safe) return fail();
       own?.cancelAll();
-      closedForWindow = Object.values(get().docs).map(({ key, policy }) => ({ key, policy }));
+      closedForWindow.push(...Object.values(get().docs).map(({ key, policy }) => ({ key, policy })));
       for (const doc of Object.values(get().docs)) dispatch(doc.id, { type: "close" });
       await own?.settled();
       if (runner !== own || Object.keys(get().docs).length) return fail();
@@ -110,6 +185,8 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
     },
     connect(client, deps = {}) {
       closedForWindow = [];
+      closeRequest?.abort();
+      closeRequest = undefined;
       const journal = deps.journal ?? indexedDbJournal();
       const own = createEffectRunner({
         client,
@@ -117,6 +194,7 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
         windowId: deps.windowId ?? windowId(),
         timers: deps.timers ?? browserTimers,
         dispatch,
+        isLoading: (id) => get().docs[id]?.state === "Loading",
         applyText: (id, text) => {
           for (const apply of editors) apply(id, text);
         },
@@ -191,7 +269,8 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
         own.cancelAll();
         if (runner === own) {
           runner = undefined;
-          set({ docs: {}, windowClosing: false });
+          closeRequest?.abort();
+          set({ docs: {}, windowClosing: false, closingDocs: {} });
         }
       };
     },

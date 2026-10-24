@@ -28,7 +28,11 @@ export function ReadOnlyBar({ docKey }: { docKey: DocKey }) {
         )
       }
     >
-      {reason ? REASONS[reason] : "읽기 전용으로 열었습니다."}
+      {reason === "too_large" && doc.policy.kind === "code"
+        ? "파일이 5 MiB를 넘어 읽기 전용으로 엽니다."
+        : reason
+          ? REASONS[reason]
+          : "읽기 전용으로 열었습니다."}
     </Banner>
   );
 }

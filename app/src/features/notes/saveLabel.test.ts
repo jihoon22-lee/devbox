@@ -32,3 +32,8 @@ test("a clean note while offline is still saved; states shown elsewhere have no 
   expect(saveLabel(doc({ state: "Recovering" }), true)).toBeNull();
   expect(saveLabel(doc({ state: "Loading" }), true)).toBeNull();
 });
+
+test("manual code buffers say unsaved until a save starts", () => {
+  expect(saveLabel(doc({ policy: { kind: "code" }, state: "Dirty", editSeq: 1 }), true)).toBe("저장하지 않음 · Ctrl+S");
+  expect(saveLabel(doc({ policy: { kind: "code" }, state: "Saving", editSeq: 1 }), true)).toBe("저장 중");
+});

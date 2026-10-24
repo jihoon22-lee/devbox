@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 pub fn note_window(label: &str) -> bool {
-    label == "main" || label.starts_with("popout-note-")
+    label == "main" || label.starts_with("popout-note-") || label.starts_with("popout-code-")
 }
 #[derive(Default)]
 pub struct Quit {
@@ -113,6 +113,7 @@ mod tests {
     fn all_windows_must_ack_same_round_and_lease() {
         assert!(note_window("main"));
         assert!(note_window("popout-note-a"));
+        assert!(note_window("popout-code-a"));
         assert!(!note_window("popout-terminal-a"));
         let mut quit = Quit::default();
         let main = quit.register("main");

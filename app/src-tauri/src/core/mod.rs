@@ -26,6 +26,8 @@ pub mod shutdown;
 pub mod diagnostics;
 #[cfg(any(windows, test))]
 pub mod external;
+#[cfg(any(windows, test))]
+pub mod source_external;
 
 #[cfg(any(windows, test))]
 pub mod intents;

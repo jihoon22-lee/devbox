@@ -227,6 +227,7 @@ domain_error! {
         LeaseLost { reason: LeaseLoss } = "documents.lease_lost",
         OutOfScope = "documents.out_of_scope",
         NotFound = "documents.not_found",
+        NotEmpty = "documents.not_empty",
         Exists = "documents.exists",
         TooLarge { limit: u64 } = "documents.too_large",
         StaleJournal = "documents.stale_journal",

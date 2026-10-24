@@ -232,6 +232,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         });
     let router = super::secret_routes::register(router);
     let router = super::knowledge_routes::register(router);
+    let router = super::source_routes::register(router);
     if test_instance {
         router.register::<devbox_protocol::debug::DebugEcho, _, _>(|_, ctx, params| {
             super::debug::echo(ctx, params)
