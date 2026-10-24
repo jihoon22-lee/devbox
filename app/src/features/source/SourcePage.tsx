@@ -5,7 +5,7 @@ import { RpcError } from "../../rpc/client";
 import type { FileEntry, Project } from "../../rpc/gen/rpc";
 import { messageFor } from "../../rpc/messages";
 import { useRpc } from "../../rpc/RpcProvider";
-import { Button, EmptyState, useToasts } from "../../ui";
+import { Button, Dialog, EmptyState, useToasts } from "../../ui";
 import { chooseDocumentClose } from "../documents/closePrompt";
 import { needsCloseChoice, useDocuments } from "../documents/store";
 import { useProjectData } from "../projects/ProjectData";
@@ -17,6 +17,7 @@ import { sourceSearch } from "./editor/location";
 import { openExternalEditor } from "./externalEditor";
 import { type FileOperation, FileOperationDialog } from "./FileOperationDialog";
 import { type FileAction, FileTree } from "./FileTree";
+import { MergePanel } from "./merge/MergePanel";
 import s from "./source.module.css";
 import { useSource } from "./store";
 export function SourceRoute() {
@@ -45,6 +46,7 @@ export function SourcePage() {
 }
 function ProjectSource({ project }: { project: Project }) {
   const root = `project:${project.id}`;
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [operation, setOperation] = useState<FileOperation>();
   const client = useRpc();
@@ -130,9 +132,15 @@ function ProjectSource({ project }: { project: Project }) {
           <Button size="sm" onClick={() => useSource.setState({ quickOpen: true })}>
             빠른 열기 · Ctrl+P
           </Button>
+          <Button size="sm" onClick={() => setMergeOpen(true)}>
+            충돌 해결
+          </Button>
         </div>
         <CodeTabs root={root} />
       </div>
+      <Dialog open={mergeOpen} onOpenChange={setMergeOpen} title="충돌 해결" width={1100}>
+        {mergeOpen && <MergePanel target={{ projectId: project.id }} />}
+      </Dialog>
       {operation && (
         <FileOperationDialog
           key={JSON.stringify(operation)}

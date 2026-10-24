@@ -3,8 +3,9 @@ import { RpcError } from "../../../rpc/client";
 import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
-import { Banner, Button, Menu, Tooltip } from "../../../ui";
+import { Banner, Button, Dialog, Menu, Tooltip } from "../../../ui";
 import { useProjectTrust } from "../../projects/useProjectTrust";
+import { MergePanel } from "../../source/merge/MergePanel";
 import { openPopout } from "../../terminal/popout";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
@@ -52,6 +53,7 @@ export function AgentActions({
   const rebaseConflict =
     rebaseStatus.isFetchedAfterMount && !rebaseStatus.isFetching && !rebaseStatus.error && rebaseStatus.data?.owned;
   const conflict = rebaseConflict ? rebaseStatus.data?.files : preflightConflict;
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [edit, setEdit] = useState<EditIntent>();
@@ -207,6 +209,9 @@ export function AgentActions({
           actions={
             rebaseConflict ? (
               <>
+                <Button disabled={blocked} onClick={() => setMergeOpen(true)}>
+                  충돌 해결
+                </Button>
                 <Button
                   disabled={blocked || !sessionAlive || task.toolExited}
                   onClick={() =>
@@ -248,6 +253,14 @@ export function AgentActions({
             : "변경 내용을 확인해 충돌을 해결하세요."}
         </Banner>
       )}
+      <Dialog open={mergeOpen} onOpenChange={setMergeOpen} title="충돌 해결" width={1100}>
+        {mergeOpen && (
+          <MergePanel
+            target={{ projectId: task.projectId, worktreeId: task.id }}
+            initialPath={rebaseStatus.data?.files[0]}
+          />
+        )}
+      </Dialog>
       <ReviewDialogs task={task} edit={edit} setEdit={setEdit} review={destructive} />
     </>
   );

@@ -39,6 +39,9 @@ importers:
       '@codemirror/lsp-client':
         specifier: ^6.3.0
         version: 6.3.0
+      '@codemirror/merge':
+        specifier: ^6.12.3
+        version: 6.12.3
       '@codemirror/search':
         specifier: ^6.7.2
         version: 6.7.2
@@ -419,6 +422,9 @@ packages:
 
   '@codemirror/lsp-client@6.3.0':
     resolution: {integrity: sha512-ZWtzuML77TnI2cXQrdLXb+HfJIldWPAeLZKRqct/Hq4RJUazg8Y0c9VqKyWDUsr1Y9TRefQKBWZ3B/eyVt1/Nw==}
+
+  '@codemirror/merge@6.12.3':
+    resolution: {integrity: sha512-Wq9wXrp41cW/nIpi1CQPyNwD+36kg8KIX676ym0Hyfn3Dpr+XQHNAIsZYVNlaivuVB4SAASbreG3V0VXinbqZA==}
 
   '@codemirror/search@6.7.2':
     resolution: {integrity: sha512-gUYkYhT2+n/+VGZ+8EzE5WFkYZUZYm1VOKDudIsNqh42uRVQJ0a6Yss9sdKT3MeOYfuL1N6AZA57oza0Oyr0LA==}
@@ -2846,6 +2852,14 @@ snapshots:
       '@lezer/highlight': 1.2.5
       marked: 15.0.12
       vscode-languageserver-protocol: 3.18.5
+
+  '@codemirror/merge@6.12.3':
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.15
+      '@lezer/highlight': 1.2.5
+      style-mod: 4.1.4
 
   '@codemirror/search@6.7.2':
     dependencies:

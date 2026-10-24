@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -177,16 +177,26 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 
 **계약**
 - `git.conflicts {target}` → 수정/수정·삭제/수정·추가/추가 목록. `git.conflict_preview {target,path}` → `{base,ours,theirs,merged,labels,token}`; token은 `{worktreeHash,stageOids:[string|null,string|null,string|null]}`에 대상 identity를 결속한다. 삭제/없는 stage는 null, binary/oversize는 텍스트 해결 불가로 표시한다.
-- `git.conflict_apply {target,path,resolution,token}`: index stage OID와 작업 파일 hash 재검사 → 같은 경우 원자적 파일 교체와 index 반영. file-scope 고정·daemon 작업 직렬화·Git index lock 경계를 명시한다. 외부 파일 변경 race는 S3의 교체 후 비교/rollback 패턴을 재사용해 stale 데이터 덮어쓰기를 피한다. index 반영 실패는 성공으로 보고하지 않고 해결안/현재 파일·index 상태를 보존해 재시도 가능하게 한다. 외부 Git 프로세스 전체와 완전 원자성은 주장하지 않는다.
+- `git.conflict_apply {target,path,resolution,token}`: `resolution`은 UTF-8 string 또는 삭제를 명시하는 null이며 필드 누락은 거부한다.  index stage OID와 작업 파일 hash 재검사 → 같은 경우 원자적 파일 교체와 index 반영. file-scope 고정·daemon 작업 직렬화·Git index lock 경계를 명시한다. 외부 파일 변경 race는 S3의 교체 후 비교/rollback 패턴을 재사용해 stale 데이터 덮어쓰기를 피한다. index 반영 실패는 성공으로 보고하지 않고 해결안/현재 파일·index 상태를 보존해 재시도 가능하게 한다. 외부 Git 프로세스 전체와 완전 원자성은 주장하지 않는다.
 - stale 오류는 `git.conflict_stale` typed detail에 현재 token/preview 또는 재조회 key를 담고, 과대 응답은 bounded preview 조회로 분리한다. 입력 해결안은 renderer state에 보존한다(서버 오류에 필요 없는 전체 본문을 echo해 프레임 예산을 늘리지 않는다).
 - UI base·ours·theirs·결과 네 칸, [내 것][그쪽][둘 다]·직접 편집. merge/rebase 단계의 실제 branch/commit 이름을 보여 준다. rebase ours=onto, theirs=적용 중 commit. 오래된 응답이 새 해결안을 덮지 않는다. agents 충돌도 동일 target-aware MergePanel을 사용한다.
 
 **순서·실패 검사**
-1. [ ] 소유 repo 세 종류 충돌 fixture, apply 정상 stage0·내용 검증을 준비한다.
-2. [ ] `apply_refuses_when_file_changed_after_preview`: preview → 외부 파일 수정 → 작성한 resolution apply → stale·외부 파일 그대로·**stage 변화 0**. `apply_refuses_when_index_stage_changed_after_preview`: 작업 파일 그대로 두고 stage OID만 변경 → 같은 거부. stale 검사 직후 교체 race도 테스트 seam으로 주입한다.
-3. [ ] `resolution_text_is_preserved_after_stale`: local resolution을 편집하고 stale 응답/재조회 후에도 그대로, 새 preview와 나란히 비교. 기존 07의 `resolution_text_is_returned_with_stale_error` 목적을 renderer 보존 assertion으로 충족한다.
-4. [ ] 삭제/수정·추가/추가·rebase label, index 실패·파일/디렉터리 대체·모드 보존 회귀를 구현과 함께 검증한다.
-5. [ ] Git source_conflicts, CLI source_git 충돌 subset, merge Vitest + agent 충돌 이동 영향 검사. 별도 검토(CV-F01 디스크/index 무변화와 해결안 보존) → Biome → `feat(git): resolve conflicts with stale preview protection`.
+1. [x] 소유 repo 세 종류 충돌 fixture, apply 정상 stage0·내용 검증을 준비한다.
+2. [x] `apply_refuses_when_file_changed_after_preview`: preview → 외부 파일 수정 → 작성한 resolution apply → stale·외부 파일 그대로·**stage 변화 0**. `apply_refuses_when_index_stage_changed_after_preview`: 작업 파일 그대로 두고 stage OID만 변경 → 같은 거부. stale 검사 직후 교체 race도 테스트 seam으로 주입한다.
+3. [x] `resolution_text_is_preserved_after_stale`: local resolution을 편집하고 stale 응답/재조회 후에도 그대로, 새 preview와 나란히 비교. 기존 07의 `resolution_text_is_returned_with_stale_error` 목적을 renderer 보존 assertion으로 충족한다.
+4. [x] 삭제/수정·추가/추가·rebase label, index 실패·파일/디렉터리 대체·모드 보존 회귀를 구현과 함께 검증한다.
+5. [x] Git source_conflicts, CLI source_git 충돌 subset, merge Vitest + agent 충돌 이동 영향 검사. 별도 검토(CV-F01 디스크/index 무변화와 해결안 보존) → Biome → `feat(git): resolve conflicts with stale preview protection`.
+
+**구현·검증 기록 (2026-10-25, R1 별도 재검토 APPROVE)**
+- 파일/index stale·정확한 stage2 OID 교체·교체 전/후·디렉터리/심볼릭 링크 교체·index 실패/lock·삭제 race·모드·filter/hook 무실행을 소유 fixture로 검증했다. Linux file-scope pinned fd와 common-dir daemon lock, 실제 index.lock + private index + 최종 index 원본 byte 재검사를 사용한다. stale은 bounded target/path 재조회 key, 부분 실패는 current/복구 사본 보존으로 보고한다. 외부 프로세스 전체/크래시에 파일·index 완전 원자성을 주장하지 않는다.
+- 텍스트128KiB/칸, 목록2,048개·경로 합계128KiB, index32MiB 상한. null 삭제는 UI에서 별도 안내하며 빈 string은 빈 파일이다. renderer 메모리 작성안은 stale/재조회/늦은 응답/닫기·재열기에도 보존한다. actual owned agent rebase만 같은 target-aware 패널로 이동한다.
+- `@codemirror/merge` 6.12.3 설치 타입과 [공식 MergeView 소스](https://github.com/codemirror/merge/blob/main/src/mergeview.ts)를 확인했다(문서 호스트403은 숨기지 않고 artifact에 기록). 네 칸은 두 MergeView와 읽기 전용 세 pane/편집 가능한 결과 pane으로 구성한다. source 전체 Git UI 통합과 rebase continue 자동 실행은 이 과제에 포함하지 않는다.
+- 직접 Rust22 + UI19 =41 PASS, 생성/--check·typecheck·형식·Biome PASS. 초기 RED/실패 기록은 `s4-task6`에 보존. 단계5의 별도 재검토 APPROVE(지적0) 후 완료 커밋을 진행한다. 전체/Windows/native/E2E는 S4-9까지 미실행이다.
+
+**R1 모드 보정 (2026-10-25, 별도 재검토 APPROVE)**
+- 작업 파일이 없는 텍스트 재생성은 현재 stage identity를 재검사하고 존재하는 모든 stage(base 포함)의100755/100644가 일치할 때만 그 모드를 디스크/stage0에 적용한다. 삭제/수정의 null stage는 제외한다. 혼합 모드는 `git.source_invalid_input`으로 무변화 거부한다. 작업 파일을 원하는 모드로 만든 뒤 새 preview를 얻으면 기존 실제 파일 모드를 보존한다. 명시적 null 삭제는 모드 선택을 하지 않는다.
+- 독립 R1 재현 및 RED3/control3 보존, 신규 mode8+기존 conflict18 직접26 PASS·fmt/Biome806 PASS. 누적 고유49이며 이번에는 CLI/타입/UI 변경 없이 기존 근거를 유지했다. 제품 변경은 `conflicts.rs` 한 파일, 신규 회귀는 `source_conflict_modes.rs` 한 파일이다.
 
 ## 8. S4-7 — Dependency Lens
 

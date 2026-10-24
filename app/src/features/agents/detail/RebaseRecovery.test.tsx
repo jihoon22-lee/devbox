@@ -73,3 +73,17 @@ test("cached owned recovery is not revived when a fresh remount reports no owned
   expect(screen.queryByText(/old.txt|foreign.txt/)).toBeNull();
   expect(wire.requests("agents.changes")).toHaveLength(0);
 });
+test("owned rebase opens the shared merge panel with the agent worktree target", async () => {
+  const wire = new ProjectWire();
+  render(<Fixture wire={wire} visible />);
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+  await act(async () => wire.reply("agents.rebase_status", { owned: true, files: ["a.txt"] }));
+  await userEvent.click(await screen.findByRole("button", { name: "충돌 해결" }));
+  await waitFor(() => expect(wire.requests("git.conflicts")).toHaveLength(1));
+  expect(wire.request("git.conflicts").params).toEqual({ target: { projectId: "a", worktreeId: "a1" } });
+  await waitFor(() => expect(wire.requests("git.conflict_preview")).toHaveLength(1));
+  expect(wire.request("git.conflict_preview").params).toEqual({
+    target: { projectId: "a", worktreeId: "a1" },
+    path: "a.txt",
+  });
+});

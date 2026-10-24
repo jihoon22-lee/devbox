@@ -116,3 +116,119 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn conflict_rpc_preserves_stale_file_and_applies_fresh_resolution() {
+    use devbox_git::conflict_model::ConflictApply;
+    assert_eq!(GitConflictApply::CONFIRM, Confirm::Reversible);
+    let d = TestDaemon::start();
+    let c = d.client().await;
+    let dir = d.home.path().join("conflicts");
+    std::fs::create_dir(&dir).unwrap();
+    git(&dir, &["init", "-qb", "main"]);
+    std::fs::write(dir.join("a"), "base").unwrap();
+    git(&dir, &["add", "."]);
+    git(&dir, &["commit", "-qm", "base"]);
+    git(&dir, &["checkout", "-b", "side"]);
+    std::fs::write(dir.join("a"), "side").unwrap();
+    git(&dir, &["commit", "-am", "side"]);
+    git(&dir, &["checkout", "main"]);
+    std::fs::write(dir.join("a"), "main").unwrap();
+    git(&dir, &["commit", "-am", "main"]);
+    assert!(
+        !std::process::Command::new("git")
+            .arg("-C")
+            .arg(&dir)
+            .args([
+                "-c",
+                "user.name=Owned",
+                "-c",
+                "user.email=owned@example.invalid",
+                "merge",
+                "side"
+            ])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    let project = bounded(
+        c.call::<devbox_projects::ProjectsAdd>(&devbox_projects::AddProject {
+            path: dir.to_string_lossy().into_owned(),
+        }),
+    )
+    .await
+    .unwrap();
+    let target = SourceTarget {
+        project_id: project.id,
+        worktree_id: None,
+    };
+    let files = bounded(c.call::<GitConflicts>(&GitTargetQuery {
+        target: target.clone(),
+    }))
+    .await
+    .unwrap();
+    assert_eq!(files.len(), 1);
+    let query = GitPathQuery {
+        target: target.clone(),
+        path: "a".into(),
+    };
+    let preview = bounded(c.call::<GitConflictPreview>(&query)).await.unwrap();
+    let index = std::fs::read(dir.join(".git/index")).unwrap();
+    std::fs::write(dir.join("a"), "external").unwrap();
+    let mut request = ConflictApply {
+        target,
+        path: "a".into(),
+        resolution: Some("draft".into()),
+        token: preview.token,
+    };
+    let error = bounded(c.call::<GitConflictApply>(&request))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, devbox_cli::client::ClientError::Rpc { code, .. } if code == "git.conflict_stale")
+    );
+    assert_eq!(std::fs::read(dir.join(".git/index")).unwrap(), index);
+    assert_eq!(std::fs::read_to_string(dir.join("a")).unwrap(), "external");
+    request.token = bounded(c.call::<GitConflictPreview>(&query))
+        .await
+        .unwrap()
+        .token;
+    bounded(c.call::<GitConflictApply>(&request)).await.unwrap();
+    assert_eq!(std::fs::read_to_string(dir.join("a")).unwrap(), "draft");
+    let files = bounded(c.call::<GitConflicts>(&GitTargetQuery {
+        target: request.target,
+    }))
+    .await
+    .unwrap();
+    assert!(files.is_empty());
+}
+#[test]
+fn conflict_deletion_requires_explicit_null_and_never_an_omitted_resolution() {
+    use devbox_git::conflict_model::{ConflictApply, ConflictToken};
+    let target = SourceTarget {
+        project_id: "p".into(),
+        worktree_id: None,
+    };
+    let request = ConflictApply {
+        target: target.clone(),
+        path: "a".into(),
+        resolution: None,
+        token: ConflictToken {
+            target,
+            path: "a".into(),
+            worktree_hash: "hash".into(),
+            stage_oids: [None, None, None],
+            identity: "identity".into(),
+        },
+    };
+    let mut json = serde_json::to_value(&request).unwrap();
+    assert!(
+        serde_json::from_value::<ConflictApply>(json.clone())
+            .unwrap()
+            .resolution
+            .is_none()
+    );
+    json.as_object_mut().unwrap().remove("resolution");
+    assert!(serde_json::from_value::<ConflictApply>(json).is_err());
+}

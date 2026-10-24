@@ -24,6 +24,15 @@ const names = (d: unknown) => {
 };
 const check = "입력란을 확인해 주세요.";
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
+  "git.conflict_stale": {
+    title: "파일 또는 Git 상태가 바뀌어 적용하지 않았습니다.",
+    action: "작성한 해결안은 보존했습니다. 새 상태와 비교한 뒤 다시 적용하세요.",
+  },
+  "git.conflict_partial": {
+    title: "충돌 해결을 끝내지 못했습니다.",
+    action:
+      "작성한 해결안을 보존했습니다. 현재 파일과 Git 상태를 다시 확인하세요. 복구 사본이 있으면 같은 폴더의 .devbox-conflict- 파일에 남아 있습니다.",
+  },
   "git.invalid_target": { title: "Git 저장소를 찾을 수 없습니다." },
   "git.source_invalid_input": { title: "Git 요청이 올바르지 않습니다." },
   "git.source_failed": { title: "Git 작업을 완료하지 못했습니다. 저장소 상태와 인증 설정을 확인해 주세요." },

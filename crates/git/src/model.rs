@@ -30,6 +30,8 @@ pub struct SourceExpect {
     pub worktree_hash: String,
 }
 domain_error! {#[derive(Deserialize)] pub enum SourceGitError {
+ ConflictStale { target: SourceTarget, path: String } = "git.conflict_stale",
+ ConflictPartial { target: SourceTarget, path: String } = "git.conflict_partial",
  InvalidTarget = "git.invalid_target",
  InvalidSourceInput = "git.source_invalid_input",
  SourceFailed = "git.source_failed",

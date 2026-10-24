@@ -1,8 +1,11 @@
 use crate::{
-    Commit, blame::BlameLine, cleanup::*, hunks::DiffSnapshot, model::*, source_queries::*,
-    stash::StashEntry,
+    Commit, blame::BlameLine, cleanup::*, conflict_model::*, hunks::DiffSnapshot, model::*,
+    source_queries::*, stash::StashEntry,
 };
 use devbox_protocol::{Done, Exporter, method, topic};
+method!(pub GitConflicts = "git.conflicts", query, GitTargetQuery => Vec<ConflictEntry>, SourceGitError);
+method!(pub GitConflictPreview = "git.conflict_preview", query, GitPathQuery => ConflictPreview, SourceGitError);
+method!(pub GitConflictApply = "git.conflict_apply", mutation(reversible), ConflictApply => Done, SourceGitError);
 method!(pub GitStatus = "git.status", query, GitTargetQuery => SourceStatus, SourceGitError);
 method!(pub GitDiff = "git.diff", query, GitDiffQuery => DiffSnapshot, SourceGitError);
 method!(pub GitBranches = "git.branches", query, GitTargetQuery => Vec<SourceBranch>, SourceGitError);
@@ -28,6 +31,9 @@ method!(pub GitCleanup = "git.cleanup", mutation(always), GitCleanupParams => Do
 topic!(pub GitChangedTopic = "git.changed", GitChanged);
 topic!(pub GitOperationChanged = "git.operation_changed", GitOperation);
 pub fn export<X: Exporter>(x: &mut X) {
+    x.method::<GitConflicts>();
+    x.method::<GitConflictPreview>();
+    x.method::<GitConflictApply>();
     x.method::<GitStatus>();
     x.method::<GitDiff>();
     x.method::<GitBranches>();

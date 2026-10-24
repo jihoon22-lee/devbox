@@ -46,3 +46,9 @@ pub mod service;
 pub mod source_queries;
 pub mod stash;
 pub mod watch;
+
+pub mod conflict_model;
+pub mod conflicts;
+
+#[cfg(target_os = "linux")]
+mod conflict_disk;

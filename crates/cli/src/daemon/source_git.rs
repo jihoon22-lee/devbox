@@ -113,6 +113,24 @@ async fn candidates(
 }
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
     router
+        .register::<GitConflicts, _, _>(|s, _, p| async move {
+            let dir = root(&s, &p.target).await?;
+            Ok(devbox_git::conflicts::list(&dir).await?)
+        })
+        .register::<GitConflictPreview, _, _>(|s, _, p| async move {
+            let dir = root(&s, &p.target).await?;
+            Ok(devbox_git::conflicts::preview(&dir, &p.target, &p.path).await?)
+        })
+        .register::<GitConflictApply, _, _>(|s, _, p| async move {
+            let dir = root(&s, &p.target).await?;
+            let _guard = s.git.lock(&dir).await?;
+            let result = devbox_git::conflicts::apply(&dir, &p).await;
+            // Partial completion must also invalidate observers so they re-read disk/index.
+            if result.is_err() {
+                s.git.changed(&p.target);
+            }
+            done(&s, &p.target, result).await
+        })
         .register::<GitStatus, _, _>(|s, _, p| async move {
             let dir = root(&s, &p.target).await?;
             map(&dir, devbox_git::source_queries::status(&dir).await).await

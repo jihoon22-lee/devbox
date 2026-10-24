@@ -91,6 +91,12 @@ export type CollectionsChange = { root: CollectionRoot, rev: string, };
 export type CollectionsQuery = { root: CollectionRoot, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
+export type ConflictApply = { target: SourceTarget, path: string, resolution: string | null, token: ConflictToken, };
+export type ConflictEntry = { path: string, kind: ConflictKind, };
+export type ConflictKind = "modifyModify" | "deleteModify" | "addAdd" | "other";
+export type ConflictLabels = { base: string, ours: string, theirs: string, rebase: boolean, };
+export type ConflictPreview = { base: string | null, ours: string | null, theirs: string | null, merged: string | null, labels: ConflictLabels, token: ConflictToken, textSupported: boolean, };
+export type ConflictToken = { target: SourceTarget, path: string, worktreeHash: string, stageOids: [string | null, string | null, string | null], identity: string, };
 export type ContainerAction = "start" | "stop" | "restart";
 export type ContainerActionParams = { id: string, action: ContainerAction, };
 export type ContainerActionResult = { id: string, action: ContainerAction, undo: ContainerActionParams | null, };
@@ -620,7 +626,7 @@ export type SourceEditor = "code" | "cursor" | "zed";
 export type SourceEditorOpened = { opened: boolean, path: string, };
 export type SourceExpect = { state: RemoteExpect, indexHash: string, worktreeHash: string, };
 export type SourceFile = { path: string, oldPath: string | null, indexStatus: string, worktreeStatus: string, conflicted: boolean, };
-export type SourceGitError = { "code": "git.invalid_target" } | { "code": "git.source_invalid_input" } | { "code": "git.source_failed" } | { "code": "git.source_limit_exceeded" } | { "code": "git.source_timed_out" } | { "code": "git.state_changed", "detail": { current: RemoteExpect, } } | { "code": "git.source_busy" } | { "code": "git.unsafe_source" };
+export type SourceGitError = { "code": "git.conflict_stale", "detail": { target: SourceTarget, path: string, } } | { "code": "git.conflict_partial", "detail": { target: SourceTarget, path: string, } } | { "code": "git.invalid_target" } | { "code": "git.source_invalid_input" } | { "code": "git.source_failed" } | { "code": "git.source_limit_exceeded" } | { "code": "git.source_timed_out" } | { "code": "git.state_changed", "detail": { current: RemoteExpect, } } | { "code": "git.source_busy" } | { "code": "git.unsafe_source" };
 export type SourcePreview = { "kind": "markdown", rendered: RenderedNote, } | { "kind": "svg", text: string, };
 export type SourceStatus = { expect: SourceExpect, summary: StatusSummary, files: Array<SourceFile>, warnings: Array<GitConfigWarning>, };
 export type SourceTarget = { projectId: string, worktreeId?: string, };
@@ -799,6 +805,9 @@ export interface Methods {
   "git.cleanup": { kind: "mutation"; confirm: "always"; params: GitCleanupParams; result: Done; error: SourceGitError };
   "git.cleanup_candidates": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<CleanupCandidate>; error: SourceGitError };
   "git.commit": { kind: "mutation"; confirm: "none"; params: GitCommitParams; result: Done; error: SourceGitError };
+  "git.conflict_apply": { kind: "mutation"; confirm: "reversible"; params: ConflictApply; result: Done; error: SourceGitError };
+  "git.conflict_preview": { kind: "query"; confirm: "none"; params: GitPathQuery; result: ConflictPreview; error: SourceGitError };
+  "git.conflicts": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<ConflictEntry>; error: SourceGitError };
   "git.diff": { kind: "query"; confirm: "none"; params: GitDiffQuery; result: DiffSnapshot; error: SourceGitError };
   "git.discard": { kind: "mutation"; confirm: "always"; params: GitFileChange; result: Done; error: SourceGitError };
   "git.fetch": { kind: "mutation"; confirm: "none"; params: GitTargetQuery; result: GitOperation; error: SourceGitError };
@@ -1002,6 +1011,9 @@ export const METHOD_INFO = {
   "git.cleanup": { kind: "mutation", confirm: "always" },
   "git.cleanup_candidates": { kind: "query", confirm: "none" },
   "git.commit": { kind: "mutation", confirm: "none" },
+  "git.conflict_apply": { kind: "mutation", confirm: "reversible" },
+  "git.conflict_preview": { kind: "query", confirm: "none" },
+  "git.conflicts": { kind: "query", confirm: "none" },
   "git.diff": { kind: "query", confirm: "none" },
   "git.discard": { kind: "mutation", confirm: "always" },
   "git.fetch": { kind: "mutation", confirm: "none" },
@@ -1194,6 +1206,8 @@ export const RPC_ERROR_CODES = [
   "files.not_found",
   "files.out_of_scope",
   "files.state_changed",
+  "git.conflict_partial",
+  "git.conflict_stale",
   "git.invalid_target",
   "git.source_busy",
   "git.source_failed",

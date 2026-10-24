@@ -13,12 +13,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 Git 조회·변경 R1 수정·별도 재검토 APPROVE·완료 커밋 단계 |
+| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 1416acbe 로컬 완료. S4-6 R1 수정·별도 재검토 APPROVE·완료 커밋 단계 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 구현·직접 검증·별도 재검토 APPROVE, S4-6–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 1416acbe 로컬 완료·별도 재검토 APPROVE, S4-6 구현·직접 검증·별도 재검토 APPROVE, S4-7–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 최종 제품 `b18bc740`, Rust target `~/.cache/targets/devbox-s5`. **구현·리뷰 수정·필수 CI3/E2E·영향 설치 수용1·2 완료, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 머지 완료**. 정상 자동 리뷰3회 및 상한 예외4367201426 수정·독립 승인 완료, 4367201424는 §8 이월. 현재 소스 설치1·2 PASS, 429 소스3·4 PASS는 과거 근거, 5·6 NOT_RUN 유지. 상세 §5 |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-25 · S4-4 R1 별도 재검토 APPROVE·Biome800 뒤 e12fcacf 로컬 커밋 완료. S4-5 Git 조회·변경 구현·직접 검증·별도 재검토 APPROVE, 소유 임시 repo/bare만 사용하며 UI S4-8·충돌 S4-6·전체/E2E/native 검증은 미착수. S5 최종 수용/머지 기록 보존 |
+| 마지막 갱신 | 2026-10-25 · S4-5 재검토 APPROVE·Biome800 뒤 1416acbe 로컬 커밋 완료. S4-6 충돌 해결 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7 이후·전체/E2E/native 미착수, S5 기록 보존 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -69,7 +69,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-5 구현·직접 검증·별도 재검토 APPROVE | 2026-10-25 | | S4-6–9 미착수 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-6 구현·직접 검증·별도 재검토 APPROVE | 2026-10-25 | | S4-7–9 미착수 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -128,7 +128,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | 마무리 | Task12 → S3 PR | `v1/s3-knowledge` | 머지 | 2026-10-24 | 2026-10-24 | #644 → e91c9b22. e56 필수CI3/E2E PASS·선택native9/합성daemon1 assertion PASS, 원래4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. 정리/prod불변 PASS, 정상3회+확정손실예외1건 수정·최종감사승인 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
 | S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-25 | S4-2 fa86bc8b·S4-3 0cb5a24f·통합 e56a76e8·S4-4 e12fcacf, R1 별도 재검토 APPROVE·Biome800 PASS |
-| S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | S4-5 구현·직접 검증 완료 | 2026-10-25 | | S4-5 별도 재검토 APPROVE. S4-6–7 대기 |
+| S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | S4-5 완료(로컬)·S4-6 별도 재검토 APPROVE | 2026-10-25 | | S4-5 1416acbe 별도 재검토 APPROVE·Biome800. S4-6 구현·직접 검사 완료, S4-7 대기 |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
@@ -143,6 +143,16 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S4-6 충돌 해결 (2026-10-25 · R1 수정·별도 재검토 APPROVE)
+
+- 기반 `1416acbece6889a7f37d72f4aa3e956e035cfa87`에서 07a §7만 구현했다. `git.conflicts/conflict_preview/conflict_apply`는 등록 project/소유 agent worktree를 사용하며 token은 target·path·canonical repo·stage OID/mode·HEAD/merge/rebase identity·작업 파일 hash/mode에 결속한다. 수정/수정·삭제/수정·추가/추가, 없는 stage null, 실제 merge/rebase commit 이름을 표시한다. 미리보기는 각 텍스트 128KiB, 목록은 2,048개/경로 합계128KiB, index 읽기는32MiB 상한이다. 바이너리/큰 파일은 텍스트 적용 불가다.
+- common-dir daemon 직렬화와 실제 `index.lock`를 잡고 private index의 선택한 literal path만 갱신한다. Linux pinned parent fd·NOFOLLOW·EXCHANGE/NOREPLACE로 교체 후 displaced bytes/mode를 검사하고 race면 rollback한다. 외부 current가 이미 바뀌어 rollback할 수 없으면 current와 `.devbox-conflict-*` 복구 사본을 보존하고 `git.conflict_partial`을 반환한다. 실제 index는 마지막 rename 전 원본 byte/소유 lock을 재검사하며 실패를 성공으로 보고하지 않는다. 외부 Git 전체와 파일/index의 완전 원자성·크래시 일괄 복구는 주장하지 않는다. 입력 해결안은 오류 본문에 echo하지 않으며 nullable `resolution`의 **명시적 null만 삭제**이고 누락은 거부한다. filters/hooks 없이 입력 UTF-8 bytes를 정확히 stage한다.
+- 설치한 `@codemirror/merge` 6.12.3의 실제 타입(`DirectMergeConfig.a/b`, `MergeView.a/b/destroy`)에 맞춰 base/ours/theirs/결과 네 칸과 내 것/그쪽/둘 다·직접 편집을 구현했다. target/path별 renderer 메모리의 해결안은 stale/partial·재조회·닫기/다시 열기·늦은 응답·적용 중 추가 편집 뒤에도 유지한다(앱 재시작 영속 보장 아님). 없는 쪽 선택은 삭제 안내와 명시적 null을 보낸다. source 진입 버튼과 agents의 실제 owned rebase 충돌만 같은 `MergePanel`을 연다. 사전 병합 검사에서 되돌려진 임시 충돌을 실제 index 충돌로 오인하지 않는다.
+- 좁은 behavioral RED는 파일/index stale2·CLI 미등록1·renderer 작성안 손실2·삭제 대신 빈 파일1을 보존했다. 직접 Rust conflict18·CLI3·등록1, UI/agent19 = 고유41개 PASS, TS 생성/검사·typecheck·rustfmt/diff·Biome PASS. 첫 typecheck의 test-only unchecked mock/index 접근 오류는 수정 뒤 PASS다. 최종 diff 검사에서 Rust doc 주석이 생성 TS trailing whitespace를 만든 실패는 일반 주석으로 바꿔 재생성한 뒤 해결했다. 검증·scope/hash 원장: common-dir `devbox-verification/s4-task6/{summary,source-freeze,documentation-freeze,scope-audit,artifact-hashes}.json`. 지정 자원 제한과 좁은 `--no-lock`을 적용했다. 별도 검토·commit/push/PR, S4-7 이후, 전체 check/clippy/build/E2E/Windows 실기·설치는 미실행이다. 동결 shared 경로와 S5 기록은 변경하지 않았다.
+
+- 별도 검토 R1(P2)의 실제 실행 파일 stage가 모두100755인데 작업 파일이 없는 경우0644로 재생성되는 재현을 수용했다. `conflicts.rs`에서 텍스트 재생성 때 현재 stage identity를 재검사하고 **존재하는 모든 stage(base 포함)의 모드가 일치할 때만** 그100755/100644를 디스크와 stage0에 사용한다. 삭제/수정은 없는 stage를 제외하므로 남은 base/side100755를 보존한다. 모드 혼합은 `git.source_invalid_input`으로 디스크/index 무변화 거부하며, 작업 파일을 의도한 모드로 만들어 다시 미리보기하면 실제 작업 파일 모드를 보존한다. 명시적 null 삭제는 모드 합의가 필요 없다.
+- R1 회귀 RED3(실행권한2·혼합모드거부1)/control3와 원래 독립 재현을 보존했다. 새 mode 회귀8 + 기존 conflict18 = 직접26 PASS, fmt/diff·Biome806 PASS. 누적 고유49(이전41+새8)이며 기존 전체41을 이번에 재실행했다고 주장하지 않는다. 경계 타입/RPC/renderer가 바뀌지 않아 기존 CLI/생성/type/UI 근거를 유지했다. 수정 제품 파일은 `conflicts.rs` 하나, 새 시험 파일은 `source_conflict_modes.rs` 하나다. `review-delta-audit.json`과 pre-r1 freeze/summary를 보존하고 재동결했다. 별도 재검토 APPROVE(`independent-rereview.json`, 지적0)는 26개 직접 시험·형식/Biome PASS 및 소스25/문서2의 정확한 hash를 확인했다. 완료 커밋 직전 Biome을 실행한다.
 
 ### S4-5 Git 조회·변경 (2026-10-25 · R1 수정·별도 재검토 APPROVE)
 
