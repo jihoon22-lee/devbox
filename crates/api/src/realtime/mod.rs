@@ -3,7 +3,7 @@
 //! 그 수를 세어 쓰기가 재개될 때 `Dropped`로 먼저 알린다(01 §5.1, 소켓 읽기를 멈추지 않는다).
 pub(crate) mod buffer;
 pub(crate) mod sse;
-mod sse_parse;
+pub(crate) mod sse_parse;
 pub(crate) mod ws;
 
 use crate::events::Closed;

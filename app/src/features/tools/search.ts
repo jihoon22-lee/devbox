@@ -4,11 +4,11 @@ export type ToolsSearch = {
   view?: ToolsView;
   root?: string;
   path?: string;
-  tool?: "import" | "runner" | "websocket" | "sse" | "grpc";
+  tool?: "import" | "runner" | "websocket" | "sse" | "grpc" | "mcp";
 };
 
 const VIEWS = new Set<string>(["api", "webhooks", "transforms", "env"]);
-const TOOLS = new Set<string>(["import", "runner", "websocket", "sse", "grpc"]);
+const TOOLS = new Set<string>(["import", "runner", "websocket", "sse", "grpc", "mcp"]);
 
 export function toolsSearch(search: Record<string, unknown>): ToolsSearch {
   const out: ToolsSearch = {};

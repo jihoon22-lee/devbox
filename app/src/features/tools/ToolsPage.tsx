@@ -9,6 +9,7 @@ import { ApiWorkspace } from "./api/ApiWorkspace";
 import { ApiBackendProvider, useApiBackend } from "./api/backend";
 import { GrpcPanel } from "./api/grpc/GrpcPanel";
 import { ImportDialog } from "./api/ImportDialog";
+import { McpPanel } from "./api/mcp/McpPanel";
 import { RunnerView } from "./api/RunnerView";
 import { SsePanel } from "./api/realtime/SsePanel";
 import { WsPanel } from "./api/realtime/WsPanel";
@@ -64,6 +65,8 @@ export function ToolsView({
       <SsePanel />
     ) : search.tool === "grpc" ? (
       <GrpcPanel roots={roots} />
+    ) : search.tool === "mcp" ? (
+      <McpPanel roots={roots} />
     ) : (
       <ApiWorkspace />
     );

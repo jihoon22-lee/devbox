@@ -16,7 +16,7 @@ const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>Devbox</title
 const BAD_PAGE: &str =
     "<!doctype html><meta charset=utf-8><title>Devbox</title><p>인증 응답이 올바르지 않습니다.</p>";
 
-fn random() -> String {
+pub(crate) fn random() -> String {
     let bytes: Vec<u8> = [uuid::Uuid::new_v4(), uuid::Uuid::new_v4()]
         .iter()
         .flat_map(|u| *u.as_bytes())
@@ -85,22 +85,85 @@ fn handle(
     }
 }
 
+/// 인증 중에만 여는 콜백 리스너(127.0.0.1:0). `redirect_uri`는 동적 클라이언트 등록에도 쓴다.
+pub(crate) struct Loopback {
+    listener: tokio::net::TcpListener,
+    pub(crate) redirect_uri: String,
+}
+
+/// PKCE S256: (verifier, challenge).
+pub(crate) fn pkce() -> (Zeroizing<String>, String) {
+    let verifier = Zeroizing::new(random());
+    let challenge = data_encoding::BASE64URL_NOPAD.encode(&Sha256::digest(verifier.as_bytes()));
+    (verifier, challenge)
+}
+
+impl Loopback {
+    pub(crate) async fn bind() -> Result<Self, ApiError> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| ApiError::oauth("callback"))?;
+        let port = listener
+            .local_addr()
+            .map_err(|_| ApiError::oauth("callback"))?
+            .port();
+        Ok(Self {
+            listener,
+            redirect_uri: format!("http://127.0.0.1:{port}/callback"),
+        })
+    }
+
+    /// state가 맞는 첫 콜백의 code를 기다린다(5분 시한, 1회용). 끝나면 리스너를 닫는다.
+    pub(crate) async fn code(self, state: &str) -> Result<Zeroizing<String>, ApiError> {
+        let (tx, mut rx) = mpsc::channel(1);
+        let used = Arc::new(Mutex::new(false));
+        let listener = self.listener;
+        let accept = async {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    // fd 고갈 같은 accept 오류가 바쁜 루프가 되지 않게 잠깐 쉰다(전체 대기는 WAIT가 끊는다).
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                };
+                let (state, used, tx) = (state.to_owned(), used.clone(), tx.clone());
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(
+                        move |req: hyper::Request<hyper::body::Incoming>| {
+                            let response = handle(req.uri(), &state, &used, &tx);
+                            async move { Ok::<_, Infallible>(response) }
+                        },
+                    );
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                        .await;
+                });
+            }
+        };
+        let callback = tokio::time::timeout(WAIT, async {
+            tokio::select! {
+                _ = accept => None,
+                callback = rx.recv() => callback,
+            }
+        })
+        .await
+        .map_err(|_| ApiError::oauth("authorize_timeout"))?;
+        drop(listener);
+        match callback {
+            Some(Callback::Code(code)) => Ok(code),
+            _ => Err(ApiError::oauth("authorize")),
+        }
+    }
+}
+
 pub(crate) async fn authorize(
     client: &reqwest::Client,
     config: &OauthConfig,
     events: &Events<'_>,
 ) -> Result<(Zeroizing<String>, Option<u64>), ApiError> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|_| ApiError::oauth("callback"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|_| ApiError::oauth("callback"))?
-        .port();
-    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+    let loopback = Loopback::bind().await?;
+    let redirect_uri = loopback.redirect_uri.clone();
     let state = random();
-    let verifier = Zeroizing::new(random());
-    let challenge = data_encoding::BASE64URL_NOPAD.encode(&Sha256::digest(verifier.as_bytes()));
+    let (verifier, challenge) = pkce();
     let mut url = config
         .authorization_url
         .clone()
@@ -123,42 +186,7 @@ pub(crate) async fn authorize(
         })
         .await
         .map_err(|_| ApiError::network("cancelled"))?;
-    let (tx, mut rx) = mpsc::channel(1);
-    let used = Arc::new(Mutex::new(false));
-    let accept = async {
-        loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                // fd 고갈 같은 accept 오류가 바쁜 루프가 되지 않게 잠깐 쉰다(전체 대기는 WAIT가 끊는다).
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                continue;
-            };
-            let (state, used, tx) = (state.clone(), used.clone(), tx.clone());
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(
-                    move |req: hyper::Request<hyper::body::Incoming>| {
-                        let response = handle(req.uri(), &state, &used, &tx);
-                        async move { Ok::<_, Infallible>(response) }
-                    },
-                );
-                let _ = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
-                    .await;
-            });
-        }
-    };
-    let callback = tokio::time::timeout(WAIT, async {
-        tokio::select! {
-            _ = accept => None,
-            callback = rx.recv() => callback,
-        }
-    })
-    .await
-    .map_err(|_| ApiError::oauth("authorize_timeout"))?;
-    drop(listener);
-    let code = match callback {
-        Some(Callback::Code(code)) => code,
-        _ => return Err(ApiError::oauth("authorize")),
-    };
+    let code = loopback.code(&state).await?;
     let form = vec![
         ("grant_type", "authorization_code".to_string()),
         ("code", code.to_string()),

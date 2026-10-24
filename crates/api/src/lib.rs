@@ -7,6 +7,7 @@ mod events;
 mod grpc;
 mod history;
 mod http;
+mod mcp;
 mod model;
 mod oauth_loopback;
 mod realtime;
@@ -28,6 +29,7 @@ pub use grpc::{
     CatalogSource, GrpcCall, GrpcCatalog, GrpcEvent, GrpcMethod, GrpcService, GrpcTarget,
 };
 pub use history::API_INDEX_VERSION;
+pub use mcp::{McpConnect, McpEvent, McpInput, McpList, McpSource, McpTransport};
 pub use model::*;
 pub use realtime::{Direction, MAX_SESSIONS, MessageKind, RealtimeEvent, SseOpen, WsInput, WsOpen};
 pub use service::{ApiOptions, ApiService, Clock};
@@ -38,6 +40,7 @@ method!(pub ApiWsOpen = "api.ws_open", stream, WsOpen => devbox_protocol::Stream
 method!(pub ApiSseOpen = "api.sse_open", stream, SseOpen => devbox_protocol::StreamOpened, ApiError);
 method!(pub ApiGrpcDescribe = "api.grpc_describe", query, GrpcTarget => GrpcCatalog, ApiError);
 method!(pub ApiGrpcCall = "api.grpc_call", stream, GrpcCall => devbox_protocol::StreamOpened, ApiError);
+method!(pub ApiMcpConnect = "api.mcp_connect", stream, McpConnect => devbox_protocol::StreamOpened, ApiError);
 method!(pub ApiHistory = "api.history", query, HistoryQuery => HistoryPage, ApiError);
 method!(pub ApiHistoryGet = "api.history_get", query, HistoryId => HistoryEntry, ApiError);
 method!(pub ApiCookies = "api.cookies", query, CookieJarRef => CookieList, ApiError);
@@ -55,6 +58,7 @@ pub fn export<X: Exporter>(x: &mut X) {
     x.method::<ApiSseOpen>();
     x.method::<ApiGrpcDescribe>();
     x.method::<ApiGrpcCall>();
+    x.method::<ApiMcpConnect>();
     x.method::<ApiHistory>();
     x.method::<ApiHistoryGet>();
     x.method::<ApiCookies>();

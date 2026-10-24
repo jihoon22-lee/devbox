@@ -3,6 +3,7 @@
 pub mod api;
 pub mod grpc;
 pub mod lines;
+pub mod mcp;
 pub mod realtime;
 pub mod tls;
 use bytes::Bytes;

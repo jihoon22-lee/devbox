@@ -31,6 +31,8 @@ pub struct Harness {
     pub secrets: Arc<devbox_secrets::SecretsService>,
     pub projects: Arc<devbox_projects::ProjectsService>,
     pub api: ApiService,
+    /// MCP 출처 파일 확인(S5-5)에 쓰는 같은 DB·프로젝트의 컬렉션 서비스.
+    pub collections: CollectionsService,
 }
 
 pub fn paths(dir: &std::path::Path) -> Paths {
@@ -66,7 +68,12 @@ impl Harness {
         unlocked: bool,
         options: ApiOptions,
     ) -> Self {
-        let migrations = [devbox_projects::MIGRATIONS, devbox_secrets::MIGRATIONS].concat();
+        let migrations = [
+            devbox_projects::MIGRATIONS,
+            devbox_secrets::MIGRATIONS,
+            devbox_api::MIGRATIONS,
+        ]
+        .concat();
         let db = Db::open(&paths.db_path, &paths.backups_dir, "test", &migrations).expect("db");
         let index = IndexDb::open(&paths.index_db_path).expect("index");
         let secrets = Arc::new(if unlocked {
@@ -95,6 +102,12 @@ impl Harness {
             options,
         )
         .expect("api service");
+        let collections = CollectionsService::new(
+            db.clone(),
+            Arc::new(devbox_core::Hub::new()),
+            paths.clone(),
+            projects.clone(),
+        );
         Self {
             dir,
             paths,
@@ -103,6 +116,7 @@ impl Harness {
             secrets,
             projects,
             api,
+            collections,
         }
     }
     pub async fn secret(&self, name: &str, value: &str) {

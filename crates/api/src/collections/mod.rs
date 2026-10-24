@@ -239,4 +239,38 @@ impl CollectionsService {
             rev: rev.to_string(),
         })
     }
+
+    /// MCP 연결 출처 확인(S5-5). 한 번 읽은 bytes로 digest와 이 PC의 검토를 확인하고 그 bytes를 돌려준다.
+    /// 호출자는 같은 bytes에서 실행할 명령이 요청과 같은지 본다(확인과 실행 사이에 파일을 다시 읽지 않는다).
+    pub(crate) async fn verified(
+        &self,
+        root: &CollectionRoot,
+        path: &str,
+        digest: &str,
+    ) -> R<Vec<u8>> {
+        let resolved = self.resolve(root).await?;
+        let (dir, file) = (resolved.root.clone(), path.to_owned());
+        let bytes = blocking(move || files::read(&dir, &file)).await?;
+        let current = files::digest(&bytes);
+        if current != digest {
+            return Err(ApiError::CollectionConflict {
+                digest: Some(current),
+            }
+            .into());
+        }
+        if let Some(key) = resolved.review_key
+            && reviews::needs_review(&bytes)
+        {
+            let file = path.to_owned();
+            let reviewed = self
+                .db
+                .read(move |tx| store::reviewed_digest(tx, &key, &file))
+                .await
+                .internal("read collection review")?;
+            if reviewed.as_deref() != Some(digest) {
+                return Err(ApiError::ReviewRequired.into());
+            }
+        }
+        Ok(bytes)
+    }
 }

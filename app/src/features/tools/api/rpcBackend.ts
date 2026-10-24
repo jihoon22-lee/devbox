@@ -1,7 +1,7 @@
 /** 실제 데몬 RPC로 만든 `ApiBackend`. 변경 RPC는 호출마다 새 clientRequestId를 쓴다. */
 import { type RpcClient, RpcError } from "../../../rpc/client";
 import type { ClientStream, StreamHandlers } from "../../../rpc/client-streams";
-import type { GrpcEvent, RealtimeEvent, WsInput } from "../../../rpc/gen/rpc";
+import type { GrpcEvent, McpEvent, McpInput, RealtimeEvent, WsInput } from "../../../rpc/gen/rpc";
 import type { ApiBackend, LineHandlers } from "./backend";
 import { SendFailure } from "./backend";
 import { SendCollector } from "./sendEvents";
@@ -42,7 +42,7 @@ function lineReader<E>(onEvent: (event: E) => void) {
 }
 
 /** 스트림 하나를 세션으로. 입력은 NDJSON 한 줄씩 쓴다. */
-function realtime<E extends RealtimeEvent | GrpcEvent, I = WsInput>(
+function realtime<E extends RealtimeEvent | GrpcEvent | McpEvent, I = WsInput>(
   open: (handlers: StreamHandlers) => Promise<ClientStream>,
   handlers: LineHandlers<E>,
 ): Promise<{ send(input: I): void; close(): void }> {
@@ -93,6 +93,8 @@ export function rpcBackend(client: RpcClient): ApiBackend {
     openSse: (params, handlers) => realtime((h) => client.openStream("api.sse_open", params, h), handlers),
     grpcDescribe: (params) => rpc(() => client.call("api.grpc_describe", params)),
     openGrpc: (params, handlers) => realtime((h) => client.openStream("api.grpc_call", params, h), handlers),
+    openMcp: (params, handlers) =>
+      realtime<McpEvent, McpInput>((h) => client.openStream("api.mcp_connect", params, h), handlers),
     send: (request, signal) =>
       new Promise((resolve, reject) => {
         const collector = new SendCollector();

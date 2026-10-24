@@ -13,6 +13,9 @@ import type {
   GrpcEvent,
   GrpcTarget,
   HistoryPage,
+  McpConnect,
+  McpEvent,
+  McpInput,
   Pair,
   RealtimeEvent,
   RequestOrigin,
@@ -68,6 +71,8 @@ export interface ApiBackend {
   grpcDescribe(params: GrpcTarget): Promise<GrpcCatalog>;
   /** gRPC 호출 하나. `close`는 호출 스트림을 닫는다(데몬이 호출을 취소). */
   openGrpc(params: GrpcCall, handlers: LineHandlers<GrpcEvent>): Promise<{ close(): void }>;
+  /** MCP 연결. stdio는 데몬이 출처 파일의 검토·명령 일치를 다시 확인한다. */
+  openMcp(params: McpConnect, handlers: LineHandlers<McpEvent>): Promise<McpSession>;
 }
 
 /** 스트림 하나의 NDJSON 이벤트 받기. */
@@ -75,6 +80,11 @@ export interface LineHandlers<E> {
   onEvent(event: E): void;
   /** 데몬이 스트림을 끝냈거나(FIN) 화면이 닫음. */
   onEnd(): void;
+}
+
+export interface McpSession {
+  send(input: McpInput): void;
+  close(): void;
 }
 
 /** WebSocket·SSE 세션 화면 쪽. `close`는 스트림을 닫는다(데몬이 연결을 끊고 다시 연결하지 않음). */

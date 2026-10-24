@@ -49,6 +49,9 @@ export function ToolsList({
           <Button size="sm" variant="ghost" onClick={() => navigate({ view: "api", tool: "grpc" })}>
             gRPC
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => navigate({ view: "api", tool: "mcp" })}>
+            MCP
+          </Button>
         </div>
         <h3 className={s.muted}>개인</h3>
         <CollectionTree root={personal} label="개인 컬렉션" />

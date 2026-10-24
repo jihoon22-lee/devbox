@@ -46,8 +46,27 @@ impl ParseError {
     }
 }
 
+/// 줄·필드 값·이벤트 data 상한. 기본은 실시간 SSE 값이고 MCP는 메시지 상한(4MiB)을 쓴다.
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    line: usize,
+    value: usize,
+    data: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            line: MAX_LINE_BYTES,
+            value: MAX_FIELD_BYTES,
+            data: MAX_EVENT_DATA_BYTES,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct SseParser {
+    limits: Limits,
     pending_utf8: Vec<u8>,
     line: String,
     pending_cr: bool,
@@ -66,6 +85,18 @@ impl SseParser {
         Self {
             last_event_id: last_event_id.unwrap_or_default().to_owned(),
             retry_ms,
+            ..Self::default()
+        }
+    }
+
+    /// 한 줄·한 이벤트 data를 `max` 바이트까지 받는다(필드 이름·event·id 상한은 그대로).
+    pub(crate) fn with_limit(max: usize) -> Self {
+        Self {
+            limits: Limits {
+                line: max.saturating_add(16),
+                value: max,
+                data: max,
+            },
             ..Self::default()
         }
     }
@@ -153,7 +184,7 @@ impl SseParser {
                 '\n' => self.finish_line()?,
                 _ => {
                     self.line.push(character);
-                    if self.line.len() > MAX_LINE_BYTES {
+                    if self.line.len() > self.limits.line {
                         return Err(ParseError::LineTooLong);
                     }
                 }
@@ -186,7 +217,7 @@ impl SseParser {
         if let Some(rest) = value.strip_prefix(' ') {
             value = rest;
         }
-        if value.len() > MAX_FIELD_BYTES {
+        if value.len() > self.limits.value {
             return Err(ParseError::FieldTooLong);
         }
         match field {
@@ -207,7 +238,7 @@ impl SseParser {
                     .checked_add(value.len())
                     .and_then(|length| length.checked_add(1))
                     .ok_or(ParseError::DataTooLong)?;
-                if next > MAX_EVENT_DATA_BYTES {
+                if next > self.limits.data {
                     return Err(ParseError::DataTooLong);
                 }
                 self.data.push_str(value);

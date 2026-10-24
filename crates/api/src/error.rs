@@ -26,6 +26,8 @@ devbox_protocol::domain_error! {
         CollectionNotFound = "api.collection_not_found",
         ProjectNotFound = "api.project_not_found",
         Grpc { reason: String } = "api.grpc",
+        ReviewRequired = "api.review_required",
+        Mcp { reason: String } = "api.mcp",
     }
 }
 
@@ -63,6 +65,11 @@ impl ApiError {
     }
     pub(crate) fn grpc(reason: &str) -> Self {
         Self::Grpc {
+            reason: reason.into(),
+        }
+    }
+    pub(crate) fn mcp(reason: &str) -> Self {
+        Self::Mcp {
             reason: reason.into(),
         }
     }

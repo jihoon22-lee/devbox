@@ -364,6 +364,11 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "gRPC 서비스를 불러오거나 호출하지 못했습니다.",
     action: "대상·메서드·요청 JSON·proto 파일을 확인해 주세요.",
   },
+  "api.review_required": {
+    title: "이 PC에서 검토하지 않은 프로젝트 파일입니다.",
+    action: "내용과 명령을 확인한 뒤 [검토하고 사용]을 눌러 주세요.",
+  },
+  "api.mcp": { title: "MCP 서버와 연결하지 못했습니다.", action: "명령·주소와 서버 응답을 확인해 주세요." },
 };
 export function messageFor(code: ErrorCode, detail?: unknown): Message {
   if (code === "connection_lost")

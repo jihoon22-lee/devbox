@@ -17,6 +17,9 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<devbox_api::ApiGrpcCall, _, _>(|s, ctx, p| async move {
             s.api.grpc_call(ctx, p).await
         })
+        .register::<devbox_api::ApiMcpConnect, _, _>(|s, ctx, p| async move {
+            s.api.mcp_connect(ctx, p, &s.api_collections).await
+        })
         .register::<devbox_api::ApiHistory, _, _>(|s, _, p| async move { s.api.history(p).await })
         .register::<devbox_api::ApiHistoryGet, _, _>(
             |s, _, p| async move { s.api.history_get(p).await },

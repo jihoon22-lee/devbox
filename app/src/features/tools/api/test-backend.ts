@@ -8,6 +8,9 @@ import type {
   GrpcEvent,
   GrpcTarget,
   HistoryPage,
+  McpConnect,
+  McpEvent,
+  McpInput,
   RealtimeEvent,
   SendRequest,
   SseOpen,
@@ -52,7 +55,7 @@ export class FakeRealtime {
   }
 }
 
-/** 가짜 gRPC 호출: 시험이 이벤트를 넣고 화면이 보낸 입력·닫기를 본다. */
+/** 가짜 gRPC 호출·MCP 연결: 시험이 이벤트를 넣고 화면이 보낸 입력·닫기를 본다. */
 export class FakeStream<E, P, I = never> {
   sent: I[] = [];
   closed = false;
@@ -161,5 +164,21 @@ export class FakeBackend implements ApiBackend {
     const call = new FakeStream<GrpcEvent, GrpcCall>(params, handlers);
     this.grpcCalls.push(call);
     return { close: () => call.close() };
+  });
+  mcp: FakeStream<McpEvent, McpConnect, McpInput>[] = [];
+  /** 데몬과 같다: 프로젝트 파일 출처는 그 digest가 지금 파일이고 이 PC에서 검토했을 때만 연다. */
+  openMcp = vi.fn(async (params: McpConnect, handlers: LineHandlers<McpEvent>) => {
+    if (this.rejectOpen) throw this.rejectOpen;
+    const source = params.source;
+    if (source.kind === "file") {
+      const current = this.files.get(key(source.root, source.path));
+      if (!current || current.digest !== source.digest)
+        throw new SendFailure("api.collection_conflict", { digest: current?.digest ?? null });
+      if (source.root.kind === "project" && !this.reviewed.has(`${key(source.root, source.path)}@${source.digest}`))
+        throw new SendFailure("api.review_required");
+    }
+    const session = new FakeStream<McpEvent, McpConnect, McpInput>(params, handlers);
+    this.mcp.push(session);
+    return { send: (input: McpInput) => session.sent.push(input), close: () => session.close() };
   });
 }

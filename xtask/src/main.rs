@@ -25,6 +25,8 @@ fn main() -> Result<()> {
     ts_rs::TypeVisitor::visit::<devbox_api::RealtimeEvent>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_api::WsInput>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_api::GrpcEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::McpEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::McpInput>(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");
     update_file(&path, &out, check)?;

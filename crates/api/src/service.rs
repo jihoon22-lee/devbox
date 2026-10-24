@@ -116,8 +116,8 @@ pub(crate) struct Inner {
 pub struct ApiService {
     db: Db,
     secrets: Arc<devbox_secrets::SecretsService>,
-    /// S5-3 프로젝트 컬렉션이 쓴다.
-    _projects: Arc<devbox_projects::ProjectsService>,
+    /// MCP stdio `cwd`가 등록 프로젝트 안인지 확인한다(S5-5).
+    pub(crate) projects: Arc<devbox_projects::ProjectsService>,
     pub(crate) inner: Arc<Inner>,
 }
 
@@ -156,7 +156,7 @@ impl ApiService {
         let service = Self {
             db,
             secrets,
-            _projects: projects,
+            projects,
             inner: Arc::new(Inner {
                 history,
                 jars: Jars::new(paths.data_dir.join("api-cookies")),
