@@ -189,3 +189,42 @@
   border: 2px dashed var(--accent);
   background: var(--selection);
 }
+
+.lspStatus {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.lspStatus p {
+  margin: 6px 0;
+}
+.lspStatus code {
+  display: block;
+  white-space: pre-wrap;
+}
+.installTerminal {
+  height: 260px;
+  min-width: 0;
+}
+
+.codePane {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.withPreview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.sourcePreview {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+}
+.svgPreview {
+  padding: 16px;
+}
+.svgPreview img {
+  max-width: 100%;
+  height: auto;
+}

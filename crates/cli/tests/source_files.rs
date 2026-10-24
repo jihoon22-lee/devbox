@@ -249,3 +249,44 @@ async fn external_editor_rpc_uses_owned_launcher_literal_arguments_and_reports_f
         );
     }
 }
+
+#[tokio::test]
+async fn source_preview_rpc_uses_dirty_body_project_scope_and_shared_renderer() {
+    use devbox_projects::{FilesPreview, PreviewFile, SourcePreview};
+    let d = TestDaemon::start();
+    let client = d.client().await;
+    let project = d.home.path().join("preview-project");
+    std::fs::create_dir(&project).expect("owned project");
+    std::fs::write(project.join("readme.md"), "disk stays").expect("fixture");
+    std::fs::write(project.join("image.png"), b"\x89PNG\r\n\x1a\nfixture").expect("owned image");
+    let id = d
+        .add_project(&client, project.to_str().expect("utf8"))
+        .await;
+    let key = DocKey {
+        root: format!("project:{id}"),
+        path: "readme.md".into(),
+    };
+    let result = bounded(client.call::<FilesPreview>(&PreviewFile { key: key.clone(), text: Some("# Dirty\n![local](image.png) ![remote](https://fixture.invalid/leak)\n<script>BAD()</script>".into()) })).await.expect("preview route");
+    let SourcePreview::Markdown { rendered } = result else {
+        panic!("markdown")
+    };
+    assert!(rendered.html.contains("Dirty"));
+    assert!(rendered.html.contains("data:image/png;base64,"));
+    assert!(rendered.html.contains("remote-blocked"));
+    assert!(!rendered.html.contains("<script>"));
+    assert_eq!(
+        std::fs::read_to_string(project.join("readme.md")).unwrap(),
+        "disk stays"
+    );
+    assert!(
+        bounded(client.call::<FilesPreview>(&PreviewFile {
+            key: DocKey {
+                root: key.root,
+                path: "../outside.md".into()
+            },
+            text: Some("dirty".into())
+        }))
+        .await
+        .is_err()
+    );
+}

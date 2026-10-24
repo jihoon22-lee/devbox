@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3 구현·직접 검증·별도 재검토 APPROVE, S4-4–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE, S4-5–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -116,17 +116,24 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - 수정: source CodeEditor, 필요 EditorHost extension slot, `crates/projects/src/files.rs` 및 새 `preview.rs`; CLI source 등록·생성. S3 Preview/renderer는 공개 기능을 재사용하며 별도 Markdown parser를 추가하지 않는다.
 
 **계약·순서**
-1. [ ] 설치된 `@codemirror/lsp-client` 타입에 맞춰 Transport를 구현한다. `client.openStream("lsp.open",params,handlers)`의 bytes를 메시지 경계로 복원하고 send 실패는 throw한다. `subscribe/unsubscribe` handler 집합·close·재연결 generation을 시험한다. renderer stream 포맷은 S4-3과 동일한 길이/메시지 단위 계약으로 고정하며 stream chunk 하나=JSON 하나라고 가정하지 않는다.
-2. [ ] disconnect→새 연결→initialize→현재 lease 문서 didOpen을 다시 보내는 실패 시험을 먼저 둔다. 오래된 응답은 현재 editor에 적용하지 않는다. document save ACK의 seq/text에 대해 didSave를 정확히 보내고 실패 저장에는 보내지 않는다.
-3. [ ] F12·Shift+Alt+F·F2·완성·hover·diagnostic을 실제 EditorState에 붙인다. LSP workspace edit는 열린 문서를 `useDocuments.replace`로 바꾸고 수동 저장 정책·undo를 지킨다. 다른 파일은 먼저 open/claim 후 적용; lease 없음·외부 rev 변경·지원하지 않는 resource operation은 명시 거절한다. 일부만 조용히 적용하지 않는다. `😀a`의 UTF-16 위치 시험을 둔다.
-4. [ ] `LspStatus`에 상태·메모리·inotify 안내·[설치]/[다시 시작]을 연결하고 설치 결과 TerminalView/터미널 탭을 연다. 설치 실행은 표시한 서버의 명령과 결속한다.
+1. [x] 설치된 `@codemirror/lsp-client` 타입에 맞춰 Transport를 구현한다. `client.openStream("lsp.open",params,handlers)`의 bytes를 메시지 경계로 복원하고 send 실패는 throw한다. `subscribe/unsubscribe` handler 집합·close·재연결 generation을 시험한다. renderer stream 포맷은 S4-3과 동일한 길이/메시지 단위 계약으로 고정하며 stream chunk 하나=JSON 하나라고 가정하지 않는다.
+2. [x] disconnect→새 연결→initialize→현재 lease 문서 didOpen을 다시 보내는 실패 시험을 먼저 둔다. 오래된 응답은 현재 editor에 적용하지 않는다. document save ACK의 seq/text에 대해 didSave를 정확히 보내고 실패 저장에는 보내지 않는다.
+3. [x] F12·Shift+Alt+F·F2·완성·hover·diagnostic을 실제 EditorState에 붙인다. LSP workspace edit는 열린 문서를 `useDocuments.replace`로 바꾸고 수동 저장 정책·undo를 지킨다. 다른 파일은 먼저 open/claim 후 적용; lease 없음·외부 rev 변경·지원하지 않는 resource operation은 명시 거절한다. 일부만 조용히 적용하지 않는다. `😀a`의 UTF-16 위치 시험을 둔다.
+4. [x] `LspStatus`에 상태·메모리·inotify 안내·[설치]/[다시 시작]을 연결하고 설치 결과 TerminalView/터미널 탭을 연다. 설치 실행은 표시한 서버의 명령과 결속한다.
    - **LSP HTML sink는 파일 미리보기와 별도다.** 위 공식 `client.ts`의 `sanitizeHTML`은 선택사항(L165–171)이므로 `LSPClient` 생성 때 반드시 지정한다. hover·completion documentation·signature help의 Markdown→HTML 결과에 기존 `features/notes/safeHtml.ts`의 allowlist 정책을 재사용하는 LSP adapter(`editor/lspContent.ts`)를 적용한다. script/event handler·iframe/object·style 실행 경로를 제거하고 이미지/외부 자원 로딩을 막는다. 링크는 http/https만 남기며 javascript/data/file/command URI를 거절한다. 허용 링크도 WebView 기본 탐색 대신 명시 클릭에서 기존 `openExternal`로 보낸다. 설치 버전의 각 sink가 callback을 통과하는지 확인하고 우회 sink는 같은 살균 wrapper 또는 plain text로 표시한다.
    - 공식 `client.ts` 기본 `window/logMessage` 처리(L136–140)는 원문을 console에 쓰므로 `notificationHandlers`에서 해당 알림을 소비하고 기본 handler에 넘기지 않는다. raw protocol·hover/완성/signature 본문·서버 로그 메시지를 console/tracing에 기록하지 않는다. 필요한 진단은 서버 ID·세션 generation·오류 종류 등 본문 없는 metadata로 제한한다. `window/showMessage`도 원문 HTML을 실행하거나 로그에 복제하지 않고 텍스트로만 표시한다.
    - **별도 RED→GREEN:** fake LSP가 hover·completion documentation·signature help 각각에 `<img src="https://fixture.invalid/leak" onerror="...">`, `<script>`, javascript/command 링크를 보내는 `lspContent.test.tsx`/adapter 시험을 먼저 실패시킨다. 실제 각 UI sink에서 실행 0·네트워크 요청 0·금지 탐색 0, 일반 강조/코드와 허용 링크 클릭 유지 assertion 후 sanitizer/링크 처리를 구현한다. `window/logMessage`의 고유 본문 sentinel을 보내 console spy와 daemon 로그 fixture에 해당 값이 없음을 검증한다. files.preview 시험의 PASS로 이 검사를 대신하지 않는다.
 
-5. [ ] source 미리보기는 dirty buffer를 반영한다. `RenderNote {path:Option<String>,text:Option<String>}`의 body 전달 모드는 이미 있으나 path는 vault 기준이다. 프로젝트 상대 이미지가 vault로 해석되지 않도록 **새 `files.preview {key,text?}`**에서 WriteScope 검증 후 `render_bounded`에 프로젝트 이미지 resolver를 주입한다. 현재 `features/notes/Preview.tsx`는 notes.render 호출과 렌더를 함께 소유한다. 같은 feature 안에 `RenderedPreview.tsx`를 추출해 `RenderedNote {html,mermaid}`·link callback을 받게 하고 노트/source 양쪽이 쓰며 기존 sanitizer·Mermaid 정책을 유지한다. SVG는 살균된 bytes의 blob `<img>`로만 표시하고 URL을 정리한다.
-6. [ ] 실패 시험: 악성 SVG script/event handler·Markdown javascript/원격 이미지·Mermaid 외부 참조 차단, 프로젝트 외부 이미지 거절, dirty 미리보기 갱신과 late response 무시. 기존 notes preview·safeSvg·mermaidNetwork도 직접 영향 범위 실행한다.
-7. [ ] 좁은 source LSP/preview 및 lspContent Vitest(세 HTML sink·raw log 억제 포함), projects preview·CLI RPC 시험, 생성/영향 typecheck. 가짜 LSP 진단→밑줄+문제 패널 E2E는 S4-9에 실행한다. 별도 검토 후 Biome → `feat(source): connect LSP features and safe previews`.
+5. [x] source 미리보기는 dirty buffer를 반영한다. `RenderNote {path:Option<String>,text:Option<String>}`의 body 전달 모드는 이미 있으나 path는 vault 기준이다. 프로젝트 상대 이미지가 vault로 해석되지 않도록 **새 `files.preview {key,text?}`**에서 WriteScope 검증 후 `render_bounded`에 프로젝트 이미지 resolver를 주입한다. 현재 `features/notes/Preview.tsx`는 notes.render 호출과 렌더를 함께 소유한다. 같은 feature 안에 `RenderedPreview.tsx`를 추출해 `RenderedNote {html,mermaid}`·link callback을 받게 하고 노트/source 양쪽이 쓰며 기존 sanitizer·Mermaid 정책을 유지한다. SVG는 살균된 bytes의 blob `<img>`로만 표시하고 URL을 정리한다.
+6. [x] 실패 시험: 악성 SVG script/event handler·Markdown javascript/원격 이미지·Mermaid 외부 참조 차단, 프로젝트 외부 이미지 거절, dirty 미리보기 갱신과 late response 무시. 기존 notes preview·safeSvg·mermaidNetwork도 직접 영향 범위 실행한다.
+7. [x] 좁은 source LSP/preview 및 lspContent Vitest(세 HTML sink·raw log 억제 포함), projects preview·CLI RPC 시험, 생성/영향 typecheck. 가짜 LSP 진단→밑줄+문제 패널 E2E는 S4-9에 실행한다. 별도 검토 후 Biome → `feat(source): connect LSP features and safe previews`.
+
+**구현 계약 보정(2026-10-25)**
+- 실제 설치 버전은 lsp-client 6.3.0이며 renderer wire는 S4-3의 RelayMessage JSON Lines다. 같은 turn의 연속 sync도 notification 호출 순간 직렬화한 version/text를 보내며 이전 세대 응답·ACK는 폐기한다. strict write와 save ACK additive 이벤트 예외는 PROGRESS §2에 사전 기록했다.
+- relay 독립 server counter는 ref별 동일 텍스트 snapshot에 결속해 renderer local version으로 번역한다. 정확 current version만 번역하며 무버전은 같은 snapshot ref에 원래 무버전으로 전달한다. rename 결과·workspace/applyEdit의 versioned documentChanges도 같은 규칙이며 매핑 불가한 전체 edit는 ContentModified/applied:false로 거절한다. 기존 Problems version/generation 필터는 그대로다.
+- files.preview 응답은 `{kind:"markdown",rendered:RenderedNote}` 또는 `{kind:"svg",text:string}`이다. SVG text는 inert 데이터이며 화면은 기존 safeSvg allowlist의 XML 입력 경로를 통과한 blob img만 사용한다. source Markdown에는 프로젝트 image resolver를 주입하며 notes parser/예산을 공유한다.
+- 독립 검토 R1: root/file URI 인코더는 서버의 ASCII alphanumeric + `/-._~` literal 정책에 맞춰 `'!()*`도 대문자 %XX로 인코딩한다. punctuation/Unicode root·파일 roundtrip과 실제 설치 client의 canonical 진단 및 workspace edit를 직접 검증했다. 기존 경로 거절은 유지한다.
+- R1 수정본 별도 재검토 APPROVE(지적0) 후 완료 커밋 단계다. 직접 검증/실패 원본/미실행 E2E와 최종 hash는 PROGRESS와 common-dir `s4-task4` artifact에 기록한다.
 
 ## 6. S4-5 — Git 전체 조회·변경
 

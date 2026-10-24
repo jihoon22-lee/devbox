@@ -1,16 +1,21 @@
 use crate::{LspError, adapters::DocumentGrant};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 #[derive(Default)]
 pub(crate) struct Documents {
     items: BTreeMap<String, Document>,
 }
 struct Document {
-    refs: BTreeSet<u32>,
+    refs: BTreeMap<u32, Reference>,
+    snapshot: i64,
     owner: Option<(u32, String)>,
     owner_version: i64,
     server_version: i64,
     text: String,
+}
+struct Reference {
+    version: i64,
+    snapshot: Option<i64>,
 }
 impl Documents {
     pub fn notification(
@@ -26,7 +31,7 @@ impl Documents {
         }
         if method == "textDocument/didSave" {
             let doc = self.items.get(&uri).ok_or(LspError::Protocol)?;
-            if !doc.refs.contains(&client)
+            if !doc.refs.contains_key(&client)
                 || grant
                     .lease_id
                     .as_ref()
@@ -81,13 +86,21 @@ impl Documents {
                 .and_then(Value::as_str)
                 .filter(|s| s.len() <= 64)
                 .ok_or(LspError::InvalidInput)?;
+            let supplied = text;
             let text = if grant.lease_id.is_some() {
                 text.to_owned()
             } else {
                 grant.disk_text
             };
             let doc = Document {
-                refs: BTreeSet::from([client]),
+                refs: BTreeMap::from([(
+                    client,
+                    Reference {
+                        version,
+                        snapshot: (supplied == text).then_some(1),
+                    },
+                )]),
+                snapshot: 1,
                 owner: grant.lease_id.map(|l| (client, l)),
                 owner_version: version,
                 server_version: 1,
@@ -101,13 +114,19 @@ impl Documents {
             return Err(LspError::LimitExceeded);
         }
         let doc = self.items.get_mut(&uri).ok_or(LspError::Protocol)?;
-        if method == "textDocument/didOpen" {
-            doc.refs.insert(client);
-        } else if !doc.refs.contains(&client) {
+        if method != "textDocument/didOpen" && !doc.refs.contains_key(&client) {
             return Err(LspError::Protocol);
         }
         let Some(lease) = grant.lease_id else {
             return if method == "textDocument/didOpen" {
+                doc.refs.insert(
+                    client,
+                    Reference {
+                        version,
+                        snapshot: (text == grant.disk_text && text == doc.text)
+                            .then_some(doc.snapshot),
+                    },
+                );
                 Ok(vec![])
             } else {
                 Err(LspError::LeaseLost)
@@ -123,7 +142,17 @@ impl Documents {
             .server_version
             .checked_add(1)
             .ok_or(LspError::LimitExceeded)?;
+        if doc.text != text {
+            doc.snapshot = doc.server_version;
+        }
         doc.text = text.to_owned();
+        doc.refs.insert(
+            client,
+            Reference {
+                version,
+                snapshot: Some(doc.snapshot),
+            },
+        );
         Ok(vec![json!({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":uri,"version":doc.server_version},"contentChanges":[{"text":doc.text}]}}).to_string()])
     }
     fn bytes(&self) -> usize {
@@ -152,6 +181,54 @@ impl Documents {
     }
     pub fn version_current(&self, uri: &str, version: Option<i64>) -> bool {
         version.is_none_or(|v| self.items.get(uri).is_none_or(|d| v >= d.server_version))
+    }
+    /// A server version names a different counter from each renderer's local version.
+    /// Only an exact current server version can be relabeled. Unversioned diagnostics
+    /// are the server's assertion about its current snapshot and remain unversioned.
+    pub fn renderer_version(
+        &self,
+        uri: &str,
+        client: u32,
+        server_version: Option<i64>,
+    ) -> Option<i64> {
+        let doc = self.items.get(uri)?;
+        if server_version.is_some_and(|version| version != doc.server_version) {
+            return None;
+        }
+        let reference = doc.refs.get(&client)?;
+        (reference.snapshot == Some(doc.snapshot)).then_some(reference.version)
+    }
+    /// Translate only the version fields of an LSP WorkspaceEdit, never arbitrary JSON.
+    pub fn workspace_versions(&self, client: u32, edit: &mut Value) -> bool {
+        let Some(changes) = edit.get_mut("documentChanges") else {
+            return true;
+        };
+        let Some(changes) = changes.as_array_mut() else {
+            return false;
+        };
+        let mut versions = Vec::new();
+        for (index, change) in changes.iter().enumerate() {
+            let Some(document) = change.get("textDocument") else {
+                continue;
+            };
+            let Some(version) = document.get("version").filter(|v| !v.is_null()) else {
+                continue;
+            };
+            let (Some(uri), Some(version)) = (
+                document.get("uri").and_then(Value::as_str),
+                version.as_i64(),
+            ) else {
+                return false;
+            };
+            let Some(local) = self.renderer_version(uri, client, Some(version)) else {
+                return false;
+            };
+            versions.push((index, local));
+        }
+        for (index, version) in versions {
+            changes[index]["textDocument"]["version"] = version.into();
+        }
+        true
     }
     pub fn owner(&self, uri: &str) -> Option<u32> {
         self.items.get(uri)?.owner.as_ref().map(|(id, _)| *id)

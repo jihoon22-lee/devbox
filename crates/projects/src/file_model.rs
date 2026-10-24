@@ -65,3 +65,23 @@ pub struct SourceEditorOpened {
     pub opened: bool,
     pub path: String,
 }
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct PreviewFile {
+    pub key: DocKey,
+    #[serde(default)]
+    #[ts(optional)]
+    pub text: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SourcePreview {
+    Markdown {
+        rendered: devbox_notes::RenderedNote,
+    },
+    // Inert source data: the renderer must sanitize and display only through a blob img.
+    Svg {
+        text: String,
+    },
+}

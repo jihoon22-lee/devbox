@@ -367,6 +367,7 @@ export type PortInfo = { port: number, proto: string, addr: string, pid: number 
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type Pressure = { some: PressureLine | null, full: PressureLine | null, };
 export type PressureLine = { avg10: number, avg60: number, avg300: number, totalUs: number, };
+export type PreviewFile = { key: DocKey, text?: string, };
 export type PrivacyRules = { 
 /**
  * Exact process names (case-insensitive). A match drops the session.
@@ -591,6 +592,7 @@ export type SetSecret = { name: string, value: string, };
 export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
 export type SourceEditor = "code" | "cursor" | "zed";
 export type SourceEditorOpened = { opened: boolean, path: string, };
+export type SourcePreview = { "kind": "markdown", rendered: RenderedNote, } | { "kind": "svg", text: string, };
 export type SseOpen = { 
 /**
  * `http://`·`https://` 절대 URL.
@@ -752,6 +754,7 @@ export interface Methods {
   "files.create": { kind: "mutation"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
   "files.delete": { kind: "mutation"; confirm: "always"; params: DeleteSourceFile; result: Done; error: FilesError };
   "files.external_editor": { kind: "mutation"; confirm: "none"; params: OpenSourceEditor; result: SourceEditorOpened; error: FilesError };
+  "files.preview": { kind: "query"; confirm: "none"; params: PreviewFile; result: SourcePreview; error: FilesError };
   "files.stat": { kind: "query"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
   "files.tree": { kind: "query"; confirm: "none"; params: FileTreeQuery; result: FileTree; error: FilesError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
@@ -930,6 +933,7 @@ export const METHOD_INFO = {
   "files.create": { kind: "mutation", confirm: "none" },
   "files.delete": { kind: "mutation", confirm: "always" },
   "files.external_editor": { kind: "mutation", confirm: "none" },
+  "files.preview": { kind: "query", confirm: "none" },
   "files.stat": { kind: "query", confirm: "none" },
   "files.tree": { kind: "query", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },

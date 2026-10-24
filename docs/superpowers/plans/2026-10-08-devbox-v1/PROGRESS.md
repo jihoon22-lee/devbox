@@ -13,17 +13,20 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE이며 S4-4는 미착수 |
+| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 구현·직접 검증 후 별도 재검토 APPROVE |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, S4-4–9는 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 구현·직접 검증 완료·별도 재검토 APPROVE, S4-5–9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 최종 제품 `b18bc740`, Rust target `~/.cache/targets/devbox-s5`. **구현·리뷰 수정·필수 CI3/E2E·영향 설치 수용1·2 완료, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 머지 완료**. 정상 자동 리뷰3회 및 상한 예외4367201426 수정·독립 승인 완료, 4367201424는 §8 이월. 현재 소스 설치1·2 PASS, 429 소스3·4 PASS는 과거 근거, 5·6 NOT_RUN 유지. 상세 §5 |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-25 · S4-3 0cb5a24f 완료 뒤 main a55907a2 통합 직접 검증 완료·별도 검토 APPROVE. S5 b18 검증 tree=main merge tree 및 final handoff 두 문서 hash를 확인했다. S5 현재 native1·2 PASS/과거429 native3·4 PASS/5·6 NOT_RUN과 원본 실패·정리 근거를 보존한다. 통합 독립 검토 APPROVE 뒤 merge commit 단계이며 S4-4·push/PR·새 native 실행 없음 |
+| 마지막 갱신 | 2026-10-25 · S4 main 통합 e56a76e8 완료 뒤 S4-4 구현·직접 검증 완료, 별도 재검토 APPROVE. S5 b18→a559 merge tree·handoff 및 native1·2 PASS/과거429 native3·4 PASS/5·6 NOT_RUN 근거는 보존. S4-4 commit/push/PR·E2E·새 Windows/호스트 native 작업 없음 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-25 | S4-4 실제 LSP 진단 연결의 S4-3 최소 보정: `crates/lsp/src/{relay_documents,relay}.rs`와 직접 회귀 | 부모 하네스 사전 승인 | renderer local version과 독립 server version을 ref별 동일 텍스트 snapshot에 결속해 번역. 후속 승인으로 Pending rename 응답 종류에 결속된 WorkspaceEdit와 workspace/applyEdit의 versioned documentChanges만 같은 helper로 번역하며 실패는 요청 단위 ContentModified/applied:false(공유 generation 유지). stale/future server version은 renderer에 재표기하지 않음. 기존 Problems generation/version 필터와 로그본문 비기록 유지, core/protocol 동결 보존 |
+| 2026-10-25 | S4-4 ACK 경계: `features/documents/{effects,store}.ts`에 성공 ACK `{id,leaseId,seq,text}`의 additive subscribeSaved 이벤트 추가 | 부모 하네스 사전 승인 | reducer/wire/저장정책 유지. 실제 성공 응답의 seq/text만 전달하며 listener 예외와 이전 연결의 late ACK를 격리. source의 didSave는 현재 문서/lease/generation과 결속 |
+| 2026-10-25 | S4-4 최소 공유 예외: `app/src/rpc/client-streams.ts`의 선택적 strict write에서만 closed/send 실패를 body 없는 Error로 전달하고 기존 RPC 시험에 회귀 추가 | 승인된 07a §5 Transport 실패 계약, 부모 하네스 사전 통지 | wire/기존 호출 동작은 유지. optional `{throwOnFailure:true}`인 LSP만 실패를 throw하며 terminal은 기존 동작 유지. source 미리보기 등록·생성 및 승인된 lsp-client 의존/lock 추가 외 동결 영역 보존 |
 | 2026-10-24 | S4-3 등록 경계: workspace/CLI/xtask Cargo 의존·daemon routes/state/mod·xtask export·messages/generated RPC에 lsp 등록만 추가. `crates/documents/src/{code_authority.rs,lib.rs}`의 새 내부 authority helper/등록은 canonical code DocKey와 live lease를 검증 | 승인된 07a §2/4, 부모 하네스에 구현 전 통지 | core/protocol/ui/scripts/.github 변경 불필요. documents는 동결 대상이 아니며 lease 소유 검증 helper와 회귀만 추가. S5 등록/상태 보존, main 통합은 root 조율 |
 | 2026-10-24 | S3 PR #644 상한 이후 실제 데이터 손실 예외: `app/src-tauri/src/{lib.rs,platform/intents.rs,platform/mod.rs,core/mod.rs}`·`app/src/App.tsx`의 기존 종료/루트 조립에 최소 coordinator/listener를 연결 | CONVENTIONS §8 차단 기준·부모 하네스 승인, 별도 재현4366874346 `BLOCKING_CONFIRMED` | main·note popout의 기존 `prepareWindowClose`가 완료되기 전에 RPC transport를 취소하지 않도록 순서만 조정. main close-to-tray 유지, notes 없는 startup도 준비 ACK 가능. S5 제품·공유 RPC/프로토콜·의존성 변경 없음 |
 | 2026-10-24 | S3 PR #644 2회차 공유 파일 예외: `crates/cli/src/daemon/mod.rs`의 기존 serve 후 activity flush 두 줄을 serve 결과 보관 → 명시적 activity shutdown → 원래 serve 오류 반환 순서로 보정 | 사용자 승인 범위 내 에이전트 · 독립 재현 실제 데이터 손실, 부모 하네스 명시 승인 | 등록 확장 없이 기존 종료 조립만 수정. 열린 활동 session이 정상 재시작에도 두 시간 분량 소실됨을 실제 SQLite fixture에서 확인. 수정 전 예외 기록, S5에 경계 통지 |
@@ -65,7 +68,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-3 지적2 수정·별도 재검토 APPROVE | 2026-10-25 | | S4-4–9 미착수 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-4 구현·직접 검증·별도 재검토 APPROVE | 2026-10-25 | | S4-5–9 미착수 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -123,7 +126,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
 | S3 | 마무리 | Task12 → S3 PR | `v1/s3-knowledge` | 머지 | 2026-10-24 | 2026-10-24 | #644 → e91c9b22. e56 필수CI3/E2E PASS·선택native9/합성daemon1 assertion PASS, 원래4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. 정리/prod불변 PASS, 정상3회+확정손실예외1건 수정·최종감사승인 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
-| S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | S4-3 지적2 수정·별도 재검토 APPROVE | 2026-10-24 | | S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료. S4-4는 main 통합 검토·merge commit 뒤 |
+| S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | S4-4 구현·별도 재검토 APPROVE | 2026-10-24 | | S4-2 fa86bc8b·S4-3 0cb5a24f·통합 e56a76e8 완료. S4-4 R1 수정·직접 검증·별도 재검토 APPROVE, 완료 커밋 단계·push 없음 |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
@@ -139,6 +142,17 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S4-4 LSP 화면·프로젝트 미리보기 (2026-10-25 · R1 수정·별도 재검토 APPROVE)
+
+- 독립 검토 REQUEST_CHANGES의 단일 P2 R1만 수정했다. renderer encodeURIComponent가 literal로 남기던 `'!()*`를 root/file 공통 인코더에서 서버 `uri::file_uri`와 같은 대문자 %XX로 바꾼다. reviewer encoder4/incoming4 RED와 author root/파일 punctuation·Unicode/emoji·space/%/#·실제 설치 client 진단 밑줄 RED8을 보존했다. canonical URI의 실제 서버 workspace edit·manual-save 정책 및 outside-root/encoded separator/invalid UTF-8 거절까지 직접 workspace/session26 PASS이며 이전 무관159개를 재실행하지 않았다. 변경은 제품 인코더1곳·회귀2파일뿐이고 생성/Rust 소스는 동일하다. 수정본 type/Biome 및 pre-r1/새 freeze·review-delta-audit 근거는 s4-task4 artifact에 기록하며 별도 재검토 APPROVE다.
+- 기반은 통합 독립 APPROVE 뒤의 merge `e56a76e8eb52a82e5c257afc3a7b86c2d428586a`다. 설치된 `@codemirror/lsp-client` 6.3.0의 실제 `.d.ts`/공식 소스와 세 documentation sink를 확인했다. strict NDJSON/UTF-8 Transport는 fragmented/coalesced bytes·handler 집합·close·send 실패를 처리하며 새 연결마다 새 LSPClient와 현재 lease로 initialize→didOpen을 재생성한다. 기존 terminal write 동작은 유지하고 선택적 strict write만 body 없는 오류를 던진다(§2).
+- F12·Shift+Alt+F·F2·완성·hover·signature·진단을 실제 EditorHost에 연결했다. workspace edit는 모든 대상 open/claim·live lease renew·외부 disk rev·version/세대/로컬 snapshot을 먼저 검사한 뒤 `useDocuments.replace`로 한 번에 버퍼만 바꾸며 undo와 수동 저장을 유지한다. 다른 대상은 코드 탭으로 드러낸다. 성공 save ACK의 정확 seq/text 이벤트만 didSave에 쓰고 실패/lease 이동/closed/이전 세대 ACK는 보내지 않는다. 라이브러리의 지연 notification 때문에 A1→B2가 뒤섞이던 RED를 보존했고 notification 호출 순간 전체 text를 직렬화해 고쳤다.
+- 실제 연결에서 드러난 S4-3 counter 차이는 §2 사전 승인 후 보정했다. ref별 local version과 같은 텍스트의 causal snapshot ID만 보관해 current server version을 번역한다. stale/future/다른 snapshot은 renderer에 보내지 않으며 Problems의 기존 version/generation 필터는 유지한다. 무버전 진단은 서버의 현재 snapshot 주장으로 해석하고 같은 snapshot ref에만 무버전 그대로 전달한다. 같은 helper는 Pending에 rename 결과 종류가 결속된 WorkspaceEdit와 server workspace/applyEdit의 versioned documentChanges에만 적용한다. 한 대상이라도 매핑 불가하면 ContentModified/applied:false로 전체 거절하며 공유 actor는 유지한다. 세대 종료에는 lint만 비우고 active/cached editor undo를 보존한다.
+- LSP HTML은 `safeHtml` 기반 별도 adapter를 강제한다. 실제 hover/completion/signature sink의 악성 img/script/event/style/iframe·javascript/command 링크 3RED와 기본 logMessage console sentinel RED를 보존했다. 세 sink에서 금지 DOM/탐색/자원/실행이 없고 강조/code·명시 http(s) openExternal 클릭이 유지된다. logMessage는 소비하고 showMessage는 React 텍스트, request error는 body 없는 정적 메시지만 라이브러리에 전달한다. 상태·PID/RSS·소유 inotify 부분집계·표시한 고정 설치 명령/expectedCommand·반환 TerminalView와 다시 시작을 연결했다. 실제 언어 서버 설치는 하지 않았다.
+- 새 `files.preview {key,text?}`는 프로젝트 WriteScope·agent/internal 제외를 검사하고 notes의 `render_bounded`에 프로젝트 상대 이미지 resolver를 주입한다(새 Markdown parser 없음). dirty text 4MiB·출력 12MiB·이미지 2MiB/128개/inline 8MiB 상한, 외부/프로젝트 밖 이미지 거절. source SVG는 inert 데이터로 받고 XML 문법으로 기존 safeSvg allowlist를 통과한 bytes의 blob img만 만들며 URL을 갱신/해제한다. HTML parser가 foreignObject 뒤 정상 SVG shape까지 삼킨 실패를 XML 입력 모드로 고쳤다. notes의 RenderedPreview 추출로 notes/source가 sanitizer·Mermaid network 정책과 늦은 응답 보호를 공유한다.
+- 검증 원장은 common-dir `devbox-verification/s4-task4/`다. frontend-final 직접 13파일81, 이전 strict-stream/RPC/terminal59, relay-final10·process-final3·preview-rust-final3·preview-cli1·lsp-cli-log-final1·routes-final1로 고유159 PASS다. gen-ts/check·TypeScript·직접 rustfmt·Biome800 PASS이며 freeze hash는 summary에 기록한다. typecheck-final의 시험 LeaseLost key 누락과 biome-final의 후속 줄바꿈 실패도 그대로 보존하고 typecheck-clean-final/biome-clean-final로 해결했다. 실패 이름 `green-preview-ui`도 exit1 원본을 보존하며 SVG 후속 `green-preview-svg`와 전체 직접 `frontend-final`이 해결 근거다. `lsp-cli-final`의 sentinel 실패는 갱신되지 않은 canonical fake_lsp 실행파일로 인한 fixture 불일치이며 example만 재컴파일했다. 후속 lsp-cli-fixture-final EOF는 CLI 시험 helper가 함께 받은 log 알림+응답 두 줄 중 첫 줄만 보존하던 문제로, 응답 없는 log notification fixture로 분리해 lsp-cli-log-final PASS했다. 두 실패와 실행파일 provenance를 보존한다.
+- E2E fake LSP 진단→밑줄+Problems는 소유 fixture PATH만 사용하는 시험을 작성했으며 실행은 S4-9다. 별도 재검토 APPROVE(`independent-rereview.json`, 지적0) 뒤 완료 커밋 단계다. push/PR·전체 check/clippy/제품 build/E2E·실제 Windows/host 설치·S4-5 이상은 미실행이다. core/protocol/ui/scripts/.github와 S5 제품/상태 행을 보존했다.
 
 ### S4 최신 main 통합 (2026-10-25 · 직접 검증·별도 검토 APPROVE)
 

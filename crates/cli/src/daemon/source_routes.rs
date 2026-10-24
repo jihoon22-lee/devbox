@@ -4,6 +4,9 @@ use devbox_projects::{FilesCreate, FilesDelete, FilesService, FilesStat, FilesTr
 use devbox_protocol::Router;
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
     router
+        .register::<devbox_projects::FilesPreview, _, _>(|s, _, p| async move {
+            FilesService::new(s.documents.clone()).preview(p).await
+        })
         .register::<devbox_projects::FilesExternalEditor, _, _>(|s, _, p| async move {
             super::source_external::open(s, p).await
         })

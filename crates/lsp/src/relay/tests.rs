@@ -419,3 +419,6 @@ async fn review_cancelled_or_disconnected_late_reply_has_no_authority_side_effec
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }
+
+#[path = "version_tests.rs"]
+mod versions;

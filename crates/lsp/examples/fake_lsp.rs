@@ -49,6 +49,12 @@ fn main() {
                 );
                 continue;
             }
+            "test/log" => {
+                send(
+                    json!({"jsonrpc":"2.0","method":"window/logMessage","params":{"type":1,"message":"PRIVATE_LSP_LOG_SENTINEL"}}),
+                );
+                continue;
+            }
             "test/state" => json!({"opens":open,"pid":std::process::id()}),
             "test/large" => json!({"data":"x".repeat(300*1024)}),
             "test/crash" => std::process::exit(2),

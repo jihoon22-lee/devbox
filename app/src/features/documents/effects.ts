@@ -15,6 +15,13 @@ export const browserTimers: Timers = {
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
+export interface SavedDocument {
+  id: string;
+  leaseId: string;
+  seq: number;
+  text: string;
+}
+
 export interface EffectDeps {
   client: DocumentsClient;
   journal: OfflineJournal;
@@ -23,6 +30,7 @@ export interface EffectDeps {
   dispatch(id: string, event: DocEvent): void;
   isLoading(id: string): boolean;
   applyText(id: string, text: string): void;
+  saved?(ack: SavedDocument): void;
 }
 
 const codeOf = (error: unknown): ErrorCode => (error instanceof RpcError ? error.code : "internal");
@@ -133,6 +141,12 @@ export function createEffectRunner(deps: EffectDeps) {
             text: e.text,
           });
           dispatch(id, { type: "saveOk", rev });
+          // A subscriber cannot turn an acknowledged disk write into saveFailed.
+          try {
+            deps.saved?.({ id, leaseId: e.leaseId, seq: e.seq, text: e.text });
+          } catch {
+            // No protocol body or listener exception is logged.
+          }
         } catch (error) {
           const code = codeOf(error);
           const rev = code === "documents.conflict" ? revOf(error) : undefined;

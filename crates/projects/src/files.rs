@@ -10,12 +10,14 @@ use std::sync::Arc;
 type R<T> = Result<T, Fail<FilesError>>;
 const PAGE: usize = 256;
 const MAX_ENTRIES: usize = 20_000;
+method!(pub FilesPreview = "files.preview", query, PreviewFile => SourcePreview, FilesError);
 method!(pub FilesTree = "files.tree", query, FileTreeQuery => FileTree, FilesError);
 method!(pub FilesStat = "files.stat", query, FileKey => EntryInfo, FilesError);
 method!(pub FilesCreate = "files.create", mutation, FileKey => EntryInfo, FilesError);
 method!(pub FilesDelete = "files.delete", mutation(always), DeleteFile => Done, FilesError);
 method!(pub FilesExternalEditor = "files.external_editor", mutation, OpenSourceEditor => SourceEditorOpened, FilesError);
 pub fn export<X: Exporter>(x: &mut X) {
+    x.method::<FilesPreview>();
     x.method::<FilesExternalEditor>();
     x.method::<FilesTree>();
     x.method::<FilesStat>();
@@ -26,7 +28,7 @@ pub fn export<X: Exporter>(x: &mut X) {
 pub struct FilesService {
     documents: Arc<DocumentsService>,
 }
-fn failure(error: Fail<DocumentsError>) -> Fail<FilesError> {
+pub(crate) fn failure(error: Fail<DocumentsError>) -> Fail<FilesError> {
     match error {
         Fail::Domain(DocumentsError::NotFound) => FilesError::NotFound.into(),
         Fail::Domain(DocumentsError::Exists) => FilesError::Exists.into(),
@@ -41,7 +43,7 @@ impl FilesService {
     pub fn new(documents: Arc<DocumentsService>) -> Self {
         Self { documents }
     }
-    async fn scoped(&self, key: &DocKey) -> R<DocumentsService> {
+    pub(crate) async fn scoped(&self, key: &DocKey) -> R<DocumentsService> {
         if !key.root.starts_with("project:") || key.root.len() <= 8 || is_internal(&key.path) {
             return Err(FilesError::OutOfScope.into());
         }

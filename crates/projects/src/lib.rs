@@ -4,9 +4,10 @@ mod external_editor;
 mod file_model;
 pub use external_editor::{SourceEditor, editor_arguments};
 mod files;
+mod preview;
 pub use file_model::*;
 pub use files::{
-    FilesCreate, FilesDelete, FilesExternalEditor, FilesService, FilesStat, FilesTree,
+    FilesCreate, FilesDelete, FilesExternalEditor, FilesPreview, FilesService, FilesStat, FilesTree,
 };
 #[cfg(target_os = "linux")]
 mod clone_target;

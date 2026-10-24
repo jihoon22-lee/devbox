@@ -130,6 +130,13 @@ async fn lsp_rpc_relay_uses_document_authority_and_replaces_problem_diagnostics(
         std::fs::read_to_string(root.join(file)).expect("disk"),
         "fn main() {}\n"
     );
+    send(
+        &owner,
+        json!({"jsonrpc":"2.0","method":"test/log","params":{}}),
+        None,
+    )
+    .await;
+    assert_eq!(response(&owner).await["method"], "window/logMessage");
     bounded(a.call::<LspRestart>(&OpenLsp {
         project_id: id.clone(),
         language: Language::Rust,
@@ -155,4 +162,20 @@ async fn lsp_rpc_relay_uses_document_authority_and_replaces_problem_diagnostics(
     .expect("owned stop");
     let status = d.child.as_mut().expect("daemon").0.wait().expect("wait");
     assert_eq!(status.signal(), None);
+    let mut logs = vec![d.home.path().join("stderr.log")];
+    if let Ok(entries) = std::fs::read_dir(&d.paths.log_dir) {
+        logs.extend(
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file()),
+        );
+    }
+    for path in logs {
+        let text = std::fs::read_to_string(path).expect("owned daemon log");
+        assert!(
+            !text.contains("PRIVATE_LSP_LOG_SENTINEL"),
+            "raw LSP log body must never reach daemon logs"
+        );
+    }
 }

@@ -223,3 +223,92 @@ async fn files_changed_directory_rejects_a_stale_page_cursor() {
         Err(devbox_protocol::Fail::Domain(FilesError::StateChanged))
     ));
 }
+
+#[tokio::test]
+async fn source_preview_renders_dirty_markdown_with_project_images_and_no_disk_write() {
+    let fx = Fx::new();
+    std::fs::create_dir(fx.project.join("docs")).unwrap();
+    std::fs::write(fx.project.join("docs/readme.md"), "on disk").unwrap();
+    std::fs::write(fx.project.join("logo.png"), b"\x89PNG\r\n\x1a\nfixture").unwrap();
+    let rendered = fx.files.preview(PreviewFile { key: fx.key("docs/readme.md"), text: Some("# Dirty\n\n![local](../logo.png) ![remote](https://fixture.invalid/leak)\n<script>BAD</script>\n[bad](javascript:evil)\n```mermaid\ngraph TD; A-->B\n```".into()) }).await.unwrap();
+    let SourcePreview::Markdown { rendered } = rendered else {
+        panic!("markdown")
+    };
+    assert!(rendered.html.contains("Dirty"));
+    assert!(rendered.html.contains("data:image/png;base64,"));
+    assert!(rendered.html.contains("remote-blocked"));
+    assert!(!rendered.html.contains("<script>"));
+    assert!(!rendered.html.contains("javascript:"));
+    assert_eq!(rendered.mermaid, ["graph TD; A-->B\n"]);
+    assert_eq!(
+        std::fs::read_to_string(fx.project.join("docs/readme.md")).unwrap(),
+        "on disk"
+    );
+}
+
+#[tokio::test]
+async fn source_preview_rejects_outside_private_images_and_outside_source_even_with_dirty_text() {
+    let fx = Fx::new();
+    std::fs::write(fx.project.join("a.md"), "disk").unwrap();
+    std::fs::write(fx.outside.join("secret.png"), b"\x89PNG\r\n\x1a\nOUTSIDE").unwrap();
+    std::os::unix::fs::symlink(
+        fx.outside.join("secret.png"),
+        fx.project.join("outside.png"),
+    )
+    .unwrap();
+    let SourcePreview::Markdown { rendered } = fx
+        .files
+        .preview(PreviewFile {
+            key: fx.key("a.md"),
+            text: Some(
+                "![x](outside.png) ![x](../outside/secret.png) ![x](owned-agents/secret.png)"
+                    .into(),
+            ),
+        })
+        .await
+        .unwrap()
+    else {
+        panic!("markdown")
+    };
+    assert!(!rendered.html.contains("data:image"));
+    assert!(rendered.html.contains("outside-root"));
+    for path in ["../outside/a.md", "owned-agents/a.md", ".git/a.md"] {
+        assert!(
+            fx.files
+                .preview(PreviewFile {
+                    key: fx.key(path),
+                    text: Some("dirty".into())
+                })
+                .await
+                .is_err()
+        );
+    }
+}
+
+#[tokio::test]
+async fn source_preview_svg_is_data_only_and_input_is_bounded() {
+    let fx = Fx::new();
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>BAD</script></svg>";
+    std::fs::write(fx.project.join("a.svg"), svg).unwrap();
+    let SourcePreview::Svg { text } = fx
+        .files
+        .preview(PreviewFile {
+            key: fx.key("a.svg"),
+            text: None,
+        })
+        .await
+        .unwrap()
+    else {
+        panic!("svg data")
+    };
+    assert_eq!(text, svg);
+    assert!(
+        fx.files
+            .preview(PreviewFile {
+                key: fx.key("a.svg"),
+                text: Some("x".repeat(4 * 1024 * 1024 + 1))
+            })
+            .await
+            .is_err()
+    );
+}

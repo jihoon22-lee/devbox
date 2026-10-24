@@ -13,6 +13,7 @@ pub struct RelayOutput {
 struct Pending {
     client: u32,
     id: Value,
+    workspace_edit: bool,
 }
 pub struct Relay {
     root: String,
@@ -164,6 +165,7 @@ impl Relay {
                 Pending {
                     client,
                     id: original,
+                    workspace_edit: method == "textDocument/rename",
                 },
             );
             value["id"] = global.into();
@@ -185,7 +187,11 @@ impl Relay {
             ));
             return Ok(out);
         }
-        self.waiting.push(Pending { client, id });
+        self.waiting.push(Pending {
+            client,
+            id,
+            workspace_edit: false,
+        });
         if self.init_id.is_some() {
             return Ok(out);
         }
@@ -266,7 +272,14 @@ impl Relay {
             }
             crate::uri::normalize(&mut value, access, 0).await?;
             if let Some(pending) = self.requests.remove(&global) {
-                value["id"] = pending.id;
+                value["id"] = pending.id.clone();
+                let current = !pending.workspace_edit
+                    || value
+                        .get_mut("result")
+                        .is_none_or(|edit| self.documents.workspace_versions(pending.client, edit));
+                if !current {
+                    value = json!({"jsonrpc":"2.0","id":pending.id,"error":{"code":-32801,"message":"Document version changed"}});
+                }
                 out.clients.push((pending.client, value.to_string()));
             }
             // Late replies to cancelled/disconnected requests are deliberately ignored.
@@ -296,7 +309,20 @@ impl Relay {
             {
                 return Ok(out);
             }
+            for client in &self.initialized {
+                if let Some(version) =
+                    self.documents
+                        .renderer_version(&diagnostics.uri, *client, diagnostics.version)
+                {
+                    let mut message = value.clone();
+                    if diagnostics.version.is_some() {
+                        message["params"]["version"] = version.into();
+                    }
+                    out.clients.push((*client, message.to_string()));
+                }
+            }
             out.diagnostics.push(diagnostics);
+            return Ok(out);
         }
         if value.get("id").is_some() {
             let original = request_id(&value)?;
@@ -312,7 +338,20 @@ impl Relay {
             let preferred = value
                 .pointer("/params/edit/changes")
                 .and_then(Value::as_object)
-                .and_then(|changes| changes.keys().find_map(|uri| self.documents.owner(uri)));
+                .and_then(|changes| changes.keys().find_map(|uri| self.documents.owner(uri)))
+                .or_else(|| {
+                    value
+                        .pointer("/params/edit/documentChanges")
+                        .and_then(Value::as_array)
+                        .and_then(|changes| {
+                            changes.iter().find_map(|change| {
+                                change
+                                    .pointer("/textDocument/uri")
+                                    .and_then(Value::as_str)
+                                    .and_then(|uri| self.documents.owner(uri))
+                            })
+                        })
+                });
             let target = preferred
                 .or_else(|| self.initialized.first().copied())
                 .or_else(|| self.waiting.first().map(|p| p.client));
@@ -320,6 +359,14 @@ impl Relay {
                 out.server.push(json!({"jsonrpc":"2.0","id":original,"error":{"code":-32800,"message":"No active client"}}).to_string());
                 return Ok(out);
             };
+            if value.get("method").and_then(Value::as_str) == Some("workspace/applyEdit")
+                && value
+                    .pointer_mut("/params/edit")
+                    .is_some_and(|edit| !self.documents.workspace_versions(client, edit))
+            {
+                out.server.push(json!({"jsonrpc":"2.0","id":original,"result":{"applied":false,"failureReason":"Document version changed"}}).to_string());
+                return Ok(out);
+            }
             let next = self.id()?;
             let id = format!("devbox-server-{}-{next}", self.generation);
             self.server_requests.insert(
@@ -327,6 +374,7 @@ impl Relay {
                 Pending {
                     client,
                     id: original,
+                    workspace_edit: false,
                 },
             );
             value["id"] = id.into();

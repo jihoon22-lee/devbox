@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import type { RpcClient } from "../../rpc/client";
 import type { DocKey, DocPolicy } from "../../rpc/gen/rpc";
-import { browserTimers, createEffectRunner, type EffectRunner, movedKey, type Timers } from "./effects";
+import {
+  browserTimers,
+  createEffectRunner,
+  type EffectRunner,
+  movedKey,
+  type SavedDocument,
+  type Timers,
+} from "./effects";
 import { type CloseChoice, closedDoc, type Doc, type DocEvent, reduce } from "./machine";
 import { indexedDbJournal, keyId, type OfflineJournal } from "./offlineJournal";
 import { windowId } from "./windowId";
@@ -43,6 +50,8 @@ export interface DocumentsStore {
   take(key: DocKey): void;
   /** An editor that owns per-document `EditorState`s receives undoable text replacements here. */
   registerEditor(apply: (id: string, text: string) => void): () => void;
+  /** Actual save ACK, carrying the exact submitted sequence and text. */
+  subscribeSaved(listener: (ack: SavedDocument) => void): () => void;
   /** Resolves once no effect is running (tests and shutdown). */
   settled(): Promise<void>;
 }
@@ -57,6 +66,7 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
   let nextId = 1;
   let closeRequest: AbortController | undefined;
   let closedForWindow: { key: DocKey; policy: DocPolicy }[] = [];
+  const savedListeners = new Set<(ack: SavedDocument) => void>();
   const editors = new Set<(id: string, text: string) => void>();
 
   const dispatch = (id: string, event: DocEvent) => {
@@ -195,6 +205,16 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
         timers: deps.timers ?? browserTimers,
         dispatch,
         isLoading: (id) => get().docs[id]?.state === "Loading",
+        saved: (ack) => {
+          if (runner !== own) return;
+          for (const listener of savedListeners) {
+            try {
+              listener(ack);
+            } catch {
+              /* Isolate observers without logging document text. */
+            }
+          }
+        },
         applyText: (id, text) => {
           for (const apply of editors) apply(id, text);
         },
@@ -302,6 +322,12 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
       editors.add(apply);
       return () => {
         editors.delete(apply);
+      };
+    },
+    subscribeSaved(listener) {
+      savedListeners.add(listener);
+      return () => {
+        savedListeners.delete(listener);
       };
     },
     settled: async () => {
