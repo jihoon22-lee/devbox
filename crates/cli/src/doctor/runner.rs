@@ -239,7 +239,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("owned fixture");
         let auth = temp.path().join("auth.json");
         std::fs::write(&auth, "fixture-secret").expect("fixture write");
-        std::fs::set_permissions(&auth, std::fs::Permissions::from_mode(0))
+        std::fs::set_permissions(&auth, std::fs::Permissions::from_mode(0o0))
             .expect("fixture permissions");
         assert_eq!(run(file_exists(auth.clone())), Ok(true));
         let link = temp.path().join("config.toml");

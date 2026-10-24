@@ -189,6 +189,8 @@ async fn read_tools_return_projects_and_only_open_tasks_and_denied_send_has_no_e
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_api::MIGRATIONS,
+        devbox_webhooks::MIGRATIONS,
     ]
     .concat();
     let db = devbox_core::Db::open(

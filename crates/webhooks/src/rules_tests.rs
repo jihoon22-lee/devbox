@@ -1,5 +1,4 @@
 use crate::matcher::precedence_reason;
-use std::cmp::Ordering;
 
 use super::*;
 
@@ -66,11 +65,13 @@ fn path_matching_is_exact_or_prefix_only_for_a_trailing_star() {
 #[test]
 fn upsert_assigns_and_preserves_rule_identity() {
     let mut rules = HashMap::new();
-    let generated = upsert(&mut rules, rule("", Some("POST"), "/hook")).unwrap();
+    let generated =
+        upsert(&mut rules, rule("", Some("POST"), "/hook")).expect("webhook rule fixture");
     assert!(!generated.is_empty());
     assert_eq!(rules[&generated].id, generated);
 
-    let same = upsert(&mut rules, rule(&generated, Some("GET"), "/updated")).unwrap();
+    let same = upsert(&mut rules, rule(&generated, Some("GET"), "/updated"))
+        .expect("webhook rule fixture");
     assert_eq!(same, generated);
     assert_eq!(rules.len(), 1);
     assert_eq!(rules[&generated].path, "/updated");
@@ -105,7 +106,7 @@ fn priority_is_bounded_and_old_json_defaults_to_zero() {
         "body": "",
         "delayMs": 0
     }))
-    .unwrap();
+    .expect("webhook rule fixture");
     assert_eq!(old.priority, 0);
 
     let mut candidate = rule("priority", None, "/hook");
@@ -137,20 +138,20 @@ fn selector_is_insertion_order_independent_and_uses_documented_precedence() {
             "POST",
             "/events/special/42",
         )
-        .unwrap();
+        .expect("webhook rule fixture");
         assert_eq!(selected.id, "priority");
     }
 
     let tied = &rules[..3];
     assert_eq!(
         select_matching_rule(tied.iter(), "POST", "/events/special/42")
-            .unwrap()
+            .expect("webhook rule fixture")
             .id,
         "x-exact"
     );
     assert_eq!(
         select_matching_rule(tied.iter(), "POST", "/events/special/other")
-            .unwrap()
+            .expect("webhook rule fixture")
             .id,
         "y-method-prefix"
     );
@@ -162,7 +163,7 @@ fn final_tie_break_is_bytewise_ascending_id() {
     let right = rule("beta", Some("POST"), "/hook");
     assert_eq!(
         select_matching_rule([&right, &left], "POST", "/hook")
-            .unwrap()
+            .expect("webhook rule fixture")
             .id,
         "alpha"
     );
@@ -180,7 +181,7 @@ fn conflict_preview_reports_full_and_partial_overlap_without_mutation() {
 
     let mut exact = rule("candidate", Some("POST"), "/events/42");
     exact.priority = 1;
-    let plan = plan_upsert(&rules, exact).unwrap();
+    let plan = plan_upsert(&rules, exact).expect("webhook rule fixture");
     assert!(plan.preview.requires_confirmation);
     assert_eq!(plan.preview.conflicts.len(), 1);
     assert_eq!(
@@ -195,14 +196,14 @@ fn conflict_preview_reports_full_and_partial_overlap_without_mutation() {
 
     let mut covering = rule("covering", None, "/events/*");
     covering.priority = 2;
-    let plan = plan_upsert(&rules, covering).unwrap();
+    let plan = plan_upsert(&rules, covering).expect("webhook rule fixture");
     assert_eq!(
         plan.preview.conflicts[0].kind,
         RuleConflictKind::CandidateShadowsExisting
     );
 
     let unrelated = rule("other", Some("GET"), "/unrelated");
-    let plan = plan_upsert(&rules, unrelated).unwrap();
+    let plan = plan_upsert(&rules, unrelated).expect("webhook rule fixture");
     assert!(!plan.preview.requires_confirmation);
     assert!(plan.preview.conflicts.is_empty());
 
@@ -322,7 +323,7 @@ fn validates_header_count_shape_and_aggregate_limits() {
 #[test]
 fn rejects_invalid_upsert_without_mutating_storage() {
     let mut rules = HashMap::new();
-    let id = upsert(&mut rules, rule("stable", Some("GET"), "/old")).unwrap();
+    let id = upsert(&mut rules, rule("stable", Some("GET"), "/old")).expect("webhook rule fixture");
     let before = rules.clone();
 
     let mut invalid = rule(&id, Some("GET"), "/new");

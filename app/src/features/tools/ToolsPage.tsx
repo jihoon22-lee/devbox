@@ -15,7 +15,7 @@ import { SsePanel } from "./api/realtime/SsePanel";
 import { WsPanel } from "./api/realtime/WsPanel";
 import { rpcBackend } from "./api/rpcBackend";
 import { useApiTabs } from "./api/store";
-import { bumpCollections } from "./api/useCollections";
+import { bumpCollections, useCollectionRevision } from "./api/useCollections";
 import { type ToolsSearch, toolsSearch } from "./search";
 import { rootOf, ToolsList } from "./ToolsList";
 import { WebhooksPanel } from "./webhooks/WebhooksPanel";
@@ -40,19 +40,28 @@ export function ToolsView({
     { id: "personal", label: "개인 컬렉션", root: { kind: "personal" as const } },
   ];
   const { root, path } = search;
-  // 검색값의 경로는 그 파일을 탭으로 연다(명령 팔레트·알림에서 온 이동).
+  const revision = useCollectionRevision();
+  const request = useMemo(() => ({ backend, root, path, opened: false }), [backend, root, path]);
+  // A navigation opens its path once. Failed reads can retry after Welcome,
+  // but later refreshes must not select this path over the user's current tab.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision invalidates pending read-only navigation.
   useEffect(() => {
-    if (!path) return;
+    if (!request.path || request.opened) return;
     let live = true;
-    const target = rootOf(root);
-    backend.read(target, path).then(
-      (file) => live && useApiTabs.getState().openFile(target, path, file.text, file.digest, file.reviewed),
+    const target = rootOf(request.root);
+    const path = request.path;
+    request.backend.read(target, path).then(
+      (file) => {
+        if (!live) return;
+        useApiTabs.getState().openFile(target, path, file.text, file.digest, file.reviewed);
+        request.opened = true;
+      },
       () => {},
     );
     return () => {
       live = false;
     };
-  }, [backend, root, path]);
+  }, [request, revision]);
   const body =
     view === "webhooks" ? (
       <WebhooksPanel openApi={() => navigate({ view: "api" })} />
@@ -93,7 +102,18 @@ export function ToolsPage() {
   const client = useRpc();
   const backend = useMemo(() => rpcBackend(client), [client]);
   const navigate = useNavigate();
-  useEffect(() => client.subscribe("api.collections_changed", bumpCollections, bumpCollections), [client]);
+  useEffect(() => {
+    const offCollections = client.subscribe("api.collections_changed", bumpCollections, bumpCollections);
+    // These backend reads live outside the RPC query cache. Retry only reads
+    // when Welcome/reconnect makes the client ready; never replay a send.
+    const offState = client.onState((state) => {
+      if (state === "ready") bumpCollections();
+    });
+    return () => {
+      offState();
+      offCollections();
+    };
+  }, [client]);
   return (
     <ApiBackendProvider backend={backend}>
       <ToolsView

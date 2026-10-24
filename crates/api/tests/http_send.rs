@@ -512,7 +512,7 @@ async fn composed_secret_reference_is_rejected_before_connecting() {
 async fn raw_base64_replay_sends_original_bytes_with_byte_content_length() {
     let api = Harness::new().await;
     let server = Server::echo().await;
-    let encoded: Body = serde_json::from_str(r#"{"kind":"raw","text":"AP+A","encoding":"base64","contentType":"application/octet-stream"}"#).unwrap();
+    let encoded: Body = serde_json::from_str(r#"{"kind":"raw","text":"AP+A","encoding":"base64","contentType":"application/octet-stream"}"#).expect("HTTP fixture");
     api.complete(request(RequestSnapshot {
         body: encoded,
         ..snapshot("POST", &server.url("/binary"))

@@ -51,7 +51,7 @@ async fn malformed_raw_structured_bodies_fail_closed_without_replacing_the_file(
     let saved = f
         .write(&root, "a.request.json", &safe, CollectionExpect::Absent)
         .await
-        .unwrap();
+        .expect("owned storage fixture");
     for body in [
         document(
             r#"{"password":"fixture-password""#,
@@ -78,7 +78,8 @@ async fn malformed_raw_structured_bodies_fail_closed_without_replacing_the_file(
             .is_err()
         );
         assert_eq!(
-            std::fs::read_to_string(project.join(".devbox/api/a.request.json")).unwrap(),
+            std::fs::read_to_string(project.join(".devbox/api/a.request.json"))
+                .expect("owned storage fixture"),
             safe
         );
     }
@@ -88,7 +89,7 @@ async fn safe_raw_templates_redactions_and_binary_keep_exact_file_bytes() {
     let f = Fixture::new().await;
     let (root, _) = f.project("storage").await;
     for (index,body) in [document("{ \"password\": \"{{secret:TOKEN}}\", \"client_secret\": \"[REDACTED]\", \"message\": \"fine\" }","application/json",false),document("safe=a%20b&password=%5BREDACTED%5D&token=%7B%7Bsecret%3ATOKEN%7D%7D","application/x-www-form-urlencoded",false),document("AP+A","application/octet-stream",true),document("raw text stays exact","text/plain",false)].into_iter().enumerate() {
-  let path=format!("{index}.request.json");let saved=f.write(&root,&path,&body,CollectionExpect::Absent).await.unwrap();let loaded=f.read(&root,&path).await.unwrap();assert_eq!(loaded.text,body);assert_eq!(loaded.digest,saved.digest);
+  let path=format!("{index}.request.json");let saved=f.write(&root,&path,&body,CollectionExpect::Absent).await.expect("owned storage fixture");let loaded=f.read(&root,&path).await.expect("owned storage fixture");assert_eq!(loaded.text,body);assert_eq!(loaded.digest,saved.digest);
  }
 }
 
@@ -169,7 +170,8 @@ struct TokenCase {
 #[tokio::test]
 async fn stored_token_golden_corpus_matches_plain_json_and_base64_writes() {
     let cases: Vec<TokenCase> =
-        serde_json::from_str(include_str!("fixtures/raw-storage-token-cases.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/raw-storage-token-cases.json"))
+            .expect("owned storage fixture");
     let f = Fixture::new().await;
     let (root, project) = f.project("token-corpus").await;
     for (case_index, case) in cases.iter().enumerate() {
@@ -210,7 +212,13 @@ async fn stored_token_golden_corpus_matches_plain_json_and_base64_writes() {
             if case.sensitive {
                 assert!(!project.join(".devbox/api").join(&path).exists());
             } else {
-                assert_eq!(f.read(&root, &path).await.unwrap().text, text);
+                assert_eq!(
+                    f.read(&root, &path)
+                        .await
+                        .expect("owned storage fixture")
+                        .text,
+                    text
+                );
             }
         }
     }

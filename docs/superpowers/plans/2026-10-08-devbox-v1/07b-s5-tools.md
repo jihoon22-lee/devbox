@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **S5-1 상세화 완료 · 실행 중(트랙 2)** (S5-2 미착수) · 브랜치 `v1/s5-tools`, worktree `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`(S2 머지 `1e82e649` 뒤 인계 문서 #643). 트랙 2(00-roadmap §3.6)이며 트랙 1(S3→S4)과 동시에 진행한다.
+- 상태: **구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기** · 브랜치 `v1/s5-tools`, worktree `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최초 전체 검사 FAIL 후 실패 범위 수정·영향 검사 PASS, 브랜치 전체 검토와 최종 수정 승인. Windows 설치 수용·필수 CI3·PR 리뷰는 아직 미실행. S3와 동시 진행하며 진행 원장은 PROGRESS.md다.
 - 상세화 수준: S2까지 실제로 머지된 코드의 이름·시그니처로 S5-2–S5-9의 실패 테스트 → 실패 확인 → 구현 → 통과 → 별도 검토·커밋 순서를 확정했다. 코드 조각은 시작점이며 각 과제의 "핵심 테스트" 전부가 완료 조건이다. 계획 코드는 컴파일해 본 것이 아니다. 같은 의도로 고친 것은 PROGRESS §5에 적는다(00 §3.5).
 - 원래 과제 수준 계획은 [07-s4-s6.md](07-s4-s6.md)의 S5 절이었다. 이 문서가 S5의 실행 원장이고 07에는 작업 묶음 표와 링크만 남긴다.
 

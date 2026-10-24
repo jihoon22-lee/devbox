@@ -226,7 +226,7 @@ pub async fn uninstall_with(
             Ok(()) => {}
             Err(UninstallError::Io(error))
                 if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
         }
     }
     if let Some(directory) = bin_directory {

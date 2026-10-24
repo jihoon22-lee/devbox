@@ -8,10 +8,10 @@ pub fn matches(rule: &ResponseRule, method: &str, path: &str) -> bool {
     if !rule.path.is_ascii() || !path.is_ascii() {
         return false;
     }
-    if let Some(m) = &rule.method {
-        if !m.eq_ignore_ascii_case(method) {
-            return false;
-        }
+    if let Some(m) = &rule.method
+        && !m.eq_ignore_ascii_case(method)
+    {
+        return false;
     }
     rule.path == path
         || (rule.path.ends_with('*') && path.starts_with(&rule.path[..rule.path.len() - 1]))

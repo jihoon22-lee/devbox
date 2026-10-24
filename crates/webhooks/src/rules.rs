@@ -309,10 +309,10 @@ pub fn validate_rule(rule: &ResponseRule) -> Result<(), RuleValidationError> {
         return Err(RuleValidationError);
     }
 
-    if let Some(method) = &rule.method {
-        if !within(method, MAX_METHOD_CHARS, MAX_METHOD_BYTES) || !is_method(method) {
-            return Err(RuleValidationError);
-        }
+    if let Some(method) = &rule.method
+        && (!within(method, MAX_METHOD_CHARS, MAX_METHOD_BYTES) || !is_method(method))
+    {
+        return Err(RuleValidationError);
     }
     if rule.sequence.len() > MAX_RESPONSE_SEQUENCE {
         return Err(RuleValidationError);

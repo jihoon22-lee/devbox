@@ -225,6 +225,8 @@ impl RuntimeFixture {
             .chain(devbox_agents::MIGRATIONS)
             .chain(devbox_runtime::MIGRATIONS)
             .chain(devbox_secrets::MIGRATIONS)
+            .chain(devbox_api::MIGRATIONS)
+            .chain(devbox_webhooks::MIGRATIONS)
             .copied()
             .collect::<Vec<_>>();
         let db = devbox_core::Db::open(

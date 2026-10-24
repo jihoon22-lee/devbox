@@ -244,7 +244,7 @@ impl UnitController for ReplacedParentController {
 }
 #[tokio::test]
 async fn review_uninstall_preserves_files_after_parent_is_replaced_during_shutdown() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("owned uninstall fixture");
     let p = paths(temp.path(), "accept");
     install_fixture(&p);
     let moved = temp.path().join("moved-user-directory");

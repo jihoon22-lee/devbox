@@ -7,6 +7,7 @@ import { REQUEST_FILE_SUFFIX } from "./model/requestFile";
 import { rootKey } from "./store";
 
 const useRevision = create<{ revision: number }>(() => ({ revision: 0 }));
+export const useCollectionRevision = () => useRevision((state) => state.revision);
 export const bumpCollections = () => useRevision.setState((state) => ({ revision: state.revision + 1 }));
 
 export interface CollectionState {
@@ -18,7 +19,7 @@ export interface CollectionState {
 
 export function useCollections(root: CollectionRoot): CollectionState {
   const backend = useApiBackend();
-  const revision = useRevision((state) => state.revision);
+  const revision = useCollectionRevision();
   const [state, setState] = useState<CollectionState>({ items: [], truncated: false, loaded: false });
   const key = rootKey(root);
   // biome-ignore lint/correctness/useExhaustiveDependencies: the root key identifies the root object.

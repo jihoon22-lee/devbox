@@ -326,20 +326,22 @@ async fn review_support_bundle_does_not_export_json_escaped_secret_values() {
             value: value.into(),
         })
         .await
-        .unwrap();
+        .expect("fixture secret");
     std::fs::write(
         paths.log_dir.join("daemon.today.log"),
         serde_json::json!({"token":value}).to_string(),
     )
-    .unwrap();
-    let bundle = create_bundle(input(&paths), &secrets).await.unwrap();
+    .expect("fixture log");
+    let bundle = create_bundle(input(&paths), &secrets)
+        .await
+        .expect("bundle");
     let files = entries(&bundle.path);
     let log = files
         .iter()
         .find(|(name, _)| name.starts_with("logs/"))
-        .unwrap()
+        .expect("bundled log")
         .1;
-    let decoded: serde_json::Value = serde_json::from_str(log).unwrap();
+    let decoded: serde_json::Value = serde_json::from_str(log).expect("bundled JSON");
     assert_ne!(
         decoded["token"], value,
         "archive exposes the entire secret after normal JSON decoding"

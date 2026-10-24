@@ -329,23 +329,28 @@ mod raw_encoding_tests {
     use super::*;
     #[test]
     fn raw_base64_preserves_bytes_and_content_type() {
-        let body: Body = serde_json::from_str(r#"{"kind":"raw","text":"AP+A","encoding":"base64","contentType":"application/octet-stream"}"#).unwrap();
-        let (PreparedBody::Bytes { data, content_type }, _) = prepare(&body).unwrap() else {
+        let body: Body = serde_json::from_str(r#"{"kind":"raw","text":"AP+A","encoding":"base64","contentType":"application/octet-stream"}"#).expect("body fixture");
+        let (PreparedBody::Bytes { data, content_type }, _) = prepare(&body).expect("body fixture")
+        else {
             panic!("bytes");
         };
         assert_eq!(data.as_ref(), &[0, 255, 128]);
-        assert_eq!(content_type.unwrap(), "application/octet-stream");
+        assert_eq!(
+            content_type.expect("body fixture"),
+            "application/octet-stream"
+        );
     }
     #[test]
     fn invalid_base64_is_rejected_and_raw_default_is_unchanged() {
         let invalid: Body = serde_json::from_str(
             r#"{"kind":"raw","text":"!","encoding":"base64","contentType":null}"#,
         )
-        .unwrap();
+        .expect("body fixture");
         assert!(prepare(&invalid).is_err());
         let plain: Body =
-            serde_json::from_str(r#"{"kind":"raw","text":"한글","contentType":null}"#).unwrap();
-        let (PreparedBody::Bytes { data, .. }, _) = prepare(&plain).unwrap() else {
+            serde_json::from_str(r#"{"kind":"raw","text":"한글","contentType":null}"#)
+                .expect("body fixture");
+        let (PreparedBody::Bytes { data, .. }, _) = prepare(&plain).expect("body fixture") else {
             panic!("bytes");
         };
         assert_eq!(data.as_ref(), "한글".as_bytes());

@@ -76,12 +76,13 @@ test("runner sends the token captured by login to the next request", async ({ pa
     });
     // 이전 실행 값이 남아 있어도 이번 로그인 값을 써야 한다: 두 번 실행한다.
     await page.goto(`/tools?gateway=${encodeURIComponent(stack.gatewayUrl)}&view=api&tool=runner&root=personal`);
-    const plan = page.getByRole("list", { name: "실행 순서" });
+    const workspace = page.getByRole("region", { name: "본문", exact: true });
+    const plan = workspace.getByRole("list", { name: "실행 순서" });
     await expect(plan.getByRole("listitem", { name: "2. me" })).toContainText("session ← login");
     for (let round = 1; round <= 2; round++) {
-      await page.getByRole("button", { name: "실행", exact: true }).click();
-      await expect(page.getByText("통과 2 · 실패 0 · 오류 0 · 건너뜀 0")).toBeVisible();
-      const results = page.getByRole("table", { name: "실행 결과" });
+      await workspace.getByRole("button", { name: "실행", exact: true }).click();
+      await expect(workspace.getByText("통과 2 · 실패 0 · 오류 0 · 건너뜀 0")).toBeVisible();
+      const results = workspace.getByRole("table", { name: "실행 결과" });
       await expect(results.getByRole("row", { name: "me" })).toContainText("session: login");
       expect(fixture.issued).toHaveLength(round);
       expect(fixture.received.filter((item) => item.path === "/me").at(-1)?.session).toBe(fixture.issued.at(-1));
