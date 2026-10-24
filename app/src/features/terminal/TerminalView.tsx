@@ -7,19 +7,17 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import { useRpc } from "../../rpc/RpcProvider";
 import { openExternal } from "../../shell/external";
-import { useLayout } from "../../shell/layout";
 import { Button, useToasts } from "../../ui";
-import { setTerminalFont, storedFontSize, usePreferences } from "../settings/preferences";
+import { storedFontSize, usePreferences } from "../settings/preferences";
 import { preserveInitialHistory } from "./initial-history";
-import { terminalKey } from "./keys";
 import { type LinkState, TerminalLink } from "./link";
 import { TerminalSearch } from "./TerminalSearch";
 import s from "./TerminalView.module.css";
+import { attachTerminalActions } from "./terminalActions";
 import { terminalTheme } from "./theme";
 import { useOsc7 } from "./useOsc7";
 
 const FONT = '"Cascadia Mono", "D2Coding", monospace';
-const DEFAULT_SIZE = 13;
 export interface TerminalViewProps {
   id: string;
   readOnly?: boolean;
@@ -129,42 +127,12 @@ export function TerminalView({
       }),
       registerOsc7(term.parser),
     ];
-    term.attachCustomKeyEventHandler((event) => {
-      if (disposed) return false;
-      if (event.type !== "keydown" || event.defaultPrevented) return true;
-      const action = terminalKey(event, term.hasSelection());
-      if (!action) return true;
-      event.preventDefault();
-      event.stopPropagation();
-      if (action === "copy") {
-        void Promise.resolve()
-          .then(() => {
-            if (!disposed) return navigator.clipboard.writeText(term.getSelection());
-          })
-          .catch(() => warn("클립보드에 복사하지 못했습니다"));
-      }
-      if (action === "paste" && !preview) {
-        void Promise.resolve()
-          .then(() => {
-            if (!disposed) return navigator.clipboard.readText();
-          })
-          .then((text) => {
-            if (!disposed && text !== undefined) term.paste(text);
-          })
-          .catch(() => warn("클립보드에서 붙여넣지 못했습니다"));
-      }
-      if (action === "zoomIn" || action === "zoomOut" || action === "zoomReset") {
-        const size =
-          action === "zoomReset"
-            ? DEFAULT_SIZE
-            : Math.min(28, Math.max(9, (term.options.fontSize ?? DEFAULT_SIZE) + (action === "zoomIn" ? 1 : -1)));
-        term.options.fontSize = size;
-        setTerminalFont(size, false);
-        fitView();
-      }
-      if (action === "search") setSearching(true);
-      if (action === "bottom") useLayout.getState().toggleBottom();
-      return false;
+    attachTerminalActions(term, {
+      isDisposed: () => disposed,
+      preview,
+      warn,
+      fitView,
+      search: () => setSearching(true),
     });
     const updateFont = () => {
       if (disposed) return;
