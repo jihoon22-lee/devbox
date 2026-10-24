@@ -16,14 +16,17 @@ export function rootOf(id: string | undefined): CollectionRoot {
 export function ToolsList({
   projectId,
   navigate,
+  environmentRoot,
 }: {
   projectId: string | undefined;
   navigate: (search: ToolsSearch) => void;
+  /** A displayed runner owns its route root independently of the retained request tab. */
+  environmentRoot?: CollectionRoot;
 }) {
   const personal: CollectionRoot = { kind: "personal" };
   const project: CollectionRoot | undefined = projectId ? { kind: "project", projectId } : undefined;
   const activeRoot = useApiTabs((state) => state.tabs.find((tab) => tab.key === state.active)?.root);
-  const envRoot = activeRoot ?? project ?? personal;
+  const envRoot = environmentRoot ?? activeRoot ?? project ?? personal;
   return (
     <div>
       <section className={s.group} aria-labelledby="tools-api">

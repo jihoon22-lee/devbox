@@ -14,7 +14,7 @@ import { RunnerView } from "./api/RunnerView";
 import { SsePanel } from "./api/realtime/SsePanel";
 import { WsPanel } from "./api/realtime/WsPanel";
 import { rpcBackend } from "./api/rpcBackend";
-import { useApiTabs } from "./api/store";
+import { rootKey, useApiTabs } from "./api/store";
 import { bumpCollections, useCollectionRevision } from "./api/useCollections";
 import { type ToolsSearch, toolsSearch } from "./search";
 import { rootOf, ToolsList } from "./ToolsList";
@@ -62,6 +62,7 @@ export function ToolsView({
       live = false;
     };
   }, [request, revision]);
+  const runnerRoot = view === "api" && search.tool === "runner" ? rootOf(search.root) : undefined;
   const body =
     view === "webhooks" ? (
       <WebhooksPanel openApi={() => navigate({ view: "api" })} />
@@ -71,8 +72,8 @@ export function ToolsView({
       </Suspense>
     ) : view === "env" ? (
       <DiagnosticsSettings />
-    ) : search.tool === "runner" ? (
-      <RunnerView root={rootOf(search.root)} />
+    ) : runnerRoot ? (
+      <RunnerView key={rootKey(runnerRoot)} root={runnerRoot} />
     ) : search.tool === "websocket" ? (
       <WsPanel />
     ) : search.tool === "sse" ? (
@@ -85,7 +86,7 @@ export function ToolsView({
       <ApiWorkspace />
     );
   return (
-    <SectionLayout list={<ToolsList projectId={projectId} navigate={navigate} />}>
+    <SectionLayout list={<ToolsList projectId={projectId} navigate={navigate} environmentRoot={runnerRoot} />}>
       {body}
       <ImportDialog
         open={view === "api" && search.tool === "import"}
