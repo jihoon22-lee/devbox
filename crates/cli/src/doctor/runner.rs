@@ -172,7 +172,7 @@ pub(super) async fn command(program: &str, args: &[&str], capture: bool) -> Prob
 }
 pub(super) async fn version(program: &str, args: &[&str]) -> Probed<Option<String>> {
     match command(program, args, true).await {
-        Ok(output) => Ok(output.success.then_some(output.text)),
+        Ok(output) => Ok(output.success.then(|| output.text.trim().to_owned())),
         Err(ProbeIssue::Missing) => Ok(None),
         Err(issue) => Err(issue),
     }

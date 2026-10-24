@@ -18,7 +18,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. S5-7b `b762b582`. S5-7c 감지·선택 보내기 완료(로컬)·독립 재검토 APPROVE. S5-7c `d55cd7c6`. S5-8a1 기존 환경 점검 이동 완료(로컬)·독립 검토 APPROVE. S5-8a1 `de7a04dd`. S5-8a2 점검 확장·설치 제안 완료(로컬)·독립 재검토 APPROVE. S5-8a2 `56c65372`. S5-8b 설치 동작·지원 번들·WSL 정리 완료(로컬)·독립 재검토 APPROVE. S5-8b `f1d86bef`. S5-9 1단계 섹션 마무리 완료(로컬)·독립 검토 APPROVE. S5-9 `c4001e33`. 개수 확인 완료·전체 브랜치 검토 APPROVE, origin/main fetch=329b2ee9(S3 미머지로 통합 불필요). 5단계 전체 검사1회 FAIL 뒤 실패/직접 영향 범위 PASS, MSVC all-target strict Clippy PASS. 최종 수정 독립 검토 APPROVE. 다음: 최종 SHA Windows 산출물·설치 수용 뒤 PR. 근거 `devbox-verification/s5-9-layout/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5 `2d02ee18` push 뒤 Windows run40080544756 모듈 case 충돌 FAIL. QR helper 이름 변경+filesystem 회귀9/typecheck/Biome627 PASS, 별도 검토·새 SHA CI 대기. Windows 설치본 수용/PR 미실행, 외부 수용 helper 준비 중 |
+| 마지막 갱신 | 2026-10-24 · 트랙 2 S5 `61d7e6f2` Windows 산출물로 설치 수용 2회 진행: 준비 단계 실패로 6개 시나리오 NOT_RUN. 두 번째 실행의 native gate `setupFailed`와 정확한 CLI fixture에서 tmux 버전 줄바꿈 회귀를 확인했다. version adapter의 trim 복구·CLI 경계 회귀/좁은 검사 완료, 별도 검토 뒤 새 SHA CI·helper binding·설치 수용 필요 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -640,6 +640,14 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-9 설치 수용에서 발견한 tmux 버전 줄바꿈 회귀 (2026-10-24, 트랙 2 · 별도 검토 대기)
+
+- `61d7e6f2` 첫 설치 수용은 ready Node 30초 시간 초과로 FAIL(6개 시나리오 NOT_RUN), 두 번째는 CDP 연결·창 식별 성공 뒤 native gate `setupFailed`를 확인해 6개 NOT_RUN. 기록된 앱·WSL·설치 파일 정리와 prod/개인 API 불변 비교는 PASS, 잔여 없음. 첫 실행의 Node 종료는 당시 증명하지 않았고 이후 읽기 전용 관찰에서만 잔여 0이었다. 두 번째는 정확한 Node PID/실행 파일/시작 시각·종료 증명을 기록했다.
+- 정확한 배포 CLI를 소유 HOME/config/hook·선택 도구 stub으로 격리한 8개 사례에서 실제 `tmux 3.6` 출력의 LF 및 소유 CRLF 출력은 `tool.tmux=fail`/exit 1, 같은 버전의 줄바꿈 없는 출력은 exit 0으로 재현했다. 이전 `run_cmd`의 `trim()`이 S5-8a2의 bounded version adapter에서 빠진 원인이다. adapter 한 줄로 기존 정규화를 복구하며 버전 파서·시간/출력 제한은 유지한다.
+- 새 실제 CLI 경계 시험은 LF·CRLF·`next-` 정상 출력과 구버전·잘못된 접미사·추가 출력 줄 거부 6개 사례를 확인한다. 모든 외부 명령은 소유 stub, 사용자 환경/인증/서비스는 사용하지 않는다. PID 1이 systemd가 아닌 CI에서도 전체 Fail 검사와 CLI exit의 일치를 검증한다.
+- 검증: CLI 경계 RED 1 → GREEN 1(내부 6사례), 기존 doctor 10 PASS. rustfmt/diff·완료 Biome CI PASS. 리소스 CPU4/nice10/jobs2/test threads2, memory high6GiB/max8GiB/swap1GiB 적용. 전체 검사·Windows 빌드·수정본 설치 수용은 재실행하지 않았으며, 새 소스 SHA·CI 산출물·helper 승인 binding 뒤 별도로 진행한다.
+- 근거: Git common-dir `devbox-verification/s5-9/acceptance-doctor-owned-fixture.json`, `tmux-version-{red,green,doctor-tests,biome}.log`, `tmux-version-fix-evidence.json`; 설치 실행 원본 `acceptance/runs/61d7e6f2-84c6f766`·`61d7e6f2-942fa2ae`.
 
 ### S5-9 Windows CI 모듈 이름 충돌 수정 (2026-10-24, 트랙 2 · 별도 검토 대기)
 
