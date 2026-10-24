@@ -8,6 +8,9 @@ publish.workspace = true
 [dependencies]
 devbox-lsp.workspace = true
 devbox-secrets.workspace = true
+devbox-api.workspace = true
+devbox-webhooks.workspace = true
+devbox-tools.workspace = true
 devbox-documents.workspace = true
 devbox-notes.workspace = true
 devbox-search.workspace = true

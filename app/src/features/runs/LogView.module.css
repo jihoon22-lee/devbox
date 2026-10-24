@@ -75,3 +75,10 @@
 .truncated {
   color: var(--fg-muted);
 }
+
+.selection {
+  display: flex;
+  flex: 1;
+  min-height: 180px;
+  overflow: hidden;
+}

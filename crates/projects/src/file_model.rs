@@ -37,6 +37,7 @@ pub struct FileKey {
 }
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
+#[ts(rename = "DeleteSourceFile")]
 pub struct DeleteFile {
     pub key: DocKey,
     pub expect: DiskRev,

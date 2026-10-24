@@ -21,5 +21,7 @@ pub mod secrets;
 pub mod windows;
 
 pub mod capture;
+pub mod install;
+pub mod wsl_cleanup;
 
 pub mod quit;

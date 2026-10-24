@@ -21,6 +21,7 @@ pub mod state;
 mod streams;
 mod summary;
 mod system;
+mod tools_routes;
 mod trust;
 mod windows_broker;
 mod windows_routes;
@@ -44,6 +45,8 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_api::MIGRATIONS,
+        devbox_webhooks::MIGRATIONS,
         devbox_search::MIGRATIONS,
         devbox_activity::MIGRATIONS,
     ]
@@ -130,6 +133,24 @@ fn build_services_with_runtime(
         paths.clone(),
     ));
     let index = devbox_core::IndexDb::open(&paths.index_db_path)?;
+    let webhooks = Arc::new(devbox_webhooks::WebhooksService::new(
+        db.clone(),
+        hub.clone(),
+        paths.data_dir.join("webhooks"),
+    ));
+    let api = Arc::new(devbox_api::ApiService::new(
+        db.clone(),
+        index.clone(),
+        paths.clone(),
+        projects.clone(),
+        secrets.clone(),
+    )?);
+    let api_collections = Arc::new(devbox_api::CollectionsService::new(
+        db.clone(),
+        hub.clone(),
+        paths.clone(),
+        projects.clone(),
+    ));
     let runs = Arc::new(
         devbox_runtime::RuntimeService::new(db.clone(), hub.clone(), projects.clone())
             .with_execution(execution)
@@ -160,6 +181,10 @@ fn build_services_with_runtime(
         agents,
         runs,
         secrets,
+        index,
+        api,
+        api_collections,
+        webhooks,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
         lsp: Arc::new(devbox_lsp::LspService::default()),

@@ -1,0 +1,142 @@
+.page {
+  padding: var(--space-4, 16px);
+  overflow: auto;
+  min-height: 0;
+  min-width: 0;
+}
+.page :global(.tool) {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.page :global(.io-grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.page :global(.io-col) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.page :global(.io-label) {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+}
+.page input,
+.page select,
+.page textarea {
+  box-sizing: border-box;
+  background: var(--bg-1);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.page button {
+  background: var(--bg-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.page button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.page button:focus-visible,
+.page input:focus-visible,
+.page textarea:focus-visible,
+.page select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.page :global(.io-output) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow: auto;
+  min-height: 80px;
+  padding: 12px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono, monospace);
+}
+.page :global(.io-error),
+.page [role="alert"] {
+  color: var(--danger);
+}
+.page :global(.row),
+.page :global(.conversion-actions),
+.page :global(.tool-picker),
+.page [role="group"],
+.page [class$="-toolbar"],
+.page [class$="-options"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.page :global(.tool-local-note),
+.page [role="note"],
+.page :global(.dim),
+.page :global(.tool-actions-toggle) {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.page :global(.tool-text-control),
+.page :global(.tool-output-control) {
+  min-width: 0;
+}
+.page :global(.tool-actions-toggle) {
+  margin-top: 4px;
+}
+.page label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.page :global(.qr-input-panel),
+.page :global(.qr-wifi-panel),
+.page :global(.hmac-input-grid),
+.page :global(.jwt-key-grid) {
+  display: grid;
+  gap: 12px;
+}
+.page :global(.qr-preview-image) {
+  max-width: 100%;
+  max-height: 400px;
+  background: white;
+}
+.page :global(.diff-line) {
+  min-height: 1.4em;
+  white-space: pre-wrap;
+}
+.page :global(.diff-add) {
+  background: color-mix(in srgb, var(--success, #2a8) 15%, transparent);
+}
+.page :global(.diff-del) {
+  background: color-mix(in srgb, var(--danger, #e66) 15%, transparent);
+}
+.page :global(.diff-gap) {
+  background: var(--bg-2);
+}
+.page mark {
+  background: color-mix(in srgb, var(--accent, #ebc) 40%, transparent);
+  color: inherit;
+}
+@media (max-width: 800px) {
+  .page :global(.io-grid) {
+    grid-template-columns: 1fr;
+  }
+}

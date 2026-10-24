@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "crates/documents", "crates/notes", "crates/search", "crates/activity", "crates/lsp", "xtask"]
+members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "crates/documents", "crates/notes", "crates/search", "crates/activity", "crates/lsp", "xtask", "crates/api", "crates/webhooks", "crates/tools"]
 exclude = ["app/src-tauri"]
 
 [workspace.package]
@@ -10,6 +10,8 @@ rust-version = "1.98"
 publish = false
 
 [workspace.dependencies]
+zip = { version = "=8.6.0", default-features = false }
+aho-corasick = "1"
 devbox-protocol = { path = "crates/protocol" }
 devbox-mux = { path = "crates/mux" }
 devbox-core = { path = "crates/core" }
@@ -21,6 +23,9 @@ devbox-agents = { path = "crates/agents" }
 devbox-runtime = { path = "crates/runtime" }
 devbox-observe = { path = "crates/observe" }
 devbox-secrets = { path = "crates/secrets" }
+devbox-api = { path = "crates/api" }
+devbox-webhooks = { path = "crates/webhooks" }
+devbox-tools = { path = "crates/tools" }
 devbox-documents = { path = "crates/documents" }
 devbox-notes = { path = "crates/notes" }
 devbox-search = { path = "crates/search" }
@@ -60,6 +65,23 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 ts-rs = { version = "=12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "stream", "multipart"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+url = "2"
+cookie_store = "0.22"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-platform-verifier = "0.7"
+tonic = { version = "0.14", default-features = false, features = ["channel", "codegen"] }
+tonic-reflection = { version = "0.14", default-features = false }
+tonic-prost = { version = "0.14", default-features = false }
+prost = "0.14"
+prost-reflect = { version = "0.16", features = ["serde"] }
+protox = "0.9"
+tower = { version = "0.5", default-features = false, features = ["util"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

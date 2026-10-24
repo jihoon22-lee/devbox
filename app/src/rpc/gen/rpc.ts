@@ -34,6 +34,7 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
+export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
 export type AppMs = { app: string, ms: number, };
 export type AppendFormat = "plain" | "capture";
 export type AppendNote = { target: AppendTarget, text: string, format: AppendFormat, };
@@ -47,15 +48,19 @@ data: string, };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attached = { path: string, markdown: string, };
 export type Attention = { kind: string, message: string, atMs: number, };
+export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
 export type Backlink = { src: string, title: string, 
 /**
  * 1-based line of the link in `src`.
  */
 line: number, fromUtf16: number, toUtf16: number, };
 export type Backlinks = { rev: string, items: Array<Backlink>, truncated: boolean, };
+export type Body = { "kind": "none" } | { "kind": "raw", text: string, encoding?: RawEncoding, contentType: string | null, } | { "kind": "json", text: string, } | { "kind": "form", fields: Array<Pair>, } | { "kind": "multipart", parts: Array<Part>, } | { "kind": "binary", path: string, } | { "kind": "graphql", query: string, variables: string, operationName: string | null, method: GraphqlMethod, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
+export type CatalogSource = "reflection" | "protoFiles";
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
 export type Check = { id: string, status: Status, message: string, fix: string | null, };
+export type CheckRef = { id: string, };
 export type ClaimDocument = { key: DocKey, policy: DocPolicy, windowId: string, };
 export type Claimed = { key: DocKey, leaseId: string | null, rev: DiskRev | null, text: string | null, eol: Eol, bom: boolean, readOnly: ReadOnly | null, journal: JournalView | null, };
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
@@ -64,6 +69,24 @@ export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>
 export type CloneProject = { url: string, dir: string | null, };
 export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
+export type CollectionExpect = { "kind": "digest", digest: string, } | { "kind": "absent" };
+export type CollectionFile = { path: string, size: number, digest: string | null, 
+/**
+ * 프로젝트 파일이 비밀 참조·파일 부분·stdio 명령을 쓰면 이 PC에서 그 digest를 검토했을 때만 참.
+ */
+reviewed: boolean, 
+/**
+ * 권한 등으로 읽지 못한 파일. 목록 전체를 실패시키지 않고 이 항목만 표시한다.
+ */
+unreadable: boolean, };
+export type CollectionList = { root: CollectionRoot, items: Array<CollectionFile>, 
+/**
+ * 루트당 2,000개를 넘으면 참.
+ */
+truncated: boolean, };
+export type CollectionRoot = { "kind": "personal" } | { "kind": "project", projectId: string, };
+export type CollectionsChange = { root: CollectionRoot, rev: string, };
+export type CollectionsQuery = { root: CollectionRoot, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
 export type ContainerAction = "start" | "stop" | "restart";
@@ -74,6 +97,9 @@ export type ContainerInfo = { id: string, name: string, image: string, state: st
 export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
 export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
+export type CookieInfo = { name: string, value: string, domain: string, path: string, secure: boolean, httpOnly: boolean, expiresMs: number | null, };
+export type CookieJarRef = { jar: string, };
+export type CookieList = { cookies: Array<CookieInfo>, };
 export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
 export type CreateNote = { 
 /**
@@ -116,9 +142,11 @@ export type DefinitionCursor = { id: string, shadowed: boolean, };
 export type DefinitionKind = "task" | "service";
 export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: Array<Definition>, runs: Array<Run>, trust: TrustPreviewStatus, nextCursor: DefinitionCursor | null, };
 export type DefinitionSource = "projectFile" | "thisPc";
-export type DeleteFile = { key: DocKey, expect: DiskRev, };
+export type DeleteFile = { root: CollectionRoot, path: string, digest: string, };
+export type DeleteSourceFile = { key: DocKey, expect: DiskRev, };
 export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
+export type Direction = "sent" | "received";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
 export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
 export type DiskDocument = { key: DocKey, rev: DiskRev | null, text: string | null, readOnly: ReadOnly | null, };
@@ -141,6 +169,8 @@ export type EchoParams = { bytes: number, };
 export type Empty = Record<symbol, never>;
 export type EntryInfo = { key: DocKey, kind: EntryKind, rev: DiskRev, readOnly: ReadOnly | null, };
 export type EntryKind = "file" | "directory" | "symlink";
+export type EnvSnapshot = { variables: Array<EnvVar>, };
+export type EnvVar = { name: string, value: string, sensitive: boolean, origin: VarOrigin, };
 export type Eol = "lf" | "crlf";
 export type ExitRecord = { attemptId: string, code: number | null, signal?: string, endedMs: number, by: ExitSource, serviceResult?: string, };
 export type ExitSource = "wrapper" | "systemd";
@@ -158,6 +188,8 @@ export type FileChange = { path: string, oldPath: string | null, status: ChangeS
 export type FileEntry = { key: DocKey, name: string, kind: EntryKind, };
 export type FileKey = { key: DocKey, };
 export type FileLocation = { path: string, line: number, column: number, };
+export type FileRef = { root: CollectionRoot, path: string, };
+export type FileText = { text: string, digest: string, reviewed: boolean, };
 export type FileTree = { entries: Array<FileEntry>, nextCursor: FileTreeCursor | null, };
 export type FileTreeCursor = { after: string, rev: string, };
 export type FileTreeQuery = { projectId: string, dir: string, showHidden: boolean, cursor: FileTreeCursor | null, };
@@ -167,6 +199,45 @@ export type FollowUp = { atMs: number, text: string, instructionId?: string, del
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
+export type GraphqlMethod = "post" | "get";
+export type GrpcCall = { target: string, 
+/**
+ * `package.Service/Method`(목록의 `fullName`).
+ */
+method: string, 
+/**
+ * 요청 메시지 JSON 텍스트(변수·비밀 참조 가능).
+ */
+json: string, metadata: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot, timeoutMs: number, protoFiles: Array<string> | null, origin: RequestOrigin | null, };
+export type GrpcCatalog = { source: CatalogSource, services: Array<GrpcService>, };
+export type GrpcEvent = { "type": "headers", metadata: Array<Pair>, } | { "type": "message", json: string, } | { "type": "trailers", code: number, message: string, metadata: Array<Pair>, } | { "type": "failed", error: WireError, };
+export type GrpcMethod = { name: string, 
+/**
+ * `package.Service/Method`.
+ */
+fullName: string, clientStreaming: boolean, serverStreaming: boolean, 
+/**
+ * 입력 메시지 기본값(JSON 텍스트).
+ */
+inputDefault: string, };
+export type GrpcService = { name: string, methods: Array<GrpcMethod>, };
+export type GrpcTarget = { 
+/**
+ * `http://host:port`(평문 h2c) 또는 `https://host:port`(요청 TLS 설정). 변수·비밀 참조 가능.
+ */
+target: string, metadata: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot, 
+/**
+ * 있으면 reflection 대신 이 `.proto` 파일들(WSL 절대 경로)을 protox로 해석한다.
+ */
+protoFiles: Array<string> | null, };
+export type HeaderRow = { row: number, name: string, value: string, };
+export type HistoryEntry = { id: string, sentAtMs: number, method: string, url: string, snapshot: RequestSnapshot, tlsVerify: boolean, runId: string | null, origin: RequestOrigin | null, outcome: HistoryOutcome, error: WireError | null, response: HistoryResponse | null, bodyBase64: string, bodyTruncated: boolean, };
+export type HistoryId = { id: string, };
+export type HistoryOutcome = "ok" | "failed" | "cancelled";
+export type HistoryPage = { items: Array<HistorySummary>, next: string | null, };
+export type HistoryQuery = { before: string | null, limit: number, origin: RequestOrigin | null, };
+export type HistoryResponse = { status: number, reason: string, httpVersion: string, headers: Array<Pair>, redirects: Array<Redirect>, elapsedMs: number, sizeBytes: number, binary: boolean, };
+export type HistorySummary = { id: string, sentAtMs: number, method: string, url: string, status: number | null, elapsedMs: number, sizeBytes: number, outcome: HistoryOutcome, runId: string | null, origin: RequestOrigin | null, };
 export type HookSource = "claude" | "codex" | "setup" | "exit";
 export type Hooks = "claude" | "codex" | "none";
 export type HourMs = { 
@@ -204,6 +275,7 @@ export type InsertSummary = {
  */
 date: string | null, };
 export type InstallLsp = { projectId: string, language: Language, expectedCommand: string, };
+export type InstallPlan = { "kind": "wsl", command: string, title: string, shellCommand: string, } | { "kind": "windows", package: WindowsPackage, } | { "kind": "manual", text: string, } | { "kind": "none" };
 export type Installed = { terminalId: string, };
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type InvalidRule = { field: RuleField, 
@@ -218,6 +290,7 @@ export type JournalView = { seq: number, baseRev: DiskRev | null, text: string |
  * True when `text` did not fit the response budget; read it with `documents.journal_read`.
  */
 deferred: boolean, };
+export type KeyPlacement = "header" | "query";
 export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
 export type KillResult = { pid: number, };
 export type KillSignal = "term" | "kill";
@@ -241,8 +314,15 @@ export type LogLine = { src: LogSource, ts: string, stream: LogStream, text: str
 export type LogSource = { "kind": "run", runId: string, } | { "kind": "file", path: string, } | { "kind": "container", id: string, };
 export type LogStream = "stdout" | "stderr" | "system";
 export type LspError = { "code": "lsp.invalid_input" } | { "code": "lsp.project_not_found" } | { "code": "lsp.missing_server" } | { "code": "lsp.failed" } | { "code": "lsp.limit_exceeded" } | { "code": "lsp.lease_lost" } | { "code": "lsp.outside_project" } | { "code": "lsp.protocol" } | { "code": "lsp.stream_unavailable" } | { "code": "lsp.install_unavailable" };
+export type McpConnect = { transport: McpTransport, env: EnvSnapshot, source: McpSource, };
+export type McpEvent = { "type": "authorize", url: string, } | { "type": "ready", serverName: string, serverVersion: string, protocolVersion: string, capabilitiesJson: string, } | { "type": "result", id: string, json: string, } | { "type": "error", id: string, code: number, message: string, } | { "type": "failed", error: WireError, } | { "type": "closed" };
+export type McpInput = { "type": "list", id: string, what: McpList, cursor: string | null, } | { "type": "call", id: string, name: string, argumentsJson: string, } | { "type": "read", id: string, uri: string, } | { "type": "getPrompt", id: string, name: string, argumentsJson: string, };
+export type McpList = "tools" | "resources" | "prompts";
+export type McpSource = { "kind": "draft" } | { "kind": "file", root: CollectionRoot, path: string, digest: string, };
+export type McpTransport = { "kind": "stdio", command: string, args: Array<string>, cwd: string | null, env: Array<Pair>, } | { "kind": "http", url: string, headers: Array<HeaderRow>, tls: TlsOptions, };
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type MergeKind = "merge" | "squash" | "rebase";
+export type MessageKind = "text" | "binary";
 export type MissedPolicy = "skip" | "runOnce";
 export type Name = { name: string, };
 export type NoParams = Record<symbol, never>;
@@ -279,6 +359,8 @@ export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
 export type OpenLsp = { projectId: string, language: Language, };
 export type OpenSourceEditor = { key: DocKey, editor: SourceEditor, };
+export type Pair = { name: string, value: string, };
+export type Part = { "kind": "text", name: string, value: string, contentType: string | null, } | { "kind": "file", name: string, path: string, fileName: string | null, contentType: string | null, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
 export type PortInfo = { port: number, proto: string, addr: string, pid: number | null, process: string | null, startTimeMs: number | null, runId: string | null, containerId: string | null, projectId: string | null, };
@@ -333,6 +415,7 @@ export type RangeQuery = {
  * Inclusive local dates, at most 31 days.
  */
 from: string, to: string, };
+export type RawEncoding = "base64";
 export type ReadDocument = { key: DocKey, 
 /**
  * Defaults to `note`.
@@ -340,8 +423,10 @@ export type ReadDocument = { key: DocKey,
 policy?: DocPolicy, };
 export type ReadOnly = { reason: ReadOnlyReason, };
 export type ReadOnlyReason = "binary" | "encoding" | "too_large" | "leased_elsewhere";
+export type RealtimeEvent = { "type": "open", protocol: string | null, } | { "type": "message", direction: Direction, kind: MessageKind, data: string | null, dataBase64: string | null, atMs: number, } | { "type": "sseEvent", id: string | null, event: string | null, data: string, retryMs: number | null, atMs: number, } | { "type": "reconnecting", attempt: number, lastEventId: string | null, } | { "type": "dropped", count: number, } | { "type": "closed", code: number | null, reason: string | null, } | { "type": "failed", error: WireError, };
 export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
+export type Redirect = { status: number, location: string, };
 export type RefreshEnvResult = { restarting: boolean, };
 export type RelayMessage = { json: string, leaseId?: string, };
 export type RemoveProject = { id: string, };
@@ -374,6 +459,8 @@ path: string | null, text: string | null, };
 export type RenderedNote = { html: string, mermaid: Array<string>, };
 export type RenewLeases = { leaseIds: Array<string>, };
 export type Renewed = { lost: Array<string>, };
+export type RequestOrigin = { root: CollectionRoot, path: string, };
+export type RequestSnapshot = { method: string, url: string, query: Array<Pair>, headers: Array<HeaderRow>, cookies: Array<HeaderRow>, body: Body, auth: Auth, tls: TlsOptions, timeoutMs: number, followRedirects: boolean, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
 export type ResolveLink = { 
@@ -386,10 +473,13 @@ target: string, kind: LinkKind,
  */
 from: string | null, };
 export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
+export type ResponseRule = { id: string, priority: number, method: string | null, path: string, status: number, headers: Array<[string, string]>, body: string, delayMs: number, sequence?: Array<ResponseSequenceStep>, };
+export type ResponseSequenceStep = { status: number, headers: Array<[string, string]>, body: string, delayMs: number, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type Restarted = { projectId: string, language: Language, failed: boolean, generation: number, };
 export type RestoreNote = { trashPath: string, path: string, };
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
+export type ReviewFile = { root: CollectionRoot, path: string, digest: string, };
 export type RewriteFailure = "conflict" | "open" | "missing" | "unsupported" | "too_large";
 export type RewriteReply = { opId: string, key: DocKey, 
 /**
@@ -481,6 +571,8 @@ limit: number, };
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
 export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
+export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
+export type SendRequest = { snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
 export type SendToAgent = { id: string, text: string, };
 export type ServerInfo = { language: Language, command: string, args: Array<string>, install: string | null, state: ServerState, generation: number, pid: number | null, memoryBytes: number | null, clients: number, };
 export type ServerState = "missing" | "starting" | "ready" | "failed" | "idle_stopped";
@@ -499,6 +591,15 @@ export type SetSecret = { name: string, value: string, };
 export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
 export type SourceEditor = "code" | "cursor" | "zed";
 export type SourceEditorOpened = { opened: boolean, path: string, };
+export type SseOpen = { 
+/**
+ * `http://`·`https://` 절대 URL.
+ */
+url: string, headers: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot, 
+/**
+ * 첫 연결부터 보낼 `Last-Event-ID`(재연결은 마지막으로 받은 id를 쓴다).
+ */
+lastEventId: string | null, origin: RequestOrigin | null, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
 export type Status = "ok" | "warn" | "fail";
@@ -509,6 +610,7 @@ export type Suggestion = { id: string, command: string, kind: DefinitionKind, fr
 export type SuggestionSource = "package.json" | "Makefile" | "justfile" | "Cargo.toml" | "compose.yaml" | "docker-compose.yml";
 export type SummaryInserted = { path: string, rev: DiskRev, };
 export type SummaryProjects = Record<symbol, never>;
+export type SupportBundle = { path: string, sizeBytes: number, logsOmitted?: string, };
 export type SystemError = { "code": "system.unavailable" } | { "code": "system.env_refresh_failed" };
 export type SystemInfo = { memoryTotalBytes: number, memoryAvailableBytes: number, swapTotalBytes: number, swapUsedBytes: number, cpuPressure: Pressure | null, memoryPressure: Pressure | null, ioPressure: Pressure | null, homeFilesystem: FilesystemInfo | null, };
 export type TagCount = { tag: string, count: number, };
@@ -531,8 +633,12 @@ export type TerminalProfiles = { items: Array<TerminalProfile>, };
 export type TerminalSession = { id: string, projectId: string | null, title: string, cwd: string, kind: SessionKind, alive: boolean, command: string, createdMs: number, };
 export type TextEdit = { fromUtf16: number, toUtf16: number, text: string, };
 export type TitleMs = { app: string, title: string, ms: number, };
+export type TlsOptions = { verify: boolean, caPath: string | null, clientCertPath: string | null, clientKeyPath: string | null, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
 export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
+export type ToolsDiagnosticsInfo = { logDir: string, };
+export type ToolsEmpty = Record<symbol, never>;
+export type ToolsError = { "code": "tools.invalid_input" } | { "code": "tools.support_failed" } | { "code": "tools.support_too_large" };
 export type Trashed = { trashPath: string, };
 export type TreeItem = { 
 /**
@@ -550,8 +656,39 @@ export type TrustPreview = { status: TrustPreviewStatus, projectId: string, proj
 export type TrustPreviewParams = { id: string, operation: TrustOperation, agentId: string | null, worktrees: Array<string>, worktree: boolean | null, };
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
+export type VarOrigin = "environment" | "capture";
+export type WebhookEmpty = Record<symbol, never>;
+export type WebhookFixture = { id: string, name: string, request: WebhookReceivedDetail, };
+export type WebhookHistoryQuery = { listenerId: string, before: string | null, limit: number, };
+export type WebhookListener = { id: string, port: number, lan: boolean, addresses: Array<string>, running: boolean, };
+export type WebhookListenerId = { id: string, };
+export type WebhookListenerList = { items: Array<WebhookListener>, };
+export type WebhookReceived = { listenerId: string, id: string, method: string, path: string, sizeBytes: number, atMs: number, truncated: boolean, };
+export type WebhookReceivedDetail = { received: WebhookReceived, query: string, headers: Array<[string, string]>, bodyBase64: string, previewTruncated: boolean, };
+export type WebhookReceivedId = { id: string, };
+export type WebhookReceivedPage = { items: Array<WebhookReceived>, };
+export type WebhookRuleList = { items: Array<ResponseRule>, };
+export type WebhookRuleRef = { listenerId: string, id: string, };
+export type WebhookSaveFixture = { receivedId: string, name: string, };
+export type WebhookStartListener = { port: number, lan: boolean, };
+export type WebhookUpsertRule = { listenerId: string, rule: ResponseRule, };
+export type WebhooksError = { "code": "webhooks.invalid_input" } | { "code": "webhooks.not_found" } | { "code": "webhooks.bind_failed" } | { "code": "webhooks.limit_reached" } | { "code": "webhooks.storage" };
+export type WindowsPackage = "dockerDesktop";
 export type WindowsRun = { directory: string, notice: string, };
+export type WireError = { code: string, detail?: unknown, };
+export type WriteFile = { root: CollectionRoot, path: string, text: string, expect: CollectionExpect, };
 export type WriteJournal = { leaseId: string, seq: number, baseRev: DiskRev | null, text: string, };
+export type Written = { digest: string, rev: string, };
+export type WsInput = { "type": "text", data: string, } | { "type": "binary", dataBase64: string, } | { "type": "close", code: number | null, reason: string | null, };
+export type WsOpen = { 
+/**
+ * `ws://`·`wss://` 절대 URL(변수·비밀 참조 가능).
+ */
+url: string, headers: Array<HeaderRow>, 
+/**
+ * `Sec-WebSocket-Protocol` 후보(RFC 9110 token, 치환하지 않음).
+ */
+subprotocols: Array<string>, tls: TlsOptions, env: EnvSnapshot, origin: RequestOrigin | null, };
 export type ZellijSessions = { items: Array<string>, };
 
 export interface Methods {
@@ -586,6 +723,21 @@ export interface Methods {
   "agents.send": { kind: "mutation"; confirm: "none"; params: SendToAgent; result: AgentTask; error: AgentsError };
   "agents.test": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTest; error: AgentsError };
   "agents.usage": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentUsage; error: AgentsError };
+  "api.collection_delete": { kind: "mutation"; confirm: "always"; params: DeleteFile; result: Done; error: ApiError };
+  "api.collection_read": { kind: "query"; confirm: "none"; params: FileRef; result: FileText; error: ApiError };
+  "api.collection_review": { kind: "mutation"; confirm: "none"; params: ReviewFile; result: Done; error: ApiError };
+  "api.collection_write": { kind: "mutation"; confirm: "none"; params: WriteFile; result: Written; error: ApiError };
+  "api.collections": { kind: "query"; confirm: "none"; params: CollectionsQuery; result: CollectionList; error: ApiError };
+  "api.cookies": { kind: "query"; confirm: "none"; params: CookieJarRef; result: CookieList; error: ApiError };
+  "api.cookies_clear": { kind: "mutation"; confirm: "always"; params: CookieJarRef; result: Done; error: ApiError };
+  "api.grpc_call": { kind: "stream"; confirm: "none"; params: GrpcCall; result: StreamOpened; error: ApiError };
+  "api.grpc_describe": { kind: "query"; confirm: "none"; params: GrpcTarget; result: GrpcCatalog; error: ApiError };
+  "api.history": { kind: "query"; confirm: "none"; params: HistoryQuery; result: HistoryPage; error: ApiError };
+  "api.history_get": { kind: "query"; confirm: "none"; params: HistoryId; result: HistoryEntry; error: ApiError };
+  "api.mcp_connect": { kind: "stream"; confirm: "none"; params: McpConnect; result: StreamOpened; error: ApiError };
+  "api.send": { kind: "stream"; confirm: "none"; params: SendRequest; result: StreamOpened; error: ApiError };
+  "api.sse_open": { kind: "stream"; confirm: "none"; params: SseOpen; result: StreamOpened; error: ApiError };
+  "api.ws_open": { kind: "stream"; confirm: "none"; params: WsOpen; result: StreamOpened; error: ApiError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
   "documents.claim": { kind: "mutation"; confirm: "none"; params: ClaimDocument; result: Claimed; error: DocumentsError };
   "documents.journal": { kind: "mutation"; confirm: "none"; params: WriteJournal; result: Done; error: DocumentsError };
@@ -598,7 +750,7 @@ export interface Methods {
   "documents.save": { kind: "mutation"; confirm: "none"; params: SaveDocument; result: Saved; error: DocumentsError };
   "documents.take": { kind: "mutation"; confirm: "none"; params: TakeDocument; result: Claimed; error: DocumentsError };
   "files.create": { kind: "mutation"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
-  "files.delete": { kind: "mutation"; confirm: "always"; params: DeleteFile; result: Done; error: FilesError };
+  "files.delete": { kind: "mutation"; confirm: "always"; params: DeleteSourceFile; result: Done; error: FilesError };
   "files.external_editor": { kind: "mutation"; confirm: "none"; params: OpenSourceEditor; result: SourceEditorOpened; error: FilesError };
   "files.stat": { kind: "query"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
   "files.tree": { kind: "query"; confirm: "none"; params: FileTreeQuery; result: FileTree; error: FilesError };
@@ -681,6 +833,18 @@ export interface Methods {
   "terminal.rename": { kind: "mutation"; confirm: "none"; params: RenameSession; result: Done; error: TerminalError };
   "terminal.resize": { kind: "mutation"; confirm: "none"; params: ResizeStream; result: Done; error: TerminalError };
   "terminal.zellij_list": { kind: "query"; confirm: "none"; params: PingParams; result: ZellijSessions; error: TerminalError };
+  "tools.diagnostics": { kind: "query"; confirm: "none"; params: ToolsEmpty; result: ToolsDiagnosticsInfo; error: ToolsError };
+  "tools.install_command": { kind: "query"; confirm: "none"; params: CheckRef; result: InstallPlan; error: ToolsError };
+  "tools.support_bundle": { kind: "mutation"; confirm: "none"; params: ToolsEmpty; result: SupportBundle; error: ToolsError };
+  "webhooks.fixture_save": { kind: "mutation"; confirm: "none"; params: WebhookSaveFixture; result: WebhookFixture; error: WebhooksError };
+  "webhooks.history": { kind: "query"; confirm: "none"; params: WebhookHistoryQuery; result: WebhookReceivedPage; error: WebhooksError };
+  "webhooks.history_get": { kind: "query"; confirm: "none"; params: WebhookReceivedId; result: WebhookReceivedDetail; error: WebhooksError };
+  "webhooks.listeners": { kind: "query"; confirm: "none"; params: WebhookEmpty; result: WebhookListenerList; error: WebhooksError };
+  "webhooks.rule_delete": { kind: "mutation"; confirm: "always"; params: WebhookRuleRef; result: Done; error: WebhooksError };
+  "webhooks.rule_upsert": { kind: "mutation"; confirm: "none"; params: WebhookUpsertRule; result: ResponseRule; error: WebhooksError };
+  "webhooks.rules": { kind: "query"; confirm: "none"; params: WebhookListenerId; result: WebhookRuleList; error: WebhooksError };
+  "webhooks.start": { kind: "mutation"; confirm: "none"; params: WebhookStartListener; result: WebhookListener; error: WebhooksError };
+  "webhooks.stop": { kind: "mutation"; confirm: "none"; params: WebhookListenerId; result: Done; error: WebhooksError };
 }
 
 export interface Topics {
@@ -688,6 +852,7 @@ export interface Topics {
   "activity.status_changed": ActivityStatus;
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
+  "api.collections_changed": CollectionsChange;
   "documents.changed": DocumentChanged;
   "documents.lease_lost": LeaseLost;
   "documents.moved": DocumentMoved;
@@ -701,6 +866,7 @@ export interface Topics {
   "runtime.changed": RuntimeChange;
   "search.changed": SearchChanged;
   "terminal.changed": TerminalChanged;
+  "webhooks.received": WebhookReceived;
 }
 
 export const METHOD_INFO = {
@@ -735,6 +901,21 @@ export const METHOD_INFO = {
   "agents.send": { kind: "mutation", confirm: "none" },
   "agents.test": { kind: "mutation", confirm: "none" },
   "agents.usage": { kind: "query", confirm: "none" },
+  "api.collection_delete": { kind: "mutation", confirm: "always" },
+  "api.collection_read": { kind: "query", confirm: "none" },
+  "api.collection_review": { kind: "mutation", confirm: "none" },
+  "api.collection_write": { kind: "mutation", confirm: "none" },
+  "api.collections": { kind: "query", confirm: "none" },
+  "api.cookies": { kind: "query", confirm: "none" },
+  "api.cookies_clear": { kind: "mutation", confirm: "always" },
+  "api.grpc_call": { kind: "stream", confirm: "none" },
+  "api.grpc_describe": { kind: "query", confirm: "none" },
+  "api.history": { kind: "query", confirm: "none" },
+  "api.history_get": { kind: "query", confirm: "none" },
+  "api.mcp_connect": { kind: "stream", confirm: "none" },
+  "api.send": { kind: "stream", confirm: "none" },
+  "api.sse_open": { kind: "stream", confirm: "none" },
+  "api.ws_open": { kind: "stream", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
   "documents.claim": { kind: "mutation", confirm: "none" },
   "documents.journal": { kind: "mutation", confirm: "none" },
@@ -830,6 +1011,18 @@ export const METHOD_INFO = {
   "terminal.rename": { kind: "mutation", confirm: "none" },
   "terminal.resize": { kind: "mutation", confirm: "none" },
   "terminal.zellij_list": { kind: "query", confirm: "none" },
+  "tools.diagnostics": { kind: "query", confirm: "none" },
+  "tools.install_command": { kind: "query", confirm: "none" },
+  "tools.support_bundle": { kind: "mutation", confirm: "none" },
+  "webhooks.fixture_save": { kind: "mutation", confirm: "none" },
+  "webhooks.history": { kind: "query", confirm: "none" },
+  "webhooks.history_get": { kind: "query", confirm: "none" },
+  "webhooks.listeners": { kind: "query", confirm: "none" },
+  "webhooks.rule_delete": { kind: "mutation", confirm: "always" },
+  "webhooks.rule_upsert": { kind: "mutation", confirm: "none" },
+  "webhooks.rules": { kind: "query", confirm: "none" },
+  "webhooks.start": { kind: "mutation", confirm: "none" },
+  "webhooks.stop": { kind: "mutation", confirm: "none" },
 } as const;
 
 export const RPC_ERROR_CODES = [
@@ -869,6 +1062,32 @@ export const RPC_ERROR_CODES = [
   "agents.unsafe_worktree",
   "agents.worktree_add_partial",
   "agents.worktree_dirty",
+  "api.collection_conflict",
+  "api.collection_not_found",
+  "api.collection_path_invalid",
+  "api.collection_too_large",
+  "api.file_missing",
+  "api.grpc",
+  "api.history_not_found",
+  "api.invalid_body",
+  "api.invalid_cookie",
+  "api.invalid_header",
+  "api.invalid_input",
+  "api.invalid_method",
+  "api.invalid_url",
+  "api.mcp",
+  "api.network",
+  "api.oauth_failed",
+  "api.project_not_found",
+  "api.review_required",
+  "api.secret_missing",
+  "api.storage_sensitive_body",
+  "api.stream_rejected",
+  "api.stream_unsupported",
+  "api.tls_invalid",
+  "api.too_large",
+  "api.too_many_streams",
+  "api.variable_missing",
   "cancelled",
   "daemon_restarting",
   "debug.unsupported",
@@ -988,5 +1207,13 @@ export const RPC_ERROR_CODES = [
   "terminal.project_not_found",
   "terminal.stream_unavailable",
   "terminal.title_too_long",
+  "tools.invalid_input",
+  "tools.support_failed",
+  "tools.support_too_large",
+  "webhooks.bind_failed",
+  "webhooks.invalid_input",
+  "webhooks.limit_reached",
+  "webhooks.not_found",
+  "webhooks.storage",
 ] as const;
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number];

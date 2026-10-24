@@ -1,0 +1,72 @@
+[
+  {
+    "case": "plain",
+    "review": false,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"plain\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "direct secret is masked, not a reference",
+    "review": false,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"direct secret is masked, not a reference\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [\n      {\n        \"name\": \"Authorization\",\n        \"value\": \"[REDACTED]\",\n        \"enabled\": true\n      }\n    ],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": [],\n  \"masked\": [\n    \"request.headers.0.value\"\n  ]\n}\n"
+  },
+  {
+    "case": "secret reference in a header",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"secret reference in a header\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [\n      {\n        \"name\": \"Authorization\",\n        \"value\": \"Bearer {{secret:GH}}\",\n        \"enabled\": true\n      }\n    ],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "secret reference in a disabled header",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"secret reference in a disabled header\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [\n      {\n        \"name\": \"X-Off\",\n        \"value\": \"{{secret:GH}}\",\n        \"enabled\": false\n      }\n    ],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "secret reference in bearer auth",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"secret reference in bearer auth\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"bearer\",\n      \"token\": \"{{secret:GH}}\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "multipart file part (project root drops the path)",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"multipart file part (project root drops the path)\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"multipart\",\n      \"parts\": [\n        {\n          \"kind\": \"file\",\n          \"name\": \"upload\",\n          \"path\": \"\",\n          \"fileName\": \"a.zip\",\n          \"contentType\": null,\n          \"enabled\": true\n        }\n      ]\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "multipart file part (personal root keeps the path)",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"multipart file part (personal root keeps the path)\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"multipart\",\n      \"parts\": [\n        {\n          \"kind\": \"file\",\n          \"name\": \"upload\",\n          \"path\": \"/home/u/a.zip\",\n          \"fileName\": null,\n          \"contentType\": null,\n          \"enabled\": true\n        }\n      ]\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "binary body path",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"binary body path\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"binary\",\n      \"path\": \"/home/u/.ssh/id_ed25519\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "binary body without a path",
+    "review": false,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"binary body without a path\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"binary\",\n      \"path\": \"\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "tls caPath",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"tls caPath\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": \"/home/u/tls.pem\",\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "tls clientCertPath",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"tls clientCertPath\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": \"/home/u/tls.pem\",\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "tls clientKeyPath",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"tls clientKeyPath\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": \"/home/u/tls.pem\"\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": []\n}\n"
+  },
+  {
+    "case": "stdio command kept in an unknown field",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"stdio command kept in an unknown field\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": [],\n  \"x-mcp\": {\n    \"transport\": \"stdio\",\n    \"command\": \"node server.js\"\n  }\n}\n"
+  },
+  {
+    "case": "grpc proto files kept in an unknown field",
+    "review": true,
+    "text": "{\n  \"version\": 1,\n  \"name\": \"grpc proto files kept in an unknown field\",\n  \"request\": {\n    \"method\": \"POST\",\n    \"url\": \"https://api.test/x\",\n    \"query\": [],\n    \"headers\": [],\n    \"cookies\": [],\n    \"body\": {\n      \"kind\": \"none\"\n    },\n    \"auth\": {\n      \"kind\": \"none\"\n    },\n    \"tls\": {\n      \"verify\": true,\n      \"caPath\": null,\n      \"clientCertPath\": null,\n      \"clientKeyPath\": null\n    },\n    \"timeoutMs\": 30000,\n    \"followRedirects\": true\n  },\n  \"assertions\": [],\n  \"captures\": [],\n  \"x-grpc\": {\n    \"protoFiles\": [\n      \"/home/u/echo.proto\"\n    ]\n  }\n}\n"
+  }
+]

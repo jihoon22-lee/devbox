@@ -16,14 +16,24 @@ fn main() -> Result<()> {
     devbox_runtime::export(&mut exporter);
     devbox_observe::export(&mut exporter);
     devbox_secrets::export(&mut exporter);
+    devbox_api::export(&mut exporter);
+    devbox_webhooks::export(&mut exporter);
+    devbox_tools::export(&mut exporter);
+    devbox_core::notify::export(&mut exporter);
+    // Request fields refine this shared type with literal TypeScript intersections.
+    ts_rs::TypeVisitor::visit::<devbox_agents::ReviewExpect>(&mut exporter);
+    // `api.send` 스트림 NDJSON 이벤트.
+    ts_rs::TypeVisitor::visit::<devbox_api::SendEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::RealtimeEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::WsInput>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::GrpcEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::McpEvent>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_api::McpInput>(&mut exporter);
     devbox_documents::export(&mut exporter);
     devbox_notes::export(&mut exporter);
     devbox_search::export(&mut exporter);
     devbox_activity::export(&mut exporter);
     devbox_lsp::export(&mut exporter);
-    devbox_core::notify::export(&mut exporter);
-    // Request fields refine this shared type with literal TypeScript intersections.
-    ts_rs::TypeVisitor::visit::<devbox_agents::ReviewExpect>(&mut exporter);
     // `search.query` stream lines (JSON Lines of this type).
     ts_rs::TypeVisitor::visit::<devbox_search::SearchChunk>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_lsp::RelayMessage>(&mut exporter);

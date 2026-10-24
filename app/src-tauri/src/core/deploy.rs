@@ -35,6 +35,39 @@ mod tests {
         .await
     }
     #[tokio::test]
+    async fn redeploy_uses_the_first_launch_deploy_plan() {
+        let steps = std::sync::Mutex::new(Vec::new());
+        apply_deployment(
+            || async {
+                steps.lock().unwrap().push("install");
+                Ok::<_, ()>(())
+            },
+            || async {
+                steps.lock().unwrap().push("setup");
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(*steps.lock().unwrap(), ["install", "setup"]);
+        steps.lock().unwrap().clear();
+        assert!(
+            apply_deployment(
+                || async {
+                    steps.lock().unwrap().push("install");
+                    Err::<(), _>(())
+                },
+                || async {
+                    steps.lock().unwrap().push("setup");
+                    Ok(())
+                }
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(*steps.lock().unwrap(), ["install"]);
+    }
+    #[tokio::test]
     async fn channel_install_and_exec_preserve_other_channel_bytes_and_mtimes() {
         let fixture = tempfile::tempdir().unwrap();
         let data = fixture.path().join("custom data");
@@ -336,3 +369,15 @@ fi
 ln -s "devbox-$1" "$t/link"
 mv -Tf "$t/link" "$d/devbox"
 "#;
+
+/// Both first launch and explicit redeployment use the same install/setup steps.
+pub async fn apply_deployment<I, S, IFut, SFut, E>(install: I, setup: S) -> Result<(), E>
+where
+    I: FnOnce() -> IFut,
+    S: FnOnce() -> SFut,
+    IFut: std::future::Future<Output = Result<(), E>>,
+    SFut: std::future::Future<Output = Result<(), E>>,
+{
+    install().await?;
+    setup().await
+}

@@ -1,0 +1,61 @@
+[package]
+name = "devbox-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+devbox-core.workspace = true
+devbox-protocol.workspace = true
+devbox-projects.workspace = true
+devbox-secrets.workspace = true
+aho-corasick = "1"
+bytes.workspace = true
+cookie_store.workspace = true
+data-encoding.workspace = true
+futures.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+notify = "8.2"
+prost.workspace = true
+prost-reflect.workspace = true
+protox.workspace = true
+reqwest.workspace = true
+regex = "1"
+rusqlite.workspace = true
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tonic.workspace = true
+tonic-reflection.workspace = true
+tower.workspace = true
+tokio-rustls.workspace = true
+tokio.workspace = true
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
+tokio-util = { workspace = true, features = ["io"] }
+tracing.workspace = true
+ts-rs.workspace = true
+url.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["fs", "signal"] }
+
+[dev-dependencies]
+rcgen.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tonic = { workspace = true, features = ["server", "router"] }
+tonic-reflection = { workspace = true, features = ["server"] }
+tonic-prost.workspace = true
+rustls-platform-verifier.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
