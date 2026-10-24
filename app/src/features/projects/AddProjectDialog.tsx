@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
-import { Button, Dialog, Tabs } from "../../ui";
+import { Button, Dialog, Tabs, useToasts } from "../../ui";
 import { CloneProjectForm } from "./CloneProjectForm";
 import { ProjectError } from "./ProjectError";
 import s from "./Projects.module.css";
@@ -19,7 +19,14 @@ function AddProjectContent({ onOpenChange }: { onOpenChange: (open: boolean) => 
   const qc = useQueryClient();
   const locked = useRef(false);
   const [path, setPath] = useState("");
-  const success = (project: { id: string }) => {
+  const success = (project: { id: string; gitWarnings?: { key: string }[] }) => {
+    if (project.gitWarnings?.length) {
+      useToasts.getState().push({
+        tone: "warn",
+        title: "외부 명령을 실행할 수 있는 Git 설정이 있습니다",
+        body: `설정: ${project.gitWarnings.map((warning) => warning.key).join(", ")}. Git 작업 시 설정된 훅과 필터가 실행될 수 있습니다.`,
+      });
+    }
     useCurrentProject.getState().set(project.id);
     // Successful registration never becomes a retryable mutation due to refresh failure.
     void qc.invalidateQueries({ queryKey: ["projects.list"] });

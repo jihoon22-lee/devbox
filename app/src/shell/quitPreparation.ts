@@ -2,7 +2,8 @@ import type { DocumentsStore } from "../features/documents/store";
 
 /** One renderer participates in a native exit round; cancellation cannot race a durable save. */
 export function createQuitPreparation(
-  documents: Pick<DocumentsStore, "prepareWindowClose" | "cancelWindowClose">,
+  documents: Pick<DocumentsStore, "prepareWindowClose" | "cancelWindowClose"> &
+    Partial<Pick<DocumentsStore, "abortWindowClose">>,
   ack: (round: number, safe: boolean) => Promise<unknown>,
   blocked: () => void,
 ) {
@@ -33,6 +34,7 @@ export function createQuitPreparation(
     cancel(round: number) {
       if (active?.round !== round) return;
       active.cancelled = true;
+      documents.abortWindowClose?.();
       // If prepare already settled, reopening is safe; otherwise finally does it.
       if (active.settled) {
         documents.cancelWindowClose();

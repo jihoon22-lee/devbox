@@ -95,6 +95,12 @@ impl ProjectsService {
             path,
             favorite: false,
             added_ms: now_ms(),
+            git_warnings: {
+                let warnings = devbox_git::safety::warnings(&reservation.path)
+                    .await
+                    .unwrap_or_default();
+                (!warnings.is_empty()).then_some(warnings)
+            },
         };
         let row = project.clone();
         let hub = self.hub.clone();

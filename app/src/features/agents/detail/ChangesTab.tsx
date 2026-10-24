@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { RpcError } from "../../../rpc/client";
 import { useRpcQuery } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Button, EmptyState } from "../../../ui";
-import { DiffView } from "../../../ui/DiffView";
-import { type DiffRange, parseUnifiedDiff } from "../../../ui/diff";
+import type { DiffRange } from "../../../ui/diff";
+import { ChangesList } from "../../source/ChangesList";
+import { SourceDiff } from "../../source/SourceDiff";
 import s from "./Detail.module.css";
 import { useDrafts } from "./drafts";
 import { QueryError } from "./QueryError";
@@ -13,7 +14,6 @@ import { freshReviewPatch } from "./reviewPatch";
 import { useReviewSignature, useReviewSnapshot } from "./reviewSignature";
 import { useSeen } from "./seen";
 
-const labels = { added: "A", modified: "M", deleted: "D", renamed: "R", unmerged: "U" };
 export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; closed?: boolean; onQuote?: () => void }) {
   const changes = useRpcQuery("agents.changes", { id: agentId });
   const [selected, setSelected] = useState<string>();
@@ -77,7 +77,6 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
     refreshed?.path !== path ||
     refreshed?.snapshot !== snapshot ||
     refreshed?.version !== readVersion;
-  const parsed = useMemo(() => parseUnifiedDiff(patch.data?.patch ?? ""), [patch.data?.patch]);
   const signature = useReviewSignature(changes.data, current, patch.data);
   useEffect(() => {
     if (!signature || stale) return;
@@ -117,20 +116,15 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
       {changes.data && !files.length && <EmptyState title="변경한 파일이 없습니다" />}
       {!!files.length && (
         <div className={s.changes}>
-          <nav className={s.files} aria-label="변경한 파일">
-            {files.map((file) => (
-              <button
-                key={file.path}
-                type="button"
-                className={s.file}
-                aria-current={file.path === path ? "true" : undefined}
-                onClick={() => setSelected(file.path)}
-              >
-                {labels[file.status]} {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path} · +{file.added} −
-                {file.removed} {seen(file) && "✓ 봤음"}
-              </button>
-            ))}
-          </nav>
+          <ChangesList
+            mode="review"
+            files={files}
+            selectedPath={path}
+            onSelectPath={setSelected}
+            isSeen={seen}
+            className={s.files}
+            itemClassName={s.file}
+          />
           <div className={s.patch}>
             {current && (
               <Button
@@ -169,14 +163,14 @@ export function ChangesTab({ agentId, closed, onQuote }: { agentId: string; clos
             )}
             {!patch.data && !patch.error && <p role="status">파일 변경 내용을 불러오는 중…</p>}
             {patch.data?.truncated && <p role="status">파일 변경 내용이 너무 길어 일부만 가져왔습니다.</p>}
-            {parsed.map((file, index) => (
-              <DiffView
-                key={`${path}:${index}`}
-                file={file}
+            {patch.data && (
+              <SourceDiff
+                mode="review"
+                path={path}
+                snapshot={patch.data}
                 onSelectLines={(range) => setSelection({ path, patch: patch.data!.patch, range })}
               />
-            ))}
-            {patch.data && !patch.data.patch && <p>표시할 텍스트 변경이 없습니다.</p>}
+            )}
           </div>
         </div>
       )}

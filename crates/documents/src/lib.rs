@@ -1,12 +1,17 @@
 //! Document storage: write scope, edit leases, CAS saves with atomic exchange,
 //! data-folder journals, no-replace moves and external change observation.
 //! Document text, titles and paths are never written to logs or error details.
+mod code_authority;
 mod commits;
+mod entries;
+mod entry_model;
+pub use entry_model::{EntryInfo, EntryKind};
 mod files;
 mod journal;
 mod lease;
 mod ledger;
 mod model;
+mod policy_scope;
 mod rename;
 mod scope;
 mod service;
@@ -75,3 +80,6 @@ mod service_tests;
 mod sweep_tests;
 #[cfg(test)]
 mod sys_tests;
+
+#[cfg(test)]
+mod entry_tests;

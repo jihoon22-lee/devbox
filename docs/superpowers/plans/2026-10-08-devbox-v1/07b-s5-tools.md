@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기** · 브랜치 `v1/s5-tools`, worktree `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최초 전체 검사 FAIL 후 실패 범위 수정·영향 검사 PASS, 브랜치 전체 검토와 최종 수정 승인. Windows 설치 수용·필수 CI3·PR 리뷰는 아직 미실행. S3와 동시 진행하며 진행 원장은 PROGRESS.md다.
+- 상태: **구현·필수 CI·영향 설치 수용 완료, 최종 근거 감사 APPROVE·PR #645 a55907a2 머지 완료** · 최종 제품 `b18bc740`, 브랜치 `v1/s5-tools`, worktree `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 현재 소스 설치1·2 PASS, 과거429 소스3·4 PASS는 역사 근거, 5·6 NOT_RUN 유지. 정상 리뷰3회·차단 예외1건 수정과 독립 승인 완료. 진행 원장은 PROGRESS.md다.
 - 상세화 수준: S2까지 실제로 머지된 코드의 이름·시그니처로 S5-2–S5-9의 실패 테스트 → 실패 확인 → 구현 → 통과 → 별도 검토·커밋 순서를 확정했다. 코드 조각은 시작점이며 각 과제의 "핵심 테스트" 전부가 완료 조건이다. 계획 코드는 컴파일해 본 것이 아니다. 같은 의도로 고친 것은 PROGRESS §5에 적는다(00 §3.5).
 - 원래 과제 수준 계획은 [07-s4-s6.md](07-s4-s6.md)의 S5 절이었다. 이 문서가 S5의 실행 원장이고 07에는 작업 묶음 표와 링크만 남긴다.
 
@@ -777,6 +777,8 @@ method!(pub ToolsSupportBundle = "tools.support_bundle", mutation, Empty => Supp
 ---
 
 ### S5-9: 도구 섹션 마무리·S5 완료
+
+현재 결과: 구현·검토·CI와 영향 설치 수용1·2 완료(b18bc740), 최종 근거 독립 감사 APPROVE·PR #645 → a55907a2 squash 머지 완료. 최종 문서는 S4에 인계하며 dirty 작업 사본/공유 cache는 보존한다. 7단계는 전체6개 PASS가 아니며 과거429의3·4 PASS, 5·6 NOT_RUN 및 원본 실패/복구 근거를 PROGRESS §5에 구분했다. 아래 체크리스트는 계획 절차이고 실제 진행 원장은 PROGRESS다.
 
 **Files:**
 - Modify: `app/src/features/tools/{ToolsPage,ToolsList}.tsx`, `app/e2e/tools.spec.ts`(새 1개), 이 문서 상태 줄, `PROGRESS.md`(S5 행·PR 표·트랙 2 위치·§5·§8)

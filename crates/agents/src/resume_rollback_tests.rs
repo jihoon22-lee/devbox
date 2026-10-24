@@ -25,6 +25,7 @@ async fn case(mode: &str) {
         path: f.workdir.clone(),
         favorite: false,
         added_ms: 0,
+        git_warnings: None,
     };
     f.svc.db.write(move |tx| tx.execute("INSERT INTO projects_projects(id,name,path,favorite,added_ms) VALUES(?1,?2,?3,?4,?5)",rusqlite::params![project.id,project.name,project.path,project.favorite,project.added_ms])).await.expect("owned project");
     f.rollout(

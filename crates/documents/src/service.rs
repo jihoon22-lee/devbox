@@ -24,6 +24,8 @@ pub(crate) const VAULT: &str = "vault";
 /// Pause points for tests. Production leaves every field empty.
 #[derive(Clone, Default)]
 pub struct Hooks {
+    #[cfg(test)]
+    pub(crate) before_entry_remove: Option<Hook>,
     /// Runs after reading a claimed document, before the lease critical section.
     pub before_lease_insert: Option<Hook>,
     #[cfg(test)]
@@ -84,6 +86,7 @@ pub(crate) struct Shared {
 pub struct DocumentsService {
     pub(crate) s: Arc<Shared>,
     root_constraints: Vec<String>,
+    extra_private: Vec<PathBuf>,
 }
 
 pub(crate) fn scope_fail(e: ScopeError) -> Fail<DocumentsError> {
@@ -158,6 +161,7 @@ impl DocumentsService {
         let data = c.data_dir;
         Self {
             root_constraints: Vec::new(),
+            extra_private: Vec::new(),
             s: Arc::new(Shared {
                 namespace: RwLock::new(()),
                 commits: Default::default(),
@@ -183,6 +187,20 @@ impl DocumentsService {
         scoped.root_constraints.push(root.into());
         scoped
     }
+    /// Extra domain-owned folders to exclude through a broader registered root.
+    pub fn excluding(&self, folders: Vec<PathBuf>) -> Self {
+        let mut scoped = self.clone();
+        scoped.extra_private.extend(folders);
+        scoped
+    }
+    fn private(&self) -> Vec<PathBuf> {
+        self.s
+            .private
+            .iter()
+            .chain(&self.extra_private)
+            .cloned()
+            .collect()
+    }
     async fn roots(&self) -> Vec<crate::Root> {
         (self.s.roots)()
             .await
@@ -191,7 +209,7 @@ impl DocumentsService {
             .collect()
     }
     pub async fn scope(&self) -> R<WriteScope> {
-        let (roots, private) = (self.roots().await, self.s.private.clone());
+        let (roots, private) = (self.roots().await, self.private());
         blocking(move || Ok(WriteScope::new(roots).deny(&private))).await
     }
     pub(crate) async fn locate(&self, key: DocKey, create: bool, entry: bool) -> R<Located> {
@@ -205,7 +223,7 @@ impl DocumentsService {
         entry: bool,
         trash: bool,
     ) -> R<Located> {
-        let (roots, private) = (self.roots().await, self.s.private.clone());
+        let (roots, private) = (self.roots().await, self.private());
         let refused = move |path: &str| is_internal(path) && !(trash && in_trash(path));
         blocking(move || {
             let scope = WriteScope::new(roots).deny(&private);
@@ -290,7 +308,8 @@ impl DocumentsService {
         if window.is_empty() || window.len() > 128 {
             return Err(DocumentsError::InvalidInput.into());
         }
-        let located = self.locate(key, false, false).await?;
+        let scope = self.policy_scope(&key, kind).await;
+        let located = scope.locate(key, false, false).await?;
         let _guard = self.s.leases.lock(located.key()).await;
         let o = self.opened(located, kind, true).await?;
         if let Some(hook) = &self.s.hooks.before_lease_insert {
@@ -415,7 +434,8 @@ impl DocumentsService {
             }
             .into());
         }
-        let Located::At(r) = self.locate(lease.key.clone(), true, false).await? else {
+        let scope = self.policy_scope(&lease.key, lease.kind).await;
+        let Located::At(r) = scope.locate(lease.key.clone(), true, false).await? else {
             return Err(DocumentsError::NotFound.into());
         };
         if r.key != lease.key {
@@ -518,7 +538,8 @@ impl DocumentsService {
     /// Current disk content without a lease (comparison views, other crates).
     pub async fn read_disk(&self, key: &DocKey, kind: DocKind) -> R<DiskDocument> {
         let _namespace = self.s.namespace.read().await;
-        let located = self.locate(key.clone(), false, false).await?;
+        let scope = self.policy_scope(key, kind).await;
+        let located = scope.locate(key.clone(), false, false).await?;
         let o = self.opened(located, kind, false).await?;
         let present = o.file.is_some();
         Ok(DiskDocument {
