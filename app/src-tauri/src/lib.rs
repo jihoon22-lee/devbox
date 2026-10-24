@@ -53,6 +53,7 @@ pub fn run() {
             platform::deploy::redeploy_wsl,
             platform::wsl_cleanup::cleanup_wsl,
             platform::external::open_file_location,
+            platform::external_editor::open_external_editor,
             platform::notify::notify_attention,
             platform::notify::set_badge,
             platform::notify::pending_navigation,
@@ -100,7 +101,8 @@ pub fn run() {
             // Keep note buffers alive even before the renderer's listener is ready.
             // Its explicit destroy happens only after the latest save has completed.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
-                && window.label().starts_with("popout-note-")
+                && (window.label().starts_with("popout-note-")
+                    || window.label().starts_with("popout-code-"))
             {
                 api.prevent_close();
             }

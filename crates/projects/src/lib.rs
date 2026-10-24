@@ -1,5 +1,14 @@
 //! 프로젝트 목록 도메인.
 mod actions;
+mod external_editor;
+mod file_model;
+pub use external_editor::{SourceEditor, editor_arguments};
+mod files;
+mod preview;
+pub use file_model::*;
+pub use files::{
+    FilesCreate, FilesDelete, FilesExternalEditor, FilesPreview, FilesService, FilesStat, FilesTree,
+};
 #[cfg(target_os = "linux")]
 mod clone_target;
 mod cloning;
@@ -46,6 +55,7 @@ method!(pub ProjectsTrustApprove = "projects.trust_approve", mutation, TrustAppr
 topic!(pub ProjectsChangedTopic = "projects.changed", ProjectsChanged);
 
 pub fn export<X: Exporter>(x: &mut X) {
+    files::export(x);
     x.method::<ProjectsList>();
     x.method::<ProjectsAdd>();
     x.method::<ProjectsRemove>();
@@ -102,6 +112,7 @@ fn canonical_project(path: String) -> R<Project> {
         path: canonical,
         favorite: false,
         added_ms: now_ms(),
+        git_warnings: None,
     })
 }
 
@@ -202,9 +213,13 @@ impl ProjectsService {
     }
 
     pub async fn add(&self, p: AddProject) -> R<Project> {
-        let project = tokio::task::spawn_blocking(move || canonical_project(p.path))
+        let mut project = tokio::task::spawn_blocking(move || canonical_project(p.path))
             .await
             .internal("validate project path")??;
+        let warnings = devbox_git::safety::warnings(std::path::Path::new(&project.path))
+            .await
+            .unwrap_or_default();
+        project.git_warnings = (!warnings.is_empty()).then_some(warnings);
         let row = project.clone();
         let hub = self.hub.clone();
         let _ = self
@@ -275,3 +290,6 @@ mod run_ownership_tests;
 mod tests;
 #[cfg(test)]
 mod trust_tests;
+
+#[cfg(test)]
+mod files_tests;

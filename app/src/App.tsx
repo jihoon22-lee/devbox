@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DocumentCloseDialog } from "./features/documents/DocumentCloseDialog";
 import { RpcClient, type Transport } from "./rpc/client";
 import { RpcProvider } from "./rpc/RpcProvider";
 import { tauriTransport } from "./rpc/transport-tauri";
@@ -28,6 +29,7 @@ export function App({ loadTransport = pickTransport }: { loadTransport?: () => P
     return (
       <>
         <NativeQuitPreparation />
+        <DocumentCloseDialog />
         <NativeMainController ready={ready} />
         <ConnectionGate onReady={() => setReady(true)}>
           {(instance) => <ConnectedApp loadTransport={loadTransport} instance={instance} native />}
@@ -35,11 +37,14 @@ export function App({ loadTransport = pickTransport }: { loadTransport?: () => P
       </>
     );
   return (
-    <ConnectedApp
-      loadTransport={loadTransport}
-      instance={import.meta.env.VITE_DEVBOX_INSTANCE ?? "dev"}
-      native={false}
-    />
+    <>
+      <DocumentCloseDialog />
+      <ConnectedApp
+        loadTransport={loadTransport}
+        instance={import.meta.env.VITE_DEVBOX_INSTANCE ?? "dev"}
+        native={false}
+      />
+    </>
   );
 }
 function ConnectedApp({

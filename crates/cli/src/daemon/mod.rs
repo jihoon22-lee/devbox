@@ -7,6 +7,7 @@ mod knowledge_routes;
 mod launch;
 mod locations;
 mod logs;
+mod lsp;
 pub mod observe;
 mod outbox;
 mod problems;
@@ -14,6 +15,10 @@ pub mod routes;
 mod secret_routes;
 pub mod server;
 mod socket;
+mod source_deps;
+mod source_external;
+mod source_git;
+mod source_routes;
 pub mod state;
 mod streams;
 mod summary;
@@ -163,6 +168,8 @@ fn build_services_with_runtime(
     )?;
     let activity = devbox_activity::ActivitySettings::from_table(&config.activity);
     let activity = knowledge::activity(&paths, activity, &db, &hub, &projects);
+    let git = source_git::service(&hub);
+    let deps = source_deps::service(&hub);
     Ok(Arc::new(Services {
         windows: windows_broker::WindowsBroker::default(),
         runtime,
@@ -184,6 +191,9 @@ fn build_services_with_runtime(
         webhooks,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
+        lsp: Arc::new(devbox_lsp::LspService::default()),
+        git,
+        deps,
         documents: knowledge.documents,
         notes: knowledge.notes,
         search: knowledge.search,
@@ -225,6 +235,7 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let _documents_startup = services.documents.start();
     let _activity_writer = services.activity.start();
     let activity = services.activity.clone();
+    let lsp = services.lsp.clone();
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
     let s2 = shutdown.clone();
@@ -234,7 +245,10 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
         tokio::select! { _ = term.recv() => {}, _ = tokio::signal::ctrl_c() => {} }
         s2.cancel();
     });
+    let git = services.git.clone();
     let served = server::serve(socket.listener, services, shutdown).await;
+    lsp.shutdown().await;
+    git.shutdown().await;
     activity.shutdown().await;
     served?;
     tracing::info!("daemon stopped");

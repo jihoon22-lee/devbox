@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
+import { chooseDocumentClose } from "../features/documents/closePrompt";
 import { useDocuments } from "../features/documents/store";
 import { createQuitPreparation } from "./quitPreparation";
 
@@ -10,14 +11,15 @@ export function NativeQuitPreparation() {
   const [error, setError] = useState(false);
   useEffect(() => {
     const label = getCurrentWindow().label;
-    if (label !== "main" && !label.startsWith("popout-note-")) return;
+    if (label !== "main" && !label.startsWith("popout-note-") && !label.startsWith("popout-code-")) return;
     let disposed = false;
     let lease: number | undefined;
     let currentRound: number | undefined;
     const offs: (() => void)[] = [];
     const preparation = createQuitPreparation(
       {
-        prepareWindowClose: () => useDocuments.getState().prepareWindowClose(),
+        prepareWindowClose: () => useDocuments.getState().prepareWindowClose(chooseDocumentClose),
+        abortWindowClose: () => useDocuments.getState().abortWindowClose(),
         cancelWindowClose: () => useDocuments.getState().cancelWindowClose(),
       },
       async (round, safe) => {
@@ -64,6 +66,6 @@ export function NativeQuitPreparation() {
     };
   }, []);
   return error ? (
-    <p role="alert">노트를 안전하게 저장하지 못해 종료를 취소했습니다. 연결과 저장 상태를 확인하고 다시 시도하세요.</p>
+    <p role="alert">문서를 안전하게 닫지 못해 종료를 취소했습니다. 연결과 저장 상태를 확인하고 다시 시도하세요.</p>
   ) : null;
 }

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   prepare: vi.fn(),
   cancel: vi.fn(),
+  abort: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
@@ -17,6 +18,7 @@ vi.mock("../features/documents/store", () => ({
     getState: () => ({
       prepareWindowClose: mocks.prepare,
       cancelWindowClose: mocks.cancel,
+      abortWindowClose: mocks.abort,
     }),
   },
 }));
@@ -34,7 +36,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-test.each(["main", "popout-note-owned"])(
+test.each(["main", "popout-note-owned", "popout-code-owned"])(
   "%s listens before registering and ACKs only after persistence",
   async (label) => {
     mocks.label = label;

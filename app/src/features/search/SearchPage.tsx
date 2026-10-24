@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import type { Scope, SearchQuery } from "../../rpc/gen/rpc";
+import type { Scope, SearchHit, SearchQuery } from "../../rpc/gen/rpc";
 import { messageFor } from "../../rpc/messages";
 import { Button } from "../../ui";
 import { CodePreview } from "./CodePreview";
@@ -18,7 +18,13 @@ const initial: SearchQuery = {
   caseSensitive: false,
   limit: 100,
 };
-export function SearchPage({ onOpenNote }: { onOpenNote(path: string): void }) {
+export function SearchPage({
+  onOpenNote,
+  onOpenCode,
+}: {
+  onOpenNote(path: string): void;
+  onOpenCode?: (hit: SearchHit) => void;
+}) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   const [draft, setDraft] = useState(initial);
@@ -118,7 +124,7 @@ export function SearchPage({ onOpenNote }: { onOpenNote(path: string): void }) {
           {selected?.root === "vault" ? (
             <Button onClick={() => onOpenNote(selected.path)}>노트 열기</Button>
           ) : (
-            selected && <CodePreview key={hitKey(selected)} hit={selected} />
+            selected && <CodePreview key={hitKey(selected)} hit={selected} onOpen={onOpenCode} />
           )}
           <SavedSearches query={query} onSelect={apply} />
         </div>
@@ -128,5 +134,12 @@ export function SearchPage({ onOpenNote }: { onOpenNote(path: string): void }) {
 }
 export function SearchRoute() {
   const navigate = useNavigate();
-  return <SearchPage onOpenNote={(path) => void navigate({ to: "/notes", search: { path } })} />;
+  return (
+    <SearchPage
+      onOpenNote={(path) => void navigate({ to: "/notes", search: { path } })}
+      onOpenCode={(hit) =>
+        void navigate({ to: "/source", search: { root: hit.root, path: hit.path, line: hit.line ?? 1, column: 1 } })
+      }
+    />
+  );
 }

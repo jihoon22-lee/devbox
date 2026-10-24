@@ -78,6 +78,13 @@ pub fn open_file_location(
 ) -> Result<(), IpcError> {
     let distro = conn.state().ready_distro()?.to_owned();
     let args = external::file_arguments(&distro, &path, line, column)?;
+    launch_editor(editor, args)
+}
+
+pub(super) fn launch_editor(
+    editor: external::EditorKind,
+    args: Vec<String>,
+) -> Result<(), IpcError> {
     let (exe, cli) = match editor {
         external::EditorKind::Vscode => vscode(),
         external::EditorKind::Cursor => {

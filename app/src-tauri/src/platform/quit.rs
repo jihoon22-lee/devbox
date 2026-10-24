@@ -35,7 +35,7 @@ pub fn quit_window_ready(
     state: State<'_, QuitState>,
 ) -> Result<u64, IpcError> {
     if !note_window(window.label()) {
-        return Err(IpcError::new("노트 창이 아닙니다"));
+        return Err(IpcError::new("문서 창이 아닙니다"));
     }
     let lease = state
         .state
@@ -78,11 +78,11 @@ pub async fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcEr
         .lock()
         .expect("quit state")
         .start(labels(&app))
-        .ok_or_else(|| IpcError::new("노트 창의 저장 준비를 기다린 뒤 다시 시도하세요"))?;
+        .ok_or_else(|| IpcError::new("문서 창의 저장 준비를 기다린 뒤 다시 시도하세요"))?;
     let result = async {
         for label in labels(&app) {
             app.emit_to(&label, "devbox://prepare-quit", round)
-                .map_err(|_| IpcError::new("노트 창에 저장을 요청하지 못했습니다"))?;
+                .map_err(|_| IpcError::new("문서 창에 저장을 요청하지 못했습니다"))?;
         }
         loop {
             // Notify retains a permit when the last ACK arrives between status and await.
@@ -94,7 +94,7 @@ pub async fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcEr
             match status {
                 Status::Ready => return Ok(()),
                 Status::Failed => {
-                    return Err(IpcError::new("노트를 저장하지 못해 종료를 취소했습니다"));
+                    return Err(IpcError::new("문서를 저장하지 못해 종료를 취소했습니다"));
                 }
                 Status::Waiting => state.changed.notified().await,
             }
@@ -132,7 +132,7 @@ pub async fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcEr
         Ok(())
     } else {
         Err(IpcError::new(
-            "노트를 안전하게 저장하지 못해 종료를 취소했습니다",
+            "문서를 안전하게 저장하지 못해 종료를 취소했습니다",
         ))
     }
 }

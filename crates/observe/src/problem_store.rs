@@ -26,7 +26,8 @@ pub(crate) struct ProblemState {
     projects: HashSet<String>,
     sources: HashMap<String, ProblemRun>,
     explicit: HashMap<String, String>,
-    rows: Vec<(String, Problem)>,
+    pub(crate) rows: Vec<(String, Problem)>,
+    pub(crate) lsp: std::collections::BTreeMap<(String, String), crate::problem_lsp::LspSource>,
     truncated: HashSet<String>,
 }
 #[derive(Default)]
@@ -100,7 +101,15 @@ impl ObserveService {
         let rows: Vec<_> = state
             .rows
             .iter()
-            .filter(|(project, _)| project == &p.project_id)
+            .map(|(project, problem)| (project, problem))
+            .chain(state.lsp.iter().flat_map(|((project, _), source)| {
+                source
+                    .rows
+                    .values()
+                    .flatten()
+                    .map(move |problem| (project, problem))
+            }))
+            .filter(|(project, _)| *project == &p.project_id)
             .collect();
         if offset > rows.len() {
             return Err(ObserveError::InvalidCursor.into());
@@ -116,7 +125,7 @@ impl ObserveService {
                 break;
             }
             bytes += size;
-            items.push(problem.clone());
+            items.push((*problem).clone());
         }
         let next = offset + items.len();
         Ok(ProblemsResult {
@@ -126,7 +135,10 @@ impl ObserveService {
                 rev,
                 offset: next as u32,
             }),
-            truncated: state.truncated.contains(&p.project_id),
+            truncated: state.truncated.contains(&p.project_id)
+                || state.lsp.iter().any(|((project, _), source)| {
+                    project == &p.project_id && (!source.truncated.is_empty() || source.saturated)
+                }),
         })
     }
     pub fn apply_problem_batch(
@@ -161,7 +173,14 @@ impl ObserveService {
             if state.rows.iter().any(|(_, p)| p == &problem) {
                 continue;
             }
-            if state.rows.len() == MAX_PROBLEMS {
+            if state.rows.len()
+                + state
+                    .lsp
+                    .values()
+                    .map(|s| s.rows.values().map(Vec::len).sum::<usize>())
+                    .sum::<usize>()
+                >= MAX_PROBLEMS
+            {
                 changed |= state.truncated.insert(run.project_id.clone());
                 break;
             }

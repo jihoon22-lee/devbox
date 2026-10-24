@@ -8,6 +8,8 @@ publish.workspace = true
 [dependencies]
 devbox-protocol.workspace = true
 serde.workspace = true
+sha2.workspace = true
+uuid.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
 tokio.workspace = true
@@ -21,3 +23,6 @@ workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30", features = ["signal", "process"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix.workspace = true

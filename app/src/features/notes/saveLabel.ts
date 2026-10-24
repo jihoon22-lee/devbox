@@ -34,7 +34,7 @@ export function saveLabel(doc: Doc, online: boolean): string | null {
     case "Orphaned":
       if (!unsaved) return doc.state === "Orphaned" ? null : "저장 중";
       if (!online || doc.retry || (doc.error && OFFLINE.has(doc.error))) return "연결 끊김 · 이 기기에 임시 저장";
-      return "저장 중";
+      return doc.policy.kind === "code" && doc.state !== "Saving" ? "저장하지 않음 · Ctrl+S" : "저장 중";
     default:
       return null;
   }

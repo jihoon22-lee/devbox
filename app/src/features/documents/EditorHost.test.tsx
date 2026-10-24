@@ -163,3 +163,40 @@ test("a read-only document cannot be edited from the keyboard", async () => {
   expect(content).toHaveAttribute("contenteditable", "false");
   expect(content).toHaveAttribute("aria-readonly", "true");
 });
+
+test("section unmount and group move keep the document's undo history", () => {
+  const first = render(<EditorHost docKey={a} />);
+  type(editor().view, " kept");
+  first.unmount();
+  const other = render(<EditorHost docKey={b} />);
+  type(editor().view, " other");
+  other.unmount();
+  render(<EditorHost docKey={a} />);
+  expect(editor().view.state.doc.toString()).toBe("alpha kept");
+  undo(editor().content);
+  expect(docs().find(a)?.text).toBe("alpha");
+  expect(docs().find(b)?.text).toBe("beta other");
+});
+
+test("renaming and recreating the old path keeps independent document undo histories", async () => {
+  const renamed = { ...a, path: "renamed.md" };
+  const rendered = render(<EditorHost docKey={a} />);
+  type(editor().view, " retained");
+  await act(async () => {
+    daemon.move(a, renamed);
+    await docs().settled();
+  });
+  rendered.rerender(<EditorHost docKey={renamed} />);
+  expect(editor().view.state.doc.toString()).toBe("alpha retained");
+  await act(async () => {
+    daemon.write(a, "recreated");
+    docs().open(a, note);
+    await docs().settled();
+  });
+  rendered.rerender(<EditorHost docKey={a} />);
+  type(editor().view, " independent");
+  rendered.rerender(<EditorHost docKey={renamed} />);
+  undo(editor().content);
+  expect(docs().find(renamed)?.text).toBe("alpha");
+  expect(docs().find(a)?.text).toBe("recreated independent");
+});

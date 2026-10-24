@@ -43,7 +43,10 @@ impl DocumentsService {
         if from.root != to.root || nested {
             return Err(DocumentsError::InvalidInput.into());
         }
-        let Located::At(src) = self.locate(from, false, true).await? else {
+        // Source file/folder moves use the same project boundary as code claims.
+        // Vault note moves retain their existing policy.
+        let scope = self.policy_scope(&from, DocKind::Code).await;
+        let Located::At(src) = scope.locate(from, false, true).await? else {
             return Err(DocumentsError::NotFound.into());
         };
         match src.kind {
@@ -53,7 +56,7 @@ impl DocumentsService {
             }
             Some(_) => {}
         }
-        let Located::At(dst) = self.locate(to, true, true).await? else {
+        let Located::At(dst) = scope.locate(to, true, true).await? else {
             return Err(DocumentsError::NotFound.into());
         };
         if src.key.root != dst.key.root {

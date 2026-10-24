@@ -120,3 +120,38 @@ test("changed topic invalidates the complete snapshot and unmount removes its su
   );
   expect(wire.sent.some((m) => m.type === "unsubscribe" && m.subId === sub.id)).toBe(true);
 });
+test("Devbox editor action resolves the owned project path and preserves line and column", async () => {
+  const wire = new ProjectWire(),
+    onOpenCode = vi.fn();
+  render(
+    <RpcProvider client={wire.client}>
+      <ProblemsPanel onOpenCode={onOpenCode} />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("observe.problems")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("observe.problems", { rev: "1", items: [problem], nextCursor: null, truncated: false }),
+  );
+  fireEvent.click(await screen.findByRole("link", { name: "src/x.rs:10:4" }));
+  await waitFor(() => expect(wire.requests("observe.resolve_location")).toHaveLength(1));
+  await act(async () => wire.reply("observe.resolve_location", { path: "/owned/src/x.rs", line: 10, column: 4 }));
+  await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("projects.list", {
+      rev: "1",
+      items: [{ id: "p", name: "owned", path: "/owned", favorite: false, addedMs: 0 }],
+    }),
+  );
+  await waitFor(() => expect(wire.requests("files.stat")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("files.stat", {
+      key: { root: "project:p", path: "src/x.rs" },
+      kind: "file",
+      rev: { hash: "h", size: 1, mtimeNs: "1", ino: "2" },
+    }),
+  );
+  await waitFor(() =>
+    expect(onOpenCode).toHaveBeenCalledWith({ root: "project:p", path: "src/x.rs" }, { line: 10, column: 4 }),
+  );
+  expect(openFileLocation).not.toHaveBeenCalled();
+});

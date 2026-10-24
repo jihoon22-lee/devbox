@@ -1,6 +1,9 @@
 use crate::GitError;
 use std::{path::Path, process::Stdio, time::Duration};
-use tokio::{io::AsyncReadExt, process::Command};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
+};
 pub const MAX_OUTPUT: usize = 8 * 1024 * 1024;
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 #[path = "implicit_checkout.rs"]
@@ -50,7 +53,7 @@ pub async fn clone_output(
 }
 
 #[cfg(target_os = "linux")]
-fn ssh_with_batch(command: &str) -> Result<String, GitError> {
+pub(crate) fn ssh_with_batch(command: &str) -> Result<String, GitError> {
     let command = command.trim_start();
     let mut cursor = 0;
     let mut env_wrapper = false;
@@ -256,9 +259,19 @@ pub(crate) async fn with_index(
 }
 
 pub(crate) async fn execute(
-    mut command: Command,
+    command: Command,
     timeout: Duration,
 ) -> Result<(i32, String, String), GitError> {
+    execute_input(command, timeout, None).await
+}
+pub(crate) async fn execute_input(
+    mut command: Command,
+    timeout: Duration,
+    input: Option<&[u8]>,
+) -> Result<(i32, String, String), GitError> {
+    if input.is_some() {
+        command.stdin(Stdio::piped());
+    }
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().map_err(|error| {
@@ -277,12 +290,27 @@ pub(crate) async fn execute(
         .take()
         .ok_or(GitError::Internal)?
         .take((MAX_OUTPUT + 1) as u64);
+    let mut stdin = child.stdin.take();
     let mut out = Vec::new();
     let mut err = Vec::new();
     let read = async {
         tokio::try_join!(
             read_bounded(&mut stdout, &mut out),
-            read_bounded(&mut stderr, &mut err)
+            read_bounded(&mut stderr, &mut err),
+            async {
+                if let (Some(stdin), Some(input)) = (stdin.as_mut(), input) {
+                    stdin
+                        .write_all(input)
+                        .await
+                        .map_err(|e| internal(e, "write Git input"))?;
+                    stdin
+                        .shutdown()
+                        .await
+                        .map_err(|e| internal(e, "close Git input"))?;
+                }
+                drop(stdin.take());
+                Ok::<(), GitError>(())
+            }
         )?;
         let status = child
             .wait()
@@ -394,192 +422,5 @@ pub(crate) async fn repository_root(dir: &Path) -> Result<std::path::PathBuf, Gi
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn clone_runner_allows_transfer_past_query_deadline() {
-        let fixture = tempfile::tempdir().expect("owned fixture");
-        let directory = std::fs::File::open(fixture.path()).expect("owned fixture");
-        // An owned Git alias models a slow transfer without any network or global config.
-        let result = clone_output(
-            &directory,
-            &["-c", "alias.fixture-clone=!sleep 31", "fixture-clone"],
-        )
-        .await
-        .expect("clone should outlive the 30-second query deadline");
-        assert_eq!(result.0, 0);
-    }
-    #[cfg(target_os = "linux")]
-    async fn effective_ssh_options(command: &str) {
-        let ssh = ssh_with_batch(command).expect("owned fixture");
-        let mut process = Command::new("sh");
-        process
-            .args(["-c", &format!("{ssh} -G fixture.invalid")])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let (code, output, _) = execute(process, TIMEOUT).await.expect("owned fixture");
-        assert_eq!(code, 0, "SSH environment prefix broke command execution");
-        assert!(output.lines().any(|line| line == "batchmode yes"));
-        assert!(
-            output
-                .lines()
-                .any(|line| line == "stricthostkeychecking true")
-        );
-    }
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn clone_ssh_keeps_assignment_prefix_before_executable() {
-        effective_ssh_options("SSH_AUTH_SOCK='/tmp/fixture socket' ssh -F /dev/null -i '/tmp/fixture identity' -oBatchMode=no -oStrictHostKeyChecking=no").await;
-    }
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn clone_ssh_keeps_env_wrapper_before_executable() {
-        effective_ssh_options("env SSH_AUTH_SOCK='/tmp/fixture socket' ssh -F /dev/null -i '/tmp/fixture identity' -oBatchMode=no -oStrictHostKeyChecking=no").await;
-    }
-    #[cfg(target_os = "linux")]
-    #[tokio::test]
-    async fn clone_batch_options_override_conflicting_ssh_options_without_network() {
-        let ssh = ssh_with_batch("ssh -F /dev/null -oBatchMode=no -oStrictHostKeyChecking=no")
-            .expect("owned fixture");
-        let mut command = Command::new("sh");
-        command
-            .args(["-c", &format!("{ssh} -G fixture.invalid")])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let (code, output, _) = execute(command, TIMEOUT).await.expect("owned fixture");
-        assert_eq!(code, 0);
-        assert!(
-            output.lines().any(|line| line == "batchmode yes"),
-            "effective batch mode was not enabled"
-        );
-        assert!(
-            output
-                .lines()
-                .any(|line| line == "stricthostkeychecking true"),
-            "effective strict host key checking was not enabled"
-        );
-    }
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn clone_credential_environment_cannot_launch_interactive_helpers() {
-        let fixture = tempfile::tempdir().expect("owned fixture");
-        let directory = std::fs::File::open(fixture.path()).expect("owned fixture");
-        let command = clone_command(&directory, &["clone", "--", "fixture", "."]);
-        let variables: std::collections::HashMap<_, _> = command.as_std().get_envs().collect();
-        for key in ["GIT_ASKPASS", "SSH_ASKPASS"] {
-            assert_eq!(
-                variables[std::ffi::OsStr::new(key)],
-                Some(std::ffi::OsStr::new(""))
-            );
-        }
-        assert_eq!(
-            variables[std::ffi::OsStr::new("SSH_ASKPASS_REQUIRE")],
-            Some(std::ffi::OsStr::new("never"))
-        );
-        assert_eq!(variables[std::ffi::OsStr::new("GIT_SSH")], None);
-        assert_eq!(
-            variables[std::ffi::OsStr::new("GCM_INTERACTIVE")],
-            Some(std::ffi::OsStr::new("Never"))
-        );
-    }
-    #[cfg(unix)]
-    fn fixture(script: &str) -> Command {
-        let mut command = Command::new("python3");
-        command
-            .args(["-c", script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        command
-    }
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn timed_out_command_does_not_leave_owned_descendants() {
-        let fixture_dir = tempfile::tempdir().expect("owned fixture");
-        let marker = fixture_dir.path().join("survived");
-        let child = format!(
-            "import time,pathlib; time.sleep(.3); pathlib.Path({:?}).write_text('survived')",
-            marker.to_str().expect("owned fixture")
-        );
-        let script = format!(
-            "import subprocess,time; subprocess.Popen(['python3','-c', {child:?}]); time.sleep(60)"
-        );
-        assert!(matches!(
-            execute(fixture(&script), Duration::from_millis(100)).await,
-            Err(GitError::TimedOut)
-        ));
-        tokio::time::sleep(Duration::from_millis(450)).await;
-        assert!(
-            !marker.exists(),
-            "owned descendant survived its command timeout"
-        );
-    }
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn cancelled_command_does_not_leave_owned_descendants() {
-        let fixture_dir = tempfile::tempdir().expect("owned fixture");
-        let marker = fixture_dir.path().join("survived");
-        let ready = fixture_dir.path().join("ready");
-        let child = format!(
-            "import time,pathlib; time.sleep(.3); pathlib.Path({:?}).write_text('survived')",
-            marker.to_str().expect("owned fixture")
-        );
-        let script = format!(
-            "import subprocess,time,pathlib; subprocess.Popen(['python3','-c', {child:?}]); pathlib.Path({:?}).write_text('ready'); time.sleep(60)",
-            ready.to_str().expect("owned fixture")
-        );
-        let task = tokio::spawn(execute(fixture(&script), Duration::from_secs(30)));
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while !ready.exists() {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .expect("owned fixture");
-        task.abort();
-        assert!(
-            task.await
-                .expect_err("fixture operation must fail")
-                .is_cancelled()
-        );
-        tokio::time::sleep(Duration::from_millis(450)).await;
-        assert!(!marker.exists(), "owned descendant survived cancellation");
-    }
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn oversized_stream_stops_without_waiting_for_other_pipe() {
-        let command = fixture("import os,time; os.write(1,b'x'*(9*1024*1024)); time.sleep(60)");
-        let result = tokio::time::timeout(
-            Duration::from_secs(2),
-            execute(command, Duration::from_secs(30)),
-        )
-        .await;
-        assert!(matches!(result, Ok(Err(GitError::LimitExceeded))));
-    }
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn timeout_and_invalid_utf8_are_explicit_failures() {
-        assert!(matches!(
-            execute(
-                fixture("import time; time.sleep(60)"),
-                Duration::from_millis(30)
-            )
-            .await,
-            Err(GitError::TimedOut)
-        ));
-        assert!(matches!(
-            execute(
-                fixture("import os; os.write(1,b'\\xff')"),
-                Duration::from_secs(2)
-            )
-            .await,
-            Err(GitError::InvalidEncoding)
-        ));
-    }
-}
+#[path = "run_tests.rs"]
+mod tests;

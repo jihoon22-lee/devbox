@@ -13,6 +13,7 @@ export interface OfflineJournal {
   get(key: DocKey): Promise<OfflineEntry | undefined>;
   /** Removes the entry only when its seq (or a tombstone's `dropUpto`) is at or below `uptoSeq`. */
   drop(key: DocKey, uptoSeq: number): Promise<void>;
+  dropIf(key: DocKey, replace: (existing: OfflineEntry | undefined) => boolean): Promise<boolean>;
   list(): Promise<{ key: DocKey; entry: OfflineEntry }[]>;
   /** Re-keys every entry `rekey` maps (a rename), each read and moved inside its key's queue. */
   move(rekey: (key: DocKey) => DocKey | undefined): Promise<void>;
@@ -27,6 +28,7 @@ interface Backend {
   set(id: string, value: Stored): Promise<void>;
   del(id: string): Promise<void>;
   all(): Promise<Stored[]>;
+  update(id: string, change: (value: Stored | undefined) => Stored | undefined): Promise<void>;
 }
 
 function journalOver(backend: Backend): OfflineJournal {
@@ -46,15 +48,30 @@ function journalOver(backend: Backend): OfflineJournal {
     put: (key, entry) => serial(keyId(key), () => backend.set(keyId(key), { key, entry })),
     putIf: (key, entry, replace) =>
       serial(keyId(key), async () => {
-        if (!replace((await backend.get(keyId(key)))?.entry)) return false;
-        await backend.set(keyId(key), { key, entry });
-        return true;
+        let written = false;
+        await backend.update(keyId(key), (stored) => {
+          if (!replace(stored?.entry)) return stored;
+          written = true;
+          return { key, entry };
+        });
+        return written;
       }),
     get: (key) => serial(keyId(key), async () => (await backend.get(keyId(key)))?.entry),
     drop: (key, uptoSeq) =>
       serial(keyId(key), async () => {
-        const stored = await backend.get(keyId(key));
-        if (stored && entrySeq(stored.entry) <= uptoSeq) await backend.del(keyId(key));
+        await backend.update(keyId(key), (stored) =>
+          stored && entrySeq(stored.entry) <= uptoSeq ? undefined : stored,
+        );
+      }),
+    dropIf: (key, replace) =>
+      serial(keyId(key), async () => {
+        let removed = false;
+        await backend.update(keyId(key), (stored) => {
+          if (!replace(stored?.entry)) return stored;
+          removed = true;
+          return undefined;
+        });
+        return removed;
       }),
     list: async () => backend.all(),
     // Moves run one at a time: a move holds its source key's queue while it waits on the target's,
@@ -97,6 +114,11 @@ export function memoryJournal(): OfflineJournal {
       map.delete(id);
     },
     all: async () => [...map.values()],
+    update: async (id, change) => {
+      const next = change(map.get(id));
+      if (next) map.set(id, next);
+      else map.delete(id);
+    },
   });
 }
 
@@ -112,5 +134,26 @@ export function indexedDbJournal(): OfflineJournal {
     set: (id, value) => set(id, value, db()),
     del: (id) => del(id, db()),
     all: async () => (await entries<string, Stored>(db())).map(([, value]) => value),
+    // The read and conditional write share one readwrite transaction across renderers.
+    update: (id, change) =>
+      db()(
+        "readwrite",
+        (objectStore) =>
+          new Promise<void>((resolve, reject) => {
+            const transaction = objectStore.transaction;
+            transaction.oncomplete = () => resolve();
+            transaction.onabort = transaction.onerror = () => reject(transaction.error);
+            const request = objectStore.get(id);
+            request.onsuccess = () => {
+              try {
+                const next = change(request.result as Stored | undefined);
+                if (next) objectStore.put(next, id);
+                else objectStore.delete(id);
+              } catch {
+                transaction.abort();
+              }
+            };
+          }),
+      ),
   });
 }

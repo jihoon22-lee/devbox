@@ -1,0 +1,269 @@
+.page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.sidebar {
+  width: 260px;
+  min-width: 180px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  padding: var(--space-2);
+}
+.workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.toolbar,
+.editorHeader {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: var(--space-2);
+}
+.editorHeader {
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border);
+}
+.editorHeader > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+.editorBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.groups {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.tab[data-active="true"] {
+  border-bottom-color: var(--accent);
+}
+.tab[data-preview="true"] > button:first-child {
+  font-style: italic;
+}
+.tab button {
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: var(--space-2);
+  cursor: pointer;
+}
+.tab button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tree {
+  list-style: none;
+  padding: 0 0 0 var(--space-3);
+  margin: 0;
+}
+.treeRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.treeRow > button:first-child {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: none;
+  color: inherit;
+  border: 0;
+  padding: var(--space-1);
+  cursor: pointer;
+}
+.treeRow[data-selected="true"] {
+  background: var(--selection);
+}
+.results {
+  list-style: none;
+  padding: 0;
+  max-height: 360px;
+  overflow: auto;
+}
+.results button {
+  text-align: left;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  padding: var(--space-2);
+  cursor: pointer;
+}
+.results button:hover,
+.results button:focus-visible {
+  background: var(--selection);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.field input,
+.quickInput {
+  box-sizing: border-box;
+  width: 100%;
+}
+.popout {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .sidebar {
+    width: 200px;
+    min-width: 160px;
+  }
+  .groups {
+    flex-direction: column;
+  }
+}
+.menu {
+  z-index: 1000;
+  min-width: 180px;
+  padding: var(--space-1);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.menuItem {
+  padding: var(--space-2);
+  outline: none;
+  cursor: pointer;
+}
+.menuItem[data-highlighted] {
+  background: var(--selection);
+}
+
+.splitDrop {
+  width: 160px;
+  display: grid;
+  place-items: center;
+  padding: var(--space-3);
+  border: 2px dashed var(--accent);
+  background: var(--selection);
+}
+
+.lspStatus {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.lspStatus p {
+  margin: 6px 0;
+}
+.lspStatus code {
+  display: block;
+  white-space: pre-wrap;
+}
+.installTerminal {
+  height: 260px;
+  min-width: 0;
+}
+
+.codePane {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.withPreview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.sourcePreview {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+}
+.svgPreview {
+  padding: 16px;
+}
+.svgPreview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.gitPanel {
+  padding: var(--space-3);
+  overflow: auto;
+  min-height: 0;
+}
+.editorWorkspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.editorWorkspace[hidden] {
+  display: none;
+}
+@media (max-width: 560px) {
+  .page {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: auto;
+    min-width: 0;
+    max-height: 40%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.sidebar label {
+  display: block;
+  margin-block: var(--space-2);
+}
+.sidebar textarea,
+.sidebar input:not([type="checkbox"]) {
+  box-sizing: border-box;
+  width: 100%;
+}
+.gitPanel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

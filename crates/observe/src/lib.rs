@@ -8,6 +8,8 @@ mod logs;
 mod model;
 mod ports;
 mod problem_ingest;
+mod problem_lsp;
+pub use problem_lsp::LspProblems;
 mod problem_model;
 mod problem_store;
 mod problems;

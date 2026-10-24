@@ -6,7 +6,7 @@ export interface StreamHandlers {
 }
 export interface ClientStream {
   streamId: number;
-  write(bytes: Uint8Array): void;
+  write(bytes: Uint8Array, options?: { throwOnFailure?: boolean }): void;
   /** Dispose both directions; FIN only ends the peer's output. */
   end(): void;
 }
@@ -96,9 +96,15 @@ export class ClientStreams {
     this.clearOrphans();
     return {
       streamId: id,
-      write: (bytes) => {
-        for (let offset = 0; offset < bytes.length && this.current(entry); offset += MAX_STREAM_CHUNK) {
-          if (!this.send(streamFrame(id, 0, bytes.subarray(offset, offset + MAX_STREAM_CHUNK)))) break;
+      write: (bytes, options) => {
+        const failed = () => {
+          if (options?.throwOnFailure) throw new Error("Stream write failed");
+        };
+        if (!this.current(entry)) return failed();
+        for (let offset = 0; offset < bytes.length; offset += MAX_STREAM_CHUNK) {
+          if (!this.current(entry) || !this.send(streamFrame(id, 0, bytes.subarray(offset, offset + MAX_STREAM_CHUNK))))
+            return failed();
+          if (!this.current(entry)) return failed();
         }
       },
       end: () => {

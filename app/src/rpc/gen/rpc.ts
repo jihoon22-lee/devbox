@@ -13,6 +13,7 @@ pending: number,
  */
 dropped: number, lastError: StorageProblem | null, };
 export type AddProject = { path: string, };
+export type Advisory = { id: string, url: string, };
 export type AgentChanges = { base: string, ahead: number, behind: number, headOid: string, baseOid: string, files: Array<FileChange>, };
 export type AgentCommits = { items: Array<Commit>, };
 export type AgentConfig = { copy: Array<string>, setup: Array<string>, teardown: Array<string>, test: string | null, };
@@ -48,6 +49,12 @@ data: string, };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attached = { path: string, markdown: string, };
 export type Attention = { kind: string, message: string, atMs: number, };
+export type AuditFailure = "network" | "http" | "invalidResponse" | "incomplete" | "limitExceeded" | "inputChanged";
+export type AuditJob = { id: string, projectId: string, fingerprint: string, state: AuditState, completed: number, total: number, cached: boolean, error: AuditFailure | null, result: AuditReport | null, lastSuccess: AuditReport | null, };
+export type AuditPackage = { ecosystem: Ecosystem, name: string, version: string, advisories: Array<Advisory>, };
+export type AuditProgress = { id: string, projectId: string, state: AuditState, completed: number, total: number, };
+export type AuditReport = { fingerprint: string, completedAtMs: number, packages: Array<AuditPackage>, skipped: number, };
+export type AuditState = "running" | "succeeded" | "failed";
 export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
 export type Backlink = { src: string, title: string, 
 /**
@@ -55,6 +62,7 @@ export type Backlink = { src: string, title: string,
  */
 line: number, fromUtf16: number, toUtf16: number, };
 export type Backlinks = { rev: string, items: Array<Backlink>, truncated: boolean, };
+export type BlameLine = { oid: string, originalLine: number, line: number, author: string, timeMs: number, text: string, };
 export type Body = { "kind": "none" } | { "kind": "raw", text: string, encoding?: RawEncoding, contentType: string | null, } | { "kind": "json", text: string, } | { "kind": "form", fields: Array<Pair>, } | { "kind": "multipart", parts: Array<Part>, } | { "kind": "binary", path: string, } | { "kind": "graphql", query: string, variables: string, operationName: string | null, method: GraphqlMethod, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
 export type CatalogSource = "reflection" | "protoFiles";
@@ -64,6 +72,7 @@ export type CheckRef = { id: string, };
 export type ClaimDocument = { key: DocKey, policy: DocPolicy, windowId: string, };
 export type Claimed = { key: DocKey, leaseId: string | null, rev: DiskRev | null, text: string | null, eol: Eol, bom: boolean, readOnly: ReadOnly | null, journal: JournalView | null, };
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
+export type CleanupCandidate = { path: string | null, branch: string, oid: string, };
 export type CleanupCandidates = { projectId: string, };
 export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, };
 export type CloneProject = { url: string, dir: string | null, };
@@ -89,6 +98,12 @@ export type CollectionsChange = { root: CollectionRoot, rev: string, };
 export type CollectionsQuery = { root: CollectionRoot, };
 export type Commit = { sha: string, subject: string, author: string, timeMs: number, };
 export type CommonError = { "code": "internal" } | { "code": "invalid_params", "detail": { reason: string, } } | { "code": "method_not_found", "detail": { method: string, } } | { "code": "hello_required" } | { "code": "cancelled" } | { "code": "daemon_restarting" } | { "code": "not_found" } | { "code": "secrets_locked" };
+export type ConflictApply = { target: SourceTarget, path: string, resolution: string | null, token: ConflictToken, };
+export type ConflictEntry = { path: string, kind: ConflictKind, };
+export type ConflictKind = "modifyModify" | "deleteModify" | "addAdd" | "other";
+export type ConflictLabels = { base: string, ours: string, theirs: string, rebase: boolean, };
+export type ConflictPreview = { base: string | null, ours: string | null, theirs: string | null, merged: string | null, labels: ConflictLabels, token: ConflictToken, textSupported: boolean, };
+export type ConflictToken = { target: SourceTarget, path: string, worktreeHash: string, stageOids: [string | null, string | null, string | null], identity: string, };
 export type ContainerAction = "start" | "stop" | "restart";
 export type ContainerActionParams = { id: string, action: ContainerAction, };
 export type ContainerActionResult = { id: string, action: ContainerAction, undo: ContainerActionParams | null, };
@@ -143,8 +158,15 @@ export type DefinitionKind = "task" | "service";
 export type DefinitionList = { rev: string, defs: Array<Definition>, shadowed: Array<Definition>, runs: Array<Run>, trust: TrustPreviewStatus, nextCursor: DefinitionCursor | null, };
 export type DefinitionSource = "projectFile" | "thisPc";
 export type DeleteFile = { root: CollectionRoot, path: string, digest: string, };
+export type DeleteSourceFile = { key: DocKey, expect: DiskRev, };
+export type Dependency = { ecosystem: Ecosystem, name: string, versions: Array<DependencyVersion>, direct: boolean, };
+export type DependencyInventory = { fingerprint: string, locks: Array<LockKind>, dependencies: Array<Dependency>, };
+export type DependencySource = "registry" | "git" | "local" | "unknown";
+export type DependencyVersion = { version: string, source: DependencySource, direct: boolean, };
+export type DepsError = { "code": "deps.invalid_project" } | { "code": "deps.no_lockfile" } | { "code": "deps.unsupported_lock", "detail": { lock: LockKind, } } | { "code": "deps.malformed_lock", "detail": { lock: LockKind, } } | { "code": "deps.missing_manifest", "detail": { lock: LockKind, } } | { "code": "deps.limit_exceeded" } | { "code": "deps.unsafe_path" } | { "code": "deps.read_failed" } | { "code": "deps.busy" } | { "code": "deps.job_not_found" };
 export type DetectRuns = { projectId: string, };
 export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" | "unsafePath" | "unavailable";
+export type DiffSnapshot = { path: string, oldPath: string | null, staged: boolean, patch: string, hunks: Array<Hunk>, fileOnly: boolean, expect: FileExpect, };
 export type Direction = "sent" | "received";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
 export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
@@ -156,7 +178,7 @@ export type DocPolicy = { kind: DocKind, };
 export type DoctorReport = { checks: Array<Check>, };
 export type DocumentChanged = { key: DocKey, rev: DiskRev | null, };
 export type DocumentMoved = { from: DocKey, to: DocKey, };
-export type DocumentsError = { "code": "documents.conflict", "detail": { rev: DiskRev | null, } } | { "code": "documents.lease_lost", "detail": { reason: LeaseLoss, } } | { "code": "documents.out_of_scope" } | { "code": "documents.not_found" } | { "code": "documents.exists" } | { "code": "documents.too_large", "detail": { limit: number, } } | { "code": "documents.stale_journal" } | { "code": "documents.unsupported" } | { "code": "documents.invalid_input" };
+export type DocumentsError = { "code": "documents.conflict", "detail": { rev: DiskRev | null, } } | { "code": "documents.lease_lost", "detail": { reason: LeaseLoss, } } | { "code": "documents.out_of_scope" } | { "code": "documents.not_found" } | { "code": "documents.not_empty" } | { "code": "documents.exists" } | { "code": "documents.too_large", "detail": { limit: number, } } | { "code": "documents.stale_journal" } | { "code": "documents.unsupported" } | { "code": "documents.invalid_input" };
 export type Done = { rev: string, };
 export type DropJournal = { key: DocKey, uptoSeq: number, 
 /**
@@ -165,7 +187,10 @@ export type DropJournal = { key: DocKey, uptoSeq: number,
  */
 leaseId?: string, };
 export type EchoParams = { bytes: number, };
+export type Ecosystem = "npm" | "cargo" | "go" | "python";
 export type Empty = Record<symbol, never>;
+export type EntryInfo = { key: DocKey, kind: EntryKind, rev: DiskRev, readOnly: ReadOnly | null, };
+export type EntryKind = "file" | "directory" | "symlink";
 export type EnvSnapshot = { variables: Array<EnvVar>, };
 export type EnvVar = { name: string, value: string, sensitive: boolean, origin: VarOrigin, };
 export type Eol = "lf" | "crlf";
@@ -182,14 +207,40 @@ from: string, to: string, format: ExportFormat, };
 export type Exported = { path: string, };
 export type FailedRewrite = { path: string, reason: RewriteFailure, };
 export type FileChange = { path: string, oldPath: string | null, status: ChangeStatus, added: number, removed: number, };
+export type FileEntry = { key: DocKey, name: string, kind: EntryKind, };
+export type FileExpect = { fingerprint: string, };
+export type FileKey = { key: DocKey, };
 export type FileLocation = { path: string, line: number, column: number, };
 export type FileRef = { root: CollectionRoot, path: string, };
 export type FileText = { text: string, digest: string, reviewed: boolean, };
+export type FileTree = { entries: Array<FileEntry>, nextCursor: FileTreeCursor | null, };
+export type FileTreeCursor = { after: string, rev: string, };
+export type FileTreeQuery = { projectId: string, dir: string, showHidden: boolean, cursor: FileTreeCursor | null, };
+export type FilesError = { "code": "files.invalid_input" } | { "code": "files.out_of_scope" } | { "code": "files.not_found" } | { "code": "files.exists" } | { "code": "files.state_changed" } | { "code": "files.not_empty" } | { "code": "files.limit_exceeded" } | { "code": "files.editor_unavailable" };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
 export type GetProjectConfig = { id: string, };
+export type GitBranchDeleteParams = { target: SourceTarget, branch: string, oid: string, force: boolean, expect: SourceExpect, };
+export type GitChanged = { projectId: string, worktreeId: string | null, };
+export type GitCheckoutParams = { target: SourceTarget, branch: string, create?: boolean, expect: SourceExpect, };
+export type GitCleanupParams = { target: SourceTarget, candidates: Array<CleanupCandidate>, };
+export type GitCommitParams = { target: SourceTarget, message: string, amend: boolean, expect: SourceExpect, };
+export type GitConfigWarning = { key: string, };
+export type GitDiffQuery = { target: SourceTarget, path: string, staged: boolean, };
+export type GitFileChange = { target: SourceTarget, path: string, hunk?: string, expect: FileExpect, };
+export type GitLogQuery = { target: SourceTarget, path?: string, limit: number, skip: number, };
+export type GitOperation = { id: string, target: SourceTarget, state: GitOperationState, error: SourceGitError | null, current: RemoteExpect | null, remoteOid: string | null, completionUnknown: boolean, };
+export type GitOperationQuery = { target: SourceTarget, operationId: string, };
+export type GitOperationState = "running" | "succeeded" | "failed" | "cancelled";
+export type GitPathQuery = { target: SourceTarget, path: string, };
+export type GitPullParams = { target: SourceTarget, rebase: boolean, expect: RemoteExpect, };
+export type GitPushParams = { target: SourceTarget, forceWithLease: boolean, expect: RemoteExpect, };
+export type GitStashAction = { "action": "push", message: string, includeUntracked: boolean, } | { "action": "apply", oid: string, } | { "action": "pop", oid: string, };
+export type GitStashDropParams = { target: SourceTarget, oid: string, expect: SourceExpect, };
+export type GitStashParams = { target: SourceTarget, payload: GitStashAction, expect: SourceExpect, };
+export type GitTargetQuery = { target: SourceTarget, };
 export type GraphqlMethod = "post" | "get";
 export type GrpcCall = { target: string, 
 /**
@@ -236,6 +287,7 @@ export type HourMs = {
  * Local hour `0..=23`.
  */
 hour: number, ms: number, };
+export type Hunk = { id: string, patch: string, };
 export type ImageProblem = "empty" | "too_large" | "unsupported" | "dimensions" | "encoding";
 export type IncompleteReason = "failed" | "target_exists" | "source_missing" | "move_failed" | "unreadable";
 export type Ingest = { 
@@ -259,12 +311,15 @@ export type Ingested = {
  * Events applied; `0` for a batch at or below the run's last `upto`.
  */
 accepted: number, };
+export type InotifyInfo = { maxUserInstances: number | null, maxUserWatches: number | null, ownedInstances: number, ownedWatches: number, usageComplete: boolean, };
 export type InsertSummary = { 
 /**
  * `YYYY-MM-DD`; `null` is today (local).
  */
 date: string | null, };
+export type InstallLsp = { projectId: string, language: Language, expectedCommand: string, };
 export type InstallPlan = { "kind": "wsl", command: string, title: string, shellCommand: string, } | { "kind": "windows", package: WindowsPackage, } | { "kind": "manual", text: string, } | { "kind": "none" };
+export type Installed = { terminalId: string, };
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type InvalidRule = { field: RuleField, 
 /**
@@ -272,6 +327,7 @@ export type InvalidRule = { field: RuleField,
  * entry beyond the limit.
  */
 index: number, problem: RuleProblem, };
+export type JobQuery = { projectId: string, id: string, };
 export type JournalText = { seq: number, baseRev: DiskRev | null, text: string, };
 export type JournalView = { seq: number, baseRev: DiskRev | null, text: string | null, 
 /**
@@ -282,6 +338,7 @@ export type KeyPlacement = "header" | "query";
 export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
 export type KillResult = { pid: number, };
 export type KillSignal = "term" | "kill";
+export type Language = "rust" | "typescript" | "python" | "go" | "bash" | "yaml" | "toml" | "json";
 export type LaunchAgent = { tool: string, worktree: boolean, prompt: string | null, };
 export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTerminal>, agents: Array<LaunchAgent>, };
 export type LaunchProject = { id: string, };
@@ -295,11 +352,13 @@ export type ListAgents = { includeClosedHours: number | null, afterId?: string, 
 export type ListProjects = Record<symbol, never>;
 export type ListRuns = { projectId: string, cursor: DefinitionCursor | null, };
 export type ListSessions = { projectId: string | null, afterId?: string, };
+export type LockKind = "pnpm" | "npm" | "yarn" | "cargo" | "go" | "poetry" | "uv";
 export type LogFilter = { text?: string, regex?: string, streams?: Array<LogStream>, };
 export type LogFrom = Tail | { offset: number, };
 export type LogLine = { src: LogSource, ts: string, stream: LogStream, text: string, };
 export type LogSource = { "kind": "run", runId: string, } | { "kind": "file", path: string, } | { "kind": "container", id: string, };
 export type LogStream = "stdout" | "stderr" | "system";
+export type LspError = { "code": "lsp.invalid_input" } | { "code": "lsp.project_not_found" } | { "code": "lsp.missing_server" } | { "code": "lsp.failed" } | { "code": "lsp.limit_exceeded" } | { "code": "lsp.lease_lost" } | { "code": "lsp.outside_project" } | { "code": "lsp.protocol" } | { "code": "lsp.stream_unavailable" } | { "code": "lsp.install_unavailable" };
 export type McpConnect = { transport: McpTransport, env: EnvSnapshot, source: McpSource, };
 export type McpEvent = { "type": "authorize", url: string, } | { "type": "ready", serverName: string, serverVersion: string, protocolVersion: string, capabilitiesJson: string, } | { "type": "result", id: string, json: string, } | { "type": "error", id: string, code: number, message: string, } | { "type": "failed", error: WireError, } | { "type": "closed" };
 export type McpInput = { "type": "list", id: string, what: McpList, cursor: string | null, } | { "type": "call", id: string, name: string, argumentsJson: string, } | { "type": "read", id: string, uri: string, } | { "type": "getPrompt", id: string, name: string, argumentsJson: string, };
@@ -343,6 +402,8 @@ export type ObservationKind = "foreground" | "input" | "idle" | "pause";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
 export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
+export type OpenLsp = { projectId: string, language: Language, };
+export type OpenSourceEditor = { key: DocKey, editor: SourceEditor, };
 export type Pair = { name: string, value: string, };
 export type Part = { "kind": "text", name: string, value: string, contentType: string | null, } | { "kind": "file", name: string, path: string, fileName: string | null, contentType: string | null, };
 export type PingParams = Record<symbol, never>;
@@ -351,6 +412,7 @@ export type PortInfo = { port: number, proto: string, addr: string, pid: number 
 export type PrAgent = { id: string, title: string | null, body: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type Pressure = { some: PressureLine | null, full: PressureLine | null, };
 export type PressureLine = { avg10: number, avg60: number, avg300: number, totalUs: number, };
+export type PreviewFile = { key: DocKey, text?: string, };
 export type PrivacyRules = { 
 /**
  * Exact process names (case-insensitive). A match drops the session.
@@ -377,7 +439,7 @@ export type ProblemsResult = { rev: string, items: Array<Problem>, nextCursor: P
 export type ProcessExpectation = { startTimeMs: number, };
 export type ProcessInfo = { pid: number, name: string, uid: number, cwd: string | null, startTimeMs: number, cpuPercent: number, rssBytes: number, unit: string | null, runId: string | null, projectId: string | null, };
 export type ProcessesQuery = { projectId: string | null, };
-export type Project = { id: string, name: string, path: string, favorite: boolean, addedMs: number, };
+export type Project = { id: string, name: string, path: string, favorite: boolean, addedMs: number, gitWarnings?: Array<GitConfigWarning>, };
 export type ProjectAgentCounts = { open: number, attention: number, };
 export type ProjectConfig = { agent: AgentConfig, launch: LaunchConfig, };
 export type ProjectConfigIssue = { message: string, };
@@ -386,6 +448,7 @@ export type ProjectList = { rev: string, items: Array<Project>, };
 export type ProjectMs = { projectId: string, ms: number, };
 export type ProjectPrompt = { name: string, body: string, };
 export type ProjectPrompts = { id: string, };
+export type ProjectQuery = { projectId: string, };
 export type ProjectSummary = { id: string, branch?: string, dirty: boolean | null, ahead: number | null, behind: number | null, terminals: number, agents: ProjectAgentCounts, error?: ProjectSummaryIssue, };
 export type ProjectSummaryIssue = { message: string, };
 export type ProjectSummaryList = { items: Array<ProjectSummary>, };
@@ -412,6 +475,8 @@ export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
 export type Redirect = { status: number, location: string, };
 export type RefreshEnvResult = { restarting: boolean, };
+export type RelayMessage = { json: string, leaseId?: string, };
+export type RemoteExpect = { branch: string | null, headOid: string | null, upstream: Upstream | null, upstreamOid: string | null, };
 export type RemoveProject = { id: string, };
 export type RenameDocument = { leaseId: string | null, key: DocKey, to: DocKey, };
 export type RenameIncomplete = { opId: string, 
@@ -459,6 +524,7 @@ export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
 export type ResponseRule = { id: string, priority: number, method: string | null, path: string, status: number, headers: Array<[string, string]>, body: string, delayMs: number, sequence?: Array<ResponseSequenceStep>, };
 export type ResponseSequenceStep = { status: number, headers: Array<[string, string]>, body: string, delayMs: number, };
 export type RestartPolicy = "no" | "onFailure" | "always";
+export type Restarted = { projectId: string, language: Language, failed: boolean, generation: number, };
 export type RestoreNote = { trashPath: string, path: string, };
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
 export type ReviewFile = { root: CollectionRoot, path: string, digest: string, };
@@ -556,6 +622,10 @@ export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key
 export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
 export type SendRequest = { snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
 export type SendToAgent = { id: string, text: string, };
+export type ServerInfo = { language: Language, command: string, args: Array<string>, install: string | null, state: ServerState, generation: number, pid: number | null, memoryBytes: number | null, clients: number, };
+export type ServerState = "missing" | "starting" | "ready" | "failed" | "idle_stopped";
+export type ServersQuery = { projectId: string, };
+export type ServersResult = { items: Array<ServerInfo>, inotify: InotifyInfo, };
 export type ServiceDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, restart: RestartPolicy, restartSec: number, startLimit: StartLimit, portsHint: Array<number>, readyTimeoutSec: number, };
 export type SessionKind = "shell" | "agent";
 export type SessionList = { rev: string, items: Array<TerminalSession>, nextAfterId?: string, };
@@ -566,7 +636,17 @@ export type SetRules = { rules: PrivacyRules,
  */
 idleThresholdMs: number, };
 export type SetSecret = { name: string, value: string, };
+export type SourceBranch = { name: string, oid: string, current: boolean, remote: boolean, upstream: string | null, };
 export type SourceCursor = { source: LogSource, identity: string, stream: LogStream, offset: number, };
+export type SourceEditor = "code" | "cursor" | "zed";
+export type SourceEditorOpened = { opened: boolean, path: string, };
+export type SourceExpect = { state: RemoteExpect, indexHash: string, worktreeHash: string, };
+export type SourceFile = { path: string, oldPath: string | null, indexStatus: string, worktreeStatus: string, conflicted: boolean, };
+export type SourceGitError = { "code": "git.conflict_stale", "detail": { target: SourceTarget, path: string, } } | { "code": "git.conflict_partial", "detail": { target: SourceTarget, path: string, } } | { "code": "git.invalid_target" } | { "code": "git.source_invalid_input" } | { "code": "git.source_failed" } | { "code": "git.source_limit_exceeded" } | { "code": "git.source_timed_out" } | { "code": "git.state_changed", "detail": { current: RemoteExpect, } } | { "code": "git.source_busy" } | { "code": "git.unsafe_source" };
+export type SourcePreview = { "kind": "markdown", rendered: RenderedNote, } | { "kind": "svg", text: string, };
+export type SourceStatus = { expect: SourceExpect, summary: StatusSummary, files: Array<SourceFile>, warnings: Array<GitConfigWarning>, };
+export type SourceTarget = { projectId: string, worktreeId?: string, };
+export type SourceWorktree = { path: string, headOid: string | null, branch: string | null, locked: boolean, prunable: boolean, main: boolean, };
 export type SseOpen = { 
 /**
  * `http://`·`https://` 절대 URL.
@@ -578,7 +658,9 @@ url: string, headers: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot,
 lastEventId: string | null, origin: RequestOrigin | null, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
+export type StashEntry = { oid: string, reference: string, subject: string, };
 export type Status = "ok" | "warn" | "fail";
+export type StatusSummary = { branch: string | null, ahead: number, behind: number, staged: number, unstaged: number, untracked: number, conflicted: Array<string>, clean: boolean, };
 export type StorageProblem = "disk_full" | "database";
 export type StorageState = "ok" | "storage_failed";
 export type StreamOpened = { streamId: number, };
@@ -632,6 +714,7 @@ export type TrustPreview = { status: TrustPreviewStatus, projectId: string, proj
 export type TrustPreviewParams = { id: string, operation: TrustOperation, agentId: string | null, worktrees: Array<string>, worktree: boolean | null, };
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
+export type Upstream = { remote: string, destinationRef: string, };
 export type VarOrigin = "environment" | "capture";
 export type WebhookEmpty = Record<symbol, never>;
 export type WebhookFixture = { id: string, name: string, request: WebhookReceivedDetail, };
@@ -715,6 +798,9 @@ export interface Methods {
   "api.sse_open": { kind: "stream"; confirm: "none"; params: SseOpen; result: StreamOpened; error: ApiError };
   "api.ws_open": { kind: "stream"; confirm: "none"; params: WsOpen; result: StreamOpened; error: ApiError };
   "debug.echo": { kind: "stream"; confirm: "none"; params: EchoParams; result: StreamOpened; error: DebugError };
+  "deps.audit": { kind: "mutation"; confirm: "none"; params: ProjectQuery; result: AuditJob; error: DepsError };
+  "deps.audit_status": { kind: "query"; confirm: "none"; params: JobQuery; result: AuditJob; error: DepsError };
+  "deps.list": { kind: "query"; confirm: "none"; params: ProjectQuery; result: DependencyInventory; error: DepsError };
   "documents.claim": { kind: "mutation"; confirm: "none"; params: ClaimDocument; result: Claimed; error: DocumentsError };
   "documents.journal": { kind: "mutation"; confirm: "none"; params: WriteJournal; result: Done; error: DocumentsError };
   "documents.journal_drop": { kind: "mutation"; confirm: "none"; params: DropJournal; result: Done; error: DocumentsError };
@@ -725,8 +811,43 @@ export interface Methods {
   "documents.renew": { kind: "mutation"; confirm: "none"; params: RenewLeases; result: Renewed; error: DocumentsError };
   "documents.save": { kind: "mutation"; confirm: "none"; params: SaveDocument; result: Saved; error: DocumentsError };
   "documents.take": { kind: "mutation"; confirm: "none"; params: TakeDocument; result: Claimed; error: DocumentsError };
+  "files.create": { kind: "mutation"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
+  "files.delete": { kind: "mutation"; confirm: "always"; params: DeleteSourceFile; result: Done; error: FilesError };
+  "files.external_editor": { kind: "mutation"; confirm: "none"; params: OpenSourceEditor; result: SourceEditorOpened; error: FilesError };
+  "files.preview": { kind: "query"; confirm: "none"; params: PreviewFile; result: SourcePreview; error: FilesError };
+  "files.stat": { kind: "query"; confirm: "none"; params: FileKey; result: EntryInfo; error: FilesError };
+  "files.tree": { kind: "query"; confirm: "none"; params: FileTreeQuery; result: FileTree; error: FilesError };
+  "git.blame": { kind: "query"; confirm: "none"; params: GitPathQuery; result: Array<BlameLine>; error: SourceGitError };
+  "git.branch_delete": { kind: "mutation"; confirm: "always"; params: GitBranchDeleteParams; result: Done; error: SourceGitError };
+  "git.branches": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<SourceBranch>; error: SourceGitError };
+  "git.checkout": { kind: "mutation"; confirm: "none"; params: GitCheckoutParams; result: Done; error: SourceGitError };
+  "git.cleanup": { kind: "mutation"; confirm: "always"; params: GitCleanupParams; result: Done; error: SourceGitError };
+  "git.cleanup_candidates": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<CleanupCandidate>; error: SourceGitError };
+  "git.commit": { kind: "mutation"; confirm: "none"; params: GitCommitParams; result: Done; error: SourceGitError };
+  "git.conflict_apply": { kind: "mutation"; confirm: "reversible"; params: ConflictApply; result: Done; error: SourceGitError };
+  "git.conflict_preview": { kind: "query"; confirm: "none"; params: GitPathQuery; result: ConflictPreview; error: SourceGitError };
+  "git.conflicts": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<ConflictEntry>; error: SourceGitError };
+  "git.diff": { kind: "query"; confirm: "none"; params: GitDiffQuery; result: DiffSnapshot; error: SourceGitError };
+  "git.discard": { kind: "mutation"; confirm: "always"; params: GitFileChange; result: Done; error: SourceGitError };
+  "git.fetch": { kind: "mutation"; confirm: "none"; params: GitTargetQuery; result: GitOperation; error: SourceGitError };
+  "git.log": { kind: "query"; confirm: "none"; params: GitLogQuery; result: Array<Commit>; error: SourceGitError };
+  "git.operation_cancel": { kind: "mutation"; confirm: "none"; params: GitOperationQuery; result: GitOperation; error: SourceGitError };
+  "git.operation_status": { kind: "query"; confirm: "none"; params: GitOperationQuery; result: GitOperation; error: SourceGitError };
+  "git.pull": { kind: "mutation"; confirm: "always"; params: GitPullParams; result: GitOperation; error: SourceGitError };
+  "git.push": { kind: "mutation"; confirm: "always"; params: GitPushParams; result: GitOperation; error: SourceGitError };
+  "git.stage": { kind: "mutation"; confirm: "reversible"; params: GitFileChange; result: Done; error: SourceGitError };
+  "git.stash": { kind: "mutation"; confirm: "none"; params: GitStashParams; result: Done; error: SourceGitError };
+  "git.stash_drop": { kind: "mutation"; confirm: "always"; params: GitStashDropParams; result: Done; error: SourceGitError };
+  "git.stash_list": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<StashEntry>; error: SourceGitError };
+  "git.status": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: SourceStatus; error: SourceGitError };
+  "git.unstage": { kind: "mutation"; confirm: "reversible"; params: GitFileChange; result: Done; error: SourceGitError };
+  "git.worktrees": { kind: "query"; confirm: "none"; params: GitTargetQuery; result: Array<SourceWorktree>; error: SourceGitError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
+  "lsp.install": { kind: "mutation"; confirm: "none"; params: InstallLsp; result: Installed; error: LspError };
+  "lsp.open": { kind: "stream"; confirm: "none"; params: OpenLsp; result: StreamOpened; error: LspError };
+  "lsp.restart": { kind: "mutation"; confirm: "none"; params: OpenLsp; result: Done; error: LspError };
+  "lsp.servers": { kind: "query"; confirm: "none"; params: ServersQuery; result: ServersResult; error: LspError };
   "notes.append": { kind: "mutation"; confirm: "none"; params: AppendNote; result: Appended; error: NotesError };
   "notes.attach": { kind: "mutation"; confirm: "none"; params: AttachImage; result: Attached; error: NotesError };
   "notes.backlinks": { kind: "query"; confirm: "none"; params: NotePath; result: Backlinks; error: NotesError };
@@ -820,9 +941,13 @@ export interface Topics {
   "agents.attention": AgentsAttention;
   "agents.changed": AgentsChanged;
   "api.collections_changed": CollectionsChange;
+  "deps.audit_changed": AuditProgress;
   "documents.changed": DocumentChanged;
   "documents.lease_lost": LeaseLost;
   "documents.moved": DocumentMoved;
+  "git.changed": GitChanged;
+  "git.operation_changed": GitOperation;
+  "lsp.restarted": Restarted;
   "notes.changed": NotesChanged;
   "notes.rename_incomplete": RenameIncomplete;
   "notes.rewrite_request": RewriteRequest;
@@ -883,6 +1008,9 @@ export const METHOD_INFO = {
   "api.sse_open": { kind: "stream", confirm: "none" },
   "api.ws_open": { kind: "stream", confirm: "none" },
   "debug.echo": { kind: "stream", confirm: "none" },
+  "deps.audit": { kind: "mutation", confirm: "none" },
+  "deps.audit_status": { kind: "query", confirm: "none" },
+  "deps.list": { kind: "query", confirm: "none" },
   "documents.claim": { kind: "mutation", confirm: "none" },
   "documents.journal": { kind: "mutation", confirm: "none" },
   "documents.journal_drop": { kind: "mutation", confirm: "none" },
@@ -893,8 +1021,43 @@ export const METHOD_INFO = {
   "documents.renew": { kind: "mutation", confirm: "none" },
   "documents.save": { kind: "mutation", confirm: "none" },
   "documents.take": { kind: "mutation", confirm: "none" },
+  "files.create": { kind: "mutation", confirm: "none" },
+  "files.delete": { kind: "mutation", confirm: "always" },
+  "files.external_editor": { kind: "mutation", confirm: "none" },
+  "files.preview": { kind: "query", confirm: "none" },
+  "files.stat": { kind: "query", confirm: "none" },
+  "files.tree": { kind: "query", confirm: "none" },
+  "git.blame": { kind: "query", confirm: "none" },
+  "git.branch_delete": { kind: "mutation", confirm: "always" },
+  "git.branches": { kind: "query", confirm: "none" },
+  "git.checkout": { kind: "mutation", confirm: "none" },
+  "git.cleanup": { kind: "mutation", confirm: "always" },
+  "git.cleanup_candidates": { kind: "query", confirm: "none" },
+  "git.commit": { kind: "mutation", confirm: "none" },
+  "git.conflict_apply": { kind: "mutation", confirm: "reversible" },
+  "git.conflict_preview": { kind: "query", confirm: "none" },
+  "git.conflicts": { kind: "query", confirm: "none" },
+  "git.diff": { kind: "query", confirm: "none" },
+  "git.discard": { kind: "mutation", confirm: "always" },
+  "git.fetch": { kind: "mutation", confirm: "none" },
+  "git.log": { kind: "query", confirm: "none" },
+  "git.operation_cancel": { kind: "mutation", confirm: "none" },
+  "git.operation_status": { kind: "query", confirm: "none" },
+  "git.pull": { kind: "mutation", confirm: "always" },
+  "git.push": { kind: "mutation", confirm: "always" },
+  "git.stage": { kind: "mutation", confirm: "reversible" },
+  "git.stash": { kind: "mutation", confirm: "none" },
+  "git.stash_drop": { kind: "mutation", confirm: "always" },
+  "git.stash_list": { kind: "query", confirm: "none" },
+  "git.status": { kind: "query", confirm: "none" },
+  "git.unstage": { kind: "mutation", confirm: "reversible" },
+  "git.worktrees": { kind: "query", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
+  "lsp.install": { kind: "mutation", confirm: "none" },
+  "lsp.open": { kind: "stream", confirm: "none" },
+  "lsp.restart": { kind: "mutation", confirm: "none" },
+  "lsp.servers": { kind: "query", confirm: "none" },
   "notes.append": { kind: "mutation", confirm: "none" },
   "notes.attach": { kind: "mutation", confirm: "none" },
   "notes.backlinks": { kind: "query", confirm: "none" },
@@ -1048,18 +1211,57 @@ export const RPC_ERROR_CODES = [
   "cancelled",
   "daemon_restarting",
   "debug.unsupported",
+  "deps.busy",
+  "deps.invalid_project",
+  "deps.job_not_found",
+  "deps.limit_exceeded",
+  "deps.malformed_lock",
+  "deps.missing_manifest",
+  "deps.no_lockfile",
+  "deps.read_failed",
+  "deps.unsafe_path",
+  "deps.unsupported_lock",
   "documents.conflict",
   "documents.exists",
   "documents.invalid_input",
   "documents.lease_lost",
+  "documents.not_empty",
   "documents.not_found",
   "documents.out_of_scope",
   "documents.stale_journal",
   "documents.too_large",
   "documents.unsupported",
+  "files.editor_unavailable",
+  "files.exists",
+  "files.invalid_input",
+  "files.limit_exceeded",
+  "files.not_empty",
+  "files.not_found",
+  "files.out_of_scope",
+  "files.state_changed",
+  "git.conflict_partial",
+  "git.conflict_stale",
+  "git.invalid_target",
+  "git.source_busy",
+  "git.source_failed",
+  "git.source_invalid_input",
+  "git.source_limit_exceeded",
+  "git.source_timed_out",
+  "git.state_changed",
+  "git.unsafe_source",
   "hello_required",
   "internal",
   "invalid_params",
+  "lsp.failed",
+  "lsp.install_unavailable",
+  "lsp.invalid_input",
+  "lsp.lease_lost",
+  "lsp.limit_exceeded",
+  "lsp.missing_server",
+  "lsp.outside_project",
+  "lsp.project_not_found",
+  "lsp.protocol",
+  "lsp.stream_unavailable",
   "method_not_found",
   "not_found",
   "notes.busy",

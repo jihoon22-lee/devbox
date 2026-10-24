@@ -89,9 +89,15 @@ function localCss(value: string): boolean {
   );
 }
 
-export function sanitizeDiagram(svg: string): DocumentFragment {
+export function sanitizeDiagram(svg: string, xml = false): DocumentFragment {
   const template = document.createElement("template");
-  template.innerHTML = svg;
+  if (xml) {
+    // Source SVG is XML. HTML parsing of foreignObject/iframe can swallow safe siblings.
+    if (/<!DOCTYPE|<!ENTITY/i.test(svg)) return template.content;
+    const parsed = new DOMParser().parseFromString(svg, "image/svg+xml");
+    if (parsed.querySelector("parsererror") || parsed.documentElement.localName !== "svg") return template.content;
+    template.content.append(document.importNode(parsed.documentElement, true));
+  } else template.innerHTML = svg;
   for (const element of [...template.content.querySelectorAll("*")]) {
     if (!template.content.contains(element)) continue;
     const tag = element.localName.toLowerCase();
