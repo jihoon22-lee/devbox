@@ -59,16 +59,14 @@ pub fn capture_ready(window: WebviewWindow, app: AppHandle) -> Result<(), IpcErr
     if window
         .is_visible()
         .map_err(|e| IpcError::new(e.to_string()))?
-    {
-        if let Some(start) = app
+        && let Some(start) = app
             .state::<Capture>()
             .0
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
-        {
-            eprintln!("capture-ready elapsed_ms={}", start.elapsed().as_millis());
-        }
+    {
+        eprintln!("capture-ready elapsed_ms={}", start.elapsed().as_millis());
     }
     Ok(())
 }

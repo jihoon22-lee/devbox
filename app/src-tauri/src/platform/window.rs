@@ -63,13 +63,12 @@ pub(crate) fn disable_browser_accelerators_and_show(
             ready_window.app_handle().exit(1);
             return;
         }
-        if focus {
-            if let Err(error) = ready_window
+        if focus
+            && let Err(error) = ready_window
                 .unminimize()
                 .and_then(|()| ready_window.set_focus())
-            {
-                eprintln!("Cannot focus window: {error}");
-            }
+        {
+            eprintln!("Cannot focus window: {error}");
         }
     })
 }
