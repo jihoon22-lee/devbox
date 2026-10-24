@@ -192,3 +192,63 @@ async fn lock_change_during_audit_is_failed_and_concurrent_start_is_refused() {
     assert_eq!(job.error, Some(AuditFailure::InputChanged));
     assert!(job.result.is_none());
 }
+
+struct PanicAfterSuccess(std::sync::atomic::AtomicUsize);
+impl Http for PanicAfterSuccess {
+    fn post(&self, _: &str, _: Vec<u8>) -> HttpFuture {
+        let call = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            assert_ne!(call, 1, "owned HTTP future panic");
+            Ok(br#"{"results":[{},{}]}"#.to_vec())
+        })
+    }
+}
+#[tokio::test]
+async fn panicked_audit_finishes_failed_preserves_success_and_allows_retry() {
+    let data = files();
+    let read = reader(data.clone());
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let service = DepsService::new(
+        Auditor::new(
+            Arc::new(PanicAfterSuccess(std::sync::atomic::AtomicUsize::new(0))),
+            Arc::new(|| 7_000),
+            ENDPOINT.into(),
+        ),
+        Arc::new(move |event| sink.lock().expect("owned event lock").push(event)),
+    );
+    let initial = load(read.clone()).await.expect("owned initial inventory");
+    let first = service
+        .start("project".into(), initial, read.clone())
+        .expect("owned initial audit");
+    let first = finished(&service, &first.id).await;
+    assert_eq!(first.state, AuditState::Succeeded);
+    data.lock()
+        .expect("owned fixture lock")
+        .get_mut("package-lock.json")
+        .expect("owned lockfile")
+        .push(b'\n');
+    let changed = load(read.clone()).await.expect("owned changed inventory");
+    let second = service
+        .start("project".into(), changed.clone(), read.clone())
+        .expect("owned panicking audit");
+    let second = finished(&service, &second.id).await;
+    assert_eq!(second.state, AuditState::Failed);
+    assert_eq!(second.error, Some(AuditFailure::Network));
+    assert!(second.result.is_none());
+    assert_eq!(second.last_success, first.result);
+    assert!(
+        events
+            .lock()
+            .expect("owned event lock")
+            .iter()
+            .any(|event| event.id == second.id && event.state == AuditState::Failed)
+    );
+    let retry = service
+        .start("project".into(), changed, read)
+        .expect("retry after owned panic");
+    assert_eq!(
+        finished(&service, &retry.id).await.state,
+        AuditState::Succeeded
+    );
+}

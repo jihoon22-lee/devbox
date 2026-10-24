@@ -1,7 +1,11 @@
 //! OSV querybatch adapter. Raw response bodies never cross the domain boundary.
 use crate::model::*;
 use serde::{Deserialize, Serialize};
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, OnceLock},
+};
 pub const ENDPOINT: &str = "https://api.osv.dev/v1/querybatch";
 pub const CACHE_MS: u64 = 30 * 60 * 1000;
 pub type HttpFuture = Pin<Box<dyn Future<Output = Result<Vec<u8>, AuditFailure>> + Send>>;
@@ -14,6 +18,12 @@ impl Http for NetworkHttp {
     fn post(&self, endpoint: &str, body: Vec<u8>) -> HttpFuture {
         let endpoint = endpoint.to_owned();
         Box::pin(async move {
+            // reqwest rustls-no-provider needs an explicit process provider even
+            // when OSV is the first TLS client used, before any API request.
+            static PROVIDER: OnceLock<()> = OnceLock::new();
+            PROVIDER.get_or_init(|| {
+                let _ = rustls::crypto::ring::default_provider().install_default();
+            });
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
                 .redirect(reqwest::redirect::Policy::none())

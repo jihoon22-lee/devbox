@@ -75,19 +75,25 @@ impl DepsService {
                     completed == total || completed % 100 == 0,
                 );
             });
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(180),
-                this.auditor.audit(&project, &inventory, progress),
-            )
+            let auditor = this.auditor.clone();
+            // A panicked transport must finish the job and release its retry slot.
+            let result = tokio::spawn(async move {
+                let result = tokio::time::timeout(
+                    std::time::Duration::from_secs(180),
+                    auditor.audit(&project, &inventory, progress),
+                )
+                .await
+                .unwrap_or(Err(AuditFailure::Network));
+                match result {
+                    Ok(value) => match load(reader).await {
+                        Ok(current) if current.fingerprint == inventory.fingerprint => Ok(value),
+                        _ => Err(AuditFailure::InputChanged),
+                    },
+                    error => error,
+                }
+            })
             .await
             .unwrap_or(Err(AuditFailure::Network));
-            let result = match result {
-                Ok(value) => match load(reader).await {
-                    Ok(current) if current.fingerprint == inventory.fingerprint => Ok(value),
-                    _ => Err(AuditFailure::InputChanged),
-                },
-                error => error,
-            };
             this.update(
                 &id,
                 |j| match result {

@@ -17,6 +17,7 @@ ts-rs.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 reqwest.workspace = true
+rustls.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
