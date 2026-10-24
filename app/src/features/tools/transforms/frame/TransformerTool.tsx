@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from "react";
+import { useTransformInput } from "../handoff";
 import { CopyBtn } from "./ToolActions";
 import { ToolTextArea } from "./ToolInput";
 import { ToolOutput } from "./ToolOutput";
@@ -16,7 +17,7 @@ export function TransformerTool({
   rows?: number;
   clearOutputOnInput?: boolean;
 }) {
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(useTransformInput()?.text ?? "");
   const { output, error, running } = useAsyncTransform(input, run, { clearOutputOnStart: clearOutputOnInput });
   return (
     <div className="tool">

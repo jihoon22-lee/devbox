@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. 다음: S5-7c 감지·선택 보내기. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. S5-7b `b762b582`. S5-7c 감지·선택 보내기 완료(로컬)·독립 재검토 APPROVE. 다음: S5-8a 환경 점검 이동·확장. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-7b 구현·검토 수정 완료·독립 재검토 APPROVE. 201개 이식/적응·기능228+상한 회귀18·typecheck·Biome PASS. S5-7c/8 미착수 |
+| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-7c 구현·검토 수정 완료·최종 APPROVE. 기존 감지7개 이식, 직접 영향85+최종23·typecheck·Biome PASS. S5-8 미착수 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -124,7 +124,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
 | S5 | AC | S5-5 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-24 | 구현 1회·별도 검토 4회·수정 3회(차단 2건: stdio env 주입 실행·SSE 64KiB), 사용량 한도 대기 제외 약3.5h |
 | S5 | AD | S5-6 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 웹훅 수신기·규칙·기록·이진 재전송, 검토 3회(수정 요청2 → APPROVE). 좁은 검증 §5, 전체 수용 S5-9 |
-| S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 작업 중(S5-7b 완료) | 2026-10-24 | | S5-7a `2acd3eee` 완료, S5-7b 독립 재검토 APPROVE. S5-7c·S5-8 미착수 |
+| S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 작업 중(S5-7 완료) | 2026-10-24 | | S5-7a `2acd3eee` 완료, S5-7b `b762b582` 완료, S5-7c 최종 APPROVE. S5-8 미착수 |
 | S5 | 마무리 | S5-9 → S5 PR |  | 대기 | | | |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
 | S6 | AF | S6-1b–S6-2 |  | 대기 | | | |
@@ -640,6 +640,17 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-7c 감지·선택 보내기 (2026-10-24, 트랙 2 · 독립 검토 승인)
+
+- 최종 재검토 APPROVE(`s5-7c/review-1/final-review.txt`), 원래 덮어쓰기 재현 1 PASS. 완료 커밋에 포함한다.
+
+- S5-7b `b762b582` clean 상태에서 시작. v0.9 smartDetection 기존 **7개 시험을 모두 이식**(B표208개 이식/적응 완료). 감지는 결정적 후보 순서·중복 없는 tool ID 목록, 1MiB UTF-8/깊이64/노드100,000 상한, 자격 URL·경로 제안 억제를 유지한다. Unix 초/ms·UUID·퍼센트 인코딩 제안을 추가하고, 감지 중 URL 열기·파일 읽기·네트워크·JWT 검증을 하지 않는다.
+- handoff는 zustand 메모리만 사용하고 탐색 인자는 view/tool ID뿐이다. 512KiB를 넘으면 Unicode 경계에서 앞부분만 전달하고 고정 알림을 띄운다. 도구 화면이 받아 전역 pending을 비우고, 같은 도구의 새 전달·StrictMode 초기화·unmount·선택기 밖 도구 탐색도 처리한다. 입력은 다시 돌아와도 복원하지 않는다. Base64/hex는 감지한 디코딩 모드로 초기화, JWT는 토큰 입력만 채우며 검증은 수동이다. UUID 도구는 전달 UUID를 읽기 전용으로 표시하고 생성은 기존 수동 동작이다. 최근 저장은 여전히 ID만이다.
+- `tools.clipboard` 명령은 명시적 실행 때만 읽고 실패는 원문/진단 없는 한국어 토스트, 해제 뒤 늦은 읽기는 무시한다. SelectionMenu는 선택 스냅샷·우클릭·Shift+F10/ContextMenu·Enter·Esc/초점 복원·외부 클릭 닫기를 제공한다. LogView는 로그 목록 안의 실제 DOM 선택만, TerminalView는 xterm hasSelection/getSelection만 전달한다. 기존 TerminalView 시험549줄 bytes 무변경, 선택 시험은 별도 파일. TerminalView276줄, detect433줄로 한도 이내다.
+- 검증: 새 모듈 미구현 RED, 실제 도구 주입/로그 메뉴 RED, 기존 TerminalView에 새 선택 시험 **1 FAIL RED → PASS**. 최종 직접 영향 **15파일85시험 PASS**(기존 LogView·TerminalView 전체 포함). 선택기 밖 탐색으로 원문이 재주입되는 경로 **1 FAIL/3 PASS RED → GREEN** 수정 뒤 직접 영향 **5파일23시험 PASS**(추가4사례 포함, 전체 고유89). typecheck·Biome 완료 검사 PASS. CPU4·nice+10·workers2/no-lock, memory_enforced=false. 실제 Windows·전체 check/build/clippy/E2E는 S5-9로 미실행.
+- 별도 검토 1회 REQUEST_CHANGES(B1): 늦은 clipboard read가 최신 전달 뒤 사용자 편집을 덮는 실제 화면 경로를 재현했다. 클립보드 호출과 log/terminal 전달이 공유 intent revision을 갱신해 이전 읽기·오류 알림을 무효화하며 unmount 가드도 유지한다. 권고 N1은 Shell 등록 콜백의 `void` 제거 1줄로 router.navigate Promise를 반환하고, 실제 Shell+ToolsCommands 경로의 navigation 거부가 pending 정리/고정 토스트까지 전달됨을 검증했다. 신규 회귀 **5 FAIL RED → 5 PASS**, 직접 영향 **5파일17시험 PASS**, typecheck·Biome PASS. 근거 `s5-7c/review-fix/`, 재검토·커밋 대기.
+- 근거 `devbox-verification/s5-7c/`의 RED/GREEN 로그·감지 원본/시험 이름·파일 크기/해시. 별도 검토·커밋 대기, **S5-8 미착수**. 커밋 예정 `feat(tools): suggest transforms and accept selections from logs and terminals`.
 
 ### S5-7b 변환 도구 21종 (2026-10-24, 트랙 2 · 독립 검토 승인)
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ToolOutput, ToolTextArea, ToolTextField } from "../frame";
+import { useTransformInput } from "../handoff";
 import { verifyJwt } from "../lib/browser";
 import {
   decodeJwtKey,
@@ -40,7 +41,7 @@ const STATUS_LABELS: Readonly<Record<JwtVerificationStatus, string>> = {
  * was checked, and the key field is never persisted or copied automatically.
  */
 export function JwtDecoder() {
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(useTransformInput()?.text ?? "");
   const [key, setKey] = useState("");
   const [keyEncoding, setKeyEncoding] = useState<JwtKeyEncoding>("utf8");
   const [output, setOutput] = useState("");

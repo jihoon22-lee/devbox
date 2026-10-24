@@ -194,7 +194,7 @@ export function Shell() {
           }}
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
-        <ToolsCommands navigate={(search) => void router.navigate({ to: "/tools", search })} />
+        <ToolsCommands navigate={(search) => router.navigate({ to: "/tools", search })} />
         <RunStopUndo />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />

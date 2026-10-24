@@ -3,6 +3,8 @@ import type { LogFilter, LogLine, LogSource, LogStream, SearchCursor } from "../
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Banner, Button } from "../../ui";
 import { VirtualList } from "../../ui/VirtualList";
+import { sendToTransforms } from "../tools/transforms/handoff";
+import { SelectionMenu } from "../tools/transforms/SelectionMenu";
 import { LogBody, type LogLocation } from "./LogBody";
 import { LogSources } from "./LogSources";
 import s from "./LogView.module.css";
@@ -202,13 +204,25 @@ function LogSession({ sources: initialSources, onOpenLocation, onPinSources }: L
           </Button>
         </div>
       )}
-      <VirtualList
-        items={lines}
-        follow={follow && search === null}
-        label="로그 줄"
-        onAtBottomChange={(atBottom) => setFollow((old) => followState(old, { type: "userScrolled", atBottom }))}
-        renderItem={(line) => <LogBody line={line} onOpenLocation={openLocation} />}
-      />
+      <SelectionMenu
+        label="로그 선택 작업"
+        className={s.selection}
+        getSelection={(element) => {
+          const selection = window.getSelection();
+          if (!selection || !element.contains(selection.anchorNode) || !element.contains(selection.focusNode))
+            return "";
+          return selection.toString();
+        }}
+        onSend={(text) => void sendToTransforms(text, "log")}
+      >
+        <VirtualList
+          items={lines}
+          follow={follow && search === null}
+          label="로그 줄"
+          onAtBottomChange={(atBottom) => setFollow((old) => followState(old, { type: "userScrolled", atBottom }))}
+          renderItem={(line) => <LogBody line={line} onOpenLocation={openLocation} />}
+        />
+      </SelectionMenu>
       <div className={s.footer}>
         <span>
           {search ? "검색 결과" : follow ? "따라가는 중" : "따라가기 멈춤"} · {lines.length}줄

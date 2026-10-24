@@ -9,6 +9,8 @@ import { useRpc } from "../../rpc/RpcProvider";
 import { openExternal } from "../../shell/external";
 import { Button, useToasts } from "../../ui";
 import { storedFontSize, usePreferences } from "../settings/preferences";
+import { sendToTransforms } from "../tools/transforms/handoff";
+import { SelectionMenu } from "../tools/transforms/SelectionMenu";
 import { preserveInitialHistory } from "./initial-history";
 import { type LinkState, TerminalLink } from "./link";
 import { TerminalSearch } from "./TerminalSearch";
@@ -222,7 +224,13 @@ export function TerminalView({
   }, [focusRequest, preview]);
   const validScale = scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : undefined;
   return (
-    <div className={s.wrap} data-keyscope="terminal">
+    <SelectionMenu
+      className={s.wrap}
+      dataKeyscope="terminal"
+      label="터미널 선택 작업"
+      getSelection={() => (termRef.current?.hasSelection() ? termRef.current.getSelection() : "")}
+      onSend={(text) => void sendToTransforms(text, "terminal")}
+    >
       <div
         className={s.viewport}
         style={
@@ -263,6 +271,6 @@ export function TerminalView({
           )}
         </div>
       )}
-    </div>
+    </SelectionMenu>
   );
 }

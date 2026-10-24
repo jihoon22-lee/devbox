@@ -1,0 +1,20 @@
+.menu {
+  position: fixed;
+  z-index: 1000;
+  padding: var(--space-1);
+  background: var(--bg-1);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px #0003;
+}
+.menu button {
+  padding: var(--space-2);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.menu button:focus-visible {
+  outline: 2px solid var(--accent);
+}

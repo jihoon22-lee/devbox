@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { downloadTextResult, ToolOutput, ToolTextArea } from "../frame";
+import { useTransformInput } from "../handoff";
 import { type ByteEncoding, convertByteEncoding } from "../lib/byteCodec";
 
 const ENCODING_LABELS: Readonly<Record<ByteEncoding, string>> = {
@@ -17,9 +18,16 @@ const OUTPUT_NAMES: Readonly<Record<ByteEncoding, string>> = {
 };
 
 export function ByteCodecTool() {
-  const [source, setSource] = useState<ByteEncoding>("utf8");
-  const [target, setTarget] = useState<ByteEncoding>("base64");
-  const [input, setInput] = useState("");
+  const initial = useTransformInput();
+  const kind = initial?.candidate?.kind;
+  const [source, setSource] = useState<ByteEncoding>(
+    kind === "base64" || kind === "base64url" || kind === "hex" ? kind : "utf8",
+  );
+  const transformer = initial?.candidate?.transformerId;
+  const [target, setTarget] = useState<ByteEncoding>(
+    transformer?.endsWith("-decode") ? "utf8" : transformer?.endsWith("-to-hex") ? "hex" : "base64",
+  );
+  const [input, setInput] = useState(initial?.text ?? "");
   const [actionError, setActionError] = useState<string | null>(null);
   const result = useMemo(() => convertByteEncoding(input, source, target), [input, source, target]);
 
