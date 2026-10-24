@@ -38,6 +38,9 @@ pub enum Body {
     None,
     Raw {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        encoding: Option<RawEncoding>,
         content_type: Option<String>,
     },
     Json {
@@ -375,4 +378,10 @@ pub struct CookieInfo {
 #[serde(rename_all = "camelCase")]
 pub struct CookieList {
     pub cookies: Vec<CookieInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum RawEncoding {
+    Base64,
 }

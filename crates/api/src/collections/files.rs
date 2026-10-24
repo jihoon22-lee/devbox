@@ -234,6 +234,7 @@ pub(crate) fn write(root: &Root, path: &str, text: &[u8], condition: Condition<'
         .into());
     }
     let parts = segments(path)?;
+    super::storage_guard::validate(text)?;
     let name = parts[parts.len() - 1];
     let creating = matches!(condition, Condition::Absent);
     let dir = match parent(root, &parts, creating)? {

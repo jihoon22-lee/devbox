@@ -24,6 +24,7 @@ devbox_protocol::domain_error! {
         CollectionConflict { digest: Option<String> } = "api.collection_conflict",
         CollectionTooLarge { limit: u64 } = "api.collection_too_large",
         CollectionNotFound = "api.collection_not_found",
+        StorageSensitiveBody = "api.storage_sensitive_body",
         ProjectNotFound = "api.project_not_found",
         Grpc { reason: String } = "api.grpc",
         ReviewRequired = "api.review_required",

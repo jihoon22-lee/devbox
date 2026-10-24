@@ -158,7 +158,15 @@ pub(crate) fn visit_active(
     }
     match &mut s.body {
         Body::None | Body::Binary { .. } => {}
-        Body::Raw { text, .. } | Body::Json { text } => f(text)?,
+        Body::Raw {
+            text,
+            encoding: None,
+            ..
+        }
+        | Body::Json { text } => f(text)?,
+        Body::Raw {
+            encoding: Some(_), ..
+        } => {}
         Body::Form { fields } => {
             for row in fields {
                 f(&mut row.value)?;

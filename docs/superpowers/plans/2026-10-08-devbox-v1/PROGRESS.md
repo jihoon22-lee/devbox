@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). 다음: S5-6. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). 다음: S5-7a 터미널 동작 분리. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-5 커밋 2개(gRPC·MCP). 좁은 시험(api grpc·grpc_limits·mcp_stdio·mcp_stdio_guards·mcp_http·mcp_http_guards·http_auth·collections·lib 44, cli `api_mcp`·`api_send`·`daemon::` 24, vitest tools 247 3회)·gRPC 커밋 단독 임시 worktree 검증·clippy/fmt·gen --check·typecheck·musl check·완료 Biome CI PASS(메모리 cgroup 미적용, 트랙 1 §2). E2E·전체 check/Windows는 S5-9 |
+| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-6 구현·검토 수정 완료, 최종 독립 검토 APPROVE. Biome519 PASS. 좁은 검증/차이/미실행은 §5 S5-6·`devbox-verification/s5-6/`. S5-5 gRPC `7c31cecf`·MCP `a5b1850f` 보존 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -123,7 +123,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
 | S5 | AC | S5-5 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-24 | 구현 1회·별도 검토 4회·수정 3회(차단 2건: stdio env 주입 실행·SSE 64KiB), 사용량 한도 대기 제외 약3.5h |
-| S5 | AD | S5-6 |  | 대기 | | | |
+| S5 | AD | S5-6 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 웹훅 수신기·규칙·기록·이진 재전송, 검토 3회(수정 요청2 → APPROVE). 좁은 검증 §5, 전체 수용 S5-9 |
 | S5 | AE | S5-7–S5-8 |  | 대기 | | | |
 | S5 | 마무리 | S5-9 → S5 PR |  | 대기 | | | |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
@@ -640,6 +640,27 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-6 웹훅 수신기 결과 (2026-10-24, 트랙 2 · 독립 검토 승인)
+
+- 최종 독립 재검토 APPROVE(`s5-6/review-1/final-review.txt`), 기존 우회 재현 시험 1 PASS(`final-guard-recheck.txt`). 아래 구현·수정 이력은 보존하며 완료 커밋에 포함한다.
+
+- `crates/webhooks`에 9개 RPC·수신 topic·DB migration, hyper HTTP/1 리스너, 메서드/경로/우선순위/ID 매칭·순서 응답, 16MiB 요청 제한(413·잘림 metadata·부분 본문 저장 안 함), 헤더 64KiB/100행(431), 120건/초 고정 창, 200건/리스너·30일 기록 보관, 0600 본문·0700 디렉터리, 1MiB 상세 미리보기·fixture 저장. 재시작은 자동 bind하지 않으며 시작/중지만 사용자 RPC로 한다. LAN bind는 제품에 구현했지만 시험은 실제 `127.0.0.1`만, `0.0.0.0`는 순수 주소 함수만 검증했다.
+- 화면: 시작/중지·주소·LAN 포트 전달 명령 안내(실행 없음), 받은 요청 목록/본문, 응답 헤더·지연·순서 JSON 편집, 삭제 확인, fixture 저장 후 비밀 없는 응답 규칙 **초안**. 받은 요청은 API 편집기로만 열며 hop-by-hop/Host/Content-Length와 Connection 지명 헤더를 제거한다. 저장 정화 안내를 표시하고 기존 저장 정화 경로를 거친다.
+- 계획 구체화: 기존 API `raw`는 UTF-8 문자열만 받아 이진 재전송 바이트 보존이 불가능했다. S5 소유 `crates/api` model/http/template/history와 화면 draft/stored/storage/BodyEditor에 선택 필드 `encoding: "base64"`를 추가했다(없으면 기존 UTF-8 유지). 유효하지 않은 base64는 송신 전 거부, 템플릿 치환 안 함, 기록에서는 encoded 본문을 비우며 파일 저장은 디코딩한 바이트 문자열의 기존 알려진 토큰 가림 후 다시 인코딩한다. 프로젝트 파일 roundtrip에서 이진 바이트 보존·Authorization 가림, UTF-8 BOM 보존·실제 HTTP Content-Length/bytes를 검증했다. 동결 경로 변경 없음(공유 등록은 추가 줄, RPC 생성물 재생성).
+- hyper 자체 버퍼 상한만으로 완성된 64KiB 초과 헤더를 막지 못하는 RED를 재현해 handler의 집계 상한을 더했다. 오래된 기록에 새 수신이 없어도 조회 때 정리하는 RED, 기록 디렉터리를 symlink로 바꾼 뒤 읽기/정리에서 사용자 파일에 접근하던 RED도 고쳤다. 규칙의 최종 상태 범위는 **200–599**(이전 순수 규칙의 100–599에서 hyper의 최종 응답 계약에 맞춤). 초과 요청의 sizeBytes는 거부까지 관찰한 바이트 수이며 truncated=true다. 동시 연결은 리스너당16, 리스너16, 헤더/본문 시한10초·연결 수명90초로 제한했다.
+- 검증: webhooks unit31 + 실제 loopback listener12 PASS(순서·재시작·chunked 확장/트레일러·100 Continue·413/431·417·HEAD/204/304·중단·느린 본문), API raw encoding2와 실제 http_send13 PASS, 라우팅 완전성1 PASS, 화면/관련 model/storage/ToolsPage52 PASS, typecheck·gen-check·Biome518 PASS. 초기 crate RED는 미구현 심벌 실패, 프론트 초기 실행은 모듈 없음(시험0건)이어서 assertion RED로 세지 않는다. 추가 회귀 RED/원본 로그와 자원 보고 경로는 `devbox-verification/s5-6/`에 보존. 전체 check/clippy/build/E2E·musl·Windows/외부 웹훅 실기는 S5-9로 미실행. 메모리 cgroup 미적용은 유지(CPU4/nice+10/jobs·workers·threads2 적용).
+- 한계/다음: 1차 별도 검토 REQUEST_CHANGES(비밀 저장·신규 규칙 ID) 수정 후 재검토 대기, 커밋·push·PR 없음. D 표 시험은 새 DB/서버/API 구조에 묶어 적응했으며 원래 46개의 개별 시험 이름을 그대로 모두 유지한 것은 아니다. 보관 정리는 수신/조회 때 수행하며 주기 타이머는 없다. 실제 LAN 노출·Windows 전달·방화벽/공유 서비스 변경은 하지 않았다. 검토 후 커밋은 `feat(webhooks): listen for webhooks with response rules and history`.
+
+
+- **1차 별도 검토 수정:** 검토자가 재현한 B1(raw로 연 JSON의 client_secret/password가 프로젝트 파일에 평문 저장됨)·B2(신규 규칙 저장 뒤 ID가 빈 값으로 남아 다음 저장이 중복 생성됨)를 수용했다. 프론트 회귀6개 RED→GREEN; JSON MIME 변형·URL-encoded 폼 민감 키/중복/퍼센트 인코딩은 실제 파일 serializer로 검사한다. raw 전송 초안 bytes는 유지하고 **저장 시** content type에 맞춰 JSON/폼 정화를 적용한다. 규칙 저장은 mutation 반환값을 기다려 서버 ID만 반영하고, 진행 중 중복 제출을 막으며 더 최신 본문 편집·다른 규칙 선택은 보존한다. 화면 연결/실패 재시도까지 관련 시험61 PASS.
+- **데몬 저장 경계 보강(부모 요청):** 기존 `api.collection_write`는 스키마를 검사하지 않는 텍스트 writer여서 화면 정화를 직접 RPC로 우회할 수 있었다. 새 `collections/storage_guard.rs`가 **쓰기 전 raw request body**의 JSON/폼·디코딩된 base64·알려진 토큰 모양을 검사하고, 비밀 값이나 확인할 수 없는 구조/인코딩이면 거부한다. bytes를 자동 재작성하지 않아 digest·CAS·모르는 필드를 보존한다. `api.storage_sensitive_body`와 한국어 복구 안내를 추가했다. JSON 중복 키는 모든 값을 검사하며, 잘못된 JSON 형태의 raw 본문(plain text MIME 포함)·잘못된 base64·구조화 MIME의 잘못된 UTF-8은 보수적으로 거부한다. 컬렉션 외곽 JSON/알려진 envelope 필드가 깨져도 검사 불가능하므로 거부하며, 이는 이전의 임의 텍스트 쓰기에서 좁은 저장 검사를 더한 동작 변경이다. 기존 non-raw body·헤더·환경 파일 전체를 새 정화기로 재설계한 것은 아니다.
+- **수정 검증:** 소유 프로젝트의 실제 CollectionsService 쓰기에서 새4개 PASS(JSON/form/base64·malformed·중복 민감 키 거부·실패 덮어쓰기 bytes 보존·안전한 참조/[REDACTED]/binary 정확한 roundtrip), 기존 collections11 PASS. 최초 daemon 회귀는 2 FAIL/1 PASS RED. 관련 프론트61·messages2·typecheck·gen-check·완료 Biome PASS, 원본 로그·수정 소스 해시는 `devbox-verification/s5-6/review-1-fix/`. 전체 체크·clippy·build·E2E·Windows는 재실행하지 않았으며 기존 미실행 상태 유지. 아직 재검토 승인·커밋 완료로 표시하지 않는다.
+
+
+- **2차 차이 검토 수정:** 원래 B1/B2 수정은 적절하다고 확인됐으나 새 raw 저장 guard의 `known_token`이 `(ghp_...)`를 놓치는 실제 프로젝트 파일 쓰기 우회가 재현됐다. 소스 대조 결과 검토 설명과 달리 프론트 저장 함수도 같은 구분자/앵커 방식으로 놓쳤고, 프론트 2개 RED로 이를 확인했다(`looksLikeSecret`의 별도 비앵커 검사는 저장 함수가 쓰지 않았음). 양쪽 저장 판정을 접두 토큰의 **문장 내부 매칭**으로 맞추고, JWT는 최대 토큰 문자 구간에서 정확히 3부분을 검사한다. Rust의 기존 Redactor는 이미 알려진 값만 가리는 도구여서 형태 감지와 호환되지 않아 기존 lock에 있는 `regex`를 API 직접 의존성으로 연결했다(새 패키지/버전 없음). 기존 일반 `looksLikeSecret` 동작은 바꾸지 않았다.
+- **공통 근거/범위:** `crates/api/tests/fixtures/raw-storage-token-cases.json` 27개 합성 사례를 실제 daemon 저장 4형식(plain/JSON/base64 plain/base64 JSON)과 프론트 serializer 3형식에 공유한다. 괄호·대괄호·유니코드·문장 내부·복수 토큰·JWT 주변 구두점·4부분은 JWT 아님·짧은 비밀 아닌 값·안전한 참조·[REDACTED]를 검사한다. 토큰 모양의 이름을 가진 명시적 `{{secret:NAME}}`는 보존하고 토큰을 일반 변수처럼 감싼 직접 입력은 거부/가린다. 데몬의 앞선 malformed JSON처럼 보이는 raw 본문 거부는 별도 보수적 제약으로 유지하며, 전체 저장 정책이 모든 입력에서 프론트와 동일하다고 주장하지 않는다.
+- **성능 회귀도 수정:** 최초 비앵커 JWT 정규식은 비밀 없는 20,000자에서 약1.16초였고 기존 큰 본문 시험을 지연시켰다. 해당 소유 검증만 종료(exit143, PASS 아님)하고 프론트를 문자 구간 1회 스캔+앵커 JWT 검사로 바꿨다. 200,000자 일반 본문이 변경 없이 정화되는 회귀를 추가했으며 촘촘한 시간 assertion은 쓰지 않았다. 최종 raw collection6 + 기존 collection11, 관련 프론트62, typecheck·완료 Biome PASS. 원본 실패·중단·최종 로그와 해시는 `devbox-verification/s5-6/review-2-fix/`. 재검토 승인·커밋·push는 아직 없음.
 
 ### S5-5 gRPC·MCP 클라이언트·OAuth 2.1 결과 (2026-10-24, 트랙 2)
 

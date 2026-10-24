@@ -48,8 +48,11 @@ export function BodyEditor({ draft, onChange }: { draft: RequestDraft; onChange:
             value={draft.bodies.raw?.contentType ?? ""}
             onChange={(event) => onChange(updateBody(draft, "raw", { contentType: event.target.value }))}
           />
+          {draft.bodies.raw?.encoding === "base64" && (
+            <p>이진 본문 · Base64로 표시하며 보낼 때 원래 바이트로 복원합니다.</p>
+          )}
           <CodeView
-            ariaLabel="텍스트 본문"
+            ariaLabel={draft.bodies.raw?.encoding === "base64" ? "Base64 본문" : "텍스트 본문"}
             value={draft.bodies.raw?.text ?? ""}
             onChange={(text) => onChange(updateBody(draft, "raw", { text }))}
           />

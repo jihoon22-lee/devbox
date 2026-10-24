@@ -11,7 +11,7 @@ import { maskGraphqlQueryLiterals } from "./graphql/mask";
 import { isHeaderEnabled, normalizeHeaders } from "./headers";
 import { MAX_MULTIPART_PARTS, normalizeMultipartParts, safeMultipartFileName } from "./multipart";
 import { isExactVariableReference } from "./references";
-import { isSensitiveName } from "./secretPatterns";
+import { isSensitiveName, redactKnownTokenPatterns } from "./secretPatterns";
 import type {
   AuthConfig,
   GraphqlRequest,
@@ -323,17 +323,6 @@ function sanitizeJsonValue(value: unknown, key = ""): unknown {
   return typeof value === "string" ? redactKnownTokenPatterns(value) : value;
 }
 
-function redactKnownTokenPatterns(value: string): string {
-  if (!value) return value;
-  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)) return REDACTED;
-  let output = value;
-  const candidates = value.split(/[\s"'=:,&]+/).filter(Boolean);
-  for (const candidate of candidates) {
-    if (looksLikeStoredSecret(candidate)) output = output.split(candidate).join(REDACTED);
-  }
-  return output;
-}
-
 function redactMalformedJsonFields(value: string): string {
   return value.replace(/"([^"]+)"\s*:\s*"([^"]*)"/g, (match, key: string, raw: string) =>
     isSensitiveName(key) && !isExactVariableReference(raw) ? match.replace(raw, REDACTED) : match,
@@ -346,13 +335,6 @@ function decodeURIComponentSafely(value: string): string {
   } catch {
     return value;
   }
-}
-
-function looksLikeStoredSecret(value: string): boolean {
-  if (/^(?:sk[_-]|ghp_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9_.-]{12,}$/.test(value)) return true;
-  if (/^AKIA[A-Z0-9]{16}$/.test(value)) return true;
-  const jwt = value.split(".");
-  return jwt.length === 3 && jwt.every((part) => part.length >= 10 && /^[A-Za-z0-9_-]+$/.test(part));
 }
 
 /** 파일 저장 정화 결과. `masked`는 가린 필드 위치(`StoredRequest` 기준 경로, 예 `headers.0.value`). */
@@ -443,6 +425,24 @@ type Mark = (
 ) => string;
 const keep = (_original: string, sanitized: string) => sanitized;
 
+/** Keep received wire text intact until storage, then apply the matching structured-body sanitizer. */
+function sanitizeRawText(text: string, contentType: string | null): string {
+  const mime = contentType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  if (mime.endsWith("/json") || mime.endsWith("+json")) return sanitizeBody(text, "json");
+  if (mime !== "application/x-www-form-urlencoded") return redactKnownTokenPatterns(text);
+  return text
+    .split("&")
+    .map((field) => {
+      const entry = new URLSearchParams(field).entries().next().value;
+      if (!entry) return field;
+      const [name, value] = entry;
+      const safe =
+        isSensitiveName(name) && value && !isExactVariableReference(value) ? REDACTED : redactKnownTokenPatterns(value);
+      return safe === value ? field : `${field.split("=", 1)[0]}=${encodeURIComponent(safe)}`;
+    })
+    .join("&");
+}
+
 function sanitizeStoredBody(
   body: StoredBody,
   shared: boolean,
@@ -453,7 +453,9 @@ function sanitizeStoredBody(
     case "none":
       return body;
     case "raw":
-      return { ...body, text: mark("body.text", body.text, redactKnownTokenPatterns(body.text)) };
+      if (body.encoding === "base64")
+        return { ...body, text: mark("body.text", body.text, btoa(redactKnownTokenPatterns(atob(body.text)))) };
+      return { ...body, text: mark("body.text", body.text, sanitizeRawText(body.text, body.contentType)) };
     case "json":
       return { ...body, text: mark("body.text", body.text, sanitizeBody(body.text, "json"), normalizedJson) };
     case "form":

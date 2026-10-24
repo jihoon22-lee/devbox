@@ -648,6 +648,7 @@ dependencies = [
  "prost-reflect",
  "protox",
  "rcgen",
+ "regex",
  "reqwest",
  "rusqlite",
  "rustls",
@@ -693,6 +694,7 @@ dependencies = [
  "devbox-runtime",
  "devbox-secrets",
  "devbox-terminal",
+ "devbox-webhooks",
  "futures",
  "libc",
  "mimalloc",
@@ -879,6 +881,30 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "devbox-webhooks"
+version = "1.0.0-dev"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "devbox-core",
+ "devbox-protocol",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "reqwest",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
  "ts-rs",
  "uuid",
 ]
@@ -3905,6 +3931,7 @@ dependencies = [
  "devbox-runtime",
  "devbox-secrets",
  "devbox-terminal",
+ "devbox-webhooks",
  "serde",
  "tempfile",
  "ts-rs",

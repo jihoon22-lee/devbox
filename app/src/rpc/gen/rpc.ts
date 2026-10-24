@@ -23,11 +23,11 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
-export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
+export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
 export type AttachSession = { id: string, cols: number, rows: number, readOnly: boolean, };
 export type Attention = { kind: string, message: string, atMs: number, };
 export type Auth = { "kind": "none" } | { "kind": "basic", username: string, password: string, } | { "kind": "bearer", token: string, } | { "kind": "apiKey", name: string, value: string, placement: KeyPlacement, } | { "kind": "oauth2ClientCredentials", tokenUrl: string, clientId: string, clientSecret: string, scope: string | null, } | { "kind": "oauth2AuthCode", authorizationUrl: string, tokenUrl: string, clientId: string, clientSecret: string | null, scope: string | null, };
-export type Body = { "kind": "none" } | { "kind": "raw", text: string, contentType: string | null, } | { "kind": "json", text: string, } | { "kind": "form", fields: Array<Pair>, } | { "kind": "multipart", parts: Array<Part>, } | { "kind": "binary", path: string, } | { "kind": "graphql", query: string, variables: string, operationName: string | null, method: GraphqlMethod, };
+export type Body = { "kind": "none" } | { "kind": "raw", text: string, encoding?: RawEncoding, contentType: string | null, } | { "kind": "json", text: string, } | { "kind": "form", fields: Array<Pair>, } | { "kind": "multipart", parts: Array<Part>, } | { "kind": "binary", path: string, } | { "kind": "graphql", query: string, variables: string, operationName: string | null, method: GraphqlMethod, };
 export type Candidate = { path: string, name: string, isGit: boolean, registered: boolean, };
 export type CatalogSource = "reflection" | "protoFiles";
 export type ChangeStatus = "added" | "modified" | "deleted" | "renamed" | "unmerged";
@@ -212,6 +212,7 @@ export type ProjectsChanged = { rev: string, };
 export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
+export type RawEncoding = "base64";
 export type RealtimeEvent = { "type": "open", protocol: string | null, } | { "type": "message", direction: Direction, kind: MessageKind, data: string | null, dataBase64: string | null, atMs: number, } | { "type": "sseEvent", id: string | null, event: string | null, data: string, retryMs: number | null, atMs: number, } | { "type": "reconnecting", attempt: number, lastEventId: string | null, } | { "type": "dropped", count: number, } | { "type": "closed", code: number | null, reason: string | null, } | { "type": "failed", error: WireError, };
 export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
@@ -223,6 +224,8 @@ export type RequestOrigin = { root: CollectionRoot, path: string, };
 export type RequestSnapshot = { method: string, url: string, query: Array<Pair>, headers: Array<HeaderRow>, cookies: Array<HeaderRow>, body: Body, auth: Auth, tls: TlsOptions, timeoutMs: number, followRedirects: boolean, };
 export type ResizeStream = { streamId: number, cols: number, rows: number, };
 export type ResolveFileLocation = { projectId: string, source: LogSource, path: string, line: number, column: number | null, };
+export type ResponseRule = { id: string, priority: number, method: string | null, path: string, status: number, headers: Array<[string, string]>, body: string, delayMs: number, sequence?: Array<ResponseSequenceStep>, };
+export type ResponseSequenceStep = { status: number, headers: Array<[string, string]>, body: string, delayMs: number, };
 export type RestartPolicy = "no" | "onFailure" | "always";
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
 export type ReviewFile = { root: CollectionRoot, path: string, digest: string, };
@@ -298,6 +301,22 @@ export type TrustPreviewParams = { id: string, operation: TrustOperation, agentI
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
 export type VarOrigin = "environment" | "capture";
+export type WebhookEmpty = Record<symbol, never>;
+export type WebhookFixture = { id: string, name: string, request: WebhookReceivedDetail, };
+export type WebhookHistoryQuery = { listenerId: string, before: string | null, limit: number, };
+export type WebhookListener = { id: string, port: number, lan: boolean, addresses: Array<string>, running: boolean, };
+export type WebhookListenerId = { id: string, };
+export type WebhookListenerList = { items: Array<WebhookListener>, };
+export type WebhookReceived = { listenerId: string, id: string, method: string, path: string, sizeBytes: number, atMs: number, truncated: boolean, };
+export type WebhookReceivedDetail = { received: WebhookReceived, query: string, headers: Array<[string, string]>, bodyBase64: string, previewTruncated: boolean, };
+export type WebhookReceivedId = { id: string, };
+export type WebhookReceivedPage = { items: Array<WebhookReceived>, };
+export type WebhookRuleList = { items: Array<ResponseRule>, };
+export type WebhookRuleRef = { listenerId: string, id: string, };
+export type WebhookSaveFixture = { receivedId: string, name: string, };
+export type WebhookStartListener = { port: number, lan: boolean, };
+export type WebhookUpsertRule = { listenerId: string, rule: ResponseRule, };
+export type WebhooksError = { "code": "webhooks.invalid_input" } | { "code": "webhooks.not_found" } | { "code": "webhooks.bind_failed" } | { "code": "webhooks.limit_reached" } | { "code": "webhooks.storage" };
 export type WindowsRun = { directory: string, notice: string, };
 export type WireError = { code: string, detail?: unknown, };
 export type WriteFile = { root: CollectionRoot, path: string, text: string, expect: CollectionExpect, };
@@ -408,6 +427,15 @@ export interface Methods {
   "terminal.rename": { kind: "mutation"; confirm: "none"; params: RenameSession; result: Done; error: TerminalError };
   "terminal.resize": { kind: "mutation"; confirm: "none"; params: ResizeStream; result: Done; error: TerminalError };
   "terminal.zellij_list": { kind: "query"; confirm: "none"; params: PingParams; result: ZellijSessions; error: TerminalError };
+  "webhooks.fixture_save": { kind: "mutation"; confirm: "none"; params: WebhookSaveFixture; result: WebhookFixture; error: WebhooksError };
+  "webhooks.history": { kind: "query"; confirm: "none"; params: WebhookHistoryQuery; result: WebhookReceivedPage; error: WebhooksError };
+  "webhooks.history_get": { kind: "query"; confirm: "none"; params: WebhookReceivedId; result: WebhookReceivedDetail; error: WebhooksError };
+  "webhooks.listeners": { kind: "query"; confirm: "none"; params: WebhookEmpty; result: WebhookListenerList; error: WebhooksError };
+  "webhooks.rule_delete": { kind: "mutation"; confirm: "always"; params: WebhookRuleRef; result: Done; error: WebhooksError };
+  "webhooks.rule_upsert": { kind: "mutation"; confirm: "none"; params: WebhookUpsertRule; result: ResponseRule; error: WebhooksError };
+  "webhooks.rules": { kind: "query"; confirm: "none"; params: WebhookListenerId; result: WebhookRuleList; error: WebhooksError };
+  "webhooks.start": { kind: "mutation"; confirm: "none"; params: WebhookStartListener; result: WebhookListener; error: WebhooksError };
+  "webhooks.stop": { kind: "mutation"; confirm: "none"; params: WebhookListenerId; result: Done; error: WebhooksError };
 }
 
 export interface Topics {
@@ -419,6 +447,7 @@ export interface Topics {
   "projects.changed": ProjectsChanged;
   "runtime.changed": RuntimeChange;
   "terminal.changed": TerminalChanged;
+  "webhooks.received": WebhookReceived;
 }
 
 export const METHOD_INFO = {
@@ -515,6 +544,15 @@ export const METHOD_INFO = {
   "terminal.rename": { kind: "mutation", confirm: "none" },
   "terminal.resize": { kind: "mutation", confirm: "none" },
   "terminal.zellij_list": { kind: "query", confirm: "none" },
+  "webhooks.fixture_save": { kind: "mutation", confirm: "none" },
+  "webhooks.history": { kind: "query", confirm: "none" },
+  "webhooks.history_get": { kind: "query", confirm: "none" },
+  "webhooks.listeners": { kind: "query", confirm: "none" },
+  "webhooks.rule_delete": { kind: "mutation", confirm: "always" },
+  "webhooks.rule_upsert": { kind: "mutation", confirm: "none" },
+  "webhooks.rules": { kind: "query", confirm: "none" },
+  "webhooks.start": { kind: "mutation", confirm: "none" },
+  "webhooks.stop": { kind: "mutation", confirm: "none" },
 } as const;
 
 export const RPC_ERROR_CODES = [
@@ -569,6 +607,7 @@ export const RPC_ERROR_CODES = [
   "api.project_not_found",
   "api.review_required",
   "api.secret_missing",
+  "api.storage_sensitive_body",
   "api.stream_rejected",
   "api.stream_unsupported",
   "api.tls_invalid",
@@ -647,5 +686,10 @@ export const RPC_ERROR_CODES = [
   "terminal.project_not_found",
   "terminal.stream_unavailable",
   "terminal.title_too_long",
+  "webhooks.bind_failed",
+  "webhooks.invalid_input",
+  "webhooks.limit_reached",
+  "webhooks.not_found",
+  "webhooks.storage",
 ] as const;
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number];

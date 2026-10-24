@@ -1,8 +1,10 @@
-//! 컬렉션 파일 읽기·쓰기·감시(S5-3). 데몬은 텍스트 단위로만 다루고(스키마는 화면 TS 소유),
+//! 컬렉션 파일 읽기·쓰기·감시(S5-3). 스키마는 화면 TS 소유이며 저장 bytes는 재작성하지 않는다.
+//! S5-6 raw 본문은 쓰기 전에 비밀 값과 잘못된 인코딩을 보수적으로 거부한다.
 //! 쓰기는 등록 프로젝트의 `.devbox/api`와 이 채널의 `Paths.config_dir/api` 안에서만 한다.
 mod files;
 pub mod model;
 mod reviews;
+mod storage_guard;
 mod watch;
 
 use crate::{ApiError, R, store};

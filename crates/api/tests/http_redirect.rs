@@ -184,6 +184,7 @@ async fn live_cross_origin_307_and_308_suppress_body_and_derived_secret_headers(
                     header(4, "Content-Encoding", "identity"),
                 ],
                 body: Body::Raw {
+                    encoding: None,
                     text: "payload=cross-origin-secret".into(),
                     content_type: None,
                 },

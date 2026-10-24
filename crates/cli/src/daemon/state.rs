@@ -21,6 +21,7 @@ pub struct Services {
     pub secrets: Arc<devbox_secrets::SecretsService>,
     pub runs: Arc<devbox_runtime::RuntimeService>,
     pub index: devbox_core::IndexDb,
+    pub webhooks: Arc<devbox_webhooks::WebhooksService>,
     pub api: Arc<devbox_api::ApiService>,
     pub api_collections: Arc<devbox_api::CollectionsService>,
 }

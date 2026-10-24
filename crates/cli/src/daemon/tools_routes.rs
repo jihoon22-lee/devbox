@@ -43,4 +43,31 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<devbox_api::ApiCollectionReview, _, _>(|s, _, p| async move {
             s.api_collections.review(p).await
         })
+        .register::<devbox_webhooks::WebhooksListeners, _, _>(|s, _, _| async move {
+            s.webhooks.listeners().await
+        })
+        .register::<devbox_webhooks::WebhooksStart, _, _>(|s, _, p| async move {
+            s.webhooks.start(p).await
+        })
+        .register::<devbox_webhooks::WebhooksStop, _, _>(|s, _, p| async move {
+            s.webhooks.stop(p).await
+        })
+        .register::<devbox_webhooks::WebhooksRules, _, _>(|s, _, p| async move {
+            s.webhooks.rules(p).await
+        })
+        .register::<devbox_webhooks::WebhooksRuleUpsert, _, _>(|s, _, p| async move {
+            s.webhooks.rule_upsert(p).await
+        })
+        .register::<devbox_webhooks::WebhooksRuleDelete, _, _>(|s, _, p| async move {
+            s.webhooks.rule_delete(p).await
+        })
+        .register::<devbox_webhooks::WebhooksHistory, _, _>(|s, _, p| async move {
+            s.webhooks.history(p).await
+        })
+        .register::<devbox_webhooks::WebhooksHistoryGet, _, _>(|s, _, p| async move {
+            s.webhooks.history_get(p).await
+        })
+        .register::<devbox_webhooks::WebhooksFixtureSave, _, _>(|s, _, p| async move {
+            s.webhooks.fixture_save(p).await
+        })
 }

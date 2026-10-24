@@ -265,7 +265,16 @@ pub(crate) fn snapshot(original: &RequestSnapshot, redactor: &Redactor) -> Reque
     }
     match &mut s.body {
         Body::None => {}
-        Body::Raw { text, .. } => *text = raw(text),
+        Body::Raw {
+            text,
+            encoding: None,
+            ..
+        } => *text = raw(text),
+        Body::Raw {
+            text,
+            encoding: Some(_),
+            ..
+        } => *text = String::new(),
         Body::Json { text } => *text = json(text),
         Body::Form { fields } => {
             for row in fields {

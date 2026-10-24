@@ -33,7 +33,7 @@ export type StoredPart =
 
 export type StoredBody =
   | { kind: "none" }
-  | { kind: "raw"; text: string; contentType: string | null }
+  | { kind: "raw"; text: string; contentType: string | null; encoding?: "base64" }
   | { kind: "json"; text: string }
   | { kind: "form"; fields: StoredRow[] }
   | { kind: "multipart"; parts: StoredPart[] }
@@ -106,7 +106,13 @@ function bodyDrafts(body: StoredBody): Partial<BodyDrafts> {
     case "none":
       return {};
     case "raw":
-      return { raw: { text: body.text, contentType: body.contentType ?? "" } };
+      return {
+        raw: {
+          text: body.text,
+          contentType: body.contentType ?? "",
+          ...(body.encoding ? { encoding: body.encoding } : {}),
+        },
+      };
     case "json":
       return { json: { text: body.text } };
     case "form":

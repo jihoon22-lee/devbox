@@ -82,6 +82,7 @@ fn request_template_is_not_mutated() {
     let original = RequestSnapshot {
         url: "{{base}}/x".into(),
         body: Body::Raw {
+            encoding: None,
             text: "hello {{name}}".into(),
             content_type: None,
         },
@@ -101,6 +102,7 @@ fn request_template_is_not_mutated() {
     assert_eq!(
         out.body,
         Body::Raw {
+            encoding: None,
             text: "hello world".into(),
             content_type: None
         }

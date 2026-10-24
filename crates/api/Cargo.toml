@@ -23,6 +23,7 @@ prost.workspace = true
 prost-reflect.workspace = true
 protox.workspace = true
 reqwest.workspace = true
+regex = "1"
 rusqlite.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true

@@ -104,9 +104,18 @@ pub(crate) fn prepare(body: &Body) -> Result<(PreparedBody, Option<Graphql>), Ap
         Body::Raw {
             text: t,
             content_type: ct,
+            encoding,
         } => (
             PreparedBody::Bytes {
-                data: text(t)?,
+                data: if encoding.is_some() {
+                    let _ = text(t)?;
+                    data_encoding::BASE64
+                        .decode(t.as_bytes())
+                        .map_err(|_| ApiError::body("invalid_base64"))?
+                        .into()
+                } else {
+                    text(t)?
+                },
                 content_type: content_type(ct)?,
             },
             None,
@@ -313,4 +322,32 @@ pub(crate) async fn apply(
             builder.multipart(form)
         }
     })
+}
+
+#[cfg(test)]
+mod raw_encoding_tests {
+    use super::*;
+    #[test]
+    fn raw_base64_preserves_bytes_and_content_type() {
+        let body: Body = serde_json::from_str(r#"{"kind":"raw","text":"AP+A","encoding":"base64","contentType":"application/octet-stream"}"#).unwrap();
+        let (PreparedBody::Bytes { data, content_type }, _) = prepare(&body).unwrap() else {
+            panic!("bytes");
+        };
+        assert_eq!(data.as_ref(), &[0, 255, 128]);
+        assert_eq!(content_type.unwrap(), "application/octet-stream");
+    }
+    #[test]
+    fn invalid_base64_is_rejected_and_raw_default_is_unchanged() {
+        let invalid: Body = serde_json::from_str(
+            r#"{"kind":"raw","text":"!","encoding":"base64","contentType":null}"#,
+        )
+        .unwrap();
+        assert!(prepare(&invalid).is_err());
+        let plain: Body =
+            serde_json::from_str(r#"{"kind":"raw","text":"한글","contentType":null}"#).unwrap();
+        let (PreparedBody::Bytes { data, .. }, _) = prepare(&plain).unwrap() else {
+            panic!("bytes");
+        };
+        assert_eq!(data.as_ref(), "한글".as_bytes());
+    }
 }

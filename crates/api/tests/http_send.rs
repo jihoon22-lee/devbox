@@ -302,6 +302,7 @@ async fn secret_reference_is_resolved_on_send_and_kept_as_reference_in_history()
         .complete(request(RequestSnapshot {
             headers: vec![header(0, "Authorization", "Bearer {{secret:TOKEN}}")],
             body: Body::Raw {
+                encoding: None,
                 text: "echo {{secret:TOKEN}}".into(),
                 content_type: Some("text/plain".into()),
             },
@@ -505,4 +506,20 @@ async fn composed_secret_reference_is_rejected_before_connecting() {
     let seen = server.only();
     assert_eq!(seen.header("authorization"), ["Bearer gh-secret-value"]);
     assert_eq!(seen.header("x-literal"), ["gh-secret-value"]);
+}
+
+#[tokio::test]
+async fn raw_base64_replay_sends_original_bytes_with_byte_content_length() {
+    let api = Harness::new().await;
+    let server = Server::echo().await;
+    let encoded: Body = serde_json::from_str(r#"{"kind":"raw","text":"AP+A","encoding":"base64","contentType":"application/octet-stream"}"#).unwrap();
+    api.complete(request(RequestSnapshot {
+        body: encoded,
+        ..snapshot("POST", &server.url("/binary"))
+    }))
+    .await;
+    let seen = server.only();
+    assert_eq!(seen.body, [0, 255, 128]);
+    assert_eq!(seen.header("content-length"), ["3"]);
+    assert_eq!(seen.header("content-type"), ["application/octet-stream"]);
 }

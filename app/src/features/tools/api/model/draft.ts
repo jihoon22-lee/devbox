@@ -34,7 +34,7 @@ export interface PartRow {
 }
 
 export interface BodyDrafts {
-  raw: { text: string; contentType: string };
+  raw: { text: string; contentType: string; encoding?: "base64" };
   json: { text: string };
   form: { fields: Row[] };
   multipart: { parts: PartRow[] };
@@ -153,7 +153,12 @@ export function activeBody(draft: RequestDraft): Body {
   switch (kind) {
     case "raw": {
       const body = draft.bodies.raw ?? BODY_DEFAULTS.raw();
-      return { kind, text: body.text, contentType: body.contentType || null };
+      return {
+        kind,
+        text: body.text,
+        contentType: body.contentType || null,
+        ...(body.encoding ? { encoding: body.encoding } : {}),
+      };
     }
     case "json":
       return { kind, text: (draft.bodies.json ?? BODY_DEFAULTS.json()).text };

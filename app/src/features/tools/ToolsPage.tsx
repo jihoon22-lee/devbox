@@ -18,6 +18,7 @@ import { useApiTabs } from "./api/store";
 import { bumpCollections } from "./api/useCollections";
 import { type ToolsSearch, toolsSearch } from "./search";
 import { rootOf, ToolsList } from "./ToolsList";
+import { WebhooksPanel } from "./webhooks/WebhooksPanel";
 
 const LATER: Record<string, string> = {
   webhooks: "웹훅",
@@ -55,7 +56,9 @@ export function ToolsView({
     };
   }, [backend, root, path]);
   const body =
-    view !== "api" ? (
+    view === "webhooks" ? (
+      <WebhooksPanel openApi={() => navigate({ view: "api" })} />
+    ) : view !== "api" ? (
       <EmptyState title={LATER[view] ?? "도구"} body="이 도구는 다음 단계에서 이 자리에 연결됩니다." />
     ) : search.tool === "runner" ? (
       <RunnerView root={rootOf(search.root)} />

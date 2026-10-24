@@ -40,6 +40,7 @@ fn migrations() -> Vec<devbox_core::Migration> {
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
         devbox_api::MIGRATIONS,
+        devbox_webhooks::MIGRATIONS,
     ]
     .concat()
 }
@@ -122,6 +123,11 @@ fn build_services_with_runtime(
         paths.clone(),
     ));
     let index = devbox_core::IndexDb::open(&paths.index_db_path)?;
+    let webhooks = Arc::new(devbox_webhooks::WebhooksService::new(
+        db.clone(),
+        hub.clone(),
+        paths.data_dir.join("webhooks"),
+    ));
     let api = Arc::new(devbox_api::ApiService::new(
         db.clone(),
         index.clone(),
@@ -158,6 +164,7 @@ fn build_services_with_runtime(
         index,
         api,
         api_collections,
+        webhooks,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
     }))

@@ -47,7 +47,12 @@ function body(value: unknown): StoredBody {
     case "none":
       return { kind: "none" };
     case "raw":
-      return { kind: "raw", text: str(b.text), contentType: optStr(b.contentType) };
+      return {
+        kind: "raw",
+        text: str(b.text),
+        contentType: optStr(b.contentType),
+        ...(b.encoding === "base64" ? { encoding: "base64" as const } : {}),
+      };
     case "json":
       return { kind: "json", text: str(b.text) };
     case "form":

@@ -24,6 +24,15 @@ const names = (d: unknown) => {
 };
 const check = "입력란을 확인해 주세요.";
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
+  "api.storage_sensitive_body": {
+    title: "본문에 비밀 값이 있거나 저장 형식을 확인할 수 없습니다.",
+    action: "JSON 형식을 확인하고 비밀 값은 참조({{secret:NAME}})나 [REDACTED]로 바꿔 주세요.",
+  },
+  "webhooks.invalid_input": { title: "웹훅 입력을 확인해 주세요." },
+  "webhooks.not_found": { title: "수신 기록을 찾을 수 없습니다." },
+  "webhooks.bind_failed": { title: "포트를 열 수 없습니다. 다른 포트를 선택해 주세요." },
+  "webhooks.limit_reached": { title: "열 수 있는 리스너 수를 넘었습니다." },
+  "webhooks.storage": { title: "웹훅 기록을 읽거나 저장하지 못했습니다." },
   internal: { title: "예상하지 못한 문제가 생겼습니다.", action: "진단 ID를 복사해 두면 원인을 찾을 수 있습니다." },
   invalid_params: { title: "요청 형식이 맞지 않습니다.", action: "앱과 데몬 버전을 확인해 주세요." },
   method_not_found: { title: "이 기능을 사용할 수 없습니다.", action: "앱을 다시 시작해 주세요." },
