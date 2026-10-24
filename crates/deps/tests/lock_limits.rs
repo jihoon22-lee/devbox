@@ -25,7 +25,7 @@ fn ms() -> BTreeMap<String, String> {
 }
 #[test]
 fn pnpm_local_reference_is_visible_and_not_registry() {
-    let ds=parse(LockKind::Pnpm,"lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      local: {version: 'link:../local', specifier: 'link:../local'}\n",&ms()).unwrap();
+    let ds=parse(LockKind::Pnpm,"lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      local: {version: 'link:../local', specifier: 'link:../local'}\n",&ms()).expect("parse owned dependency fixture");
     assert_eq!(ds.len(), 1);
     assert_eq!(ds[0].versions[0].source, DependencySource::Local);
     assert!(ds[0].direct);
@@ -42,14 +42,14 @@ fn absent_relationship_data_is_not_clean_empty_inventory() {
 }
 #[test]
 fn npm_local_link_is_visible_and_not_registry() {
-    let ds=parse(LockKind::Npm,r#"{"lockfileVersion":3,"packages":{"":{"dependencies":{"local":"file:../local"}},"node_modules/local":{"resolved":"../local","link":true}}}"#,&ms()).unwrap();
+    let ds=parse(LockKind::Npm,r#"{"lockfileVersion":3,"packages":{"":{"dependencies":{"local":"file:../local"}},"node_modules/local":{"resolved":"../local","link":true}}}"#,&ms()).expect("parse owned dependency fixture");
     assert_eq!(ds.len(), 1);
     assert_eq!(ds[0].versions[0].source, DependencySource::Local);
 }
 #[test]
 fn pnpm_multiple_documents_retain_importer_relationships() {
     let text = "lockfileVersion: '9.0'\n---\nimporters:\n  .:\n    dependencies:\n      x: {version: 1.0.0, specifier: ^1}\npackages:\n  x@1.0.0: {resolution: {integrity: fixture}}\n";
-    assert!(parse(LockKind::Pnpm, text, &ms()).unwrap()[0].direct);
+    assert!(parse(LockKind::Pnpm, text, &ms()).expect("parse owned dependency fixture")[0].direct);
 }
 #[test]
 fn yaml_alias_depth_duplicate_include_and_item_budgets_reject() {
@@ -127,7 +127,7 @@ fn uv_root_optional_and_dev_relationships_are_direct() {
     let mut manifests = ms();
     manifests.insert("pyproject.toml".into(), "[project]\nname='owned'".into());
     let text = "version=1\nrevision=3\n[[package]]\nname='owned'\nversion='0.1.0'\nsource={virtual='.'}\n[package.optional-dependencies]\ntest=[{name='some-package'}]\n[package.dev-dependencies]\ndev=[{name='other'}]\n[[package]]\nname='some-package'\nversion='1.0.0'\nsource={registry='https://pypi.org/simple'}\n[[package]]\nname='other'\nversion='2.0.0'\nsource={registry='https://pypi.org/simple'}";
-    let ds = parse(LockKind::Uv, text, &manifests).unwrap();
+    let ds = parse(LockKind::Uv, text, &manifests).expect("parse owned dependency fixture");
     assert!(ds.iter().all(|d| d.direct));
 }
 #[test]
@@ -181,7 +181,7 @@ fn missing_poetry_manifest_reference_is_not_clean() {
 #[test]
 fn pnpm_boot_document_package_manager_is_direct_and_project_graph_remains_present() {
     let text = "lockfileVersion: '9.0'\nimporters:\n  .:\n    packageManagerDependencies:\n      pnpm: {specifier: 12.3.4, version: 12.3.4}\npackages:\n  pnpm@12.3.4: {resolution: {integrity: fixture}}\n---\nlockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      x: {version: 1.0.0, specifier: ^1}\npackages:\n  x@1.0.0: {resolution: {integrity: fixture}}\n";
-    let ds = parse(LockKind::Pnpm, text, &ms()).unwrap();
+    let ds = parse(LockKind::Pnpm, text, &ms()).expect("parse owned dependency fixture");
     assert_eq!(ds.len(), 2);
     assert!(ds.iter().all(|d| d.direct));
 }

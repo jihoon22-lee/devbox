@@ -15,12 +15,20 @@ fn pnpm_importers_scopes_peers_and_versions() {
         include_str!("fixtures/pnpm.yaml"),
         &manifests(),
     )
-    .unwrap();
-    let d = ds.iter().find(|d| d.name == "@scope/pkg").unwrap();
+    .expect("parse owned dependency fixture");
+    let d = ds
+        .iter()
+        .find(|d| d.name == "@scope/pkg")
+        .expect("matching owned dependency");
     assert!(d.direct);
     assert_eq!(d.versions.len(), 2);
     assert!(d.versions.iter().any(|v| v.version == "1.2.3" && v.direct));
-    assert!(ds.iter().find(|d| d.name == "other").unwrap().direct);
+    assert!(
+        ds.iter()
+            .find(|d| d.name == "other")
+            .expect("matching owned dependency")
+            .direct
+    );
 }
 #[test]
 fn npm_nested_instances_and_yarn_manifest_directness() {
@@ -28,8 +36,13 @@ fn npm_nested_instances_and_yarn_manifest_directness() {
         (LockKind::Npm, include_str!("fixtures/npm.json")),
         (LockKind::Yarn, include_str!("fixtures/yarn.lock")),
     ] {
-        let ds = parse(kind, text, &manifests()).unwrap();
-        assert!(ds.iter().find(|d| d.name == "@scope/pkg").unwrap().direct);
+        let ds = parse(kind, text, &manifests()).expect("parse owned dependency fixture");
+        assert!(
+            ds.iter()
+                .find(|d| d.name == "@scope/pkg")
+                .expect("matching owned dependency")
+                .direct
+        );
         if kind == LockKind::Npm {
             assert_eq!(ds[0].versions.len(), 2);
         }
@@ -42,18 +55,26 @@ fn cargo_keeps_versions_and_marks_git_unqueryable() {
         include_str!("fixtures/Cargo.lock"),
         &manifests(),
     )
-    .unwrap();
-    let d = ds.iter().find(|d| d.name == "crate-a").unwrap();
+    .expect("parse owned dependency fixture");
+    let d = ds
+        .iter()
+        .find(|d| d.name == "crate-a")
+        .expect("matching owned dependency");
     assert_eq!(d.versions.len(), 2);
     assert!(d.versions.iter().any(|v| v.version == "1.0.0" && !v.direct));
     assert_eq!(
-        ds.iter().find(|d| d.name == "git-crate").unwrap().versions[0].source,
+        ds.iter()
+            .find(|d| d.name == "git-crate")
+            .expect("matching owned dependency")
+            .versions[0]
+            .source,
         DependencySource::Git
     );
 }
 #[test]
 fn go_deduplicates_module_checksums_and_uses_require_relationship() {
-    let ds = parse(LockKind::Go, include_str!("fixtures/go.sum"), &manifests()).unwrap();
+    let ds = parse(LockKind::Go, include_str!("fixtures/go.sum"), &manifests())
+        .expect("parse owned dependency fixture");
     assert_eq!(ds.len(), 2);
     assert_eq!(ds[0].versions.len(), 1);
     assert!(ds[0].direct);
@@ -65,8 +86,11 @@ fn python_locks_normalize_names_without_guessing_directness() {
         (LockKind::Poetry, include_str!("fixtures/poetry.lock")),
         (LockKind::Uv, include_str!("fixtures/uv.lock")),
     ] {
-        let ds = parse(kind, text, &manifests()).unwrap();
-        let d = ds.iter().find(|d| d.name == "some-package").unwrap();
+        let ds = parse(kind, text, &manifests()).expect("parse owned dependency fixture");
+        let d = ds
+            .iter()
+            .find(|d| d.name == "some-package")
+            .expect("matching owned dependency");
         assert!(d.direct);
         assert_eq!(d.versions[0].version, "1.2.3");
     }

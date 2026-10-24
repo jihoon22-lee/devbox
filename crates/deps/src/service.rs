@@ -52,10 +52,10 @@ impl DepsService {
             result: None,
             last_success,
         };
-        if jobs.len() >= 32 {
-            if let Some(index) = jobs.iter().position(|j| j.state != AuditState::Running) {
-                jobs.remove(index);
-            }
+        if jobs.len() >= 32
+            && let Some(index) = jobs.iter().position(|j| j.state != AuditState::Running)
+        {
+            jobs.remove(index);
         }
         jobs.push(job.clone());
         drop(jobs);

@@ -56,16 +56,15 @@ pub async fn preflight(dir: &Path, expect: &RemoteExpect) -> Result<(), SourceGi
     if &current != expect {
         return Err(SourceGitError::StateChanged { current });
     }
-    if let Some(upstream) = &expect.upstream {
-        if !upstream.destination_ref.starts_with("refs/heads/")
+    if let Some(upstream) = &expect.upstream
+        && (!upstream.destination_ref.starts_with("refs/heads/")
             || output(dir, &["check-ref-format", &upstream.destination_ref])
                 .await
                 .map_err(failure)?
                 .0
-                != 0
-        {
-            return Err(SourceGitError::InvalidSourceInput);
-        }
+                != 0)
+    {
+        return Err(SourceGitError::InvalidSourceInput);
     }
     Ok(())
 }

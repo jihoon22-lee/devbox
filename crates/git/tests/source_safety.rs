@@ -4,7 +4,12 @@ use source_support::*;
 async fn config_warning_lists_keys_without_values_or_synthetic_override() {
     let r = repo();
     let d = r.path();
-    assert!(devbox_git::safety::warnings(d).await.unwrap().is_empty());
+    assert!(
+        devbox_git::safety::warnings(d)
+            .await
+            .expect("owned source result")
+            .is_empty()
+    );
     for key in [
         "core.fsmonitor",
         "core.hooksPath",
@@ -13,7 +18,9 @@ async fn config_warning_lists_keys_without_values_or_synthetic_override() {
     ] {
         git(d, &["config", key, "SECRET-SENTINEL-NEVER-RETURN"]);
     }
-    let warnings = devbox_git::safety::warnings(d).await.unwrap();
+    let warnings = devbox_git::safety::warnings(d)
+        .await
+        .expect("owned source result");
     assert_eq!(warnings.len(), 4);
     assert!(warnings.iter().all(|w| !w.key.contains("SECRET")));
 }
@@ -26,16 +33,16 @@ async fn cleanup_preserves_user_main_locked_dirty_unmerged_and_unowned() {
     assert!(
         devbox_git::cleanup::candidates(d, &[], &[])
             .await
-            .unwrap()
+            .expect("owned source result")
             .is_empty()
     );
     let names = vec!["main".into(), "user".into(), "agent/clean".into()];
     let result = devbox_git::cleanup::candidates(d, &[], &names)
         .await
-        .unwrap();
+        .expect("owned source result");
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].branch, "agent/clean");
-    let parent = tempfile::tempdir().unwrap();
+    let parent = tempfile::tempdir().expect("create owned temporary directory");
     let tree = parent.path().join("tree");
     git(
         d,
@@ -43,24 +50,34 @@ async fn cleanup_preserves_user_main_locked_dirty_unmerged_and_unowned() {
             "worktree",
             "add",
             "-q",
-            tree.to_str().unwrap(),
+            tree.to_str().expect("owned UTF-8 path"),
             "agent/clean",
         ],
     );
     let paths = vec![tree.to_string_lossy().into_owned()];
-    git(d, &["worktree", "lock", tree.to_str().unwrap()]);
+    git(
+        d,
+        &["worktree", "lock", tree.to_str().expect("owned UTF-8 path")],
+    );
     assert!(
         devbox_git::cleanup::candidates(d, &paths, &names)
             .await
-            .unwrap()
+            .expect("owned source result")
             .is_empty()
     );
-    git(d, &["worktree", "unlock", tree.to_str().unwrap()]);
-    std::fs::write(tree.join("dirty"), "dirty").unwrap();
+    git(
+        d,
+        &[
+            "worktree",
+            "unlock",
+            tree.to_str().expect("owned UTF-8 path"),
+        ],
+    );
+    std::fs::write(tree.join("dirty"), "dirty").expect("write owned fixture");
     assert!(
         devbox_git::cleanup::candidates(d, &paths, &names)
             .await
-            .unwrap()
+            .expect("owned source result")
             .is_empty()
     );
     git(&tree, &["add", "."]);
@@ -68,7 +85,7 @@ async fn cleanup_preserves_user_main_locked_dirty_unmerged_and_unowned() {
     assert!(
         devbox_git::cleanup::candidates(d, &paths, &names)
             .await
-            .unwrap()
+            .expect("owned source result")
             .is_empty()
     );
 }

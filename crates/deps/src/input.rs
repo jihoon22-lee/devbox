@@ -37,10 +37,11 @@ pub async fn load(reader: Reader) -> Result<DependencyInventory, DepsError> {
         (LockKind::Poetry, "pyproject.toml"),
         (LockKind::Uv, "pyproject.toml"),
     ] {
-        if kinds.contains(&kind) && !manifests.contains_key(path) {
-            if let Some(value) = read(&reader, path, &mut bytes).await? {
-                manifests.insert(path.into(), value);
-            }
+        if kinds.contains(&kind)
+            && !manifests.contains_key(path)
+            && let Some(value) = read(&reader, path, &mut bytes).await?
+        {
+            manifests.insert(path.into(), value);
         }
     }
     if let Some(root) = manifests.get("Cargo.toml") {

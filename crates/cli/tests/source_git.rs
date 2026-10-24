@@ -13,7 +13,7 @@ fn git(dir: &std::path::Path, args: &[&str]) {
         .env("GIT_COMMITTER_NAME", "Owned")
         .env("GIT_COMMITTER_EMAIL", "owned@example.invalid")
         .output()
-        .unwrap();
+        .expect("run owned Git fixture command");
     assert!(
         out.status.success(),
         "{}",
@@ -32,9 +32,9 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
     let d = TestDaemon::start();
     let c = d.client().await;
     let dir = d.home.path().join("source-git");
-    std::fs::create_dir(&dir).unwrap();
+    std::fs::create_dir(&dir).expect("create owned fixture directory");
     git(&dir, &["init", "-qb", "main"]);
-    std::fs::write(dir.join("a"), "one\n").unwrap();
+    std::fs::write(dir.join("a"), "one\n").expect("write owned fixture");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "-qm", "initial"]);
     git(&dir, &["config", "filter.owned.clean", "SECRET-SENTINEL"]);
@@ -44,11 +44,11 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
         }),
     )
     .await
-    .unwrap();
+    .expect("owned RPC response");
     assert!(
         project
             .git_warnings
-            .unwrap()
+            .expect("owned RPC response")
             .iter()
             .any(|w| w.key == "filter.owned.clean")
     );
@@ -59,16 +59,18 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
     let query = GitTargetQuery {
         target: target.clone(),
     };
-    let status = bounded(c.call::<GitStatus>(&query)).await.unwrap();
+    let status = bounded(c.call::<GitStatus>(&query))
+        .await
+        .expect("owned RPC response");
     assert_eq!(status.expect.state.branch.as_deref(), Some("main"));
-    std::fs::write(dir.join("a"), "two\n").unwrap();
+    std::fs::write(dir.join("a"), "two\n").expect("write owned fixture");
     let diff = bounded(c.call::<GitDiff>(&GitDiffQuery {
         target: target.clone(),
         path: "a".into(),
         staged: false,
     }))
     .await
-    .unwrap();
+    .expect("owned RPC response");
     bounded(c.call::<GitStage>(&GitFileChange {
         target: target.clone(),
         path: "a".into(),
@@ -76,8 +78,10 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
         expect: diff.expect,
     }))
     .await
-    .unwrap();
-    let status = bounded(c.call::<GitStatus>(&query)).await.unwrap();
+    .expect("owned RPC response");
+    let status = bounded(c.call::<GitStatus>(&query))
+        .await
+        .expect("owned RPC response");
     assert_eq!(status.summary.staged, 1);
     let invalid = GitTargetQuery {
         target: SourceTarget {
@@ -85,7 +89,9 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
             worktree_id: None,
         },
     };
-    let error = bounded(c.call::<GitStatus>(&invalid)).await.unwrap_err();
+    let error = bounded(c.call::<GitStatus>(&invalid))
+        .await
+        .expect_err("owned RPC must reject stale or invalid input");
     assert!(
         matches!(error,devbox_cli::client::ClientError::Rpc{code,..}if code=="git.invalid_target")
     );
@@ -96,7 +102,9 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
         },
     };
     assert!(bounded(c.call::<GitStatus>(&invalid)).await.is_err());
-    let branches = bounded(c.call::<GitBranches>(&query)).await.unwrap();
+    let branches = bounded(c.call::<GitBranches>(&query))
+        .await
+        .expect("owned RPC response");
     assert_eq!(branches[0].name, "main");
     let log = bounded(c.call::<GitLog>(&GitLogQuery {
         target: target.clone(),
@@ -105,14 +113,16 @@ async fn source_git_rpc_resolves_targets_and_mutation_metadata() {
         skip: 0,
     }))
     .await
-    .unwrap();
+    .expect("owned RPC response");
     assert_eq!(log[0].subject, "initial");
-    let trees = bounded(c.call::<GitWorktrees>(&query)).await.unwrap();
+    let trees = bounded(c.call::<GitWorktrees>(&query))
+        .await
+        .expect("owned RPC response");
     assert!(trees[0].main);
     assert!(
         bounded(c.call::<GitCleanupCandidates>(&query))
             .await
-            .unwrap()
+            .expect("owned RPC response")
             .is_empty()
     );
 }
@@ -124,16 +134,16 @@ async fn conflict_rpc_preserves_stale_file_and_applies_fresh_resolution() {
     let d = TestDaemon::start();
     let c = d.client().await;
     let dir = d.home.path().join("conflicts");
-    std::fs::create_dir(&dir).unwrap();
+    std::fs::create_dir(&dir).expect("create owned fixture directory");
     git(&dir, &["init", "-qb", "main"]);
-    std::fs::write(dir.join("a"), "base").unwrap();
+    std::fs::write(dir.join("a"), "base").expect("write owned fixture");
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "-qm", "base"]);
     git(&dir, &["checkout", "-b", "side"]);
-    std::fs::write(dir.join("a"), "side").unwrap();
+    std::fs::write(dir.join("a"), "side").expect("write owned fixture");
     git(&dir, &["commit", "-am", "side"]);
     git(&dir, &["checkout", "main"]);
-    std::fs::write(dir.join("a"), "main").unwrap();
+    std::fs::write(dir.join("a"), "main").expect("write owned fixture");
     git(&dir, &["commit", "-am", "main"]);
     assert!(
         !std::process::Command::new("git")
@@ -148,7 +158,7 @@ async fn conflict_rpc_preserves_stale_file_and_applies_fresh_resolution() {
                 "side"
             ])
             .output()
-            .unwrap()
+            .expect("run owned Git fixture command")
             .status
             .success()
     );
@@ -158,7 +168,7 @@ async fn conflict_rpc_preserves_stale_file_and_applies_fresh_resolution() {
         }),
     )
     .await
-    .unwrap();
+    .expect("owned RPC response");
     let target = SourceTarget {
         project_id: project.id,
         worktree_id: None,
@@ -167,15 +177,17 @@ async fn conflict_rpc_preserves_stale_file_and_applies_fresh_resolution() {
         target: target.clone(),
     }))
     .await
-    .unwrap();
+    .expect("owned RPC response");
     assert_eq!(files.len(), 1);
     let query = GitPathQuery {
         target: target.clone(),
         path: "a".into(),
     };
-    let preview = bounded(c.call::<GitConflictPreview>(&query)).await.unwrap();
-    let index = std::fs::read(dir.join(".git/index")).unwrap();
-    std::fs::write(dir.join("a"), "external").unwrap();
+    let preview = bounded(c.call::<GitConflictPreview>(&query))
+        .await
+        .expect("owned RPC response");
+    let index = std::fs::read(dir.join(".git/index")).expect("read owned index");
+    std::fs::write(dir.join("a"), "external").expect("write owned fixture");
     let mut request = ConflictApply {
         target,
         path: "a".into(),
@@ -184,23 +196,34 @@ async fn conflict_rpc_preserves_stale_file_and_applies_fresh_resolution() {
     };
     let error = bounded(c.call::<GitConflictApply>(&request))
         .await
-        .unwrap_err();
+        .expect_err("owned RPC must reject stale or invalid input");
     assert!(
         matches!(error, devbox_cli::client::ClientError::Rpc { code, .. } if code == "git.conflict_stale")
     );
-    assert_eq!(std::fs::read(dir.join(".git/index")).unwrap(), index);
-    assert_eq!(std::fs::read_to_string(dir.join("a")).unwrap(), "external");
+    assert_eq!(
+        std::fs::read(dir.join(".git/index")).expect("read owned index"),
+        index
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a")).expect("read owned fixture text"),
+        "external"
+    );
     request.token = bounded(c.call::<GitConflictPreview>(&query))
         .await
-        .unwrap()
+        .expect("owned RPC response")
         .token;
-    bounded(c.call::<GitConflictApply>(&request)).await.unwrap();
-    assert_eq!(std::fs::read_to_string(dir.join("a")).unwrap(), "draft");
+    bounded(c.call::<GitConflictApply>(&request))
+        .await
+        .expect("owned RPC response");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a")).expect("read owned fixture text"),
+        "draft"
+    );
     let files = bounded(c.call::<GitConflicts>(&GitTargetQuery {
         target: request.target,
     }))
     .await
-    .unwrap();
+    .expect("owned RPC response");
     assert!(files.is_empty());
 }
 #[test]
@@ -222,13 +245,15 @@ fn conflict_deletion_requires_explicit_null_and_never_an_omitted_resolution() {
             identity: "identity".into(),
         },
     };
-    let mut json = serde_json::to_value(&request).unwrap();
+    let mut json = serde_json::to_value(&request).expect("encode owned RPC request");
     assert!(
         serde_json::from_value::<ConflictApply>(json.clone())
-            .unwrap()
+            .expect("owned RPC response")
             .resolution
             .is_none()
     );
-    json.as_object_mut().unwrap().remove("resolution");
+    json.as_object_mut()
+        .expect("owned request JSON object")
+        .remove("resolution");
     assert!(serde_json::from_value::<ConflictApply>(json).is_err());
 }

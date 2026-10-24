@@ -275,7 +275,7 @@ async fn source_preview_rpc_uses_dirty_body_project_scope_and_shared_renderer() 
     assert!(rendered.html.contains("remote-blocked"));
     assert!(!rendered.html.contains("<script>"));
     assert_eq!(
-        std::fs::read_to_string(project.join("readme.md")).unwrap(),
+        std::fs::read_to_string(project.join("readme.md")).expect("read owned fixture text"),
         "disk stays"
     );
     assert!(

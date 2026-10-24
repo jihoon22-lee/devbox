@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { rankFiles } from "./quickOpen";
+import { rankFiles } from "./quickOpenRanking";
 
 const key = (root: string, path: string) => ({ root, path });
 test("quick open deduplicates by complete key and ranks basename and recent files", () => {

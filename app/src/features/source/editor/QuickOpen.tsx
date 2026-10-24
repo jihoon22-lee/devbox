@@ -6,7 +6,7 @@ import { keyId } from "../../documents/offlineJournal";
 import { useSearchStream } from "../../search/useSearchStream";
 import s from "../source.module.css";
 import { useSource } from "../store";
-import { rankFiles } from "./quickOpen";
+import { rankFiles } from "./quickOpenRanking";
 export function QuickOpen({ projectId, onClose }: { projectId: string; onClose(): void }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState<SearchQuery>();

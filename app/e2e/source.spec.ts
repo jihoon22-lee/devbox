@@ -93,7 +93,12 @@ test("owned fake LSP diagnostics appear in the editor and Problems without savin
   await page.keyboard.press("Control+End");
   await page.keyboard.type("// dirty");
   await expect(page.locator(".cm-lintRange-error")).toHaveCount(1);
-  if (!(await page.getByRole("tab", { name: "문제", exact: true }).isVisible())) await page.keyboard.press("Control+`");
+  if (!(await page.getByRole("tab", { name: "문제", exact: true }).isVisible())) {
+    // App shortcuts intentionally yield while the code editor owns keyboard focus.
+    await page.getByRole("tab", { name: "파일", exact: true }).focus();
+    await page.keyboard.press("Control+Backquote");
+  }
+  await expect(page.getByRole("region", { name: "하단 패널", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "문제", exact: true }).click();
   await expect(page.getByRole("region", { name: "실행 문제" })).toContainText("owned LSP diagnostic");
   expect(readFileSync(file, "utf8")).toBe("const a = 1;\n");
@@ -133,8 +138,9 @@ test("conflict rejects a stale preview, preserves the draft and commits a freshl
   const unmerged = git("ls-files", "-u");
   writeFileSync(join(folder, "initial.txt"), "external change\n");
   await page.getByRole("button", { name: "해결안 적용", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "파일 또는 Git 상태가 바뀌어" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "파일 또는 Git 상태가 바뀌어" })).toBeVisible();
   expect(git("ls-files", "-u")).toBe(unmerged);
+  expect(readFileSync(join(folder, "initial.txt"), "utf8")).toBe("external change\n");
   await expect(resolution).toContainText("chosen resolution");
   await page.getByRole("button", { name: "현재 파일 다시 읽기 · 해결안 유지" }).click();
   await expect(page.getByRole("button", { name: "해결안 적용", exact: true })).toBeEnabled();

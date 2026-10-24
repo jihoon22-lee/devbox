@@ -24,15 +24,20 @@ fn cargo_ordinary_declaration_missing_from_lock_refuses() {
 }
 #[test]
 fn cargo_matching_and_dependency_free_controls() {
-    assert!(cargo("", ROOT).unwrap().is_empty());
-    let ds = cargo("[dependencies]\nserde='1'", &matching()).unwrap();
+    assert!(
+        cargo("", ROOT)
+            .expect("parse owned Cargo declaration")
+            .is_empty()
+    );
+    let ds =
+        cargo("[dependencies]\nserde='1'", &matching()).expect("parse owned Cargo declaration");
     assert!(ds[0].direct);
 }
 #[test]
 fn cargo_alias_must_match_its_actual_package_reference() {
     let manifest = "[dependencies]\nrenamed={package='serde',version='1'}";
     assert!(cargo(manifest, ROOT).is_err());
-    assert!(cargo(manifest, &matching()).unwrap()[0].direct);
+    assert!(cargo(manifest, &matching()).expect("parse owned Cargo declaration")[0].direct);
 }
 #[test]
 fn cargo_dev_build_and_target_declarations_are_checked() {
@@ -43,14 +48,16 @@ fn cargo_dev_build_and_target_declarations_are_checked() {
     ] {
         let manifest = format!("[{table}]\nserde='1'");
         assert!(cargo(&manifest, ROOT).is_err(), "{table}");
-        assert!(cargo(&manifest, &matching()).unwrap()[0].direct);
+        assert!(cargo(&manifest, &matching()).expect("parse owned Cargo declaration")[0].direct);
     }
 }
 #[test]
 fn cargo_explicit_workspace_member_inherits_package_alias() {
     let mut ms=Manifests::from([("Cargo.toml".into(),"[workspace]\nmembers=['app']\n[workspace.dependencies]\nrenamed={package='serde',version='1'}".into()),("app/Cargo.toml".into(),"[package]\nname='owned'\nversion='0.1.0'\n[dependencies]\nrenamed={workspace=true}".into())]);
     assert!(parse(LockKind::Cargo, ROOT, &ms).is_err());
-    assert!(parse(LockKind::Cargo, &matching(), &ms).unwrap()[0].direct);
+    assert!(
+        parse(LockKind::Cargo, &matching(), &ms).expect("parse owned dependency fixture")[0].direct
+    );
     ms.insert("Cargo.toml".into(), "[workspace]\nmembers=['app']".into());
     assert!(parse(LockKind::Cargo, &matching(), &ms).is_err());
 }
@@ -72,7 +79,10 @@ fn poetry(section: &str, present: bool) -> Result<Vec<Dependency>, DepsError> {
 }
 #[test]
 fn poetry_legacy_dev_present_is_direct() {
-    assert!(poetry("tool.poetry.dev-dependencies", true).unwrap()[0].direct);
+    assert!(
+        poetry("tool.poetry.dev-dependencies", true).expect("parse owned Poetry declaration")[0]
+            .direct
+    );
 }
 #[test]
 fn poetry_missing_legacy_dev_refuses() {
@@ -80,6 +90,10 @@ fn poetry_missing_legacy_dev_refuses() {
 }
 #[test]
 fn poetry_modern_groups_remain_direct_and_require_lock_entry() {
-    assert!(poetry("tool.poetry.group.dev.dependencies", true).unwrap()[0].direct);
+    assert!(
+        poetry("tool.poetry.group.dev.dependencies", true).expect("parse owned Poetry declaration")
+            [0]
+        .direct
+    );
     assert!(poetry("tool.poetry.group.dev.dependencies", false).is_err());
 }

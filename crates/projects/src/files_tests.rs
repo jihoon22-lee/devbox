@@ -227,10 +227,11 @@ async fn files_changed_directory_rejects_a_stale_page_cursor() {
 #[tokio::test]
 async fn source_preview_renders_dirty_markdown_with_project_images_and_no_disk_write() {
     let fx = Fx::new();
-    std::fs::create_dir(fx.project.join("docs")).unwrap();
-    std::fs::write(fx.project.join("docs/readme.md"), "on disk").unwrap();
-    std::fs::write(fx.project.join("logo.png"), b"\x89PNG\r\n\x1a\nfixture").unwrap();
-    let rendered = fx.files.preview(PreviewFile { key: fx.key("docs/readme.md"), text: Some("# Dirty\n\n![local](../logo.png) ![remote](https://fixture.invalid/leak)\n<script>BAD</script>\n[bad](javascript:evil)\n```mermaid\ngraph TD; A-->B\n```".into()) }).await.unwrap();
+    std::fs::create_dir(fx.project.join("docs")).expect("create owned directory");
+    std::fs::write(fx.project.join("docs/readme.md"), "on disk").expect("write owned fixture");
+    std::fs::write(fx.project.join("logo.png"), b"\x89PNG\r\n\x1a\nfixture")
+        .expect("write owned fixture");
+    let rendered = fx.files.preview(PreviewFile { key: fx.key("docs/readme.md"), text: Some("# Dirty\n\n![local](../logo.png) ![remote](https://fixture.invalid/leak)\n<script>BAD</script>\n[bad](javascript:evil)\n```mermaid\ngraph TD; A-->B\n```".into()) }).await.expect("owned source preview fixture");
     let SourcePreview::Markdown { rendered } = rendered else {
         panic!("markdown")
     };
@@ -241,7 +242,8 @@ async fn source_preview_renders_dirty_markdown_with_project_images_and_no_disk_w
     assert!(!rendered.html.contains("javascript:"));
     assert_eq!(rendered.mermaid, ["graph TD; A-->B\n"]);
     assert_eq!(
-        std::fs::read_to_string(fx.project.join("docs/readme.md")).unwrap(),
+        std::fs::read_to_string(fx.project.join("docs/readme.md"))
+            .expect("read owned fixture text"),
         "on disk"
     );
 }
@@ -249,13 +251,14 @@ async fn source_preview_renders_dirty_markdown_with_project_images_and_no_disk_w
 #[tokio::test]
 async fn source_preview_rejects_outside_private_images_and_outside_source_even_with_dirty_text() {
     let fx = Fx::new();
-    std::fs::write(fx.project.join("a.md"), "disk").unwrap();
-    std::fs::write(fx.outside.join("secret.png"), b"\x89PNG\r\n\x1a\nOUTSIDE").unwrap();
+    std::fs::write(fx.project.join("a.md"), "disk").expect("write owned fixture");
+    std::fs::write(fx.outside.join("secret.png"), b"\x89PNG\r\n\x1a\nOUTSIDE")
+        .expect("write owned fixture");
     std::os::unix::fs::symlink(
         fx.outside.join("secret.png"),
         fx.project.join("outside.png"),
     )
-    .unwrap();
+    .expect("create owned fixture symlink");
     let SourcePreview::Markdown { rendered } = fx
         .files
         .preview(PreviewFile {
@@ -266,7 +269,7 @@ async fn source_preview_rejects_outside_private_images_and_outside_source_even_w
             ),
         })
         .await
-        .unwrap()
+        .expect("preview owned source")
     else {
         panic!("markdown")
     };
@@ -289,7 +292,7 @@ async fn source_preview_rejects_outside_private_images_and_outside_source_even_w
 async fn source_preview_svg_is_data_only_and_input_is_bounded() {
     let fx = Fx::new();
     let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>BAD</script></svg>";
-    std::fs::write(fx.project.join("a.svg"), svg).unwrap();
+    std::fs::write(fx.project.join("a.svg"), svg).expect("write owned fixture");
     let SourcePreview::Svg { text } = fx
         .files
         .preview(PreviewFile {
@@ -297,7 +300,7 @@ async fn source_preview_svg_is_data_only_and_input_is_bounded() {
             text: None,
         })
         .await
-        .unwrap()
+        .expect("preview owned source")
     else {
         panic!("svg data")
     };

@@ -33,12 +33,13 @@ mod tests {
         let path = "/owned/가 & $(x); file.ts";
         for editor in [SourceEditor::Code, SourceEditor::Cursor] {
             assert_eq!(
-                source_arguments(editor, "Ubuntu", path).unwrap(),
+                source_arguments(editor, "Ubuntu", path).expect("owned external editor arguments"),
                 ["--remote", "wsl+Ubuntu", path]
             );
         }
         assert_eq!(
-            source_arguments(SourceEditor::Zed, "Ubuntu", path).unwrap(),
+            source_arguments(SourceEditor::Zed, "Ubuntu", path)
+                .expect("owned external editor arguments"),
             [r"\\wsl.localhost\Ubuntu\owned\가 & $(x); file.ts"]
         );
         for path in ["--command", "/x/../y", "/x\ny"] {

@@ -1,17 +1,46 @@
-import type { SourceFile, SourceTarget } from "../../rpc/gen/rpc";
+import type { FileChange, SourceFile, SourceTarget } from "../../rpc/gen/rpc";
 import { useRpcQuery } from "../../rpc/query";
 import { Banner, Button } from "../../ui";
 import { gitError } from "./gitState";
 export type SourceSelection = { path: string; staged: boolean; conflicted: boolean };
-export function ChangesList({
-  target,
-  selected,
-  onSelect,
-}: {
+type SourceChangesProps = {
+  mode?: "source";
   target: SourceTarget;
   selected?: SourceSelection;
   onSelect: (selection: SourceSelection) => void;
-}) {
+};
+type ReviewChangesProps = {
+  mode: "review";
+  files: readonly FileChange[];
+  selectedPath?: string;
+  onSelectPath: (path: string) => void;
+  isSeen?: (file: FileChange) => boolean;
+  className?: string;
+  itemClassName?: string;
+};
+export function ChangesList(props: SourceChangesProps | ReviewChangesProps) {
+  return props.mode === "review" ? <ReviewChanges {...props} /> : <SourceChanges {...props} />;
+}
+function ReviewChanges({ files, selectedPath, onSelectPath, isSeen, className, itemClassName }: ReviewChangesProps) {
+  const labels = { added: "A", modified: "M", deleted: "D", renamed: "R", unmerged: "U" };
+  return (
+    <nav className={className} aria-label="변경한 파일">
+      {files.map((file) => (
+        <button
+          key={file.path}
+          type="button"
+          className={itemClassName}
+          aria-current={file.path === selectedPath ? "true" : undefined}
+          onClick={() => onSelectPath(file.path)}
+        >
+          {labels[file.status]} {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path} · +{file.added} −
+          {file.removed} {isSeen?.(file) && "✓ 봤음"}
+        </button>
+      ))}
+    </nav>
+  );
+}
+function SourceChanges({ target, selected, onSelect }: SourceChangesProps) {
   const status = useRpcQuery("git.status", { target }, { staleTime: 0 });
   const files = status.data?.files ?? [];
   const groups: { name: string; staged: boolean; files: SourceFile[] }[] = [

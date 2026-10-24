@@ -16,7 +16,7 @@ fn target() -> SourceTarget {
 async fn stale_remote_starts_no_operation_or_event() {
     let r = repo();
     let d = r.path();
-    let expected = remote::state(d).await.unwrap();
+    let expected = remote::state(d).await.expect("read owned remote state");
     git(d, &["checkout", "-qb", "other"]);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let service = Arc::new(GitService::new(
@@ -46,7 +46,7 @@ async fn operation_status_is_target_bound_and_reconciles_completion() {
     let started = service
         .begin(d.into(), target(), RemoteAction::Fetch)
         .await
-        .unwrap();
+        .expect("start owned remote operation");
     let query = GitOperationQuery {
         target: target(),
         operation_id: started.id,
@@ -61,7 +61,10 @@ async fn operation_status_is_target_bound_and_reconciles_completion() {
     assert!(service.operation(&bad).await.is_err());
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            let result = service.operation(&query).await.unwrap();
+            let result = service
+                .operation(&query)
+                .await
+                .expect("read owned operation status");
             if result.state != GitOperationState::Running {
                 break result;
             }
@@ -69,9 +72,12 @@ async fn operation_status_is_target_bound_and_reconciles_completion() {
         }
     })
     .await
-    .unwrap();
+    .expect("owned remote operation result");
     assert_eq!(result.state, GitOperationState::Succeeded);
-    assert_eq!(result.current.unwrap(), remote::state(d).await.unwrap());
+    assert_eq!(
+        result.current.expect("owned remote operation result"),
+        remote::state(d).await.expect("read owned remote state")
+    );
     service.shutdown().await;
 }
 #[cfg(unix)]
@@ -88,13 +94,19 @@ async fn cancelled_transfer(pull: bool) {
             pid.display()
         ),
     )
-    .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let bare = tempfile::tempdir().unwrap();
+    .expect("write owned fixture");
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
+        .expect("set owned fixture permissions");
+    let bare = tempfile::tempdir().expect("create owned temporary directory");
     git(bare.path(), &["init", "--bare", "-q"]);
     git(
         d,
-        &["remote", "add", "origin", bare.path().to_str().unwrap()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            bare.path().to_str().expect("owned UTF-8 path"),
+        ],
     );
     git(d, &["push", "-qu", "origin", "main"]);
     git(
@@ -102,26 +114,29 @@ async fn cancelled_transfer(pull: bool) {
         &[
             "config",
             "remote.origin.uploadpack",
-            script.to_str().unwrap(),
+            script.to_str().expect("owned UTF-8 path"),
         ],
     );
     let service = Arc::new(GitService::new(Arc::new(|_| {}), Arc::new(|_| {})));
     let action = if pull {
         RemoteAction::Pull {
-            expect: remote::state(d).await.unwrap(),
+            expect: remote::state(d).await.expect("read owned remote state"),
             rebase: false,
         }
     } else {
         RemoteAction::Fetch
     };
-    let started = service.begin(d.into(), target(), action).await.unwrap();
+    let started = service
+        .begin(d.into(), target(), action)
+        .await
+        .expect("start owned remote operation");
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !pid.exists() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
-    .unwrap();
+    .expect("owned remote operation result");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         service.cancel(&GitOperationQuery {
@@ -130,16 +145,19 @@ async fn cancelled_transfer(pull: bool) {
         }),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("cancel owned operation")
+    .expect("capture owned branch expectation");
     assert_eq!(result.state, GitOperationState::Cancelled);
     assert!(result.error.is_none());
-    assert_eq!(result.current.unwrap(), remote::state(d).await.unwrap());
+    assert_eq!(
+        result.current.expect("owned remote operation result"),
+        remote::state(d).await.expect("read owned remote state")
+    );
     let pid = std::fs::read_to_string(pid)
-        .unwrap()
+        .expect("read owned fixture text")
         .trim()
         .parse::<i32>()
-        .unwrap();
+        .expect("read owned fixture text");
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
         loop {
             let alive = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok();
@@ -152,7 +170,7 @@ async fn cancelled_transfer(pull: bool) {
         }
     })
     .await
-    .unwrap();
+    .expect("owned remote operation result");
     service.shutdown().await;
     assert!(
         result.completion_unknown,
@@ -165,11 +183,16 @@ async fn cancelling_push_after_remote_ref_update_reports_confirmed_completion() 
     use std::os::unix::fs::PermissionsExt;
     let r = repo();
     let d = r.path();
-    let bare = tempfile::tempdir().unwrap();
+    let bare = tempfile::tempdir().expect("create owned temporary directory");
     git(bare.path(), &["init", "--bare", "-q"]);
     git(
         d,
-        &["remote", "add", "origin", bare.path().to_str().unwrap()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            bare.path().to_str().expect("owned UTF-8 path"),
+        ],
     );
     git(d, &["push", "-qu", "origin", "main"]);
     git(d, &["commit", "--allow-empty", "-qm", "approved"]);
@@ -182,9 +205,10 @@ async fn cancelling_push_after_remote_ref_update_reports_confirmed_completion() 
             marker.display()
         ),
     )
-    .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let expected = remote::state(d).await.unwrap();
+    .expect("write owned fixture");
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700))
+        .expect("set owned fixture permissions");
+    let expected = remote::state(d).await.expect("read owned remote state");
     let service = Arc::new(GitService::new(Arc::new(|_| {}), Arc::new(|_| {})));
     let started = service
         .begin(
@@ -196,14 +220,14 @@ async fn cancelling_push_after_remote_ref_update_reports_confirmed_completion() 
             },
         )
         .await
-        .unwrap();
+        .expect("start owned remote operation");
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !marker.exists() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
-    .unwrap();
+    .expect("owned remote operation result");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         service.cancel(&GitOperationQuery {
@@ -212,14 +236,14 @@ async fn cancelling_push_after_remote_ref_update_reports_confirmed_completion() 
         }),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("cancel owned operation")
+    .expect("capture owned branch expectation");
     assert_eq!(result.state, GitOperationState::Succeeded);
     assert_eq!(result.remote_oid, expected.head_oid);
     assert!(!result.completion_unknown);
     assert_eq!(
         git(bare.path(), &["rev-parse", "refs/heads/main"]).trim(),
-        result.remote_oid.unwrap()
+        result.remote_oid.expect("owned remote operation result")
     );
     service.shutdown().await;
 }
@@ -228,15 +252,28 @@ async fn push_destination_case(multiple: bool) {
     use std::os::unix::fs::PermissionsExt;
     let r = repo();
     let d = r.path();
-    let first = tempfile::tempdir().unwrap();
-    let second = tempfile::tempdir().unwrap();
+    let first = tempfile::tempdir().expect("create owned temporary directory");
+    let second = tempfile::tempdir().expect("create owned temporary directory");
     for bare in [&first, &second] {
         git(bare.path(), &["init", "--bare", "-q"]);
-        git(d, &["push", "-q", bare.path().to_str().unwrap(), "main"]);
+        git(
+            d,
+            &[
+                "push",
+                "-q",
+                bare.path().to_str().expect("owned UTF-8 path"),
+                "main",
+            ],
+        );
     }
     git(
         d,
-        &["remote", "add", "origin", first.path().to_str().unwrap()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            first.path().to_str().expect("owned UTF-8 path"),
+        ],
     );
     git(d, &["fetch", "-q", "origin"]);
     git(d, &["branch", "--set-upstream-to=origin/main", "main"]);
@@ -251,7 +288,7 @@ async fn push_destination_case(multiple: bool) {
             "config",
             "--add",
             "remote.origin.pushurl",
-            receiving.to_str().unwrap(),
+            receiving.to_str().expect("owned UTF-8 path"),
         ],
     );
     if multiple {
@@ -261,7 +298,7 @@ async fn push_destination_case(multiple: bool) {
                 "config",
                 "--add",
                 "remote.origin.pushurl",
-                second.path().to_str().unwrap(),
+                second.path().to_str().expect("owned UTF-8 path"),
             ],
         );
     }
@@ -279,9 +316,10 @@ async fn push_destination_case(multiple: bool) {
             marker.display()
         ),
     )
-    .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let expected = remote::state(d).await.unwrap();
+    .expect("write owned fixture");
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700))
+        .expect("set owned fixture permissions");
+    let expected = remote::state(d).await.expect("read owned remote state");
     let service = Arc::new(GitService::new(Arc::new(|_| {}), Arc::new(|_| {})));
     let started = service
         .begin(
@@ -293,14 +331,14 @@ async fn push_destination_case(multiple: bool) {
             },
         )
         .await
-        .unwrap();
+        .expect("start owned remote operation");
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !marker.exists() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
-    .unwrap();
+    .expect("owned remote operation result");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         service.cancel(&GitOperationQuery {
@@ -309,8 +347,8 @@ async fn push_destination_case(multiple: bool) {
         }),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("cancel owned operation")
+    .expect("capture owned branch expectation");
     if multiple {
         assert_eq!(result.state, GitOperationState::Cancelled);
         assert!(result.completion_unknown);
@@ -357,28 +395,34 @@ async fn cancelled_pull_after_merge_preserves_applied_head_and_reports_unknown()
     use std::os::unix::fs::PermissionsExt;
     let r = repo();
     let d = r.path();
-    let bare = tempfile::tempdir().unwrap();
+    let bare = tempfile::tempdir().expect("create owned temporary directory");
     git(bare.path(), &["init", "--bare", "-q"]);
     git(
         d,
-        &["remote", "add", "origin", bare.path().to_str().unwrap()],
+        &[
+            "remote",
+            "add",
+            "origin",
+            bare.path().to_str().expect("owned UTF-8 path"),
+        ],
     );
     git(d, &["push", "-qu", "origin", "main"]);
     let before = git(d, &["rev-parse", "HEAD"]);
-    std::fs::write(d.join("pulled.txt"), "remote content").unwrap();
+    std::fs::write(d.join("pulled.txt"), "remote content").expect("write owned fixture");
     git(d, &["add", "pulled.txt"]);
     git(d, &["commit", "-qm", "remote update"]);
     git(d, &["push", "-q", "origin", "main"]);
     let after = git(d, &["rev-parse", "HEAD"]);
     git(d, &["reset", "--hard", before.trim()]);
-    let expected = remote::state(d).await.unwrap();
+    let expected = remote::state(d).await.expect("read owned remote state");
     let hook = d.join(".git/hooks/post-merge");
     std::fs::write(
         &hook,
         "#!/bin/sh\necho ready > .git/owned-merge-done\nexec sleep 60\n",
     )
-    .unwrap();
-    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700)).unwrap();
+    .expect("write owned fixture");
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o700))
+        .expect("set owned fixture permissions");
     let svc = Arc::new(GitService::new(Arc::new(|_| {}), Arc::new(|_| {})));
     let op = svc
         .begin(
@@ -390,14 +434,14 @@ async fn cancelled_pull_after_merge_preserves_applied_head_and_reports_unknown()
             },
         )
         .await
-        .unwrap();
+        .expect("start owned remote operation");
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while !d.join(".git/owned-merge-done").exists() {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
     })
     .await
-    .unwrap();
+    .expect("owned remote operation result");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
         svc.cancel(&GitOperationQuery {
@@ -406,16 +450,21 @@ async fn cancelled_pull_after_merge_preserves_applied_head_and_reports_unknown()
         }),
     )
     .await
-    .unwrap()
-    .unwrap();
+    .expect("cancel owned operation")
+    .expect("capture owned branch expectation");
     assert_eq!(git(d, &["rev-parse", "HEAD"]), after);
     assert_eq!(
-        std::fs::read_to_string(d.join("pulled.txt")).unwrap(),
+        std::fs::read_to_string(d.join("pulled.txt")).expect("read owned fixture text"),
         "remote content"
     );
     svc.shutdown().await;
     assert_eq!(
-        result.current.as_ref().unwrap().head_oid.as_deref(),
+        result
+            .current
+            .as_ref()
+            .expect("owned optional value")
+            .head_oid
+            .as_deref(),
         Some(after.trim())
     );
     assert_eq!(result.state, GitOperationState::Cancelled);

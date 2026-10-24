@@ -13,12 +13,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 1416acbe 로컬 완료. S4-6 804143bc 로컬 완료. S4-7 1736d0ad 로컬 완료·별도 재검토 APPROVE. S4-8 소스 화면 통합·직접 검증 완료, R1 수정·별도 재검토 APPROVE·완료 커밋 단계 |
+| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 1416acbe 로컬 완료. S4-6 804143bc 로컬 완료. S4-7 1736d0ad 로컬 완료·별도 재검토 APPROVE. S4-8 00be638d 로컬 완료·별도 재검토 APPROVE. S4-9 공유 검토·브랜치 전체 검토 APPROVE, 로컬 최종 검사 실패 수정·재검증 완료, Windows 수용 준비 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 1416acbe 로컬 완료·별도 재검토 APPROVE, S4-6 804143bc 로컬 완료·별도 재검토 APPROVE, S4-7 1736d0ad 로컬 완료·별도 재검토 APPROVE, S4-8 구현·직접 검증 완료·R1 수정·별도 재검토 APPROVE·완료 커밋 단계, S4-9 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 1416acbe 로컬 완료·별도 재검토 APPROVE, S4-6 804143bc 로컬 완료·별도 재검토 APPROVE, S4-7 1736d0ad 로컬 완료·별도 재검토 APPROVE, S4-8 00be638d 로컬 완료·별도 재검토 APPROVE, S4-9 공유 검토·브랜치 전체 검토 APPROVE, 로컬 최종 검사 실패 수정·재검증 완료, Windows 수용 준비. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 최종 제품 `b18bc740`, Rust target `~/.cache/targets/devbox-s5`. **구현·리뷰 수정·필수 CI3/E2E·영향 설치 수용1·2 완료, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 머지 완료**. 정상 자동 리뷰3회 및 상한 예외4367201426 수정·독립 승인 완료, 4367201424는 §8 이월. 현재 소스 설치1·2 PASS, 429 소스3·4 PASS는 과거 근거, 5·6 NOT_RUN 유지. 상세 §5 |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-25 · S4-7 1736d0ad 별도 재검토 APPROVE·Biome810 뒤 로컬 완료. S4-8 구현·직접 Vitest36 완료·R1 수정·별도 재검토 APPROVE·완료 커밋 단계, S4-9/전체/E2E/native 미착수, S5 기록 보존 |
+| 마지막 갱신 | 2026-10-25 · S4-8 00be638d 별도 재검토 APPROVE·Biome831 뒤 로컬 완료. S4-9 step1·브랜치 전체 검토 APPROVE, 최초 전체 검사 실패 보존·수정 영향 UI8/E2E3 PASS, Rust1624 PASS·34 ignored·clippy PASS, native/PR 미완료, S5 기록 보존 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -69,7 +69,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-7 로컬 완료·S4-8 R1 수정·별도 재검토 APPROVE·완료 커밋 단계 | 2026-10-25 | | S4-9 미착수 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-8 로컬 완료·S4-9 step1·브랜치 검토 APPROVE·로컬 재검증 완료 | 2026-10-25 | | 전체 검증·PR은 root 단계 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -129,7 +129,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
 | S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-25 | S4-2 fa86bc8b·S4-3 0cb5a24f·통합 e56a76e8·S4-4 e12fcacf, R1 별도 재검토 APPROVE·Biome800 PASS |
 | S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-25 | 2026-10-25 | S4-5 1416acbe·S4-6 804143bc·S4-7 1736d0ad, 각각 별도 재검토 APPROVE·Biome PASS |
-| S4 | Z | S4-8–S4-9 → S4 PR | `v1/s4-editor-git` | S4-8 별도 재검토 APPROVE·완료 커밋 단계 | 2026-10-25 | | S4-8 누적42/수정 영향18 PASS·Biome831·독립 재검토 APPROVE. S4-9 미착수 |
+| S4 | Z | S4-8–S4-9 → S4 PR | `v1/s4-editor-git` | S4-8 완료(로컬)·S4-9 step1·브랜치 검토 APPROVE·로컬 재검증 완료 | 2026-10-25 | | S4-8 00be638d 누적42/수정 영향18 PASS·Biome831·독립 재검토 APPROVE. S4-9 공유 adapter 직접36 PASS·별도 검토 APPROVE·로컬 재검증 완료·Windows 수용 준비 |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
@@ -144,7 +144,25 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 ## 5. 계획과 달라진 점
 
-### S4-8 소스 화면 통합 (2026-10-25 · 구현·직접 검증 완료, R1 수정·별도 재검토 APPROVE·완료 커밋 단계)
+### S4-9 공유 검토 화면 (2026-10-25 · step1·브랜치 검토 APPROVE, 로컬 재검증 완료·Windows 수용 대기)
+
+- 기반 `00be638d18a4224c61e828b8dcf3042ec700b9e0` clean 확인(`s4-task8/commit.json`). 승인 범위는 07a §10 step1만이다. `ChangesList`/`SourceDiff`/`LogView`에 명시적인 review-data adapter를 추가하고 agent `ChangesTab`/`CommitsTab`을 연결했다(제품5파일). source의 기존 조회·stage/unstage/discard·log pagination 경로는 유지한다.
+- agent의 `agents.changes`/`agents.patch`/`agents.commits`를 그대로 사용하므로 기준 브랜치 대비·종료 당시 historical snapshot 의미를 잃지 않는다. 빈 파일/patch/commit 배열도 live `git.status`/`git.diff`/`git.log`로 fallback하지 않는다. loading/undefined 상태는 기존 query/error 경계에서 처리한다. review-data 경로는 RPC provider 없이 표시할 수 있고 Git 쓰기 버튼이나 live source 새로고침 제어를 만들지 않는다.
+- 기존 freshness·signature·봤음·빠른 다음 파일·closed 제한·인용 `DiffRange`/renamed oldPath/지시 초안 추가 정책은 agent에 그대로 남았다. 공용 `ui/DiffView`와 parser/range, `useReviewAction`/AgentActions/quote 함수는 수정하지 않았다. agent 커밋 목록 CSS도 유지한다. 기준 반영의 MergePanel preview/apply는 소스 현재 프로젝트가 전환되어도 `{projectId:task.projectId,worktreeId:task.id}`와 원래 preview token을 사용함을 강화된 회귀로 확인했다.
+- RED3(shared review-data 미지원)→GREEN4. 직접 영향10파일에서34 PASS와 신규 commit 시험의 React Query 통지 대기 부족2 FAIL을 보존했고, 시험만 `findBy` 대기로 고쳐 실패 범위2 PASS. **고유 직접36 PASS**, 제품 소스는 영향34 입력과 같고 실패 시험만 바뀌었다. source query-mode2/그룹1/통합7, review adapter3, agent 변경2/봤음·freshness·review·actions/rebase/commits를 포함한다. typecheck PASS·최종 Biome CI833 PASS. source/doc/scope/artifact hash와 모든 실패 원본은 `s4-task9-implementation`에 보존한다.
+- 동결 예외·새 의존성·S5 변경 없음. 이번 승인에 포함된 agent 두 화면 외 agent mutation/ownership 경계는 유지했다. 전체/Rust/CLI/generated/E2E/native/live Git/OSV/main 통합/commit/push/PR은 이 구현 에이전트가 실행하지 않았다. 단계2–6은 root의 별도 과제/브랜치 전체 검토와 최종 검사 단계이며 S4/PR 완료로 표시하지 않는다. 별도 검토를 위해 소스/문서를 동결한다.
+
+
+**최종 검사와 실패 수정(2026-10-25, 로컬 완료·Windows 수용 대기)**
+- 별도 step1·브랜치 전체 검토 APPROVE 뒤 root가 전체 검사를 한 번 실행했다. 원본 `s4-final/full-check.log`는 exit1이며 frontend1554 PASS/1 case-insensitive 모듈 충돌 FAIL, E2E20 PASS/3 FAIL을 보존한다. Rust workspace test는 `Project.git_warnings` 누락으로 컴파일 중단, clippy는 remote preflight 중첩 if로 실패했다. 이를 전체 PASS로 바꾸지 않는다.
+- 최소 수정은 remote 조건식 결합, agents 시험 fixture의 빈 git_warnings, source `previewHelpers.ts`/`quickOpenRanking.ts` 이름과 해당 import 정리다. LSP E2E는 editor focus 중 앱 단축키를 양보하는 기존 정책에 맞춰 파일 탭에 focus한 뒤 하단 패널을 열며, stale 충돌 알림은 실제 status role로 확인하고 외부 파일 보존 assertion을 추가했다. 최초 HTTP E2E trace는 React/App 모듈의 `ERR_NETWORK_CHANGED`로 화면이 시작하지 못한 근거이며 runtime 제품 결함 수정으로 주장하지 않는다.
+- 수정 영향 frontend4파일/8 PASS·typecheck PASS, 수정 E2E3 PASS(메모리 제한 true), 최종 Biome833 PASS·변경 Rust2파일 rustfmt PASS. 독립 delta 검토 APPROVE. 최초 frontend 명령의 지원하지 않는 minWorkers 인자 오류, memory 제한 false로 완료된 직접 frontend/typecheck, 같은 설정의 E2E 중단 exit130도 별도 보존한다. cgroup 필수 설정으로 재실행한 E2E3만 최종 실패 범위 수용 근거이며 앞선20 PASS와 합쳐 고유23개를 덮지만 단일 전체23 PASS 실행이라고 쓰지 않는다.
+- 모든 후속 supervisor는 명시적 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS와 DEVBOX_VERIFY_CGROUP=required를 사용한다. root가 실패한 Rust workspace test·clippy --keep-going만 공유 lock으로 재검증했다. 통과한 무관 전체 검사는 반복하지 않았다. 제품소스 동결·docs2 진행 정보만 갱신하며 Windows native/commit/push/PR은 아직 완료하지 않았다.
+- root의 실패 Rust 명령 재실행도 exit1로 보존했다. 최초 git_warnings 보정의 vec![]는 실제 Option 타입과 달라 None으로 다시 고쳤고 agents resume rollback2를 컴파일·실행해 PASS를 확인했다. keep-going에서 드러난 deps 조건3·LSP test-module 위치와 S4 소유 시험의 unwrap을 expect/expect_err로 정리했다(제품 unwrap 변경·lint 억제 없음). 600줄 제한을 위해 conflict 시험 일부를 test-only child로 옮기고 기존18 PASS를 확인했다. 추가로 library 실패에 가려졌던 S4 deps/CLI/native source_external 시험의 같은 패턴을 고쳤으며 assertion·시험 이름·정규화 본문 동등성은 `fix-rust2-coverage.json`에 기록한다. Rust2 입력은 별도 검토 APPROVE(`final-rust2-review.json`) 후 workspace clippy PASS·Rust **1624 PASS/0 FAIL/34 ignored**(`fix-rust2-workspace-result.json`)를 확인했다. ignored는 실행 성공으로 합산하지 않는다. 461.447초·memory enforced true·cgroup peak6,075,981,824B, CPU4/jobs2/threads2 제한으로 완료했다.
+- 최종 소스 LOC121202/160000·제품600줄 초과 없음, scripts+.github1500줄·workflow2개, E2E23개다. 최신 main a55907a2는 기존 통합 e56a76e8을 통해 포함됨을 확인했고 추가 merge가 필요하지 않았다(`main-integration.json`). S4-9 제품 커밋을 먼저 고정해 백업 push·정확한 SHA의 Windows workflow_dispatch 산출물을 만든 뒤 설치 수용·결과 문서·S4 PR을 마무리한다. 이 중간 커밋을 S4 PR 수용 완료로 표시하지 않는다.
+- 외부 설치 도우미는 `s4-final/acceptance`에서 준비·별도 수정 검토 APPROVE_PENDING_BINDING, runtime23개다. SHA/run UNBOUND·실행 승인 NOT_REVIEWED를 유지하고 실제 Windows/OSV/언어 서버 수용은 모두 NOT_RUN이다. 언어 서버 부재 항목2/3/4/7을 fake LSP E2E로 대체하지 않는다. 최초 실패·중단·수정 검증 및 source/doc 동결은 `s4-final/fix-*`에 기록한다.
+
+### S4-8 소스 화면 통합 (2026-10-25 · 00be638d 로컬 완료·별도 재검토 APPROVE)
 
 - 기반 `1736d0ad64f09e7dd65221f3b1dd92a9663a9371`(S4-7 별도 재검토 APPROVE·Biome810·로컬 완료), 같은 전용 worktree. 07a §9만 구현했다. 파일/변경/브랜치 키보드 선택, staged/unstaged/conflict 분류, 기존 DiffView parser/인용 범위를 그대로 쓰는 SourceDiff와 hunk/파일 stage·unstage·always discard, branch create/checkout/always delete, stash/worktree/log/blame/cleanup, CommitBox, 상태 표시줄 Git 칩을 연결했다. merge/deps는 SourcePage에서 접근한다. 기존 Shell의 검색·Problems 위치 연결은 유지하고 직접 회귀를 추가했다.
 - source 안의 프로젝트+worktree 키 상태와 전역 SourceSession이 확인 대화상자·진행/완료 결과를 보관한다. 프로젝트/선택 변경·늦은 조회/이벤트는 다른 대상에 적용하지 않는다. push/pull은 캡처한 target/expect를 표시하고 항상 확인, force-with-lease/rebase는 명시 선택한다. stale은 새 snapshot을 읽은 뒤 다시 확인해야 한다. 취소의 completionUnknown은 원격 반영 여부 불명으로 표시한다.

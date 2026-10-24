@@ -9,7 +9,7 @@ import { OpenError, ReadOnlyBar } from "../../notes/ReadOnlyBar";
 import { RecoveryView } from "../../notes/RecoveryView";
 import { SaveStatus } from "../../notes/SaveStatus";
 import { Preview } from "../Preview";
-import { canPreview } from "../preview";
+import { canPreview } from "../previewHelpers";
 import s from "../source.module.css";
 import { codeExtensions } from "./extensions";
 import { LspStatus } from "./LspStatus";

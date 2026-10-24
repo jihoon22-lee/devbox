@@ -43,30 +43,6 @@ pub fn file_path(uri: &str) -> Option<PathBuf> {
     let text = String::from_utf8(bytes).ok()?;
     valid_path(&text).then(|| PathBuf::from(text))
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn file_uris_encode_unicode_and_reject_other_authorities() {
-        let p = Path::new("/owned/가 😀#%.ts");
-        let uri = file_uri(p).expect("uri");
-        assert!(uri.contains("%20") && uri.contains("%23") && uri.contains("%25"));
-        assert_eq!(file_path(&uri).as_deref(), Some(p));
-        for uri in [
-            "file://host/a",
-            "file:///a/../b",
-            "file:///a%2fb",
-            "file:///a?b",
-            "file:///a#b",
-            "https://x/a",
-            "file:///a%00b",
-            "file:///a/%2e%2e/b",
-        ] {
-            assert!(file_path(uri).is_none(), "{uri}");
-        }
-    }
-}
-
 /// Canonicalize LSP locations and workspace-edit targets through daemon authority.
 /// Text and opaque data remain opaque; there is no Windows URI translation in a renderer.
 pub(crate) fn normalize<'a>(
@@ -111,4 +87,28 @@ pub(crate) fn normalize<'a>(
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn file_uris_encode_unicode_and_reject_other_authorities() {
+        let p = Path::new("/owned/가 😀#%.ts");
+        let uri = file_uri(p).expect("uri");
+        assert!(uri.contains("%20") && uri.contains("%23") && uri.contains("%25"));
+        assert_eq!(file_path(&uri).as_deref(), Some(p));
+        for uri in [
+            "file://host/a",
+            "file:///a/../b",
+            "file:///a%2fb",
+            "file:///a?b",
+            "file:///a#b",
+            "https://x/a",
+            "file:///a%00b",
+            "file:///a/%2e%2e/b",
+        ] {
+            assert!(file_path(uri).is_none(), "{uri}");
+        }
+    }
 }

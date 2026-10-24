@@ -45,6 +45,8 @@ test("late file patches never replace current selection, quotes append to live d
   await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(3));
   await act(async () => wire.reply("agents.patch", patch));
   await screen.findByText("old text");
+  expect(screen.getByRole("region", { name: "변경 검토" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /스테이징|커밋|버리기/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "변경 전 1줄" }));
   act(() => useDrafts.getState().set("a", "방금 쓴 지시"));
   fireEvent.click(screen.getByRole("button", { name: "지시에 인용" }));
@@ -58,3 +60,23 @@ test("late file patches never replace current selection, quotes append to live d
 });
 
 import { webcrypto } from "node:crypto";
+
+test("closed historical patches keep citations read-only and never use live Git fallback", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <ChangesTab agentId="closed" closed />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  expect(wire.requests("git.status")).toHaveLength(0);
+  await act(async () => wire.reply("agents.changes", { ...changes, files: [changes.files[0]] }));
+  await waitFor(() => expect(wire.requests("agents.patch")).toHaveLength(1));
+  await act(async () => wire.reply("agents.patch", patch));
+  await screen.findByText(/종료할 때 확인한 기록/);
+  fireEvent.click(await screen.findByRole("button", { name: "변경 전 1줄" }));
+  expect(screen.queryByRole("button", { name: "지시에 인용" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /스테이징|커밋|버리기/ })).toBeNull();
+  expect(wire.requests("git.diff")).toHaveLength(0);
+  expect(wire.requests("git.status")).toHaveLength(0);
+});

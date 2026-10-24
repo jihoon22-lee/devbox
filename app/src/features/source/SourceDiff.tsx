@@ -6,17 +6,31 @@ import { DiffView } from "../../ui/DiffView";
 import { type DiffRange, parseUnifiedDiff } from "../../ui/diff";
 import { gitError, requestGit, runGit, sourceTargetKey, useSourceGit } from "./gitState";
 import s from "./source.module.css";
-export type SourceDiffProps = {
+
+type QueriedDiffProps = {
   target: SourceTarget;
   path: string;
   staged: boolean;
   mode?: "source" | "review";
   onSelectLines?: (range: DiffRange) => void;
 };
+type ReviewDiffProps = {
+  mode: "review";
+  path: string;
+  snapshot: { patch: string };
+  onSelectLines?: (range: DiffRange) => void;
+};
+export type SourceDiffProps = QueriedDiffProps | ReviewDiffProps;
 export function SourceDiff(props: SourceDiffProps) {
+  if ("snapshot" in props)
+    return (
+      <section aria-label="변경 검토">
+        <DiffContents path={props.path} patch={props.snapshot.patch} onSelectLines={props.onSelectLines} />
+      </section>
+    );
   return <SelectedDiff key={JSON.stringify([props.target, props.path, props.staged])} {...props} />;
 }
-function SelectedDiff({ target, path, staged, mode = "source", onSelectLines }: SourceDiffProps) {
+function SelectedDiff({ target, path, staged, mode = "source", onSelectLines }: QueriedDiffProps) {
   const client = useRpc();
   const diff = useRpcQuery("git.diff", { target, path, staged }, { staleTime: 0 });
   const busy = useSourceGit(
@@ -63,11 +77,26 @@ function SelectedDiff({ target, path, staged, mode = "source", onSelectLines }: 
           {diff.data?.fileOnly && <p>이 변경은 파일 단위로 처리합니다.</p>}
         </div>
       )}
-      {diff.data &&
-        parseUnifiedDiff(diff.data.patch).map((file, index) => (
-          <DiffView key={`${path}:${index}`} file={file} onSelectLines={onSelectLines} />
-        ))}
-      {diff.data && !diff.data.patch && <p>표시할 텍스트 변경이 없습니다.</p>}
+      {diff.data && <DiffContents path={path} patch={diff.data.patch} onSelectLines={onSelectLines} />}
     </section>
+  );
+}
+
+function DiffContents({
+  path,
+  patch,
+  onSelectLines,
+}: {
+  path: string;
+  patch: string;
+  onSelectLines?: (range: DiffRange) => void;
+}) {
+  return (
+    <>
+      {parseUnifiedDiff(patch).map((file, index) => (
+        <DiffView key={`${path}:${index}`} file={file} onSelectLines={onSelectLines} />
+      ))}
+      {!patch && <p>표시할 텍스트 변경이 없습니다.</p>}
+    </>
   );
 }

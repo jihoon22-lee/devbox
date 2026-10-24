@@ -219,10 +219,10 @@ pub(super) fn parse(
         }
     }
     for p in lock.package {
-        if let VecOrMap::Map(ref values) = p.dependencies {
-            if values.len() > MAX_ITEMS {
-                return Err(DepsError::LimitExceeded);
-            }
+        if let VecOrMap::Map(ref values) = p.dependencies
+            && values.len() > MAX_ITEMS
+        {
+            return Err(DepsError::LimitExceeded);
         }
         let name = normalize(&p.name);
         let source = match &p.source {

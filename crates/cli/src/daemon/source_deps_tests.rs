@@ -5,8 +5,10 @@ where
     M::Params: serde::Serialize,
     M::Output: serde::de::DeserializeOwned,
 {
-    let raw =
-        serde_json::value::RawValue::from_string(serde_json::to_string(params).unwrap()).unwrap();
+    let raw = serde_json::value::RawValue::from_string(
+        serde_json::to_string(params).expect("encode owned RPC request"),
+    )
+    .expect("encode owned RPC request");
     let result = router
         .dispatch(
             M::NAME,
@@ -18,8 +20,8 @@ where
             raw,
         )
         .await
-        .unwrap();
-    serde_json::from_str(result.get()).unwrap()
+        .expect("owned RPC response");
+    serde_json::from_str(result.get()).expect("owned fixture entry")
 }
 #[tokio::test]
 async fn source_deps_routes_owned_inventory_and_fake_audit() {
@@ -29,16 +31,18 @@ async fn source_deps_routes_owned_inventory_and_fake_audit() {
             Box::pin(async { Ok(br#"{"results":[{},{}]}"#.to_vec()) })
         }
     }
-    let home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().expect("create owned temporary directory");
     let repo = home.path().join("owned");
-    std::fs::create_dir(&repo).unwrap();
+    std::fs::create_dir(&repo).expect("create owned fixture directory");
     std::fs::write(
         repo.join("package-lock.json"),
         include_bytes!("../../../deps/tests/fixtures/npm.json"),
     )
-    .unwrap();
+    .expect("write owned fixture");
     let mut services = crate::daemon::build_services_for_test(home.path());
-    Arc::get_mut(&mut services).unwrap().deps = DepsService::new(
+    Arc::get_mut(&mut services)
+        .expect("exclusive owned services fixture")
+        .deps = DepsService::new(
         Auditor::new(Arc::new(Fake), Arc::new(|| 1_000), ENDPOINT.into()),
         Arc::new(|_| {}),
     );
@@ -48,7 +52,7 @@ async fn source_deps_routes_owned_inventory_and_fake_audit() {
             path: repo.display().to_string(),
         })
         .await
-        .unwrap();
+        .expect("encode owned RPC request");
     let router = crate::daemon::routes::router(services);
     let query = ProjectQuery {
         project_id: project.id,
@@ -63,7 +67,7 @@ async fn source_deps_routes_owned_inventory_and_fake_audit() {
     for _ in 0..100 {
         let job = call::<DepsAuditStatus>(&router, &params).await;
         if job.state == AuditState::Succeeded {
-            assert_eq!(job.result.unwrap().packages.len(), 2);
+            assert_eq!(job.result.expect("owned RPC response").packages.len(), 2);
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
@@ -72,9 +76,9 @@ async fn source_deps_routes_owned_inventory_and_fake_audit() {
 }
 #[tokio::test]
 async fn source_deps_rejects_unregistered_and_external_symlink() {
-    let home = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().expect("create owned temporary directory");
     let repo = home.path().join("owned");
-    std::fs::create_dir(&repo).unwrap();
+    std::fs::create_dir(&repo).expect("create owned fixture directory");
     let services = crate::daemon::build_services_for_test(home.path());
     assert!(reader(&services, "missing").await.is_err());
     let project = services
@@ -83,19 +87,24 @@ async fn source_deps_rejects_unregistered_and_external_symlink() {
             path: repo.display().to_string(),
         })
         .await
-        .unwrap();
+        .expect("encode owned RPC request");
     std::fs::write(
         home.path().join("outside.json"),
         include_bytes!("../../../deps/tests/fixtures/npm.json"),
     )
-    .unwrap();
+    .expect("write owned fixture");
     std::os::unix::fs::symlink(
         home.path().join("outside.json"),
         repo.join("package-lock.json"),
     )
-    .unwrap();
+    .expect("owned RPC response");
     assert!(matches!(
-        input::load(reader(&services, &project.id).await.unwrap()).await,
+        input::load(
+            reader(&services, &project.id)
+                .await
+                .expect("read owned project dependencies")
+        )
+        .await,
         Err(DepsError::UnsafePath)
     ));
 }

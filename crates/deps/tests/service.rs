@@ -3,13 +3,22 @@ use std::sync::{Arc, Mutex};
 struct Fake(Mutex<std::collections::VecDeque<Result<Vec<u8>, AuditFailure>>>);
 impl Http for Fake {
     fn post(&self, _: &str, _: Vec<u8>) -> HttpFuture {
-        let response = self.0.lock().unwrap().pop_front().unwrap();
+        let response = self
+            .0
+            .lock()
+            .expect("lock owned fixture state")
+            .pop_front()
+            .expect("next owned HTTP response");
         Box::pin(async move { response })
     }
 }
 fn reader(files: Arc<Mutex<std::collections::BTreeMap<String, Vec<u8>>>>) -> Reader {
     Arc::new(move |path| {
-        let value = files.lock().unwrap().get(&path).cloned();
+        let value = files
+            .lock()
+            .expect("lock owned fixture state")
+            .get(&path)
+            .cloned();
         Box::pin(async move { Ok(value) })
     })
 }
@@ -21,7 +30,7 @@ fn files() -> Arc<Mutex<std::collections::BTreeMap<String, Vec<u8>>>> {
 }
 async fn finished(s: &DepsService, id: &str) -> AuditJob {
     for _ in 0..100 {
-        let j = s.status("project", id).unwrap();
+        let j = s.status("project", id).expect("read owned audit status");
         if j.state != AuditState::Running {
             return j;
         }
@@ -33,7 +42,9 @@ async fn finished(s: &DepsService, id: &str) -> AuditJob {
 async fn failure_preserves_previous_success_and_events_and_retry() {
     let data = files();
     let read = reader(data.clone());
-    let inv = load(read.clone()).await.unwrap();
+    let inv = load(read.clone())
+        .await
+        .expect("load owned dependency inventory");
     let events = Arc::new(Mutex::new(Vec::new()));
     let sink = events.clone();
     let service = DepsService::new(
@@ -46,29 +57,42 @@ async fn failure_preserves_previous_success_and_events_and_retry() {
             Arc::new(|| 7_000),
             ENDPOINT.into(),
         ),
-        Arc::new(move |j| sink.lock().unwrap().push(j)),
+        Arc::new(move |j| sink.lock().expect("lock owned fixture state").push(j)),
     );
-    let first = service.start("project".into(), inv, read.clone()).unwrap();
+    let first = service
+        .start("project".into(), inv, read.clone())
+        .expect("start owned dependency audit");
     assert_eq!(first.state, AuditState::Running);
     let first = finished(&service, &first.id).await;
     assert_eq!(first.state, AuditState::Succeeded);
-    assert_eq!(first.result.as_ref().unwrap().completed_at_ms, 7_000);
+    assert_eq!(
+        first
+            .result
+            .as_ref()
+            .expect("owned audit report")
+            .completed_at_ms,
+        7_000
+    );
     data.lock()
-        .unwrap()
+        .expect("lock owned fixture state")
         .get_mut("package-lock.json")
-        .unwrap()
+        .expect("exclusive owned services fixture")
         .push(b'\n');
-    let inv = load(read.clone()).await.unwrap();
+    let inv = load(read.clone())
+        .await
+        .expect("load owned dependency inventory");
     let second = service
         .start("project".into(), inv.clone(), read.clone())
-        .unwrap();
+        .expect("start owned dependency audit");
     let second = finished(&service, &second.id).await;
     assert_eq!(second.state, AuditState::Failed);
     assert_eq!(second.error, Some(AuditFailure::Network));
     assert!(second.result.is_none());
     assert_eq!(second.last_success, first.result);
     assert!(service.status("other-project", &second.id).is_err());
-    let third = service.start("project".into(), inv, read).unwrap();
+    let third = service
+        .start("project".into(), inv, read)
+        .expect("start owned dependency audit");
     assert_eq!(
         finished(&service, &third.id).await.state,
         AuditState::Succeeded
@@ -76,7 +100,7 @@ async fn failure_preserves_previous_success_and_events_and_retry() {
     assert!(
         events
             .lock()
-            .unwrap()
+            .expect("lock owned fixture state")
             .iter()
             .any(|j| j.state == AuditState::Failed)
     );
@@ -85,13 +109,21 @@ async fn failure_preserves_previous_success_and_events_and_retry() {
 async fn input_reader_hash_changes_and_unsafe_member_refuses_before_read() {
     let data = files();
     let read = reader(data.clone());
-    let a = load(read.clone()).await.unwrap();
+    let a = load(read.clone())
+        .await
+        .expect("load owned dependency inventory");
     data.lock()
-        .unwrap()
+        .expect("lock owned fixture state")
         .get_mut("package-lock.json")
-        .unwrap()
+        .expect("exclusive owned services fixture")
         .push(b'\n');
-    assert_ne!(a.fingerprint, load(read).await.unwrap().fingerprint);
+    assert_ne!(
+        a.fingerprint,
+        load(read)
+            .await
+            .expect("load owned dependency inventory")
+            .fingerprint
+    );
     let mut cargo = std::collections::BTreeMap::new();
     cargo.insert(
         "Cargo.lock".into(),
@@ -125,7 +157,9 @@ async fn lock_change_during_audit_is_failed_and_concurrent_start_is_refused() {
     }
     let data = files();
     let read = reader(data.clone());
-    let inv = load(read.clone()).await.unwrap();
+    let inv = load(read.clone())
+        .await
+        .expect("load owned dependency inventory");
     let started = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
     let svc = DepsService::new(
@@ -141,16 +175,16 @@ async fn lock_change_during_audit_is_failed_and_concurrent_start_is_refused() {
     );
     let job = svc
         .start("project".into(), inv.clone(), read.clone())
-        .unwrap();
+        .expect("start owned dependency audit");
     started.notified().await;
     assert!(matches!(
         svc.start("project".into(), inv, read),
         Err(DepsError::Busy)
     ));
     data.lock()
-        .unwrap()
+        .expect("lock owned fixture state")
         .get_mut("package-lock.json")
-        .unwrap()
+        .expect("exclusive owned services fixture")
         .push(b'\n');
     release.notify_one();
     let job = finished(&svc, &job.id).await;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { DocKey, SourcePreview } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { RenderedPreview } from "../notes/RenderedPreview";
-import { previewLink, svgBlob } from "./preview";
+import { previewLink, svgBlob } from "./previewHelpers";
 import s from "./source.module.css";
 import { useSource } from "./store";
 
