@@ -187,6 +187,8 @@ async fn stored(d: &TestDaemon) -> Vec<devbox_activity::Session> {
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_api::MIGRATIONS,
+        devbox_webhooks::MIGRATIONS,
         devbox_search::MIGRATIONS,
         devbox_activity::MIGRATIONS,
     ]

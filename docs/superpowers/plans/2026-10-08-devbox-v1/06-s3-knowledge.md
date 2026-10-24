@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **구현 완료·최종 로컬 검증 결과 기록·PR 수용 대기** · 브랜치 `v1/s3-knowledge` · worktree `../devbox-wt/v1-s3-knowledge`. 최초 전체 검사 FAIL 후 실패 범위 수정·영향 검사 PASS, 브랜치 전체 검토 승인. Windows 설치 수용·SC2·필수 CI3·PR 리뷰는 아직 미실행. S5와 동시 진행하며 상세 상태의 원장은 PROGRESS.md다.
+- 상태: **완료(S3 PR 머지)** · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) → squash `e91c9b22`(2026-10-24). 검증 소스e56c3096와 merge tree 동일. 필수CI3/E2E·선택된 실제Windows9/합성데몬1 assertion PASS, 원래 수용4·6·7·8/SC2미실행 및 strict자동저장1초미입증 보존. 정상리뷰3회+상한예외확정손실1건 수정·별도검토·최종근거감사 완료. 상세 원장은 PROGRESS.md이며 다음은 S4-1이다.
 - 상세화 수준: Task 1에서 실제 S0b–S2 코드(main `329b2ee9`)와 v0.9.0 태그를 대조해 Interfaces·파일·실패 테스트·검증 명령·커밋을 확정했다. 각 코드 조각은 그 과제 구현의 시작점이며 그 아래 핵심 테스트 전부가 완료 조건이다. 계획 코드는 컴파일해 본 것이 아니다. 같은 의도로 고쳐도 되고, 고친 것은 PROGRESS §5에 적는다(00 §3.5).
 
 **Goal:** 개발하면서 남기는 기록을 devbox 안에서 끝낸다.

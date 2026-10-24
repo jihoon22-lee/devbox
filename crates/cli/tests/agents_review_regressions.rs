@@ -427,6 +427,8 @@ async fn accumulated_history_limit_rejects_before_paste_and_preserves_the_full_h
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_api::MIGRATIONS,
+        devbox_webhooks::MIGRATIONS,
         devbox_search::MIGRATIONS,
         devbox_activity::MIGRATIONS,
     ]
@@ -465,6 +467,8 @@ fn send_persistence_db(d: &TestDaemon) -> devbox_core::Db {
         devbox_agents::MIGRATIONS,
         devbox_runtime::MIGRATIONS,
         devbox_secrets::MIGRATIONS,
+        devbox_api::MIGRATIONS,
+        devbox_webhooks::MIGRATIONS,
         devbox_search::MIGRATIONS,
         devbox_activity::MIGRATIONS,
     ]

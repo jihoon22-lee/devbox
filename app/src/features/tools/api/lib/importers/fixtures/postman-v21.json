@@ -1,0 +1,144 @@
+{
+  "info": {
+    "name": "Devbox demo",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-Key"
+      },
+      {
+        "key": "value",
+        "value": "{{key}}"
+      },
+      {
+        "key": "in",
+        "value": "header"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://x.test"
+    },
+    {
+      "key": "key",
+      "value": "secret"
+    }
+  ],
+  "item": [
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/users"
+            },
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Trace",
+                "value": "1",
+                "disabled": true
+              }
+            ]
+          }
+        },
+        {
+          "name": "Create user",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "throw new Error(\"never run\")"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/users",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"kim\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Admin",
+          "item": [
+            {
+              "name": "Login form",
+              "request": {
+                "method": "POST",
+                "url": "{{baseUrl}}/login",
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    {
+                      "key": "user",
+                      "value": "kim"
+                    },
+                    {
+                      "key": "off",
+                      "value": "ignored",
+                      "disabled": true
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Query",
+              "request": {
+                "method": "POST",
+                "url": "{{baseUrl}}/graphql",
+                "auth": {
+                  "type": "oauth2"
+                },
+                "body": {
+                  "mode": "graphql",
+                  "graphql": {
+                    "query": "query { user { id } }",
+                    "variables": "{}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

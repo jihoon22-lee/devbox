@@ -30,6 +30,9 @@ import { BottomTerminal } from "../features/terminal/BottomTerminal";
 import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
 import { TerminalCommands } from "../features/terminal/TerminalCommands";
 import { TerminalPage } from "../features/terminal/TerminalPage";
+import { toolsSearch } from "../features/tools/search";
+import { ToolsCommands } from "../features/tools/ToolsCommands";
+import { ToolsPage } from "../features/tools/ToolsPage";
 import { ToastHost } from "../ui/Toast";
 import { registerBottomTab } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -60,6 +63,7 @@ export function Shell() {
           "/terminal": { component: TerminalPage },
           "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
+          "/tools": { component: ToolsPage, validateSearch: toolsSearch },
           "/search": { component: SearchRoute },
           "/notes": { component: NotesRoute, validateSearch: notesSearch },
         },
@@ -202,6 +206,7 @@ export function Shell() {
           }}
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
+        <ToolsCommands navigate={(search) => router.navigate({ to: "/tools", search })} />
         {ownsAttention && <SearchCommands navigate={() => void router.navigate({ to: "/search" })} />}
         <NotesCommands navigate={() => void router.navigate({ to: "/notes" })} />
         <RunStopUndo />

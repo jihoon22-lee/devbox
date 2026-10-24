@@ -1,0 +1,130 @@
+/** v0.9.0 tool identities and output policies; inputs/results never enter this catalog. */
+export const CATALOG = [
+  {
+    id: "json-format",
+    group: "JSON",
+    name: "포매터",
+    policy: "exportable",
+  },
+  {
+    id: "json-minify",
+    group: "JSON",
+    name: "최소화",
+    policy: "exportable",
+  },
+  {
+    id: "json-yaml",
+    group: "JSON",
+    name: "JSON ↔ YAML",
+    policy: "exportable",
+  },
+  {
+    id: "json-typescript",
+    group: "JSON",
+    name: "JSON → TypeScript",
+    policy: "exportable",
+  },
+  {
+    id: "byte-codec",
+    group: "인코딩",
+    name: "UTF-8 / Base64 / Hex",
+    policy: "exportable",
+  },
+  {
+    id: "radix",
+    group: "인코딩",
+    name: "진법 변환기",
+    policy: "exportable",
+  },
+  {
+    id: "html-entity-encode",
+    group: "인코딩",
+    name: "HTML 엔터티 인코딩",
+    policy: "exportable",
+  },
+  {
+    id: "html-entity-decode",
+    group: "인코딩",
+    name: "HTML 엔터티 디코딩",
+    policy: "exportable",
+  },
+  {
+    id: "url-encode",
+    group: "인코딩",
+    name: "URL 컴포넌트 인코딩",
+    policy: "exportable",
+  },
+  {
+    id: "url-decode",
+    group: "인코딩",
+    name: "URL 컴포넌트 디코딩",
+    policy: "exportable",
+  },
+  {
+    id: "qr",
+    group: "인코딩",
+    name: "QR 생성기",
+    policy: "exportable",
+  },
+  {
+    id: "timestamp",
+    group: "시간",
+    name: "타임스탬프 변환기",
+    policy: "exportable",
+  },
+  {
+    id: "case",
+    group: "텍스트",
+    name: "대소문자 변환기",
+    policy: "exportable",
+  },
+  {
+    id: "lorem",
+    group: "텍스트",
+    name: "Lorem 생성기",
+    policy: "exportable",
+  },
+  {
+    id: "markdown-table",
+    group: "텍스트",
+    name: "Markdown 표 포매터",
+    policy: "exportable",
+  },
+  {
+    id: "hash",
+    group: "보안",
+    name: "해시 (MD5/SHA)",
+    policy: "exportable",
+  },
+  {
+    id: "hmac",
+    group: "보안",
+    name: "HMAC 생성 / 검증",
+    policy: "non-persistable",
+  },
+  {
+    id: "uuid",
+    group: "보안",
+    name: "UUID / ULID 생성기",
+    policy: "exportable",
+  },
+  {
+    id: "regex",
+    group: "정규식",
+    name: "정규식 테스터",
+    policy: "exportable",
+  },
+  {
+    id: "diff",
+    group: "차이",
+    name: "텍스트 차이",
+    policy: "exportable",
+  },
+  {
+    id: "jwt",
+    group: "인증",
+    name: "JWT 디코더",
+    policy: "sensitive",
+  },
+] as const;
+export type ToolId = (typeof CATALOG)[number]["id"];

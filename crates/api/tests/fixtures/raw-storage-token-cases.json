@@ -1,0 +1,137 @@
+[
+  {
+    "label": "github parentheses",
+    "text": "(ghp_abcdefghijklmnopqrstuvwxyz1234567890)",
+    "sensitive": true
+  },
+  {
+    "label": "github unicode wrapper",
+    "text": "「ghp_abcdefghijklmnopqrstuvwxyz1234567890」",
+    "sensitive": true
+  },
+  {
+    "label": "github embedded prefix",
+    "text": "prefixghp_abcdefghijklmnopSuffix",
+    "sensitive": true
+  },
+  {
+    "label": "github fine-grained bracket",
+    "text": "[github_pat_abcdefghijklmnop]",
+    "sensitive": true
+  },
+  {
+    "label": "openai punctuation",
+    "text": "key=(sk-abcdefghijklmnop)!",
+    "sensitive": true
+  },
+  {
+    "label": "underscore key",
+    "text": "<sk_abcdefghijklmnop>",
+    "sensitive": true
+  },
+  {
+    "label": "gitlab braces",
+    "text": "wrapped {glpat-abcdefghijklmnop}",
+    "sensitive": true
+  },
+  {
+    "label": "slack bot",
+    "text": "(xoxb-abcdefghijklmnop)",
+    "sensitive": true
+  },
+  {
+    "label": "slack app",
+    "text": "<xoxa-abcdefghijklmnop>",
+    "sensitive": true
+  },
+  {
+    "label": "slack user",
+    "text": "[xoxp-abcdefghijklmnop]",
+    "sensitive": true
+  },
+  {
+    "label": "slack refresh",
+    "text": "(xoxr-abcdefghijklmnop)",
+    "sensitive": true
+  },
+  {
+    "label": "slack session",
+    "text": "(xoxs-abcdefghijklmnop)",
+    "sensitive": true
+  },
+  {
+    "label": "aws wrapped",
+    "text": "[AKIAABCDEFGHIJKLMNOP]",
+    "sensitive": true
+  },
+  {
+    "label": "jwt wrapped",
+    "text": "(aaaaaaaaaa.bbbbbbbbbb.cccccccccc)",
+    "sensitive": true
+  },
+  {
+    "label": "multiple adjacent tokens",
+    "text": "(ghp_abcdefghijklmnop);[sk-ponmlkjihgfedcba]",
+    "sensitive": true
+  },
+  {
+    "label": "private key marker",
+    "text": "prefix -----BEGIN RSA PRIVATE KEY----- suffix",
+    "sensitive": true
+  },
+  {
+    "label": "short github",
+    "text": "(ghp_short)",
+    "sensitive": false
+  },
+  {
+    "label": "short aws",
+    "text": "short [AKIAABCDEFGHIJKLMNO]",
+    "sensitive": false
+  },
+  {
+    "label": "short jwt part",
+    "text": "aaaaaaaaa.bbbbbbbbbb.cccccccccc",
+    "sensitive": false
+  },
+  {
+    "label": "ordinary punctuation",
+    "text": "plain (text) [without] credentials",
+    "sensitive": false
+  },
+  {
+    "label": "secret reference",
+    "text": "{{secret:TOKEN}}",
+    "sensitive": false
+  },
+  {
+    "label": "variable reference",
+    "text": "${REQUEST_BODY}",
+    "sensitive": false
+  },
+  {
+    "label": "redaction marker",
+    "text": "[REDACTED]",
+    "sensitive": false
+  },
+  {
+    "label": "secret reference with token-shaped name",
+    "text": "{{secret:ghp_abcdefghijklmnop}}",
+    "sensitive": false
+  },
+  {
+    "label": "literal token disguised as variable",
+    "text": "{{ghp_abcdefghijklmnop}}",
+    "sensitive": true
+  },
+  {
+    "label": "four dot-separated parts are not JWT",
+    "text": "aaaaaaaaaa.bbbbbbbbbb.cccccccccc.dddddddddd",
+    "sensitive": false
+  },
+  {
+    "label": "JWT surrounded by braces in prose",
+    "text": "value={aaaaaaaaaa.bbbbbbbbbb.cccccccccc}!",
+    "sensitive": true
+  }
+]

@@ -12,6 +12,9 @@ path = "src/main.rs"
 [dependencies]
 sha2.workspace = true
 devbox-secrets.workspace = true
+devbox-api.workspace = true
+devbox-webhooks.workspace = true
+devbox-tools.workspace = true
 devbox-documents.workspace = true
 devbox-notes.workspace = true
 devbox-search.workspace = true
@@ -42,7 +45,7 @@ tracing.workspace = true
 uuid.workspace = true
 libc.workspace = true
 aho-corasick = "1"
-nix = { version = "0.30", features = ["signal", "process"] }
+nix = { version = "0.30", features = ["signal", "process", "fs"] }
 
 axum.workspace = true
 
