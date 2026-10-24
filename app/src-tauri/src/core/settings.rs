@@ -20,6 +20,7 @@ pub struct ActivitySettings {
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GlobalShortcuts {
+    pub capture: Option<String>,
     pub palette: Option<String>,
     pub bottom_terminal: Option<String>,
 }

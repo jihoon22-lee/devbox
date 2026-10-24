@@ -71,3 +71,23 @@ test("a withdrawal that stopped but could not be saved says it may come back", a
   expect(mocks.invoke).toHaveBeenLastCalledWith("activity_state");
   expect(screen.getByRole("button", { name: "활동 기록 켜기" })).toBeInTheDocument();
 });
+
+test("a late initial native read cannot overwrite a newer tray event", async () => {
+  let finish!: (value: unknown) => void;
+  let receive!: (event: { payload: unknown }) => void;
+  mocks.invoke.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      }),
+  );
+  mocks.listen.mockImplementation(async (_name: string, cb: typeof receive) => {
+    receive = cb;
+    return () => {};
+  });
+  render(<ActivityConsent />);
+  receive({ payload: state(true, false, true) });
+  expect(await screen.findByRole("button", { name: "다시 시작" })).toBeVisible();
+  finish(state(true, false, false));
+  await waitFor(() => expect(screen.getByRole("button", { name: "다시 시작" })).toBeVisible());
+});

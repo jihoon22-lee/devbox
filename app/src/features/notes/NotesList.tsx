@@ -1,7 +1,8 @@
 import { CalendarDays, FilePlus } from "lucide-react";
 import { useState } from "react";
 import { useRpcSession } from "../../rpc/RpcProvider";
-import { EmptyState, IconButton, Tabs } from "../../ui";
+import { IconButton, Tabs } from "../../ui";
+import { ActivityView } from "../activity/ActivityView";
 import { createNote, openDaily } from "./actions";
 import { NoteTree } from "./NoteTree";
 import s from "./notes.module.css";
@@ -44,9 +45,7 @@ export function NotesList() {
       <div className={s.listBody} role="tabpanel" aria-label={TABS.find((t) => t.id === tab)?.label}>
         {tab === "tree" && <NoteTree />}
         {tab === "tags" && <TagList />}
-        {tab === "activity" && (
-          <EmptyState title="활동 기록" body="활동 기록 보기는 다음 단계에서 이곳에 표시됩니다." />
-        )}
+        {tab === "activity" && <ActivityView />}
       </div>
     </div>
   );

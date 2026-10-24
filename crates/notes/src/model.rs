@@ -52,6 +52,15 @@ pub struct CreatedNote {
 pub struct NotePath {
     pub path: String,
 }
+/// A bounded, lease-less vault read for MCP and the read-only search preview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NoteContent {
+    pub path: String,
+    pub text: String,
+    pub rev: DiskRev,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Trashed {

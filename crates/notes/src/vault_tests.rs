@@ -259,3 +259,45 @@ async fn restore_takes_only_a_trashed_note_file() -> T {
     assert_eq!(n.read("back.md"), "a\n");
     Ok(())
 }
+
+#[tokio::test]
+async fn read_rejects_traversal_and_outside_symlinks() -> T {
+    let n = fixture(&[("a.md", "owned note\n")]).await;
+    let out = n
+        .svc
+        .read(NotePath {
+            path: "a.md".into(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(out.text, "owned note\n");
+    let outside = n.home.join("outside.md");
+    std::fs::write(&outside, "private fixture")?;
+    std::os::unix::fs::symlink(&outside, n.vault().join("escape.md"))?;
+    for path in [
+        "../outside.md".to_owned(),
+        outside.display().to_string(),
+        "escape.md".into(),
+        "folder/../a.md".into(),
+    ] {
+        assert_eq!(
+            domain(n.svc.read(NotePath { path }).await),
+            NotesError::OutOfVault
+        );
+    }
+    n.write(
+        "large.md",
+        vec![b'x'; devbox_documents::NOTE_LIMIT as usize + 1],
+    );
+    assert!(matches!(
+        domain(
+            n.svc
+                .read(NotePath {
+                    path: "large.md".into()
+                })
+                .await
+        ),
+        NotesError::TooLarge { .. }
+    ));
+    Ok(())
+}

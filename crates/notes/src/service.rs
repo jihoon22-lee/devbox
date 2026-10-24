@@ -146,6 +146,36 @@ impl NotesService {
             }),
         })
     }
+    /// Read through documents' guarded root/file descriptor path, never a bare filesystem read.
+    pub async fn read(&self, p: NotePath) -> R<NoteContent> {
+        if !vault::valid_note_path(&p.path) {
+            return Err(NotesError::OutOfVault.into());
+        }
+        let disk = self
+            .s
+            .docs
+            .read_disk(&self.key(&p.path), devbox_documents::DocKind::Note)
+            .await
+            .map_err(docs_fail)?;
+        let rev = disk.rev.ok_or(NotesError::NotFound)?;
+        if disk
+            .read_only
+            .as_ref()
+            .is_some_and(|r| r.reason == devbox_documents::ReadOnlyReason::TooLarge)
+        {
+            return Err(NotesError::TooLarge {
+                limit: devbox_documents::NOTE_LIMIT,
+            }
+            .into());
+        }
+        let text = disk.text.ok_or(NotesError::InvalidInput)?;
+        Ok(NoteContent {
+            path: p.path,
+            text,
+            rev,
+        })
+    }
+
     pub fn vault(&self) -> &Path {
         &self.s.settings.vault
     }

@@ -30,6 +30,7 @@ pub use rename::StopAt;
 pub use service::{Clock, NotesConfig, NotesService, PcName, Today};
 pub use settings::{NotesSettings, SettingsError};
 
+method!(pub NotesRead = "notes.read", query, NotePath => NoteContent, NotesError);
 method!(pub NotesTree = "notes.tree", query, TreeParams => NoteTree, NotesError);
 method!(pub NotesCreate = "notes.create", mutation, CreateNote => CreatedNote, NotesError);
 method!(pub NotesDelete = "notes.delete", mutation(reversible), NotePath => Trashed, NotesError);
@@ -51,6 +52,7 @@ topic!(pub NotesRewriteRequestTopic = "notes.rewrite_request", RewriteRequest);
 topic!(pub NotesRenameIncompleteTopic = "notes.rename_incomplete", RenameIncomplete);
 
 pub fn export<X: Exporter>(x: &mut X) {
+    x.method::<NotesRead>();
     x.method::<NotesTree>();
     x.method::<NotesCreate>();
     x.method::<NotesDelete>();

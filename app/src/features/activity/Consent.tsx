@@ -1,68 +1,14 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
 import { Button } from "../../ui";
+import { type ActivityControl, useNativeActivity } from "./nativeState";
 
-/** `activity_state`, also delivered as `activity://state` when the tray changes it. */
-export interface ActivityState {
-  consent: boolean;
-  paused: boolean;
-  legacyKnowledge: boolean;
-}
+export type { ActivityState } from "./nativeState";
 
-/** Consent first (01 §6.2): before it only the collect button, and no collector runs. */
 export function ActivityConsent() {
-  const [state, setState] = useState<ActivityState | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  const pending = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt explicitly reloads native state.
-  useEffect(() => {
-    let cancelled = false;
-    let off: (() => void) | undefined;
-    setError(null);
-    void listen<ActivityState>("activity://state", (event) => {
-      if (!cancelled) setState(event.payload);
-    })
-      .then((unlisten) => {
-        if (cancelled) unlisten();
-        else off = unlisten;
-      })
-      .catch(() => {});
-    void invoke<ActivityState>("activity_state")
-      .then((value) => {
-        if (!cancelled) setState(value);
-      })
-      .catch(() => {
-        if (!cancelled) setError("활동 기록 상태를 확인하지 못했습니다.");
-      });
-    return () => {
-      cancelled = true;
-      off?.();
-    };
-  }, [attempt]);
-  const change = async (next: { consent?: boolean; paused?: boolean }) => {
-    if (pending.current) return;
-    pending.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      setState(await invoke<ActivityState>("activity_set", next));
-    } catch {
-      // The native side may have stopped anyway (a withdrawal stops before saving).
-      const now = await invoke<ActivityState>("activity_state").catch(() => null);
-      if (now) setState(now);
-      setError(
-        next.consent === false && now && !now.consent
-          ? "활동 기록을 껐지만 설정을 저장하지 못했습니다. 앱을 다시 열면 다시 켜질 수 있으니 다시 시도하세요."
-          : "활동 기록 설정을 바꾸지 못했습니다. 다시 시도하세요.",
-      );
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
-  };
+  return <ActivityControls control={useNativeActivity()} />;
+}
+/** Only native consent/pause state decides these buttons; list responses never do. */
+export function ActivityControls({ control }: { control: ActivityControl }) {
+  const { state, error, busy, change, retry } = control;
   return (
     <section aria-label="활동 기록">
       <h3>활동 기록</h3>
@@ -89,7 +35,7 @@ export function ActivityConsent() {
       {error && (
         <p role="alert" style={{ color: "var(--danger)" }}>
           {error}
-          {!state && <Button onClick={() => setAttempt((value) => value + 1)}>다시 시도</Button>}
+          {!state && <Button onClick={retry}>다시 시도</Button>}
         </p>
       )}
     </section>

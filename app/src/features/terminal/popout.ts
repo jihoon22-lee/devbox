@@ -1,4 +1,4 @@
-export type PopoutKind = "terminal" | "agent" | "agents-grid" | "note";
+export type PopoutKind = "terminal" | "agent" | "agents-grid" | "note" | "capture";
 const pending = new Map<string, Promise<void>>();
 const browserWindows = new Map<string, Window>();
 // Hex-encode UTF-8 rather than replacing punctuation, which would collide for IDs.

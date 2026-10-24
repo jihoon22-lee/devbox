@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -5,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { buildRouter } from "../../shell/router";
 import { TooltipProvider } from "../../ui";
+import { useAgentsUi } from "../agents/ui";
 import { memoryJournal } from "../documents/offlineJournal";
 import { openPopout } from "../terminal/popout";
 import { NotesPage } from "./NotesPage";
@@ -141,4 +143,16 @@ test("a note that cannot be opened says why and opens on [다시 시도]", async
   await userEvent.click(retry);
   await waitFor(() => expect(editor()).toHaveTextContent("alpha body"));
   expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+});
+
+test("note selection opens a draft agent task without executing it", async () => {
+  show();
+  await userEvent.click(await screen.findByRole("button", { name: "Alpha" }));
+  await waitFor(() => expect(editor()).toHaveTextContent("alpha body"));
+  const view = EditorView.findFromDOM(editor());
+  view?.dispatch({ selection: { anchor: 0, head: 5 } });
+  await userEvent.click(screen.getByRole("button", { name: "에이전트 작업 만들기" }));
+  expect(useAgentsUi.getState()).toMatchObject({ creating: true, draft: { prompt: "alpha", truncated: false } });
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  useAgentsUi.getState().setCreating(false);
 });

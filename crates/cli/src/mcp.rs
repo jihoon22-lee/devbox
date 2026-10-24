@@ -1,5 +1,6 @@
 //! Minimal newline-framed MCP stdio server, with write access disabled by default.
 mod input;
+mod notes;
 mod protocol;
 mod runs;
 mod tools;

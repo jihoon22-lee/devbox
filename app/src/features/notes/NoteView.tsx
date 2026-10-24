@@ -1,5 +1,5 @@
 import { ExternalLink, Link2, SquareSplitHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconButton, SplitPane } from "../../ui";
 import { keyId } from "../documents/offlineJournal";
 import { useDocuments } from "../documents/store";
@@ -7,6 +7,7 @@ import { Backlinks } from "./Backlinks";
 import { CompareView } from "./CompareView";
 import { InsertSummary } from "./InsertSummary";
 import { NoteEditor } from "./NoteEditor";
+import { NoteTaskButton } from "./NoteTaskButton";
 import { noteKey, stem } from "./notePaths";
 import s from "./notes.module.css";
 import { Preview } from "./Preview";
@@ -30,6 +31,7 @@ export function NoteView({
   popout?: boolean;
   onOpen(path: string): void;
 }) {
+  const host = useRef<HTMLElement>(null);
   const key = useMemo(() => noteKey(path), [path]);
   const tree = useNoteTree();
   const candidates = useMemo(() => (tree.data?.items ?? []).filter((item) => !item.dir), [tree.data]);
@@ -39,11 +41,12 @@ export function NoteView({
   const [ratio, setRatio] = useState(0.5);
   const [backlinks, setBacklinks] = useState(!popout);
   return (
-    <article className={s.note} aria-label={`노트 ${title}`}>
+    <article ref={host} className={s.note} aria-label={`노트 ${title}`}>
       <header className={s.noteHeader}>
         <h2 title={path}>{title}</h2>
         <SaveStatus docKey={key} />
         <InsertSummary onOpen={onOpen} />
+        <NoteTaskButton host={host} text={text} />
         <span className={s.spacer} />
         <IconButton
           label="미리보기 분할"

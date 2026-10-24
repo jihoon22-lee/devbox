@@ -40,6 +40,7 @@ pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
         .item(&summary)
         .item(&palette)
         .item(&activity)
+        .text("capture", "빠른 캡처")
         .separator()
         .text("quit", "종료")
         .build()?;
@@ -57,6 +58,7 @@ pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
                 super::window::focus_main(app);
                 super::notify::navigate_agents(app);
             }
+            "capture" => super::capture::show(app),
             "activity" => super::activity::toggle_pause(app),
             "activity-storage" => super::window::focus_main(app),
             "palette" => {
@@ -107,6 +109,9 @@ pub fn set_shortcut_status(app: &AppHandle, status: &crate::core::shortcuts::Sho
         let mut tooltip = "devbox".to_string();
         if status.palette_error.is_some() {
             tooltip.push_str(" · 팔레트 단축키 등록 안 됨");
+        }
+        if status.capture_error.is_some() {
+            tooltip.push_str(" · 빠른 캡처 단축키 등록 안 됨");
         }
         if status.bottom_terminal_error.is_some() {
             tooltip.push_str(" · 터미널 단축키 등록 안 됨");

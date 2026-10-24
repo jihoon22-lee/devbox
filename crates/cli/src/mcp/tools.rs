@@ -23,6 +23,7 @@ pub fn list(write: bool) -> Vec<Tool> {
         .properties
         .insert("afterId", PropertySchema::String);
     tools.extend(super::runs::tools());
+    tools.extend(super::notes::tools(write));
     if write {
         tools.push(tool(
             "devbox_agent_send",
@@ -111,6 +112,9 @@ impl Server {
             }
             "devbox_runs" | "devbox_logs" | "devbox_problems" | "devbox_run_task" => {
                 self.call_run_tool(call).await
+            }
+            "devbox_notes_search" | "devbox_note_read" | "devbox_note_add" => {
+                self.call_note_tool(call).await
             }
             _ => Err(ErrorKind::InvalidParams.into()),
         }

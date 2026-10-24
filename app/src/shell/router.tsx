@@ -85,9 +85,17 @@ export function buildRouter(
         (() => <EmptyState title={section.label} body="이 화면은 다음 단계에서 제공됩니다." />),
     }),
   );
+  const searchRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/search",
+    component: parts.pages["/search"]?.component ?? (() => <EmptyState title="통합 검색" />),
+  });
   const settingsRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/settings",
+    validateSearch: (search: Record<string, unknown>) => ({
+      ...(typeof search.tab === "string" ? { tab: search.tab } : {}),
+    }),
     onEnter: () => remember("/settings"),
     component: parts.settings,
   });
@@ -95,7 +103,7 @@ export function buildRouter(
     createRoute({ getParentRoute: () => rootRoute, path: popout.path, component: popout.component }),
   );
   return createRouter({
-    routeTree: rootRoute.addChildren([index, ...sectionRoutes, settingsRoute, ...popoutRoutes]),
+    routeTree: rootRoute.addChildren([index, ...sectionRoutes, searchRoute, settingsRoute, ...popoutRoutes]),
     history,
   });
 }

@@ -18,3 +18,5 @@ pub mod tray;
 pub mod secrets;
 
 pub mod windows;
+
+pub mod capture;

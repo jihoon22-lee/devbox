@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1–9 완료(Task 9 `93316caa`). **Task 10 노트 섹션 화면 완료(로컬)**: 별도 검토 REQUEST_CHANGES(3건) → Mermaid 추가 우회 수정 → 최종 APPROVE. 노트 편집·충돌/복구·분리 창·일일 활동 요약과 네트워크 없는 Mermaid 미리보기. 다음: Task 11 통합 검색·빠른 캡처·활동 보기·MCP |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1–9 완료(Task 9 `93316caa`). **Task 10 노트 섹션 화면 완료(로컬)**: 별도 검토 REQUEST_CHANGES(3건) → Mermaid 추가 우회 수정 → 최종 APPROVE. 노트 편집·충돌/복구·분리 창·일일 활동 요약과 네트워크 없는 Mermaid 미리보기. Task 10 `f469c2b0` 보존. **Task 11 검토 수정·좁은 검증 완료, 재검토 대기**(통합 검색·빠른 캡처·활동 화면·MCP). 다음: Task 11 재검토 뒤 묶음 W 커밋·Task 12 통합 수용 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 Task 10 구현·독립 검토 완료. 노트 시험 46개 및 Mermaid 최종 영향 19개·typecheck·Biome418 PASS(실패 후 직접 영향 재검사 근거 §5). 실제 배포 청크·전체 check/E2E·Windows는 Task 12 미실행 |
+| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 Task 11 검토 수정·좁은 검증 완료, 재검토 대기. UI 통합52/12파일·MCP notes2 및 기존7(실패2개 재검사)·native shortcuts7·vault read1·라우트1·gen-check·최종 typecheck·Biome451·MSVC 좁은 check PASS. 전체 check/E2E·Windows 실기/SC2는 Task 12 미실행 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -115,7 +115,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | T | Task 4–6 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-22 | 2026-10-23 | Task 4: Step 0 config 예외 별도 커밋, 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.8h. Task 5: 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.5h. Task 6: 구현 1회·검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 약1.2h(세션 재시작·사용량 한도 대기 제외) |
 | S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-24 | Task 8: 구현 1회·검토 2회·수정 1회 약1.5h, Task 9: 구현 1회·검토 2회·수정 1회 약1.5h(사용량 한도 대기 제외). 실제 Windows 훅 미실행 |
-| S3 | W | Task 10–11 | 2026-10-24 | 작업 중 | Task 10 구현·별도 검토 완료, Task 11 대기 | | |
+| S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 독립 검토 지적 수정·재검토 APPROVE. 전체 검증·설치본 수용 Task 12 |
 | S3 | 마무리 | Task 12 → S3 PR |  | 대기 | | | |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
@@ -358,6 +358,18 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 11 구현 결과 (2026-10-24, 트랙 1 · 검토 수정 후 재검토 대기)
+
+- 통합 검색(`/search`): 노트·코드·파일 이름 범위, 정규식·대소문자, 저장한 검색, 그룹별 결과·선택, 코드 읽기 전용 미리보기. JSON-line 스트림의 분할 UTF-8·종료·취소·상한 처리. 같은 `search.changed.rev`는 무시하고 더 큰 revision만 새로 조회하며 갱신 중 이전 성공 결과·선택 유지(CV-F07). Ctrl+Shift+F는 터미널·IME에 양보.
+- 빠른 캡처: 숨긴 `popout-capture-main` 사전 생성(520×220·항상 위·장식 없음·가속키 비활성), 전역 키(일반 Ctrl+Alt+N / 개발 Ctrl+Alt+Shift+N)·트레이, 사용자 지정 키의 저장·충돌 검증. 네이티브는 메인 창을 거치지 않고 직접 표시하며 `capture-ready elapsed_ms`만 기록. 화면은 IME Enter·Shift+Enter 보호, 중복 제출 방지, 실패 시 내용 유지, Esc/sessionStorage 초안, 성공 뒤 숨김. Windows 실행·SC2 측정은 미실행.
+- 활동: 일·주 막대와 앱/프로젝트 표, 개인정보 규칙의 행별 오류, 동의/일시중지·내보내기 설정. native consent/pause와 storage health만 수집 버튼을 결정하며 늦은 day 응답과 분리(AR-F12). storage 이벤트 snapshot은 revision으로 보호, 실패 배너·트레이·알림 1회(CV-F08). `notes.rename_incomplete`는 보고서로 연결되는 알림.
+- 노트 선택(없으면 전체)에서 에이전트 작성 창에 지시문 전달, UTF-8 64 KiB 제한·잘림 안내. 기존 프로젝트 선택·신뢰 승인·시작 단계 유지. MCP notes search/read/add, write=false 목록 제외·직접 호출 거절. `notes.read`는 documents의 안전한 root/file-descriptor 읽기를 사용해 vault 밖·symlink·2 MiB 초과를 거절. 새 외부 의존성 없음.
+- 근거 `devbox-verification/s3-task11/`: 사전 RED `red-notes-read`(미구현 메서드+fixture 크기 형변환), `red-mcp-notes`, `red-capture-shortcut`, `red-ui`, `red-activity-settings`, `red-note-task`. GREEN: vault read1, MCP notes2, native shortcuts5, 라우트1·gen-check, UI 첫18/8파일·확장30/8파일·통합52/12파일(범위 중복, 합산하지 않음), `green-typecheck-final.txt`·`green-biome-final.txt`(451파일), MSVC accept cfg 좁은 check. 기존 MCP7 중 첫5 PASS/2 FAIL → 고정 tool 배열 index 대신 이름 조회 및 fixture migrations에 search/activity 추가 후 실패2개만 재검사 PASS. 최종 MCP notes2 PASS. E2E `search.spec.ts` 2개는 작성·타입 확인만, 실행하지 않음.
+- 미실행: 전체 check·clippy·build·E2E·Windows 설치본 실기/SC2는 Task 12. 기존 메모리 cgroup 미적용(§2), jobs/workers/threads2·CPU4·nice10은 적용. 최종 재검토 APPROVE(`review-1/delta-review.txt`), 완료 커밋에 포함.
+- 별도 검토 1차 REQUEST_CHANGES(B1): 등록 거절된 capture 설정의 alias가 등록된 팔레트/터미널 키를 가로채는 동작 재현(`review-1/`). 진단용 `ShortcutStatus`와 성공 등록된 키→동작 소유권을 분리했고, OS 등록·설정 저장이 모두 성공한 뒤에만 소유권을 교체한다. 실패·부분 rollback 때는 실제 남은 등록과 이전 소유권의 교집합만 실행. 팔레트/터미널 alias, 등록 실패, 저장 실패, rollback 실패 회귀를 추가했다. Esc 임시 초안 저장 실패도 창을 숨기지 않고 내용·오류를 유지하도록 보완. `red-review-ownership.txt`(새 소유권 API 미구현)·`red-review-capture-storage.txt` RED, `green-review-ownership.txt` core shortcuts7 PASS 및 `green-review-rollback.txt` 강화된 부분 rollback1 PASS, `green-review-capture-storage.txt` 화면4 PASS, `green-review-msvc.txt`·`green-review-typecheck.txt`·`green-review-biome.txt`(451파일) PASS.
+- 후속(비차단): 저장한 검색의 다른 창 변경은 현재 별도 topic이 없다. `SearchService::save/unsave`는 DB revision만 갱신하고 `search.changed`는 검색 색인의 별도 revision이므로 이를 잘못 비교하는 무효화를 추가하지 않았다. 저장 검색 전용 알림 계약을 후속으로 판단한다(현재 창 저장/삭제 뒤 refetch는 유지).
+- Task 12 참고: `crates/cli/tests/support/agents.rs::agent_launch`에도 이전 DB migration 목록이 있어 search/activity 도메인과 대조가 필요하다(이번 MCP 실패와 같은 fixture 형태, 이 helper의 직접 실행은 이번 과제에서 하지 않음).
 
 ### S3 Task 10 결과 (2026-10-24, 트랙 1 · 독립 검토 승인)
 

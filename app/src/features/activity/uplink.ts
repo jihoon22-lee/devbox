@@ -4,7 +4,7 @@ import { createElement, useEffect, useState } from "react";
 import { type RpcClient, RpcError } from "../../rpc/client";
 import type { Observation } from "../../rpc/gen/rpc";
 import { useRpc } from "../../rpc/RpcProvider";
-import { useActivityStatus, useActivityTray } from "./useActivityStatus";
+import { useActivityStorage, useActivityTray } from "./useActivityStatus";
 
 /** `activity_drain`: the native buffer's oldest observations, kept until `activity_ack`. */
 export interface Drained {
@@ -105,7 +105,7 @@ export function startActivityUplink(client: UplinkClient): () => void {
 function NativeActivity() {
   const client = useRpc();
   useEffect(() => startActivityUplink(client), [client]);
-  useActivityTray(useActivityStatus());
+  useActivityTray(useActivityStorage());
   return null;
 }
 /** Mount once inside the RPC session; renders nothing outside the native main window. */

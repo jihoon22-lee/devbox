@@ -8,6 +8,7 @@ import { AgentDataProvider } from "../features/agents/AgentData";
 import { PopoutAgentGrid } from "../features/agents/AgentGrid";
 import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { PopoutAgent } from "../features/agents/detail/AgentDetail";
+import { CaptureWindow } from "../features/capture/CaptureWindow";
 import { NotesCommands } from "../features/notes/NotesCommands";
 import { NotesRoute, notesSearch } from "../features/notes/NotesPage";
 import { PopoutNote } from "../features/notes/PopoutNote";
@@ -20,9 +21,11 @@ import { BottomLogs } from "../features/runs/BottomLogs";
 import { RunStopUndo } from "../features/runs/RunStopUndo";
 import { RunsPage } from "../features/runs/RunsPage";
 import { runsSearch } from "../features/runs/search";
+import { SearchCommands } from "../features/search/SearchCommands";
+import { SearchRoute } from "../features/search/SearchPage";
 import { openSettings, registerSettingsNavigation } from "../features/settings/open";
 import { restorePreferences } from "../features/settings/preferences";
-import { SettingsPage } from "../features/settings/SettingsPage";
+import { SettingsRoute } from "../features/settings/SettingsPage";
 import { BottomTerminal } from "../features/terminal/BottomTerminal";
 import { PopoutTerminal } from "../features/terminal/PopoutTerminal";
 import { TerminalCommands } from "../features/terminal/TerminalCommands";
@@ -57,14 +60,16 @@ export function Shell() {
           "/terminal": { component: TerminalPage },
           "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
+          "/search": { component: SearchRoute },
           "/notes": { component: NotesRoute, validateSearch: notesSearch },
         },
-        settings: SettingsPage,
+        settings: SettingsRoute,
         popouts: [
           { path: "/popout/terminal/$id", component: PopoutTerminal },
           { path: "/popout/agent/$id", component: PopoutAgent },
           { path: "/popout/agents-grid", component: PopoutAgentGrid },
           { path: "/popout/note/$key", component: PopoutNote },
+          { path: "/popout/capture", component: CaptureWindow },
         ],
       }),
     [],
@@ -197,6 +202,7 @@ export function Shell() {
           }}
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
+        {ownsAttention && <SearchCommands navigate={() => void router.navigate({ to: "/search" })} />}
         <NotesCommands navigate={() => void router.navigate({ to: "/notes" })} />
         <RunStopUndo />
         <ToastHost />

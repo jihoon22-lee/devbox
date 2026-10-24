@@ -232,6 +232,7 @@ export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
 export type Name = { name: string, };
 export type NoParams = Record<symbol, never>;
+export type NoteContent = { path: string, text: string, rev: DiskRev, };
 export type NoteHit = { path: string, title: string, snippet: string, rangesUtf16: Array<[number, number]>, };
 export type NoteHits = { rev: string, items: Array<NoteHit>, truncated: boolean, };
 export type NotePath = { path: string, };
@@ -581,6 +582,7 @@ export interface Methods {
   "notes.daily": { kind: "mutation"; confirm: "none"; params: DailyParams; result: DailyNote; error: NotesError };
   "notes.delete": { kind: "mutation"; confirm: "reversible"; params: NotePath; result: Trashed; error: NotesError };
   "notes.insert_summary": { kind: "mutation"; confirm: "none"; params: InsertSummary; result: SummaryInserted; error: NotesError };
+  "notes.read": { kind: "query"; confirm: "none"; params: NotePath; result: NoteContent; error: NotesError };
   "notes.rename": { kind: "mutation"; confirm: "none"; params: RenameNote; result: RenameStarted; error: NotesError };
   "notes.rename_status": { kind: "query"; confirm: "none"; params: RenameOp; result: RenameStatus; error: NotesError };
   "notes.render": { kind: "query"; confirm: "none"; params: RenderNote; result: RenderedNote; error: NotesError };
@@ -719,6 +721,7 @@ export const METHOD_INFO = {
   "notes.daily": { kind: "mutation", confirm: "none" },
   "notes.delete": { kind: "mutation", confirm: "reversible" },
   "notes.insert_summary": { kind: "mutation", confirm: "none" },
+  "notes.read": { kind: "query", confirm: "none" },
   "notes.rename": { kind: "mutation", confirm: "none" },
   "notes.rename_status": { kind: "query", confirm: "none" },
   "notes.render": { kind: "query", confirm: "none" },

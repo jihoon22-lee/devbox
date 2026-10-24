@@ -40,6 +40,7 @@ pub fn run() {
         .manage(platform::intents::Intents::default())
         .manage(connection::Connection::default())
         .manage(platform::activity::Activity::default())
+        .manage(platform::capture::Capture::default())
         .invoke_handler(tauri::generate_handler![
             connection::gate_status,
             connection::gate_retry,
@@ -65,6 +66,8 @@ pub fn run() {
             platform::activity::activity_configure,
             platform::activity::activity_drain,
             platform::activity::activity_ack,
+            platform::capture::capture_hide,
+            platform::capture::capture_ready,
             platform::activity::activity_tray
         ])
         .setup(|app| {
@@ -75,6 +78,7 @@ pub fn run() {
             }
             platform::shortcuts::initialize(app.handle());
             platform::activity::initialize(app.handle());
+            platform::capture::initialize(app.handle());
             let focus = platform::notify::handle_arguments(
                 app.handle(),
                 &std::env::args().collect::<Vec<_>>(),
@@ -86,6 +90,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == platform::capture::LABEL
+                && window.hide().is_ok()
+            {
+                api.prevent_close();
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
                 && platform::tray::available(window.app_handle(), window.label())
             {

@@ -55,6 +55,7 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<documents::DocumentsRename, _, _>(|s, _, p| async move {
             s.documents.rename(p).await
         })
+        .register::<notes::NotesRead, _, _>(|s, _, p| async move { s.notes.read(p).await })
         .register::<notes::NotesTree, _, _>(|s, _, p| async move { s.notes.tree(p).await })
         .register::<notes::NotesCreate, _, _>(|s, _, p| async move { s.notes.create(p).await })
         .register::<notes::NotesDelete, _, _>(|s, _, p| async move { s.notes.delete(p).await })
