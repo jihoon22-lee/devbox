@@ -7,6 +7,7 @@ import { visit } from "jsonc-parser";
 import type { Auth, CollectionRoot } from "../../../../rpc/gen/rpc";
 import type { StoredBody, StoredPart, StoredRequest, StoredRow } from "../model/stored";
 import { normalizeCookies } from "./cookies";
+import { formText } from "./form";
 import { maskGraphqlQueryLiterals } from "./graphql/mask";
 import { isHeaderEnabled, normalizeHeaders } from "./headers";
 import { MAX_MULTIPART_PARTS, normalizeMultipartParts, safeMultipartFileName } from "./multipart";
@@ -94,10 +95,21 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
   }));
   const params = request.params.map((param) => sanitizePair(param, mark));
   const url = mark(request.url, sanitizeUrl(request.url));
-  const body = mark(
-    request.body,
-    ["multipart", "graphql"].includes(request.body_kind) ? "" : sanitizeBody(request.body, request.body_kind),
-  );
+  // Imported fields are already decoded. Mask decoded names/values before serializing display text.
+  const form =
+    request.body_kind === "form" && request.form_fields
+      ? request.form_fields.map((field) => ({
+          ...field,
+          ...sanitizePair(field, mark),
+          key: mark(field.key, redactKnownTokenPatterns(field.key)),
+        }))
+      : undefined;
+  const body = form
+    ? formText(form)
+    : mark(
+        request.body,
+        ["multipart", "graphql"].includes(request.body_kind) ? "" : sanitizeBody(request.body, request.body_kind),
+      );
   const sourceMultipart = request.multipart ?? [];
   if (sourceMultipart.length > MAX_MULTIPART_PARTS) requiresSecretReview = true;
   const multipart = normalizeMultipartParts(sourceMultipart).map((part, index) =>
@@ -116,6 +128,7 @@ export function sanitizeRequestForPersistence(request: RequestTemplate): Persist
     params,
     body_kind: request.body_kind,
     body,
+    ...(form ? { form_fields: form } : {}),
     auth,
     timeout_ms: request.timeout_ms,
     ...(graphql ? { graphql } : {}),

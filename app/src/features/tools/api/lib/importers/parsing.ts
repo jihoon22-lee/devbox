@@ -1,3 +1,4 @@
+import { importedForm } from "../form";
 import { ImportError } from "./model";
 export type JsonObject = Record<string, unknown>;
 export function object(value: unknown): JsonObject {
@@ -19,10 +20,11 @@ export function readJson(source: string): JsonObject {
     throw new ImportError("가져올 수 없는 형식입니다.");
   }
 }
-export function formRows(value: unknown): string {
-  return rows(value)
-    .map(object)
-    .filter((row) => row.disabled !== true)
-    .map((row) => `${encodeURIComponent(text(row.key))}=${encodeURIComponent(text(row.value))}`)
-    .join("\n");
+export function formRows(value: unknown) {
+  return importedForm(
+    rows(value)
+      .map(object)
+      .filter((row) => row.disabled !== true)
+      .map((row) => ({ key: text(row.key), value: text(row.value) })),
+  );
 }

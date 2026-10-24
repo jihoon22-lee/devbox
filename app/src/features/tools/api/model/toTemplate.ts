@@ -68,11 +68,13 @@ export function templateFromDraft(draft: RequestDraft): RequestTemplate {
     tls: { credentialId: null, verify: draft.tls.verify },
   };
   if (body.kind === "json" || body.kind === "raw") template.body = body.text;
-  if (body.kind === "form")
+  if (body.kind === "form") {
+    template.form_fields = body.fields.map((f) => ({ key: f.name, value: f.value, enabled: f.enabled }));
     template.body = body.fields
       .filter((f) => f.enabled)
       .map((f) => `${f.name}=${f.value}`)
       .join("\n");
+  }
   if (body.kind === "multipart")
     template.multipart = body.parts.map((part) => ({
       kind: part.kind,

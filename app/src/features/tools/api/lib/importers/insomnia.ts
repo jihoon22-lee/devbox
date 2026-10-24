@@ -57,11 +57,13 @@ export function parseInsomnia(source: string): ImportBundle {
       request.body_kind = "json";
       request.body = norm(body.text);
     } else if (mime === "application/x-www-form-urlencoded") {
-      request.body_kind = "form";
-      request.body = formRows(
-        rows(body.params)
-          .map(object)
-          .map((row) => ({ ...row, key: text(row.name), value: norm(row.value) })),
+      Object.assign(
+        request,
+        formRows(
+          rows(body.params)
+            .map(object)
+            .map((row) => ({ ...row, key: text(row.name), value: norm(row.value) })),
+        ),
       );
     } else if (mime === "multipart/form-data") {
       request.body_kind = "multipart";

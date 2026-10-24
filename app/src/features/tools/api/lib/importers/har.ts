@@ -1,3 +1,4 @@
+import { wireForm } from "../form";
 import { emptyMultipartPart, safeMultipartFileName } from "../multipart";
 import { emptyRequest, IMPORT_METHODS, type ImportBundle, ImportError, normalizeBodyHeaders } from "./model";
 import { formRows, object, optionalObject, readJson, rows, text } from "./parsing";
@@ -62,11 +63,13 @@ export function parseHar(source: string): ImportBundle {
       request.body_kind = "json";
       request.body = text(body.text);
     } else if (mime === "application/x-www-form-urlencoded") {
-      request.body_kind = "form";
       const params = rows(body.params).map(object);
-      request.body = params.length
-        ? formRows(params.map((row) => ({ key: text(row.name), value: text(row.value) })))
-        : text(body.text).replace(/&/g, "\n");
+      Object.assign(
+        request,
+        params.length
+          ? formRows(params.map((row) => ({ key: text(row.name), value: text(row.value) })))
+          : wireForm(text(body.text)),
+      );
     } else if (mime === "multipart/form-data") {
       request.body_kind = "multipart";
       request.multipart = rows(body.params)

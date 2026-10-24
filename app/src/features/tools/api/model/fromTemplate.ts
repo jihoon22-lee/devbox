@@ -4,27 +4,14 @@
  * 컬렉션 목록의 `reviewed`와 파일 표시를 합쳐 실행기 항목을 만든다.
  */
 import type { Auth } from "../../../../rpc/gen/rpc";
+import { formFields } from "../lib/form";
 import type { PreviewRequest } from "../lib/importers/preview";
 import type { RequestTemplate } from "../lib/template";
 import type { RunEntry } from "../runner/runner";
 import { draftFromFile } from "./fileDraft";
 import type { ParsedRequestFile, RequestFile } from "./requestFile";
-import type { StoredBody, StoredPart, StoredRequest, StoredRow } from "./stored";
+import type { StoredBody, StoredPart, StoredRequest } from "./stored";
 import { normalizeTls } from "./storedShape";
-
-function formFields(body: string): StoredRow[] {
-  return body
-    .split(/\r?\n/)
-    .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
-    .map((line) => {
-      const at = line.indexOf("=");
-      return {
-        name: (at < 0 ? line : line.slice(0, at)).trim(),
-        value: at < 0 ? "" : line.slice(at + 1),
-        enabled: true,
-      };
-    });
-}
 
 function body(t: RequestTemplate): StoredBody {
   switch (t.body_kind) {
@@ -33,7 +20,14 @@ function body(t: RequestTemplate): StoredBody {
     case "raw":
       return { kind: "raw", text: t.body, contentType: null };
     case "form":
-      return { kind: "form", fields: formFields(t.body) };
+      return {
+        kind: "form",
+        fields: formFields(t).map((field) => ({
+          name: field.key,
+          value: field.value,
+          enabled: field.enabled !== false,
+        })),
+      };
     case "multipart":
       return {
         kind: "multipart",

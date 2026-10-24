@@ -1,5 +1,5 @@
 import { MAX_MULTIPART_PARTS } from "../multipart";
-import type { MultipartPart } from "../template";
+import type { MultipartPart, RequestHeader } from "../template";
 import { OPENAPI_LIMITS } from "./limits";
 import {
   byteLength,
@@ -108,6 +108,7 @@ export function bodyForMedia(
   kind: string;
   body: string;
   multipart: MultipartPart[];
+  form_fields?: RequestHeader[];
   exampleIncluded: boolean;
   redacted: boolean;
   warning: OpenApiIssueCode | null;
@@ -227,7 +228,15 @@ export function bodyForMedia(
           redacted: sanitized.redacted,
           warning: "BODY_TOO_LARGE",
         }
-      : { kind: "form", body, multipart: [], exampleIncluded: true, redacted: sanitized.redacted, warning: null };
+      : {
+          kind: "form",
+          body,
+          form_fields: Array.from(form, ([key, value]) => ({ key, value })),
+          multipart: [],
+          exampleIncluded: true,
+          redacted: sanitized.redacted,
+          warning: null,
+        };
   }
   if (normalized === "application/json" || normalized.endsWith("+json")) {
     let body: string;

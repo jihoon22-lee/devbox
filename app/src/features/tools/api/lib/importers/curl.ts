@@ -1,3 +1,4 @@
+import { wireForm } from "../form";
 import { emptyMultipartPart, safeMultipartFileName } from "../multipart";
 import {
   emptyRequest,
@@ -304,7 +305,7 @@ export function parseCurl(command: string): ImportBundle {
           ? "form"
           : "raw";
     request.body = data.join("&");
-    if (request.body_kind === "form") request.body = request.body.replace(/&/g, "\n");
+    if (request.body_kind === "form") Object.assign(request, wireForm(request.body));
   }
   if (json && !request.headers.some((h) => h.key.toLowerCase() === "accept")) header("Accept", "application/json");
   normalizeBodyHeaders(request);

@@ -70,6 +70,8 @@ export type RequestTemplate = {
   /** none | json | form | multipart | raw | graphql */
   body_kind: string;
   body: string;
+  /** Decoded structured form rows; absent means legacy literal body lines, never URL decoding. */
+  form_fields?: RequestHeader[];
   auth?: AuthConfig | null;
   timeout_ms: number;
   graphql?: GraphqlRequest | null;

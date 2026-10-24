@@ -96,6 +96,7 @@ export function operationPreview(
             const body = bodyForMedia(media, mediaContent);
             request.body_kind = body.kind;
             request.body = body.body;
+            if (body.form_fields) request.form_fields = body.form_fields;
             request.multipart = body.multipart;
             requestBody = { mediaType: media, exampleIncluded: body.exampleIncluded, redacted: body.redacted };
             if (body.warning) warnings.push(issue(body.warning, "operation", path, method));

@@ -1,3 +1,4 @@
+import { formFields } from "../form";
 import { buildGraphqlBody } from "../graphql/build";
 import { isSensitiveName, looksLikeSecret } from "../secretPatterns";
 import { sanitizeRequestForPersistence } from "../storage";
@@ -38,10 +39,15 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
     return `{{${name}}}`;
   };
   // 민감한 위치(인증 헤더·쿠키·민감 이름 query·API key 값)의 참조는 비밀이 아닌 env 값이어도 자리 표시로 남긴다.
-  const resolve = (source: string, sensitive = false): string => {
-    let value = source
-      .replace(/%7B%7B((?:secret%3A)?[^%]*?)%7D%7D/gi, (_match, name: string) => `{{${name.replace(/%3A/gi, ":")}}}`)
-      .replace(/%5BREDACTED%5D/gi, "[REDACTED]");
+  const resolve = (source: string, sensitive = false, encodedReferences = true): string => {
+    let value = encodedReferences
+      ? source
+          .replace(
+            /%7B%7B((?:secret%3A)?[^%]*?)%7D%7D/gi,
+            (_match, name: string) => `{{${name.replace(/%3A/gi, ":")}}}`,
+          )
+          .replace(/%5BREDACTED%5D/gi, "[REDACTED]")
+      : source;
     for (const row of environment)
       if ((row.secret || looksLikeSecret(row.value)) && row.value && value.includes(row.value))
         value = value.split(row.value).join(placeholder(row.key));
@@ -66,13 +72,12 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
   const auth = req.auth;
   if (auth?.kind === "apikey" && auth.placement === "query")
     params.push([resolve(auth.api_key), resolve(auth.api_value, true)]);
-  let body = req.body_kind === "none" ? "" : resolve(req.body);
+  let body = ["none", "form"].includes(req.body_kind) ? "" : resolve(req.body);
   if (req.body_kind === "form") {
     const fields = new URLSearchParams();
-    for (const line of body.split(/\r?\n/)) {
-      if (!line.trim() || line.trimStart().startsWith("#")) continue;
-      const at = line.indexOf("=");
-      fields.append((at < 0 ? line : line.slice(0, at)).trim(), at < 0 ? "" : line.slice(at + 1));
+    for (const field of formFields(req)) {
+      if (field.enabled === false) continue;
+      fields.append(resolve(field.key, false, false), resolve(field.value, isSensitiveName(field.key), false));
     }
     body = editableReferences(fields.toString());
   }

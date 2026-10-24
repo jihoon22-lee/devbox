@@ -49,8 +49,7 @@ function applyBody(request: RequestTemplate, input: unknown, name: string, warni
       break;
     }
     case "urlencoded":
-      request.body_kind = "form";
-      request.body = formRows(body.urlencoded);
+      Object.assign(request, formRows(body.urlencoded));
       break;
     case "formdata":
       request.body_kind = "multipart";

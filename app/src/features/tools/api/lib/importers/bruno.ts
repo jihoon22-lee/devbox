@@ -1,3 +1,4 @@
+import { importedForm } from "../form";
 import { MAX_EXPORTED_COLLECTIONS } from "../limits";
 import { emptyMultipartPart, safeMultipartFileName } from "../multipart";
 import { emptyRequest, IMPORT_METHODS, type ImportBundle, ImportError, normalizeBodyHeaders } from "./model";
@@ -120,11 +121,7 @@ export function parseBruno(files: { relativePath: string; text: string }[]): Imp
       request.body_kind = "raw";
       request.body = body(`body:${kind}`);
     } else if (kind === "form-urlencoded") {
-      request.body_kind = "form";
-      request.body = entries("body:form-urlencoded")
-        .filter((entry) => entry.enabled)
-        .map((entry) => `${encodeURIComponent(entry.key)}=${encodeURIComponent(entry.value)}`)
-        .join("\n");
+      Object.assign(request, importedForm(entries("body:form-urlencoded").filter((entry) => entry.enabled)));
     } else if (kind === "multipart-form") {
       request.body_kind = "multipart";
       request.multipart = entries("body:multipart-form").map((entry) => {
