@@ -7,6 +7,7 @@ mod knowledge_routes;
 mod launch;
 mod locations;
 mod logs;
+mod lsp;
 pub mod observe;
 mod outbox;
 mod problems;
@@ -161,6 +162,7 @@ fn build_services_with_runtime(
         secrets,
         containers: devbox_runtime::DockerContainers::default(),
         observe: Arc::new(devbox_observe::ObserveService::default()),
+        lsp: Arc::new(devbox_lsp::LspService::default()),
         documents: knowledge.documents,
         notes: knowledge.notes,
         search: knowledge.search,
@@ -202,6 +204,7 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let _documents_startup = services.documents.start();
     let _activity_writer = services.activity.start();
     let activity = services.activity.clone();
+    let lsp = services.lsp.clone();
     socket::notify_ready()?;
     tracing::info!(instance = paths.instance.as_str(), socket = %paths.socket.display(), "daemon ready");
     let s2 = shutdown.clone();
@@ -212,6 +215,7 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
         s2.cancel();
     });
     let served = server::serve(socket.listener, services, shutdown).await;
+    lsp.shutdown().await;
     activity.shutdown().await;
     served?;
     tracing::info!("daemon stopped");

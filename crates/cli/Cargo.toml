@@ -10,6 +10,7 @@ name = "devbox"
 path = "src/main.rs"
 
 [dependencies]
+devbox-lsp.workspace = true
 sha2.workspace = true
 devbox-secrets.workspace = true
 devbox-documents.workspace = true

@@ -13,17 +13,18 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 PR #644 squash 머지 완료**(`e91c9b22`, 2026-10-24). 검증 소스e56c3096와 merge tree 동일, 원본 main ff-only 동기화·clean 확인. 트랙1 S4-2 R1/R2/R3 및 reconnect 수정·최종 독립 검토 APPROVE. 트랙2 최신 상태는 해당 브랜치 PROGRESS 참조 |
+| 단계 | **S3 PR #644 squash 머지 완료**(`e91c9b22`, 2026-10-24). 검증 소스e56c3096와 merge tree 동일, 원본 main ff-only 동기화·clean 확인. 트랙1 S4-2 fa86bc8b 로컬 완료, S4-3 R1/R2 수정·직접 검증·별도 재검토 APPROVE. 트랙2 최신 상태는 해당 브랜치 PROGRESS 참조 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c 완료 → S4-2 최종 독립 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2 제품 변경은 아직 커밋하지 않았으며 S4-3–9는 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
+| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 지적2 수정·직접 검증·별도 재검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단 지적2 수정·직접 검증·별도 재검토 APPROVE, S4-4–9는 미착수. 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · S4-2 지적3 및 reconnect 수정·직접 검증·최종 독립 검토 APPROVE. S4-3/전체 check·E2E·Windows 실기·push/PR 미실행. S3 머지와 미실행·미입증 근거는 기존 §5 기록을 보존 |
+| 마지막 갱신 | 2026-10-25 · S4-2 fa86bc8b 로컬 커밋, S4-3 R1/R2 수정·직접 검증·별도 재검토 APPROVE.  전체 check·E2E·Windows 실기·push/PR 미실행. S3 머지와 미실행·미입증 근거는 기존 §5 기록을 보존 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-24 | S4-3 등록 경계: workspace/CLI/xtask Cargo 의존·daemon routes/state/mod·xtask export·messages/generated RPC에 lsp 등록만 추가. `crates/documents/src/{code_authority.rs,lib.rs}`의 새 내부 authority helper/등록은 canonical code DocKey와 live lease를 검증 | 승인된 07a §2/4, 부모 하네스에 구현 전 통지 | core/protocol/ui/scripts/.github 변경 불필요. documents는 동결 대상이 아니며 lease 소유 검증 helper와 회귀만 추가. S5 등록/상태 보존, main 통합은 root 조율 |
 | 2026-10-24 | S3 PR #644 상한 이후 실제 데이터 손실 예외: `app/src-tauri/src/{lib.rs,platform/intents.rs,platform/mod.rs,core/mod.rs}`·`app/src/App.tsx`의 기존 종료/루트 조립에 최소 coordinator/listener를 연결 | CONVENTIONS §8 차단 기준·부모 하네스 승인, 별도 재현4366874346 `BLOCKING_CONFIRMED` | main·note popout의 기존 `prepareWindowClose`가 완료되기 전에 RPC transport를 취소하지 않도록 순서만 조정. main close-to-tray 유지, notes 없는 startup도 준비 ACK 가능. S5 제품·공유 RPC/프로토콜·의존성 변경 없음 |
 | 2026-10-24 | S3 PR #644 2회차 공유 파일 예외: `crates/cli/src/daemon/mod.rs`의 기존 serve 후 activity flush 두 줄을 serve 결과 보관 → 명시적 activity shutdown → 원래 serve 오류 반환 순서로 보정 | 사용자 승인 범위 내 에이전트 · 독립 재현 실제 데이터 손실, 부모 하네스 명시 승인 | 등록 확장 없이 기존 종료 조립만 수정. 열린 활동 session이 정상 재시작에도 두 시간 분량 소실됨을 실제 SQLite fixture에서 확인. 수정 전 예외 기록, S5에 경계 통지 |
 | 2026-10-21 | S3 공유 파일 예외 1: 동결 `crates/core/src/config.rs`에 `[notes]`·`[search]`·`[activity]` 표 허용 | 에이전트 · 00 §3.6 기록 후 진행 | 기록: `Config`의 `deny_unknown_fields` 때문에 표가 있으면 데몬·MCP가 시작하지 못해 불가피. 최소안은 opaque `toml::Table` 세 필드(`#[serde(default)]`)와 `read_table` 목록 3이름(제품 약10·시험 약15줄), 키 검증은 각 도메인 crate. 규칙을 다른 파일로 옮기면 01 §7과 어긋나 채택 안 함. S5(07b)는 이 파일을 고치지 않으므로 S3 Task 4 Step 0 별도 커밋이 맡는다. 사용자가 막으면 Task 4 전에 멈춤 |
@@ -62,7 +63,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-2 최종 독립 검토 APPROVE | 2026-10-24 | | S4-3–9 미착수 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-3 지적2 수정·별도 재검토 APPROVE | 2026-10-25 | | S4-4–9 미착수 |
 | S5 | 07-s4-s6(→ 07b) · S2 뒤 S3와 동시(트랙 2) | 대기 | | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -120,7 +121,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
 | S3 | 마무리 | Task12 → S3 PR | `v1/s3-knowledge` | 머지 | 2026-10-24 | 2026-10-24 | #644 → e91c9b22. e56 필수CI3/E2E PASS·선택native9/합성daemon1 assertion PASS, 원래4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. 정리/prod불변 PASS, 정상3회+확정손실예외1건 수정·최종감사승인 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
-| S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | S4-2 최종 독립 검토 APPROVE | 2026-10-24 | | 최종 검토 승인, 과제 커밋 뒤 S4-3 |
+| S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | S4-3 지적2 수정·별도 재검토 APPROVE | 2026-10-24 | | S4-2 fa86bc8b 완료, 다음 S4-4는 검토·커밋·root main 통합 뒤 |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
 | S4 | Z | S4-8–S4-9 → S4 PR |  | 대기 | | | |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 대기 | | | |
@@ -136,6 +137,18 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S4-3 LSP 서버 수명·중계·진단 (2026-10-24, 트랙1 · 지적2 수정·별도 재검토 APPROVE)
+
+- 기반 `fa86bc8b`(S4-2 최종 독립 APPROVE·Biome497·로컬 커밋). 새 `crates/lsp`는 프로젝트·언어별 프로세스 한 개, generation별 initialize 공유, 숫자/문자열 요청 ID 왕복 매핑, 서버 요청의 대상 창·응답 ID 결속, 양방향 취소·단절 정리를 맡는다. didOpen 참조 수·실제 code lease·소유자별 version을 검사하며 소유권 이동은 현재 전체 텍스트와 증가하는 서버 version으로 동기화한다. read-only 창의 변경은 그 세션만 닫고 다른 편집자는 보존한다.
+- stream 계약: 생성 `RelayMessage {json,leaseId?}`의 JSON Lines로 JSON 문자열을 주고받고 서버 stdio 쪽에만 UTF-8 바이트 Content-Length를 붙인다. `didOpen/didChange/didSave`의 leaseId는 DocumentsService가 검증하며 didChange는 전체 텍스트 한 개다. 본문2MiB/header8KiB/packet4MiB·큐 예산·16클라이언트·512 pending·256 URI 상한, 신용 대기250ms 초과/큐 초과 시 세션 종료. root/URI는 CLI가 canonical project code 범위로 검증하고 UTF-16만 광고한다. 서버 종료/재시작 시 이전 stream과 initialize/request 상태를 폐기한다.
+- 수명/관찰: 마지막 client 뒤15분 idle stop, 비정상 종료1·5·30초 backoff·5분 내 재시작3회 후 실패, 수동 restart 한도 초기화. 소유 process group만 종료·wait하며 stderr/메시지 본문을 로그에 남기지 않는다. PID/RSS와 inotify 한도·데몬/소유 LSP만의 사용량을 반환하고 전체 사용자 사용량으로 표시하지 않는다. daemon 정상 종료에 LSP drain을 최소 연결했다.
+- 진단: observe에 별도 project/server/URI source와 generation barrier를 추가했다. 빈 진단/새 generation/종료는 해당 LSP source만 지우고 run attempt·등록 목록·다른 파일/서버를 보존한다. 내용 동일(순서 차이 포함)이면 rev 유지, 오래된 generation/문서 version 거절, 문제/URI/메시지 상한과 truncated 표시, UTF-16 0-based 위치를 기존 1-based Problem으로 변환한다. `documents/{code_authority,lib}.rs`의 최소 helper는 canonical code key와 live code lease만 확인하며 note/store 행동은 바꾸지 않는다.
+- 설치: PATH 파일 탐지만 한다. `lsp.install {projectId,language,expectedCommand}`는 표시한 명령과 현재 고정 명령이 같을 때만 기존 terminal.create adapter로 전달한다. caller 문자열을 shell로 실행하지 않으며 자동 설치 없음. 공식 근거: [rust-analyzer](https://rust-analyzer.github.io/book/rust_analyzer_binary.html)·[rust-src](https://rust-analyzer.github.io/book/installation.html), [TypeScript](https://github.com/typescript-language-server/typescript-language-server)(현재 typescript@6)·[vtsls](https://github.com/yioneko/vtsls), [Pyright](https://github.com/microsoft/pyright/blob/main/docs/installation.md), [gopls](https://go.dev/gopls/), [Bash](https://github.com/bash-lsp/bash-language-server), [YAML](https://github.com/redhat-developer/yaml-language-server), [Taplo cargo](https://taplo.tamasfe.dev/cli/installation/cargo.html)·[LSP feature](https://taplo.tamasfe.dev/cli/usage/language-server.html), [JSON server](https://github.com/hrsh7th/vscode-langservers-extracted). 실제 설치는 전혀 실행하지 않고 fake terminal 전달·불일치 거부만 시험했다.
+- 직접 검증: LSP15단위+3 owned fake-process18, observe 문제28, code authority2, CLI 선언/등록1·실제 owned RPC1 PASS(고유50). 추가 install 좁은1 PASS는 LSP18과 중복이다. fake 시계의3회/5분·15분 직전 재접속·manual reset, 실제 자식 PID 공유/ID 분리·신용 고갈 시 sibling 보존·crash 재시작·새 initialize·reap, Unicode URI·live lease·진단→Problems·디스크 무변경·restart clear를 확인했다. `gen-ts --check`·TypeScript·Biome497 PASS. cgroup memory enforcement 적용, 최종 route 검증 peak2,216,681,472B·swap0; CPU4/nice10/jobs2/threads2/workers2·6/8GiB/swap1GiB 예산을 유지했다.
+- 독립 검토 `independent-review.json` REQUEST_CHANGES의 P2 두 건만 수정했다. R1: save A ACK 뒤 current buffer B를 didSave text로 바꾸던 중계를 ACK의 선택적 text 검증·보존으로 수정(생략은 생략, 최신 B·version·lease/ref 보호 유지). R2: 취소/단절한 요청의 늦은 외부 URI 응답은 live pending ID 확인 뒤에만 URI 검증하도록 바꿔, 무관한 공유 세대/형제 client를 재시작하지 않는다. 원본 reviewer RED2와 author RED3을 보존했다. 취소·단절 모두 authority 호출0/출력0·generation 유지·형제 live 응답과 정상 live URI 검증을 확인했고 직접 영향 relay8·owned process3·CLI RPC1(12)·TypeScript·Biome497 PASS. RPC 선언/생성 hash는 동일하여 재생성하지 않았다. 수정본 별도 재검토는 대기다.
+- 실패 근거 보존: framing/supervisor/URI/catalog/authority/relay/diagnostics/observe/process/CLI missing-method RED 원본, 중간 Rust borrow/참조 clone 컴파일 오류, 생성 field doc-comment의 새 trailing-space 검사 실패를 남겼다. 생성물은 손으로 고치지 않고 선언의 주석 위치를 바꿔 재생성했다. 새 외부 dependency/설치 없음; 기존 rustix process 기능을 재사용한다.
+- 경계/근거: core/protocol/ui/scripts/.github와 S5 행을 보존했다. 공용 등록·생성 외 S4-4 UI는 미착수. Git common-dir `devbox-verification/s4-task3/`의 summary/source-freeze/documentation-freeze/scope-audit·설치 출처·named RED/GREEN/resource 기록을 보존한다. 별도 검토·commit/push/PR·전체 check/clippy/build/E2E·실제 Windows 앱/실제 언어 서버 실행·호스트 설치는 미실행이다. 새 main 통합은 root가 S4-3 커밋 경계에서 조율한다.
 
 ### S4-2 코드 편집·파일 작업 (2026-10-24, 트랙1 · 수정·최종 독립 검토 APPROVE)
 

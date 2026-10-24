@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3 구현·직접 검증·별도 재검토 APPROVE, S4-4–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -77,7 +77,7 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - `documents/policy_scope.rs`는 project code claim/read/save와 project rename을 같은 root·agent 제외 경계로 묶는다. 다른 등록 root로의 symlink claim RED와 nested agents claim/read/move 거부·같은 project alias 허용을 검증했다. vault note 정책은 유지한다.
 - 단일 문서 탭 소유: split은 복제가 아닌 이동이다. 최초 오른쪽 drop 영역·그룹 사이 drag·재정렬·키보드/버튼 이동을 제공한다. EditorState는 문서 세션 pool에 두어 section unmount 뒤에도 undo가 남는다. S4-8 전에 검증 가능한 파일 전용 SourcePage를 먼저 연결했다.
 - `closeSafely`는 code 선택 전 자동 저장하지 않는다. 온라인 keep은 daemon lease CAS·journal ACK, 오프라인 keep은 IndexedDB ACK를 확인한다. ReadOnly로 lease를 잃은 창은 keep을 거절하고 명시적 버림은 자기 buffer만 닫아 새 owner의 공유 저널을 보존한다. native code popout 등록·X·전역 quit 모두 내구 준비를 기다린다.
-- 상세 결과·실패 원본·최종 소스 범위는 PROGRESS §5 S4-2 및 Git common-dir `devbox-verification/s4-task2/summary.json`에 기록한다. 과제 커밋·S4-3 착수는 별도 검토 뒤다. E2E 1개는 작성만 했으며 S4-9에서 실행한다.
+- 상세 결과·실패 원본·최종 소스 범위는 PROGRESS §5 S4-2 및 Git common-dir `devbox-verification/s4-task2/summary.json`에 기록한다. S4-2는 최종 독립 검토 뒤 fa86bc8b로 로컬 커밋했고 다음 S4-3을 진행했다. E2E 1개는 작성만 했으며 S4-9에서 실행한다.
 
 ## 4. S4-3 — LSP 서버 수명·중계·진단
 
@@ -96,12 +96,18 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - **새 내부 함수** observe의 `replace_lsp_diagnostics(project,server,uri,generation,problems)`는 같은 source+URI 기존 항목을 교체, 빈 진단은 삭제, 다른 파일·run 문제 유지. run의 attempt 교체/clear·등록 목록·project filter/cursor·truncated 상한 의미를 그대로 보존하고 source lifecycle을 별도로 관리한다. run 재시작이 LSP 항목을 지우거나 LSP shutdown이 run 항목을 지우지 않는 교차 시험을 추가한다. 동일 내용은 rev 불변, 이전 generation은 거절. source `lsp:<server>`; LSP 0-based UTF-16 → 기존 Problem의 1-based line/col로 변환하고 경로는 `observe.resolve_location`과 일치시킨다.
 
 **순서·실패 검사**
-1. [ ] `framing_round_trips_split_and_coalesced_messages`에 비ASCII·oversize·잘못된 길이·EOF fixture RED → framing 구현.
-2. [ ] fake server로 `two_clients_share_one_server_with_rewritten_ids`, 같은 ID 충돌·서버 요청·취소·한 창 close·lease 전환·초기화 경쟁 RED → relay 구현.
-3. [ ] 가짜 시계로 `crash_loop_stops_after_three_restarts_in_five_minutes`, `idle_server_stops_after_last_client_leaves`, 14:59 재접속·수동 재시작 RED → supervisor 구현.
-4. [ ] `diagnostics_flow_into_problems`와 빈 진단 삭제·old generation·동일 rev·다른 run 유지 RED → observe sink와 CLI 등록. 설치는 fake terminal로 전달값만 검증.
-5. [ ] `cargo test -p devbox-lsp`에서 위 모듈/시험 타깃, 변경 observe LSP 시험, CLI `--test lsp`와 생성 검사. 실제 언어 서버 설치/프로세스는 S4-9 소유 fixture에서만 필요 범위 실행.
-6. [ ] 별도 검토: 공유 서버 수명·URI/UTF-16·lease/세션·backpressure·로그에 본문 없음. Biome → `feat(lsp): relay shared language servers and diagnostics`.
+1. [x] `framing_round_trips_split_and_coalesced_messages`에 비ASCII·oversize·잘못된 길이·EOF fixture RED → framing 구현.
+2. [x] fake server로 `two_clients_share_one_server_with_rewritten_ids`, 같은 ID 충돌·서버 요청·취소·한 창 close·lease 전환·초기화 경쟁 RED → relay 구현.
+3. [x] 가짜 시계로 `crash_loop_stops_after_three_restarts_in_five_minutes`, `idle_server_stops_after_last_client_leaves`, 14:59 재접속·수동 재시작 RED → supervisor 구현.
+4. [x] `diagnostics_flow_into_problems`와 빈 진단 삭제·old generation·동일 rev·다른 run 유지 RED → observe sink와 CLI 등록. 설치는 fake terminal로 전달값만 검증.
+5. [x] `cargo test -p devbox-lsp`에서 위 모듈/시험 타깃, 변경 observe LSP 시험, CLI `--test lsp`와 생성 검사. 실제 언어 서버 설치/프로세스는 S4-9 소유 fixture에서만 필요 범위 실행.
+6. [x] 별도 검토: 공유 서버 수명·URI/UTF-16·lease/세션·backpressure·로그에 본문 없음. Biome → `feat(lsp): relay shared language servers and diagnostics`.
+
+**실제 계약 보정(2026-10-24, 구현·직접 검증·별도 재검토 APPROVE)**
+- byte stream은 생성된 `RelayMessage {json:string,leaseId?:string}` JSON Lines다. stdio에만 Content-Length를 사용한다. code 소유자의 didOpen/didChange/didSave는 실제 document lease를 같이 보내고 didChange는 전체 텍스트 한 개로 제한한다. 다른 창/이전 lease/이전 version이 공유 텍스트를 덮지 못한다.
+- `lsp.install`은 `{projectId,language,expectedCommand}`를 받아 현재 표시한 고정 명령과 일치해야 terminal adapter를 호출한다. 표시 이후 감지 상태가 달라져 명령이 바뀌면 실행하지 않는다. 설치 안내 출처와 실제 명령은 PROGRESS S4-3 및 `installation-sources.json`에 고정했다.
+- `lsp.servers`의 inotify 사용량은 데몬과 소유 LSP만 집계하고 `usageComplete`로 읽기 한계를 표시한다. 전체 사용자 사용량으로 주장하지 않는다. missing/starting/ready/failed/idle_stopped·PID/RSS/generation/client 수를 반환한다.
+- frozen core/protocol 변경은 없으며 code lease authority를 위해 non-frozen `documents/code_authority.rs`와 lib 등록만 추가했다. 세부 결과/실패 원본/한계는 PROGRESS와 task3 artifact를 따른다. S4-4 UI·전체 검사·실기·commit/push는 아직 하지 않았다.
 
 ## 5. S4-4 — LSP 화면과 미리보기
 

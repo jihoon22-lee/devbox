@@ -20,11 +20,13 @@ fn main() -> Result<()> {
     devbox_notes::export(&mut exporter);
     devbox_search::export(&mut exporter);
     devbox_activity::export(&mut exporter);
+    devbox_lsp::export(&mut exporter);
     devbox_core::notify::export(&mut exporter);
     // Request fields refine this shared type with literal TypeScript intersections.
     ts_rs::TypeVisitor::visit::<devbox_agents::ReviewExpect>(&mut exporter);
     // `search.query` stream lines (JSON Lines of this type).
     ts_rs::TypeVisitor::visit::<devbox_search::SearchChunk>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_lsp::RelayMessage>(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");
     update_file(&path, &out, check)?;

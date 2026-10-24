@@ -589,6 +589,7 @@ dependencies = [
  "devbox-core",
  "devbox-documents",
  "devbox-git",
+ "devbox-lsp",
  "devbox-mux",
  "devbox-notes",
  "devbox-observe",
@@ -667,6 +668,22 @@ dependencies = [
  "tracing",
  "ts-rs",
  "which",
+]
+
+[[package]]
+name = "devbox-lsp"
+version = "1.0.0-dev"
+dependencies = [
+ "bytes",
+ "devbox-protocol",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3283,6 +3300,7 @@ dependencies = [
  "devbox-agents",
  "devbox-core",
  "devbox-documents",
+ "devbox-lsp",
  "devbox-notes",
  "devbox-observe",
  "devbox-projects",

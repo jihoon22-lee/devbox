@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "crates/documents", "crates/notes", "crates/search", "crates/activity", "xtask"]
+members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "crates/cli", "crates/terminal", "crates/git", "crates/agents", "crates/win", "crates/runtime", "crates/observe", "crates/secrets", "crates/documents", "crates/notes", "crates/search", "crates/activity", "crates/lsp", "xtask"]
 exclude = ["app/src-tauri"]
 
 [workspace.package]
@@ -25,6 +25,7 @@ devbox-documents = { path = "crates/documents" }
 devbox-notes = { path = "crates/notes" }
 devbox-search = { path = "crates/search" }
 devbox-activity = { path = "crates/activity" }
+devbox-lsp = { path = "crates/lsp" }
 chacha20poly1305 = "0.10"
 zeroize = { version = "1", features = ["derive"] }
 data-encoding = "2"

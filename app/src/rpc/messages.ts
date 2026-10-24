@@ -16,6 +16,16 @@ const cloneMessage = (detail: unknown) => {
     .replace(/([?&](?:token|password|access_token)=)[^&\s]+/gi, "$1[숨김]")}`;
 };
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
+  "lsp.invalid_input": { title: "언어 서버 요청이 올바르지 않습니다." },
+  "lsp.project_not_found": { title: "언어 서버를 실행할 프로젝트를 찾을 수 없습니다." },
+  "lsp.missing_server": { title: "언어 서버가 설치되어 있지 않습니다." },
+  "lsp.failed": { title: "언어 서버를 시작하지 못했습니다. 다시 시작해 주세요." },
+  "lsp.limit_exceeded": { title: "언어 서버 요청이 한도를 넘었습니다. 연결을 다시 열어 주세요." },
+  "lsp.lease_lost": { title: "다른 창이 이 파일을 편집하고 있습니다." },
+  "lsp.outside_project": { title: "이 프로젝트에서 언어 서버로 열 수 없는 경로입니다." },
+  "lsp.protocol": { title: "언어 서버 응답을 읽지 못했습니다. 다시 시작해 주세요." },
+  "lsp.stream_unavailable": { title: "언어 서버 연결을 열 수 없습니다." },
+  "lsp.install_unavailable": { title: "언어 서버 설치 터미널을 열지 못했습니다." },
   "documents.not_empty": { title: "빈 폴더만 삭제할 수 있습니다." },
   "files.editor_unavailable": { title: "편집기를 찾지 못했습니다. 편집기 설치와 WSL 연결을 확인하세요." },
   "files.invalid_input": { title: "파일 이름이나 경로가 올바르지 않습니다." },

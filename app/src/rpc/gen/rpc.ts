@@ -197,11 +197,14 @@ export type Ingested = {
  * Events applied; `0` for a batch at or below the run's last `upto`.
  */
 accepted: number, };
+export type InotifyInfo = { maxUserInstances: number | null, maxUserWatches: number | null, ownedInstances: number, ownedWatches: number, usageComplete: boolean, };
 export type InsertSummary = { 
 /**
  * `YYYY-MM-DD`; `null` is today (local).
  */
 date: string | null, };
+export type InstallLsp = { projectId: string, language: Language, expectedCommand: string, };
+export type Installed = { terminalId: string, };
 export type InstructionDelivery = "pending" | "delivered" | "unknown";
 export type InvalidRule = { field: RuleField, 
 /**
@@ -218,6 +221,7 @@ deferred: boolean, };
 export type KillProcess = { pid: number, signal: KillSignal, expect: ProcessExpectation, };
 export type KillResult = { pid: number, };
 export type KillSignal = "term" | "kill";
+export type Language = "rust" | "typescript" | "python" | "go" | "bash" | "yaml" | "toml" | "json";
 export type LaunchAgent = { tool: string, worktree: boolean, prompt: string | null, };
 export type LaunchConfig = { services: Array<string>, terminals: Array<LaunchTerminal>, agents: Array<LaunchAgent>, };
 export type LaunchProject = { id: string, };
@@ -236,6 +240,7 @@ export type LogFrom = Tail | { offset: number, };
 export type LogLine = { src: LogSource, ts: string, stream: LogStream, text: string, };
 export type LogSource = { "kind": "run", runId: string, } | { "kind": "file", path: string, } | { "kind": "container", id: string, };
 export type LogStream = "stdout" | "stderr" | "system";
+export type LspError = { "code": "lsp.invalid_input" } | { "code": "lsp.project_not_found" } | { "code": "lsp.missing_server" } | { "code": "lsp.failed" } | { "code": "lsp.limit_exceeded" } | { "code": "lsp.lease_lost" } | { "code": "lsp.outside_project" } | { "code": "lsp.protocol" } | { "code": "lsp.stream_unavailable" } | { "code": "lsp.install_unavailable" };
 export type MergeAgent = { id: string, strategy: MergeKind, message: string | null, expect: ReviewExpect & { baseOid: string }, };
 export type MergeKind = "merge" | "squash" | "rebase";
 export type MissedPolicy = "skip" | "runOnce";
@@ -272,6 +277,7 @@ export type ObservationKind = "foreground" | "input" | "idle" | "pause";
 export type ObserveError = { "code": "observe.invalid_input" } | { "code": "observe.state_changed" } | { "code": "observe.permission_denied" } | { "code": "observe.project_not_found" } | { "code": "observe.invalid_regex" } | { "code": "observe.file_outside_roots" } | { "code": "observe.source_unavailable" } | { "code": "observe.run_not_found" } | { "code": "observe.invalid_cursor" } | { "code": "observe.limit_exceeded" } | { "code": "observe.stream_unsupported" };
 export type ObserveQuery = Record<symbol, never>;
 export type OpenLogs = { sources: Array<LogSource>, from: LogFrom, filter?: LogFilter, };
+export type OpenLsp = { projectId: string, language: Language, };
 export type OpenSourceEditor = { key: DocKey, editor: SourceEditor, };
 export type PingParams = Record<symbol, never>;
 export type Pong = { daemonId: string, version: string, uptimeMs: number, };
@@ -337,6 +343,7 @@ export type ReadOnlyReason = "binary" | "encoding" | "too_large" | "leased_elsew
 export type RebaseResult = "done" | "conflict";
 export type Recovery = { recovery: string, };
 export type RefreshEnvResult = { restarting: boolean, };
+export type RelayMessage = { json: string, leaseId?: string, };
 export type RemoveProject = { id: string, };
 export type RenameDocument = { leaseId: string | null, key: DocKey, to: DocKey, };
 export type RenameIncomplete = { opId: string, 
@@ -380,6 +387,7 @@ target: string, kind: LinkKind,
 from: string | null, };
 export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
 export type RestartPolicy = "no" | "onFailure" | "always";
+export type Restarted = { projectId: string, language: Language, failed: boolean, generation: number, };
 export type RestoreNote = { trashPath: string, path: string, };
 export type ReviewExpect = { headOid: string, baseOid?: string, unmergedCommits?: number, discardFingerprint?: string, };
 export type RewriteFailure = "conflict" | "open" | "missing" | "unsupported" | "too_large";
@@ -474,6 +482,10 @@ export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | n
 export type SecretInfo = { name: string, hasValue: boolean, };
 export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
 export type SendToAgent = { id: string, text: string, };
+export type ServerInfo = { language: Language, command: string, args: Array<string>, install: string | null, state: ServerState, generation: number, pid: number | null, memoryBytes: number | null, clients: number, };
+export type ServerState = "missing" | "starting" | "ready" | "failed" | "idle_stopped";
+export type ServersQuery = { projectId: string, };
+export type ServersResult = { items: Array<ServerInfo>, inotify: InotifyInfo, };
 export type ServiceDef = { id: string, command: string, cwd: string | null, env: { [key in string]: string }, target: RunTarget, dependsOn: Array<string>, worktree: string | null, secrets: Array<string>, restart: RestartPolicy, restartSec: number, startLimit: StartLimit, portsHint: Array<number>, readyTimeoutSec: number, };
 export type SessionKind = "shell" | "agent";
 export type SessionList = { rev: string, items: Array<TerminalSession>, nextAfterId?: string, };
@@ -592,6 +604,10 @@ export interface Methods {
   "files.tree": { kind: "query"; confirm: "none"; params: FileTreeQuery; result: FileTree; error: FilesError };
   "logs.open": { kind: "stream"; confirm: "none"; params: OpenLogs; result: StreamOpened; error: ObserveError };
   "logs.search": { kind: "query"; confirm: "none"; params: SearchLogs; result: SearchResult; error: ObserveError };
+  "lsp.install": { kind: "mutation"; confirm: "none"; params: InstallLsp; result: Installed; error: LspError };
+  "lsp.open": { kind: "stream"; confirm: "none"; params: OpenLsp; result: StreamOpened; error: LspError };
+  "lsp.restart": { kind: "mutation"; confirm: "none"; params: OpenLsp; result: Done; error: LspError };
+  "lsp.servers": { kind: "query"; confirm: "none"; params: ServersQuery; result: ServersResult; error: LspError };
   "notes.append": { kind: "mutation"; confirm: "none"; params: AppendNote; result: Appended; error: NotesError };
   "notes.attach": { kind: "mutation"; confirm: "none"; params: AttachImage; result: Attached; error: NotesError };
   "notes.backlinks": { kind: "query"; confirm: "none"; params: NotePath; result: Backlinks; error: NotesError };
@@ -675,6 +691,7 @@ export interface Topics {
   "documents.changed": DocumentChanged;
   "documents.lease_lost": LeaseLost;
   "documents.moved": DocumentMoved;
+  "lsp.restarted": Restarted;
   "notes.changed": NotesChanged;
   "notes.rename_incomplete": RenameIncomplete;
   "notes.rewrite_request": RewriteRequest;
@@ -736,6 +753,10 @@ export const METHOD_INFO = {
   "files.tree": { kind: "query", confirm: "none" },
   "logs.open": { kind: "stream", confirm: "none" },
   "logs.search": { kind: "query", confirm: "none" },
+  "lsp.install": { kind: "mutation", confirm: "none" },
+  "lsp.open": { kind: "stream", confirm: "none" },
+  "lsp.restart": { kind: "mutation", confirm: "none" },
+  "lsp.servers": { kind: "query", confirm: "none" },
   "notes.append": { kind: "mutation", confirm: "none" },
   "notes.attach": { kind: "mutation", confirm: "none" },
   "notes.backlinks": { kind: "query", confirm: "none" },
@@ -872,6 +893,16 @@ export const RPC_ERROR_CODES = [
   "hello_required",
   "internal",
   "invalid_params",
+  "lsp.failed",
+  "lsp.install_unavailable",
+  "lsp.invalid_input",
+  "lsp.lease_lost",
+  "lsp.limit_exceeded",
+  "lsp.missing_server",
+  "lsp.outside_project",
+  "lsp.project_not_found",
+  "lsp.protocol",
+  "lsp.stream_unavailable",
   "method_not_found",
   "not_found",
   "notes.busy",

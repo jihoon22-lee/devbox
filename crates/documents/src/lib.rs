@@ -1,6 +1,7 @@
 //! Document storage: write scope, edit leases, CAS saves with atomic exchange,
 //! data-folder journals, no-replace moves and external change observation.
 //! Document text, titles and paths are never written to logs or error details.
+mod code_authority;
 mod commits;
 mod entries;
 mod entry_model;
