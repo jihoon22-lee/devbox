@@ -35,7 +35,7 @@ function rowErrors(tab: ApiTab, list: keyof typeof ROWS): Record<number, string>
 }
 
 export function RequestEditor({ tab }: { tab: ApiTab }) {
-  const [section, setSection] = useState<Section>("query");
+  const [section, setSection] = useState<Section>(() => (tab.draft.bodyKind === "graphql" ? "body" : "query"));
   const [confirmReload, setConfirmReload] = useState(false);
   const setDraft = (draft: RequestDraft) => useApiTabs.getState().setDraftById(tab.id, draft);
   const save = useSave(tab);

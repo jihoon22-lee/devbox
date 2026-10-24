@@ -1,9 +1,10 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { ApiBackendProvider } from "./api/backend";
+import { emptyDraft, setBodyKind } from "./api/model/draft";
 import { useApiTabs } from "./api/store";
 import { FakeBackend } from "./api/test-backend";
-import { toolsSearch } from "./search";
+import { type ToolsSearch, toolsSearch } from "./search";
 import { ToolsView } from "./ToolsPage";
 
 afterEach(() => {
@@ -11,15 +12,15 @@ afterEach(() => {
   useApiTabs.getState().reset();
   window.innerWidth = 1280;
 });
-function setup() {
+function setup(search: ToolsSearch = { view: "api" }) {
   render(
     <ApiBackendProvider backend={new FakeBackend()}>
-      <ToolsView search={{ view: "api" }} projectId={undefined} navigate={() => {}} />
+      <ToolsView search={search} projectId={undefined} navigate={() => {}} />
     </ApiBackendProvider>,
   );
 }
 
-it("lists_four_tool_groups", async () => {
+it("tools_list_has_four_groups", async () => {
   setup();
   const list = screen.getByRole("complementary", { name: "목록" });
   const groups = within(list)
@@ -29,24 +30,60 @@ it("lists_four_tool_groups", async () => {
   expect(await within(list).findByRole("tree", { name: "개인 컬렉션" })).toBeInTheDocument();
 });
 
-it("request_and_response_stack_vertically_below_1100px", () => {
+it("narrow_width_stacks_response_below", () => {
   act(() => {
     useApiTabs.getState().openNew({ kind: "personal" });
   });
-  window.innerWidth = 1280;
+  window.innerWidth = 1100;
   setup();
   expect(screen.getByRole("separator", { name: "요청·응답 크기 조절" })).toHaveAttribute(
     "aria-orientation",
     "vertical",
   );
   act(() => {
-    window.innerWidth = 1000;
+    window.innerWidth = 1099;
     window.dispatchEvent(new Event("resize"));
   });
   expect(screen.getByRole("separator", { name: "요청·응답 크기 조절" })).toHaveAttribute(
     "aria-orientation",
     "horizontal",
   );
+  expect(screen.getByRole("separator", { name: "요청·응답 크기 조절" }).parentElement).toHaveAttribute(
+    "data-dir",
+    "column",
+  );
+  act(() => {
+    window.innerWidth = 1100;
+    window.dispatchEvent(new Event("resize"));
+  });
+  expect(screen.getByRole("separator", { name: "요청·응답 크기 조절" }).parentElement).toHaveAttribute(
+    "data-dir",
+    "row",
+  );
+});
+
+it.each([
+  ["HTTP", undefined, "쿼리 추가"],
+  ["GraphQL", undefined, "GraphQL 쿼리"],
+  ["WebSocket", "websocket", "하위 프로토콜"],
+  ["SSE", "sse", "Last-Event-ID"],
+  ["gRPC", "grpc", "gRPC 대상"],
+  ["MCP", "mcp", "연결 방식"],
+] as const)("request_kind_shows_only_its_panel: %s", async (kind, tool, field) => {
+  const tabs = useApiTabs.getState();
+  const key = tabs.openNew({ kind: "personal" });
+  tabs.update(key, { draft: kind === "GraphQL" ? setBodyKind(emptyDraft(), "graphql") : emptyDraft() });
+  setup({ view: "api", tool });
+  if (kind === "HTTP") expect(await screen.findByRole("button", { name: field })).toBeInTheDocument();
+  else expect(await screen.findByLabelText(field)).toBeInTheDocument();
+  for (const label of ["GraphQL 쿼리", "하위 프로토콜", "Last-Event-ID", "gRPC 대상", "연결 방식"]) {
+    if (label !== field) expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+  }
+  if (kind !== "HTTP") expect(screen.queryByRole("button", { name: "쿼리 추가" })).not.toBeInTheDocument();
+  for (const name of ["WebSocket", "SSE", "gRPC", "MCP"]) {
+    expect(screen.queryByRole("region", { name })).toBe(kind === name ? screen.getByRole("region", { name }) : null);
+  }
+  expect(screen.queryByRole("tablist", { name: "요청 설정" }) !== null).toBe(!tool);
 });
 
 it("grpc_and_mcp_tools_open_from_the_list_and_search", async () => {
