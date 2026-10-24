@@ -694,6 +694,7 @@ dependencies = [
  "devbox-runtime",
  "devbox-secrets",
  "devbox-terminal",
+ "devbox-tools",
  "devbox-webhooks",
  "futures",
  "libc",
@@ -883,6 +884,13 @@ dependencies = [
  "tracing",
  "ts-rs",
  "uuid",
+]
+
+[[package]]
+name = "devbox-tools"
+version = "1.0.0-dev"
+dependencies = [
+ "devbox-protocol",
 ]
 
 [[package]]
