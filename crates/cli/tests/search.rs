@@ -331,3 +331,57 @@ async fn daemon_git_location_variables_do_not_redirect_file_listing() {
     paths.sort();
     assert_eq!(paths, ["initial.txt", "own.txt"]);
 }
+
+#[tokio::test]
+async fn editor_document_save_updates_the_real_search_sink_and_fts() {
+    use devbox_documents::{
+        ClaimDocument, DocKey, DocKind, DocPolicy, DocumentsClaim, DocumentsSave, Expect,
+        SaveDocument,
+    };
+    let d = TestDaemon::start();
+    let client = d.client().await;
+    watching(&d, &client).await;
+    let path = "saved-index.md";
+    write(
+        &vault(&d).join(path),
+        "---\ntitle: OldIndexedTitle8739\n---\noldneedle8739",
+    );
+    assert_eq!(wait_hits(&client, "oldneedle8739", 1).await.items.len(), 1);
+    let claim = client
+        .call::<DocumentsClaim>(&ClaimDocument {
+            key: DocKey {
+                root: "vault".into(),
+                path: path.into(),
+            },
+            policy: DocPolicy {
+                kind: DocKind::Note,
+            },
+            window_id: "owned-editor".into(),
+        })
+        .await
+        .expect("claim saved note");
+    let body = "---\ntitle: NewIndexedTitle8739\ntags: [newtag8739]\n---\nfreshneedle8739";
+    client
+        .call::<DocumentsSave>(&SaveDocument {
+            lease_id: claim.lease_id.expect("owned lease"),
+            seq: 1,
+            base_rev: claim.rev,
+            expect: Expect::Present,
+            text: body.into(),
+        })
+        .await
+        .expect("durable editor save ACK");
+    let hits = wait_hits(&client, "freshneedle8739", 1).await;
+    assert_eq!(
+        hits.items.len(),
+        1,
+        "real composed SearchSink must feed FTS after a document save"
+    );
+    assert_eq!(
+        (hits.items[0].path.as_str(), hits.items[0].title.as_str()),
+        (path, "NewIndexedTitle8739")
+    );
+    assert!(hits.items[0].snippet.contains("freshneedle8739"));
+    assert!(notes(&client, "oldneedle8739").await.items.is_empty());
+    assert_eq!(notes(&client, "NewIndexedTitle8739").await.items.len(), 1);
+}

@@ -1,6 +1,7 @@
 //! Document storage: write scope, edit leases, CAS saves with atomic exchange,
 //! data-folder journals, no-replace moves and external change observation.
 //! Document text, titles and paths are never written to logs or error details.
+mod commits;
 mod files;
 mod journal;
 mod lease;
@@ -12,6 +13,7 @@ mod service;
 mod startup;
 mod sys;
 mod watch;
+pub use commits::{COMMIT_HISTORY, CommittedChanges};
 use devbox_protocol::{Done, Exporter, method, topic};
 pub use files::EditState;
 pub use model::*;

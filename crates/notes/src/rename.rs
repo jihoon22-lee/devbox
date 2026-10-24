@@ -166,6 +166,7 @@ impl NotesService {
         if state.lease_id.is_some() || state.journal.is_some() {
             return Err(NotesError::TargetUnsaved.into());
         }
+        self.sync_committed().await?;
         let mv = Move::new(&p.path, &p.new_path, source.text.as_deref().unwrap_or(""));
         let files = if p.rewrite_links {
             self.plan_files(&mv).await?

@@ -1,12 +1,12 @@
 //! `NotesService`: owns the note index, keeps it current from the vault scan and
 //! `documents.changed`, and answers the read-side RPCs. Writes are in `ops.rs`,
 //! tree paging in `tree.rs`.
-use crate::index::{NoteIndex, NoteSink, SinkNote, analyze};
+use crate::R;
+use crate::index::{NoteIndex, NoteSink};
 use crate::links::{markdown_note_target, normalize_link_key, path_key, pick};
 use crate::model::*;
 use crate::settings::NotesSettings;
-use crate::vault::{self, hidden, is_note};
-use crate::{NotesChangedTopic, R};
+use crate::vault;
 use devbox_core::{CoreError, Hub, HubMessage, IndexDb};
 use devbox_documents::{DocKey, DocumentChanged, DocumentsError, DocumentsService};
 use devbox_protocol::router::BoxFuture;
@@ -25,8 +25,6 @@ pub type PcName = Arc<dyn Fn() -> BoxFuture<String> + Send + Sync>;
 pub(crate) const VAULT: &str = "vault";
 /// List responses: at most 256 rows (S1 rule).
 pub(crate) const MAX_ROWS: usize = 256;
-const CHANGED_PATHS: usize = 256;
-const BATCH: usize = 500;
 
 pub struct NotesConfig {
     pub settings: NotesSettings,
@@ -90,6 +88,7 @@ pub(crate) struct Inner {
     pub tree: Mutex<crate::tree::Snapshots>,
     /// Serializes index updates (scan, watch events, own writes).
     pub update: tokio::sync::Mutex<()>,
+    pub committed: AtomicU64,
     pub rename_dir: PathBuf,
     pub stop: Option<crate::StopAt>,
     pub renames: crate::rename::Renames,
@@ -138,6 +137,7 @@ impl NotesService {
                 rev: AtomicU64::new(0),
                 tree: Mutex::default(),
                 update: tokio::sync::Mutex::new(()),
+                committed: AtomicU64::new(0),
                 rename_dir: c.rename_dir,
                 stop: c.stop,
                 renames: Default::default(),
@@ -208,6 +208,7 @@ impl NotesService {
             .s
             .hub
             .subscribe(devbox_documents::DocumentsChanged::NAME);
+        let mut commits = self.s.docs.subscribe_commits();
         let weak = Arc::downgrade(&self.s);
         let svc = self.clone();
         tokio::spawn(async move {
@@ -238,12 +239,18 @@ impl NotesService {
             });
             drop(svc);
             tokio::spawn(async move {
-                while let Some(message) = changes.recv().await {
+                loop {
+                    let message = tokio::select! {
+                        Some(message) = changes.recv() => Some(message),
+                        Ok(()) = commits.changed() => None,
+                        else => break,
+                    };
                     let Some(s) = weak.upgrade() else { break };
                     let svc = NotesService { s };
                     let result = match message {
-                        HubMessage::Resync => svc.rescan().await,
-                        HubMessage::Event { payload, .. } => {
+                        None => svc.sync_committed().await,
+                        Some(HubMessage::Resync) => svc.rescan().await,
+                        Some(HubMessage::Event { payload, .. }) => {
                             match serde_json::from_str::<DocumentChanged>(&payload) {
                                 Ok(c) if c.key.root == VAULT => svc.refresh(vec![c.key.path]).await,
                                 _ => Ok(()),
@@ -256,160 +263,6 @@ impl NotesService {
                 }
             });
         })
-    }
-
-    /// Full scan: unchanged hashes are skipped, missing notes removed.
-    pub async fn rescan(&self) -> R<()> {
-        let _guard = self.s.update.lock().await;
-        let vault = self.vault().to_path_buf();
-        let known = self.s.index.hashes().await.internal("read note index")?;
-        let (fresh, removed, bodies) = tokio::task::spawn_blocking(move || {
-            let (files, _) = vault::scan(&vault);
-            let mut seen = std::collections::HashSet::new();
-            let (mut fresh, mut bodies) = (Vec::new(), Vec::new());
-            for rel in files {
-                seen.insert(rel.clone());
-                let Some((hash, text)) = vault::read_note(&vault, &rel) else {
-                    continue;
-                };
-                if known.get(&rel) == Some(&hash) {
-                    continue;
-                }
-                let note = analyze(&rel, hash, text.as_deref());
-                bodies.push(text.unwrap_or_default());
-                fresh.push(note);
-            }
-            let removed: Vec<String> = known.into_keys().filter(|p| !seen.contains(p)).collect();
-            (fresh, removed, bodies)
-        })
-        .await
-        .internal("scan note vault")?;
-        let mut changed: Vec<String> = fresh.iter().map(|n| n.path.clone()).collect();
-        let mut fresh = fresh;
-        let mut bodies = bodies;
-        while !fresh.is_empty() {
-            let rest = fresh.split_off(fresh.len().min(BATCH));
-            let rest_bodies = bodies.split_off(bodies.len().min(BATCH));
-            let sink = fresh.iter().zip(bodies).map(|(n, body)| SinkNote {
-                path: n.path.clone(),
-                title: n.title.clone(),
-                body,
-            });
-            self.s.sink.indexed(sink.collect()).await;
-            bodies = rest_bodies;
-            self.s
-                .index
-                .upsert(fresh)
-                .await
-                .internal("write note index")?;
-            fresh = rest;
-        }
-        if !removed.is_empty() {
-            self.s.sink.removed(removed.clone()).await;
-        }
-        let gone = self
-            .s
-            .index
-            .remove(removed)
-            .await
-            .internal("write note index")?;
-        changed.extend(gone);
-        self.changed(changed);
-        Ok(())
-    }
-
-    /// Sends every note to the sink, unchanged ones too (its index was rebuilt or
-    /// missed writes), then the full list so it drops the rest.
-    /// Holds the update lock, so no newer refresh is overtaken.
-    pub(crate) async fn replay(&self) -> R<()> {
-        let _guard = self.s.update.lock().await;
-        let vault = self.vault().to_path_buf();
-        let root = vault.clone();
-        let (files, _) = tokio::task::spawn_blocking(move || vault::scan(&root))
-            .await
-            .internal("scan note vault")?;
-        let mut sent = Vec::with_capacity(files.len());
-        for batch in files.chunks(BATCH) {
-            let (root, batch) = (vault.clone(), batch.to_vec());
-            let notes = tokio::task::spawn_blocking(move || {
-                batch
-                    .into_iter()
-                    .filter_map(|rel| {
-                        let (hash, text) = vault::read_note(&root, &rel)?;
-                        let title = analyze(&rel, hash, text.as_deref()).title;
-                        Some(SinkNote {
-                            path: rel,
-                            title,
-                            body: text.unwrap_or_default(),
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .await
-            .internal("read note vault")?;
-            sent.extend(notes.iter().map(|n| n.path.clone()));
-            self.s.sink.indexed(notes).await;
-        }
-        self.s.sink.retain(sent).await;
-        Ok(())
-    }
-
-    /// Re-reads the given vault paths (notes, or removed folders).
-    pub(crate) async fn refresh(&self, paths: Vec<String>) -> R<()> {
-        let _guard = self.s.update.lock().await;
-        let mut changed = Vec::new();
-        for path in paths {
-            if hidden(&path) {
-                continue;
-            }
-            let (root, rel) = (self.vault().to_path_buf(), path.clone());
-            let read = tokio::task::spawn_blocking(move || vault::read_note(&root, &rel))
-                .await
-                .internal("read note")?;
-            match read {
-                Some((hash, text)) if is_note(&path) => {
-                    let known = self.s.index.hash_of(path.clone()).await;
-                    if known.internal("read note index")?.as_deref() == Some(hash.as_str()) {
-                        continue;
-                    }
-                    let note = analyze(&path, hash, text.as_deref());
-                    let sink = SinkNote {
-                        path: note.path.clone(),
-                        title: note.title.clone(),
-                        body: text.unwrap_or_default(),
-                    };
-                    self.s.sink.indexed(vec![sink]).await;
-                    self.s
-                        .index
-                        .upsert(vec![note])
-                        .await
-                        .internal("write note index")?;
-                    changed.push(path);
-                }
-                Some(_) => {}
-                None => {
-                    self.s.sink.removed(vec![path.clone()]).await;
-                    let gone = self.s.index.remove(vec![path]).await;
-                    changed.extend(gone.internal("write note index")?);
-                }
-            }
-        }
-        self.changed(changed);
-        Ok(())
-    }
-    fn changed(&self, mut paths: Vec<String>) {
-        if paths.is_empty() {
-            return;
-        }
-        paths.truncate(CHANGED_PATHS);
-        let rev = self.s.rev.fetch_add(1, Ordering::SeqCst) + 1;
-        self.s.hub.publish::<NotesChangedTopic>(
-            rev,
-            &NotesChanged {
-                rev: rev.to_string(),
-                paths,
-            },
-        );
     }
 
     pub async fn resolve(&self, p: ResolveLink) -> R<ResolvedLink> {

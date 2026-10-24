@@ -20,6 +20,7 @@ mod service;
 mod settings;
 pub mod templates;
 mod tree;
+mod updates;
 mod vault;
 
 pub use daily::{SUMMARY_END, replace_summary, summary_start};

@@ -63,6 +63,7 @@ impl DocumentsConfig {
 }
 
 pub(crate) struct Shared {
+    pub commits: crate::commits::Commits,
     /// Ordinary operations share this barrier; namespace moves exclude all of
     /// them before resolution, including claims for previously unopened children.
     pub namespace: RwLock<()>,
@@ -159,6 +160,7 @@ impl DocumentsService {
             root_constraints: Vec::new(),
             s: Arc::new(Shared {
                 namespace: RwLock::new(()),
+                commits: Default::default(),
                 roots: c.roots,
                 hub: c.hub,
                 max_wire: c.max_wire_text,
@@ -442,6 +444,7 @@ impl DocumentsService {
             self.s.watch.add(&key, abs, Some(rev.hash.clone()));
         });
         self.s.leases.saved(&lease.id, p.seq);
+        self.s.commits.record(key);
         Ok(Saved { rev })
     }
 

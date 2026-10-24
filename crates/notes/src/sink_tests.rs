@@ -156,3 +156,215 @@ async fn bom_notes_indexed_by_schema_2_are_reindexed_and_other_domains_kept() ->
     assert_eq!((count("api_y").await?, count("search_x").await?), (1, 1));
     Ok(())
 }
+
+async fn editor_save(n: &Nx, path: &str, seq: u64, text: &str) -> T {
+    let c = n.open_note(path, "owned-editor", None).await;
+    n.docs
+        .save(devbox_documents::SaveDocument {
+            lease_id: c.lease_id.expect("editor lease"),
+            seq,
+            base_rev: c.rev,
+            expect: devbox_documents::Expect::Present,
+            text: text.into(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(())
+}
+async fn wait_title(n: &Nx, path: &str, title: &str) -> T {
+    tokio::time::timeout(std::time::Duration::from_secs(4), async {
+        loop {
+            if n.index_title(path).await.ok().as_deref() == Some(title) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn editor_save_indexes_title_tags_backlinks_and_sink_without_external_echo() -> T {
+    use std::time::Duration;
+    let mut n = fixture(&[
+        (
+            "source.md",
+            "---\ntitle: Old\ntags: [oldtag]\n---\nold body",
+        ),
+        ("target.md", "target body"),
+        ("control.md", "control"),
+    ])
+    .await;
+    let sink = Arc::new(Recorder::default());
+    n.restart_with(sink.clone(), false);
+    n.svc.start().await?;
+    n.docs.start().await?;
+    n.write("control.md", "---\ntitle: ExternalControl\n---\ncontrol");
+    wait_title(&n, "control.md", "ExternalControl").await?;
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    sink.take();
+    let mut external = n.hub.subscribe("documents.changed");
+    let saved = "---\ntitle: NewSavedTitle\ntags: [newtag]\n---\nnew saved body [[target]]";
+    editor_save(&n, "source.md", 1, saved).await?;
+    assert_eq!(n.read("source.md"), saved);
+    wait_title(&n, "source.md", "NewSavedTitle").await?;
+    assert!(
+        sink.take()
+            .contains(&indexed("source.md", "NewSavedTitle", saved))
+    );
+    let tags = n
+        .svc
+        .tags(NoParams {})
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert!(tags.items.iter().any(|t| t.tag == "newtag"));
+    assert!(!tags.items.iter().any(|t| t.tag == "oldtag"));
+    let back = n
+        .svc
+        .backlinks(NotePath {
+            path: "target.md".into(),
+        })
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(back.items.len(), 1);
+    assert!(
+        tokio::time::timeout(Duration::from_millis(900), external.recv())
+            .await
+            .is_err(),
+        "a save must not look like an external edit to its renderer"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn acknowledged_editor_save_is_indexed_before_immediate_rename_planning() -> T {
+    // No background consumer is started: rename must establish its own ordering barrier.
+    let n = fixture(&[("source.md", "no link yet"), ("target.md", "target")]).await;
+    editor_save(&n, "source.md", 1, "a newly saved [[target]]").await?;
+    let renamed = n.renamed("target.md", "renamed.md").await?;
+    assert_eq!(renamed.state, RenameState::Done);
+    assert!(renamed.failed.is_empty());
+    assert_eq!(n.read("source.md"), "a newly saved [[renamed]]");
+    Ok(())
+}
+
+struct PausedSink {
+    seen: Arc<Recorder>,
+    once: std::sync::atomic::AtomicBool,
+    reached: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+}
+impl PausedSink {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            seen: Arc::default(),
+            once: std::sync::atomic::AtomicBool::new(true),
+            reached: Arc::default(),
+            release: Arc::default(),
+        })
+    }
+}
+impl NoteSink for PausedSink {
+    fn indexed(&self, notes: Vec<SinkNote>) -> BoxFuture<()> {
+        let pause = self.once.swap(false, std::sync::atomic::Ordering::SeqCst);
+        let (seen, reached, release) = (
+            self.seen.clone(),
+            self.reached.clone(),
+            self.release.clone(),
+        );
+        Box::pin(async move {
+            if pause {
+                reached.notify_one();
+                release.notified().await;
+            }
+            seen.indexed(notes).await;
+        })
+    }
+    fn removed(&self, paths: Vec<String>) -> BoxFuture<()> {
+        self.seen.removed(paths)
+    }
+}
+
+#[tokio::test]
+async fn a_save_during_startup_scan_remains_pending_after_its_snapshot() -> T {
+    use std::time::Duration;
+    let mut n = fixture(&[]).await;
+    n.write("source.md", "---\ntitle: BeforeScan\n---\nold");
+    let sink = PausedSink::new();
+    n.restart_with(sink.clone(), false);
+    let startup = n.svc.start();
+    tokio::time::timeout(Duration::from_secs(4), sink.reached.notified()).await?;
+    // Scan has already read old bytes, but has not written them into the index.
+    tokio::time::timeout(
+        Duration::from_secs(4),
+        editor_save(&n, "source.md", 1, "---\ntitle: DuringScan\n---\nnew"),
+    )
+    .await??;
+    sink.release.notify_one();
+    startup.await?;
+    wait_title(&n, "source.md", "DuringScan").await?;
+    assert_eq!(
+        n.svc.s.committed.load(std::sync::atomic::Ordering::SeqCst),
+        n.docs.commit_revision()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn bounded_commit_history_lag_rescans_and_keeps_saves_during_that_scan_pending() -> T {
+    use std::time::Duration;
+    let mut n = fixture(&[
+        ("evicted.md", "---\ntitle: Old\n---\nold"),
+        ("churn.md", "churn"),
+    ])
+    .await;
+    let sink = PausedSink::new();
+    n.restart_with(sink.clone(), false);
+    n.svc.start().await?; // All hashes unchanged: sink is not called yet.
+    let held = n.svc.s.update.lock().await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        editor_save(&n, "evicted.md", 1, "---\ntitle: EvictedSave\n---\nnew").await?;
+        for seq in 1..=devbox_documents::COMMIT_HISTORY as u64 + 1 {
+            editor_save(&n, "churn.md", seq, &format!("churn {seq}")).await?;
+        }
+        Ok::<_, Box<dyn std::error::Error>>(())
+    })
+    .await??;
+    assert!(
+        n.docs.committed_since(0).paths.is_none(),
+        "the first saved path is no longer in bounded history"
+    );
+    drop(held);
+    tokio::time::timeout(Duration::from_secs(4), sink.reached.notified()).await?;
+    let snapshot = n.docs.commit_revision();
+    // The lag rescan read EvictedSave already; this later commit must not be marked applied by it.
+    tokio::time::timeout(
+        Duration::from_secs(4),
+        editor_save(
+            &n,
+            "evicted.md",
+            2,
+            "---\ntitle: AfterLagSnapshot\n---\nlatest",
+        ),
+    )
+    .await??;
+    assert!(n.docs.commit_revision() > snapshot);
+    sink.release.notify_one();
+    wait_title(&n, "evicted.md", "AfterLagSnapshot").await?;
+    let seen = sink.seen.take();
+    assert!(
+        seen.contains(&indexed(
+            "evicted.md",
+            "EvictedSave",
+            "---\ntitle: EvictedSave\n---\nnew"
+        )),
+        "rescan covered the evicted path"
+    );
+    assert!(seen.contains(&indexed(
+        "evicted.md",
+        "AfterLagSnapshot",
+        "---\ntitle: AfterLagSnapshot\n---\nlatest"
+    )));
+    Ok(())
+}
