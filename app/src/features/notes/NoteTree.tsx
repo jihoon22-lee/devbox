@@ -6,7 +6,7 @@ import { VirtualList } from "../../ui/VirtualList";
 import { useDocuments } from "../documents/store";
 import { fileName, folderOf, joinPath, noteKey } from "./notePaths";
 import s from "./notes.module.css";
-import { openNotePopout } from "./popoutNote";
+import { openNotePopout } from "./openNoteWindow";
 import { RenameDialog } from "./RenameDialog";
 import { renameNote } from "./renameStatus";
 import { useNoteSelection } from "./selection";
