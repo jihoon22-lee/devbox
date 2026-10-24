@@ -1,6 +1,6 @@
 /** 도구 섹션: 목록(`ToolsList`) + 본문(API 작업 공간·실행기·가져오기). 실제 데몬 연결은 `ToolsPage`가 넣는다. */
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useRpc } from "../../rpc/RpcProvider";
 import { SectionLayout } from "../../shell/SectionLayout";
 import { EmptyState } from "../../ui";
@@ -19,6 +19,10 @@ import { bumpCollections } from "./api/useCollections";
 import { type ToolsSearch, toolsSearch } from "./search";
 import { rootOf, ToolsList } from "./ToolsList";
 import { WebhooksPanel } from "./webhooks/WebhooksPanel";
+
+const TransformsPage = lazy(() =>
+  import("./transforms/TransformsPage").then((module) => ({ default: module.TransformsPage })),
+);
 
 const LATER: Record<string, string> = {
   webhooks: "웹훅",
@@ -58,6 +62,10 @@ export function ToolsView({
   const body =
     view === "webhooks" ? (
       <WebhooksPanel openApi={() => navigate({ view: "api" })} />
+    ) : view === "transforms" ? (
+      <Suspense fallback={<p>변환 도구를 여는 중…</p>}>
+        <TransformsPage toolId={search.tool} onSelect={(tool) => navigate({ view: "transforms", tool })} />
+      </Suspense>
     ) : view !== "api" ? (
       <EmptyState title={LATER[view] ?? "도구"} body="이 도구는 다음 단계에서 이 자리에 연결됩니다." />
     ) : search.tool === "runner" ? (

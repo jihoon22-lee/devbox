@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). 다음: S5-7b 변환 도구21종. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. 다음: S5-7c 감지·선택 보내기. 기존 변경 없음 확인 후 재개, 구현/좁은 검증 근거 `devbox-verification/s5-6/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-7a 터미널 키 동작 이동 완료·독립 검토 APPROVE. 이동 전/후23·typecheck·Biome PASS, S5-7b/7c 미착수. S5-6 `89c64829` 완료 보존 |
+| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-7b 구현·검토 수정 완료·독립 재검토 APPROVE. 201개 이식/적응·기능228+상한 회귀18·typecheck·Biome PASS. S5-7c/8 미착수 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -124,7 +124,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
 | S5 | AC | S5-5 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-24 | 구현 1회·별도 검토 4회·수정 3회(차단 2건: stdio env 주입 실행·SSE 64KiB), 사용량 한도 대기 제외 약3.5h |
 | S5 | AD | S5-6 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 웹훅 수신기·규칙·기록·이진 재전송, 검토 3회(수정 요청2 → APPROVE). 좁은 검증 §5, 전체 수용 S5-9 |
-| S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 작업 중(S5-7a 완료) | 2026-10-24 | | S5-7b·7c·S5-8 미착수 |
+| S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 작업 중(S5-7b 완료) | 2026-10-24 | | S5-7a `2acd3eee` 완료, S5-7b 독립 재검토 APPROVE. S5-7c·S5-8 미착수 |
 | S5 | 마무리 | S5-9 → S5 PR |  | 대기 | | | |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
 | S6 | AF | S6-1b–S6-2 |  | 대기 | | | |
@@ -640,6 +640,19 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### S5-7b 변환 도구 21종 (2026-10-24, 트랙 2 · 독립 검토 승인)
+
+- 최종 재검토 APPROVE(`s5-7b/review-1/final-review.txt`), 원래 재현 3개 PASS. 완료 커밋에 포함한다.
+
+- S5-7a `2acd3eee` clean 상태에서 시작. v0.9.0 `apps/api-studio-tools.json`의 **21개 id/group/name/policy**를 그대로 대조하는 catalog/registry, 도구 선택·최근 ID8개·도구 화면을 연결했다. 입력/출력은 React 메모리만 쓰고 도구 전환 시 초기화한다. 최근 저장 API는 알려진 tool ID만 받는다. 수동 복사/파일 저장은 명시적 버튼 동작으로 유지하며 자동 저장·전송은 없다. 변환 페이지는 동적 import로 연결(실제 번들 산출/크기는 S5-9 검증).
+- 07b B표208개 중 smartDetection7개는 **S5-7c 소유로 이월**, 이번 단계의 기존 시험 **201개 정적 선언을 모두 이식/적응**했다(원본/대상 이름·매핑 `devbox-verification/s5-7b/test-names.json`, 26파일). 순수 코덱 assertion은 보존하고 native DTO를 로컬 TS 타입으로, crypto를 WebCrypto/로컬 ID 생성으로 바꿨다. 기존 제품 간 전달·컨텍스트 메뉴 코드는 가져오지 않고 입력/출력 작업 버튼으로 적응했다. strict TS의 검증된 길이/범위 내 index를 non-null/tuple로 명시했으며 strict 옵션은 유지했다.
+- frame을 ToolInput/ToolOutput/ToolActions/useToolAction/TransformerTool로 나누고 취소·입력 변경·unmount 뒤 늦은 clipboard/계산 결과를 무시한다. 기본 자동 변환 입력은 1MiB(UTF-8) 상한으로 native textarea 변경도 검사한다. JWT 타입/검증 구현과 QR 상태/옵션/표시를 분리해 최대 파일530줄(`jwt.ts`), 최대 컴포넌트281줄(`HmacTool`)이다.
+- MD5는 [RFC1321 A.5](https://www.rfc-editor.org/rfc/rfc1321) 7벡터를 검증한 작은 TS 구현, SHA256/512·HMAC·JWT 검증은 WebCrypto. 정규식은 renderer에서 실행하지 않고 전용 worker에서만 실행한다. UTF-16 위치·u 모드 code point 영폭 전진·10,000개 상한·1초 초과 종료·취소를 검증했다. 실제 Node worker thread로 같은 엔진/소유자 종료를 시험했으며 실제 Windows WebView worker 로딩 PASS를 주장하지 않는다.
+- diff는 기존 S5-3 bounded lineDiff를 재사용한다(현 코드는 계획 문구의 Myers가 아니라 bounded LCS이며 이번에 알고리즘을 바꾸지 않음). 2,000줄 결과 상한에서 반대쪽 결과를 조용히 버리던 adapter RED를 고쳐 크기 오류로 알린다. 외부 의존성은 계획의 entities/qrcode-generator만: entities는 기존 lock8.1.0을 직접 사용해 parse5 의존성 downgrade를 피했고 qrcode-generator2.0.4를 추가했다. 나머지 lock 버전은 유지한다.
+- 검증: 초기 formatJson3 FAIL/2 PASS RED, MD5/regex11 FAIL RED, ByteCodec UI4 FAIL RED, registry1 FAIL RED. 기존 lib135 runtime PASS 후 전체 기능 범위 **33파일228시험 PASS**(변환225 + 기존 ToolsPage3). 마지막 native 입력 상한 RED→GREEN 뒤 직접 영향 frame/TextEncoding **18시험 PASS**(신규1 포함), typecheck PASS. 관련 고유 사례는229이며 마지막 수정 뒤 무관한 전체 시험을 반복하지 않았다. Biome 완료 검사 PASS. CPU4·nice+10·workers2/no-lock, memory_enforced=false 유지. 실제 Windows·full check/build/clippy/E2E는 S5-9로 미실행.
+- 별도 검토 1회 REQUEST_CHANGES(B1): JSON 포맷/압축의 JS 숫자 재직렬화 손실을 확인하고, 기존 jsonc-parser의 공백 편집/토큰 스캔으로 원문 숫자·중복 키·문자열 이스케이프를 보존하도록 수정했다. unsafe 정수·overflow/underflow·긴 소수·음수0 및 실제 도구 factory 회귀, JSON→YAML 중복/이스케이프 키 거부·독립 객체 허용 회귀는 **4 FAIL/1 PASS RED → 5 PASS**. 권고 N1 중복 키 오류, N2 인코딩 오류 한국어와 부정확한 native fallback 주석도 반영. 직접 영향 **6파일67시험 PASS**, scanner TS 호환 수정 뒤 JSON **2파일34시험 PASS**, typecheck·Biome PASS. 검토 수정 근거 `s5-7b/review-fix/`; 재검토·커밋 대기.
+- 근거: `devbox-verification/s5-7b/`(RED/GREEN·원본 자원 보고 경로·source-evidence·test-names·size-bounds). 독립 검토·커밋 대기이며 **S5-7c 감지/선택 보내기/클립보드 명령 및 S5-8은 미착수**. 커밋 예정 `feat(tools): port the 21 transform tools`.
 
 ### S5-7a 터미널 키 동작 선행 이동 (2026-10-24, 트랙 2 · 독립 검토 승인)
 

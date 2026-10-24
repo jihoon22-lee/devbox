@@ -6,6 +6,7 @@ import { CollectionTree } from "./api/CollectionTree";
 import { EnvEditor } from "./api/EnvEditor";
 import { useApiTabs } from "./api/store";
 import type { ToolsSearch } from "./search";
+import { CATALOG } from "./transforms/catalog";
 
 /** 검색값 `root`(`personal` 또는 프로젝트 id) → 컬렉션 루트. */
 export function rootOf(id: string | undefined): CollectionRoot {
@@ -88,6 +89,19 @@ export function ToolsList({
         <Button size="sm" variant="ghost" onClick={() => navigate({ view: "transforms" })}>
           변환 도구 열기
         </Button>
+        <details>
+          <summary>변환 도구 목록</summary>
+          {CATALOG.map((tool) => (
+            <Button
+              key={tool.id}
+              size="sm"
+              variant="ghost"
+              onClick={() => navigate({ view: "transforms", tool: tool.id })}
+            >
+              {tool.group} · {tool.name}
+            </Button>
+          ))}
+        </details>
       </section>
       <section className={s.group} aria-labelledby="tools-env">
         <h2 id="tools-env">개발 환경 점검</h2>
