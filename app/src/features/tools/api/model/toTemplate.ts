@@ -12,7 +12,7 @@ function auth(draft: RequestDraft): RequestTemplate["auth"] {
     case "bearer":
       return { ...base, kind: "bearer", token: a.token };
     case "apiKey":
-      return { ...base, kind: "apikey", api_key: a.name, api_value: a.value };
+      return { ...base, kind: "apikey", api_key: a.name, api_value: a.value, placement: a.placement };
     case "oauth2ClientCredentials":
     case "oauth2AuthCode":
       return {

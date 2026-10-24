@@ -21,20 +21,30 @@ struct Entry {
     dir: PathBuf,
     /// 폴더 정체(dev, inode). `git checkout`으로 지웠다 다시 만든 폴더는 같은 경로라도 다시 붙인다.
     id: Option<(u64, u64)>,
+    /// 삭제된 폴더의 inode가 새 폴더에 재사용되지 않도록 등록 수명 동안 고정한다.
+    #[cfg(unix)]
+    directory: std::fs::File,
     _watcher: RecommendedWatcher,
 }
 
-fn identity(dir: &std::path::Path) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        std::fs::metadata(dir).ok().map(|m| (m.dev(), m.ino()))
+impl Entry {
+    fn is_current(&self, dir: &std::path::Path, id: Option<(u64, u64)>) -> bool {
+        let same = self.dir == dir && id.is_some() && self.id == id;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            // inotify의 삭제 이벤트를 아직 처리하지 않았어도 unlink는 즉시 보인다.
+            same && self.directory.metadata().is_ok_and(|m| m.nlink() != 0)
+        }
+        #[cfg(not(unix))]
+        same
     }
-    #[cfg(not(unix))]
-    {
-        let _ = dir;
-        None
-    }
+}
+
+#[cfg(unix)]
+fn identity(directory: &std::fs::File) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    directory.metadata().ok().map(|m| (m.dev(), m.ino()))
 }
 
 pub(crate) struct Watches {
@@ -65,11 +75,29 @@ impl Watches {
     /// 감시가 없거나 다른 폴더를 보고 있으면 새로 붙인다. 실패하면 감시 없이 계속한다(목록은 화면이 다시 읽음).
     pub(crate) fn ensure(&self, key: String, root: CollectionRoot, dir: PathBuf) {
         let mut roots = self.roots.lock().expect("collection watches");
-        let id = identity(&dir);
-        if roots
-            .get(&key)
-            .is_some_and(|e| e.dir == dir && id.is_some() && e.id == id)
-        {
+        #[cfg(unix)]
+        let directory = {
+            use nix::{
+                fcntl::{OFlag, open},
+                sys::stat::Mode,
+            };
+            match open(
+                &dir,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            ) {
+                Ok(fd) => std::fs::File::from(fd),
+                Err(_) => {
+                    tracing::warn!("open collection watch folder failed");
+                    return;
+                }
+            }
+        };
+        #[cfg(unix)]
+        let id = identity(&directory);
+        #[cfg(not(unix))]
+        let id = None;
+        if roots.get(&key).is_some_and(|e| e.is_current(&dir, id)) {
             return;
         }
         if !roots.contains_key(&key) && roots.len() >= MAX_ROOTS {
@@ -101,6 +129,8 @@ impl Watches {
             Entry {
                 dir,
                 id,
+                #[cfg(unix)]
+                directory,
                 _watcher: watcher,
             },
         );
@@ -132,6 +162,37 @@ async fn debounce(
                 root: root.clone(),
                 rev: next.to_string(),
             },
+        );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn deleted_watch_is_not_reused_when_the_path_reports_the_same_identity() {
+        let fixture = tempfile::tempdir().expect("owned directory");
+        let dir = fixture.path().join("api");
+        std::fs::create_dir(&dir).expect("create collection");
+        let watches = Watches::new(Arc::new(Hub::new()));
+        watches.ensure("owned".into(), CollectionRoot::Personal, dir.clone());
+        let roots = watches.roots.lock().expect("owned watch map");
+        let entry = roots.get("owned").expect("registered watch");
+        let reported_id = entry.id;
+        assert!(entry.is_current(&dir, reported_id));
+        std::fs::write(dir.join("ordinary.request.json"), "{}").expect("ordinary child edit");
+        assert!(
+            entry.is_current(&dir, reported_id),
+            "child edits must keep the watch"
+        );
+        std::fs::remove_dir_all(&dir).expect("delete watched directory");
+        std::fs::create_dir(&dir).expect("replace same path");
+        // Inject the metadata boundary seen when a filesystem reuses dev/inode.
+        // Do not rely on this machine's allocator reproducing that rare timing.
+        assert!(
+            !entry.is_current(&dir, reported_id),
+            "a deleted registration is stale even when the path identity collides"
         );
     }
 }

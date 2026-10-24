@@ -63,6 +63,9 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
   const params = req.params
     .filter((row) => row.key)
     .map((row): [string, string] => [resolve(row.key), resolve(row.value, isSensitiveName(row.key))]);
+  const auth = req.auth;
+  if (auth?.kind === "apikey" && auth.placement === "query")
+    params.push([resolve(auth.api_key), resolve(auth.api_value, true)]);
   let body = req.body_kind === "none" ? "" : resolve(req.body);
   if (req.body_kind === "form") {
     const fields = new URLSearchParams();
@@ -104,11 +107,11 @@ export function prepare(request: RequestTemplate, environment: EnvVariable[], pl
   const addHeader = (key: string, value: string) => {
     if (!headers.some(([name]) => name.toLowerCase() === key.toLowerCase())) headers.push([key, singleLine(value)]);
   };
-  const auth = req.auth;
   if (auth?.kind === "bearer") addHeader("Authorization", `Bearer ${resolve(auth.token, true)}`);
   if (auth?.kind === "oauth2") addHeader("Authorization", `Bearer ${placeholder("access_token")}`);
   if (auth?.kind === "basic") addHeader("Authorization", `Basic ${placeholder("basic_credentials_base64")}`);
-  if (auth?.kind === "apikey") addHeader(singleLine(resolve(auth.api_key)), resolve(auth.api_value, true));
+  if (auth?.kind === "apikey" && auth.placement !== "query")
+    addHeader(singleLine(resolve(auth.api_key)), resolve(auth.api_value, true));
   const cookies = req.cookies
     .filter((row) => row.enabled !== false && row.name)
     .map((row) => `${singleLine(resolve(row.name))}=${singleLine(resolve(row.value, true))}`);

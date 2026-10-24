@@ -78,7 +78,7 @@ function auth(t: RequestTemplate): Auth {
     case "bearer":
       return { kind: "bearer", token: a.token };
     case "apikey":
-      return { kind: "apiKey", name: a.api_key, value: a.api_value, placement: "header" };
+      return { kind: "apiKey", name: a.api_key, value: a.api_value, placement: a.placement ?? "header" };
     case "oauth2": {
       const o = a.oauth2;
       if (!o) return { kind: "none" };

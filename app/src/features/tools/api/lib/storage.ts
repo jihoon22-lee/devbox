@@ -154,6 +154,7 @@ function sanitizeAuth(auth: AuthConfig, mark: (original: string, sanitized: stri
     token: secretField(auth.token),
     api_key: mark(auth.api_key, redactKnownTokenPatterns(auth.api_key)),
     api_value: secretField(auth.api_value),
+    ...(auth.placement ? { placement: auth.placement } : {}),
     ...(config
       ? {
           oauth2: {

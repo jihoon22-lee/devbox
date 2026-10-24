@@ -38,6 +38,8 @@ export type AuthConfig = {
   token: string;
   api_key: string;
   api_value: string;
+  /** v0.9 템플릿에서 생략하면 기존처럼 헤더 인증이다. */
+  placement?: "header" | "query";
   oauth2?: OAuth2Config;
 };
 

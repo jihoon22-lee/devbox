@@ -5,7 +5,7 @@
  * 검토하지 않은 프로젝트 환경 파일은 [검토하고 사용]으로 검토를 기록하기 전까지 송신·실행에 쓰지 않는다
  * (값 전체가 `{{secret:X}}`인 변수는 데몬이 비밀로 풀므로 저장소 파일이 사용자 비밀을 끌어낼 수 있다).
  */
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import type { CollectionRoot } from "../../../rpc/gen/rpc";
 import { messageFor } from "../../../rpc/messages";
@@ -63,14 +63,18 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
         byRoot: { ...state.byRoot, [key]: typeof next === "function" ? next(current) : { ...current, ...next } },
       };
     });
-  const apply = (next: Editing | undefined) => {
-    patch({ editing: next });
+  // 활성 환경은 지금 보이는 루트의 초안에서만 발행한다. 이전 루트의 비동기 작업은
+  // 그 루트의 초안만 갱신하므로 현재 보내기·실행기·코드 생성 입력을 덮어쓰지 않는다.
+  useLayoutEffect(() => {
     useApiTabs
       .getState()
       .setEnvironment(
-        next ? { name: next.name, variables: pairs(next.rows), unreviewed: next.unreviewed === true } : null,
+        editing
+          ? { name: editing.name, variables: pairs(editing.rows), unreviewed: editing.unreviewed === true }
+          : null,
       );
-  };
+  }, [editing]);
+  const apply = (next: Editing | undefined) => patch({ editing: next });
   /** 저장하지 않은 변경이 있으면 먼저 묻는다. */
   const guarded = (action: () => void) => (dirty ? setAsk(() => action) : action());
 

@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. S5-7b `b762b582`. S5-7c 감지·선택 보내기 완료(로컬)·독립 재검토 APPROVE. S5-7c `d55cd7c6`. S5-8a1 기존 환경 점검 이동 완료(로컬)·독립 검토 APPROVE. S5-8a1 `de7a04dd`. S5-8a2 점검 확장·설치 제안 완료(로컬)·독립 재검토 APPROVE. S5-8a2 `56c65372`. S5-8b 설치 동작·지원 번들·WSL 정리 완료(로컬)·독립 재검토 APPROVE. S5-8b `f1d86bef`. S5-9 1단계 섹션 마무리 완료(로컬)·독립 검토 APPROVE. S5-9 `c4001e33`. 개수 확인 완료·전체 브랜치 검토 APPROVE, origin/main fetch=329b2ee9(S3 미머지로 통합 불필요). 5단계 전체 검사1회 FAIL 뒤 실패/직접 영향 범위 PASS, MSVC all-target strict Clippy PASS. 최종 수정 독립 검토 APPROVE. 다음: 최종 SHA Windows 산출물·설치 수용 뒤 PR. 근거 `devbox-verification/s5-9-layout/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. **S5-1–S5-9 구현 뒤 PR #645 R1 수정·별도 검토 APPROVE**. 기존 설치 검증 소스 `4297438b`, Windows run40085773770 PASS. 같은 소스 설치본 수용1–4 PASS,5(기존 foreground 없음)·6(설치 제안할 미설치 도구 없음) NOT_RUN. 외부 LAN/실제 도구 설치는 §2 기본안대로 미실행. [PR #645](https://github.com/jihoon22-lee/devbox/pull/645) 생성 완료. R1 코드2건·Rust CI 감시 실패 보완 뒤 변경 소스의 필수 CI와 영향 검증이 남음. 보안 R1도 지적0건으로 완료했다. 상세 결과와 원본 실패는 §5 S5-9 및 `devbox-verification/s5-9/` |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5 `61d7e6f2` Windows 산출물로 설치 수용 2회 진행: 준비 단계 실패로 6개 시나리오 NOT_RUN. 두 번째 실행의 native gate `setupFailed`와 정확한 CLI fixture에서 tmux 버전 줄바꿈 회귀를 확인했다. version adapter의 trim 복구·CLI 경계 회귀/좁은 검사 완료, 별도 검토 뒤 새 SHA CI·helper binding·설치 수용 필요 |
+| 마지막 갱신 | 2026-10-24 · PR #645 R1 코드2건과 Rust CI40088414708 단일 감시 실패 보완·독립 검토 APPROVE. 4297438b 설치 수용1–4 PASS/5–6 NOT_RUN은 해당 소스의 과거 근거로 보존하며 변경 소스의 PASS로 재사용하지 않는다. 직접 회귀·타입·형식/영향 Clippy PASS, 코드2·보안0 완료. 묶음 push 뒤 새 필수 CI/영향 검증 대기 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -59,7 +59,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | 06-s3-knowledge | 대기 | | | 완료·검증 결과 보고 |
 | S4 | 07-s4-s6(→ 07a) | 대기 | | | 완료·검증 결과 보고 |
-| S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · S2 뒤 S3와 동시(트랙 2) | 작업 중 | 2026-10-21 | | 완료·검증 결과 보고 |
+| S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · S2 뒤 S3와 동시(트랙 2) | PR 수용 대기 | 2026-10-21 | | 완료·검증 결과 보고 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
 ## 4. PR (모두 7개)
@@ -73,7 +73,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
 | S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
-| S5 | `v1/s5-tools` | S5-1–S5-9 | 대기 | | |
+| S5 | `v1/s5-tools` | S5-1–S5-9 | 열림·CI/리뷰 대기 | #645 | |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
@@ -125,7 +125,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AC | S5-5 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-24 | 구현 1회·별도 검토 4회·수정 3회(차단 2건: stdio env 주입 실행·SSE 64KiB), 사용량 한도 대기 제외 약3.5h |
 | S5 | AD | S5-6 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 웹훅 수신기·규칙·기록·이진 재전송, 검토 3회(수정 요청2 → APPROVE). 좁은 검증 §5, 전체 수용 S5-9 |
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
-| S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 작업 중 | 2026-10-24 | | 1단계·전체 브랜치 검토 APPROVE. 최종 검사1회 뒤 실패 범위 보완 PASS·수정 검토 APPROVE. E2E14 여정 확인, 설치본 수용/CI/PR 미착수 |
+| S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | PR 수용 대기 | 2026-10-24 | | 구현·전체 브랜치/후속 수정 검토 APPROVE. 원본 전체 검사1회FAIL 및 영향 범위 보완PASS, E2E14 여정 확인. 최종4297438b Windows dispatchPASS, 설치본1–4PASS/5–6NOT_RUN. 최종 근거 감사 APPROVE·PR #645 열림, 필수CI·리뷰 대기 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
 | S6 | AF | S6-1b–S6-2 |  | 대기 | | | |
 | S6 | AG | S6-3 |  | 대기 | | | |
@@ -641,48 +641,65 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
 
-### S5-9 설치 수용에서 발견한 tmux 버전 줄바꿈 회귀 (2026-10-24, 트랙 2 · 별도 검토 대기)
+### PR #645 R1 코드 지적·Rust CI 감시 보완 (2026-10-24, 트랙 2 · 독립 검토 승인)
+
+- 원본 인수 결과 작업 사본을 `s5-9/pr-review-1/root-progress-before-fixes.patch`로 보존했다. 아래 `4297438b`의 설치 수용1–4 PASS/5–6 NOT_RUN은 해당 소스에서만 유효한 과거 근거다. 이번 변경 소스는 새 필수 CI와 해당 영향 범위 검증을 계획하며, 전체 check/설치 수용을 무조건 반복하지 않는다. 보안 R1도 지적0건으로 완료했고 수정 묶음 독립 검토 APPROVE다. 최초 결과 문서 작업 사본은 이번 필요한 제품 수정 커밋에 함께 보존한다.
+- 별도 수정 검토 APPROVE(`fix-independent-review.json`), 추가 차단0. 검토자가 실행한 `devbox-api --all-targets` strict Clippy도 PASS(18.726초, 자원 제한 적용). 새 소스 필수 CI/필요한 설치본 영향 검증 뒤 다음 자동 리뷰 회차를 판단한다.
+- CI 시간 관찰: 첫 branch Windows40080544756은103초FAIL(모듈 case 오류로 조기 종료), 첫 PR Rust40088414708은516초FAIL, 첫 PR Windows40088414678은714초PASS. 직전 main329b2ee9은 Rust skip/Windows문서전용6초라 비교 기준으로 쓰지 않고, 가장 가까운 전체 main1e82e649의 Rust439초/Windows1026초와 구분해 기록했다. 성공한 Windows의714초 대1026초는 관찰값이며 runner/cache/source 차이 때문에 새 의존성의 인과 효과로 해석하지 않는다. 수정 뒤 첫 성공 PR Rust 시간은 추가 기록 예정. 근거 `ci-duration-comparison.json`.
+- 코드 댓글4366934415: 현재 루트에 환경 선택이 없는데 이전 루트의 URL/자격 증명 변수가 전역 송신 입력에 남았다. 루트별 초안은 보존하고 현재 마운트된 편집 상태만 layout effect로 전역 환경에 반영한다(선택 없음→null). 지연된 이전 루트 read/review/save는 그 루트 초안만 갱신한다. 단순 편집기 닫기 뒤 실행기가 선택 환경을 쓰는 기존 동작은 유지한다. 루트 왕복의 dirty·검토 상태, 지연 완료3종, 실제 useSend 입력의 이전 비밀 배제·명시 송신만 실행을 검증했다.
+- 코드 댓글4366934419: query API key가 초안→템플릿에서 위치를 잃고 코드 생성 시 헤더가 됐다. 선택적 `placement`를 템플릿·저장 정화 재구성·역변환에 보존하고 공통 생성 계획에서 query에만 추가한다. 과거 템플릿의 생략 값은 header다. query 이름과 무관하게 인증 값은 sensitive resolve를 사용해 literal/env/secret 값을 가리고, 6개 생성 대상의 URL·중복 query·특수문자·비활성 인증·기존 header 호환을 확인했다.
+- 원본 Rust CI **40088414708 / job120855980914, 8분36초 FAIL**: `collections_watch::recreated_collection_folder_is_watched_again`의5초 수신 대기가 만료됐다(같은 target 다른2개 PASS). 로컬 원본 단일 검사는 PASS였고 소유 디렉터리2000회 생성/삭제에서도 inode 재사용은 관찰되지 않아 **CI 직접 원인은 미확정**이다. 이 실패를 과거 성공으로 대체하지 않는다.
+- 별도로 증명한 조건: 삭제된 감시 등록에 경로+dev/inode가 같게 관찰되면 기존 ensure가 stale watcher를 재사용한다. 실제 삭제 경계에 동일 identity 입력을 주는 회귀 RED→GREEN으로 확인했다. 등록 수명 동안 nofollow 디렉터리 FD를 보유해 inode 재사용을 막고, nlink liveness로 삭제 이벤트 처리 전에도 재사용을 거부한다. 정상 자식 편집은 감시를 유지하며, 감시64개 상한·디바운스·시험 timeout은 그대로다. 기존 감시3개 검사는3회 모두 PASS(9회 실행), 강제 호스트 설정·공유 서비스 변경은 없다.
+- 직접 검증: 프론트 신규 환경5 RED·query5 RED/기존호환1 PASS → 직접11 PASS. 기존 영향 범위는72개 고유 검사 PASS(초기 runner 환경 유지 회귀1 실패를 불필요한 unmount 초기화 제거로 보완, 마지막 환경/검토 게이트17 PASS). typecheck PASS. Rust 삭제/동일 identity seam1 PASS와 기존3개×3회 PASS, rustfmt/diff·완료 Biome CI PASS. CPU4/nice10/jobs2/threads2/workers2, cgroup6/8GiB·swap1GiB 적용. 전체 check·새 Windows/설치 실행은 미실행.
+- 근거: `devbox-verification/s5-9/pr-review-1/`의 `independent-classification.json`, `env-root-red.log`, `query-auth-red.log`, `code-fixes-affected.log`, `env-affected-final.log`, `code-fixes-typecheck.log`, `ci-rust-40088414708-failed.log`, `watch-identity-{red,green}.log`, `watch-three-runs.log`, `fix-batch-evidence.json`.
+
+### S5-9 설치 수용에서 발견한 tmux 버전 줄바꿈 회귀 (2026-10-24, 트랙 2 · 독립 검토 승인)
 
 - `61d7e6f2` 첫 설치 수용은 ready Node 30초 시간 초과로 FAIL(6개 시나리오 NOT_RUN), 두 번째는 CDP 연결·창 식별 성공 뒤 native gate `setupFailed`를 확인해 6개 NOT_RUN. 기록된 앱·WSL·설치 파일 정리와 prod/개인 API 불변 비교는 PASS, 잔여 없음. 첫 실행의 Node 종료는 당시 증명하지 않았고 이후 읽기 전용 관찰에서만 잔여 0이었다. 두 번째는 정확한 Node PID/실행 파일/시작 시각·종료 증명을 기록했다.
 - 정확한 배포 CLI를 소유 HOME/config/hook·선택 도구 stub으로 격리한 8개 사례에서 실제 `tmux 3.6` 출력의 LF 및 소유 CRLF 출력은 `tool.tmux=fail`/exit 1, 같은 버전의 줄바꿈 없는 출력은 exit 0으로 재현했다. 이전 `run_cmd`의 `trim()`이 S5-8a2의 bounded version adapter에서 빠진 원인이다. adapter 한 줄로 기존 정규화를 복구하며 버전 파서·시간/출력 제한은 유지한다.
 - 새 실제 CLI 경계 시험은 LF·CRLF·`next-` 정상 출력과 구버전·잘못된 접미사·추가 출력 줄 거부 6개 사례를 확인한다. 모든 외부 명령은 소유 stub, 사용자 환경/인증/서비스는 사용하지 않는다. PID 1이 systemd가 아닌 CI에서도 전체 Fail 검사와 CLI exit의 일치를 검증한다.
-- 검증: CLI 경계 RED 1 → GREEN 1(내부 6사례), 기존 doctor 10 PASS. rustfmt/diff·완료 Biome CI PASS. 리소스 CPU4/nice10/jobs2/test threads2, memory high6GiB/max8GiB/swap1GiB 적용. 전체 검사·Windows 빌드·수정본 설치 수용은 재실행하지 않았으며, 새 소스 SHA·CI 산출물·helper 승인 binding 뒤 별도로 진행한다.
+- 검증: CLI 경계 RED 1 → GREEN 1(내부 6사례), 기존 doctor 10 PASS. rustfmt/diff·완료 Biome CI PASS. 리소스 CPU4/nice10/jobs2/test threads2, memory high6GiB/max8GiB/swap1GiB 적용. 이 좁은 수정 시점에는 전체 검사·Windows 빌드·수정본 설치 수용을 재실행하지 않았다. 이후 독립 검토 승인·4297438b 커밋/push 및 새 Windows/설치본 검증은 아래 현재 현황에 기록했다.
 - 근거: Git common-dir `devbox-verification/s5-9/acceptance-doctor-owned-fixture.json`, `tmux-version-{red,green,doctor-tests,biome}.log`, `tmux-version-fix-evidence.json`; 설치 실행 원본 `acceptance/runs/61d7e6f2-84c6f766`·`61d7e6f2-942fa2ae`.
 
-### S5-9 Windows CI 모듈 이름 충돌 수정 (2026-10-24, 트랙 2 · 별도 검토 대기)
+### S5-9 Windows CI 모듈 이름 충돌 수정 (2026-10-24, 트랙 2 · 독립 검토 승인)
 
 - 소스 `2d02ee18608ca0214c8b45c94e690c2c581b4ff4`의 [Windows run 40080544756](https://github.com/jihoon22-lee/devbox/actions/runs/40080544756)은 TS1149/TS1261/TS2305로 **FAIL**. 같은 디렉터리의 `QrOptions.tsx`·`qrOptions.ts`가 Windows TypeScript에서 같은 모듈 stem으로 충돌했다. 실패 로그 `devbox-verification/s5-9/windows-40080544756-failed.txt` 보존.
 - 보조 모듈만 `qrConfiguration.ts`로 이름 변경하고 QrTool/QrOptions/useQrState import3개를 수정했다. 전후 파일 SHA256 `3bd2ab57ad2ee9b8e2d5e29b6a6abaef051aed91c6272d9b1c4e8a87f596aae3` 동일, 기능 변경 없음. 추적 중 TS/TSX588개를 **확장자 제거+상대 경로 casefold**로 감사: 기존 충돌1쌍, 수정 후0(`module-case-fix/scan.json`).
 - 같은 문제가 S3/S5에서 반복돼 `app/src/modulePaths.test.ts`의 저비용 filesystem 회귀를 추가했다. app/src 전체의 `.ts`/`.tsx` module stem을 대소문자 구분 없이 비교한다. runtime JS를 만들지 않는 ambient `.d.ts`만 제외했다. 최초 jsdom URL 환경 오류는 assertion RED로 세지 않고 Node 환경으로 바로잡은 뒤 실제 QR 충돌 **assertion RED1→GREEN**을 확인했다.
-- 새 회귀+기존 QR UI/lib **3파일9 PASS**, typecheck·Biome·diff PASS. Windows 실제 빌드의 성공으로 대체하지 않으며 새 SHA의 Windows CI 재실행이 필요하다. 전체 suite/build/check.sh는 다시 돌리지 않았다. 외부 S5 수용 도우미 준비는 이 수정 검토 뒤 새 소스 SHA에 재결합하고 재개한다. 커밋·push는 부모 하네스가 담당한다.
+- 새 회귀+기존 QR UI/lib **3파일9 PASS**, typecheck·Biome·diff PASS. 이 좁은 검사 자체는 Windows 실제 빌드 성공을 대신하지 않는다. 독립 검토 뒤61d7e6f2로 커밋/push했고 Windows40081776941 PASS를 확인했다. 전체 suite/build/check.sh는 다시 돌리지 않았다. 후속 tmux 수정과 최종 소스 설치 수용은 아래 현재 현황에 기록했다.
 
-### S5-9 최종 검증·수용 현황 (2026-10-24, 트랙 2)
+### S5-9 최초 검증·수용 현황 (2026-10-24, 트랙 2 ·4297438b 기록)
 
-- 최종 수정 독립 검토 APPROVE(`s5-9/final-delta-review.json`). 최초 check.sh 1회 FAIL 기록과 실패 범위 수정·직접 영향 PASS를 결합해 로컬 검증을 완료했다. Windows 설치 수용·필수 PR CI·자동 PR 리뷰는 아직 미실행이며, 완료 커밋 뒤 같은 SHA 산출물로 진행한다.
+- 설치 수용을 검증한 소스 **4297438bb07d07e70003e69f7ee95b02663db866**, Windows **40085773770 PASS**(Linux 출처·Windows 시험·NSIS·패키지 self-check). 최종 수정·모듈 충돌·tmux 회귀 모두 독립 검토 APPROVE. 제품 LOC86624/160000(Rust50591+TS36033), 제품600줄 초과0. 아래 원본 전체 검사 결과는 과거 스냅샷이며 FAIL을 PASS로 바꾸지 않는다.
+- 설치 수용은 같은 최종 소스에서3회, 전체 반복 없이 실패 항목만 재실행했다: `4297438b-a4e3a997` 전체FAIL150.640초(2·3PASS,1·4helperFAIL,5·6NOT_RUN); `4297438b-df8d4f40` 선택1·4 전체FAIL104.621초(1PASS,4helperFAIL); `4297438b-9d48f9ac` 선택4 PASS93.366초. 첫 실패의 원인은 미설정 선언 이름을 기존 비밀 값으로 오인한 helper, JWT 디코드 버튼 누락, 이후 JWT의 잘못된3바이트 HS256 fixture 서명이다. 제품의32바이트 형식 검사는 유지했다. 실제 디코더·포매터로 RED→GREEN을 확인하고 매번 새 helper 해시/선택 항목을 별도 승인받았다.
+- 최종 항목별 근거:1(API/환경/fixture비밀의 실제송신·가림·기록)은 df8d4f40;2(Postman 개인 가져오기)·3(Windows loopback 웹훅 수신/재전송)는 a4e3a997;4(JSON/Base64/JWT 디코드)는9d48f9ac.5는 이미 foreground인 소유 창이 없어NOT_RUN,6은 설치 제안할 미설치 도구가 없어NOT_RUN. 포커스 강제나 도구 제거로 조건을 만들지 않았다. 실제 도구 설치·외부 LAN·JWT 서명 검증은 주장하지 않는다.
+- 세 실행 모두 tracked Node 종료와 실행된 clipboard guard 정리 확인, 앱/WSL/Windows/다운로드 정리와 prod/개인API 비교 PASS, 잔여[]. 예전61d7 두 실행과 원본 실패는 그대로 보존하며 최종 소스 PASS로 재사용하지 않는다. 근거 `native-acceptance-final-assessment.json`(artifact154개 해시), `acceptance/runs/`, `status-matrix.json`; 최종 결과 독립 감사 APPROVE(`native-acceptance-independent-final-review.json`). 당시 결과만 담은 작업 사본은 소스 SHA를 바꾸지 않고 보존했으며, 이후 필요한 R1 제품 수정 커밋에 이 과거 근거를 함께 기록한다. 새 소스 영향 검증은 별도다.
+
+- 최종 수정 독립 검토 APPROVE(`s5-9/final-delta-review.json`). 최초 check.sh 1회 FAIL 기록과 실패 범위 수정·직접 영향 PASS를 결합해 로컬 검증을 완료했다. 이 시점 뒤의 설치 수용 결과는 위 현재 요약에 기록했다. 필수 PR CI·자동 PR 리뷰는 아직 미실행이다.
 
 - 검증 소스 `c4001e33`, 브랜치 전체 `329b2ee9..c4001e33` 별도 검토 **APPROVE / 새 차단0**. 07b 회귀 연결18개 이름 모두 존재(실행 결과와 구분), 제품 LOC86606/160000, 600줄 파일·300줄 컴포넌트 초과0, 인프라1500줄/워크플로2개, E2E 열거14개/8파일. 근거 `devbox-verification/s5-9/whole-branch-review/`.
 - `git fetch origin main` 확인 결과 `329b2ee9` 유지(S3 미머지), 현재 통합 대상 없음. `scripts/check.sh`는 내부 대기 잠금으로 **1회 실행, exit1/759.177초**. 원본 `check-once.log`·`check-resources.json` 보존, 전체 재실행 없이 아래 실패/직접 영향 범위만 재검사했다. Windows cfg의 accept 설정 MSVC target strict all-target Clippy는 **PASS(115.727초)**이며 metadata 검사로 실제 Windows 링크/실행과 구분한다.
 
 | 검증/수용 항목 | 상태 | 범위·근거 |
 |---|---|---|
-| Windows 수용1 API·환경·fixture 비밀 | NOT_RUN | 소유 localhost 서버, 외부 echo는 가능할 때만 |
-| Windows 수용2 Postman 가져오기 | NOT_RUN | accept 개인 저장·prod 불변 |
-| Windows 수용3 웹훅 수신·재전송 | NOT_RUN | Windows 소유 curl→127.0.0.1만, 외부 LAN 수신 NOT_RUN |
-| Windows 수용4 JWT·Base64·JSON | NOT_RUN | 설치본 UI 각1회 |
-| Windows 수용5 클립보드 변환 | NOT_RUN | 원래 텍스트 메모리 보존·복원 |
-| Windows 수용6 빠진 도구 설치 제안 | NOT_RUN | 버튼·명령만 확인, 실제 apt/npm/winget 설치 NOT_RUN |
-| Frontend (pnpm) CI | NOT_RUN | 아직 push/PR 없음 |
+| Windows 수용1 API·환경·fixture 비밀 | PASS |4297438b-df8d4f40, 소유 localhost 실제송신·가림·기록; 외부 echo 미실행 |
+| Windows 수용2 Postman 가져오기 | PASS |4297438b-a4e3a997, accept 개인 저장·prod 불변 |
+| Windows 수용3 웹훅 수신·재전송 | PASS |4297438b-a4e3a997, Windows curl→소유127.0.0.1, 외부 LAN NOT_RUN |
+| Windows 수용4 JWT·Base64·JSON | PASS |4297438b-9d48f9ac, 실제설치본 디코드/변환; JWT검증 주장없음 |
+| Windows 수용5 클립보드 변환 | NOT_RUN | 소유 창 foreground 조건불충족, 원래값 미기록·정리확인 |
+| Windows 수용6 빠진 도구 설치 제안 | NOT_RUN | 실행가능 설치제안의 빠진도구 없음; 실제설치 미실행 |
+| Frontend (pnpm) CI | NOT_RUN |4297438b push완료, PR #645 진행중 |
 | Rust (Cargo workspace) CI | NOT_RUN | 첫 branch/직전 main job 시간 비교 예정 |
-| Rust (Windows) CI | FAIL | 소스2d02ee18 run40080544756 모듈 case 충돌. 수정 검토·새 SHA CI 대기 |
+| Rust (Windows) CI | PASS |4297438b dispatch40085773770. PR필수 검사는 PR뒤 별도확인; 이전40080544756FAIL 보존 |
 | 브랜치 전체 하네스 검토 | APPROVE | 위 검토 artifact, 새 차단0 |
-| PR 자동 리뷰 | NOT_RUN | 아직 PR 없음, 최대3회 규칙 유지 |
+| PR 자동 리뷰 | NOT_RUN | PR #645 첫 회차 진행중, 최대3회 규칙 유지 |
 
 - 최초 전체 실행에서 Python scripts17/xtask3·양쪽 fmt·Linux native core84·gen-check·금지어·Biome625·typecheck·Vitest **213파일1157**·Vite build PASS. Rust workspace는 **9개 사례/6개 CLI integration target FAIL**, 기존 systemd 실환경 등 **34 ignored**는 실행 성공으로 세지 않는다. E2E **13 PASS/1 FAIL**이며 새 웹훅→요청→JSON 포매터는 최초 실행에서 PASS.
 - Rust 실패 보완: 오래된 fixture DB 재개방 migration 목록에 `api`·`webhooks`가 빠져 unsupported domain을 반환했다. 기존 helper/fixture 목록에 두 도메인을 추가하고 제품 DB 검사는 유지했다. 실패 대상 agents/codex/review/watch/mcp/projects_launch **6 target34 PASS**. 공유 runtime helper의 같은 목록도 정합화했으나 ignored 실환경 테스트를 강제로 실행하지 않았다. strict Clippy의 webhook 중첩조건·사용 안 하는 import·동일 타입 into·0 permission 표기·시험 unwrap을 경고 억제 없이 정리(조건 의미/검증/fixture 그대로, unwrap→설명 있는 expect). 남은 lint를 keep-going으로 모은 뒤 workspace/all-target `-D warnings` **PASS**. 웹훅 직접 영향 **31 unit+12 loopback PASS**.
 - 실제 제품 수정: 처음 `/tools?tool=runner`로 들어올 때 Welcome 이전 collection 읽기가 실패하고 연결 후 갱신되지 않았다. ToolsPage가 ready 이벤트에서 읽기 revision만 갱신하도록 수정했다. 같은 경계의 직접 `search.path`도 지연 Welcome으로 RED를 확인해 아직 열리지 않은 경로만 재시도한다. 한 navigation이 성공한 뒤에는 추가 갱신으로 다른 선택 탭을 빼앗지 않는다. **지연 Welcome2 RED→2 PASS**, 재연결/수정 초안/수동 선택 탭 보존·송신0 확인, 기존 직접 영향 화면24 PASS 유지. 새 송신·재전송은 자동 실행하지 않는다.
 - 실패 실행기 E2E는 초기 진입 수정 뒤 기존 전역 `실행` locator가 섹션 버튼과 겹치는 다음 실패를 드러냈다. 시험 locator만 본문 region으로 좁혔고 해당 **1여정 재검사 PASS(두 번 실행·캡처 토큰 전달 확인)**. 원본13+재검사1로14개 여정이 검증됐으며 전체 E2E를 다시 돌리지 않았다. `initial-e2e-results/`·`runner-rerun-1-results/`에 실패 trace/context, 재검사 로그도 보존한다.
 - 최종 수정 뒤 typecheck·양쪽 fmt·diff check·Biome **626파일 PASS**. 추가 회귀의 Testing Library가 지원하지 않는 exact 옵션은 타입 검사 실패 후 제거해 GREEN이며 로그를 보존했다. 최종 제품 LOC **86624/160000**, 제품600줄 초과0, 변경 컴포넌트 AST ToolsView71/ToolsPage28줄(기존 최대281 불변), 새 시험103줄·변경 시험 파일도600줄 이하.
-- 이 최종 수정은 별도 검토 대기다. Windows 설치본 수용6/필수 CI3/PR 자동 리뷰는 위 NOT_RUN 유지. 모든 이번 supervisor는 memory_enforced=true(6/8GiB·swap1GiB), CPU4/nice+10/jobs2/threads2/workers2(Playwright1), 전용 S5 target을 사용했다. 실제 설치·정리·외부 네트워크·방화벽 변경은 하지 않았다.
+- 이 단락은 전체 검사 직후 스냅샷이다. 최종 수정은 이후 승인됐고 설치 수용은 위 현재 요약으로 갱신했다. 필수 PR CI/자동 리뷰는 아직 미실행이다. 모든 이번 supervisor는 memory_enforced=true(6/8GiB·swap1GiB), CPU4/nice+10/jobs2/threads2/workers2(Playwright1), 전용 S5 target을 사용했다. 실제 설치·정리·외부 네트워크·방화벽 변경은 하지 않았다.
 
 - 원시 상태 행렬 `devbox-verification/s5-9/status-matrix.json`. 전체 검사·MSVC cfg·설치 helper 준비·설치 수용을 각각 기록하고 성공을 서로 대체하지 않는다. 외부 웹훅·실제 도구 설치는 §2 기본안/NOT_RUN 유지, 확인 요청 없이 승인 범위 검증을 진행한다.
 
