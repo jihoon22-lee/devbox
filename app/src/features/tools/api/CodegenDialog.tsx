@@ -6,7 +6,7 @@ import { CodeView } from "../../../ui/code/CodeView";
 import s from "./Api.module.css";
 import { CODE_TARGETS, type CodeTarget, generateCode } from "./lib/codegen";
 import type { RequestDraft } from "./model/draft";
-import { templateFromDraft } from "./model/toTemplate";
+import { CodegenUnsupportedError, templateFromDraft } from "./model/toTemplate";
 
 const LABELS: Record<CodeTarget, string> = {
   curl: "cURL",
@@ -29,14 +29,20 @@ export function CodegenDialog({
   environment: Pair[];
 }) {
   const [target, setTarget] = useState<CodeTarget>("curl");
-  const [copied, setCopied] = useState(false);
-  const result = useMemo(() => {
-    if (!open) return null;
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const { result, reason } = useMemo(() => {
+    if (!open) return { result: null, reason: "" };
     try {
       const variables = environment.map((pair) => ({ key: pair.name, value: pair.value, secret: false }));
-      return generateCode(target, templateFromDraft(draft), variables);
-    } catch {
-      return null;
+      return { result: generateCode(target, templateFromDraft(draft), variables), reason: "" };
+    } catch (error) {
+      return {
+        result: null,
+        reason:
+          error instanceof CodegenUnsupportedError
+            ? error.message
+            : "이 요청으로는 코드를 만들 수 없습니다. URL과 본문을 확인해 주세요.",
+      };
     }
   }, [open, target, draft, environment]);
   return (
@@ -47,14 +53,14 @@ export function CodegenDialog({
       width={720}
       footer={
         <>
-          {copied && <span className={s.muted}>복사했습니다</span>}
+          {result && copiedCode === result.code && <span className={s.muted}>복사했습니다</span>}
           <Button
             disabled={!result}
             onClick={() =>
               result &&
               void navigator.clipboard.writeText(result.code).then(
-                () => setCopied(true),
-                () => setCopied(false),
+                () => setCopiedCode(result.code),
+                () => setCopiedCode(null),
               )
             }
           >
@@ -73,7 +79,7 @@ export function CodegenDialog({
           value={target}
           onChange={(event) => {
             setTarget(event.target.value as CodeTarget);
-            setCopied(false);
+            setCopiedCode(null);
           }}
         >
           {CODE_TARGETS.map((item) => (
@@ -83,11 +89,7 @@ export function CodegenDialog({
           ))}
         </select>
       </label>
-      {result ? (
-        <CodeView ariaLabel="생성한 코드" value={result.code} readOnly />
-      ) : (
-        <p role="alert">이 요청으로는 코드를 만들 수 없습니다. URL과 본문을 확인해 주세요.</p>
-      )}
+      {result ? <CodeView ariaLabel="생성한 코드" value={result.code} readOnly /> : <p role="alert">{reason}</p>}
     </Dialog>
   );
 }

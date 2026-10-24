@@ -3,6 +3,20 @@ import type { RequestTemplate } from "../lib/template";
 import { activeAuth, type RequestDraft } from "./draft";
 import { toStored } from "./stored";
 
+const UNSUPPORTED_MESSAGES = {
+  binary: "파일 본문의 코드 생성은 아직 지원하지 않습니다. 요청 편집기에서 보내세요.",
+  rawBase64: "Base64 원시 본문의 코드 생성은 아직 지원하지 않습니다. 요청 편집기에서 보내세요.",
+  tlsFiles: "사용자 TLS 파일이 설정된 요청의 코드 생성은 아직 지원하지 않습니다. 요청 편집기에서 보내세요.",
+} as const;
+
+/** 코드 생성에만 적용한다. 원래 송신·저장 경로와 파일 내용은 건드리지 않는다. */
+export class CodegenUnsupportedError extends Error {
+  constructor(reason: keyof typeof UNSUPPORTED_MESSAGES) {
+    super(UNSUPPORTED_MESSAGES[reason]);
+    this.name = "CodegenUnsupportedError";
+  }
+}
+
 function auth(draft: RequestDraft): RequestTemplate["auth"] {
   const a = activeAuth(draft);
   const base = { username: "", password: "", token: "", api_key: "", api_value: "" };
@@ -35,6 +49,10 @@ function auth(draft: RequestDraft): RequestTemplate["auth"] {
 export function templateFromDraft(draft: RequestDraft): RequestTemplate {
   const stored = toStored(draft);
   const body = stored.body;
+  if (body.kind === "binary") throw new CodegenUnsupportedError("binary");
+  if (body.kind === "raw" && body.encoding === "base64") throw new CodegenUnsupportedError("rawBase64");
+  if (stored.tls.caPath || stored.tls.clientCertPath || stored.tls.clientKeyPath)
+    throw new CodegenUnsupportedError("tlsFiles");
   const template: RequestTemplate = {
     method: draft.method,
     url: draft.url,
@@ -42,7 +60,7 @@ export function templateFromDraft(draft: RequestDraft): RequestTemplate {
     cookies: stored.cookies.map((c) => ({ name: c.name, value: c.value, enabled: c.enabled })),
     multipart: [],
     params: stored.query.filter((q) => q.enabled).map((q) => ({ key: q.name, value: q.value })),
-    body_kind: body.kind === "binary" ? "none" : body.kind,
+    body_kind: body.kind,
     body: "",
     auth: auth(draft),
     timeout_ms: draft.timeoutMs,

@@ -16,9 +16,9 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. **S5-1–S5-9 구현 뒤 PR #645 R1 수정·별도 검토 APPROVE**. 기존 설치 검증 소스 `4297438b`, Windows run40085773770 PASS. 같은 소스 설치본 수용1–4 PASS,5(기존 foreground 없음)·6(설치 제안할 미설치 도구 없음) NOT_RUN. 외부 LAN/실제 도구 설치는 §2 기본안대로 미실행. [PR #645](https://github.com/jihoon22-lee/devbox/pull/645) 생성 완료. R1 코드2건·Rust CI 감시 실패 보완 뒤 변경 소스의 필수 CI와 영향 검증이 남음. 보안 R1도 지적0건으로 완료했다. 상세 결과와 원본 실패는 §5 S5-9 및 `devbox-verification/s5-9/` |
+| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. **S5-1–S5-9 구현 뒤 PR #645 R1·R2 수정 독립 검토 APPROVE**. 기존 설치 검증 소스 `4297438b`, Windows run40085773770 PASS. 같은 소스 설치본 수용1–4 PASS,5(기존 foreground 없음)·6(설치 제안할 미설치 도구 없음) NOT_RUN. 외부 LAN/실제 도구 설치는 §2 기본안대로 미실행. [PR #645](https://github.com/jihoon22-lee/devbox/pull/645) 생성 완료. R1 수정 소스2c60a6c9의 필수 CI3·E2E는 PASS다. R2 코드2건·보안0건 완료 뒤 코드 생성 지원 한계 수정은 독립 승인됐다. 로컬 커밋으로 보존하고 S3 마무리 뒤 필요한 main 통합·다음 push 및 새 소스 CI/영향 검증이 남음. 상세 결과와 원본 실패는 §5 S5-9 및 `devbox-verification/s5-9/` |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · PR #645 R1 코드2건과 Rust CI40088414708 단일 감시 실패 보완·독립 검토 APPROVE. 4297438b 설치 수용1–4 PASS/5–6 NOT_RUN은 해당 소스의 과거 근거로 보존하며 변경 소스의 PASS로 재사용하지 않는다. 직접 회귀·타입·형식/영향 Clippy PASS, 코드2·보안0 완료. 묶음 push 뒤 새 필수 CI/영향 검증 대기 |
+| 마지막 갱신 | 2026-10-24 · PR #645 R2 코드2·보안0 완료. 파일/Base64 본문 및 사용자 TLS 파일의 코드 생성 한계를 명시하는 최소 수정·직접 검사·독립 검토 APPROVE. 원본2c60a6c9 CI3/E2E PASS와4297438b 설치1–4 PASS/5–6 NOT_RUN은 각각 해당 소스의 근거다. 새 R2 소스 CI/설치 영향 검증은 미실행이며 외부 helper 바인딩을 동결했다 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -640,6 +640,18 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 자동 리뷰 한도: 2026-10-14 03:00:54 UTC [bot 통지](https://github.com/jihoon22-lee/devbox/pull/640#issuecomment-6159905266)에 따라 c28e4cab의 자동 코드/보안 리뷰는 시작되지 않았다. 이전 c68 리뷰 완료 요약을 보고 현재도 진행 중이라고 안내한 오류를 사용자에게 정정했다. GitHub 등록 자동 리뷰22건·고유 커밋15개를 확인했고 최신 후보의 별도 검토·CI·Windows 수용은 완료했다. CONVENTIONS §8의 최종 SHA 자동 리뷰 요건을 충족했다고 보고하지 않으며, 사용자가 2026-10-14 이번 PR에 한해 최신 자동 리뷰 생략 후 머지·정리를 명시 승인했다. 이 예외는 향후 PR 규약을 변경하지 않는다. 추가 구매·리뷰 트리거·보호 규칙 우회는 하지 않았다. 결과 작업 사본은 승인된 머지 후 다음 브랜치 문서 커밋으로 인계한다.
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
+
+### PR #645 R2 코드 생성의 지원하지 않는 요청 안내 (2026-10-24, 트랙 2 · 독립 검토 승인)
+
+- 최종 별도 검토 APPROVE, 차단0(`s5-9/pr-review-2/fix-independent-review.json`). 코드 생성 전용 거절·고정 안내의 경로 비노출·출력/복사 상태 제거·지원 설정 복구와 송신/저장 보존을 확인했다. S3 최종 설치 결과에 따른 main 통합 여부를 확인해 다음 push를 묶으며, 사용자 확인을 기다리는 것은 아니다.
+
+- R2 코드2건(4366985694·4366985699)·보안0건 완료. 독립 판정에서 활성 binary 파일 본문이 none으로 바뀌는 경우, CA/인증서/개인 키 경로가 각각 사라지는 경우, 같은 본문 경계의 raw `encoding=base64` 값 `AP+A`가 디코딩한 바이트 대신 문자로 생성되는 경우 등5개를 재현했다.
+- **코드 생성이 모든 요청을 지원하는 것은 아니다.** 활성 파일 본문·Base64 원시 본문·사용자 CA/클라이언트 인증서/개인 키 파일이 설정된 요청은 코드 생성 대화상자에서 고정 한국어 안내를 표시하고 코드·복사를 제공하지 않는다. `templateFromDraft`의 코드 생성 전용 경계만 거부하며, 원래 송신·저장·가져오기는 유지한다. 임의 credentialId나 잘못된 TLS placeholder를 만들지 않고 파일 경로·내용을 코드/안내/클립보드로 내보내지 않는다.
+- 이전에 생성한 코드와 복사 안내는 지원하지 않는 요청으로 바꾸면 사라진다. 지원되는 본문으로 전환하거나 TLS 파일 설정을 비우면 다시 생성된다. 비활성 binary/base64 초안은 차단하지 않으며, 일반 본문·query API key·기존6개 생성 대상과 TLS 파일 없는 `verify=false`의 기존 대상별 동작을 유지한다(fetch는 기존 명시적 TLS 실행 거부 코드 유지).
+- 검증: 새 model5·실제 CodegenDialog/CodeMirror7 causal RED(12 FAIL/4 PASS) → GREEN, TLS 파일 해제 복구 추가 포함 직접 영향14파일77 PASS. 각 지원 불가 UI에서6개 언어 전환·고정 안내·코드 부재/복사 비활성·private path/base64 canary 부재·파일/native/fetch 호출0을 확인했다. 실제 toSnapshot/toStored/요청 파일 재읽기는 binary/base64/TLS를 보존하며 기존 저장·가져오기·웹훅 이진 변환 검사도 통과했다. 새 시험의 Testing Library가 지원하지 않는 exact 옵션은 최초 타입 실패 뒤 제거했고 해당UI8개·typecheck·diff·완료 Biome CI PASS. 전체 check·새 Windows/native 실행은 반복하지 않았다.
+- **이전 소스2c60a6c9의 CI 결과:** CI40089973076 Frontend2분56초·E2E2분50초·Rust8분58초(538초), Windows40089973078 14분59초(899초) 모두 PASS. 원래4297438b Rust40088414708의8분36초(516초) FAIL은 보존한다. 첫 성공 PR Rust538초와 가까운 main439초는 cache/runner 조건이 같지 않아 의존성 추가가 원인이라고 해석하지 않는다. 이 성공을 변경된 R2 후보의 CI/native PASS로 재사용하지 않는다.
+- 기존4297438b 설치 수용1–4 PASS/5–6 NOT_RUN 및 소유 자원 정리 근거를 보존한다. 2c60a6c9용21파일 targeted helper는 미실행·바인딩 동결 상태이며, 새 최종 소스·정확한 Windows run/선택 항목/해시 승인 뒤 영향 범위만 검증한다.
+- 근거: Git common-dir `devbox-verification/s5-9/pr-review-2/`의 `independent-classification.json`, `codegen-unsupported-{red,green,affected,typecheck}.log`, `codegen-dialog-final.log`, `codegen-unsupported-typecheck-initial.log`, `fix-batch-biome.log`, `fix-batch-evidence.json`. 검증 자원 CPU4/nice10/workers2·cgroup6/8GiB·swap1GiB 적용.
 
 ### PR #645 R1 코드 지적·Rust CI 감시 보완 (2026-10-24, 트랙 2 · 독립 검토 승인)
 
