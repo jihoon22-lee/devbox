@@ -11,7 +11,7 @@ import {
   type QrVersion,
   type WifiRequest,
 } from "../lib/qr";
-import { EMPTY_WIFI, FIXED_ACTION_ERROR } from "./qrOptions";
+import { EMPTY_WIFI, FIXED_ACTION_ERROR } from "./qrConfiguration";
 export function useQrState() {
   const [preset, setPreset] = useState<QrPreset>("text");
   const [text, setText] = useState("");

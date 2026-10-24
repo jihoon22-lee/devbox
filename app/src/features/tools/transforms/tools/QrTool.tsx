@@ -1,7 +1,7 @@
 import { ToolOutput, ToolTextArea, ToolTextField } from "../frame";
 import { MAX_PAYLOAD_BYTES, MAX_WIFI_PASSWORD_BYTES, MAX_WIFI_SSID_BYTES, type WifiRequest } from "../lib/qr";
 import { QrOptions } from "./QrOptions";
-import { FIXED_ACTION_ERROR, PRESETS } from "./qrOptions";
+import { FIXED_ACTION_ERROR, PRESETS } from "./qrConfiguration";
 import { useQrState } from "./useQrState";
 export function QrTool() {
   const state = useQrState();

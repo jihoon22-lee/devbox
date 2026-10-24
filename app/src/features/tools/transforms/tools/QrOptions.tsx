@@ -1,5 +1,5 @@
 import { MAX_OUTPUT_SIZE, MAX_QUIET_ZONE, MIN_OUTPUT_SIZE, MIN_QUIET_ZONE, type QrErrorCorrection } from "../lib/qr";
-import { ERROR_CORRECTION_LEVELS, VERSION_OPTIONS } from "./qrOptions";
+import { ERROR_CORRECTION_LEVELS, VERSION_OPTIONS } from "./qrConfiguration";
 import type { QrState } from "./useQrState";
 export function QrOptions({ state }: { state: QrState }) {
   const {

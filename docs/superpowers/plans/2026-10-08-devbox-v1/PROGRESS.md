@@ -18,7 +18,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`. 최신 상태는 그 브랜치의 PROGRESS |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 기반 `origin/main@329b2ee9`, Rust target `~/.cache/targets/devbox-s5`. S5-1 상세화 `28e6706c`, S5-2 `87587702`(+OAuth `8c4a4cc9`), S5-3 `1e7b7bee`·`634970c9`·`c7a03682`·`613a4c8a`·`becfd8d1`, 검토 게이트 보안 수정 `7f4de376`, S5-4 `24358624`·`eb1b7689`, **S5-5 gRPC·MCP·OAuth 2.1 완료(로컬)**: gRPC `7c31cecf` + MCP 커밋, 별도 검토 4회(REQUEST_CHANGES 차단2 → APPROVE → 권고 반영 확인 2회 APPROVE). **S5-6 웹훅 수신기 완료(로컬)**(2026-10-24, 최종 독립 검토 APPROVE). S5-7a 터미널 동작 분리 완료·독립 검토 APPROVE(이동 전/후 기존 시험23 PASS). S5-7b 변환 도구21종 완료(로컬)·독립 재검토 APPROVE. S5-7b `b762b582`. S5-7c 감지·선택 보내기 완료(로컬)·독립 재검토 APPROVE. S5-7c `d55cd7c6`. S5-8a1 기존 환경 점검 이동 완료(로컬)·독립 검토 APPROVE. S5-8a1 `de7a04dd`. S5-8a2 점검 확장·설치 제안 완료(로컬)·독립 재검토 APPROVE. S5-8a2 `56c65372`. S5-8b 설치 동작·지원 번들·WSL 정리 완료(로컬)·독립 재검토 APPROVE. S5-8b `f1d86bef`. S5-9 1단계 섹션 마무리 완료(로컬)·독립 검토 APPROVE. S5-9 `c4001e33`. 개수 확인 완료·전체 브랜치 검토 APPROVE, origin/main fetch=329b2ee9(S3 미머지로 통합 불필요). 5단계 전체 검사1회 FAIL 뒤 실패/직접 영향 범위 PASS, MSVC all-target strict Clippy PASS. 최종 수정 독립 검토 APPROVE. 다음: 최종 SHA Windows 산출물·설치 수용 뒤 PR. 근거 `devbox-verification/s5-9-layout/`. 사용자 결정 대기 2건(§2, S5-9 수용에만 걸림) |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 2 S5-9 최종 검사1회 수행(원본 FAIL 보존), 실패 범위 Clippy·fixture34·읽기 회귀2·실행기 E2E1 PASS. 전체 frontend1157·E2E13+재검사1·MSVC all-target strict Clippy PASS. 최종 수정 독립 검토 APPROVE, Windows 설치본 수용/최종 CI3/PR 대기 |
+| 마지막 갱신 | 2026-10-24 · 트랙 2 S5 `2d02ee18` push 뒤 Windows run40080544756 모듈 case 충돌 FAIL. QR helper 이름 변경+filesystem 회귀9/typecheck/Biome627 PASS, 별도 검토·새 SHA CI 대기. Windows 설치본 수용/PR 미실행, 외부 수용 helper 준비 중 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -641,6 +641,13 @@ c68 코드 리뷰 판정: 4266263003은 inline agent만 있는 시작 구성에�
 
 c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적도 확인했다. 로그인 PATH에 상대/빈 항목이 있으면 프로젝트 cwd의 실행파일이 bash 같은 인프라 명령을 가릴 수 있다는 위험은 인정한다. 현재는 로그인 PATH를 상속하며 이 shadowing을 차단하지 않고, `.devbox` 실행 정의 승인이 그 위험을 포괄하지 않는다. 01 §4.1의 사용자 환경 포착과 §7의 명시된 신뢰 범위에 비춰, 전체 PATH 정화나 모든 인프라 실행파일의 절대경로 강제는 별도 환경 정책 변경이므로 이번 S1 요구로는 기각하고 한계를 명시한다. 원계획이 상대 PATH 허용을 반드시 요구했다거나 터미널 열기가 shadow된 실행파일 내용의 승인이라고 주장하지 않는다. 별도 범위 검토도 같은 판정이며 추가 제품 수정·재현·자동 리뷰를 시작하지 않았다.
 
+### S5-9 Windows CI 모듈 이름 충돌 수정 (2026-10-24, 트랙 2 · 별도 검토 대기)
+
+- 소스 `2d02ee18608ca0214c8b45c94e690c2c581b4ff4`의 [Windows run 40080544756](https://github.com/jihoon22-lee/devbox/actions/runs/40080544756)은 TS1149/TS1261/TS2305로 **FAIL**. 같은 디렉터리의 `QrOptions.tsx`·`qrOptions.ts`가 Windows TypeScript에서 같은 모듈 stem으로 충돌했다. 실패 로그 `devbox-verification/s5-9/windows-40080544756-failed.txt` 보존.
+- 보조 모듈만 `qrConfiguration.ts`로 이름 변경하고 QrTool/QrOptions/useQrState import3개를 수정했다. 전후 파일 SHA256 `3bd2ab57ad2ee9b8e2d5e29b6a6abaef051aed91c6272d9b1c4e8a87f596aae3` 동일, 기능 변경 없음. 추적 중 TS/TSX588개를 **확장자 제거+상대 경로 casefold**로 감사: 기존 충돌1쌍, 수정 후0(`module-case-fix/scan.json`).
+- 같은 문제가 S3/S5에서 반복돼 `app/src/modulePaths.test.ts`의 저비용 filesystem 회귀를 추가했다. app/src 전체의 `.ts`/`.tsx` module stem을 대소문자 구분 없이 비교한다. runtime JS를 만들지 않는 ambient `.d.ts`만 제외했다. 최초 jsdom URL 환경 오류는 assertion RED로 세지 않고 Node 환경으로 바로잡은 뒤 실제 QR 충돌 **assertion RED1→GREEN**을 확인했다.
+- 새 회귀+기존 QR UI/lib **3파일9 PASS**, typecheck·Biome·diff PASS. Windows 실제 빌드의 성공으로 대체하지 않으며 새 SHA의 Windows CI 재실행이 필요하다. 전체 suite/build/check.sh는 다시 돌리지 않았다. 외부 S5 수용 도우미 준비는 이 수정 검토 뒤 새 소스 SHA에 재결합하고 재개한다. 커밋·push는 부모 하네스가 담당한다.
+
 ### S5-9 최종 검증·수용 현황 (2026-10-24, 트랙 2)
 
 - 최종 수정 독립 검토 APPROVE(`s5-9/final-delta-review.json`). 최초 check.sh 1회 FAIL 기록과 실패 범위 수정·직접 영향 PASS를 결합해 로컬 검증을 완료했다. Windows 설치 수용·필수 PR CI·자동 PR 리뷰는 아직 미실행이며, 완료 커밋 뒤 같은 SHA 산출물로 진행한다.
@@ -658,7 +665,7 @@ c68 리뷰 본문5512495126 PATH 정책 판정: inline 댓글 외 본문 지적�
 | Windows 수용6 빠진 도구 설치 제안 | NOT_RUN | 버튼·명령만 확인, 실제 apt/npm/winget 설치 NOT_RUN |
 | Frontend (pnpm) CI | NOT_RUN | 아직 push/PR 없음 |
 | Rust (Cargo workspace) CI | NOT_RUN | 첫 branch/직전 main job 시간 비교 예정 |
-| Rust (Windows) CI | NOT_RUN | 첫 branch/직전 main job 시간 비교 예정 |
+| Rust (Windows) CI | FAIL | 소스2d02ee18 run40080544756 모듈 case 충돌. 수정 검토·새 SHA CI 대기 |
 | 브랜치 전체 하네스 검토 | APPROVE | 위 검토 artifact, 새 차단0 |
 | PR 자동 리뷰 | NOT_RUN | 아직 PR 없음, 최대3회 규칙 유지 |
 
@@ -916,3 +923,5 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 | 날짜 | PR · 회차 | 지적(링크) | 별도 검토 판정 | 처리 |
 |---|---|---|---|---|
 | 2026-10-21 | #642 · 상한 이후 4회차 | [Windows 포트 준비 확인의 프로세스 귀속](https://github.com/jihoon22-lee/devbox/pull/642#discussion_r4331589592) | 직접/native의 port-only loopback probe가 무관한 listener를 준비됨으로 오인할 수 있는 기능 결함(코드 확인). 승인된 graph의 의존 순서 오류이며 실제 데이터 손실·비밀 유출·미승인 실행 재현 없음. Windows 설치본 재현은 interop 불가로 미실행. 별도 검토 NON_BLOCKING | 이번 PR 수정 안 함. S6-1 상세화에서 Windows PID/후손 소켓 귀속과 unrelated-listener 회귀를 후속 판정. 근거 `s2-task16/pr/out-of-cap/finding-4331589592.json`; 이 문서에 이월 판정을 보존 |
+
+- S5 Windows 모듈 대소문자 충돌 수정 최종 독립 검토 APPROVE(`s5-9/module-case-fix/`). `qrOptions.ts`를 `qrConfiguration.ts`로 내용 변경 없이 이동하고 import 3곳을 갱신했다. 전체 런타임 TS/TSX 모듈 stem 회귀가 기존 충돌 RED→GREEN을 확인하며 QR 관련9·typecheck·Biome627 PASS. 원래 Windows run40080544756 FAIL은 보존하고 새 SHA 산출물을 사용한다.
