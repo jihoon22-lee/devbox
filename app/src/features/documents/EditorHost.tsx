@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { useLayoutEffect, useRef } from "react";
 import type { DocKey } from "../../rpc/gen/rpc";
@@ -23,6 +23,8 @@ export interface EditorHostProps {
   /** Ctrl+S. Defaults to saving the document through the store. */
   onSave?: () => void;
   ariaLabel?: string;
+  /** Extra extensions for every document state (read when a document is first shown; use refs for live data). */
+  extensions?: Extension;
 }
 
 const EDITABLE: ReadonlySet<DocState> = new Set<DocState>(["Clean", "Dirty", "Saving", "Conflict", "Orphaned"]);
@@ -31,12 +33,20 @@ const EDITABLE: ReadonlySet<DocState> = new Set<DocState>(["Clean", "Dirty", "Sa
  * One CodeMirror view for every open document. Each document keeps its own `EditorState`
  * (and so its own undo history) and switching documents swaps it in with `setState` (AU-K1).
  */
-export function EditorHost({ docKey, language, readOnly = false, onSave, ariaLabel = "문서 편집기" }: EditorHostProps) {
+export function EditorHost({
+  docKey,
+  language,
+  readOnly = false,
+  onSave,
+  ariaLabel = "문서 편집기",
+  extensions,
+}: EditorHostProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const states = useRef(new Map<string, EditorState>());
   const active = useRef<string | undefined>(undefined);
   const save = useRef(onSave);
+  const extra = useRef(extensions);
   const initialLabel = useRef(ariaLabel);
   const id = useDocuments((s) => {
     const wanted = keyId(docKey);
@@ -49,7 +59,8 @@ export function EditorHost({ docKey, language, readOnly = false, onSave, ariaLab
 
   useLayoutEffect(() => {
     save.current = onSave;
-  }, [onSave]);
+    extra.current = extensions;
+  }, [onSave, extensions]);
 
   useLayoutEffect(() => {
     if (!host.current) return;
@@ -90,7 +101,7 @@ export function EditorHost({ docKey, language, readOnly = false, onSave, ariaLab
     }
     let next = states.current.get(doc.id);
     if (!next) {
-      next = createState(doc.id, doc.text, ariaLabel, save);
+      next = createState(doc.id, doc.text, ariaLabel, save, extra.current);
       states.current.set(doc.id, next);
     }
     active.current = doc.id;
@@ -129,12 +140,18 @@ export function EditorHost({ docKey, language, readOnly = false, onSave, ariaLab
   return <div ref={host} data-keyscope="editor" style={{ height: "100%" }} />;
 }
 
-function createState(id: string, text: string, label: string, save: { current?: () => void }): EditorState {
+function createState(
+  id: string,
+  text: string,
+  label: string,
+  save: { current?: () => void },
+  extensions: Extension = [],
+): EditorState {
   const dispatch = useDocuments.getState().dispatch;
   const handlers = {
     edit: (next: string) => dispatch(id, { type: "edit", text: next }),
     save: () => (save.current ? save.current() : dispatch(id, { type: "save" })),
   };
   // Starts locked; the editing effect unlocks it for editable states.
-  return EditorState.create({ doc: text, extensions: documentExtensions(handlers, true, label) });
+  return EditorState.create({ doc: text, extensions: [documentExtensions(handlers, true, label), extensions] });
 }

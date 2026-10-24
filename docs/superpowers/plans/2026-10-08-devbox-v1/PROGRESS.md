@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1 상세화 `da95e82b`, Task 2 `60be7a94`, Task 3 `083e3777`·`ed2672ad`, 공유 파일 예외 1 `d31870f6`(config.rs), Task 4 `4e2b530c`, Task 5 `c252f557`, Task 6 `0be54d1d`, Task 7 `e0926a1e`, Task 8 `1ece06c6`, **Task 9 Windows 활동 수집기 완료(로컬, 묶음 V 끝)**: 별도 검토 2회(REQUEST_CHANGES B1 → 반영 재검토 APPROVE). 실제 Windows 훅은 미실행(Task 12). 다음: Task 10(노트 섹션 화면) |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`, Rust target 기본 `~/.cache/targets/devbox`. Task 1–9 완료(Task 9 `93316caa`). **Task 10 노트 섹션 화면 완료(로컬)**: 별도 검토 REQUEST_CHANGES(3건) → Mermaid 추가 우회 수정 → 최종 APPROVE. 노트 편집·충돌/복구·분리 창·일일 활동 요약과 네트워크 없는 Mermaid 미리보기. 다음: Task 11 통합 검색·빠른 캡처·활동 보기·MCP |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 Task 9 커밋(묶음 V 끝). 좁은 시험(devbox-win 9·앱 87·devbox-activity 44·cli activity 2·vitest 121)·clippy Linux/MSVC·fmt·MSVC 좁은 compile·typecheck·완료 Biome CI PASS(메모리 cgroup 미적용, §2). 실제 Windows 훅·전체 check/E2E는 Task 12 |
+| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 Task 10 구현·독립 검토 완료. 노트 시험 46개 및 Mermaid 최종 영향 19개·typecheck·Biome418 PASS(실패 후 직접 영향 재검사 근거 §5). 실제 배포 청크·전체 check/E2E·Windows는 Task 12 미실행 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -115,7 +115,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | T | Task 4–6 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-22 | 2026-10-23 | Task 4: Step 0 config 예외 별도 커밋, 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.8h. Task 5: 구현 1회·검토 2회(차단1 → APPROVE)·수정 1회, 약1.5h. Task 6: 구현 1회·검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 약1.2h(세션 재시작·사용량 한도 대기 제외) |
 | S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-24 | Task 8: 구현 1회·검토 2회·수정 1회 약1.5h, Task 9: 구현 1회·검토 2회·수정 1회 약1.5h(사용량 한도 대기 제외). 실제 Windows 훅 미실행 |
-| S3 | W | Task 10–11 |  | 대기 | | | |
+| S3 | W | Task 10–11 | 2026-10-24 | 작업 중 | Task 10 구현·별도 검토 완료, Task 11 대기 | | |
 | S3 | 마무리 | Task 12 → S3 PR |  | 대기 | | | |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
@@ -358,6 +358,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 10 결과 (2026-10-24, 트랙 1 · 독립 검토 승인)
+
+- 이전 세션 구현을 보존하고 별도 검토의 재현 3건을 수정: 충돌 병합 초안을 문서 ID·충돌 revision으로 격리해 다른 노트 덮어쓰기 방지, Mermaid 렌더 전에 외부 리소스 가능 문법 차단(메타데이터·HTML/엔티티·Markdown 이미지·CSS·설정 지시문, HTML labels 끔), 분리 창이 연속 `documents.moved`에도 문서 이동을 따라가며 lease 재요청 0.
+- Task 12 수용 5의 [오늘 한 일 넣기]를 Task 10에 명시 배정. `notes.insert_summary{date:null}` 호출 중 중복 방지·진행 표시, 성공 시 반환된 일일 기록 열기, 실패 시 기존 노트 유지·오류 표시. 열린 문서 편집은 기존 rewrite 계약으로 처리.
+- 근거 `devbox-verification/s3-task10/`: `review-1/` 독립 재현, `red-review-fixes.txt`(병합·분리 창), `red-mermaid-fix.txt`, `red-summary.txt`, `red-popout-rapid-move.txt` RED. `green-review-fixes.txt` 45 PASS/1 FAIL(실제 Mermaid의 jsdom SVG 측정 API 부재), 측정 fixture 보완 뒤 `green-review-mermaid.txt` 2 PASS. 연속 rename 보강 뒤 `green-review-popout.txt` 5 PASS. 제품 시험 합계 46개, 실패 범위 재검사 완료. `green-review-typecheck-final.txt`·`green-review-biome.txt`(416파일) PASS. 메모리 cgroup 미적용은 §2 상태 유지.
+- 재검토 B2 추가 경로: sequence `properties.icon`이 SVG `<image href>`를 내보내는 것을 재현. Mermaid 11.17.2의 `new Image`(공통 flowchart image shape)·`drawImage`(sequence actor properties) 경로를 읽고, 감사한 flowchart/graph·sequenceDiagram만 허용하도록 축소했다. sequence properties/details/links와 기존 리소스 문법을 렌더 전 차단하고 반환 SVG도 inert template에서 요소·속성·CSS 함수 허용 목록으로 제한한다. `red-sequence-resource.txt`·`red-svg-filter.txt` RED, `green-resource-policy-final.txt` 실제 Mermaid 기본 flowchart/sequence와 공격 fixture 포함 19 PASS, `green-resource-typecheck.txt` PASS.
+- 제한: Mermaid의 다른 종류와 리소스 가능 문법은 무해한 사용도 안내 후 표시하지 않는다. 실제 배포 청크 분리·전체 검사/E2E·Windows 실기는 Task 12 미실행. 별도 최종 재검토 APPROVE(`review-1/final-delta-review.txt`), 완료 커밋에 포함.
 
 ### S3 Task 9 Windows 활동 수집기 결과 (2026-10-24, 트랙 1, 묶음 V 끝)
 

@@ -38,6 +38,7 @@
     "@xterm/xterm": "^6",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^0.544.0",
+    "mermaid": "^11.17.2",
     "pretendard": "^1.3.9",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

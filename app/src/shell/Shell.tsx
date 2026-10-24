@@ -8,6 +8,9 @@ import { AgentDataProvider } from "../features/agents/AgentData";
 import { PopoutAgentGrid } from "../features/agents/AgentGrid";
 import { AgentsPage, agentsSearch } from "../features/agents/AgentsPage";
 import { PopoutAgent } from "../features/agents/detail/AgentDetail";
+import { NotesCommands } from "../features/notes/NotesCommands";
+import { NotesRoute, notesSearch } from "../features/notes/NotesPage";
+import { PopoutNote } from "../features/notes/PopoutNote";
 import { AttentionBridge } from "../features/notifications/AttentionBridge";
 import { subscribeNativeNavigation } from "../features/notifications/native";
 import { ProblemsPanel } from "../features/problems/ProblemsPanel";
@@ -54,12 +57,14 @@ export function Shell() {
           "/terminal": { component: TerminalPage },
           "/runs": { component: RunsPage, validateSearch: runsSearch },
           "/agents": { component: AgentsPage, validateSearch: agentsSearch },
+          "/notes": { component: NotesRoute, validateSearch: notesSearch },
         },
         settings: SettingsPage,
         popouts: [
           { path: "/popout/terminal/$id", component: PopoutTerminal },
           { path: "/popout/agent/$id", component: PopoutAgent },
           { path: "/popout/agents-grid", component: PopoutAgentGrid },
+          { path: "/popout/note/$key", component: PopoutNote },
         ],
       }),
     [],
@@ -192,6 +197,7 @@ export function Shell() {
           }}
         />
         <TerminalCommands navigate={() => void router.navigate({ to: "/terminal" })} />
+        <NotesCommands navigate={() => void router.navigate({ to: "/notes" })} />
         <RunStopUndo />
         <ToastHost />
         <CommandPalette open={palette} onOpenChange={setPalette} />

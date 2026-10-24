@@ -829,6 +829,8 @@ useEffect(() => {
   - `NoteEditor`(Task 3 `EditorHost` + `@codemirror/lang-markdown` + `[[` 자동완성 `wikiComplete`(후보 = `notes.tree` 제목·파일 이름, 정렬: 제목/stem 접두 → 같은 폴더 → 부분 일치) + 이미지 붙여넣기 `pasteImage` → `notes.attach` → 커서에 `![이름](attachments/…)` 삽입)
   - [미리보기 분할] 토글(`SplitPane`), 오른쪽 백링크 패널(접기)
   - `notes.rewrite_request` 처리: 이 창이 lease를 가진 문서면 버퍼에 edits 적용 → 저장 → `notes.rewrite_reply`
+- [오늘 한 일 넣기](`InsertSummary`, Task 12 수용 5의 화면을 Task 10에 배정): `notes.insert_summary{date:null}` → 반환된 일일 기록 경로 열기. 요청 중 중복 클릭 차단·진행 표시, 실패 시 기존 노트 유지·오류 표시. 열린 문서의 수정은 기존 daemon rewrite 흐름을 사용하며 화면에서 본문을 덮어쓰지 않는다.
+- Mermaid는 strict·HTML labels 꺼짐과 렌더 전 외부 리소스 문법 차단을 함께 적용한다. 감사한 flowchart/graph·sequenceDiagram만 허용하고 다른 종류는 안내 후 표시하지 않는다. 이미지 메타데이터·sequence properties/details/links·HTML/엔티티·Markdown 이미지·CSS·설정 지시문도 차단한다. 반환 SVG는 inert template에서 요소·속성·CSS를 제한해 이미지/외부 참조/탐색을 제거한 뒤 넣는다. 실제 배포 청크 분리는 Task 12에서 검증한다.
 - 저장 상태(`saveLabel(doc)`): "저장됨 hh:mm"·"저장 중"·"연결 끊김 · 이 기기에 임시 저장"·"충돌 · 비교 필요"
 - `CompareView`: 왼쪽 내 버퍼, 오른쪽 디스크(`documents.read`). [내 것 유지][디스크 것][직접 병합]. `DiffView`(ui) 재사용.
 - `RecoveryView`: 저널과 디스크 비교. [복원][버림]

@@ -22,6 +22,8 @@ export interface DocumentsStore {
   find(key: DocKey): Doc | undefined;
   dispatch(id: string, event: DocEvent): void;
   edit(key: DocKey, text: string): void;
+  /** An edit that did not come from the editor (a daemon rewrite): the buffer and the editor both change. */
+  replace(key: DocKey, text: string): void;
   save(key: DocKey): void;
   close(key: DocKey, choice?: CloseChoice): void;
   resolve(key: DocKey, choice: "mine" | "disk" | "merged", text?: string): void;
@@ -162,6 +164,13 @@ export const useDocuments = create<DocumentsStore>((set, get) => {
     find: (key) => findIn(get().docs, key),
     dispatch,
     edit: (key, text) => byKey(key, { type: "edit", text }),
+    replace(key, text) {
+      const doc = findIn(get().docs, key);
+      if (!doc) return;
+      dispatch(doc.id, { type: "edit", text });
+      if (get().docs[doc.id]?.text !== text) return;
+      for (const apply of editors) apply(doc.id, text);
+    },
     save: (key) => byKey(key, { type: "save" }),
     close: (key, choice) => byKey(key, { type: "close", choice }),
     resolve: (key, choice, text) => byKey(key, { type: "resolve", choice, text }),
