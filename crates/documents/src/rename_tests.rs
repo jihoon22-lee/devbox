@@ -245,3 +245,136 @@ fn moves_files_and_directories_but_preserves_existing_destinations() -> T {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn folder_move_preserves_acknowledged_child_journal_after_copy() -> T {
+    let (reached, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+    let hook = gate(reached.clone(), release.clone());
+    let mut fx = Fx::with(move |c| c.hooks.after_rename_publish = Some(hook.clone()));
+    fx.write("folder/a.md", "disk");
+    let c = claimed(&fx.svc, "folder/a.md", "w1").await;
+    let journal = |seq, text: &str| WriteJournal {
+        lease_id: c.lease_id.clone().expect("lease"),
+        seq,
+        base_rev: c.rev.clone(),
+        text: text.into(),
+    };
+    fx.svc
+        .journal(journal(1, "draft one"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    let svc = fx.svc.clone();
+    let moving = tokio::spawn(async move { svc.rename(rename(None, "folder", "moved")).await });
+    tokio::time::timeout(Duration::from_secs(5), reached.notified()).await?;
+    let svc = fx.svc.clone();
+    let newer = journal(2, "acknowledged draft two");
+    let writing = tokio::spawn(async move { svc.journal(newer).await });
+    // The original bug ACKs at the old key, then deletes seq2 during move cleanup.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    release.notify_one();
+    moving.await?.map_err(|e| format!("{e:?}"))?;
+    writing.await?.map_err(|e| format!("{e:?}"))?;
+    fx.restart();
+    let recovered = claimed(&fx.svc, "moved/a.md", "w2")
+        .await
+        .journal
+        .expect("draft");
+    assert_eq!(
+        recovered.seq, 2,
+        "an acknowledged child draft must survive the folder move"
+    );
+    assert_eq!(recovered.text.as_deref(), Some("acknowledged draft two"));
+    assert!(
+        claimed(&fx.svc, "folder/a.md", "w2")
+            .await
+            .journal
+            .is_none()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn folder_move_excludes_new_child_claims_until_rekey_finishes() -> T {
+    let (reached, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+    let hook = gate(reached.clone(), release.clone());
+    let fx = Fx::with(move |c| c.hooks.after_rename_publish = Some(hook.clone()));
+    fx.write("folder/new.md", "unclaimed child");
+    let svc = fx.svc.clone();
+    let moving = tokio::spawn(async move { svc.rename(rename(None, "folder", "moved")).await });
+    tokio::time::timeout(Duration::from_secs(5), reached.notified()).await?;
+    let svc = fx.svc.clone();
+    let claiming = tokio::spawn(async move { claimed(&svc, "moved/new.md", "w2").await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let blocked = !claiming.is_finished();
+    release.notify_one();
+    moving.await?.map_err(|e| format!("{e:?}"))?;
+    let claim = claiming.await?;
+    assert!(
+        blocked,
+        "a previously unleased child also crosses the namespace barrier"
+    );
+    assert_eq!(claim.key, key("moved/new.md"));
+    assert_eq!(claim.text.as_deref(), Some("unclaimed child"));
+    fx.svc
+        .save(save(&claim, claim.rev.clone(), "new owner edit"))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!(fx.read("moved/new.md"), "new owner edit");
+    Ok(())
+}
+
+#[tokio::test]
+async fn folder_move_waits_for_an_inflight_child_save() -> T {
+    let (reached, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+    let hook = gate(reached.clone(), release.clone());
+    let fx = Fx::with(move |c| c.hooks.before_save_watch = Some(hook.clone()));
+    fx.write("folder/a.md", "disk");
+    let c = claimed(&fx.svc, "folder/a.md", "w1").await;
+    let svc = fx.svc.clone();
+    let writing =
+        tokio::spawn(async move { svc.save(save(&c, c.rev.clone(), "saved child")).await });
+    tokio::time::timeout(Duration::from_secs(5), reached.notified()).await?;
+    let svc = fx.svc.clone();
+    let moving = tokio::spawn(async move { svc.rename(rename(None, "folder", "moved")).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let blocked = !moving.is_finished();
+    release.notify_one();
+    writing.await?.map_err(|e| format!("{e:?}"))?;
+    moving.await?.map_err(|e| format!("{e:?}"))?;
+    assert!(
+        blocked,
+        "rename cannot rekey while a child save owns the old namespace"
+    );
+    assert_eq!(fx.read("moved/a.md"), "saved child");
+    Ok(())
+}
+
+#[tokio::test]
+async fn ordinary_documents_keep_independent_operation_concurrency() -> T {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let first = Arc::new(AtomicBool::new(true));
+    let (reached, release) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
+    let (ready, go) = (reached.clone(), release.clone());
+    let fx = Fx::with(move |c| {
+        let (first, ready, go) = (first.clone(), ready.clone(), go.clone());
+        c.hooks.before_lease_insert = Some(Arc::new(move || {
+            let (first, ready, go) = (first.clone(), ready.clone(), go.clone());
+            Box::pin(async move {
+                if first.swap(false, Ordering::SeqCst) {
+                    ready.notify_one();
+                    go.notified().await;
+                }
+            })
+        }));
+    });
+    fx.write("a.md", "a");
+    fx.write("b.md", "b");
+    let svc = fx.svc.clone();
+    let waiting = tokio::spawn(async move { claimed(&svc, "a.md", "w1").await });
+    tokio::time::timeout(Duration::from_secs(5), reached.notified()).await?;
+    let other = tokio::time::timeout(Duration::from_secs(1), claimed(&fx.svc, "b.md", "w2")).await;
+    release.notify_one();
+    waiting.await?;
+    assert_eq!(other?.text.as_deref(), Some("b"));
+    Ok(())
+}

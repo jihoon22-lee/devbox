@@ -67,7 +67,7 @@ async fn internal_temp_files_are_invisible_and_swept_on_start() -> T {
     std::fs::write(fx.project.join("src/p.rs"), "fn main() {}\n")?;
     fx.svc.start().await?;
     let mut changed = fx.hub.subscribe("documents.changed");
-    let c = claimed(&fx.svc, "a.md", "w1").await;
+    let c = claimed(&fx.svc, "new.md", "w1").await;
     assert!(fx.svc.save(save(&c, c.rev.clone(), "v2\n")).await.is_err());
     let left = temp_names(&fx.vault);
     assert_eq!(left.len(), 1, "an interrupted save leaves its temp file");
@@ -105,12 +105,20 @@ async fn internal_temp_files_are_invisible_and_swept_on_start() -> T {
     }
     std::fs::create_dir_all(fx.vault.join("sub"))?;
     for (path, by) in [
-        (fx.vault.join("sub/.devbox-tmp-x"), hours),
+        (
+            fx.vault
+                .join("sub/.devbox-tmp-write-00000000000000000000000000000000"),
+            hours,
+        ),
         (
             fx.vault.join(".devbox-tmp-recent"),
             Duration::from_secs(600),
         ),
-        (fx.project.join("src/.devbox-tmp-z"), hours),
+        (
+            fx.project
+                .join("src/.devbox-tmp-write-11111111111111111111111111111111"),
+            hours,
+        ),
         (fx.project.join("other/.devbox-tmp-w"), hours),
     ] {
         std::fs::write(&path, "stale")?;

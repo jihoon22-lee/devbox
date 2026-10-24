@@ -22,6 +22,7 @@ impl DocumentsService {
     /// `Ok(None)` = absent; `too_large` when it exceeds `limit` bytes. The returned
     /// key is the resolved one, so callers can check which root it landed in.
     pub async fn read_bytes(&self, key: &DocKey, limit: u64) -> R<Option<(DocKey, Vec<u8>)>> {
+        let _namespace = self.s.namespace.read().await;
         let Located::At(r) = self.locate(key.clone(), false, false).await? else {
             return Ok(None);
         };
@@ -39,6 +40,7 @@ impl DocumentsService {
 
     /// Creates a new file with exactly `bytes` (`RENAME_NOREPLACE`); never replaces.
     pub async fn create_bytes(&self, key: &DocKey, bytes: &[u8]) -> R<DiskRev> {
+        let _namespace = self.s.namespace.read().await;
         if bytes.len() as u64 > CODE_LIMIT {
             return Err(DocumentsError::TooLarge { limit: CODE_LIMIT }.into());
         }
@@ -48,6 +50,51 @@ impl DocumentsService {
         let _guard = self.s.leases.lock(&r.key).await;
         let (s, bytes) = (self.s.clone(), bytes.to_vec());
         blocking(move || write_checked(&s, &r, &bytes, Expect::Absent, None, false)).await
+    }
+
+    /// Lease-less CAS write for other domains (link rewriting, attachments,
+    /// capture, daily notes). Line endings and BOM of an existing file are kept.
+    pub async fn write_disk(
+        &self,
+        key: &DocKey,
+        base: Option<DiskRev>,
+        expect: Expect,
+        text: &str,
+    ) -> R<DiskRev> {
+        self.write_disk_within(key, base, expect, text, CODE_LIMIT)
+            .await
+    }
+    /// [`Self::write_disk`] refusing (`too_large`) when the bytes written, after
+    /// the file's own line endings and BOM, would exceed `limit`.
+    pub async fn write_disk_within(
+        &self,
+        key: &DocKey,
+        base: Option<DiskRev>,
+        expect: Expect,
+        text: &str,
+        limit: u64,
+    ) -> R<DiskRev> {
+        let _namespace = self.s.namespace.read().await;
+        self.check_text(text, DocKind::Code)?;
+        let Located::At(r) = self.locate(key.clone(), true, false).await? else {
+            return Err(DocumentsError::NotFound.into());
+        };
+        let _guard = self.s.leases.lock(&r.key).await;
+        let (s, text) = (self.s.clone(), text.to_owned());
+        blocking(move || {
+            let current = sys::read_at(&r.dir, &r.name, CODE_LIMIT).map_err(sys_fail)?;
+            let (eol, bom) = current
+                .as_ref()
+                .and_then(|f| f.bytes.as_ref())
+                .and_then(sys::decode_text)
+                .map_or((Eol::Lf, false), |(_, eol, bom)| (eol, bom));
+            let bytes = sys::encode_text(&text, eol, bom);
+            if bytes.len() as u64 > limit {
+                return Err(DocumentsError::TooLarge { limit }.into());
+            }
+            write_checked(&s, &r, &bytes, expect, base, false)
+        })
+        .await
     }
 
     /// Moves a vault entry to `.trash/…`. Leases and journals stay on the old key:
@@ -69,6 +116,7 @@ impl DocumentsService {
     /// Lease holder and unsaved journal of `key` (other domains decide whether a
     /// lease-less write would land behind an editor's back).
     pub async fn edit_state(&self, key: &DocKey) -> R<EditState> {
+        let _namespace = self.s.namespace.read().await;
         let key = match self.locate(key.clone(), false, false).await? {
             Located::At(r) => r.key,
             Located::Missing(k) => k,
@@ -88,6 +136,7 @@ impl DocumentsService {
         self.trash_move(from, to, true).await
     }
     async fn trash_move(&self, from: &DocKey, to: &DocKey, file_only: bool) -> R<DocKey> {
+        let _namespace = self.s.namespace.write().await;
         if from.root != to.root {
             return Err(DocumentsError::InvalidInput.into());
         }

@@ -90,6 +90,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Keep note buffers alive even before the renderer's listener is ready.
+            // Its explicit destroy happens only after the latest save has completed.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label().starts_with("popout-note-")
+            {
+                api.prevent_close();
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == platform::capture::LABEL
                 && window.hide().is_ok()

@@ -153,6 +153,8 @@ pub struct Probe<'a> {
     pub stop_after_tmp: bool,
     /// Runs right after the first exchange with `(folder, temp name)`.
     pub after_exchange: Option<AfterExchange<'a>>,
+    /// Runs after a conflict undo, before checking/deleting/keeping its temp.
+    pub after_undo: Option<AfterExchange<'a>>,
 }
 
 /// Publishes `bytes` at `name`. Without `base` the name must be absent
@@ -181,8 +183,14 @@ pub fn atomic_replace(
             Err(e) => return Err(SysError::Io(e)),
         },
     };
-    let tmp = format!(".devbox-tmp-{}", uuid::Uuid::new_v4().simple());
-    // The ledger entry is durable before the temp file exists (startup sweep).
+    let prefix = if base.is_some() {
+        crate::ledger::EXCHANGE_TMP_PREFIX
+    } else {
+        crate::ledger::WRITE_TMP_PREFIX
+    };
+    let tmp = format!("{prefix}{}", uuid::Uuid::new_v4().simple());
+    // Publication intent is durable in both the ledger and filename before an
+    // exchange can ever put external bytes here. Both sweeps preserve that state.
     let entry = ledger.record(&dir_path.join(&tmp))?;
     let rev = match write_new(dir, &tmp, bytes, mode) {
         Ok(rev) => rev,
@@ -192,6 +200,7 @@ pub fn atomic_replace(
             return Err(e);
         }
     };
+    fsync(dir)?;
     if probe.stop_after_tmp {
         return Err(SysError::Interrupted);
     }
@@ -221,14 +230,17 @@ pub fn atomic_replace(
         } else {
             // An external write raced the check (or could not be verified): undo.
             let undone = renameat_with(dir, tmp.as_str(), dir, name, RenameFlags::EXCHANGE).is_ok();
+            if let Some(hook) = probe.after_undo {
+                hook(dir_path, &tmp);
+            }
             let kept = if undone && verified(&rev.hash) {
                 unlinkat(dir, tmp.as_str(), AtFlags::empty()).map_err(SysError::from)
             } else {
                 keep_for_recovery(dir, name, &tmp)
             };
             let _ = fsync(dir);
-            ledger.remove(entry)?;
             kept?;
+            ledger.remove(entry)?;
             let now = read_at(dir, name, 0).ok().flatten().map(|f| f.rev);
             return Err(SysError::Conflict(now));
         }

@@ -1,5 +1,5 @@
 //! `documents.rename`: journal copy → `RENAME_NOREPLACE` → lease/watch rekey →
-//! old journal removal → `documents.moved`, all under both document locks.
+//! old journal removal → `documents.moved`, under the exclusive namespace barrier.
 use crate::R;
 use crate::journal::JournalFile;
 use crate::model::*;
@@ -38,6 +38,7 @@ impl DocumentsService {
         to: DocKey,
         file_only: bool,
     ) -> R<DocKey> {
+        let _namespace = self.s.namespace.write().await;
         let nested = to.path == from.path || to.path.starts_with(&format!("{}/", from.path));
         if from.root != to.root || nested {
             return Err(DocumentsError::InvalidInput.into());
@@ -133,6 +134,10 @@ impl DocumentsService {
             Ok(journals.into_iter().map(|j| j.key).collect::<Vec<_>>())
         })
         .await?;
+        #[cfg(test)]
+        if let Some(hook) = &self.s.hooks.after_rename_publish {
+            hook().await;
+        }
         // ③ Same lease ids and owners, new keys; queued journal writes follow them.
         for (old, new) in self.s.leases.rekey(&from, &to) {
             let rest = new.path[to.path.len()..].trim_start_matches('/');

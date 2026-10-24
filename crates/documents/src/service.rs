@@ -5,14 +5,14 @@ use crate::model::*;
 use crate::scope::{Resolved, ScopeError, WriteScope, in_trash, is_internal, validate};
 use crate::sys::{self, DiskFile, SysError, classify, encode_text, escaped_len};
 use crate::watch::Watch;
-use crate::{CODE_LIMIT, MAX_WIRE_TEXT, R};
+use crate::{MAX_WIRE_TEXT, R};
 use devbox_core::Hub;
 use devbox_protocol::router::BoxFuture;
 use devbox_protocol::{Done, Fail, Internal};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::OwnedMutexGuard;
+use tokio::sync::{OwnedMutexGuard, RwLock};
 use tokio_util::sync::CancellationToken;
 
 pub use crate::lease::Clock;
@@ -28,6 +28,8 @@ pub struct Hooks {
     pub before_lease_insert: Option<Hook>,
     #[cfg(test)]
     pub(crate) before_rename_commit: Option<Hook>,
+    #[cfg(test)]
+    pub(crate) after_rename_publish: Option<Hook>,
     #[cfg(test)]
     pub(crate) after_tmp_written: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     /// Runs after a save wrote the file, before it registers the file watch.
@@ -61,6 +63,9 @@ impl DocumentsConfig {
 }
 
 pub(crate) struct Shared {
+    /// Ordinary operations share this barrier; namespace moves exclude all of
+    /// them before resolution, including claims for previously unopened children.
+    pub namespace: RwLock<()>,
     pub roots: Roots,
     pub hub: Arc<Hub>,
     pub max_wire: usize,
@@ -153,6 +158,7 @@ impl DocumentsService {
         Self {
             root_constraints: Vec::new(),
             s: Arc::new(Shared {
+                namespace: RwLock::new(()),
                 roots: c.roots,
                 hub: c.hub,
                 max_wire: c.max_wire_text,
@@ -278,6 +284,7 @@ impl DocumentsService {
         window: String,
         take: bool,
     ) -> R<Option<Claimed>> {
+        let _namespace = self.s.namespace.read().await;
         if window.is_empty() || window.len() > 128 {
             return Err(DocumentsError::InvalidInput.into());
         }
@@ -347,6 +354,7 @@ impl DocumentsService {
     }
 
     pub async fn renew(&self, p: RenewLeases) -> R<Renewed> {
+        let _namespace = self.s.namespace.read().await;
         if p.lease_ids.len() > 1024 {
             return Err(DocumentsError::InvalidInput.into());
         }
@@ -355,6 +363,7 @@ impl DocumentsService {
         })
     }
     pub async fn release(&self, p: LeaseRef) -> R<Done> {
+        let _namespace = self.s.namespace.read().await;
         self.s.leases.release(&p.lease_id);
         Ok(self.done())
     }
@@ -374,7 +383,7 @@ impl DocumentsService {
             }
         }
     }
-    fn check_text(&self, text: &str, kind: DocKind) -> R<()> {
+    pub(crate) fn check_text(&self, text: &str, kind: DocKind) -> R<()> {
         if text.contains('\0') {
             return Err(DocumentsError::InvalidInput.into());
         }
@@ -394,6 +403,7 @@ impl DocumentsService {
     }
 
     pub async fn save(&self, p: SaveDocument) -> R<Saved> {
+        let _namespace = self.s.namespace.read().await;
         let (lease, _guard) = self.lock_lease(&p.lease_id).await?;
         self.check_text(&p.text, lease.kind)?;
         let bytes = encode_text(&p.text, lease.eol, lease.bom);
@@ -436,6 +446,7 @@ impl DocumentsService {
     }
 
     pub async fn journal(&self, p: WriteJournal) -> R<Done> {
+        let _namespace = self.s.namespace.read().await;
         let (lease, _guard) = self.lock_lease(&p.lease_id).await?;
         self.check_text(&p.text, lease.kind)?;
         let s = self.s.clone();
@@ -456,6 +467,7 @@ impl DocumentsService {
         Ok(self.done())
     }
     pub async fn journal_drop(&self, p: DropJournal) -> R<Done> {
+        let _namespace = self.s.namespace.read().await;
         validate(&p.key).map_err(scope_fail)?;
         let _guard = self.s.leases.lock(&p.key).await;
         // Only the lease holder (or anyone, once nobody holds it) may drop the journal.
@@ -477,6 +489,7 @@ impl DocumentsService {
         Ok(self.done())
     }
     pub async fn journal_read(&self, p: LeaseRef) -> R<JournalText> {
+        let _namespace = self.s.namespace.read().await;
         let (lease, _guard) = self.lock_lease(&p.lease_id).await?;
         let s = self.s.clone();
         let journal = blocking(move || {
@@ -501,6 +514,7 @@ impl DocumentsService {
 
     /// Current disk content without a lease (comparison views, other crates).
     pub async fn read_disk(&self, key: &DocKey, kind: DocKind) -> R<DiskDocument> {
+        let _namespace = self.s.namespace.read().await;
         let located = self.locate(key.clone(), false, false).await?;
         let o = self.opened(located, kind, false).await?;
         let present = o.file.is_some();
@@ -510,49 +524,6 @@ impl DocumentsService {
             text: o.content.text.filter(|_| present),
             read_only: o.content.read_only.map(|reason| ReadOnly { reason }),
         })
-    }
-    /// Lease-less CAS write for other domains (link rewriting, attachments,
-    /// capture, daily notes). Line endings and BOM of an existing file are kept.
-    pub async fn write_disk(
-        &self,
-        key: &DocKey,
-        base: Option<DiskRev>,
-        expect: Expect,
-        text: &str,
-    ) -> R<DiskRev> {
-        self.write_disk_within(key, base, expect, text, CODE_LIMIT)
-            .await
-    }
-    /// [`Self::write_disk`] refusing (`too_large`) when the bytes written, after
-    /// the file's own line endings and BOM, would exceed `limit`.
-    pub async fn write_disk_within(
-        &self,
-        key: &DocKey,
-        base: Option<DiskRev>,
-        expect: Expect,
-        text: &str,
-        limit: u64,
-    ) -> R<DiskRev> {
-        self.check_text(text, DocKind::Code)?;
-        let Located::At(r) = self.locate(key.clone(), true, false).await? else {
-            return Err(DocumentsError::NotFound.into());
-        };
-        let _guard = self.s.leases.lock(&r.key).await;
-        let (s, text) = (self.s.clone(), text.to_owned());
-        blocking(move || {
-            let current = sys::read_at(&r.dir, &r.name, CODE_LIMIT).map_err(sys_fail)?;
-            let (eol, bom) = current
-                .as_ref()
-                .and_then(|f| f.bytes.as_ref())
-                .and_then(sys::decode_text)
-                .map_or((Eol::Lf, false), |(_, eol, bom)| (eol, bom));
-            let bytes = encode_text(&text, eol, bom);
-            if bytes.len() as u64 > limit {
-                return Err(DocumentsError::TooLarge { limit }.into());
-            }
-            write_checked(&s, &r, &bytes, expect, base, false)
-        })
-        .await
     }
 }
 /// CAS check and publish under the caller's document lock.
@@ -584,6 +555,7 @@ pub(crate) fn write_checked(
         &sys::Probe {
             stop_after_tmp: stop,
             after_exchange: None,
+            after_undo: None,
         },
     )
     .map_err(sys_fail)

@@ -54,7 +54,8 @@ export function EditorHost({
   });
   const state = useDocuments((s) => (id ? s.docs[id]?.state : undefined));
   const loaded = state !== undefined && state !== "Loading";
-  const locked = readOnly || !state || !EDITABLE.has(state);
+  const windowClosing = useDocuments((s) => s.windowClosing);
+  const locked = readOnly || windowClosing || !state || !EDITABLE.has(state);
   const kind = useDocuments((s) => (id ? s.docs[id]?.policy.kind : undefined)) ?? "note";
 
   useLayoutEffect(() => {

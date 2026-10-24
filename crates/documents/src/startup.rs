@@ -15,6 +15,7 @@ impl DocumentsService {
         self.s.watch.start();
         let s = self.s.clone();
         tokio::spawn(async move {
+            let namespace = s.namespace.write().await;
             let roots = (s.roots)().await;
             let sweep = s.clone();
             let scope = tokio::task::spawn_blocking(move || {
@@ -28,6 +29,7 @@ impl DocumentsService {
                 scope
             })
             .await;
+            drop(namespace);
             if let Ok(scope) = scope
                 && let Some(vault) = scope.root(VAULT)
             {
@@ -39,10 +41,13 @@ impl DocumentsService {
                 loop {
                     tokio::time::sleep(Duration::from_secs(3600)).await;
                     let Some(s) = weak.upgrade() else { break };
+                    let _namespace = s.namespace.write().await;
                     let roots = (s.roots)().await;
+                    let sweep = s.clone();
                     let _ = tokio::task::spawn_blocking(move || {
-                        s.ledger
-                            .sweep(&WriteScope::new(roots).deny(&s.private), STALE)
+                        sweep
+                            .ledger
+                            .sweep(&WriteScope::new(roots).deny(&sweep.private), STALE)
                     })
                     .await;
                 }

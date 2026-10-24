@@ -14,6 +14,10 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 pub const TMP_PREFIX: &str = ".devbox-tmp-";
+/// Publication intent is part of the durable pathname, so a folder-only sweep
+/// can distinguish never-exchanged staging bytes from possibly displaced data.
+pub const WRITE_TMP_PREFIX: &str = ".devbox-tmp-write-";
+pub const EXCHANGE_TMP_PREFIX: &str = ".devbox-tmp-exchange-";
 pub const STALE: Duration = Duration::from_secs(3600);
 const FORGET_UNREACHABLE: Duration = Duration::from_secs(7 * 24 * 3600);
 const FORGET_DIR: Duration = Duration::from_secs(30 * 24 * 3600);
@@ -75,7 +79,8 @@ impl TmpLedger {
             _ => Ok(()),
         }
     }
-    /// Removes recorded temp files (and their records) older than `older`.
+    /// Removes only known non-exchange staging files older than `older`.
+    /// Exchange-capable and legacy records remain recovery evidence indefinitely.
     pub fn sweep(&self, scope: &WriteScope, older: Duration) -> usize {
         let mut removed = 0;
         for (entry, entry_age) in entries(&self.dir) {
@@ -88,6 +93,7 @@ impl TmpLedger {
             let tmp = PathBuf::from(std::ffi::OsString::from_vec(bytes));
             match remove_tmp(scope, &tmp, None) {
                 Reach::Removed => removed += 1,
+                Reach::Kept => continue,
                 Reach::Unreachable if entry_age < FORGET_UNREACHABLE => continue,
                 _ => {}
             }
@@ -100,16 +106,24 @@ impl TmpLedger {
 #[derive(Debug, PartialEq, Eq)]
 enum Reach {
     Removed,
+    Missing,
     Kept,
     Unreachable,
 }
-/// Unlinks one `.devbox-tmp-*` regular file inside a registered root.
+/// Unlinks one known never-exchanged staging file inside a registered root.
+/// Everything else may be the only copy of displaced external edits: age is
+/// never proof that those bytes are disposable, even without a ledger record.
 fn remove_tmp(scope: &WriteScope, path: &Path, min_age: Option<Duration>) -> Reach {
     let (Some(parent), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
     else {
         return Reach::Kept;
     };
-    if !name.starts_with(TMP_PREFIX) {
+    if !name.strip_prefix(WRITE_TMP_PREFIX).is_some_and(|id| {
+        id.len() == 32
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }) {
         return Reach::Kept;
     }
     let canonical = std::fs::canonicalize(parent).ok();
@@ -134,11 +148,13 @@ fn remove_tmp(scope: &WriteScope, path: &Path, min_age: Option<Duration>) -> Rea
                 Err(_) => Reach::Kept,
             }
         }
+        Err(rustix::io::Errno::NOENT) => Reach::Missing,
         _ => Reach::Kept,
     }
 }
 
-/// Sweeps unrecorded stale temp files in `dir` (recursively for the vault).
+/// Sweeps known non-exchange staging files in `dir` (recursively for the vault).
+/// Ambiguous legacy/exchange names are preserved, just like the ledger sweep.
 pub fn sweep_dir(scope: &WriteScope, dir: &Path, recursive: bool) -> usize {
     let mut removed = 0;
     let mut budget = WALK_ENTRIES;

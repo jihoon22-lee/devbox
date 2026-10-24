@@ -128,6 +128,7 @@ fn conflict_undo_keeps_a_newer_external_save_under_a_recovery_name() -> T {
     let probe = Probe {
         stop_after_tmp: false,
         after_exchange: Some(&hook),
+        after_undo: None,
     };
     let result = atomic_replace(
         &dir,
@@ -159,6 +160,7 @@ fn failed_undo_moves_the_displaced_bytes_to_a_recovery_name() -> T {
     let probe = Probe {
         stop_after_tmp: false,
         after_exchange: Some(&hook),
+        after_undo: None,
     };
     let result = atomic_replace(
         &dir,
@@ -190,6 +192,7 @@ fn unverifiable_displaced_bytes_are_restored_not_deleted() -> T {
     let probe = Probe {
         stop_after_tmp: false,
         after_exchange: Some(&hook),
+        after_undo: None,
     };
     let result = atomic_replace(
         &dir,
@@ -257,4 +260,188 @@ fn escaped_length_matches_serde_json() {
         let json = serde_json::to_string(text).expect("encode");
         assert_eq!(escaped_len(text), json.len() - 2, "{text:?}");
     }
+}
+
+#[test]
+fn exchange_crash_sweeps_preserve_the_external_edit() -> T {
+    for ledger_first in [true, false] {
+        let (root, ledger, dir, base) = raced()?;
+        let hook = |_: &Path, _: &str| panic!("crash after exchange before verification");
+        let probe = Probe {
+            stop_after_tmp: false,
+            after_exchange: Some(&hook),
+            after_undo: None,
+        };
+        let crash = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            atomic_replace(
+                &dir,
+                root.path(),
+                "a.md",
+                b"ours",
+                Some(&base),
+                &ledger,
+                &probe,
+            )
+        }));
+        assert!(crash.is_err());
+        let tmp = names(root.path(), ".devbox-tmp-");
+        assert_eq!(tmp.len(), 1);
+        assert_eq!(fs::read_to_string(root.path().join(&tmp[0]))?, "ext1");
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3601);
+        for file in files(&root.path().join("ledger"))
+            .into_iter()
+            .chain([root.path().join(&tmp[0])])
+        {
+            fs::File::options()
+                .write(true)
+                .open(file)?
+                .set_modified(old)?;
+        }
+        let scope = crate::scope::WriteScope::new(vec![crate::scope::Root {
+            id: "vault".into(),
+            path: root.path().into(),
+        }]);
+        if ledger_first {
+            ledger.sweep(&scope, crate::ledger::STALE);
+        }
+        crate::ledger::sweep_dir(&scope, root.path(), true);
+        ledger.sweep(&scope, crate::ledger::STALE);
+        assert!(
+            files(root.path())
+                .into_iter()
+                .any(|p| fs::read(p).ok().as_deref() == Some(b"ext1")),
+            "neither startup ledger nor watched-folder sweep may discard the only external bytes"
+        );
+    }
+    Ok(())
+}
+
+fn sweep_aged_temps(root: &Path, ledger: &TmpLedger) -> T {
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600);
+    let temps = names(root, ".devbox-tmp-")
+        .into_iter()
+        .map(|name| root.join(name));
+    for file in files(&root.join("ledger")).into_iter().chain(temps) {
+        fs::File::options()
+            .write(true)
+            .open(file)?
+            .set_modified(old)?;
+    }
+    let scope = crate::scope::WriteScope::new(vec![crate::scope::Root {
+        id: "vault".into(),
+        path: root.into(),
+    }]);
+    ledger.sweep(&scope, crate::ledger::STALE);
+    crate::ledger::sweep_dir(&scope, root, true);
+    ledger.sweep(&scope, crate::ledger::STALE);
+    Ok(())
+}
+
+#[test]
+fn exchange_intent_is_durable_before_publication_and_legacy_temps_are_ambiguous() -> T {
+    let (root, ledger, dir, base) = raced()?;
+    let probe = Probe {
+        stop_after_tmp: true,
+        ..Probe::default()
+    };
+    assert!(matches!(
+        atomic_replace(
+            &dir,
+            root.path(),
+            "a.md",
+            b"ours",
+            Some(&base),
+            &ledger,
+            &probe
+        ),
+        Err(SysError::Interrupted)
+    ));
+    let temp = names(root.path(), crate::ledger::EXCHANGE_TMP_PREFIX);
+    assert_eq!(temp.len(), 1, "intent exists before the first exchange");
+    let legacy = root.path().join(".devbox-tmp-legacy");
+    fs::write(&legacy, "ambiguous old displaced bytes")?;
+    // Old ledger format/name lacks publication intent; it cannot authorize deletion.
+    ledger.record(&legacy)?;
+    sweep_aged_temps(root.path(), &ledger)?;
+    assert_eq!(fs::read_to_string(root.path().join("a.md"))?, "ext1");
+    assert_eq!(fs::read_to_string(root.path().join(&temp[0]))?, "ours");
+    assert_eq!(fs::read_to_string(legacy)?, "ambiguous old displaced bytes");
+    assert_eq!(
+        files(&root.path().join("ledger")).len(),
+        2,
+        "ambiguous recovery records remain"
+    );
+    Ok(())
+}
+
+#[test]
+fn crash_after_undo_preserves_a_second_external_edit_through_both_sweeps() -> T {
+    let (root, ledger, dir, base) = raced()?;
+    let edit = |folder: &Path, _: &str| {
+        fs::write(folder.join("a.md"), "ext2").expect("second external edit")
+    };
+    let crash = |_: &Path, _: &str| panic!("crash after undo before verification");
+    let probe = Probe {
+        after_exchange: Some(&edit),
+        after_undo: Some(&crash),
+        ..Probe::default()
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        atomic_replace(
+            &dir,
+            root.path(),
+            "a.md",
+            b"ours",
+            Some(&base),
+            &ledger,
+            &probe,
+        )
+    }));
+    assert!(result.is_err());
+    sweep_aged_temps(root.path(), &ledger)?;
+    assert_eq!(fs::read_to_string(root.path().join("a.md"))?, "ext1");
+    let temp = names(root.path(), crate::ledger::EXCHANGE_TMP_PREFIX);
+    assert_eq!(temp.len(), 1);
+    assert_eq!(fs::read_to_string(root.path().join(&temp[0]))?, "ext2");
+    assert_eq!(files(&root.path().join("ledger")).len(), 1);
+    Ok(())
+}
+
+#[test]
+fn failed_recovery_rename_retains_displaced_bytes_and_ledger() -> T {
+    let (root, ledger, dir, base) = raced()?;
+    if fs::metadata(root.path())?.uid() == 0 {
+        return Ok(());
+    }
+    let edit = |folder: &Path, _: &str| {
+        fs::write(folder.join("a.md"), "ext2").expect("second external edit")
+    };
+    let deny = |folder: &Path, _: &str| {
+        fs::set_permissions(folder, fs::Permissions::from_mode(0o500))
+            .expect("deny fixture directory writes")
+    };
+    let probe = Probe {
+        after_exchange: Some(&edit),
+        after_undo: Some(&deny),
+        ..Probe::default()
+    };
+    let result = atomic_replace(
+        &dir,
+        root.path(),
+        "a.md",
+        b"ours",
+        Some(&base),
+        &ledger,
+        &probe,
+    );
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700))?;
+    assert!(result.is_err(), "recovery rename really failed");
+    assert!(names(root.path(), ".devbox-conflict-").is_empty());
+    sweep_aged_temps(root.path(), &ledger)?;
+    assert_eq!(fs::read_to_string(root.path().join("a.md"))?, "ext1");
+    let temp = names(root.path(), crate::ledger::EXCHANGE_TMP_PREFIX);
+    assert_eq!(temp.len(), 1);
+    assert_eq!(fs::read_to_string(root.path().join(&temp[0]))?, "ext2");
+    assert_eq!(files(&root.path().join("ledger")).len(), 1);
+    Ok(())
 }

@@ -15,10 +15,10 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. Task 1–11 완료(로컬), Task 10 `f469c2b0`·Task 11 `468e4925`. **Task 12 제품 검증·브랜치 검토 완료, 설치 수용·PR 대기**: 최초 전체 check FAIL와 실패별 수정·직접 영향 PASS를 모두 보존. vault 경계·동의 철회 구간 보정 재검토 APPROVE. 다음: 완료 SHA Windows CI 산출물 생성, 외부 수용 helper 완성·독립 검토 후 accept 설치 수용. S5 미머지, main 통합 불필요 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. Task 1–11 완료, **Task 12 · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) 자동 리뷰 1회차 수정·독립 검토 완료**. `9ac34522` 코드3·보안0 완료, 별도 재현에서 세 건 모두 데이터 손실 차단으로 판정. 폴더 이동 journal·exchange crash sweep·노트 popout close 한 묶음 수정·최종 독립 검토 APPROVE. 소스 변경 뒤 새 CI·직접 영향 Windows 검증 필요 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · 트랙 1 S3 제품 코드 최종 독립 검토 APPROVE(`s3-task12/whole-branch-review/delta-approval.txt`). 좁은 실패 보정·영향 검증 PASS, 최초 전체 FAIL 기록 유지. Windows 읽기 전용 preflight PASS, 설치 수용10·SC2·최종 CI·PR 리뷰는 미실행 |
+| 마지막 갱신 | 2026-10-24 · PR #644 1회차 코드3/보안0 수정·재검토 완료. 최초 전체 check FAIL·수정별 PASS 및 `9ac34522` 설치 실기6 PASS/3 helper FAIL/사례6·SC2 NOT_RUN 원본 보존. 이번 수정은 독립 검토 승인, 새 SHA 필수 CI·Windows 영향 수용 대기 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -73,7 +73,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
-| S3 | `v1/s3-knowledge` | S3 Task 1–12 | 대기 | | |
+| S3 | `v1/s3-knowledge` | S3 Task 1–12 | PR 열림 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 자동 리뷰 1회차(코드3·보안0), 데이터 손실3건 수정·별도 검토 중 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 대기 | | |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
@@ -116,7 +116,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S3 | U | Task 7 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 구현 1회·별도 검토 2회(APPROVE → 권장 반영 재검토 APPROVE)·수정 1회, 사용량 한도 대기 제외 약2.0h |
 | S3 | V | Task 8–9 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-23 | 2026-10-24 | Task 8: 구현 1회·검토 2회·수정 1회 약1.5h, Task 9: 구현 1회·검토 2회·수정 1회 약1.5h(사용량 한도 대기 제외). 실제 Windows 훅 미실행 |
 | S3 | W | Task 10–11 | `v1/s3-knowledge` | 완료(로컬) | 2026-10-24 | 2026-10-24 | Task 10 `f469c2b0`, Task 11 `468e4925` 별도 검토 승인·커밋. Windows 실기/SC2는 Task 12 |
-| S3 | 마무리 | Task 12 → S3 PR | `v1/s3-knowledge` | 작업 중 | 2026-10-24 | | 제품 검증·브랜치 전체 검토 완료, Windows 산출물·외부 helper·설치 수용·PR 대기 |
+| S3 | 마무리 | Task 12 → S3 PR | `v1/s3-knowledge` | 작업 중 | 2026-10-24 | | PR #644 1회차 코드3·보안0 완료. 데이터 손실3건 수정·직접 영향 검증·독립 검토 APPROVE, 새 SHA CI/Windows 영향 수용 대기 |
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 대기 | | | |
 | S4 | X | S4-2–S4-4 |  | 대기 | | | |
 | S4 | Y | S4-5–S4-7 |  | 대기 | | | |
@@ -358,6 +358,18 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 12 PR #644 1회차 수정 (2026-10-24, 독립 검토 승인)
+
+- 최종 독립 검토 APPROVE(`s3-task12/pr-review-1/independent/fixes-review.json`). 검토자가 폴더 이동3·교환12·닫기9를 재검증 PASS했고 소스17/근거17 해시 일치를 확인했다. Windows native close는 아직 미실행이며 새 SHA의 필수 CI·직접 영향 수용을 이어간다.
+
+- 자동 리뷰 1/3회: `9ac34522` 코드3건·보안0건 완료. 별도 검토가 세 건 모두 실제 데이터 손실로 재현(`s3-task12/pr-review-1/independent/review.json`), 지적 [폴더 이동](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366562822)·[exchange crash](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366562825)·[popout close](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366562826)를 한 번에 반영한다. 구현·검토 에이전트는 트랙당 하나만 순차 실행한다.
+- 폴더 이동: 공유 namespace read/write barrier를 경로 해석 전 잡는다. 일반 document 작업은 read로 동시에 진행하며 이동·trash·startup reconcile/sweep만 write로 배제한다. child journal/save/release/drop와 새 claim도 복사→filesystem move→lease/watch rekey→옛 journal 삭제 사이에 끼어들 수 없다. 원인 RED에서 ACK된 seq2 대신 seq1 복구를 확인했고, 수정 뒤 seq2 복구·새 child claim/기존 save 대기·일반 문서 동시성 검증을 추가했다.
+- exchange crash: temp 이름과 사전 fsync ledger에 publication intent를 넣는다. `.devbox-tmp-write-<32hex>`는 exchange를 하지 않는 생성 경로만 쓰며 aged 정리를 허용한다. exchange용·구버전의 모호한 temp와 ledger는 **자동 삭제하지 않고 보존**한다. ledger sweep과 vault/claimed-folder sweep 모두 같은 판정을 사용한다. undo 뒤 recovery rename 실패도 ledger를 먼저 버리지 않는다. exchange 직후·undo 직후 crash, publication 전 중단, legacy temp, 실제 recovery rename 거절을 직접 검사한다. 보존 temp는 내부 이름이며 자동 복구 UI를 새로 구현하지 않는다.
+- popout close: Windows native handler가 JS listener 설치 전부터 close를 막고, renderer는 입력을 잠근 뒤 실제 store의 이전 effect와 최신 buffer save 완료·안전한 상태·lease release 완료까지 기다린 다음 좁게 허용된 native destroy를 요청한다. 오류/충돌/lease loss는 버퍼를 남기고 편집을 재개한다. pending write·100ms close·중복 close·destroy 실패를 actual store와 close callback에서 검사했다.
+- 현재 근거: `pr-review-1/red-folder-journal.txt`·`red-exchange-sweep.txt` 원인 RED 보존, documents57 PASS와 추가 일반 동시성 검사, popout 관련25 PASS·typecheck·MSVC accept lib compile PASS. 직접 영향 notes118·CLI documents7/MCP notes2/notes4 PASS, documents/notes all-target strict Clippy 및 MSVC accept all-target strict Clippy PASS. Clippy 최초 unused import 실패는 보존하고 수정 뒤 PASS를 별도 기록했다. 완료 Biome453 PASS. 모든 새 검증은 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB 적용(`memory_enforced=true`). 전체 check·무관한 E2E를 반복하지 않는다. native 실제 close는 NOT_RUN이다.
+- 이전 설치 근거는 `s3-task12/native-acceptance-final-assessment.json`에 원본5회·hash chain·최종6 PASS(1·2·3·5·9·10)/3 helper전제 FAIL(4·7·8)/사례6·SC2 NOT_RUN을 보존했다. 모든 소유 정리·prod 불변 PASS, retained[]. Windows `40072532925` 산출물은 수정 전 `9ac34522`의 근거이며 새 변경의 PASS로 재사용하지 않는다. SC2 native 측정이 없고 browser/단위 timing으로 대체하지 않는다. foreground 필요 사용자 click/설정 우회는 하지 않는다.
+- 다음: 세 수정의 별도 독립 검토 → 한 번의 commit/push → 새 SHA 필수 CI와 변경에 직접 영향받는 Windows 검증. 자동 리뷰 회차·원본 실패를 보존하며 현재 PR 수용/머지 완료가 아니다.
 
 ### S3 Task 12 제품 검증 결과 (2026-10-24, 트랙 1 · 제품 코드 독립 검토 승인)
 
