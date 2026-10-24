@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { SECTIONS } from "../../shell/sections";
+import { ActivityConsent } from "../activity/Consent";
 import { NativeAutostartSettings } from "./NativeSettings";
 import { isNative } from "./nativePreferences";
 import {
@@ -63,6 +64,7 @@ export function GeneralSettings() {
     <section aria-label="일반 설정">
       <h3>일반</h3>
       {isNative() && <NativeAutostartSettings />}
+      {isNative() && <ActivityConsent />}
       <p>
         <label>
           테마{" "}

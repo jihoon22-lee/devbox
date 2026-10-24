@@ -57,6 +57,10 @@ async fn client(d: &TestDaemon, kind: ClientKind) -> Client {
 
 /// The renderer: an App hello and requests on channel 1 (channel 0 is native).
 async fn renderer_ingest(d: &TestDaemon) -> ServerMessage {
+    renderer_send(d, &ingest(), "activity-owned-run-2").await
+}
+
+async fn renderer_send(d: &TestDaemon, params: &Ingest, request_id: &str) -> ServerMessage {
     let stream = tokio::net::UnixStream::connect(&d.socket)
         .await
         .expect("renderer socket");
@@ -78,8 +82,8 @@ async fn renderer_ingest(d: &TestDaemon) -> ServerMessage {
         &ClientMessage::Request {
             id: 1,
             method: "activity.ingest".into(),
-            params: serde_json::value::to_raw_value(&ingest()).expect("params"),
-            client_request_id: Some("activity-owned-run-2".into()),
+            params: serde_json::value::to_raw_value(params).expect("params"),
+            client_request_id: Some(request_id.into()),
         },
     ))
     .await
@@ -145,5 +149,86 @@ async fn ingest_is_app_only() {
     assert!(
         !logs.contains(TITLE) && !file_logs.contains(TITLE),
         "titles never reach logs"
+    );
+}
+
+fn accepted(reply: ServerMessage) -> u32 {
+    let ServerMessage::Response {
+        result: Some(result),
+        error: None,
+        ..
+    } = reply
+    else {
+        panic!("ingest failed: {reply:?}");
+    };
+    serde_json::from_str::<Ingested>(result.get())
+        .expect("ingest result")
+        .accepted
+}
+
+/// Waits for the daemon's writer, then reads the stored rows (ids are not on the wire).
+async fn stored(d: &TestDaemon) -> Vec<devbox_activity::Session> {
+    let test = d.client().await;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let status =
+            bounded(test.call::<devbox_activity::ActivityGetStatus>(&devbox_activity::NoParams {}))
+                .await
+                .expect("activity.status");
+        if status.pending == 0 {
+            break;
+        }
+        assert!(Instant::now() < deadline, "writer deadline: {status:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let migrations = [
+        devbox_projects::MIGRATIONS,
+        devbox_terminal::MIGRATIONS,
+        devbox_agents::MIGRATIONS,
+        devbox_runtime::MIGRATIONS,
+        devbox_secrets::MIGRATIONS,
+        devbox_search::MIGRATIONS,
+        devbox_activity::MIGRATIONS,
+    ]
+    .concat();
+    let db = devbox_core::Db::open(
+        &d.paths.db_path,
+        &d.paths.backups_dir,
+        devbox_cli::VERSION,
+        &migrations,
+    )
+    .expect("owned DB");
+    devbox_activity::store::overlapping(&db, local_ms(0), local_ms(23))
+        .await
+        .expect("stored sessions")
+}
+
+#[tokio::test]
+async fn replayed_batch_is_ignored() {
+    let mut d = TestDaemon::start();
+    assert_eq!(
+        accepted(renderer_send(&d, &ingest(), "activity-replay-a").await),
+        2
+    );
+    // Same `{runId, upto}` under a new request id: past the dedupe window.
+    assert_eq!(
+        accepted(renderer_send(&d, &ingest(), "activity-replay-b").await),
+        0
+    );
+    let before = stored(&d).await;
+    assert_eq!(before.len(), 1, "{before:?}");
+    // A restart forgets the run's `upto`; the deterministic id keeps one row.
+    d.restart();
+    assert_eq!(
+        accepted(renderer_send(&d, &ingest(), "activity-replay-c").await),
+        2
+    );
+    let after = stored(&d).await;
+    let ids =
+        |rows: &[devbox_activity::Session]| rows.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&after), ids(&before));
+    assert_eq!(
+        (after[0].start_ms, after[0].end_ms),
+        (local_ms(10), local_ms(11))
     );
 }

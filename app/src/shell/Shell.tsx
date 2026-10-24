@@ -2,6 +2,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useMemo, useState } from "react";
+import { ActivityUplink } from "../features/activity/uplink";
 import { AgentCommands } from "../features/agents/AgentCommands";
 import { AgentDataProvider } from "../features/agents/AgentData";
 import { PopoutAgentGrid } from "../features/agents/AgentGrid";
@@ -174,6 +175,7 @@ export function Shell() {
     <ProjectDataProvider>
       <AgentDataProvider>
         {ownsAttention && <AttentionBridge location={attentionLocation} />}
+        <ActivityUplink />
         <RouterProvider router={router} />
         <AgentCommands
           navigate={(id) =>

@@ -865,6 +865,8 @@ dependencies = [
 name = "devbox-win"
 version = "1.0.0-dev"
 dependencies = [
+ "devbox-activity",
+ "serde",
  "sha2",
  "windows",
  "zeroize",

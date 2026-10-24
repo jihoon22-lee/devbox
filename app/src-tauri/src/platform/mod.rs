@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod window;
 
 pub mod connection;

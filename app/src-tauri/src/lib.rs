@@ -39,6 +39,7 @@ pub fn run() {
         .manage(platform::shortcuts::Shortcuts::default())
         .manage(platform::intents::Intents::default())
         .manage(connection::Connection::default())
+        .manage(platform::activity::Activity::default())
         .invoke_handler(tauri::generate_handler![
             connection::gate_status,
             connection::gate_retry,
@@ -58,7 +59,13 @@ pub fn run() {
             platform::intents::app_intents_ready,
             platform::intents::app_intents_not_ready,
             platform::intents::hide_main,
-            platform::intents::quit_app
+            platform::intents::quit_app,
+            platform::activity::activity_state,
+            platform::activity::activity_set,
+            platform::activity::activity_configure,
+            platform::activity::activity_drain,
+            platform::activity::activity_ack,
+            platform::activity::activity_tray
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -67,6 +74,7 @@ pub fn run() {
                 eprintln!("Cannot create tray; closing main will exit: {error}");
             }
             platform::shortcuts::initialize(app.handle());
+            platform::activity::initialize(app.handle());
             let focus = platform::notify::handle_arguments(
                 app.handle(),
                 &std::env::args().collect::<Vec<_>>(),

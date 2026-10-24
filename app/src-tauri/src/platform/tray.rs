@@ -4,14 +4,20 @@ use crate::core::{
 };
 use tauri::{
     AppHandle, Manager,
-    menu::{MenuBuilder, MenuItem},
+    menu::{Menu, MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
 pub struct Tray {
     summary: MenuItem<tauri::Wry>,
     palette: MenuItem<tauri::Wry>,
+    menu: Menu<tauri::Wry>,
+    activity: MenuItem<tauri::Wry>,
+    storage: MenuItem<tauri::Wry>,
+    storage_shown: std::sync::Mutex<bool>,
 }
+/// Position of the storage-failure line: right after the activity toggle.
+const STORAGE_POSITION: usize = 4;
 pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
     let summary = MenuItem::with_id(
         app,
@@ -21,10 +27,19 @@ pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let palette = MenuItem::with_id(app, "palette", "명령 팔레트", true, None::<&str>)?;
+    let activity = MenuItem::with_id(app, "activity", "활동 기록 일시중지", false, None::<&str>)?;
+    let storage = MenuItem::with_id(
+        app,
+        "activity-storage",
+        "활동 저장 중단",
+        true,
+        None::<&str>,
+    )?;
     let menu = MenuBuilder::new(app)
         .text("open", "devbox 열기")
         .item(&summary)
         .item(&palette)
+        .item(&activity)
         .separator()
         .text("quit", "종료")
         .build()?;
@@ -42,6 +57,8 @@ pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
                 super::window::focus_main(app);
                 super::notify::navigate_agents(app);
             }
+            "activity" => super::activity::toggle_pause(app),
+            "activity-storage" => super::window::focus_main(app),
             "palette" => {
                 super::window::focus_main(app);
                 super::intents::dispatch(app, AppIntent::Palette);
@@ -65,7 +82,14 @@ pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-    app.manage(Tray { summary, palette });
+    app.manage(Tray {
+        summary,
+        palette,
+        menu,
+        activity,
+        storage,
+        storage_shown: std::sync::Mutex::new(false),
+    });
     Ok(())
 }
 pub fn set_shortcut_status(app: &AppHandle, status: &crate::core::shortcuts::ShortcutStatus) {
@@ -99,6 +123,51 @@ pub fn set_summary(app: &AppHandle, open: u32, attention: u32) {
             .set_text(format!("에이전트 {open} · 입력 대기 {attention}"))
     {
         eprintln!("Cannot update tray summary: {error}");
+    }
+}
+pub fn set_activity(app: &AppHandle, consent: bool, paused: bool) {
+    if let Some(tray) = app.try_state::<Tray>() {
+        let label = if paused {
+            "활동 기록 다시 시작"
+        } else {
+            "활동 기록 일시중지"
+        };
+        if let Err(error) = tray
+            .activity
+            .set_text(label)
+            .and_then(|()| tray.activity.set_enabled(consent))
+        {
+            eprintln!("Cannot update tray activity item: {error}");
+        }
+    }
+}
+/// "활동 저장 중단 · n건 대기" while the daemon cannot store activity (01 §9.1-6).
+pub fn set_activity_storage(app: &AppHandle, failed: bool, pending: u32) {
+    let Some(tray) = app.try_state::<Tray>() else {
+        return;
+    };
+    let mut shown = tray
+        .storage_shown
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let result = if failed {
+        tray.storage
+            .set_text(format!("활동 저장 중단 · {pending}건 대기"))
+            .and_then(|()| {
+                if *shown {
+                    Ok(())
+                } else {
+                    tray.menu.insert(&tray.storage, STORAGE_POSITION)
+                }
+            })
+    } else if *shown {
+        tray.menu.remove(&tray.storage)
+    } else {
+        Ok(())
+    };
+    match result {
+        Ok(()) => *shown = failed,
+        Err(error) => eprintln!("Cannot update tray activity storage: {error}"),
     }
 }
 pub fn available(app: &AppHandle, label: &str) -> bool {
