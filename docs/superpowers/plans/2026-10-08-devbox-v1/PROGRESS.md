@@ -15,15 +15,16 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 |---|---|
 | 단계 | S2 머지 완료([PR #642](https://github.com/jihoon22-lee/devbox/pull/642) `1e82e649`, 인계 문서 #643 `329b2ee9`). **S3·S5 동시 진행 중**(00 §3.6) — 아래 트랙별 줄 |
 | 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. **Task 12 · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) 마지막 정상 자동 리뷰 3회차 수정 중**. 1회차 `4640f779`, 2회차 `cdb8a9bc` 반영·필수 CI3 PASS. 3회차 코드1·보안0 완료: editor save ACK 뒤 note index가 갱신되지 않아 rewrite rename이 새 링크를 빠뜨리는 실제 참조 손상을 수정한다. 별도 검토 뒤 한 번 push하고 4회차 정상 리뷰를 기다리지 않으며, 새 SHA CI·직접 영향 Windows 검증은 별도 진행 |
+| 트랙 1(S3→S4) 위치 | `v1/s3-knowledge` · `/home/jihoon/projects/devbox-wt/v1-s3-knowledge`, 기반 `origin/main@329b2ee9`. **Task 12 · [PR #644](https://github.com/jihoon22-lee/devbox/pull/644) 정상 자동 리뷰 3/3회 반영(`9567fdb8`) 뒤 상한 예외 실제 데이터 손실1건 수정·독립 검토 APPROVE**. 트레이 종료가 메인/팝아웃 노트의 300ms journal·1s autosave 전에 transport를 끊어 버퍼를 잃는 경로를 별도 재현했다. 정상 리뷰를 다시 기다리지 않으며 최종 SHA 필수 CI·직접 영향 native 수용은 별도 진행 |
 | 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 최신 상태는 그 브랜치의 PROGRESS |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-24 · PR #644 3/3회차 코드1·보안0 완료, 원인 RED→index ordering/lag/startup/실제 FTS 회귀 PASS. 제품 변경 독립 검토·최종 push 전. cdb8a9bc 필수 CI3 PASS는 수정 전 근거이며 원본 실패·과거 native 결과는 보존한다 |
+| 마지막 갱신 | 2026-10-24 · 상한 이후 지적4366874346을 독립 `BLOCKING_CONFIRMED`로 판정해 종료 전 모든 노트 창 durable save/ACK 조정을 추가. 제품 수정 독립 검토 APPROVE(12소스/19근거 해시 확인). helper 작업은 중지·보존, commit/push·최종 SHA CI/native 수용 전 |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-24 | S3 PR #644 상한 이후 실제 데이터 손실 예외: `app/src-tauri/src/{lib.rs,platform/intents.rs,platform/mod.rs,core/mod.rs}`·`app/src/App.tsx`의 기존 종료/루트 조립에 최소 coordinator/listener를 연결 | CONVENTIONS §8 차단 기준·부모 하네스 승인, 별도 재현4366874346 `BLOCKING_CONFIRMED` | main·note popout의 기존 `prepareWindowClose`가 완료되기 전에 RPC transport를 취소하지 않도록 순서만 조정. main close-to-tray 유지, notes 없는 startup도 준비 ACK 가능. S5 제품·공유 RPC/프로토콜·의존성 변경 없음 |
 | 2026-10-24 | S3 PR #644 2회차 공유 파일 예외: `crates/cli/src/daemon/mod.rs`의 기존 serve 후 activity flush 두 줄을 serve 결과 보관 → 명시적 activity shutdown → 원래 serve 오류 반환 순서로 보정 | 사용자 승인 범위 내 에이전트 · 독립 재현 실제 데이터 손실, 부모 하네스 명시 승인 | 등록 확장 없이 기존 종료 조립만 수정. 열린 활동 session이 정상 재시작에도 두 시간 분량 소실됨을 실제 SQLite fixture에서 확인. 수정 전 예외 기록, S5에 경계 통지 |
 | 2026-10-21 | S3 공유 파일 예외 1: 동결 `crates/core/src/config.rs`에 `[notes]`·`[search]`·`[activity]` 표 허용 | 에이전트 · 00 §3.6 기록 후 진행 | 기록: `Config`의 `deny_unknown_fields` 때문에 표가 있으면 데몬·MCP가 시작하지 못해 불가피. 최소안은 opaque `toml::Table` 세 필드(`#[serde(default)]`)와 `read_table` 목록 3이름(제품 약10·시험 약15줄), 키 검증은 각 도메인 crate. 규칙을 다른 파일로 옮기면 01 §7과 어긋나 채택 안 함. S5(07b)는 이 파일을 고치지 않으므로 S3 Task 4 Step 0 별도 커밋이 맡는다. 사용자가 막으면 Task 4 전에 멈춤 |
 | 2026-10-21 | S3 Task 8: `config.toml` 동시 쓰기 잠금(`crates/secrets` `save_name`과 `activity.set_rules`가 같은 flock·symlink 거부) | 에이전트 | 기록: `crates/secrets`는 동결 대상이 아니다. S5 트랙은 `save_name`을 고치지 않는다(07b). 루트 `README.md`에 잠금 파일 안내 한 줄(줄 추가만) |
@@ -74,7 +75,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
-| S3 | `v1/s3-knowledge` | S3 Task 1–12 | PR 열림 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 자동 리뷰 3/3회차 코드1·보안0, 참조 손상1건 수정·독립 검토 중. 1·2회차 반영 완료; 이후 4회차 정상 리뷰 대기 없음 |
+| S3 | `v1/s3-knowledge` | S3 Task 1–12 | PR 열림 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 정상 자동 리뷰3회 반영 완료(`9567fdb8`). 상한 이후 실제 종료 버퍼 손실1건 독립 재현·예외 수정 중, 추가 정상 리뷰 대기 없음 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | 대기 | | |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 대기 | | |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
@@ -359,6 +360,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - 다음 트랙1은 `v1/s3-knowledge`/`../devbox-wt/v1-s3-knowledge`의 S3 Task1(06 상세화), 트랙2는 `v1/s5-tools`/`../devbox-wt/v1-s5-tools`의 S5-1(07b 상세화)다. 두 트랙은 최신 origin/main에서 시작하고 구현 또는 검토 하나씩 최대2개, 공유 파일 경계·전체검사/E2E 대기 잠금·Windows 수용 단일 잠금을 지킨다. S5 target은 `~/.cache/targets/devbox-s5`다. 이번 세션에서 다음 트랙의 브랜치나 제품 구현은 시작하지 않았다. 에이전트·실행·터미널의 새 빌드 조기 사용은 선택이며, 실제 설치 검증 미실행을 함께 안내한다. R1/R2는 S6 공개 직전까지 미실행 유지다.
 - 사용자 후속 정리 지시로 PROGRESS·05·00 결과는 `docs/s2-handoff` 문서 전용 PR에서 main에 반영한다(00 §3 예외). S2의 검증 소스 f703a4b9와 머지1e82e649는 그대로 두고, S3로 미커밋 문서나 patch를 넘기지 않는다. 문서 PR 머지 뒤 보관 근거 검증 → clean·통합 확인 → worktree 제거 → prune → 로컬·원격 브랜치 정리와 원본 main ff-only 동기화를 진행한다. 공유 toolchain/cache·사용자 자료·기존 사용자 stash 2개는 보존한다. 이 문서는 정리 계획을 기록하며, 완료 여부와 다음 시작 SHA는 다음 세션이 실제 Git·PR 상태 및 보관 manifest로 확인한다. 앞서 실행한 `scripts/sweep.sh`는 no-op이었고 cache를 삭제하지 않았다.
 - 시간은 과제 커밋 기준 경과다: Task1 2026-10-20 16:10 → 마지막 UI 통합 2026-10-21 07:08 약15.0h, 이후 머지09:19까지 약2.2h, 합계 약17.2h. PR08:16 → 머지09:19 약1.05h. 중간 세션 중단/재개와 대기 시간을 포함하며 실제 누적 작업/CPU 시간이나 기능별 순수 구현 시간으로 주장하지 않는다.
+
+### S3 Task 12 PR #644 상한 이후 차단 수정1 (2026-10-24, 독립 검토 전)
+
+- 정상 자동 리뷰3회 처리 완료 뒤 도착한 [4366874346](https://github.com/jihoon22-lee/devbox/pull/644#discussion_r4366874346)은 `post-cap-1/independent-classification.json`의 별도 실제 store/effects 재현으로 **BLOCKING_CONFIRMED(사용자 데이터 손실)**다. 메인·팝아웃에서 편집100ms 뒤 트레이 종료 시 prepare/save/journal0, offline journal빈 값, disk옛 내용인데 두 buffer가 파괴됐다. `quit_app → app.exit → ExitRequested → begin_exit`가 per-window CloseRequested를 우회하는 native source 경계도 함께 보존했다. 일반 개선이나 4회차 정상 리뷰 반영이 아니다.
+- `NativeQuitPreparation`은 ConnectionGate 바깥에서 main·popout-note 창을 등록한다. noWSL/setup의 빈 store도 ACK할 수 있고, 편집 창이 등록되기 전에는 native 실제 창 snapshot이 종료를 거부한다. 각 창은 기존 `prepareWindowClose`로 입력을 동결하고 기존 in-flight 저장 뒤 최신 buffer의 durable save와 lease release까지 기다린다. 별도 저장 정책·RPC를 만들지 않았다.
+- native coordinator는 round·호출 창 label·등록 lease가 모두 맞는 ACK만 받는다. 중복 quit·이전 round/다른 창 ACK는 exit를 승인하지 않는다. 실패·30초 timeout·창 추가/재등록/파괴는 종료를 취소하며 rollback event를 보낸다. 성공 직전 UI thread에서 창 집합을 재검사한 뒤에만 `app.exit`를 호출한다. 승인 전 모든 ExitRequested는 transport를 유지하며 기존 quit intent로 보낸다. main close-to-tray 유지, tray가 없는 main close도 저장 절차를 거친다.
+- rollback은 저장 중인 창을 먼저 해동하지 않는다. 해당 준비가 끝난 뒤 `cancelWindowClose`가 이미 닫힌 문서를 다시 claim해 편집을 재개한다. 실제 두 store 회귀에서 한 창 save/release 성공·다른 창 save 실패 뒤 실패 buffer 유지와 성공창 reopen을 확인했고, **두 창 모두 새 입력을 넣어 다음 round에서 최신 내용을 저장**했다. 100ms 편집·deferred 이전 RPC·중복 요청·stale round/lease·ACK 응답 오류·시작 화면·timeout rollback을 직접 검증한다.
+- 근거 `devbox-verification/s3-task12/post-cap-1/`: 원본 독립 재현과 새 RED(모듈 미구현), frontend 고유35개 PASS(영향34 + startup1), native lifecycle4개 PASS, 최종 타입 검사·Windows cfg all-target check/strict Clippy·완료 Biome458 PASS. 모든 새 resource wrapper는 CPU4/nice10/jobs2/workers2/testthreads2·memory high6GiB/max8GiB/swap1GiB(`memory_enforced=true`)다. 최초 native manifest 지정 오류·MSVC channel/config 지정 오류·테스트 타입 오류 로그도 보존한다. Windows cfg 확인은 실제 Windows 앱 실행 PASS가 아니다.
+- 다음: 이 한 수정의 별도 검토 → 완료 Biome → 부모 하네스 commit/push → 최종 필수 CI·global exit(편집300ms/1s 이전, main+popout) 직접 native 수용. 전체 check/E2E·무관한 검사 재실행·실제 설치/실행은 하지 않았다. 외부 helper 미완성 파일은 보존·중지하며 제품 검토와 fresh SHA 뒤 갱신한다.
 
 ### S3 Task 12 PR #644 3회차 수정 (2026-10-24, 마지막 정상 리뷰 · 검토 전)
 
@@ -874,6 +884,7 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 
 | 날짜 | PR · 회차 | 지적(링크) | 별도 검토 판정 | 처리 |
 |---|---|---|---|---|
+| 2026-10-24 | #644 · 상한 예외 수정 별도 검토 | 종료 최종 승인 뒤 `app.exit()`가 실제 `RequestExit`를 처리하기 전 창 등록 경계 | `finish` 승인 뒤 register/invalidate가 승인을 취소하지 않는 방어적 보완 가능성은 있으나 일반 사용의 실제 버퍼 손실은 재현하지 못함. 확인된 트레이100ms 손실은 all-window prepare barrier로 해결; 이 잔여 경계는 NON_BLOCKING. 근거 `s3-task12/post-cap-1/fix-independent-review.json` | 추가 제품 수정 안 함·이월 판정, PR 머지 대기. S6-1에서 후속 필요성 판단. 이후 모든 창 생성이 불가능하다고 주장하지 않음 |
 | 2026-10-21 | #642 · 상한 이후 4회차 | [Windows 포트 준비 확인의 프로세스 귀속](https://github.com/jihoon22-lee/devbox/pull/642#discussion_r4331589592) | 직접/native의 port-only loopback probe가 무관한 listener를 준비됨으로 오인할 수 있는 기능 결함(코드 확인). 승인된 graph의 의존 순서 오류이며 실제 데이터 손실·비밀 유출·미승인 실행 재현 없음. Windows 설치본 재현은 interop 불가로 미실행. 별도 검토 NON_BLOCKING | 이번 PR 수정 안 함. S6-1 상세화에서 Windows PID/후손 소켓 귀속과 unrelated-listener 회귀를 후속 판정. 근거 `s2-task16/pr/out-of-cap/finding-4331589592.json`; 이 문서에 이월 판정을 보존 |
 
 - S3 Windows 파일명 충돌 수정 최종 독립 검토 APPROVE: `s3-task12/windows-case-collision/review.txt`. helper 바이트 동일·호출부 import만 변경, 관련 시험6·typecheck·완료 Biome451 PASS. 실패 run40070649576은 보존하며 새 SHA 산출물로 수용한다.

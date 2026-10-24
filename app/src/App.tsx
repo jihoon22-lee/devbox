@@ -5,6 +5,7 @@ import { tauriTransport } from "./rpc/transport-tauri";
 import { wsTransport } from "./rpc/transport-ws";
 import { ConnectionGate } from "./shell/ConnectionGate";
 import { NativeMainController } from "./shell/NativeMainController";
+import { NativeQuitPreparation } from "./shell/NativeQuitPreparation";
 import { Shell } from "./shell/Shell";
 import { Button, ErrorState, TooltipProvider } from "./ui";
 
@@ -26,6 +27,7 @@ export function App({ loadTransport = pickTransport }: { loadTransport?: () => P
   if (native)
     return (
       <>
+        <NativeQuitPreparation />
         <NativeMainController ready={ready} />
         <ConnectionGate onReady={() => setReady(true)}>
           {(instance) => <ConnectedApp loadTransport={loadTransport} instance={instance} native />}

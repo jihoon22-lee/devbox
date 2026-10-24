@@ -41,3 +41,6 @@ pub mod secrets;
 
 #[cfg(any(windows, test))]
 pub mod windows;
+
+#[cfg(any(windows, test))]
+pub mod quit;

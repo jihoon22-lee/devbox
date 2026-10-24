@@ -20,3 +20,5 @@ pub mod secrets;
 pub mod windows;
 
 pub mod capture;
+
+pub mod quit;
