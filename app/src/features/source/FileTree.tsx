@@ -13,6 +13,7 @@ interface Props {
   projectId: string;
   showHidden: boolean;
   onAction(action: FileAction, entry: FileEntry): void;
+  onOpen?(): void;
 }
 export function FileTree(props: Props) {
   return <Folder {...props} dir="" />;
@@ -68,7 +69,10 @@ function Row({ entry, ...props }: Props & { entry: FileEntry }) {
   const directory = entry.kind === "directory";
   const open = (pinned = false) => {
     if (directory) setExpanded((value) => !value);
-    else void useSource.getState().open(entry.key, { pinned });
+    else {
+      props.onOpen?.();
+      void useSource.getState().open(entry.key, { pinned });
+    }
   };
   const items: [FileAction, string][] = [
     ["create", "여기에 새 파일"],

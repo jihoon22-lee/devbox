@@ -25,3 +25,11 @@ test("browser fallback says unavailable rather than executing another command", 
   );
   expect(invoke).not.toHaveBeenCalled();
 });
+test("native editor launch rejection reports a Korean actionable error", async () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("native spawn failed"));
+  const call = vi.fn().mockResolvedValue({ opened: false, path: "/owned/a.ts" });
+  await expect(openExternalEditor({ call } as never, { root: "project:p", path: "a.ts" }, "zed")).rejects.toThrow(
+    "Zed를 실행하지 못했습니다. Windows에 설치되어 있는지 확인하세요.",
+  );
+});

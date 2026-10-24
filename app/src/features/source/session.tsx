@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useRpc } from "../../rpc/RpcProvider";
+import { SourceGitSession } from "./SourceGitSession";
 import { syncDocumentTabs, useSource } from "./store";
 export function SourceSession() {
   const client = useRpc();
@@ -20,5 +21,5 @@ export function SourceSession() {
       ),
     [client, query],
   );
-  return null;
+  return <SourceGitSession />;
 }

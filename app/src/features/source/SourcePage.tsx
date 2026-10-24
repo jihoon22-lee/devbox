@@ -7,17 +7,28 @@ import { messageFor } from "../../rpc/messages";
 import { useRpc } from "../../rpc/RpcProvider";
 import { Button, Dialog, EmptyState, useToasts } from "../../ui";
 import { chooseDocumentClose } from "../documents/closePrompt";
+import { keyId } from "../documents/offlineJournal";
 import { needsCloseChoice, useDocuments } from "../documents/store";
 import { useProjectData } from "../projects/ProjectData";
 import { useCurrentProject } from "../projects/store";
 import { openTab, projectKey, useTerminalLayout } from "../terminal/store";
 import { useCreateSession } from "../terminal/useSessions";
+import { BlameGutter } from "./BlameGutter";
+import { BranchList } from "./BranchList";
+import { ChangesList, type SourceSelection } from "./ChangesList";
+import { CleanupPanel } from "./CleanupPanel";
+import { CommitBox } from "./CommitBox";
+import { DependencyLens } from "./deps/DependencyLens";
 import { CodeTabs } from "./editor/CodeTabs";
 import { sourceSearch } from "./editor/location";
 import { openExternalEditor } from "./externalEditor";
 import { type FileOperation, FileOperationDialog } from "./FileOperationDialog";
 import { type FileAction, FileTree } from "./FileTree";
+import { GitControls } from "./GitControls";
+import { LogView } from "./LogView";
 import { MergePanel } from "./merge/MergePanel";
+import { SourceDiff } from "./SourceDiff";
+import { SourceNavigation, type SourceSection } from "./SourceNavigation";
 import s from "./source.module.css";
 import { useSource } from "./store";
 export function SourceRoute() {
@@ -46,6 +57,17 @@ export function SourcePage() {
 }
 function ProjectSource({ project }: { project: Project }) {
   const root = `project:${project.id}`;
+  const target = { projectId: project.id };
+  const [selected, setSelected] = useState<SourceSelection>();
+  const [panel, setPanel] = useState<"editor" | "diff" | "log" | "blame" | "cleanup" | "deps">("editor");
+  const active = useSource((state) =>
+    state.layout.tabs.find((tab) => tab.key.root === root && tab.id === state.layout.active[state.layout.group]),
+  );
+  const locationRequest = useSource((state) => (active ? state.locations[keyId(active.key)]?.request : undefined));
+  useEffect(() => {
+    if (locationRequest !== undefined) setPanel("editor");
+  }, [locationRequest]);
+  const [section, setSection] = useState<SourceSection>("files");
   const [mergeOpen, setMergeOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [operation, setOperation] = useState<FileOperation>();
@@ -60,7 +82,9 @@ function ProjectSource({ project }: { project: Project }) {
       title:
         error instanceof RpcError
           ? messageFor(error.code, error.detail).title
-          : "파일 작업을 마치지 못했습니다. 경로와 앱 설치를 확인하세요.",
+          : error instanceof Error
+            ? error.message
+            : "파일 작업을 마치지 못했습니다. 경로와 앱 설치를 확인하세요.",
     });
   const action = async (kind: FileAction, entry: FileEntry) => {
     if (busy || useDocuments.getState().windowClosing) return;
@@ -111,22 +135,49 @@ function ProjectSource({ project }: { project: Project }) {
   };
   return (
     <main className={s.page} aria-label="소스 파일">
-      <aside className={s.sidebar} aria-label="파일 목록">
-        <div className={s.toolbar}>
-          <strong>파일</strong>
-          <Button size="sm" disabled={busy} onClick={() => setOperation({ kind: "create", key: { root, path: "" } })}>
-            새 파일
-          </Button>
-          <Button size="sm" onClick={() => void cache.invalidateQueries({ queryKey: ["files.tree"] })}>
-            새로고침
-          </Button>
-        </div>
-        <label>
-          <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.currentTarget.checked)} />
-          숨김 파일
-        </label>
-        <FileTree projectId={project.id} showHidden={hidden} onAction={(kind, entry) => void action(kind, entry)} />
-      </aside>
+      <SourceNavigation section={section} onChange={setSection}>
+        {section === "files" ? (
+          <>
+            <div className={s.toolbar}>
+              <strong>파일</strong>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => setOperation({ kind: "create", key: { root, path: "" } })}
+              >
+                새 파일
+              </Button>
+              <Button size="sm" onClick={() => void cache.invalidateQueries({ queryKey: ["files.tree"] })}>
+                새로고침
+              </Button>
+            </div>
+            <label>
+              <input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.currentTarget.checked)} />
+              숨김 파일
+            </label>
+            <FileTree
+              projectId={project.id}
+              showHidden={hidden}
+              onAction={(kind, entry) => void action(kind, entry)}
+              onOpen={() => setPanel("editor")}
+            />
+          </>
+        ) : section === "changes" ? (
+          <>
+            <ChangesList
+              target={target}
+              selected={selected}
+              onSelect={(value) => {
+                setSelected(value);
+                setPanel("diff");
+              }}
+            />
+            <CommitBox target={target} />
+          </>
+        ) : (
+          <BranchList target={target} />
+        )}
+      </SourceNavigation>
       <div className={s.workspace}>
         <div className={s.toolbar}>
           <Button size="sm" onClick={() => useSource.setState({ quickOpen: true })}>
@@ -136,7 +187,49 @@ function ProjectSource({ project }: { project: Project }) {
             충돌 해결
           </Button>
         </div>
-        <CodeTabs root={root} />
+        <GitControls target={target} />
+        <div className={s.toolbar}>
+          <Button onClick={() => setPanel("editor")}>편집기</Button>
+          {selected && <Button onClick={() => setPanel("diff")}>선택한 변경 · {selected.path}</Button>}
+          <Button onClick={() => setPanel("log")}>커밋 기록</Button>
+          <Button disabled={!selected?.path && !active} onClick={() => setPanel("blame")}>
+            줄별 변경 기록
+          </Button>
+          <Button onClick={() => setPanel("cleanup")}>작업 폴더 정리</Button>
+          <Button onClick={() => setPanel("deps")}>의존성 점검</Button>
+        </div>
+        <div className={s.editorWorkspace} hidden={panel !== "editor"}>
+          <CodeTabs root={root} />
+        </div>
+        {panel !== "editor" && (
+          <div className={s.gitPanel}>
+            {panel === "diff" &&
+              selected &&
+              (selected.conflicted ? (
+                <MergePanel target={target} initialPath={selected.path} />
+              ) : (
+                <SourceDiff target={target} path={selected.path} staged={selected.staged} />
+              ))}
+            {panel === "log" && <LogView target={target} />}
+            {panel === "blame" && (selected?.path ?? active?.key.path) && (
+              <BlameGutter
+                target={target}
+                path={(selected?.path ?? active?.key.path)!}
+                onOpen={(line) => {
+                  void useSource
+                    .getState()
+                    .open(
+                      { root, path: (selected?.path ?? active?.key.path)! },
+                      { pinned: true, location: { line, column: 1 } },
+                    );
+                  setPanel("editor");
+                }}
+              />
+            )}
+            {panel === "cleanup" && <CleanupPanel target={target} />}
+            {panel === "deps" && <DependencyLens projectId={project.id} />}
+          </div>
+        )}
       </div>
       <Dialog open={mergeOpen} onOpenChange={setMergeOpen} title="충돌 해결" width={1100}>
         {mergeOpen && <MergePanel target={{ projectId: project.id }} />}

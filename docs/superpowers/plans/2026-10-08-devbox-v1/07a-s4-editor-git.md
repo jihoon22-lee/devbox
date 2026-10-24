@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7 R1/R2 수정·별도 재검토 APPROVE. S4-8–9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7 R1/R2 수정·별도 재검토 APPROVE. S4-8 R1 수정·직접 검증 완료·별도 재검토 APPROVE·완료 커밋 단계. S4-9 미착수. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -234,13 +234,24 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 - 수정: `shell/Shell.tsx`, 상태 표시줄 Git 연결, `features/search/CodePreview.tsx`의 [편집기로]와 문제 위치 이동. 기존 source/editor/merge/deps를 조립한다.
 
 **순서·검증**
-1. [ ] [파일|변경|브랜치] 선택·프로젝트 전환·분리 창·좁은 창·키보드 탭 조작을 실패 시험으로 먼저 고정한다. 프로젝트가 바뀌어도 다른 프로젝트 dirty 탭/미완료 Git 결과를 새 프로젝트에 귀속시키지 않는다.
-2. [ ] 파일 트리 hidden·새 파일·rename·always 삭제·외부 editor·terminal cwd를 연결한다. 변경 목록은 staged/unstaged/conflict 그룹, 파일 선택은 SourceDiff/merge 탭. SourceDiff는 기존 DiffView 파서와 인용 범위를 그대로 사용한다.
-3. [ ] 브랜치 로컬/원격·create/checkout/delete·worktree·stash·log/blame·정리 패널을 연결한다. 정리 선택의 snapshot을 확인 UI에 표시하고 stale이면 재확인. 보존 대상 선택 불가·실패 목록 유지.
-4. [ ] CommitBox 72자 안내·Ctrl+Enter·amend·커밋 후 push. 커밋 완료 뒤 **새 expect를 읽어** push 확인을 받는다. commit 성공 뒤 목록 갱신 실패는 커밋을 다시 실행하지 않고 결과/재조회만 표시한다. push/pull 항상 확인, force-with-lease 명시. 상태 Git 칩 branch/ahead/behind/변경 수→source 이동.
-5. [ ] 완료 이벤트·조회 지연이 최신 선택/프로젝트를 덮지 않는 Vitest, confirmation expectation 전달·stale 재확인, hunk 버튼 read-only 모드 숨김, native 외부 편집 실패 문구를 검증한다. CLI source 관련 직접 영향만 실행한다.
-6. [ ] E2E 세 여정을 `app/e2e/source.spec.ts`에 추가: (a) 수정→hunk stage→커밋 (b) 충돌→stale 거부·해결안 유지→새 preview 해결→커밋 (c) 브랜치 생성·전환. 기존 편집/가짜 LSP 여정과 중복을 합쳐 전체 40개 이하를 유지한다. 실행은 S4-9.
-7. [ ] 별도 검토: 모든 승인 범위 UI 도달 가능·한국어 문구·expect 확인/결과의 같은 대상·600/300줄 경계. Biome → `feat(source): integrate editing and Git workflows`.
+1. [x] [파일|변경|브랜치] 선택·프로젝트 전환·분리 창·좁은 창·키보드 탭 조작을 실패 시험으로 먼저 고정한다. 프로젝트가 바뀌어도 다른 프로젝트 dirty 탭/미완료 Git 결과를 새 프로젝트에 귀속시키지 않는다.
+2. [x] 파일 트리 hidden·새 파일·rename·always 삭제·외부 editor·terminal cwd를 연결한다. 변경 목록은 staged/unstaged/conflict 그룹, 파일 선택은 SourceDiff/merge 탭. SourceDiff는 기존 DiffView 파서와 인용 범위를 그대로 사용한다.
+3. [x] 브랜치 로컬/원격·create/checkout/delete·worktree·stash·log/blame·정리 패널을 연결한다. 정리 선택의 snapshot을 확인 UI에 표시하고 stale이면 재확인. 보존 대상 선택 불가·실패 목록 유지.
+4. [x] CommitBox 72자 안내·Ctrl+Enter·amend·커밋 후 push. 커밋 완료 뒤 **새 expect를 읽어** push 확인을 받는다. commit 성공 뒤 목록 갱신 실패는 커밋을 다시 실행하지 않고 결과/재조회만 표시한다. push/pull 항상 확인, force-with-lease 명시. 상태 Git 칩 branch/ahead/behind/변경 수→source 이동.
+5. [x] 완료 이벤트·조회 지연이 최신 선택/프로젝트를 덮지 않는 Vitest, confirmation expectation 전달·stale 재확인, hunk 버튼 read-only 모드 숨김, native 외부 편집 실패 문구를 검증한다. CLI source 관련 직접 영향만 실행한다.
+6. [x] E2E 세 여정을 `app/e2e/source.spec.ts`에 추가: (a) 수정→hunk stage→커밋 (b) 충돌→stale 거부·해결안 유지→새 preview 해결→커밋 (c) 브랜치 생성·전환. 기존 편집/가짜 LSP 여정과 중복을 합쳐 전체 40개 이하를 유지한다. 실행은 S4-9.
+7. [x] 별도 검토: 모든 승인 범위 UI 도달 가능·한국어 문구·expect 확인/결과의 같은 대상·600/300줄 경계. Biome → `feat(source): integrate editing and Git workflows`.
+
+**구현·직접 검증 경계(2026-10-25)**
+- SourceNavigation/ChangesList/SourceDiff/BranchList/StashPanel/CommitBox/LogView/BlameGutter/CleanupPanel/GitControls/GitStatus를 기존 SourcePage/SourceSession에 조립했다. SourceDiff의 review 모드는 모든 쓰기 버튼을 숨기며 `ui/DiffView`와 parser/range는 수정하지 않았다. S4-9 agent 화면 이전은 아직 하지 않았다.
+- 확인/진행 상태는 source의 프로젝트+worktree 키 저장소에 보존한다. target/params/request ID를 복사해 프로젝트 전환 뒤에도 그대로 쓰고, RPC 단절 재시도는 같은 데몬/같은 요청만 허용한다. 실제 Git 상태를 확인하기 전에는 다른 쓰기를 막는다. operation ID·대상 일치와 terminal→running 퇴행 방지, 변경/resync invalidation·진행 중 status polling을 연결했다.
+- Commit 성공 뒤 push snapshot 실패는 완료 기록을 보존한다. 다시 읽기 버튼은 commit을 호출하지 않는다. 항상 확인 mutation은 snapshot을 표시하고 stale 새로고침 뒤에도 별도 실행 클릭이 필요하다. 정리 실패 요청의 대상/oid 목록을 유지하고 일부 처리 가능성을 표시한다.
+- 직접 Vitest 최종12파일36 PASS: 내비게이션/dirty 프로젝트 전환/분리 창, 파일 hidden·삭제 확인, 같은 파일 위치 재열기, hunk expect/인용/read-only, branch/cleanup/commit, 미확인 request ID, 원격 확인 대상 전환·stale·완료/취소, 상태 칩, native rejection, 검색/Problems 전달. typecheck PASS·Biome CI830 PASS. 시험 정리값 타입 수정 뒤 StatusBar 직접4 PASS(제품 소스는 36 PASS 입력과 동일). source/doc/scope/check log는 common-dir `s4-task8`에 보존한다.
+- E2E는 기존 editor 여정에 hunk commit을 통합하고 conflict·branch 여정을 추가(source4/전체23). 좁은 창의 실제 배치·E2E 실행은 S4-9에서 확인한다. 이번 과제에서 전체 check/clippy/build/E2E/native/실제 remote 요청은 실행하지 않았다. Rust/CLI/generated 미변경. R1 수정 후 별도 재검토 APPROVE(`s4-task8/independent-rereview.json`), 완료 커밋 단계다.
+
+**독립 검토 R1 수정**
+- 작업 ID는 daemon 메모리에만 있으므로 재시작 뒤 확정 소실된 작업은 결과 불명으로 보존한다. 원래 target/op/daemon을 대조하고 같은 대상의 읽기 전용 상태 조회+명시적 사용자 확인으로만 busy를 해제한다. 자동 replay나 성공/실패 추정은 없다. 일시적인 조회 오류는 계속 polling하고, 다른 daemon의 같은 ID는 거절한다. 같은 daemon의 늦은 terminal event도 기존 관찰 snapshot을 무효화해 재확인한다.
+- 신규6 PASS와 영향12 PASS(고유18), 누적 고유42. 초기 RED2/control1, warning role 시험 보조 오류/수정, 원본 검토 REQUEST_CHANGES와 pre-r1 source/doc/artifact를 보존한다. 세 제품 파일+신규 회귀만 R1 delta이며 R1 typecheck PASS·Biome CI831 PASS 뒤 별도 재검토 APPROVE·완료 커밋 단계다.
 
 ## 10. S4-9 — 에이전트 공유·최종 검증·PR
 

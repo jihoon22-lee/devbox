@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAgentSummary } from "../features/agents/AgentData";
 import { memoryLabel, useSystemMetrics } from "../features/runs/systemMetrics";
+import { GitStatus } from "../features/source/GitStatus";
 import { useConnection } from "../rpc/connection";
 import { useRpcQuery, useTopicInvalidation } from "../rpc/query";
 import { StatusDot } from "../ui";
@@ -67,6 +68,7 @@ export function StatusBar() {
       >
         WSL {system.isError ? "조회 실패" : system.data ? memoryLabel(system.data) : "—"}
       </button>
+      <GitStatus />
       <span style={{ flex: 1 }} />
       {daemonVersion && <span>데몬 {daemonVersion}</span>}
     </footer>

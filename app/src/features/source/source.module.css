@@ -228,3 +228,42 @@
   max-width: 100%;
   height: auto;
 }
+
+.gitPanel {
+  padding: var(--space-3);
+  overflow: auto;
+  min-height: 0;
+}
+.editorWorkspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.editorWorkspace[hidden] {
+  display: none;
+}
+@media (max-width: 560px) {
+  .page {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: auto;
+    min-width: 0;
+    max-height: 40%;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+.sidebar label {
+  display: block;
+  margin-block: var(--space-2);
+}
+.sidebar textarea,
+.sidebar input:not([type="checkbox"]) {
+  box-sizing: border-box;
+  width: 100%;
+}
+.gitPanel pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
