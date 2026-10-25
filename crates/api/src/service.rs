@@ -13,6 +13,7 @@ use devbox_protocol::{Ctx, Done, StreamOpened};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
+use zeroize::Zeroizing;
 
 /// 밀리초 단위 현재 시각(시험은 가짜 시계를 넣는다).
 pub type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
@@ -126,7 +127,7 @@ struct Job {
     prepared: http::build::Prepared,
     client: reqwest::Client,
     jar: Option<Arc<crate::cookies::Jar>>,
-    values: Vec<String>,
+    redaction: Redaction,
     run_id: Option<String>,
     origin: Option<RequestOrigin>,
 }
@@ -262,9 +263,23 @@ impl ApiService {
         if p.run_id.as_ref().is_some_and(|r| r.len() > 128) {
             return Err(ApiError::input("runId", "too_long").into());
         }
-        let (filled, mut values) = self.resolve(&p.snapshot, &p.env).await?;
+        let (filled, values) = self.resolve(&p.snapshot, &p.env).await?;
+        let mut values = Zeroizing::new(values);
         let prepared = http::build::prepare(&filled)?;
         values.extend(prepared.seeds.iter().cloned());
+        let mut redaction = Redaction::new(values.iter())?;
+        // These are recognized supplied inputs even if token acquisition or stream
+        // ownership ends before dispatch. Selected jar values remain hop-local.
+        redaction.request_headers(
+            prepared
+                .headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )?;
+        if let Some(cookie) = crate::cookies::header(&prepared.cookies, &[]) {
+            let cookie = Zeroizing::new(cookie);
+            redaction.request_headers(std::iter::once(("cookie", cookie.as_bytes())))?;
+        }
         let client = tls::client(&prepared.tls, true, self.inner.resolver.as_ref())?;
         let jar = p
             .cookie_jar
@@ -276,7 +291,7 @@ impl ApiService {
             prepared,
             client,
             jar,
-            values,
+            redaction,
             run_id: p.run_id,
             origin: p.origin,
         })
@@ -315,6 +330,9 @@ impl ApiService {
         let snapshot = crate::realtime::ws::snapshot(&p);
         let (filled, values) = self.resolve(&snapshot, &p.env).await?;
         let prepared = crate::realtime::ws::prepare(&filled, &p.subprotocols)?;
+        let values = Zeroizing::new(values);
+        let mut redaction = Redaction::new(values.iter())?;
+        prepared.seed(&mut redaction)?;
         let permit = self.session_slot()?;
         let ends = ctx.open_stream().map_err(|_| ApiError::StreamUnsupported)?;
         let stream_id = ends.id;
@@ -322,7 +340,7 @@ impl ApiService {
             prepared,
             tx: ends.tx,
             input: ends.input,
-            redactor: crate::redact::Redactor::new(&values),
+            redaction,
             clock: self.inner.clock.clone(),
             _permit: permit,
         }));
@@ -338,6 +356,9 @@ impl ApiService {
             p.last_event_id.as_deref(),
             self.inner.resolver.as_ref(),
         )?;
+        let values = Zeroizing::new(values);
+        let mut redaction = Redaction::new(values.iter())?;
+        prepared.seed(&mut redaction)?;
         let permit = self.session_slot()?;
         let ends = ctx.open_stream().map_err(|_| ApiError::StreamUnsupported)?;
         let stream_id = ends.id;
@@ -345,7 +366,7 @@ impl ApiService {
         tokio::spawn(crate::realtime::sse::run(crate::realtime::sse::Session {
             prepared,
             tx: ends.tx,
-            redactor: crate::redact::Redactor::new(&values),
+            redaction,
             clock: self.inner.clock.clone(),
             _permit: permit,
         }));
@@ -379,7 +400,7 @@ async fn run(inner: Arc<Inner>, job: Job, tx: devbox_protocol::stream::StreamTx)
     let events = Events::new(&tx);
     let id = uuid::Uuid::new_v4().simple().to_string();
     let sent_at_ms = inner.history.now();
-    let mut redaction = Redaction::new(job.values.clone());
+    let mut redaction = job.redaction;
     let mut out = Captured::default();
     let closed = tx.closed();
     let result = match events
@@ -427,6 +448,17 @@ async fn run(inner: Arc<Inner>, job: Job, tx: devbox_protocol::stream::StreamTx)
             )
         }
     };
+    // A partial matcher cannot sanitize snapshots or a response collected before
+    // the failed extension. No history row/body is written after a redaction failure.
+    if redaction.failed()
+        || matches!(
+            error.as_ref().map(|e| e.code.as_str()),
+            Some("api.redaction_failed")
+        )
+    {
+        tx.finish().await;
+        return;
+    }
     if let Some(jar) = &job.jar
         && jar.save().is_err()
     {

@@ -4,7 +4,7 @@
 use super::codec::DynamicCodec;
 use super::{GrpcEvent, MAX_MESSAGE_BYTES, MAX_STREAM_MESSAGES, Prepared, describe, metadata};
 use crate::ApiError;
-use crate::redact::Redactor;
+use crate::redact::{Redaction, Redactor};
 use devbox_protocol::stream::StreamTx;
 use prost::Message;
 use prost_reflect::{DeserializeOptions, DynamicMessage, MessageDescriptor};
@@ -20,7 +20,7 @@ pub(crate) struct Job {
     input: DynamicMessage,
     output: MessageDescriptor,
     timeout: Duration,
-    redactor: Redactor,
+    redaction: Redaction,
 }
 
 /// 요청 JSON → 동적 메시지. 모르는 필드는 거절하고, 오류 문장(값이 들어 있을 수 있음)은 버린다.
@@ -40,7 +40,7 @@ pub(crate) fn message(desc: MessageDescriptor, json: &str) -> Result<DynamicMess
 }
 
 pub(crate) async fn prepare(
-    prepared: Prepared,
+    mut prepared: Prepared,
     method: &str,
     json: &str,
     timeout: Duration,
@@ -51,7 +51,7 @@ pub(crate) async fn prepare(
     let (service_name, method_name) = method
         .split_once('/')
         .ok_or_else(|| ApiError::grpc("method_not_found"))?;
-    let (pool, _) = tokio::time::timeout(super::DESCRIBE_TIMEOUT, describe::pool(&prepared))
+    let (pool, _) = tokio::time::timeout(super::DESCRIBE_TIMEOUT, describe::pool(&mut prepared))
         .await
         .map_err(|_| ApiError::network("timeout"))??;
     let found = pool
@@ -72,7 +72,7 @@ pub(crate) async fn prepare(
         input,
         output: found.output(),
         timeout,
-        redactor: Redactor::new(&prepared.values),
+        redaction: prepared.redaction,
     })
 }
 
@@ -88,7 +88,17 @@ fn json_of(message: &DynamicMessage, redactor: &Redactor) -> String {
 }
 
 /// 서버 상태 → `Trailers`, 연결 계층 실패 → `Failed`.
-fn ended(status: &tonic::Status, redactor: &Redactor) -> GrpcEvent {
+fn failed(error: &ApiError) -> GrpcEvent {
+    GrpcEvent::Failed {
+        error: devbox_protocol::to_wire(error),
+    }
+}
+
+fn ended(status: &tonic::Status, redaction: &mut Redaction) -> GrpcEvent {
+    if let Err(error) = redaction.response_headers(metadata::headers(status.metadata())) {
+        return failed(&error);
+    }
+    let redactor = &redaction.redactor;
     match describe::transport(status) {
         Some(error) => GrpcEvent::Failed {
             error: devbox_protocol::to_wire(&error),
@@ -102,13 +112,13 @@ fn ended(status: &tonic::Status, redactor: &Redactor) -> GrpcEvent {
 }
 
 async fn exchange(job: Job, tx: &StreamTx) -> Result<&'static str, crate::events::Closed> {
-    let redactor = job.redactor.clone();
+    let mut redaction = job.redaction;
     let mut grpc = tonic::client::Grpc::new(job.channel)
         .max_decoding_message_size(MAX_MESSAGE_BYTES)
         .max_encoding_message_size(MAX_MESSAGE_BYTES);
     if let Err(error) = grpc.ready().await {
         let status = tonic::Status::from_error(Box::new(error));
-        write(tx, &ended(&status, &redactor)).await?;
+        write(tx, &ended(&status, &mut redaction)).await?;
         return Ok("failed");
     }
     let mut request = tonic::Request::new(job.input);
@@ -118,14 +128,18 @@ async fn exchange(job: Job, tx: &StreamTx) -> Result<&'static str, crate::events
     let response = match grpc.server_streaming(request, job.path, codec).await {
         Ok(response) => response,
         Err(status) => {
-            write(tx, &ended(&status, &redactor)).await?;
+            write(tx, &ended(&status, &mut redaction)).await?;
             return Ok("failed");
         }
     };
+    if let Err(error) = redaction.response_headers(metadata::headers(response.metadata())) {
+        write(tx, &failed(&error)).await?;
+        return Ok("failed");
+    }
     write(
         tx,
         &GrpcEvent::Headers {
-            metadata: metadata::pairs(response.metadata(), &redactor),
+            metadata: metadata::pairs(response.metadata(), &redaction.redactor),
         },
     )
     .await?;
@@ -149,26 +163,30 @@ async fn exchange(job: Job, tx: &StreamTx) -> Result<&'static str, crate::events
                 write(
                     tx,
                     &GrpcEvent::Message {
-                        json: json_of(&message, &redactor),
+                        json: json_of(&message, &redaction.redactor),
                     },
                 )
                 .await?;
             }
             Ok(None) => {
                 let trailers = stream.trailers().await.ok().flatten().unwrap_or_default();
+                if let Err(error) = redaction.response_headers(metadata::headers(&trailers)) {
+                    write(tx, &failed(&error)).await?;
+                    return Ok("failed");
+                }
                 write(
                     tx,
                     &GrpcEvent::Trailers {
                         code: 0,
                         message: String::new(),
-                        metadata: metadata::pairs(&trailers, &redactor),
+                        metadata: metadata::pairs(&trailers, &redaction.redactor),
                     },
                 )
                 .await?;
                 return Ok("ok");
             }
             Err(status) => {
-                write(tx, &ended(&status, &redactor)).await?;
+                write(tx, &ended(&status, &mut redaction)).await?;
                 return Ok("failed");
             }
         }

@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–3은 직접 검증·독립 전체 검토 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4는 직접 검증·독립 전체 검토 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -126,15 +126,18 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 - request raw `Cookie` header·구조화 cookie rows·**그 hop에서 실제 선택되어 송신되는 jar cookie values**를 모두 포함한다. Cookie row/jar 조립이 auth 준비보다 늦으므로 최종 outgoing header 조립 후, 각 redirect hop의 응답을 내보내기 전에 값을 seed에 추가한다. 전체 jar나 다른 origin의 cookie를 불필요하게 resolve/수집하지 않는다.
 - **새 계약:** response `Set-Cookie`는 header 이름으로 표시/history 값을 가리고, 새로 발급된 cookie value도 operation seed에 추가한 뒤 그 response head/body/history를 방출한다. redirect hop의 Set-Cookie도 같은 순서다. 기존 stream은 값 seed만 적용하므로 이 기능을 이미 있다고 쓰지 않는다.
 - response cookie seed 추가는 새 credential을 body로 echo한 경우까지 같은 privacy boundary로 보호하기 위한 명시적 확장이다. cookie 이름/Expires·Path·SameSite 등 속성을 credential 값과 혼동하지 않는다. 일반 서버 JSON field를 자동 수집하는 확장은 아니다.
-- operation별 seed 개수/총 bytes/표현 변형의 합산 상한을 기존 redactor 예산과 맞춰 고정한다. 초과하면 typed 실패로 응답 relay/history 기록을 차단하며 raw fallback은 없다. 빈 값은 matching seed로 넣지 않되 credential header 표시 가림은 유지하고, 짧은 nonempty 값은 제외하지 않는다.
+- 기존 redactor에는 합산 예산이 없었으므로 operation별 새 상한을 raw seed 1,024개·256KiB, 중복 제거한 표현 변형 4,096개·1MiB로 고정했다. 변형 길이를 먼저 확인한 뒤 할당하며 raw·form URL·percent URL·JSON escaped byte 표현을 지원한다. 초과하면 typed 실패로 응답 relay/history 기록을 차단하며 raw fallback은 없다. 빈 값은 matching seed로 넣지 않되 credential header 표시 가림은 유지하고, 짧은 nonempty 값은 제외하지 않는다.
 - streaming chunk 경계·문자 encoding/표현 변형은 기존 sanitizer의 지원 계약을 유지하며 decoded body도 검사한다. seed 확정 전 response bytes를 이미 공개한 뒤 뒤늦게 가리는 구현은 하지 않는다.
 - 로그에는 본문/헤더 값을 추가하지 않는다. stream·history 본문·snapshot·후속 노트 export에서 같은 정책을 쓴다. 짧은 credential도 제외하지 않고 과잉 가림 가능성을 명시한다.
 - **임의 literal JSON/body의 문자열을 전부 secret으로 가리는 확장은 하지 않는다.** 기존 일반 응답 가독성·literal echo 시험은 유지한다.
 
-- [ ] RED: 보존된 owned localhost echo fixture로 구조화 Bearer 제어와 직접 Authorization 실패를 정식 회귀로 만든다.
-- [ ] GREEN: 대소문자·Proxy-Authorization·API key, raw Cookie/row/실제 선택 jar echo, 요청 seed에 없던 서로 다른 신규 Set-Cookie value의 header/body/history 가림, redirect hop·chunk split·빈/짧은 값·capacity 초과 fail-closed·history_bytes 디코딩을 확인한다. 무관한 일반 literal JSON/body와 비민감 header는 그대로 보존한다.
-- [ ] 검토: 실제 credential 수집 시점이 body 송출/기록보다 앞인지, 취소/완료 뒤 seed를 장기 저장하지 않는지 확인한다.
-- [ ] 커밋: `fix(api): redact recognized credential header and cookie echoes`.
+- [x] RED: 보존된 owned localhost echo fixture로 구조화 Bearer 제어와 직접 Authorization 실패를 정식 회귀로 만든다.
+- [x] GREEN: 대소문자·Proxy-Authorization·API key, raw Cookie/row/실제 선택 jar echo, 요청 seed에 없던 서로 다른 신규 Set-Cookie value의 header/body/history 가림, redirect hop·chunk split·빈/짧은 값·capacity 초과 fail-closed·history_bytes 디코딩을 확인한다. 무관한 일반 literal JSON/body와 비민감 header는 그대로 보존한다.
+- 구현 경계: raw Cookie는 개별 값(quoted 값 포함)을 수집하고 이름·속성은 seed로 넣지 않는다. 직접 헤더·cookie row는 OAuth 실패/취소 전 prepare에서도 수집하며, jar는 실제 outgoing hop에 선택된 값만 수집한다. 최신 response cookie로 이전 redirect 목록도 공개 전에 다시 가린다.
+- WS handshake·SSE 각 재연결·gRPC 실제 요청/응답 metadata·MCP HTTP 헤더에도 같은 fallible 정책을 적용했다. gRPC reflection은 기존 첫 응답 후 drop을 유지하고 읽지 않은 정상 trailers는 수집했다고 주장하지 않는다. credential이 catalog dispatch 식별자에 섞이면 이름을 바꾸지 않고 고정 typed 오류로 거절한다. 미래 trailer 값으로 이미 보낸 streaming message를 소급 가리지는 않는다. MCP stdio 환경 이름을 HTTP 헤더로 추론하지 않는다.
+- raw seed·임시 표현·Basic decode·stream 보류 버퍼는 operation 수명에 묶인 zeroizing 소유다. Aho-Corasick 내부 할당의 zeroization을 보장한다고 쓰지 않는다. typed `api.redaction_failed`는 raw fallback 없이 처리하고 HTTP는 해당 작업의 history 전체를 쓰지 않는다. 실패 사유별 한국어 메시지와 생성 RPC 타입을 반영했다.
+- [x] 검토: 실제 credential 수집 시점·공개/기록 경계·operation 수명을 확인한 독립 전체 검토 APPROVE·잔여지적0. 직접 관련74 PASS·incidental1 PASS와 원본 실패·미실행을 구분했다. 근거 `s6-1a4/independent-review.json`.
+- [x] 커밋: `fix(api): redact recognized credential header and cookie echoes`(로컬).
 
 ## 7. S6-1b.1 — API 응답을 일일 기록·선택 노트에 붙이기
 

@@ -153,7 +153,10 @@ async fn live_cross_origin_redirect_strips_auth_and_redacts_every_return_path() 
         .iter()
         .find(|h| h.name == "set-cookie")
         .expect("set-cookie");
-    assert_eq!(set_cookie.value, "sid=[REDACTED]");
+    assert_eq!(
+        set_cookie.value, "[REDACTED]",
+        "Set-Cookie display is masked by header name"
+    );
     assert_eq!(redirects.len(), 1);
     assert!(redirects[0].location.contains("request_id=redirect-ok"));
     assert!(

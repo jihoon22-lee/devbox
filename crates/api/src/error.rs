@@ -13,6 +13,7 @@ devbox_protocol::domain_error! {
         SecretKeyMismatch = "secrets.key_mismatch",
         FileMissing { part: u32 } = "api.file_missing",
         TooLarge { limit: u64 } = "api.too_large",
+        RedactionFailed { reason: String } = "api.redaction_failed",
         TlsInvalid { reason: String } = "api.tls_invalid",
         OauthFailed { stage: String } = "api.oauth_failed",
         Network { kind: String } = "api.network",

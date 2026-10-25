@@ -478,6 +478,15 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "deps.busy": { title: "의존성을 조회하는 중입니다.", action: "현재 조회가 끝난 뒤 다시 시도하세요." },
   "deps.job_not_found": { title: "의존성 조회 작업을 찾을 수 없습니다.", action: "다시 조회하세요." },
   "api.too_large": { title: "요청이 허용 크기를 넘었습니다.", action: "행 수나 본문 크기를 줄여 주세요." },
+  "api.redaction_failed": (d) => ({
+    title: "응답의 비밀 값 보호를 완료하지 못했습니다.",
+    action:
+      field(d, "reason") === "capacity"
+        ? "자격 증명 수나 크기를 줄인 뒤 다시 시도해 주세요."
+        : field(d, "reason") === "input"
+          ? "서버 응답과 인증 설정을 확인해 주세요."
+          : "다시 시도해 주세요. 문제가 계속되면 앱을 다시 시작해 주세요.",
+  }),
   "api.tls_invalid": {
     title: "TLS 인증서 설정을 사용할 수 없습니다.",
     action: "CA·클라이언트 인증서·키 PEM 파일을 확인해 주세요.",

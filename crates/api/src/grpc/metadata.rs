@@ -69,22 +69,19 @@ fn decode_base64(text: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-/// 받은 메타데이터를 화면 표시용 쌍으로(이진 값은 Base64). 값은 가린다.
+pub(crate) fn headers(map: &MetadataMap) -> impl Iterator<Item = (&str, &[u8])> {
+    map.iter().map(|entry| match entry {
+        KeyAndValueRef::Ascii(key, value) => (key.as_str(), value.as_encoded_bytes()),
+        KeyAndValueRef::Binary(key, value) => (key.as_str(), value.as_encoded_bytes()),
+    })
+}
+
+/// Received metadata is shown only after named header masking and bytewise echo redaction.
 pub(crate) fn pairs(map: &MetadataMap, redactor: &crate::redact::Redactor) -> Vec<crate::Pair> {
-    map.iter()
-        .map(|entry| match entry {
-            KeyAndValueRef::Ascii(key, value) => (
-                key.as_str().to_owned(),
-                String::from_utf8_lossy(value.as_encoded_bytes()).into_owned(),
-            ),
-            KeyAndValueRef::Binary(key, value) => (
-                key.as_str().to_owned(),
-                String::from_utf8_lossy(value.as_encoded_bytes()).into_owned(),
-            ),
-        })
+    headers(map)
         .map(|(name, value)| crate::Pair {
-            name,
-            value: redactor.text(&value),
+            name: name.to_owned(),
+            value: redactor.header(name, value),
         })
         .collect()
 }

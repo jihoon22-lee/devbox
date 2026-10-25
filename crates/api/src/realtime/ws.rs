@@ -2,7 +2,7 @@
 //! 소켓 읽기는 화면 credit을 기다리지 않는다(큐 `Buffer`가 넘치면 버리고 센다).
 use super::buffer::Buffer;
 use super::{CONNECT_TIMEOUT, Direction, MessageKind, RealtimeEvent, WsInput};
-use crate::redact::Redactor;
+use crate::redact::{Redaction, Redactor};
 use crate::tls::{self, PreparedTls};
 use crate::validate;
 use crate::{ApiError, Auth, Body, RequestSnapshot, WsOpen};
@@ -33,6 +33,16 @@ pub(crate) struct Prepared {
     headers: Vec<(String, String)>,
     subprotocols: Vec<String>,
     tls: PreparedTls,
+}
+
+impl Prepared {
+    pub(crate) fn seed(&self, redaction: &mut Redaction) -> Result<(), ApiError> {
+        redaction.request_headers(
+            self.headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )
+    }
 }
 
 /// 치환·비밀 해석에 넣을 모양(URL·헤더·TLS 경로만 활성 필드).
@@ -104,7 +114,10 @@ fn mapped(error: &WsError) -> ApiError {
     }
 }
 
-async fn connect(p: &Prepared) -> Result<(Socket, Option<String>), ApiError> {
+async fn connect(
+    p: &Prepared,
+    redaction: &mut Redaction,
+) -> Result<(Socket, Option<String>), ApiError> {
     let host = p.url.host_str().ok_or_else(|| ApiError::url("host"))?;
     let port = p
         .url
@@ -149,6 +162,12 @@ async fn connect(p: &Prepared) -> Result<(Socket, Option<String>), ApiError> {
     )
     .await
     .map_err(|e| mapped(&e))?;
+    redaction.response_headers(
+        response
+            .headers()
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_bytes())),
+    )?;
     let protocol = response
         .headers()
         .get(http::header::SEC_WEBSOCKET_PROTOCOL)
@@ -255,7 +274,7 @@ pub(crate) struct Session {
     pub(crate) prepared: Prepared,
     pub(crate) tx: devbox_protocol::stream::StreamTx,
     pub(crate) input: mpsc::Receiver<Bytes>,
-    pub(crate) redactor: Redactor,
+    pub(crate) redaction: Redaction,
     pub(crate) clock: crate::Clock,
     /// 세션이 끝나 Session이 버려질 때 자리를 돌려준다.
     pub(crate) _permit: tokio::sync::OwnedSemaphorePermit,
@@ -323,11 +342,11 @@ async fn pump(socket: Socket, s: &mut Session, buffer: &Buffer) -> End {
                 Some(Ok(Message::Close(frame))) => {
                     server_close = Some(RealtimeEvent::Closed {
                         code: frame.as_ref().map(|f| u16::from(f.code)),
-                        reason: frame.as_ref().map(|f| s.redactor.text(&f.reason)),
+                        reason: frame.as_ref().map(|f| s.redaction.redactor.text(&f.reason)),
                     });
                 }
                 Some(Ok(message)) => {
-                    if let Some((event, size)) = shown(&s.redactor, &s.clock, Direction::Received, &message) {
+                    if let Some((event, size)) = shown(&s.redaction.redactor, &s.clock, Direction::Received, &message) {
                         buffer.message(event, size);
                     }
                 }
@@ -370,7 +389,7 @@ async fn pump(socket: Socket, s: &mut Session, buffer: &Buffer) -> End {
                         continue;
                     }
                     let closing = matches!(message, Message::Close(_));
-                    let echo = shown(&s.redactor, &s.clock, Direction::Sent, &message);
+                    let echo = shown(&s.redaction.redactor, &s.clock, Direction::Sent, &message);
                     let sent = tokio::select! {
                         biased;
                         _ = closed.cancelled() => return End::Cancelled,
@@ -401,7 +420,7 @@ async fn session(s: &mut Session, buffer: &Buffer) -> &'static str {
     let connected = tokio::select! {
         biased;
         _ = closed.cancelled() => return "cancelled",
-        r = tokio::time::timeout(CONNECT_TIMEOUT, connect(&s.prepared)) => r,
+        r = tokio::time::timeout(CONNECT_TIMEOUT, connect(&s.prepared, &mut s.redaction)) => r,
     };
     let (socket, protocol) = match connected {
         Err(_) => {
@@ -414,7 +433,9 @@ async fn session(s: &mut Session, buffer: &Buffer) -> &'static str {
         }
         Ok(Ok(open)) => open,
     };
-    buffer.control(RealtimeEvent::Open { protocol });
+    buffer.control(RealtimeEvent::Open {
+        protocol: protocol.map(|value| s.redaction.redactor.text(&value)),
+    });
     match pump(socket, s, buffer).await {
         End::Cancelled => "cancelled",
         End::Event(event) => {

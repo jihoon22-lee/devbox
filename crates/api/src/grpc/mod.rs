@@ -150,7 +150,7 @@ pub(crate) struct Prepared {
     pub(crate) metadata: tonic::metadata::MetadataMap,
     pub(crate) tls: crate::tls::PreparedTls,
     pub(crate) proto_files: Option<Vec<String>>,
-    pub(crate) values: Vec<String>,
+    pub(crate) redaction: crate::redact::Redaction,
 }
 
 impl ApiService {
@@ -168,6 +168,8 @@ impl ApiService {
             .await?;
         let url = target_url(&filled.url)?;
         let metadata = metadata::prepare(&filled.headers)?;
+        let mut redaction = crate::redact::Redaction::new(&values)?;
+        redaction.request_headers(metadata::headers(&metadata))?;
         let tls = crate::tls::prepare(&filled.tls)?;
         if let Some(files) = &proto_files {
             describe::check_proto_paths(files)?;
@@ -182,18 +184,18 @@ impl ApiService {
                 metadata,
                 tls,
                 proto_files,
-                values,
+                redaction,
             },
             json,
         ))
     }
 
     pub async fn grpc_describe(&self, p: GrpcTarget) -> R<GrpcCatalog> {
-        let (prepared, _) = self
+        let (mut prepared, _) = self
             .grpc_prepare(&p.target, &p.metadata, None, &p.tls, &p.env, p.proto_files)
             .await?;
         let started = std::time::Instant::now();
-        let result = tokio::time::timeout(DESCRIBE_TIMEOUT, describe::catalog(&prepared))
+        let result = tokio::time::timeout(DESCRIBE_TIMEOUT, describe::catalog(&mut prepared))
             .await
             .unwrap_or_else(|_| Err(ApiError::network("timeout")));
         tracing::debug!(

@@ -8,44 +8,131 @@ const MASK: &[u8] = crate::REDACTED.as_bytes();
 pub(crate) struct Redactor {
     ac: Option<Arc<AhoCorasick>>,
     longest: usize,
+    blocked: bool,
 }
 
-/// 값 하나와 응답에 되돌아올 수 있는 인코딩 꼴(form·percent·JSON 문자열).
-fn variants(value: &str) -> Vec<String> {
-    let form: String = url::form_urlencoded::byte_serialize(value.as_bytes()).collect();
-    let percent = form.replace('+', "%20");
-    let json = serde_json::to_string(value)
-        .map(|q| q[1..q.len() - 1].to_owned())
-        .unwrap_or_default();
-    vec![value.to_owned(), form, percent, json]
-}
+mod credentials;
+mod seeds;
+use crate::ApiError;
+use seeds::Seeds;
+use zeroize::{Zeroize, Zeroizing};
 
-impl Redactor {
-    pub(crate) fn new<I, S>(values: I) -> Self
+/// All sessions own bounded seeds; construction/extension failure never falls back to raw output.
+pub(crate) struct Redaction {
+    seeds: Seeds,
+    pub(crate) redactor: Redactor,
+    failed: bool,
+}
+impl Redaction {
+    pub(crate) fn new<I, S>(values: I) -> Result<Self, ApiError>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let mut patterns: Vec<String> = values
-            .into_iter()
-            .filter(|v| !v.as_ref().is_empty())
-            .flat_map(|v| variants(v.as_ref()))
-            .filter(|v| !v.is_empty())
-            .collect();
-        patterns.sort();
-        patterns.dedup();
-        if patterns.is_empty() {
-            return Self::default();
+        let mut seeds = Seeds::default();
+        for value in values {
+            seeds.add(value.as_ref().as_bytes())?;
         }
-        let longest = patterns.iter().map(String::len).max().unwrap_or(0);
+        let redactor = Redactor::compile(&seeds)?;
+        Ok(Self {
+            seeds,
+            redactor,
+            failed: false,
+        })
+    }
+    pub(crate) fn failed(&self) -> bool {
+        self.failed
+    }
+    fn update(
+        &mut self,
+        collect: impl FnOnce(&mut Seeds) -> Result<bool, ApiError>,
+    ) -> Result<(), ApiError> {
+        if self.failed {
+            return Err(seeds::failed("capacity"));
+        }
+        let result = collect(&mut self.seeds).and_then(|changed| {
+            if changed {
+                Redactor::compile(&self.seeds).map(Some)
+            } else {
+                Ok(None)
+            }
+        });
+        match result {
+            Ok(Some(redactor)) => {
+                self.redactor = redactor;
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+            Err(error) => {
+                self.failed = true;
+                self.redactor = Redactor {
+                    blocked: true,
+                    ..Default::default()
+                };
+                Err(error)
+            }
+        }
+    }
+    pub(crate) fn add(&mut self, value: &str) -> Result<(), ApiError> {
+        self.update(|seeds| seeds.add(value.as_bytes()))
+    }
+    pub(crate) fn request_headers<'a>(
+        &mut self,
+        headers: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    ) -> Result<(), ApiError> {
+        self.update(|seeds| {
+            let mut changed = false;
+            for (name, value) in headers {
+                changed |= credentials::request(seeds, name, value)?;
+            }
+            Ok(changed)
+        })
+    }
+    pub(crate) fn response_headers<'a>(
+        &mut self,
+        headers: impl IntoIterator<Item = (&'a str, &'a [u8])>,
+    ) -> Result<(), ApiError> {
+        self.update(|seeds| {
+            let mut changed = false;
+            for (name, value) in headers {
+                changed |= credentials::response(seeds, name, value)?;
+            }
+            Ok(changed)
+        })
+    }
+}
+impl Redactor {
+    #[cfg(test)]
+    pub(crate) fn new<I, S>(values: I) -> Result<Self, ApiError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        Ok(Redaction::new(values)?.redactor)
+    }
+    fn compile(seeds: &Seeds) -> Result<Self, ApiError> {
+        let patterns = seeds.patterns()?;
+        if patterns.is_empty() {
+            return Ok(Self::default());
+        }
+        let longest = patterns.iter().map(Vec::len).max().unwrap_or(0);
         let ac = AhoCorasick::builder()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(&patterns)
-            .ok()
-            .map(Arc::new);
-        Self { ac, longest }
+            .build(patterns.iter())
+            .map_err(|_| seeds::failed("matcher"))?;
+        Ok(Self {
+            ac: Some(Arc::new(ac)),
+            longest,
+            blocked: false,
+        })
     }
-
+    pub(crate) fn header(&self, name: &str, value: &[u8]) -> String {
+        if credentials::sensitive_header(name) {
+            crate::REDACTED.into()
+        } else {
+            String::from_utf8_lossy(&self.bytes(value)).into_owned()
+        }
+    }
     pub(crate) fn bytes(&self, data: &[u8]) -> Vec<u8> {
         let mut stream = self.stream();
         let mut out = stream.push(data);
@@ -58,16 +145,19 @@ impl Redactor {
     }
 
     pub(crate) fn contains(&self, text: &str) -> bool {
-        self.ac
-            .as_ref()
-            .is_some_and(|ac| ac.find(text.as_bytes()).is_some())
+        self.blocked
+            || self
+                .ac
+                .as_ref()
+                .is_some_and(|ac| ac.find(text.as_bytes()).is_some())
     }
 
     pub(crate) fn stream(&self) -> StreamRedactor {
         StreamRedactor {
             ac: self.ac.clone(),
             hold: self.longest.saturating_sub(1),
-            buf: Vec::new(),
+            buf: Zeroizing::new(Vec::new()),
+            blocked: self.blocked,
         }
     }
 }
@@ -76,11 +166,19 @@ impl Redactor {
 pub(crate) struct StreamRedactor {
     ac: Option<Arc<AhoCorasick>>,
     hold: usize,
-    buf: Vec<u8>,
+    buf: Zeroizing<Vec<u8>>,
+    blocked: bool,
 }
 
 impl StreamRedactor {
     pub(crate) fn push(&mut self, chunk: &[u8]) -> Vec<u8> {
+        if self.blocked {
+            return if chunk.is_empty() {
+                vec![]
+            } else {
+                MASK.to_vec()
+            };
+        }
         let Some(ac) = self.ac.clone() else {
             return chunk.to_vec();
         };
@@ -95,7 +193,7 @@ impl StreamRedactor {
                 let end = self.buf.len();
                 self.drain(&ac, end)
             }
-            None => std::mem::take(&mut self.buf),
+            None => std::mem::take(&mut *self.buf),
         }
     }
 
@@ -113,6 +211,7 @@ impl StreamRedactor {
         }
         let keep = pos.max(cut);
         out.extend_from_slice(&self.buf[pos..keep]);
+        self.buf[..keep].zeroize();
         self.buf.drain(..keep);
         out
     }
@@ -124,7 +223,7 @@ mod tests {
 
     #[test]
     fn redacts_response_body_error_and_url_values() {
-        let r = Redactor::new(["top-secret"]);
+        let r = Redactor::new(["top-secret"]).expect("bounded");
         assert_eq!(
             r.text(r#"{"echo":"top-secret","access_token":"other"}"#),
             r#"{"echo":"[REDACTED]","access_token":"other"}"#
@@ -134,19 +233,24 @@ mod tests {
             !r.text("https://other.test/cb?token=top-secret")
                 .contains("top-secret")
         );
-        let spaced = Redactor::new(["a b+c"]);
+        let spaced = Redactor::new(["a b+c"]).expect("bounded");
         assert_eq!(
             spaced.text("?q=a+b%2Bc&r=a%20b%2Bc"),
             "?q=[REDACTED]&r=[REDACTED]"
         );
-        let quoted = Redactor::new(["a\"b\nc"]);
+        let quoted = Redactor::new(["a\"b\nc"]).expect("bounded");
         assert_eq!(quoted.text(r#"{"v":"a\"b\nc"}"#), r#"{"v":"[REDACTED]"}"#);
-        assert_eq!(Redactor::new(Vec::<String>::new()).text("plain"), "plain");
+        assert_eq!(
+            Redactor::new(Vec::<String>::new())
+                .expect("empty")
+                .text("plain"),
+            "plain"
+        );
     }
 
     #[test]
     fn streaming_redaction_spans_chunk_boundaries_and_prefers_longest() {
-        let r = Redactor::new(["abc", "abcdefgh", "zz"]);
+        let r = Redactor::new(["abc", "abcdefgh", "zz"]).expect("bounded");
         let input = b"..abcdefgh..abc..zz..";
         for size in 1..input.len() {
             let mut stream = r.stream();
@@ -161,5 +265,104 @@ mod tests {
                 "chunk size {size}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::{Redaction, seeds::MAX_SEED_BYTES};
+    fn fresh() -> Redaction {
+        Redaction::new(std::iter::empty::<&str>()).expect("empty policy")
+    }
+    #[test]
+    fn recognized_headers_basic_and_cookie_parts_share_one_policy() {
+        let mut r = fresh();
+        let basic = format!(
+            "Basic {}",
+            data_encoding::BASE64.encode(b"fixture-user:fixture-password")
+        );
+        for (name, value, parts) in [
+            (
+                "AuThOrIzAtIoN",
+                "Bearer fixture-bearer",
+                vec!["fixture-bearer"],
+            ),
+            (
+                "Proxy-Authorization",
+                basic.as_str(),
+                vec!["fixture-user:fixture-password", "fixture-password"],
+            ),
+            (
+                "Authorization",
+                "Custom fixture-unknown-scheme",
+                vec!["fixture-unknown-scheme"],
+            ),
+            ("X-API-Key", "fixture-api", vec!["fixture-api"]),
+            ("API-Key", "fixture-second-api", vec!["fixture-second-api"]),
+            ("X-Auth-Token", "fixture-token", vec!["fixture-token"]),
+            (
+                "Cookie",
+                "first=fixture-first; second=\"fixture-second\"",
+                vec!["fixture-first", "fixture-second"],
+            ),
+        ] {
+            r.request_headers([(name, value.as_bytes())])
+                .expect("recognized");
+            for part in parts {
+                assert_eq!(r.redactor.text(part), crate::REDACTED);
+            }
+            assert_eq!(r.redactor.header(name, value.as_bytes()), crate::REDACTED);
+        }
+        assert_eq!(
+            r.redactor.text("fixture-user"),
+            "fixture-user",
+            "Basic username alone is not inferred"
+        );
+    }
+    #[test]
+    fn empty_short_binary_and_noncredential_values_keep_precise_scope() {
+        let mut r = fresh();
+        r.request_headers([
+            ("Cookie", b"empty=; quoted=\"\"".as_slice()),
+            ("x-public", b"public-readable".as_slice()),
+        ])
+        .expect("empty");
+        r.response_headers([
+            ("Set-Cookie", b"empty=\"\"; Path=/".as_slice()),
+            ("x-api-key", b"response-only".as_slice()),
+        ])
+        .expect("response");
+        assert_eq!(
+            r.redactor
+                .text("empty=; quoted=\"\" public-readable response-only Path /"),
+            "empty=; quoted=\"\" public-readable response-only Path /"
+        );
+        assert_eq!(r.redactor.header("Cookie", b""), crate::REDACTED);
+        r.response_headers([
+            ("Set-Cookie", b"sid=Q; Path=/; SameSite=Lax".as_slice()),
+            ("SET-cookie", b"bin=\xff\xfe; Secure".as_slice()),
+        ])
+        .expect("short binary");
+        assert_eq!(
+            r.redactor.text("Q Path SameSite Lax sid"),
+            "[REDACTED] Path SameSite Lax sid"
+        );
+        assert_eq!(r.redactor.bytes(b"..\xff\xfe.."), b"..[REDACTED]..");
+        assert_eq!(
+            r.redactor.header("x-echo", b"..\xff\xfe.."),
+            "..[REDACTED].."
+        );
+    }
+    #[test]
+    fn construction_and_extension_errors_poison_instead_of_raw_fallback() {
+        assert!(Redaction::new(["a".repeat(MAX_SEED_BYTES + 1)]).is_err());
+        let mut r = fresh();
+        assert!(r.add(&"a".repeat(MAX_SEED_BYTES + 1)).is_err());
+        assert!(r.failed());
+        assert_eq!(
+            r.redactor.text("raw-output-must-not-escape"),
+            crate::REDACTED
+        );
+        assert!(r.add("small").is_err(), "failure is sticky");
     }
 }

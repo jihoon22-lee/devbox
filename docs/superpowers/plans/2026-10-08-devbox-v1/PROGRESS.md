@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자2026-10-25 구현 승인에 따라 S6-1a.3 Windows 사본 identity·실행 reader 수명을 보완했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반0cf16c1e. 제품48파일·문서4파일의 독립 전체 검토 APPROVE(지적0)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자2026-10-25 구현 승인에 따라 S6-1a.4 직접 credential echo를 구현·좁은 검증했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반4f24ecc6. 제품·시험29파일과 문서2파일의 최종 독립 전체 검토 APPROVE(지적0)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1a.3 로컬 완료 다음은 S6-1a.4 직접 credential echo다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
-| 마지막 갱신 | 2026-10-25 · S6-1a.3 동일 basename RED1·marker 동시 초기화 RED1·관찰 제어 누락 RED1을 보존했다. 직접 관련 고유94 PASS와 incidental2 PASS, scoped TS·메시지 Biome PASS. common-dir `devbox-verification/s6-1a3/`에 source·원본 log·자원 근거. 독립 전체 검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 전체 검사·Windows/native 실기·push·PR·공개 미실행. |
+| 다음 제품 작업 | S6-1a.4 로컬 완료 다음은 S6-1b.1 API 응답→노트 export다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
+| 마지막 갱신 | 2026-10-25 · S6-1a.4 causal RED3·구조화 Bearer 제어1을 보존했다. 직접 관련 고유74 PASS와 incidental 메시지1 PASS, generated TS·좁은 메시지 검증을 확인했다. common-dir `devbox-verification/s6-1a4/`에 source·원본 log·자원 근거. 독립 전체 검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 전체 검사·Windows/native 실기·push·PR·공개 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -96,7 +96,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1a.3 직접 관련94 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | S6-1a.1–3 로컬 완료;1a.4 직접 관련74 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -149,11 +149,22 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1·1a.2 로컬 완료;1a.3 직접 관련94 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–3 로컬 완료;1a.4 직접 관련74 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+
+### S6-1a.4 직접 credential echo (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반4f24ecc6에서 기존 API 사전 준비11파일 hash가 같은지 확인했다. 소유 localhost의 직접 Authorization RED1·구조화 Bearer 제어1 PASS, WS/SSE 신규 response cookie RED2를 원본 source/log와 보존했다. 외부 서비스·개인 secret을 사용하지 않았다.
+- Authorization·Proxy-Authorization 전체/credential 부분(Basic decoded pair/password 포함), X-API-Key·API-Key·X-Auth-Token, raw Cookie의 값·cookie rows·실제 선택된 jar 값을 공통 operation seed로 수집한다. prepare 수집은 OAuth 실패/즉시 취소 history도 보호하며 jar 전체·미선택/덮어쓴 jar 값·임의 JSON/body·일반 header는 추론하지 않는다. 빈 값은 matching에서 제외하고 credential header 표시 가림은 유지한다. 짧은 nonempty 값은 과잉 가림 가능성을 받아들여 제외하지 않는다.
+- Set-Cookie 값은 각 response/redirect head·body 전에 추가한다. header 이름에 따른 표시 가림과 decoded body/history를 함께 검증하고 이전 redirect 목록도 최신 seed로 공개 전에 다시 가린다. binary bytes·quoted/empty cookie·chunk 경계·raw/form/percent/JSON escaping을 확인했다. 새 상한은 raw1,024개·256KiB/변형4,096개·1MiB다(기존에 합산 상한이 있었다고 주장하지 않음). 상한/구성 실패는 고정 typed `api.redaction_failed`로 raw fallback 없이 중단하고 HTTP history 전체를 생략한다.
+- seed·임시 variant·Basic decode·stream 보류 버퍼를 zeroizing 소유로 제한했다. Aho-Corasick 내부 메모리까지 zeroization을 보장하지 않는다. WS handshake·SSE 모든 재연결·gRPC metadata·MCP HTTP도 같은 정책을 쓴다. reflection은 기존 첫 응답/drop 수명을 유지하며 catalog 식별자는 내부 원본을 유지하고 credential collision은 typed 거절한다. 읽지 않은 정상 reflection trailers·미래 trailer로 과거 message 소급 가림을 주장하지 않는다. MCP stdio 환경 이름은 HTTP credential header로 추론하지 않는다.
+- 고유 Rust72 PASS=helper29(신규16·기존직접13)+공통8+HTTP신규6+조기실패/취소2+기존HTTP직접27이다. 메시지3 PASS 중 generated code/신규 reason 분기2를 직접, 기존 agent/terminal1을 incidental로 구분하여 **직접 관련74 PASS+incidental1 PASS**다. 각 필터·중복 실행은 합산하지 않았고 단일 전체75 실행으로 쓰지 않는다. raw log·명령·개별 testcase·자원은 `devbox-verification/s6-1a4/`와 `helper/`에 보존한다.
+- 중간 실패는 별도 구분했다. valid Cookie 전체 seed의 과잉 가림1은 값만 수집하도록 제품 수정 후 PASS, Authorization/Set-Cookie 전체 표시의 기존 기대값2는 승인 새 계약에 맞춰 시험만 수정 후 PASS. helper fixture의 prost_types import 컴파일 실패와 root 동일시도는0 tests이며 기존 re-export로 수정했다. 메시지 scoped tsc 최초는 artifact의 타입 경로 설정 실패였고 절대 타입 경로로 보정했다. causal RED3와 혼합하지 않는다.
+- 모든 완료 검증은 required cgroup memory_enforced=true·jobs/workers/test threads2·CPU4·nice10·memory6/8GiB·swap1GiB다. gen-ts 재생성·메시지 scoped TS·좁은 Biome를 수행했다. helper14파일 독립 부분 검토 APPROVE/지적0은 전체 과제 승인과 구분한다. 제품·시험29파일+문서2파일의 전체 독립 검토 APPROVE·잔여지적0(`independent-review.json`)를 확인했다. 완료 Biome 뒤 로컬 과제 커밋으로 보존하며 전체 검사·clippy·build·E2E·실제 Windows/native·push·PR·공개·태그는 미실행이다. 과거1a.3 이하 기록은 byte 동일하게 보존했다.
 
 ### S6-1a.3 Windows 사본 identity·실행 reader (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 
