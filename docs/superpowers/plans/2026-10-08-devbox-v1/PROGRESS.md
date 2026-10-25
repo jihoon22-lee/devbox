@@ -15,15 +15,17 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자2026-10-25 구현 승인에 따라 S6-1b.1 API 응답→일일/선택 노트 추가를 구현·직접 검증했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반c1a634d7. 제품·시험46파일과 문서2파일의 전체 독립 검토 APPROVE(지적0)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자 승인 S6-1b.2 코드 선택→변환 도구 연결을 구현·직접 검증했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반ed0175b7. 제품2·시험1파일, 고유16 PASS·scoped TS·변경 Biome PASS. 전체 독립 검토 APPROVE·지적0, 완료 Biome 뒤 로컬 커밋으로 보존한다. 사용자 요청에 따라 현재 과제에서 멈추고 새 세션에 인계한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1b.1 로컬 완료 다음은 S6-1b.2 코드 선택→변환 도구 연결을 진행한다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
-| 마지막 갱신 | 2026-10-25 · S6-1b.1 Notes 기존경로 RED2·API 미구현 export seam RED1을 보존했다. 총 고유71 PASS(직접69·incidental 메시지2; API30·Notes19·CLI3·frontend19), generated TS·scoped 타입·변경 TS Biome PASS. `devbox-verification/s6-1b1/`에 source·명령·원본 실패·자원 근거. 전체 독립 검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 추가 E2E 경로/전체 검사/Windows/native/push/PR은 미실행. |
+| 다음 제품 작업 | 사용자 요청에 따라 이번 세션은 S6-1b.2 완료 후 중단한다. 다음 세션은 S6-1b.3 HTTP OAuth authorize UI부터 재개한다. push·PR 없음; 공개/태그는 마지막 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-25 · 실제 CodeEditor 선택 행동 부재 RED1→신규5·기존 직접 영향11로 고유16 PASS. Dirty/undo 보존 강화1 재실행도 PASS(중복 집계 제외). `devbox-verification/s6-1b2/`에 명령·자원·source 근거. 실제 memory_enforced=true, scoped TS·변경3파일 Biome PASS. 독립 검토 APPROVE·지적0, 완료 Biome 뒤 로컬 커밋·세션 인계. 전체 검사·E2E·native·push/PR은 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
+
+**세션 인계(2026-10-25 사용자 요청):** 토큰 소진으로 현재 진행하던 S6-1b.2까지만 마무리하고 다음 세션용 프롬프트를 준비한다. 이번 세션에서는 S6-1b.3 이후 제품 작업·push·PR을 시작하지 않는다. 승인된07c의 남은 범위와 공개 승인 경계는 유지하며 기존 브랜치·worktree·검증 artifact를 보존한다. 다음 세션의 첫 과제는 S6-1b.3이다.
 
 **현재 S6 구현 승인(2026-10-25):** 사용자가 “S6 계획대로 작업 진행 해 주세요”라고 지시했다. 앞선 계획·로컬 문서 커밋까지만의 제한은 이 후속 지시로 대체되었고,07c 순서대로 구현·좁은 검증·별도 검토를 진행한다. 자동 리뷰는 OFF이며 #646의 대체 승인은 그 PR에 한정된다. S6 PR 전 재활성화 또는 독립 검토 대체 절차를 결정해야 하나 현재 구현을 막지는 않는다. 공개·태그는 별도 명시 승인 전 실행하지 않는다.
 
@@ -82,7 +84,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.1–4·1b.1 로컬 완료) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1b.1 완료·1b.2 로컬 완료·세션 인계) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -96,7 +98,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1a.1–4 로컬 완료;1b.1 직접69·incidental2 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | S6-1a.1–4·1b.1 로컬 완료;1b.2 고유16 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -149,12 +151,20 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4 로컬 완료;1b.1 직접69·incidental2 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1 로컬 완료;1b.2 고유16 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
+
+### S6-1b.2 코드 선택→변환 도구 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반ed0175b7에서 실제 CodeEditor의 JSON 범위를 선택한 뒤 전달 행동을 요구해 버튼 부재 RED1을 확인했다. 제품 변경은 CodeEditor와 기존 handoff의 source union 두 파일뿐이다.
+- location 없는 일반 열기에서도 EditorView를 보관하고 selection/doc update로 행동의 활성 상태를 갱신한다. 명시적인 현재 nonempty selection만 캡처하며 여러 범위는 CodeMirror의 문서 순서대로 줄바꿈 하나로 연결한다. 빈 cursor는 제외하고 선택 없으면 비활성이다.
+- 기존 sendToTransforms(text, "editor")와512KiB UTF-8 scalar 경계·고정 잘림 안내·탐지/도구 선택·intentRevision·메모리 전용 store를 그대로 재사용한다. 본문을 URL/query/localStorage/로그에 추가하지 않으며 editor 본문·dirty·undo를 쓰지 않는다.
+- 고유16 PASS: 실제 편집기 신규5(JSON·empty 반응·다중 선택·비ASCII exact512KiB/초과·연속 보내기+늦은 navigation 실패), 기존 CodeEditor2·handoff5·변환 도구 통합4. JSON 회귀를 실제 Dirty+undo1 상태로 강화한1 재실행도 PASS이며 중복 집계하지 않았다. 기존 단축키 저장·검색 패널·메모리 소비/도구 전환도 보존했다.
+- 원본 RED1·GREEN16·강화1·scoped TS·변경3파일 Biome 및 실제 memory_enforced=true/CPU4/nice10/workers2 자원 근거를 `s6-1b2/`에 보존한다. 새 의존성/RPC/generated 변경 없음. 독립 검토 APPROVE·지적0(`independent-review.json`)이며 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. 사용자 요청으로 여기서 중단하고 새 세션에서1b.3을 재개한다. 전체 check/build/E2E·Windows/native·push/PR은 미실행이다.
 
 ### S6-1b.1 API 응답→노트 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

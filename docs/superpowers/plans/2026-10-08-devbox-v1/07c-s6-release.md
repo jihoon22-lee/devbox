@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4는 로컬 완료했고 S6-1b.1은 구현·직접 검증 뒤 전체 독립 검토 대기이며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 독립 검토 뒤 로컬 완료했고 사용자 요청에 따라1b.2에서 이번 세션을 마쳐 다음 세션에 인계한다. 다음 과제는1b.3이며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -176,9 +176,12 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 
 **계약:** 기존 `sendToTransforms(text, source)`에 `source: "editor"`만 더한다. EditorView의 명시적 현재 선택을 캡처해 전달한다. 선택 없으면 비활성, 여러 selection은 순서와 구분 정책을 명시한다. 기존512KiB UTF-8 bound·잘림 안내·intentRevision·메모리 전용 store·탐지/도구 선택을 재사용한다. URL/query/localStorage/로그에 선택 본문을 넣지 않는다.
 
-- [ ] RED: 실제 CodeEditor 선택 메뉴가 기존 handoff를 호출하는 통합 시험.
-- [ ] GREEN: JSON 선택·empty·비ASCII512KiB 경계·빠른 연속 보내기·navigation 실패 후 최신 입력 보존. editor 본문/dirty/undo 무변경.
-- [ ] 별도 검토 후 `feat(source): send editor selections to transform tools`.
+- [x] RED: 실제 CodeEditor JSON 선택 뒤 행동 버튼을 요구한1 FAIL을 확인했다.
+- [x] GREEN: 신규 편집기5+기존 직접 영향11로 고유16 PASS. JSON·empty 반응·문서 순서 다중 선택(newline 결합/빈 cursor 제외)·비ASCII exact512KiB와 초과·빠른 연속 보내기/늦은 실패의 최신 입력 보존을 확인했다. 실제 Dirty+undo1의 본문/편집 상태 무변경 강화1도 PASS(중복 제외).
+- [x] 별도 검토 APPROVE·지적0. 완료 Biome 뒤 `feat(source): send editor selections to transform tools`로 로컬 완료하며 사용자 요청에 따라 여기서 세션을 마친다.
+
+
+구현은 CodeEditor의 view capture를 optional location 처리보다 앞에 두고 selection listener·헤더 행동을 추가했다. 기존 handoff의512KiB/intentRevision/memory-only 정책은 바꾸지 않고 source에 editor만 더했다. scoped TS·변경3파일 Biome PASS, 모든 실행 memory_enforced=true. 근거 `s6-1b2/`; 전체/E2E/native/push/PR은 NOT_RUN이다.
 
 ## 9. S6-1b.3 — HTTP OAuth authorize를 요청 소유 UI action에 연결
 

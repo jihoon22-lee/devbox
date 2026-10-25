@@ -6,7 +6,7 @@ import type { ToolId } from "./catalog";
 import { detectSmartInput, type SmartCandidate } from "./detect";
 
 export const MAX_HANDOFF_BYTES = 512 * 1024;
-export type HandoffSource = "clipboard" | "log" | "terminal";
+export type HandoffSource = "clipboard" | "log" | "terminal" | "editor";
 export interface TransformHandoff {
   id: number;
   text: string;

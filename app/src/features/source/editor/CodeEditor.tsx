@@ -8,6 +8,7 @@ import { CompareView } from "../../notes/CompareView";
 import { OpenError, ReadOnlyBar } from "../../notes/ReadOnlyBar";
 import { RecoveryView } from "../../notes/RecoveryView";
 import { SaveStatus } from "../../notes/SaveStatus";
+import { sendToTransforms } from "../../tools/transforms/handoff";
 import { Preview } from "../Preview";
 import { canPreview } from "../previewHelpers";
 import s from "../source.module.css";
@@ -19,6 +20,16 @@ import { useEditorLsp } from "./lsp";
 
 export function CodeEditor({ docKey, location }: { docKey: DocKey; location?: CodeLocation & { request?: number } }) {
   const [preview, setPreview] = useState(false);
+  const viewRef = useRef<EditorView | null>(null);
+  const [hasSelection, setHasSelection] = useState(false);
+  const selectionUpdates = useMemo(
+    () =>
+      EditorView.updateListener.of((update) => {
+        if (update.selectionSet || update.docChanged)
+          setHasSelection(update.state.selection.ranges.some((range) => !range.empty));
+      }),
+    [],
+  );
   const id = keyId(docKey);
   const key = useMemo(() => ({ root: docKey.root, path: docKey.path }), [docKey.root, docKey.path]);
   const doc = useDocuments((state) => Object.values(state.docs).find((item) => keyId(item.key) === id));
@@ -27,10 +38,15 @@ export function CodeEditor({ docKey, location }: { docKey: DocKey; location?: Co
   }, [key]);
   const lsp = useEditorLsp(key);
   const indent = detectIndent(doc?.text ?? "");
-  const extensions = useMemo(() => [codeExtensions(indent), lsp.extension], [indent, lsp.extension]);
+  const extensions = useMemo(
+    () => [codeExtensions(indent), lsp.extension, selectionUpdates],
+    [indent, lsp.extension, selectionUpdates],
+  );
   const lastLocation = useRef<string | undefined>(undefined);
   const onView = useCallback(
     (view: EditorView | null) => {
+      viewRef.current = view;
+      setHasSelection(view?.state.selection.ranges.some((range) => !range.empty) ?? false);
       if (!view || !location) return;
       const request = JSON.stringify([id, location]);
       if (lastLocation.current === request) return;
@@ -46,6 +62,22 @@ export function CodeEditor({ docKey, location }: { docKey: DocKey; location?: Co
       <header className={s.editorHeader}>
         <span title={key.path}>{key.path}</span>
         <SaveStatus docKey={key} />
+        <button
+          type="button"
+          disabled={!hasSelection}
+          onClick={() => {
+            const view = viewRef.current;
+            if (!view) return;
+            // CodeMirror orders ranges by document position; empty cursors contribute no text.
+            const text = view.state.selection.ranges
+              .filter((range) => !range.empty)
+              .map((range) => view.state.sliceDoc(range.from, range.to))
+              .join("\n");
+            void sendToTransforms(text, "editor");
+          }}
+        >
+          선택을 변환 도구로 보내기
+        </button>
         {canPreview(key.path) && (
           <button type="button" aria-pressed={preview} onClick={() => setPreview((open) => !open)}>
             미리보기
