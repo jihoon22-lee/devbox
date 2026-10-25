@@ -1,6 +1,6 @@
 # S4 편집·Git 상세 실행 계획
 
-- 상태: **S4-1 상세화 별도 검토 승인**(2026-10-24). S4-2 구현·직접 검증·최종 독립 검토 APPROVE. S4-3·S4-4 구현·직접 검증·별도 재검토 APPROVE. S4-5 R1 수정·직접 검증·별도 재검토 APPROVE. S4-6 R1 수정·직접 검증·별도 재검토 APPROVE. S4-7 R1/R2 수정·별도 재검토 APPROVE. S4-8 00be638d 로컬 완료·별도 재검토 APPROVE. S4-9 로컬 최종 검증·설치 수용 판정 완료(현재e6304a7e의5/8 PASS, 과거07ebb413의1/6 PASS, 2/3/4/7 NOT_RUN)·최종 감사 APPROVE·PR 대기(미머지). 진행 원장은 [PROGRESS](PROGRESS.md).
+- 상태: **S4 완료·PR #646 →20dcded6 squash 머지**(2026-10-25). 최종 검증346e00ca와 merge tree 동일·필수 CI3/E2E PASS. 사용자 비활성화 확인으로 자동 리뷰는 NOT_RUN·완료0회이며 이 PR에 한해 완료된 독립 검토로 대체해 머지하도록 명시 승인받았다. 설치5/8은e6304a7e PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN. 사용자 추가 지시는 정리만이며 S6 미착수다. 현재 위치·정리 완료 여부는 [PROGRESS](PROGRESS.md)를 따른다.
 - 기반: `main@e91c9b22efcc26905cea839420a2805af669a8e0`(S3 PR #644 squash, 검증 소스 `e56c3096`와 tree 동일). 브랜치 `v1/s4-editor-git`, worktree `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`.
 - 범위: [07 S4](07-s4-s6.md)·[01](01-design.md) §2.3·8.2–8.6·9·9.1-1/12/15·11·12, [00](00-roadmap.md) §3.6·7. 이 문서는 S4-2–9의 실행 상세다. 제품 범위·릴리스 정책은 바꾸지 않는다.
 - 실행: 최신 AGENTS/CONVENTIONS가 과거 `superpowers` 스킬 문구보다 우선한다. 하네스 구현 에이전트 → root가 배정한 별도 검토 → 과제 커밋 → 다음 과제. 트랙당 하나, 전체 두 트랙을 유지한다. S4-1 계획 별도 검토 승인 후 S4-2부터 순서대로 구현한다.
@@ -262,7 +262,7 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 3. [x] `scripts/check.sh`의 실제 포함 항목을 읽고 전체 frontend/Rust/typegen/clippy/build를 한 번 실행한다. E2E는 별도 진입점에서 한 번(전체 검사 포함이면 중복하지 않음). shared lock --wait 최대60분/exit75 대기 초과. 통과한 무관 검사 반복 금지. `bash scripts/loc.sh 160000`, E2E≤40·파일600/컴포넌트300·scripts+.github≤1500/workflow≤3 계측.
 4. [x] S4 설치 수용은 root가 허용한 최종 source SHA Windows workflow artifact를 사용한다. repository/workflow/run/source SHA/SHA256·accept 채널·windows-acceptance 단일 잠금·prod 읽기 전용 전후 비교·소유 자원 정리를 기록한다. 기존 서비스/Docker/방화벽/WSL shutdown/사용자 설정 변경 금지. 실제 실행 불가 항목만 NOT_RUN이며 자동 fake 시험 성공으로 실기 PASS를 만들지 않는다.
 5. [x] 아래 8항목을 실제 설치본의 소유 프로젝트/로컬 bare 원격에서 assertion한다. 실외 원격 push나 개인 저장소 수정은 필요 없다. 도구 설치 항목은 실제 실행 가능한 owned 설치 경계가 없으면 NOT_RUN으로 남기고 hidden 설치를 하지 않는다. **판정 완료이며8개 모두 PASS라는 뜻이 아니다. 현재5/8 PASS·과거1/6 PASS·2/3/4/7 NOT_RUN은 아래 표대로 구분한다.**
-6. [ ] 최종 Biome CI·검증 artifact·정확한 소스 근거·미실행/미입증을 PROGRESS/PR 본문에 기록. 별도 검토 후 `feat(source): share Git review views and complete S4` 과제 커밋. root 조율로 push·**S4 PR 한 번**. 필수 Frontend/Linux Rust/Windows Rust CI3와 자동리뷰 최대3회 판정 후 squash. 상한 뒤 실제 손실/유출/미승인 실행만 별도 재현/검토로 수정, 나머지 PROGRESS §8. 실제 merge SHA 확인 전 S4 완료로 바꾸지 않는다.
+6. [x] 최종 Biome CI·검증 artifact·정확한 소스 근거·미실행/미입증을 PROGRESS/PR 본문에 기록. 별도 검토 후 `feat(source): share Git review views and complete S4` 과제 커밋. root 조율로 push·**S4 PR 한 번**. 필수 Frontend/Linux Rust/Windows Rust CI3와 자동리뷰 최대3회 판정 후 squash. 상한 뒤 실제 손실/유출/미승인 실행만 별도 재현/검토로 수정, 나머지 PROGRESS §8. 실제 merge SHA 확인 전 S4 완료로 바꾸지 않는다.
 
 **step1 구현 경계(2026-10-25)**
 - 공용 feature 세 컴포넌트에 typed `mode="review"` data 입력을 추가하고 agent 변경/커밋 화면을 연결했다. agent의 base-relative/historical 쿼리는 유지하며 empty snapshot·loading에서 source live 조회로 fallback하지 않는다. shared review-data 표시에는 RPC provider가 필요 없고 모든 Git 쓰기 버튼이 없다.
@@ -272,9 +272,9 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 
 **최종 실패 수정 검증(2026-10-25)**
 - 최초 전체 검사 exit1 원본 유지: frontend1554 PASS/모듈 대소문자 충돌1 FAIL, E2E20 PASS/3 FAIL, Rust test fixture 컴파일·clippy 실패. remote 중첩 조건·git_warnings 시험 fixture·충돌 helper 파일명/import만 고쳤다. source E2E는 기존 editor focus 단축키 정책과 status role에 맞추고 외부 파일 보존을 추가 확인한다. HTTP trace의 React/App ERR_NETWORK_CHANGED는 화면 기동 실패이며 runtime 수정으로 주장하지 않는다.
-- 직접 frontend8/typecheck PASS, 제한을 필수로 적용한 실패 E2E3 PASS, Biome833·변경 Rust fmt PASS·독립 delta APPROVE. 초기 minWorkers 인자 오류와 메모리 제한 false 직접 검사·E2E 중단 exit130은 보존한다. root Rust 재검증과 아래의 source별 설치 수용 판정까지 완료됐다. 준비 시점의 helper UNBOUND/NOT_REVIEWED 상태는 이후 정확한 source/run 결속과 별도 실행 승인으로 해소했다. 단계6의 최종 감사는 APPROVE이며 문서 커밋·PR/머지는 대기다. 상세 원장은 PROGRESS §5와 `s4-final/fix-*`다.
+- 직접 frontend8/typecheck PASS, 제한을 필수로 적용한 실패 E2E3 PASS, Biome833·변경 Rust fmt PASS·독립 delta APPROVE. 초기 minWorkers 인자 오류와 메모리 제한 false 직접 검사·E2E 중단 exit130은 보존한다. root Rust 재검증과 아래의 source별 설치 수용 판정까지 완료됐다. 준비 시점의 helper UNBOUND/NOT_REVIEWED 상태는 이후 정확한 source/run 결속과 별도 실행 승인으로 해소했다. 단계6은 최종 감사 APPROVE·문서 및 fixture 보정·필수 CI3/E2E PASS 뒤 사용자 승인 독립 검토 대체를 거쳐#646→20dcded6 머지로 완료됐다. 상세 원장은 PROGRESS §5와 `s4-final/fix-*`다.
 
-- Rust 첫 재검증 exit1도 보존했다. git_warnings는 실제 Option 타입에 맞춰 None으로 수정·agents2 PASS, deps 조건3·LSP 시험 위치·S4 소유 시험 expect 정리와 test-only conflict 분리18 PASS를 추가했다. 시험/단언 보존은 `fix-rust2-coverage.json`; 새 입력의 별도 검토 APPROVE 뒤 workspace clippy PASS·Rust1624 PASS/0 FAIL/34 ignored(미실행)를 확인했다. TLS 보정 전 LOC121202, 최종 제품 LOC121277/160000·제품600줄 초과0·scripts+.github1500줄/workflow2·E2E23개다(`loc-after-native-fix.log`). main a55907a2는 이미 통합돼 추가 merge가 필요하지 않았다. 검증 제품을 고정·백업 push해 Windows 산출물을 만들었고 아래 설치 수용까지 진행했다. 최종 결과 감사·문서 커밋 뒤 S4 PR 하나를 연다.
+- Rust 첫 재검증 exit1도 보존했다. git_warnings는 실제 Option 타입에 맞춰 None으로 수정·agents2 PASS, deps 조건3·LSP 시험 위치·S4 소유 시험 expect 정리와 test-only conflict 분리18 PASS를 추가했다. 시험/단언 보존은 `fix-rust2-coverage.json`; 새 입력의 별도 검토 APPROVE 뒤 workspace clippy PASS·Rust1624 PASS/0 FAIL/34 ignored(미실행)를 확인했다. TLS 보정 전 LOC121202, 최종 제품 LOC121277/160000·제품600줄 초과0·scripts+.github1500줄/workflow2·E2E23개다(`loc-after-native-fix.log`). main a55907a2는 이미 통합돼 추가 merge가 필요하지 않았다. 검증 제품을 고정·백업 push해 Windows 산출물을 만들었고 아래 설치 수용까지 진행했다. 최종 결과 감사·문서 커밋 뒤 연 단일 S4 PR #646을 최종346e00ca 검증과 사용자 승인 후20dcded6으로 머지했다.
 
 | 설치 수용 | 근거/판정 |
 |---|---|
@@ -289,7 +289,7 @@ S4-1은 의존성 설치가 필요 없다. 기존 S3의 같은 Biome 2.5.14 실�
 
 
 - 두 Windows workflow_dispatch는 각각 exact source로 completed/success이며 설치1차는1/6 PASS·5/8 FAIL, TLS fresh-process RED·worker panic RED 후 deps44/CLI2·targeted clippy/fmt/Biome833 PASS·별도 APPROVE를 거쳐2차5/8 PASS다. deps는 기존 workspace rustls/ring만 직접 참조하며 package/version·TLS 검증 우회는 없다. 두 설치 모두 정리7 PASS·prodComparison PASS·retainedResources=[]다.
-- 최종 제품 `e6304a7eafb05d8212afb989d933d9494d292c5d`, 2차 `e6304a7e-df4cedd6`; 이전 `07ebb413-117500cc`의 성공/실패를 그대로 보존한다. 개인정보 push 거절 뒤 tree·날짜를 유지한 미공개 커밋 metadata 수정은 `s4-final/email-privacy-rewrite.json`이며 옛 검증 SHA는 역사적 근거로 유지한다. source별 최종 판정·artifact hash는 `final-assessment.json`/`final-artifact-manifest.json`, 진행 원장은 PROGRESS §5다. 현재는 로컬 검증·수용 판정 완료이고 PR·필수 CI·squash 완료가 아니다.
+- 최종 제품 `e6304a7eafb05d8212afb989d933d9494d292c5d`, 2차 `e6304a7e-df4cedd6`; 이전 `07ebb413-117500cc`의 성공/실패를 그대로 보존한다. 개인정보 push 거절 뒤 tree·날짜를 유지한 미공개 커밋 metadata 수정은 `s4-final/email-privacy-rewrite.json`이며 옛 검증 SHA는 역사적 근거로 유지한다. source별 최종 판정·artifact hash는 `final-assessment.json`/`final-artifact-manifest.json`, 진행 원장은 PROGRESS §5다. 이 결과 뒤 필수 CI3/E2E·독립 감사·사용자 리뷰 대체 승인을 거쳐#646→20dcded6 squash를 완료했다. 정리 보관은 별도 사용자 요청으로 진행 중이며 S6는 시작하지 않는다.
 
 ## 11. 추적 입력과 완료 판정
 
