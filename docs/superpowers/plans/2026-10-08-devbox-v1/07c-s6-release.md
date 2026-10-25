@@ -218,11 +218,13 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 기준 검토의 세 advisory는 실제 affected version 정보다. 제품 exploit 재현이나 모든 경고 무해 판정은 아니다. 구현 시 공식 advisory/상위 release notes와 현재 lockfile을 다시 조사해 정확 버전을 pin한다(이번 계획 작성에서 업그레이드하지 않음).
 
 - [x] `@vitest/mocker`4.1.11의 `GHSA-qxg6-89mg-rqv8`·`GHSA-xp26-3454-mjgp`: 수정4.1.12 이상 중 호환 patch를 Vitest 관련 패키지와 함께 pin. app에서 명시 mocker/interceptor plugin entrypoint가 안 보인 사실과 devdependency 범위를 기록한다. dependency graph + 대표 mock/실제 component 회귀를 실행한다.
-Vitest 과제는 정확4.1.12 pin과 관련8개 package 전환만 적용했다. 공식 두 advisory/현재4.1.11 graph를 dependency RED로 보존했으며 앱 exploit 또는 실패시험을 재현했다고 쓰지 않는다. YAML 비교로 다른 package/importer 무변경, frozen offline install과 기존 mock/component15 PASS(2.924초·memory_enforced=true)를 확인했다. `devbox-verification/s6-1c-vitest/`에 근거를 남겼고 독립 검토 APPROVE·지적0, 완료 Biome844 PASS(1.695초·memory_enforced=true) 뒤 `chore(deps): update Vitest security fixes`로 로컬 완료했다. Mermaid/KaTeX는 다음 독립 과제이며 아직 변경하지 않았다.
+Vitest 과제는 정확4.1.12 pin과 관련8개 package 전환만 적용했다. 공식 두 advisory/현재4.1.11 graph를 dependency RED로 보존했으며 앱 exploit 또는 실패시험을 재현했다고 쓰지 않는다. YAML 비교로 다른 package/importer 무변경, frozen offline install과 기존 mock/component15 PASS(2.924초·memory_enforced=true)를 확인했다. `devbox-verification/s6-1c-vitest/`에 근거를 남겼고 독립 검토 APPROVE·지적0, 완료 Biome844 PASS(1.695초·memory_enforced=true) 뒤 `chore(deps): update Vitest security fixes`로 로컬 완료했다. Mermaid/KaTeX 후속 독립 과제는 아래 기록한다.
 
-- [ ] Mermaid 경유 KaTeX0.16.47의 `GHSA-238p-pmpm-9mq7`: 수정0.18.2 이상을 받아들이는 **호환 Mermaid 경로**를 조사한다. 무검증 transitive override로 minor/major 경계를 강제하지 않는다. strict mode·htmlLabels=false·network-free diagram·SVG sanitizer 보존; math diagram rendering·유해 SVG 회귀를 실행한다.
-- [ ] 상위 호환 수정이 없거나 새 stack이 필요하면 정확 경로/대안/위험과 후속 판단을 PROGRESS에 남긴다. prior prototype pollution+unsanitized insertion의 exploit chain을 확인하지 않고 현재 앱 XSS라고 쓰지 않는다.
-- [ ] 각 변경 독립 검토·Biome 뒤 `chore(deps): update Vitest security fixes`, `chore(deps): update compatible Mermaid math dependencies` 등 실제 변경에 맞는 커밋.
+- [x] Mermaid 경유 KaTeX0.16.47의 `GHSA-238p-pmpm-9mq7`: 수정0.18.2 이상을 받아들이는 **호환 Mermaid 경로**를 조사한다. 무검증 transitive override로 minor/major 경계를 강제하지 않는다. strict mode·htmlLabels=false·network-free diagram·SVG sanitizer 보존; math diagram rendering·유해 SVG 회귀를 실행한다.
+Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을 정확 pin하고 실제 KaTeX0.18.10을 정상 pnpm9로 설치했다. 무검증 override 없음. 공식12 안내의 dagre/default/classic을 명시하고 strict/htmlLabels=false·network gate·SVG sanitizer를 유지했다. 직접 기존23+신규3=26 PASS·scoped TS·frozen offline install PASS, lock 변화는 Mermaid closure 신규11/삭제7뿐이고 Vitest4.1.12는 불변이다. baseline config RED와 inert-node matcher 시험작성 실패를 구분 보존했다. 실제 sequence MathML은11/12 모두 생성되나 최종 sanitizer가 제거하며 flowchart는 literal dollar text, LaTeX command는 차단된다. 이는 기존 표시 제한이며 수학 화면 지원 PASS로 보고하지 않는다. Node24 설정 호환은 읽기로 확인했고 native/build는 미실행. 근거 `devbox-verification/s6-1c-mermaid/`, 독립 검토 APPROVE·미해결지적0, 완료 Biome845 PASS(1.074초·memory_enforced=true) 뒤 로컬 완료했다. 변경 검사5경로 중 실제4파일 집계 정정은 원본로그와 clarification artifact에 보존했다.
+
+- [x] 상위 호환 수정이 없거나 새 stack이 필요하면 정확 경로/대안/위험과 후속 판단을 PROGRESS에 남긴다. prior prototype pollution+unsanitized insertion의 exploit chain을 확인하지 않고 현재 앱 XSS라고 쓰지 않는다.
+- [x] 각 변경 독립 검토·Biome 뒤 `chore(deps): update Vitest security fixes`, `chore(deps): update compatible Mermaid math dependencies` 등 실제 변경에 맞는 커밋.
 
 ## 12. S6-2 — 검증 예산을 확보하고 prod 태그 릴리스 job 추가
 

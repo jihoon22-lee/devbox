@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-1b.4 완료5034d003 뒤 S6-1c 첫 독립 과제인 Vitest 보안 patch를 적용했다. app devDependency를 정확4.1.12로 고정하고 관련8개 패키지만 갱신했다. 기존 mock/component15 PASS·설치/lock 그래프 확인을 마쳤으며 독립 검토 APPROVE·지적0·완료 Biome844 PASS 후 로컬 과제 커밋으로 보존한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S6-1c Vitest 완료bd70c599 뒤 Mermaid/KaTeX 호환 보안 업데이트를 적용했다. Mermaid 정확12.2.0→실제 KaTeX0.18.10, 기존 기본 레이아웃·테마 명시 및 strict/htmlLabels=false·SVG/network 정책 유지. 직접26 PASS·scoped TS·frozen offline install 확인, 독립 검토 APPROVE·미해결지적0·완료 Biome845 PASS 후 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1c Vitest 로컬 완료 뒤 Mermaid/KaTeX 호환 보안 갱신을 별도 과제로 진행한다. 현재 Mermaid/KaTeX는 변경하지 않았다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-25 · 공식 advisory 두 건과 실제 @vitest/mocker4.1.11 경로를 dependency RED 근거로 보존했다(앱 exploit·실패시험 재현 아님). 정확4.1.12 pin/관련8패키지 전환, frozen offline install·기존 mock/component15 PASS(2.924초), 모든 supervised 실행 memory_enforced=true. `devbox-verification/s6-1c-vitest/` 근거. 독립 검토 APPROVE·지적0·완료 Biome844 PASS·로컬 완료, 전체/E2E/native/push/PR 미실행. |
+| 다음 제품 작업 | S6-1c Mermaid 로컬 완료 뒤 승인된07c 순서대로 S6-2 검증 예산·prod 태그 job을 진행한다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-25 · 공식 KaTeX advisory/상위 release/registry 재확인, Mermaid12.2.0 exact·KaTeX0.18.10을 정상 pnpm9 경로로 설치. 기존23+신규3=고유26 PASS(8.255초), scoped TS·frozen offline install PASS; 모든 supervised 실행 memory_enforced=true. 수학 raw MathML와 최종 표시 제한을 분리 기록했고 기존 실패 원본도 보존. `devbox-verification/s6-1c-mermaid/` 근거, 독립 검토 APPROVE·완료 Biome845 PASS. 전체/E2E/native/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -84,7 +84,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1c-Vitest 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1c-Mermaid 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -98,7 +98,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest15 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest 완료;1c-Mermaid26 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -151,13 +151,21 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest15 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest 완료;1c-Mermaid26 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
 
+
+### S6-1c-Mermaid 호환 보안 업데이트 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반bd70c599. [공식 advisory](https://github.com/advisories/GHSA-238p-pmpm-9mq7)는 KaTeX `>=0.11.0 <0.18.2`를 affected로 분류한다. 기존 Mermaid11.17.2→0.16.47 경로를 dependency RED로 보존했고, 현재11호환 patch가 없어 [Mermaid12.2.0](https://github.com/mermaid-js/mermaid/releases/tag/mermaid@12.2.0)의 upstream `^0.18.0` 경로로 **정확12.2.0·실제 KaTeX0.18.10**을 설치했다. transitive override 없음. advisory의 선행 prototype pollution/별도 sanitizer 없는 삽입 조건을 앱 exploit으로 재현했다고 주장하지 않는다.
+- [12 공식 호환 안내](https://github.com/mermaid-js/mermaid/releases/tag/mermaid@12.0.0)에 따라 `layout:dagre/theme:default/look:classic`을 명시했다. strict·두 htmlLabels=false·source network 차단·SVG sanitizer는 유지했다. 새 패키지11개/삭제7개는 Mermaid parser/KaTeX/layout closure뿐이며 공통 package/snapshot 내용·다른 importer/Vitest4.1.12는 불변이다. Node24.18.0과 기존 Linux/Windows CI Node24 설정은 upstream22.12 하한과 호환한다(실제 Windows/build 미실행).
+- baseline26 중24 PASS·명시 config assertion1 RED·inert template MathML에 jest-dom matcher를 적용한 시험작성 오류1 FAIL을 원본 보존했다. 후자는 textContent 직접 검사로 수정해 **기존11의 math3 PASS**를 별도 확인했다. 업데이트 후 직접 **기존23+신규 math3=고유26 PASS**(8.255초), scoped TS PASS(2.955초), 정상 exact lock 재생성·frozen offline install PASS. pnpm9 add가 기존 caret을 유지한 결과를 exact manifest+정상 lock 재생성으로 바로잡았고 lock을 수작업 편집하지 않았다.
+- 수학 판정: geometry/MathMLElement capability shim 환경에서 실제 sequence KaTeX의 `msup/mi/mn/mo` 의미 출력은11·12 모두 확인했다. 그러나 해당 foreignObject/MathML은 기존 sanitizer가 제거하므로 **수학식 화면 표시 지원 PASS가 아니다**. flowchart htmlLabels=false는 literal `$$x^2+1$$` SVG text이며 typeset 성공이 아니다. backslash LaTeX 명령은 기존 source policy가 차단한다. 이를 해결하려고 sanitizer를 완화하거나 새 수학 기능을 추가하지 않았다.
+- 회귀에는 실제 일반 flowchart/sequence label·geometry 보존, fetch/XHR/Image 호출0, SVG resource/navigation 제거, 기존 유해 SVG·Source Preview 필터를 포함한다. jsdom 의미/DOM 시험이며 브라우저 레이아웃·native 실기 증거는 아니다. `devbox-verification/s6-1c-mermaid/`에 원본 실패/성공·공식 근거·설치 graph·lock closure·명령/자원·중복 제거 test/source 동결을 보존했다. 모든 supervised 실행 memory_enforced=true. 독립 전체 검토 APPROVE·미해결지적0, 완료 Biome845 PASS(1.074초·memory_enforced=true) 뒤 로컬 과제 커밋으로 마무리한다. 변경 검사에는5경로를 요청했지만 실제Biome검사4파일이며 원본로그와 `format-count-clarification.json`에 구분했다; 전체 check/build/E2E·Windows/native·push/PR 미실행.
 
 ### S6-1c-Vitest 보안 patch (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

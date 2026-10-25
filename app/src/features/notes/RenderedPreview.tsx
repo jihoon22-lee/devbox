@@ -20,6 +20,9 @@ async function drawMermaid(host: HTMLElement, sources: string[], current: () => 
     securityLevel: "strict",
     htmlLabels: false,
     flowchart: { htmlLabels: false },
+    layout: "dagre",
+    theme: "default",
+    look: "classic",
   });
   for (const el of blocks) {
     if (!current()) return;
