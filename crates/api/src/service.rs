@@ -102,7 +102,9 @@ impl ApiOptions {
 }
 
 pub(crate) struct Inner {
-    history: History,
+    pub(crate) history: History,
+    pub(crate) exports: crate::response_export::Receipts,
+    pub(crate) config_dir: std::path::PathBuf,
     jars: Jars,
     tokens: TokenCache,
     pub(crate) resolver: Option<Resolver>,
@@ -128,6 +130,7 @@ struct Job {
     client: reqwest::Client,
     jar: Option<Arc<crate::cookies::Jar>>,
     redaction: Redaction,
+    export_origin: Option<crate::collections::export::Authority>,
     run_id: Option<String>,
     origin: Option<RequestOrigin>,
 }
@@ -160,6 +163,8 @@ impl ApiService {
             projects,
             inner: Arc::new(Inner {
                 history,
+                exports: Default::default(),
+                config_dir: paths.config_dir.clone(),
                 jars: Jars::new(paths.data_dir.join("api-cookies")),
                 tokens: TokenCache::default(),
                 resolver: options.resolver,
@@ -286,7 +291,16 @@ impl ApiService {
             .as_deref()
             .map(|key| self.inner.jars.jar(key))
             .transpose()?;
+        let export_origin = crate::collections::export::Authority::capture(
+            &self.inner.config_dir,
+            &self.projects,
+            &p.source_root,
+            &p.origin,
+        )
+        .await
+        .ok();
         Ok(Job {
+            export_origin,
             snapshot: p.snapshot,
             prepared,
             client,
@@ -399,6 +413,7 @@ async fn run(inner: Arc<Inner>, job: Job, tx: devbox_protocol::stream::StreamTx)
     let started = std::time::Instant::now();
     let events = Events::new(&tx);
     let id = uuid::Uuid::new_v4().simple().to_string();
+    inner.exports.begin(&id);
     let sent_at_ms = inner.history.now();
     let mut redaction = job.redaction;
     let mut out = Captured::default();
@@ -456,6 +471,7 @@ async fn run(inner: Arc<Inner>, job: Job, tx: devbox_protocol::stream::StreamTx)
             Some("api.redaction_failed")
         )
     {
+        inner.exports.failed(&id, "redaction");
         tx.finish().await;
         return;
     }
@@ -476,7 +492,7 @@ async fn run(inner: Arc<Inner>, job: Job, tx: devbox_protocol::stream::StreamTx)
         binary: out.binary,
     });
     let entry = HistoryEntry {
-        id,
+        id: id.clone(),
         sent_at_ms,
         method: job.prepared.method.to_string(),
         url: redactor.text(&sanitize::url(job.prepared.url.as_str())),
@@ -490,13 +506,20 @@ async fn run(inner: Arc<Inner>, job: Job, tx: devbox_protocol::stream::StreamTx)
         body_base64: String::new(),
         body_truncated: out.truncated,
     };
-    if inner
+    match inner
         .history
         .record(entry, std::mem::take(&mut out.body))
         .await
-        .is_err()
     {
-        tracing::warn!(code = "api.history_write", "api history write failed");
+        Ok(receipt) if outcome == HistoryOutcome::Ok => match job.export_origin {
+            Some(authority) => inner.exports.ready(&id, receipt, authority),
+            None => inner.exports.failed(&id, "origin"),
+        },
+        Ok(_) => inner.exports.failed(&id, "incomplete"),
+        Err(_) => {
+            inner.exports.failed(&id, "history");
+            tracing::warn!(code = "api.history_write", "api history write failed");
+        }
     }
     tracing::debug!(
         method = "api.send",

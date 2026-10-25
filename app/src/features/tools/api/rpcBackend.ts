@@ -69,6 +69,9 @@ function realtime<E extends RealtimeEvent | GrpcEvent | McpEvent, I = WsInput>(
 export function rpcBackend(client: RpcClient): ApiBackend {
   const id = () => ({ clientRequestId: crypto.randomUUID() });
   return {
+    noteTargets: (cursor) => rpc(() => client.call("notes.tree", { cursor })),
+    selectResponseTarget: (target) => rpc(() => client.call("notes.select_response_target", { target })),
+    appendResponse: (params) => rpc(() => client.call("notes.append_response", params, id())),
     list: (root) => rpc(() => client.call("api.collections", { root })),
     read: (root, path) => rpc(() => client.call("api.collection_read", { root, path })),
     write: (root, path, text, expect) =>

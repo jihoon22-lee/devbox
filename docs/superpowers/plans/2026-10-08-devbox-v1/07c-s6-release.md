@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4는 직접 검증·독립 전체 검토 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4는 로컬 완료했고 S6-1b.1은 구현·직접 검증 뒤 전체 독립 검토 대기이며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -157,11 +157,18 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 - `daily_ops::edit_note`의 CAS retry·dirty lease holder rewrite/ACK·disk 확인을 재사용한다. dirty 버퍼 뒤에서 파일을 직접 쓰지 않는다. 복구 초안만 있고 holder 없음/응답 timeout/외부 변경은 보존·typed 실패.
 - 중복 클릭은 operation identity로 한 번만 append하고, 성공 후 목록 조회 실패로 다시 붙이지 않는다. 사용자 새 클릭으로 같은 응답을 다시 붙이는 의도와 retry를 구별한다.
 
-- [ ] RED: 현재64KiB 초과 거절·chosen target 미지원·원래 URL provenance 결여를 각각 좁은 시험으로 고정.
-- [ ] GREEN: 일일/선택 노트 모두, 64KiB+·1MiB 경계·다중바이트·fence·binary·최종2MiB 초과, 신뢰할 수 없는 target/token, dirty rewrite success/timeout·CAS 외부 변경·retry 중복 없음.
-- [ ] UI: 완료된 원래 응답에서 선택기 열기·pending/error/성공 경로. 응답 교체·root 전환은 이전 operation이 새 대상을 바꾸지 못한다.
-- [ ] 최종 E2E에 요청→일일 기록 append 한 경로, 선택 노트·dirty 경로는 좁은 통합 시험으로 덮는다.
-- [ ] 커밋: `feat(api): append sanitized responses to daily and selected notes`.
+- [x] RED: 기존 Notes 경로64KiB+1 거절·선택 target 미지원2 FAIL, API 새 미구현 export seam의 unavailable1 FAIL 뒤 구현했다. 원본 로그와 stub 성격을 구분해 보존한다.
+- [x] GREEN: 일일/선택 노트,64KiB+·1MiB/본문+wrapper admission·scalar/fence/binary·2MiB/BOMCRLF·target 위조/삭제/교체·dirty preflight·CAS 외부 변경·late ACK/timeout/restart·refresh 실패 retry 중복 없음. 총 고유71 PASS(직접69·incidental 메시지2; API30·Notes19·CLI3·frontend19).
+- [x] UI: 완료된 원래 historyId에서 대상 선택, sourceRoot(미저장 프로젝트 포함) 캡처·typed pending/error/성공 연결. 응답/root 교체와 중복 클릭/같은 intent 재확인을 직접 시험했다.
+- [x] 최종 E2E의 요청→응답 경로에 durable history 대기→일일 기록 append와 HTTP 재송신0 assertion을 추가했다. 현재 E2E 실행은 NOT_RUN; 선택/dirty는 좁은 통합 시험으로 확인했다.
+- [x] 제품·시험46파일+문서2파일의 전체 독립 검토 APPROVE·지적0. API 부분15파일 검토 뒤 최종 동결·근거를 대조했다. 완료 Biome 뒤 로컬 과제 커밋으로 보존한다.
+- [x] 커밋: `feat(api): append sanitized responses to daily and selected notes`(로컬).
+
+**구현 계약 보강:** export는 완료된 현재 세션의 bounded1024 receipt와 durable history 원본 JSON/full body hash·크기·canonical authority를 대조한다. sourceRoot 없는 legacy send나 이전 세션/evicted ID는 export-ineligible이며 HTTP를 다시 보내지 않는다. pending은 별도 사유다. formatter wrapper16KiB−256은 Notes의 hidden operation marker 여유를 포함한다. 선택 token256개/10분과 vault dev/ino·기존 file identity를 검사하며 일반 command64KiB는 바꾸지 않았다.
+
+전용 Notes worker4개 상한·private durable operation receipt의 Attempted/Committed 및 note marker가 retry를 식별한다. Committed는 refresh보다 먼저 기록하고 unknown의 재시도는 관찰만 한다. caller 취소는 worker의 실제 처리 수명을 끊지 않는다. holder의 실제 BOM/CRLF2MiB·wire-text12MiB·rewrite 봉투8MiB는 publish 이전에 검사한다. UI가 raw body/URL을 제출하는 RPC는 없다. 완료 retry는 history가 사라져도 기존 결과를 반환하며 사용자 새 클릭은 새로운 operation UUID다.
+
+근거는 `s6-1b1/{summary,source-freeze,commands,test-cases,resources-index}.json`·API helper·root recovery/CLI artifact다. setup/compile 실패·0개 선택을 성공에 합산하지 않았고 required cgroup memory_enforced=true를 보존했다. 정상 gen-ts/scoped TS/변경 TS Biome PASS, 전체 검사·실제 E2E/Windows·push/PR은 미실행이다.
 
 ## 8. S6-1b.2 — 코드 선택을 기존 변환 도구로 보내기
 

@@ -175,7 +175,7 @@ fn open_nofollow(path: &Path) -> io::Result<File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(nix::libc::O_NOFOLLOW);
+        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
     }
     let file = options.open(path)?;
     #[cfg(not(unix))]
@@ -218,6 +218,17 @@ pub(crate) fn read(root: &Root, path: &str) -> F<Vec<u8>> {
     let dir = parent(root, &parts, false)?.ok_or(ApiError::CollectionNotFound)?;
     read_file(&dir.join(parts[parts.len() - 1]))
         .and_then(|b| b.ok_or(ApiError::CollectionNotFound.into()))
+}
+
+/// Export checks an existing ordinary source file without reading or creating it.
+pub(crate) fn export_source_dir(root: &Root, path: &str) -> F<PathBuf> {
+    let parts = segments(path)?;
+    let dir = parent(root, &parts, false)?.ok_or(ApiError::CollectionNotFound)?;
+    let file = open_nofollow(&dir.join(parts[parts.len() - 1]))?;
+    if !file.metadata()?.is_file() {
+        return Err(ApiError::CollectionPathInvalid.into());
+    }
+    root.open(false)?.ok_or(ApiError::CollectionNotFound.into())
 }
 
 pub(crate) enum Condition<'a> {

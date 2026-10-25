@@ -141,3 +141,35 @@ test("an append edit (not a rename) is handled the same way", async () => {
   expect(disk()).toBe("see [[a]] draft\n- 09:05 hi");
   expect(replies()).toEqual([{ opId: "append1", key, applied: true }]);
 });
+
+test("response rewrite refuses serialized CRLF and BOM overflow before changing the dirty buffer", async () => {
+  await dirtyJournaled("see [[a]] draft");
+  const current = doc();
+  if (!current) throw new Error("open fixture");
+  useDocuments.setState((state) => ({ docs: { ...state.docs, [current.id]: { ...current, eol: "crlf", bom: true } } }));
+  const append = "x\n".repeat(700_000);
+  expect(new TextEncoder().encode(append).length).toBeLessThan(2 * 1024 * 1024);
+  act(() =>
+    daemon.emit(
+      "notes.rewrite_request",
+      request({ edits: [{ fromUtf16: current.text.length, toUtf16: current.text.length, text: append }] }),
+    ),
+  );
+  await advance(0);
+  expect(doc()?.text).toBe("see [[a]] draft");
+  expect(disk()).toBe("see [[a]]");
+  expect(replies()).toEqual([{ opId: "op1", key, applied: false }]);
+});
+
+test("a duplicate response rewrite cannot apply the same append twice", async () => {
+  await dirtyJournaled("see [[a]] draft");
+  const end = doc()?.text.length ?? 0;
+  const append = request({ edits: [{ fromUtf16: end, toUtf16: end, text: "\nresponse-once" }] });
+  act(() => {
+    daemon.emit("notes.rewrite_request", append);
+    daemon.emit("notes.rewrite_request", append);
+  });
+  await advance(0);
+  expect(disk()?.match(/response-once/g)).toHaveLength(1);
+  expect(doc()?.text.match(/response-once/g)).toHaveLength(1);
+});

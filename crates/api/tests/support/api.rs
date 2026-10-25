@@ -417,6 +417,7 @@ pub fn snapshot(method: &str, url: &str) -> RequestSnapshot {
 }
 pub fn request(snapshot: RequestSnapshot) -> SendRequest {
     SendRequest {
+        source_root: None,
         snapshot,
         env: EnvSnapshot::default(),
         run_id: None,

@@ -11,6 +11,7 @@ mod lsp;
 pub mod observe;
 mod outbox;
 mod problems;
+mod response_note;
 pub mod routes;
 mod secret_routes;
 pub mod server;
@@ -260,3 +261,6 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod response_note_tests;

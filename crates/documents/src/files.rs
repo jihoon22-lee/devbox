@@ -18,6 +18,23 @@ pub struct EditState {
 }
 
 impl DocumentsService {
+    /// Checks the exact holder's save encoding before a domain asks it to change its buffer.
+    pub async fn validate_note_rewrite(&self, key: &DocKey, lease_id: &str, text: &str) -> R<()> {
+        let _namespace = self.s.namespace.read().await;
+        let (lease, _guard) = self.lock_lease(lease_id).await?;
+        if lease.key != *key || lease.kind != DocKind::Note {
+            return Err(DocumentsError::InvalidInput.into());
+        }
+        self.check_text(text, DocKind::Note)?;
+        if sys::encode_text(text, lease.eol, lease.bom).len() as u64 > crate::NOTE_LIMIT {
+            return Err(DocumentsError::TooLarge {
+                limit: crate::NOTE_LIMIT,
+            }
+            .into());
+        }
+        Ok(())
+    }
+
     /// Reads a regular file (a final symlink is followed only inside the roots).
     /// `Ok(None)` = absent; `too_large` when it exceeds `limit` bytes. The returned
     /// key is the resolved one, so callers can check which root it landed in.

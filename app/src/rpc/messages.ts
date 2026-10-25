@@ -386,6 +386,37 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "일일 기록의 요약 표시가 깨져 있습니다.",
     action: "<!-- devbox:summary:… --> 줄과 <!-- /devbox:summary --> 줄이 짝을 이루는지 확인해 주세요.",
   },
+  "notes.response_unavailable": (d) =>
+    field(d, "reason") === "pending"
+      ? {
+          title: "응답 기록을 아직 저장하고 있습니다.",
+          action: "잠시 뒤 같은 작업을 다시 확인하세요. 요청을 다시 보내지는 않습니다.",
+        }
+      : field(d, "reason") === "origin"
+        ? {
+            title: "응답을 보낸 프로젝트나 컬렉션 출처가 바뀌었습니다.",
+            action: "현재 출처를 확인하세요. 바뀐 기록은 노트에 붙이지 않습니다.",
+          }
+        : {
+            title: "이 응답 기록을 노트에 붙일 수 없습니다.",
+            action: "이전 세션·누락·변경·미완료 기록인지 확인하세요. 자동으로 재송신하지 않습니다.",
+          },
+  "notes.response_target_changed": {
+    title: "선택한 노트나 보관함이 바뀌었습니다.",
+    action: "현재 보관함에서 대상을 다시 선택해 주세요.",
+  },
+  "notes.append_uncertain": {
+    title: "노트에 붙였는지 아직 확인할 수 없습니다.",
+    action: "노트 창의 저장 상태를 확인한 뒤 같은 작업을 다시 확인하세요. 같은 작업을 다시 붙이지 않습니다.",
+  },
+  "notes.append_operation_mismatch": {
+    title: "노트 추가 작업의 대상이나 응답이 일치하지 않습니다.",
+    action: "원래 응답에서 대상을 다시 선택해 주세요.",
+  },
+  "api.response_export_failed": {
+    title: "완료된 응답의 출처를 확인할 수 없습니다.",
+    action: "기록 저장 중이면 잠시 뒤 다시 확인하세요. 이전 세션이나 변경된 기록은 내보내지 않습니다.",
+  },
   "notes.conflict": { title: "노트가 계속 바뀌고 있어 쓰지 못했습니다.", action: "잠시 뒤 다시 시도해 주세요." },
   "search.invalid_regex": { title: "정규식이 올바르지 않습니다.", action: "괄호와 특수 문자를 확인해 주세요." },
   "search.invalid_input": { title: "검색 입력값을 확인해 주세요.", action: "검색어 길이와 결과 개수를 줄여 보세요." },

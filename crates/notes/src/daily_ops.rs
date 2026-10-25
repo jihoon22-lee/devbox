@@ -56,7 +56,7 @@ impl NotesService {
     }
     /// Creates `<daily_folder>/<date>.md` from `<templates>/daily.md` (or the
     /// default) when it does not exist; an existing note is never rewritten.
-    async fn ensure_daily(&self, date: &str) -> R<DailyNote> {
+    pub(crate) async fn ensure_daily(&self, date: &str) -> R<DailyNote> {
         let path = daily::daily_path(&self.s.settings.daily_folder, date);
         let key = self.key(&path);
         let disk = self.s.docs.read_disk(&key, DocKind::Note).await;
@@ -165,6 +165,24 @@ impl NotesService {
         edit: impl Fn(Option<&str>) -> R<String>,
         done: impl Fn(&str, &str) -> bool,
     ) -> R<DiskRev> {
+        self.edit_note_inner(path, edit, done, None).await
+    }
+    pub(crate) async fn edit_response_note(
+        &self,
+        path: &str,
+        edit: impl Fn(Option<&str>) -> R<String>,
+        done: impl Fn(&str, &str) -> bool,
+        guard: &crate::response_append::ResponseGuard,
+    ) -> R<DiskRev> {
+        self.edit_note_inner(path, edit, done, Some(guard)).await
+    }
+    async fn edit_note_inner(
+        &self,
+        path: &str,
+        edit: impl Fn(Option<&str>) -> R<String>,
+        done: impl Fn(&str, &str) -> bool,
+        guard: Option<&crate::response_append::ResponseGuard>,
+    ) -> R<DiskRev> {
         let at = Edit {
             path,
             key: self.key(path),
@@ -176,6 +194,9 @@ impl NotesService {
             let state = self.s.docs.edit_state(&at.key).await.map_err(docs_fail)?;
             let disk = self.s.docs.read_disk(&at.key, DocKind::Note).await;
             let disk = disk.map_err(docs_fail)?;
+            if let Some(guard) = guard {
+                guard.validate(disk.rev.as_ref())?;
+            }
             if let Some((seq, draft)) = state.journal {
                 // A draft nobody holds waits for recovery: never write behind it.
                 let Some(lease_id) = state.lease_id else {
@@ -183,7 +204,7 @@ impl NotesService {
                 };
                 let next = edit(Some(&draft))?;
                 return self
-                    .ask_holder(&at, (lease_id, seq, &draft, &next), disk.rev, &done)
+                    .ask_holder(&at, (lease_id, seq, &draft, &next), disk.rev, &done, guard)
                     .await;
             }
             let text = match (&disk.rev, disk.text) {
@@ -199,7 +220,16 @@ impl NotesService {
             if let (Some(rev), Some(text)) = (&disk.rev, &text)
                 && *text == next
             {
+                if let Some(guard) = guard {
+                    guard.committed(rev.clone()).await?;
+                }
                 return Ok(rev.clone());
+            }
+            if let Some(guard) = guard {
+                guard.validate(disk.rev.as_ref())?;
+                guard
+                    .phase(crate::response_journal::Phase::Attempted)
+                    .await?;
             }
             let expect = match disk.rev {
                 Some(_) => Expect::Present,
@@ -212,12 +242,26 @@ impl NotesService {
                 .write_disk_within(&at.key, disk.rev, expect, &next, NOTE_LIMIT);
             match write.await {
                 Ok(rev) => {
+                    if let Some(guard) = guard {
+                        guard.committed(rev.clone()).await?;
+                    }
                     self.refresh(vec![path.into()]).await?;
                     return Ok(rev);
                 }
                 // Changed since the read: read again, never overwrite.
-                Err(Fail::Domain(DocumentsError::Conflict { .. } | DocumentsError::Exists)) => {}
-                Err(e) => return Err(docs_fail(e)),
+                Err(Fail::Domain(DocumentsError::Conflict { .. } | DocumentsError::Exists)) => {
+                    if let Some(guard) = guard {
+                        guard.phase(crate::response_journal::Phase::Pending).await?;
+                    }
+                }
+                Err(e) => {
+                    if matches!(&e, Fail::Domain(_))
+                        && let Some(guard) = guard
+                    {
+                        guard.phase(crate::response_journal::Phase::Pending).await?;
+                    }
+                    return Err(docs_fail(e));
+                }
             }
         }
         Err(NotesError::Conflict.into())
@@ -231,9 +275,17 @@ impl NotesService {
         (lease_id, seq, draft, next): (String, u64, &str, &str),
         before: Option<DiskRev>,
         done: &impl Fn(&str, &str) -> bool,
+        guard: Option<&crate::response_append::ResponseGuard>,
     ) -> R<DiskRev> {
         if next == draft {
             return Err(NotesError::OpenUnsaved.into());
+        }
+        if guard.is_some() {
+            self.s
+                .docs
+                .validate_note_rewrite(&at.key, &lease_id, next)
+                .await
+                .map_err(docs_fail)?;
         }
         let request = RewriteRequest {
             op_id: uuid::Uuid::new_v4().simple().to_string(),
@@ -242,6 +294,18 @@ impl NotesService {
             journal_seq: seq,
             edits: vec![daily::single_edit(draft, next)],
         };
+        if let Some(guard) = guard {
+            if serde_json::to_vec(&request).map_or(true, |bytes| bytes.len() > 8 * 1024 * 1024) {
+                return Err(NotesError::TooLarge {
+                    limit: 8 * 1024 * 1024,
+                }
+                .into());
+            }
+            guard.validate(before.as_ref())?;
+            guard
+                .phase(crate::response_journal::Phase::Attempted)
+                .await?;
+        }
         if self.ask_window(request).await != Some(true) {
             return Err(NotesError::OpenUnsaved.into());
         }
@@ -252,6 +316,9 @@ impl NotesService {
                 text: Some(text),
                 ..
             } if !before.is_some_and(|b| b.same_content(&rev)) && done(draft, &text) => {
+                if let Some(guard) = guard {
+                    guard.committed(rev.clone()).await?;
+                }
                 self.refresh(vec![at.path.into()]).await?;
                 Ok(rev)
             }

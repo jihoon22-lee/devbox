@@ -12,6 +12,7 @@ mod model;
 mod oauth_loopback;
 mod realtime;
 mod redact;
+mod response_export;
 mod service;
 mod store;
 mod template;
@@ -32,6 +33,7 @@ pub use history::API_INDEX_VERSION;
 pub use mcp::{McpConnect, McpEvent, McpInput, McpList, McpSource, McpTransport};
 pub use model::*;
 pub use realtime::{Direction, MAX_SESSIONS, MessageKind, RealtimeEvent, SseOpen, WsInput, WsOpen};
+pub use response_export::ResponseNoteExport;
 pub use service::{ApiOptions, ApiService, Clock};
 pub use store::MIGRATIONS;
 

@@ -28,7 +28,7 @@ export function useSend() {
       return;
     }
     const origin = tab.path ? { root: tab.root, path: tab.path } : null;
-    const prepared = prepareSend(tab.draft, environment?.variables ?? [], session, origin);
+    const prepared = prepareSend(tab.draft, environment?.variables ?? [], session, origin, tab.root);
     if ("blocked" in prepared) {
       updateById(id, { notice: prepared.blocked });
       return;

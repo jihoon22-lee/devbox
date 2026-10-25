@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자2026-10-25 구현 승인에 따라 S6-1a.4 직접 credential echo를 구현·좁은 검증했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반4f24ecc6. 제품·시험29파일과 문서2파일의 최종 독립 전체 검토 APPROVE(지적0)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자2026-10-25 구현 승인에 따라 S6-1b.1 API 응답→일일/선택 노트 추가를 구현·직접 검증했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반c1a634d7. 제품·시험46파일과 문서2파일의 전체 독립 검토 APPROVE(지적0)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1a.4 로컬 완료 다음은 S6-1b.1 API 응답→노트 export다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
-| 마지막 갱신 | 2026-10-25 · S6-1a.4 causal RED3·구조화 Bearer 제어1을 보존했다. 직접 관련 고유74 PASS와 incidental 메시지1 PASS, generated TS·좁은 메시지 검증을 확인했다. common-dir `devbox-verification/s6-1a4/`에 source·원본 log·자원 근거. 독립 전체 검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 전체 검사·Windows/native 실기·push·PR·공개 미실행. |
+| 다음 제품 작업 | S6-1b.1 로컬 완료 다음은 S6-1b.2 코드 선택→변환 도구 연결을 진행한다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
+| 마지막 갱신 | 2026-10-25 · S6-1b.1 Notes 기존경로 RED2·API 미구현 export seam RED1을 보존했다. 총 고유71 PASS(직접69·incidental 메시지2; API30·Notes19·CLI3·frontend19), generated TS·scoped 타입·변경 TS Biome PASS. `devbox-verification/s6-1b1/`에 source·명령·원본 실패·자원 근거. 전체 독립 검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 추가 E2E 경로/전체 검사/Windows/native/push/PR은 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -82,7 +82,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.3 로컬 완료·1a.4 다음) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.1–4·1b.1 로컬 완료) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -96,7 +96,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1a.1–3 로컬 완료;1a.4 직접 관련74 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | S6-1a.1–4 로컬 완료;1b.1 직접69·incidental2 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -149,12 +149,25 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–3 로컬 완료;1a.4 직접 관련74 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4 로컬 완료;1b.1 직접69·incidental2 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
+
+### S6-1b.1 API 응답→노트 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반c1a634d7에서 기존 notes.append의64KiB+1 거절과 선택 target 미지원 RED2를 먼저 확인했다. API는 새 export seam의 컴파일 가능한 unavailable stub에서 완료 응답70KiB·원래 가려진 URL을 요구하는 RED1 뒤 구현했다. 이 stub 실패를 기존 제품의 정보 노출 재현이라고 부르지 않는다. 일반 command64KiB는 유지하고 응답 전용 Notes admission을 별도로 추가했다.
+- 화면은 historyId·서버 선택 token·operationId만 보내며 method/URL/body를 제출하지 않는다. API는 완료된 send와 durable history 파일·index 기록 이후에만 세션 receipt를 발급하고 원본 JSON/외부 body 전체 hash·크기 및 canonical source authority를 결속한다. sourceRoot는 저장하지 않은 프로젝트 초안도 캡처한 root를 보내며 origin과 일치를 확인한다. 실제 치환·가림 후 URL, method/status/sentAt과 body를 읽고 프로젝트 등록·config/collection 경로를 다시 확인한다. legacy sourceRoot 누락·이전 세션·1024건 receipt 범위 밖·history 변경·미완료·쓰기/가림 실패는 명시적 unavailable이며 재송신하지 않는다. End 이후 아직 기록 중인 상태는 pending으로 구분한다.
+- 본문은 최대1MiB UTF-8 scalar, history byte cap의 불완전한 끝 scalar는 버리고 잘림 안내를 붙인다. binary는 metadata만, backtick fence는 본문보다 길게 만들고 metadata/fence 합산 wrapper는16KiB−256으로 제한했다. Notes operation marker에256바이트 여유를 남긴다. UTC 기록 시각·원래 가려진 URL을 사용하고 임의 literal JSON을 새 secret으로 추론하지 않는다. FIFO/비정규 history·receipt 파일은 nonblocking/regular-file 검사로 거절한다.
+- 일일 기록/현재 vault의 기존 `.md`만 선택한다. 서버 선택 token은256개·10분으로 제한하고 canonical vault dev/ino·경로·선택 파일 identity를 결속한다. 삭제/rename/교체/alias/만료·다른 root는 재선택 오류이며 선택 노트를 ExpectAbsent로 다시 만들지 않는다. 기존 notes.append Inbox/Daily 동작은 유지한다.
+- 기존 edit_note CAS retry·dirty holder rewrite/ACK를 재사용한다. Documents가 holder의 실제 EOL/BOM과12MiB wire-text budget으로 최종2MiB를 publish 전에 검사하고 rewrite 봉투도8MiB로 제한한다. renderer도 동일 serialized note 크기를 확인해 실패하는 편집을 dirty buffer에 먼저 넣지 않는다. 복구 draft만 있고 holder가 없으면 보존·거절한다.
+- 응답 작업은 최대4개 worker로 제한하며 caller가 사라져도 실제 mutation/ACK 처리까지 worker가 수명을 보유한다. private durable journal은 operationId/historyId/selection/markdown digest를 결속하고 write/rewrite 이전 Attempted, 실제 저장 확인 뒤 refresh 이전 Committed를 기록한다. timeout/unknown 재시도는 note의 operation marker로 늦은 저장을 관찰할 뿐 새 rewrite/append를 발행하지 않는다. 저장 후 목록/index 갱신 실패나 daemon restart에도 completed 결과를 API history 조회보다 먼저 반환한다. 새 명시적 클릭만 새 UUID로 같은 응답을 다시 추가한다.
+- UI 대상 선택/목록 paging·pending/typed 오류/성공을 연결했다. 응답·root ownership key가 바뀌면 이전 lookup이 append를 제출하거나 늦은 성공이 새 화면을 바꾸지 않는다. 중복 클릭은 차단하고 실패 재확인은 기존 operation ID를 유지한다. 성공 이후 목록 조회를 이유로 다시 추가하지 않는다.
+- 총 고유71 PASS(직접69·incidental 메시지2): API30(새14·직접 영향16), Notes19(새15·기존 append/dirty/CRLF4), 실제 CLI3, frontend19(새8·기존11). 실제 소유 HTTP→daemon route→daily/selected70KiB·가림·단일 요청, history 삭제 뒤 completed retry, 위조 body/unknown ID 거절을 확인했다. root 별도 소유 SQLite trigger로 refresh 실패 후 stable bytes/inode와 restart replay, timeout 뒤 late save/ACK 및 미저장 draft 보존을 검증했다. 바뀐 기대를 덮어 성공으로 만든 실패는 없다.
+- API 부분 검토와 Notes/CLI/UI·문서를 포함한 전체 독립 검토 모두 APPROVE·지적0이다(`independent-review.json`). helper의 초기 동시 Notes 모듈 미완성 compile 실패, root fixture Option 타입 오류, CLI supervisor 인자 setup 실패·잘못된 bin의0개 선택, scoped TS artifact type 경로/Node 선언 설정 실패는 모두 원본으로 보존하고 PASS/causal RED에 세지 않았다. 최종 좁은 타입·정상 gen-ts·변경 TS Biome PASS, 모든 실제 자원 footer memory_enforced=true다. 전체 독립 검토 뒤 완료 Biome·로컬 과제 커밋으로 보존한다.
+- 기존 request→response E2E에 durable history 대기→일일 노트 append·HTTP 재송신0 경로를 추가했지만 실행하지 않았다(S6 최종 검증). 전체 check/clippy/build/E2E·Windows/native·push/PR은 이 구현 단계에서 NOT_RUN이다. API helper15파일·root의 recovery/CLI 시험은 각각 동결했고 공통 source/artifact 근거는 `s6-1b1/`다.
 
 ### S6-1a.4 직접 credential echo (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

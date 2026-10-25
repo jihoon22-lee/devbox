@@ -42,6 +42,17 @@ function savedThrough(id: string, seq: number, ms: number): Promise<boolean> {
   });
 }
 
+/** Match the note save's byte encoding before changing the holder's buffer. */
+export function fitsNoteRewrite(doc: Pick<Doc, "policy" | "eol" | "bom">, text: string): boolean {
+  if (doc.policy.kind !== "note" || text.includes("\0")) return false;
+  const bytes = new TextEncoder();
+  const disk = doc.eol === "crlf" ? text.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n") : text;
+  return (
+    bytes.encode(disk).length + (doc.bom ? 3 : 0) <= 2 * 1024 * 1024 &&
+    bytes.encode(JSON.stringify(text)).length - 2 <= 12 * 1024 * 1024
+  );
+}
+
 /**
  * One `notes.rewrite_request` (rename links, append, daily summary): only the window holding the
  * lease answers, and only when its buffer is still the journaled one. The edits go into the buffer
@@ -61,7 +72,7 @@ export async function handleRewrite(client: DocumentsClient, request: RewriteReq
     );
   const current = (doc.state === "Dirty" || doc.state === "Saving") && doc.editSeq === request.journalSeq;
   const next = current ? applyEdits(doc.text, request.edits) : null;
-  if (next === null) return reply(false);
+  if (next === null || !fitsNoteRewrite(doc, next)) return reply(false);
   store.replace(doc.key, next);
   const seq = useDocuments.getState().docs[doc.id]?.editSeq ?? Number.POSITIVE_INFINITY;
   store.save(doc.key);

@@ -24,3 +24,9 @@ test("redaction failure actions distinguish capacity and rejected server input",
     "fixture-sensitive-detail",
   );
 });
+
+test("response export distinguishes pending history from unavailable provenance without echoing details", () => {
+  expect(messageFor("notes.response_unavailable", { reason: "pending" }).title).toContain("저장");
+  expect(messageFor("notes.response_unavailable", { reason: "provenance" }).action).toContain("이전 세션");
+  expect(messageFor("notes.append_uncertain").action).toContain("같은 작업");
+});

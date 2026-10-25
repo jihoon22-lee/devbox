@@ -35,10 +35,11 @@ export type AgentsAttention = { id: string, state: AgentState, message: string, 
 export type AgentsChanged = { rev: string, id: string, };
 export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
-export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.redaction_failed", "detail": { reason: string, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
+export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.redaction_failed", "detail": { reason: string, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.response_export_failed", "detail": { reason: string, } } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
 export type AppMs = { app: string, ms: number, };
 export type AppendFormat = "plain" | "capture";
 export type AppendNote = { target: AppendTarget, text: string, format: AppendFormat, };
+export type AppendResponseNote = { historyId: string, selection: string, operationId: string, };
 export type AppendTarget = "inbox" | "daily";
 export type Appended = { path: string, rev: DiskRev, };
 export type AttachImage = { notePath: string, name: string, 
@@ -377,7 +378,7 @@ export type NoteHits = { rev: string, items: Array<NoteHit>, truncated: boolean,
 export type NotePath = { path: string, };
 export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
 export type NotesChanged = { rev: string, paths: Array<string>, };
-export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" };
+export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.response_unavailable", "detail": { reason: string, } } | { "code": "notes.response_target_changed" } | { "code": "notes.append_uncertain" } | { "code": "notes.append_operation_mismatch" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" };
 export type NotesQuery = { text: string, 
 /**
  * `1..=50`.
@@ -521,6 +522,9 @@ target: string, kind: LinkKind,
  */
 from: string | null, };
 export type ResolvedLink = { paths: Array<string>, ambiguous: boolean, };
+export type ResponseNoteAppended = { path: string, rev: DiskRev, operationId: string, };
+export type ResponseNoteSelection = { selection: string, path: string, target: ResponseNoteTarget, };
+export type ResponseNoteTarget = { "kind": "daily" } | { "kind": "existing", path: string, };
 export type ResponseRule = { id: string, priority: number, method: string | null, path: string, status: number, headers: Array<[string, string]>, body: string, delayMs: number, sequence?: Array<ResponseSequenceStep>, };
 export type ResponseSequenceStep = { status: number, headers: Array<[string, string]>, body: string, delayMs: number, };
 export type RestartPolicy = "no" | "onFailure" | "always";
@@ -619,8 +623,9 @@ limit: number, };
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
 export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
+export type SelectResponseNote = { target: ResponseNoteTarget, };
 export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
-export type SendRequest = { snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
+export type SendRequest = { sourceRoot?: CollectionRoot, snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
 export type SendToAgent = { id: string, text: string, };
 export type ServerInfo = { language: Language, command: string, args: Array<string>, install: string | null, state: ServerState, generation: number, pid: number | null, memoryBytes: number | null, clients: number, };
 export type ServerState = "missing" | "starting" | "ready" | "failed" | "idle_stopped";
@@ -853,6 +858,7 @@ export interface Methods {
   "lsp.restart": { kind: "mutation"; confirm: "none"; params: OpenLsp; result: Done; error: LspError };
   "lsp.servers": { kind: "query"; confirm: "none"; params: ServersQuery; result: ServersResult; error: LspError };
   "notes.append": { kind: "mutation"; confirm: "none"; params: AppendNote; result: Appended; error: NotesError };
+  "notes.append_response": { kind: "mutation"; confirm: "none"; params: AppendResponseNote; result: ResponseNoteAppended; error: NotesError };
   "notes.attach": { kind: "mutation"; confirm: "none"; params: AttachImage; result: Attached; error: NotesError };
   "notes.backlinks": { kind: "query"; confirm: "none"; params: NotePath; result: Backlinks; error: NotesError };
   "notes.create": { kind: "mutation"; confirm: "none"; params: CreateNote; result: CreatedNote; error: NotesError };
@@ -866,6 +872,7 @@ export interface Methods {
   "notes.resolve": { kind: "query"; confirm: "none"; params: ResolveLink; result: ResolvedLink; error: NotesError };
   "notes.restore": { kind: "mutation"; confirm: "none"; params: RestoreNote; result: Done; error: NotesError };
   "notes.rewrite_reply": { kind: "mutation"; confirm: "none"; params: RewriteReply; result: Done; error: NotesError };
+  "notes.select_response_target": { kind: "query"; confirm: "none"; params: SelectResponseNote; result: ResponseNoteSelection; error: NotesError };
   "notes.tags": { kind: "query"; confirm: "none"; params: NoParams; result: Tags; error: NotesError };
   "notes.templates": { kind: "query"; confirm: "none"; params: NoParams; result: Templates; error: NotesError };
   "notes.tree": { kind: "query"; confirm: "none"; params: TreeParams; result: NoteTree; error: NotesError };
@@ -1063,6 +1070,7 @@ export const METHOD_INFO = {
   "lsp.restart": { kind: "mutation", confirm: "none" },
   "lsp.servers": { kind: "query", confirm: "none" },
   "notes.append": { kind: "mutation", confirm: "none" },
+  "notes.append_response": { kind: "mutation", confirm: "none" },
   "notes.attach": { kind: "mutation", confirm: "none" },
   "notes.backlinks": { kind: "query", confirm: "none" },
   "notes.create": { kind: "mutation", confirm: "none" },
@@ -1076,6 +1084,7 @@ export const METHOD_INFO = {
   "notes.resolve": { kind: "query", confirm: "none" },
   "notes.restore": { kind: "mutation", confirm: "none" },
   "notes.rewrite_reply": { kind: "mutation", confirm: "none" },
+  "notes.select_response_target": { kind: "query", confirm: "none" },
   "notes.tags": { kind: "query", confirm: "none" },
   "notes.templates": { kind: "query", confirm: "none" },
   "notes.tree": { kind: "query", confirm: "none" },
@@ -1204,6 +1213,7 @@ export const RPC_ERROR_CODES = [
   "api.oauth_failed",
   "api.project_not_found",
   "api.redaction_failed",
+  "api.response_export_failed",
   "api.review_required",
   "api.secret_missing",
   "api.storage_sensitive_body",
@@ -1269,6 +1279,8 @@ export const RPC_ERROR_CODES = [
   "lsp.stream_unavailable",
   "method_not_found",
   "not_found",
+  "notes.append_operation_mismatch",
+  "notes.append_uncertain",
   "notes.busy",
   "notes.conflict",
   "notes.exists",
@@ -1279,6 +1291,8 @@ export const RPC_ERROR_CODES = [
   "notes.not_found",
   "notes.open_unsaved",
   "notes.out_of_vault",
+  "notes.response_target_changed",
+  "notes.response_unavailable",
   "notes.stale_cursor",
   "notes.summary_broken",
   "notes.target_unsaved",

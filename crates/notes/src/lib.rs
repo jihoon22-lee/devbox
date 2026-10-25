@@ -6,6 +6,10 @@ pub mod attachments;
 mod code_spans;
 mod daily;
 mod daily_ops;
+mod response_append;
+mod response_journal;
+mod response_model;
+pub use response_model::*;
 pub mod frontmatter;
 mod index;
 pub mod links;
@@ -48,12 +52,16 @@ method!(pub NotesRewriteReply = "notes.rewrite_reply", mutation, RewriteReply =>
 method!(pub NotesDaily = "notes.daily", mutation, DailyParams => DailyNote, NotesError);
 method!(pub NotesAppend = "notes.append", mutation, AppendNote => Appended, NotesError);
 method!(pub NotesInsertSummary = "notes.insert_summary", mutation, InsertSummary => SummaryInserted, NotesError);
+method!(pub NotesSelectResponseTarget = "notes.select_response_target", query, SelectResponseNote => ResponseNoteSelection, NotesError);
+method!(pub NotesAppendResponse = "notes.append_response", mutation, AppendResponseNote => ResponseNoteAppended, NotesError);
 topic!(pub NotesChangedTopic = "notes.changed", NotesChanged);
 topic!(pub NotesRewriteRequestTopic = "notes.rewrite_request", RewriteRequest);
 topic!(pub NotesRenameIncompleteTopic = "notes.rename_incomplete", RenameIncomplete);
 
 pub fn export<X: Exporter>(x: &mut X) {
     x.method::<NotesRead>();
+    x.method::<NotesSelectResponseTarget>();
+    x.method::<NotesAppendResponse>();
     x.method::<NotesTree>();
     x.method::<NotesCreate>();
     x.method::<NotesDelete>();
@@ -98,3 +106,12 @@ mod vault_tests;
 
 #[cfg(test)]
 mod scope_tests;
+
+#[cfg(test)]
+mod response_append_tests;
+
+#[cfg(test)]
+mod response_append_recovery_tests;
+
+#[cfg(test)]
+mod response_append_dirty_tests;

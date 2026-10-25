@@ -4,6 +4,7 @@
  */
 import { createContext, type ReactNode, useContext } from "react";
 import type {
+  AppendResponseNote,
   CollectionExpect,
   CollectionList,
   CollectionRoot,
@@ -16,9 +17,13 @@ import type {
   McpConnect,
   McpEvent,
   McpInput,
+  NoteTree,
   Pair,
   RealtimeEvent,
   RequestOrigin,
+  ResponseNoteAppended,
+  ResponseNoteSelection,
+  ResponseNoteTarget,
   SendRequest,
   SseOpen,
   Written,
@@ -53,6 +58,9 @@ export class SendFailure extends Error {
 }
 
 export interface ApiBackend {
+  noteTargets(cursor: string | null): Promise<NoteTree>;
+  selectResponseTarget(target: ResponseNoteTarget): Promise<ResponseNoteSelection>;
+  appendResponse(params: AppendResponseNote): Promise<ResponseNoteAppended>;
   list(root: CollectionRoot): Promise<CollectionList>;
   read(root: CollectionRoot, path: string): Promise<FileText>;
   write(root: CollectionRoot, path: string, text: string, expect: CollectionExpect): Promise<Written>;

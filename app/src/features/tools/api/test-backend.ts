@@ -1,6 +1,7 @@
 /** 화면 시험용 가짜 데몬: 메모리 파일·digest CAS·송신 기록. */
 import { vi } from "vitest";
 import type {
+  AppendResponseNote,
   CollectionExpect,
   CollectionRoot,
   GrpcCall,
@@ -11,7 +12,9 @@ import type {
   McpConnect,
   McpEvent,
   McpInput,
+  NoteTree,
   RealtimeEvent,
+  ResponseNoteTarget,
   SendRequest,
   SseOpen,
   WsInput,
@@ -77,6 +80,24 @@ export class FakeStream<E, P, I = never> {
 }
 
 export class FakeBackend implements ApiBackend {
+  noteTargets = vi.fn(
+    async (_cursor: string | null): Promise<NoteTree> => ({
+      rev: "1",
+      items: [{ path: "chosen.md", title: "고른 노트", dir: false }],
+      nextCursor: null,
+      truncated: false,
+    }),
+  );
+  selectResponseTarget = vi.fn(async (target: ResponseNoteTarget) => ({
+    selection: "a".repeat(32),
+    path: target.kind === "daily" ? "daily/today.md" : target.path,
+    target,
+  }));
+  appendResponse = vi.fn(async (params: AppendResponseNote) => ({
+    path: "chosen.md",
+    operationId: params.operationId,
+    rev: { hash: "saved", size: 1, mtimeNs: "1", ino: "1" },
+  }));
   files = new Map<string, { text: string; digest: string }>();
   secrets = new Map<string, string>();
   reviewed = new Set<string>();

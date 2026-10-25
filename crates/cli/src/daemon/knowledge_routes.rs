@@ -78,6 +78,10 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
             s.notes.rewrite_reply(p).await
         })
         .register::<notes::NotesDaily, _, _>(|s, _, p| async move { s.notes.daily(p).await })
+        .register::<notes::NotesSelectResponseTarget, _, _>(|s, _, p| async move {
+            s.notes.select_response_target(p).await
+        })
+        .register::<notes::NotesAppendResponse, _, _>(|s, _, p| super::response_note::append(s, p))
         .register::<notes::NotesAppend, _, _>(|s, _, p| async move { s.notes.append(p).await })
         .register::<notes::NotesInsertSummary, _, _>(|s, _, p| super::summary::insert(s, p))
         .register::<search::SearchQueryStream, _, _>(|s, ctx, p| async move {

@@ -21,6 +21,7 @@ devbox_protocol::domain_error! {
         StreamRejected { status: u16, reason: String } = "api.stream_rejected",
         TooManyStreams { limit: u32 } = "api.too_many_streams",
         HistoryNotFound = "api.history_not_found",
+        ResponseExportFailed { reason: String } = "api.response_export_failed",
         CollectionPathInvalid = "api.collection_path_invalid",
         CollectionConflict { digest: Option<String> } = "api.collection_conflict",
         CollectionTooLarge { limit: u64 } = "api.collection_too_large",
