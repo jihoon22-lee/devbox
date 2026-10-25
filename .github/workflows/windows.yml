@@ -103,8 +103,9 @@ jobs:
           $receipt = Get-Content app/src-tauri/resources/linux-receipt.json -Raw | ConvertFrom-Json
           if ($receipt.source_sha -ne $env:SOURCE_SHA -or $receipt.sha256 -ne (Get-FileHash app/src-tauri/resources/devbox-linux).Hash.ToLowerInvariant()) { throw 'Linux artifact provenance mismatch' }
           & ./scripts/tests/windows-orchestration.ps1
-          & ./scripts/win-package.ps1 -Verify
-          if ('${{ github.event_name }}' -in @('pull_request', 'workflow_dispatch')) { & ./scripts/win-package.ps1 -Channel accept }
+          $channels = @('prod')
+          if ('${{ github.event_name }}' -in @('pull_request', 'workflow_dispatch')) { $channels += 'accept' }
+          & ./scripts/win-package.ps1 -Verify -Channel $channels
       - uses: actions/upload-artifact@v4
         if: needs.changes.outputs.code == 'true'
         with:
