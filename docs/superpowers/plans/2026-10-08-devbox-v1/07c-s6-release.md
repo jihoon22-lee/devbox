@@ -1,15 +1,15 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **S6 작업 계획 작성·별도 검토·로컬 문서 커밋까지만**. 제품 구현·시험·push·PR·태그·공개는 이번 요청에 포함되지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1만 구현·좁은 검증 완료/별도 검토 대기이며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
-- 이 문서는 [07](07-s4-s6.md)의 S6 요약을 실제 코드에 맞게 구체화한다. 구현 시작은 후속 사용자 지시를 확인한 뒤다.
+- 이 문서는 [07](07-s4-s6.md)의 S6 요약을 실제 코드에 맞게 구체화한다. 계획 커밋563523db 뒤 사용자 구현 지시를 확인하고 S6-1a.1을 시작했다.
 
 ## 1. 먼저 고칠 네 가지 발견
 
-사전 검토 근거는 Git common-dir `devbox-archive/pre-s6-review-20261025/`의 `summary.json`, `s0-s2-review.json`, `s3-s4-review.json`, `s5-review.json`, `root-evidence-review.json`이다. 모두 위 main 기준이며 제품 수정 없이 좁은 소유 fixture로 확인했다. 아래는 아직 수정하지 않았다.
+사전 검토 근거는 Git common-dir `devbox-archive/pre-s6-review-20261025/`의 `summary.json`, `s0-s2-review.json`, `s3-s4-review.json`, `s5-review.json`, `root-evidence-review.json`이다. 모두 위 main 기준이며 제품 수정 없이 좁은 소유 fixture로 확인했다. 사전 검토 당시 아래 항목은 미수정이며, 현재 과제별 결과는 PROGRESS를 따른다.
 
 | ID | 실제 재현·한계 | S6 처리 |
 |---|---|---|
@@ -35,7 +35,7 @@
 | AH-3 | S6-6b 최종 검사·PR·머지 | 전체 브랜치 검토 | 최종 결과·수정 커밋 |
 | 공개 | S6-6c 공개 승인·태그 | main CI·수용 근거·명시 승인 | `v1.0.0` 주석 태그 |
 
-S6는 한 브랜치·한 PR이다. 이번 계획 커밋 뒤 push/PR을 만들지 않는다. 구현 시에도 과제마다 전체 검사를 반복하거나 중간 PR을 열지 않는다. 마지막 Windows 수용 artifact를 위한 candidate 백업 push/dispatch는 §16의 명시 순서로 PR 전에 수행한다.
+S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 좁은 과제 단계에서는 push/PR을 만들지 않는다. 구현 시에도 과제마다 전체 검사를 반복하거나 중간 PR을 열지 않는다. 마지막 Windows 수용 artifact를 위한 candidate 백업 push/dispatch는 §16의 명시 순서로 PR 전에 수행한다.
 
 각 구현 과제의 동일한 5단계:
 
@@ -55,11 +55,11 @@ S6는 한 브랜치·한 PR이다. 이번 계획 커밋 뒤 push/PR을 만들지
 
 **계약:** load 시작 시 `{root, selection, operationGeneration, draftRevision}`을 캡처한다. 새로운 선택·생성·root 전환·unmount는 이전 요청을 무효화한다. 편집도 draftRevision을 바꾸므로 같은 선택의 늦은 읽기가 새 입력을 덮지 못한다. guarded 확인은 시작 전 사용자 의사 확인이며 완료 시 ownership 검사를 대체하지 않는다. 현재 소유 요청만 editing/dirty/선택/환경 발행을 함께 갱신한다. 거절된 응답은 toast나 이전 오류로 새 화면을 덮지 않는다.
 
-- [ ] RED: 보존된 `EnvEditor.preS6.test.tsx`의 A 지연→B 로드→B `/unsaved` 편집→A 완료를 정식 인접 시험으로 옮긴다.
-- [ ] 같은 환경 재읽기 중 입력·새 환경 생성·root 전환·실패 역순·unmount도 필요한 ownership 경계를 시험한다.
-- [ ] GREEN: B 입력·dirty·선택·발행 환경 모두 B 유지, 정상 최초 로드/명시적 버림 뒤 선택은 정상.
-- [ ] 검토: 저장 완료·삭제 뒤 늦은 응답도 확인하고 무관 API store를 재작성하지 않는다.
-- [ ] 커밋: `fix(api): preserve environment drafts across late reads`.
+- [x] RED: 보존된 재현을 `EnvEditor.loads.test.tsx`로 옮겨 A 지연→B 로드·`/unsaved` 편집→A 완료가 입력을 덮는 실패1을 확인했다.
+- [x] 같은 환경 재읽기 중 입력·새 환경 생성·root 전환·실패 역순·unmount·빈 선택·저장 완료/저장 중 입력의 ownership 경계를 시험했다.
+- [x] GREEN: 환경 편집기3파일19 PASS, 추가 root 확인 정리1·환경 검토 gate1 PASS로 고유21. B 입력·dirty·선택·발행 환경 유지와 기존 정상 로드/명시적 버림·루트별 저장·검토 ACK를 확인했다. 별도 검토 APPROVE, 완료 Biome 뒤 로컬 과제 커밋으로 보존한다.
+- [x] 검토: 독립 검토 지적0·APPROVE. 저장/review ACK 보존과 새 read invalidation 계약을 확인했다. 근거 `s6-1a1/independent-review.json`.
+- [x] 커밋: `fix(api): preserve environment drafts across late reads`(로컬).
 
 ## 4. S6-1a.2 — LSP WorkspaceEdit 모든 대상의 출처 증명
 
@@ -313,7 +313,7 @@ S6는 한 브랜치·한 PR이다. 이번 계획 커밋 뒤 push/PR을 만들지
 
 - [ ] 전체 브랜치 독립 검토: 네 수정·통합·소유권·redaction·업데이트·문서/근거 일치. 해결되지 않은 항목과 SC 판정을 먼저 고정한다.
 - [ ] 자원 supervisor 아래 최종 **전체 check·workspace/native 해당 clippy·build·E2E를 한 번** 계획된 entrypoint로 실행한다. `scripts/check-inner.sh`가 포함하는 항목은 중복 별도 실행하지 않고 missing scope만 보충한다. 실패 뒤에는 실패/직접 영향 범위만 재실행한다.
-- [ ] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 이번 계획 작성 요청의 push 금지는 그대로다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다.
+- [ ] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 과제별 중간 push/PR을 하지 않고 이 최종 수용 준비 시점에만 수행한다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다.
 - [ ] 그 Windows artifact로 §14 설치 수용·SC 계측을 수행한다. Windows 전용 build/strict Clippy는 Windows 근거를 쓴다. 로컬 Linux 성공을 Windows 성공으로 바꾸지 않는다. 제품/packaging/runtime 입력이 바뀌면 새 candidate·artifact와 영향 수용을 다시 결속한다.
 - [ ] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다.
 - [ ] PROGRESS·단일 PR 본문용 결과에 원본 실패→수정 영향 재검증, ignored/NOT_RUN·historical source·timing·cleanup·hash를 구분해 기록한다. artifact는 common-dir에 bounded JSON/log/trace로 보존하며 새 날짜별 Markdown 보고서를 만들지 않는다.
@@ -354,6 +354,6 @@ S6는 한 브랜치·한 PR이다. 이번 계획 커밋 뒤 push/PR을 만들지
 | 과거 native·SC gaps | S6-4 재수행 목록, 환경 부재·사용자 R1/R2는 정확히 NOT_RUN |
 | 세 dependency advisory | S6-1c 호환 조사·좁은 업데이트, exploit 추정 금지 |
 | 자동 리뷰 OFF | S6 PR 전 절차 결정 미결. #646 예외를 포괄 승인으로 확장하지 않음 |
-| 공개·태그 | 이번 요청에 승인 없음. S6-6c에서만 명시 승인 |
+| 공개·태그 | 구현 지시와 별개로 승인 없음. S6-6c에서만 명시 승인 |
 
 **S6-1 계획의 완료 조건:** 네 새 발견과 기존 요구의 담당 과제·의존·실패 시험·소유 자원·검토/커밋·PR/공개 경계가 빠짐없이 있고, 별도 계획 검토를 통과한다. 계획 작성은 어떤 제품 수정이나 성공 기준 달성을 뜻하지 않는다.

@@ -15,17 +15,17 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 →e91c9b22, S4 #646 →20dcded6, S5 #645 →a55907a2 머지 완료. S6-1 계획 완료·독립 재검토 승인, 제품 구현은 미착수.** 과거 검증 소스별 PASS·FAIL·NOT_RUN은 §5에 보존한다. |
-| 현재 작업 | 사용자 요청에 따라 사전 검토 결과를 포함한 [07c S6 계획](07c-s6-release.md)을 작성하고 두 별도 재검토 승인을 받았다. `origin/main@867b414e` 기반 `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 이번 범위는 계획·로컬 문서 커밋까지이며 push·PR·제품 구현·태그·공개는 하지 않는다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 구현·고유21 직접 검증·별도 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자2026-10-25 “S6 계획대로 작업 진행 해 주세요”에 따라 `v1/s6-release`의 S6-1a.1 EnvEditor 늦은 읽기를 수정한다. worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반563523db. 과제별 별도 검토 뒤 부모가 Biome·커밋하고 다음 과제로 진행한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | 계획 로컬 완료 후 대기. 후속 구현 지시를 확인한 뒤 S6-1a.1의 좁은 실패 시험부터 시작한다. 이번 계획은 제품 수정·시험 성공이나 공개 승인을 뜻하지 않는다. |
-| 마지막 갱신 | 2026-10-25 · S6-1 계획 독립 재검토2개 APPROVE, 문서 검사·완료 Biome를 거쳐 로컬 문서 커밋으로 보존. 사전 검토 근거는 common-dir `devbox-archive/pre-s6-review-20261025/`; 계획 동결·검토 근거는 `devbox-archive/s6-plan-20261025/`. 제품 시험/빌드·push·PR·태그 없음. |
+| 다음 제품 작업 | S6-1a.1 로컬 완료 뒤 S6-1a.2 LSP 대상 출처 보완을 시작한다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
+| 마지막 갱신 | 2026-10-25 · S6-1a.1 causal RED1→환경 관련19 PASS, 추가 환경 검토 gate1·root 확인 정리1 PASS(고유21), 변경3파일 Biome check PASS·근거 동결·독립 검토 APPROVE. 완료 Biome 뒤 로컬 커밋. 검증 artifact는 common-dir `devbox-verification/s6-1a1/`. 전체 검사·빌드·E2E·Windows 실기·push·PR·공개는 이 과제에서 실행하지 않았다. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**현재 S6 계획 범위(2026-10-25):** 사용자 요청은 사전 검토 발견을 포함한 작업 계획 준비다. 제품 구현은 시작하지 않는다. `07c`의 네 결함 수정·기능 연결·release/updater·SC/미실행 수용·문서/버전/공개 순서를 별도 검토 후 로컬 문서 커밋으로 고정한다. 자동 리뷰는 OFF이며 #646의 독립 검토 대체 승인은 그 PR에 한정된다. S6 PR 전 재활성화 또는 독립 검토 대체 절차를 결정해야 하나 계획 작성을 막지는 않는다. 공개·태그는 별도 명시 승인 전 실행하지 않는다.
+**현재 S6 구현 승인(2026-10-25):** 사용자가 “S6 계획대로 작업 진행 해 주세요”라고 지시했다. 앞선 계획·로컬 문서 커밋까지만의 제한은 이 후속 지시로 대체되었고,07c 순서대로 구현·좁은 검증·별도 검토를 진행한다. 자동 리뷰는 OFF이며 #646의 대체 승인은 그 PR에 한정된다. S6 PR 전 재활성화 또는 독립 검토 대체 절차를 결정해야 하나 현재 구현을 막지는 않는다. 공개·태그는 별도 명시 승인 전 실행하지 않는다.
 
 
 **종결된 S4 머지 결정(2026-10-25):** 사용자가 자동 리뷰를 껐음을 확인하고 완료된 독립 검토로 대체해 **“머지까지만”** 진행하도록 명시 승인했다. 자동 리뷰는 NOT_RUN(비활성화)·완료0회이며 PASS나 한도 소진이 아니다. 최종346e00ca는 CI40134483816의 Frontend·Rust workspace·E2E와 Windows40134483812 모두 PASS, 독립 최종 제품/근거 감사 지적0이었다. 보호 규칙을 유지해2026-10-24T23:51:18Z에#646을20dcded6으로 squash 머지했고 검증/merge tree 동일·main ff-only 동기화를 확인했다. 이전 문의 당시의 “승인 대기/원인 불명” 상태는 이 결정으로 해소됐다. 근거 `s4-final/merge-authorization.json`, `merge-confirmation.json`, `pr-final-gate-review.json`; 다른 PR의 자동 리뷰 규약이나 공개 릴리스 승인을 바꾸지 않는다.
@@ -82,7 +82,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 계획 완료·제품 미착수 | 2026-10-25 | | 제품 미착수 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.1 로컬 완료·1a.2 다음) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -96,7 +96,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1 계획만 · 제품/태그 미착수 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | S6-1a.1 구현·좁은 검증 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -149,11 +149,23 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 |  | 대기 | | | 제품 미착수 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1 고유21 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-1a.1 환경 늦은 읽기 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 사용자 후속 구현 승인 뒤 계획 커밋563523db에서 시작했다. 사전 재현을 인접 `EnvEditor.loads.test.tsx`로 옮겨 같은 root의 A 지연→B 선택·편집→A 완료가 B 입력을 덮는 RED1을 확인했다.
+- EnvEditor 안의 root/mount별 read owner·request generation과 불변 Editing 객체 identity(초안 revision)를 함께 비교한다. 새 선택·빈 선택은 세대를 바꾸고, 편집·생성·저장/review ACK는 새 Editing 객체가 되어 이전 read를 거절한다. root 전환/unmount도 owner를 무효화하며 완료한 stale success/error 모두 적용하지 않는다. pending dirty 확인은 root 전환 시 닫는다.
+- 제품 변경은 EnvEditor 한 파일이다. 공용 store/API/RPC/저장 정책은 바꾸지 않았다. 기존 root 시험의 늦은 read는 이제 복귀 후에도 적용되지 않는 새 계약으로 수정했고, 실제 저장·review의 기존 root-local ACK 보존 기대는 유지했다.
+- 환경 편집기3파일19 PASS: 신규 load/lifecycle12와 기존 dirty-confirm/save2·root5. 같은 선택 재읽기 중 입력·신규 draft·stale error·root 전환/복귀·unmount·빈 선택·저장 완료·저장 중 입력의 보존과 정상 read/error 회복을 확인했다. causal RED1과 GREEN19 모두 required cgroup memory_enforced=true; 자원/원본 로그는 `s6-1a1/`에 보존한다.
+- 직접 영향 환경 검토 gate1 PASS(같은 파일의 무관9 skip)와 새 root 전환 dirty 확인 정리1 PASS(기존 load12 skip)를 추가해 **고유21 PASS**다. 단일21 전체 실행으로 쓰지 않는다. 변경된 TS3파일의 좁은 Biome check/format PASS이며 최종 파일 길이는 EnvEditor246줄로 컴포넌트300/파일600 제한 안이다. 모든 실행은 required cgroup memory_enforced=true다.
+- 전체 검사·빌드·E2E·native·다음 과제·커밋/push/PR은 실행하지 않았다. 부모의 별도 검토·전체 완료 Biome CI·커밋을 기다린다. 이 결과는 S6 전체 완료나 공개 승인이 아니다.
+
+
+- 부모 하네스가 동결7파일을 다시 대조했고 독립 검토는 지적0·APPROVE다. 제품 바이트는 검토 뒤 바꾸지 않았으며 완료 Biome CI 뒤 과제 커밋으로 보존한다. 근거 `devbox-verification/s6-1a1/independent-review.json`, `commit.json`.
 
 ### S6-1 계획 상세화 (2026-10-25 · 계획만, 제품 미착수)
 
