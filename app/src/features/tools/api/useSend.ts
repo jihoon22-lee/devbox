@@ -7,8 +7,9 @@
  */
 import { messageFor } from "../../../rpc/messages";
 import { SendFailure, useApiBackend } from "./backend";
+import { authorizationUrl } from "./sendAuthorization";
 import { originOf, prepareSend } from "./sendState";
-import { abortSend, beginSend, endSend, isSending, sendReviewNeeded, useApiTabs } from "./store";
+import { abortSend, beginSend, endSend, isSending, ownsSend, rootKey, sendReviewNeeded, useApiTabs } from "./store";
 
 export const ENV_REVIEW_BLOCK = "환경 파일을 검토한 뒤 보낼 수 있습니다. 환경의 [검토하고 사용]을 누르세요.";
 
@@ -40,18 +41,61 @@ export function useSend() {
     const controller = beginSend(id);
     if (!controller) return;
     const draft = tab.draft;
-    updateById(id, { sending: true, failure: undefined, notice: undefined });
+    updateById(id, { sending: true, failure: undefined, notice: undefined, authorization: undefined });
+    let authorizationAllowed = useApiTabs.getState().active === tab.key;
+    const ownsRequest = () =>
+      ownsSend(id, controller) &&
+      useApiTabs.getState().tabs.some((current) => current.id === id && rootKey(current.root) === rootKey(tab.root));
+    const stopOwnership = useApiTabs.subscribe((state) => {
+      if (!ownsSend(id, controller)) return;
+      const current = state.tabs.find((current) => current.id === id);
+      if (!current || rootKey(current.root) !== rootKey(tab.root)) {
+        abortSend(id);
+        return;
+      }
+      if (state.active !== current.key) {
+        authorizationAllowed = false;
+        if (current.authorization?.owner === controller) abortSend(id);
+      }
+    });
     try {
-      const response = await backend.send(prepared.request, controller.signal);
+      const response = await backend.send(prepared.request, controller.signal, (event) => {
+        if (!ownsRequest()) return;
+        if (!event) {
+          useApiTabs.getState().updateById(id, { authorization: undefined });
+          return;
+        }
+        const current = useApiTabs.getState().tabs.find((current) => current.id === id);
+        if (!authorizationAllowed || current?.key !== useApiTabs.getState().active) {
+          abortSend(id);
+          return;
+        }
+        const url = authorizationUrl(event.url);
+        if (!url) {
+          abortSend(id);
+          useApiTabs
+            .getState()
+            .updateById(id, { notice: "승인 주소를 확인할 수 없습니다. 요청의 인증 설정을 확인해 주세요." });
+          return;
+        }
+        useApiTabs
+          .getState()
+          .updateById(id, { authorization: { ...event, url, owner: controller, opening: false, opened: false } });
+      });
+      if (!ownsRequest()) return;
       const name = useApiTabs.getState().tabs.find((t) => t.id === id)?.name ?? tab.name;
-      useApiTabs
-        .getState()
-        .updateById(id, { sending: false, result: { response, origin: originOf(name, draft, response.sentAtMs) } });
+      useApiTabs.getState().updateById(id, {
+        sending: false,
+        authorization: undefined,
+        result: { response, origin: originOf(name, draft, response.sentAtMs) },
+      });
     } catch (error) {
+      if (!ownsRequest()) return;
       const failure =
         error instanceof SendFailure ? { code: error.code, detail: error.detail } : { code: "internal" as const };
-      useApiTabs.getState().updateById(id, { sending: false, failure });
+      useApiTabs.getState().updateById(id, { sending: false, authorization: undefined, failure });
     } finally {
+      stopOwnership();
       endSend(id, controller);
     }
   }

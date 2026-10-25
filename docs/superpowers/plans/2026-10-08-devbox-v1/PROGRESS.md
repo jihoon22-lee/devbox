@@ -15,17 +15,17 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자 승인 S6-1b.2 코드 선택→변환 도구 연결을 구현·직접 검증했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반ed0175b7. 제품2·시험1파일, 고유16 PASS·scoped TS·변경 Biome PASS. 전체 독립 검토 APPROVE·지적0, 완료 Biome 뒤 로컬 커밋으로 보존한다. 사용자 요청에 따라 현재 과제에서 멈추고 새 세션에 인계한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자2026-10-25 “토큰 한도가 복구되었어. 이어서 S6 작업 계속 진행해줘”에 따라 이전 세션 중단을 해제하고 S6-1b.3 HTTP OAuth 요청 승인 UI를 구현·직접 검증했다. 기반083d9660, 기존 `v1/s6-release` worktree 유지. 고유30 PASS·scoped TS·변경 TS Biome PASS, 전체 독립 검토 APPROVE·지적0. 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | 사용자 요청에 따라 이번 세션은 S6-1b.2 완료 후 중단한다. 다음 세션은 S6-1b.3 HTTP OAuth authorize UI부터 재개한다. push·PR 없음; 공개/태그는 마지막 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-25 · 실제 CodeEditor 선택 행동 부재 RED1→신규5·기존 직접 영향11로 고유16 PASS. Dirty/undo 보존 강화1 재실행도 PASS(중복 집계 제외). `devbox-verification/s6-1b2/`에 명령·자원·source 근거. 실제 memory_enforced=true, scoped TS·변경3파일 Biome PASS. 독립 검토 APPROVE·지적0, 완료 Biome 뒤 로컬 커밋·세션 인계. 전체 검사·E2E·native·push/PR은 미실행. |
+| 다음 제품 작업 | S6-1b.3 로컬 완료 뒤 승인된07c 순서대로 S6-1b.4 custom vault 지원 번들 가림을 진행한다. 기존 중단/인계 지시는 재개 요청으로 대체됐다. 현재 push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-25 · 실제 rpcBackend/SendCollector→요청 UI 승인 행동 부재 RED1→신규 UI12·adapter4 및 기존14로 고유30 PASS. same-stream history/controller/tab/root 소유권·명시 클릭·취소/늦은 이벤트/브라우저 실패·ordinary background/save-key 보존을 확인했다. `devbox-verification/s6-1b3/`에 명령/원본/자원/source 근거. memory_enforced=true·scoped TS·변경10파일 Biome PASS. 독립 검토 APPROVE·지적0·완료 Biome 뒤 로컬 커밋. 전체/E2E/native/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**세션 인계(2026-10-25 사용자 요청):** 토큰 소진으로 현재 진행하던 S6-1b.2까지만 마무리하고 다음 세션용 프롬프트를 준비한다. 이번 세션에서는 S6-1b.3 이후 제품 작업·push·PR을 시작하지 않는다. 승인된07c의 남은 범위와 공개 승인 경계는 유지하며 기존 브랜치·worktree·검증 artifact를 보존한다. 다음 세션의 첫 과제는 S6-1b.3이다.
+**S6 재개(2026-10-25 사용자 후속 요청):** 사용자가 “토큰 한도가 복구되었어. 이어서 S6 작업 계속 진행해줘”라고 지시했다. 앞선1b.2 완료 후 중단·새 세션 인계 제한은 대체됐다. 완료된083d9660부터 같은 브랜치/worktree에서07c 승인 순서를 계속한다. 과제별 별도 검토·완료 커밋, S6 마지막 한 번의 push/PR 및 공개·태그 별도 승인 경계는 유지한다.
 
 **현재 S6 구현 승인(2026-10-25):** 사용자가 “S6 계획대로 작업 진행 해 주세요”라고 지시했다. 앞선 계획·로컬 문서 커밋까지만의 제한은 이 후속 지시로 대체되었고,07c 순서대로 구현·좁은 검증·별도 검토를 진행한다. 자동 리뷰는 OFF이며 #646의 대체 승인은 그 PR에 한정된다. S6 PR 전 재활성화 또는 독립 검토 대체 절차를 결정해야 하나 현재 구현을 막지는 않는다. 공개·태그는 별도 명시 승인 전 실행하지 않는다.
 
@@ -84,7 +84,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1b.1 완료·1b.2 로컬 완료·세션 인계) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(재개·1b.3 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -98,7 +98,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1a.1–4·1b.1 로컬 완료;1b.2 고유16 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a.1–4·1b.1–2 완료;1b.3 고유30 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -151,12 +151,23 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1 로컬 완료;1b.2 고유16 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–2 로컬 완료;1b.3 고유30 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
+
+### S6-1b.3 HTTP 요청 승인 UI (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 사용자 후속 재개 지시로083d9660에서 시작했다. 실제 rpcBackend→SendCollector→useSend→ApiWorkspace에 Started/Authorize를 전달해도 명시 승인 버튼이 없는 RED1을 확인했다. 기능 누락이며 새 비밀 유출 재현으로 쓰지 않는다.
+- SendCollector는 같은 stream의 Started.historyId를 typed `{historyId,url}` callback에 결속한다. Started 이전 authorize·중복 Started는 고정 실패, 취소/완료 뒤 데이터는 ACK만 하고 action을 되살리지 않는다. head/end/failed에서 callback null로 action을 해제하므로 history 쓰기 뒤 FIN을 기다리는 동안 이미 끝난 승인 URL을 누를 수 없다.
+- pending action은 요청 AbortController와 tab ID·캡처 root·현재 active ownership에 묶인다. 취소/닫기/root 변경/재전송은 이전 callback을 무효화한다. tab 전환 시 OAuth pending은 취소하며 이후 늦게 온 authorize도 거절한다. 일반 HTTP는 tab을 바꿔도 background 완료를 유지하고, 저장으로 tab key/path가 바뀌어도 같은 tab ID/controller의 응답·취소를 보존한다. 1b.1 sourceRoot·원래 응답·노트 action도 유지한다.
+- [브라우저에서 승인] 클릭에서만 검증된 HTTP(S) URL을 기존 openExternal로 연다. userinfo/비웹 scheme/공백·제어 문자/과도한 URL은 고정 안내로 거절하고 자동 open0회다. 브라우저 열기 진행·실패·재시도를 표시하되 열기 성공을 OAuth 완료로 간주하지 않는다. 늦은 브라우저 성공/실패는 action 객체·controller가 아직 일치할 때만 반영한다. raw URL이나 브라우저 오류 진단을 화면에 노출하거나 앱 로그·영속 저장에 추가하지 않는다.
+- 고유30 PASS: 신규 actual adapter/UI12·전송 adapter4, 기존 request lifecycle9·sourceRoot1·response-note action4. authorize→클릭→동일 history 응답, 취소 직후 재송신/늦은 old stream·wrong owner·root/tab 변화·browser 실패·invalid URL4·head 이전/FIN 이전 수명과 ordinary background/save-key 보존을 확인했다. 기존14에는 검토/충돌 화면 보존 제어도 포함된다.
+- 범위는 개별 요청 편집기의 HTTP send action이다. RunnerPanel/importPlan은 기존 optional callback 없는 호출을 유지하며 별도 승인 UI까지 확장했다고 주장하지 않는다. MCP의 명시 클릭 UI는 참고만 했고 Rust OAuth state/PKCE/callback timeout·redaction은 바꾸지 않았다. 새로운 OAuth framework·의존성/RPC/generated 변경 없음.
+- `s6-1b3/` 원본 RED1/초기GREEN1/영향25/최종authorization16의 중복을 제거해30으로 집계했다. scoped TS3.431s·변경10파일 Biome PASS, 모든 실제 resource footer memory_enforced=true(CPU4/nice10/workers2). 실제 Windows/native browser/외부 OAuth·전체 check/build/E2E·push/PR은 NOT_RUN이다. 전체 독립 검토 APPROVE·지적0(`independent-review.json`)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. 다음은1b.4다.
+- 완료 Biome CI 첫 실행은 sendAuthorization/useSend 두 파일의 포맷 불일치로 FAIL이었다. 해당 두 파일만 표준 formatter로 정리한 뒤844파일 PASS를 확인했다. 변경 전후 TypeScript 및 출력 JavaScript token이 동일하며 원본 실패·비교 근거를 `completion-biome-first.log`와 `completion-format-delta.json`에 보존했다. 의미 변경이 없어 기능 시험은 반복하지 않았다.
 
 ### S6-1b.2 코드 선택→변환 도구 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

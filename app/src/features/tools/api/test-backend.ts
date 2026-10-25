@@ -20,7 +20,14 @@ import type {
   WsInput,
   WsOpen,
 } from "../../../rpc/gen/rpc";
-import { type ApiBackend, type LineHandlers, type RealtimeHandlers, SendFailure, type SentResponse } from "./backend";
+import {
+  type ApiBackend,
+  type LineHandlers,
+  type RealtimeHandlers,
+  type SendAuthorization,
+  SendFailure,
+  type SentResponse,
+} from "./backend";
 
 const key = (root: CollectionRoot, path: string) => `${root.kind === "project" ? root.projectId : "~"}:${path}`;
 
@@ -103,7 +110,11 @@ export class FakeBackend implements ApiBackend {
   reviewed = new Set<string>();
   failWrite = new Set<string>();
   private next = 0;
-  reply: (request: SendRequest, signal: AbortSignal) => Promise<SentResponse> = async () => textResponse("{}");
+  reply: (
+    request: SendRequest,
+    signal: AbortSignal,
+    onAuthorize?: (event: SendAuthorization | null) => void,
+  ) => Promise<SentResponse> = async () => textResponse("{}");
 
   seed(root: CollectionRoot, path: string, text: string, digest = `d${++this.next}`) {
     this.files.set(key(root, path), { text, digest });
@@ -150,7 +161,9 @@ export class FakeBackend implements ApiBackend {
   review = vi.fn(async (root: CollectionRoot, path: string, digest: string) => {
     this.reviewed.add(`${key(root, path)}@${digest}`);
   });
-  send = vi.fn((request: SendRequest, signal: AbortSignal) => this.reply(request, signal));
+  send = vi.fn((request: SendRequest, signal: AbortSignal, onAuthorize?: (event: SendAuthorization | null) => void) =>
+    this.reply(request, signal, onAuthorize),
+  );
   history = vi.fn(async (): Promise<HistoryPage> => ({ items: [], next: null }));
   historyBody = vi.fn(async () => "");
   realtime: FakeRealtime[] = [];

@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 독립 검토 뒤 로컬 완료했고 사용자 요청에 따라1b.2에서 이번 세션을 마쳐 다음 세션에 인계한다. 다음 과제는1b.3이며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -189,11 +189,16 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 
 **기존 §8 판정:** #645 `4367201424`는 S6에 포함. 이벤트를 버려 승인 흐름이 끝나지 않는 기능 누락이며 사전 검토의 새 비밀 유출로 부풀리지 않는다.
 
-- [ ] RED: HTTP authorize 이벤트가 실제 요청 화면에 도달하지 않는 좁은 adapter/UI 시험.
-- [ ] 요청ID·origin·tab generation 소유 pending action을 표시하고 사용자 [브라우저에서 승인] 클릭으로만 검증된 authorize URL을 연다. 이벤트 도착만으로 자동 open하지 않는다.
-- [ ] 취소·tab/root 전환·재전송은 pending action/callback ownership을 무효화한다. 늦은 완료는 다른 요청을 성공으로 바꾸지 않는다. 기존 state/PKCE·callback timeout·비밀 가림을 유지한다.
-- [ ] GREEN: authorize→명시 클릭→동일 요청 완료, 취소/늦은 이벤트·잘못된 소유자·브라우저 실패, 승인 전 외부 open0회.
-- [ ] 검토 후 `fix(api): expose request-owned HTTP authorization actions`.
+- [x] RED: HTTP authorize 이벤트가 실제 요청 화면에 도달하지 않는 좁은 adapter/UI 시험.
+- [x] 요청ID·origin·tab generation 소유 pending action을 표시하고 사용자 [브라우저에서 승인] 클릭으로만 검증된 authorize URL을 연다. 이벤트 도착만으로 자동 open하지 않는다.
+- [x] 취소·tab/root 전환·재전송은 pending action/callback ownership을 무효화한다. 늦은 완료는 다른 요청을 성공으로 바꾸지 않는다. 기존 state/PKCE·callback timeout·비밀 가림을 유지한다.
+- [x] GREEN: authorize→명시 클릭→동일 요청 완료, 취소/늦은 이벤트·잘못된 소유자·브라우저 실패, 승인 전 외부 open0회.
+- [x] 전체 독립 검토 APPROVE·지적0. 완료 Biome 뒤 `fix(api): expose request-owned HTTP authorization actions`로 로컬 완료.
+
+
+구현 결과: 실제 rpcBackend/collector/useSend/요청 화면의 RED1→신규UI12·adapter4와 기존14로 고유30 PASS. Started 없는 authorize/중복 Started는 거절하고 response head/end/failed에서 pending을 해제한다. 같은 controller/tab/root의 현재 action만 명시 클릭으로 validated HTTP(S) URL을 열며 브라우저 오류는 고정 문구다. tab 전환은 OAuth action만 무효화하고 ordinary HTTP background 완료·save-key 변경·1b.1 sourceRoot/노트 action은 유지한다. Runner/import의 별도 승인 UI는 이번 개별 요청 편집기 범위에 포함하지 않는다.
+
+`devbox-verification/s6-1b3/`에 원본 로그·중복 제거 목록·자원·소스 동결. scoped TS·변경10파일 Biome PASS, memory_enforced=true. Rust OAuth/PKCE/callback/redaction 코드와 RPC/generated·의존성은 변경하지 않았다. 실제 native browser/외부 OAuth·전체/E2E/push/PR은 NOT_RUN이며 전체 독립 검토 APPROVE·지적0를 확인했다. 완료 Biome 첫 포맷 실패2파일은 의미 변경 없이 바로잡고844파일 PASS를 확인했다. 원본 실패와 token 동일성 근거를 보존하고 로컬 과제 커밋으로 마무리한다.
 
 ## 10. S6-1b.4 — 지원 번들의 사용자 vault 경로 가림
 

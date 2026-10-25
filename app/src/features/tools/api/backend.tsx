@@ -31,6 +31,11 @@ import type {
   WsOpen,
 } from "../../../rpc/gen/rpc";
 
+export interface SendAuthorization {
+  historyId: string;
+  url: string;
+}
+
 export interface SentResponse {
   historyId: string | null;
   sentAtMs: number;
@@ -67,7 +72,11 @@ export interface ApiBackend {
   /** `api.collection_delete`는 확인 정책 always다. 부르는 쪽이 먼저 확인 창을 보인다. */
   remove(root: CollectionRoot, path: string, digest: string): Promise<void>;
   review(root: CollectionRoot, path: string, digest: string): Promise<void>;
-  send(request: SendRequest, signal: AbortSignal): Promise<SentResponse>;
+  send(
+    request: SendRequest,
+    signal: AbortSignal,
+    onAuthorize?: (event: SendAuthorization | null) => void,
+  ): Promise<SentResponse>;
   history(origin: RequestOrigin, limit: number): Promise<HistoryPage>;
   historyBody(id: string): Promise<string>;
   secretNames(): Promise<string[]>;

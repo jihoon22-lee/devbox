@@ -98,9 +98,13 @@ export function rpcBackend(client: RpcClient): ApiBackend {
     openGrpc: (params, handlers) => realtime((h) => client.openStream("api.grpc_call", params, h), handlers),
     openMcp: (params, handlers) =>
       realtime<McpEvent, McpInput>((h) => client.openStream("api.mcp_connect", params, h), handlers),
-    send: (request, signal) =>
+    send: (request, signal, onAuthorize) =>
       new Promise((resolve, reject) => {
-        const collector = new SendCollector();
+        if (signal.aborted) {
+          reject(new SendFailure("cancelled"));
+          return;
+        }
+        const collector = new SendCollector(onAuthorize);
         let stream: ClientStream | undefined;
         let settled = false;
         const settle = () => {
@@ -122,11 +126,16 @@ export function rpcBackend(client: RpcClient): ApiBackend {
           .openStream("api.send", request, {
             onData(bytes, ack) {
               try {
+                if (settled || signal.aborted) return;
                 collector.push(bytes);
               } catch {
                 collector.failure = new SendFailure("internal");
               } finally {
                 ack();
+              }
+              if (collector.failure) {
+                stream?.end();
+                settle();
               }
             },
             onEnd: settle,
