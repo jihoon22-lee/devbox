@@ -230,7 +230,7 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 
 **Files:** `.github/workflows/{ci,windows}.yml`, `scripts/{win-package,win-sync,win-build}.ps1`, `scripts/tests/windows-*.ps1`, `scripts/{check-inner,build-linux,ci-scope}.sh`, 실제 중복이 확인된 부분만. 새 workflow를 기본안으로 추가하지 않는다.
 
-현재 `.github`+`scripts`는 **1,500줄, workflow2개**로 여유가 없다. 제품 LOC121277는 별도 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 이번 계획은 15분 목표를 조용히 완화하지 않으며 최종 실측 전 달성을 약속하지 않는다.
+착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤 **1,492줄·workflow2개**다. 남은8줄이 release 구현·검증 예산을 충당한다고 주장하지 않는다. 제품 LOC121277는 별도 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 이번 계획은 15분 목표를 조용히 완화하지 않으며 최종 실측 전 달성을 약속하지 않는다.
 
 **먼저 하는 예산 작업:**
 
@@ -238,6 +238,9 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 - [ ] dependency cache 재사용 또는 순차 target 재사용은 build.rs의 channel 환경 rerun과 산출물 복사/receipt 격리 시험이 보장할 때만 적용한다. prod/accept config·identifier·embedded resource를 섞지 않는다.
 - [ ] 채널 불변 install/frontend 검증은 한 번, 채널별 identifier/resource/self-check는 각 채널에서 유지하도록 package 흐름을 나눈다. Linux provenance gate·실패 전파·환경 복원·owned checkout guard를 없애지 않는다.
 - [ ] 시험의 반복 fixture 생성과 공통 command runner를 기존 scripts 안의 작은 공통 책임으로 통합한다. 제거되는 중복과 추가 release 코드의 line ledger를 만든 뒤 구현한다. 단순 minify/한 줄 압축·코드를 다른 디렉터리로 옮겨 count를 피하는 변경은 하지 않는다.
+- [x] 좁은 fixture subset: 기존3suite를 단일 진입점으로 합치고 공통 ErrorAction/Reject만 공유했다. 세 GUID/개별 finally·모든 성공/거절/정리 계약은 유지하며 fixture174→168·workflow123→121로 총8줄을 줄였다. 기존34계약 mapping·AST finally3/fake5 동일·YAML의 호출3→1 외 무변경을 확인했다. Windows5.1 UNC와 검증된 owned Temp local copy 모두 host Restricted 정책에서 suite0/NOT_RUN이므로 실제 동등성은 최종 Windows CI 미실행 항목이다. 정책은 바꾸거나 우회하지 않았으며 staging cleanup과 Linux wrapper/Windows host 자원 경계는 `devbox-verification/s6-2-fixtures/`에 기록했다. 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS 뒤 로컬 subset 커밋으로 보존하며 전체 S6-2 완료가 아니다.
+현재1,492줄에 남은 batching/release 검증을 더한 중심 추정은1,709줄(구현 전)이다. 두 독립 계획 검토는 기존2workflow 유지와1,800줄 상한 제안에 합의했지만 사용자 결정 전 기존1,500줄 한도는 바꾸지 않는다. S6-4 helper와추가 musl 회귀 예산·실제timing은 아직 미확정이다. 근거와 결정 대기는 PROGRESS §2를 따른다.
+
 - [ ] 핵심 안전 assertion을 유지한 순 감소로 release job·계측에 필요한 여유를 확보한다. 1,500줄을 지키지 못하면 기능/검증 보존 가능한 추가 단순화를 검토하고 한도 위반을 조용히 승인하지 않는다.
 
 **릴리스 계약:**

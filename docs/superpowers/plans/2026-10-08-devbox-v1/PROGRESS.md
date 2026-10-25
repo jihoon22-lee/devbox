@@ -16,14 +16,16 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-1c Vitest 완료bd70c599 뒤 Mermaid/KaTeX 호환 보안 업데이트를 적용했다. Mermaid 정확12.2.0→실제 KaTeX0.18.10, 기존 기본 레이아웃·테마 명시 및 strict/htmlLabels=false·SVG/network 정책 유지. 직접26 PASS·scoped TS·frozen offline install 확인, 독립 검토 APPROVE·미해결지적0·완료 Biome845 PASS 후 로컬 과제 커밋으로 보존한다. |
+| 현재 작업 | S6-1c 완료28636607 뒤 S6-2의 Windows fixture 진입점/Reject 중복만 통합했다. 세 GUID·개별 finally와 생산 packaging 경계는 유지했고 scripts+.github 실제1,500→1,492줄(-8), workflow2개다. AST/보존 mapping/workflow 정적 검증을 마쳤으며 Windows fixture runtime은 host Restricted 정책으로 NOT_RUN, 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS 후 로컬 subset 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1c Mermaid 로컬 완료 뒤 승인된07c 순서대로 S6-2 검증 예산·prod 태그 job을 진행한다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-25 · 공식 KaTeX advisory/상위 release/registry 재확인, Mermaid12.2.0 exact·KaTeX0.18.10을 정상 pnpm9 경로로 설치. 기존23+신규3=고유26 PASS(8.255초), scoped TS·frozen offline install PASS; 모든 supervised 실행 memory_enforced=true. 수학 raw MathML와 최종 표시 제한을 분리 기록했고 기존 실패 원본도 보존. `devbox-verification/s6-1c-mermaid/` 근거, 독립 검토 APPROVE·완료 Biome845 PASS. 전체/E2E/native/push/PR 미실행. |
+| 다음 제품 작업 | Windows fixture subset 로컬 완료 뒤 실제8줄 절감과 남은 S6-2 예산의 한도 결정을 요청한다. frontend batching·target 재사용·release job은 미구현이며 한도 변경 승인은 없다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-26 · fixture174→168·workflow123→121로 합계1,492줄. 기존34계약 mapping, finally3/fake함수5 동일·Reject15→16·안전 throw14 보존, PowerShell5 AST4파일 parse 및 YAML/reference 정적 확인. UNC/localcopy 모두 Restricted 실행정책으로 suite0/NOT_RUN, staging cleanup 확인·정책 무변경. `devbox-verification/s6-2-fixtures/` 근거. 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS; 전체/build/native/E2E/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
+
+**S6-2 스크립트 예산 결정 필요(2026-10-26):** 승인된 fixture 통합 후 `.github`+`scripts`는 실제1,492줄이며 기존1,500줄 한도는 유지한다. 두 독립 계획 검토는 모든 검증·안전 계약을 보존한 채1,500줄에 들어가는 추가 단순화를 확인하지 못했고,27줄 수준의 workflow 통합은 결합 위험에 비해 부족분을 해결하지 못해 기존2개를 유지하는 데 합의했다. 실제1,492줄에 batching·release job/publisher/회귀/actionlint·최소 musl 시험 명령을 더한 중심 추정은1,709줄이며 구현 결과가 아니다. **공통 상한1,800줄 조정은 제안이며 아직 승인되지 않았다.** 현재 한도를 넘는 후속 구현은 결정 전 진행하지 않는다. S6-4 계측/helper·추가 musl 회귀의 최종 예산과Windows/CI시간은 미확정이다. 근거 `s6-2-committee.json`, `s6-2-budget-decision.json`, `s6-2-fixtures/line-ledger.json`. 한도를 유지하면 release/batching 범위 재설계가 필요하다.
 
 **S6 재개(2026-10-25 사용자 후속 요청):** 사용자가 “토큰 한도가 복구되었어. 이어서 S6 작업 계속 진행해줘”라고 지시했다. 앞선1b.2 완료 후 중단·새 세션 인계 제한은 대체됐다. 완료된083d9660부터 같은 브랜치/worktree에서07c 승인 순서를 계속한다. 과제별 별도 검토·완료 커밋, S6 마지막 한 번의 push/PR 및 공개·태그 별도 승인 경계는 유지한다.
 
@@ -84,7 +86,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1c-Mermaid 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-2 fixture subset 로컬 완료·예산 결정 필요) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -98,7 +100,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest 완료;1c-Mermaid26 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a·1b·1c 로컬 완료;2-fixtures1492줄·정적 검증·runtime NOT_RUN·정적 APPROVE·로컬 subset 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -151,13 +153,23 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest 완료;1c-Mermaid26 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a·1b·1c 로컬 완료;2-fixtures1492줄·정적 검증·runtime NOT_RUN·정적 APPROVE·로컬 subset 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
 
+
+
+### S6-2-fixtures Windows fixture 진입점 통합 (2026-10-26 · 정적 검증·runtime NOT_RUN·정적 APPROVE·로컬 subset 완료)
+
+- 기반28636607의 기존 scripts+.github1,500줄·workflow2개, 원래3suite 소스와34개 성공/거절·정리 계약의 대응표를 먼저 보존했다. 별도 Windows fixture3개를 단일 `windows-orchestration.ps1` 진입점으로 합치고 ErrorAction·Reject만 공유한다. package 호출만 명시 `-Package`로 기존 target/channel/config 복원 확인을 적용하고 dev의 거절+package sentinel 부재 확인을 유지한다. 세 GUID fixture와 각각의 try/finally·환경 복원·fake 제거·junction/cache/owned cleanup 경계는 그대로다.
+- 실제 fixture174→168줄(-6), windows.yml의3호출→1호출로123→121줄(-2), **합계1,492줄·순 감소8줄·workflow2개**다. 한 줄 압축·assertion 삭제·count 밖 코드 이전을 하지 않았다. 생산 win-package/win-sync/win-dev·필수 check 이름·scope·Linux provenance·채널별 config/resource/self-check/receipt 호출은 변경하지 않았다. frontend batching·Cargo target 재사용·release 코드는 이 subset에 없다.
+- Windows PowerShell5.1 interop 자체는 연결됐다. 원래 UNC suite 로드가 host `Restricted` 정책으로 차단됐고, source SHA·6파일 hash·owner를 검증한 고유 Windows Temp local copy도 같은 정책에서 시작 전에 거절됐다. 두 시도 모두 suite 선택0/NOT_RUN이다. 중간 staging harness 경로 regex 오타0test도 별도 보존했으며 보정 후 source/hash 검증과 owned staging cleanup을 확인했다. Bypass·Unblock·정책 변경·문자열 실행으로 우회하지 않았다. 기존/통합 suite의 실제 실행 동등성은 최종 S6 Windows CI에서 확인할 미실행 항목이며3 PASS로 세지 않는다.
+- Windows PowerShell parser로 기존3+통합1의 AST 구문 오류0을 확인했다(시험 코드 실행 아님). 원래 finally3블록·fake 함수5개는 AST 원문 동일, 기존 Reject15 호출을 보존하고 dev inline 거절1을 공통 helper로 바꾼16호출 중 package5개만 복원 guard를 사용한다. 일반 helper 진단 문구를 제외한 안전 throw14개와34계약 source mapping을 확인했다. YAML 구조 비교는 fixture 호출3→1 외 전체 workflow 동일·새 경로 존재를 확인했다. 이러한 정적 근거를 runtime PASS로 확대하지 않는다.
+- 모든 supervised Linux wrapper는 CPU4·nice10·required cgroup memory6/8GiB·swap1GiB를 적용했다. 별도 host PowerShell은 자기 프로세스 affinity4·BelowNormal을 확인했지만 Windows host memory는 제한하지 않았으며 Linux cgroup이 Windows에 적용됐다고 쓰지 않는다. 원본 로그·before/after line ledger·assertion map·AST·명령·자원·source는 `devbox-verification/s6-2-fixtures/`에 보존한다.
+- 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS 후 로컬 subset 커밋으로 보존한다. 남은8줄은 release 구현·검증을 충당했다고 보지 않으며1,500줄 한도 변경은 승인되지 않았다. 전체 S6-2 완료나15분 목표 달성을 표시하지 않는다. Mermaid heading 이하10-25 역사 기록은 byte 동일하게 보존했다. 전체 검사·실제 build/native/E2E·CI dispatch·push/PR·공개는 미실행이다.
 
 ### S6-1c-Mermaid 호환 보안 업데이트 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 
