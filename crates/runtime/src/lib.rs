@@ -9,6 +9,10 @@ pub mod detect;
 pub use detect::{DefinitionKind, DetectRuns, Suggestion, SuggestionSource};
 mod agent_test;
 mod execution;
+mod windows_copy;
+mod windows_copy_service;
+mod windows_copy_store;
+mod windows_observation;
 pub use agent_test::AgentTestRequest;
 pub mod exit_record;
 mod graph;
@@ -32,7 +36,10 @@ pub use defs::{MergedDefinitions, merge, validate_definition};
 use devbox_core::Migration;
 pub use devbox_projects::run_config::*;
 use devbox_protocol::{Exporter, method, topic};
-pub use execution::{ExecutionConfig, Readiness, ReadyCheck, StartedRun, WorktreeLocation};
+pub use execution::{
+    ExecutionConfig, Readiness, ReadyCheck, StartedRun, WindowsObservation, WindowsPaths,
+    WorktreeLocation,
+};
 pub use graph::PreparedGraph;
 pub use model::*;
 pub use run_model::*;
@@ -54,6 +61,11 @@ pub const MIGRATIONS: &[Migration] = &[
         domain: "runtime",
         version: 3,
         sql: schedule_store::MIGRATION_3,
+    },
+    Migration {
+        domain: "runtime",
+        version: 4,
+        sql: windows_copy_store::MIGRATION_4,
     },
 ];
 
@@ -125,3 +137,13 @@ mod run_ui_tests;
 
 #[cfg(test)]
 mod agent_test_tests;
+
+#[cfg(test)]
+mod windows_copy_identity_tests;
+
+#[cfg(test)]
+mod windows_copy_lifecycle_tests;
+#[cfg(test)]
+mod windows_copy_store_tests;
+#[cfg(test)]
+mod windows_copy_test_support;

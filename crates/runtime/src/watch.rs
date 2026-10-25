@@ -104,6 +104,8 @@ impl RuntimeService {
 
     pub async fn shutdown(&self) {
         self.begin_shutdown();
+        self.copy_tasks.close();
+        self.copy_tasks.wait().await;
         if let Some(handle) = self.scheduler.lock().await.take() {
             handle.cancel.cancel();
             let _ = handle.join.await;

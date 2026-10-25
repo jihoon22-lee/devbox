@@ -313,20 +313,20 @@ pub(crate) async fn prepare(
         let selected = canonical_directory(&id, &base.join(cwd.as_deref().unwrap_or("."))).await?;
         *cwd = Some(selected.to_string_lossy().into_owned());
         if target == RunTarget::Windows {
-            let name = service
-                .projects
-                .get(&p.project_id)
-                .await
-                .map_err(project_error)?
-                .ok_or_else(|| invalid(&id, "project not found"))?
-                .name;
-            let root = service
-                .execution
+            let effective = p
+                .worktree
                 .as_ref()
-                .and_then(|e| e.windows_root.as_deref())
-                .ok_or_else(|| invalid(&id, "config.local.toml windows.root is required"))?;
-            let windows_dir = crate::windows::target_directory(root, &name)
-                .map_err(|_| invalid(&id, "invalid Windows copy path"))?;
+                .or(worktree.as_ref())
+                .map(String::as_str)
+                .unwrap_or("main");
+            let identity = crate::windows_copy::CopyIdentity::new(
+                service.execution()?,
+                &p.project_id,
+                effective,
+                &base,
+            )
+            .map_err(|_| invalid(&id, "invalid Windows copy identity or path"))?;
+            let windows_dir = identity.directory();
             let relative = selected.strip_prefix(&base).map_err(|_| {
                 invalid(&id, "Windows working directory must be inside the project")
             })?;
@@ -347,11 +347,13 @@ pub(crate) async fn prepare(
                     relative.to_string_lossy().replace('/', "\\")
                 )
             };
-            let target = crate::windows::windows_to_wsl(&windows_dir)
+            let target = identity
+                .target()
                 .map_err(|_| invalid(&id, "invalid Windows copy path"))?;
             windows.insert(
                 id.clone(),
                 crate::windows::PreparedCopy {
+                    identity,
                     source: base.clone(),
                     target,
                     cwd,

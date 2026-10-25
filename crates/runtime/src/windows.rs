@@ -10,6 +10,10 @@ pub enum WindowsError {
     Io(#[from] std::io::Error),
     #[error("Git file listing failed")]
     Git,
+    #[error("Windows copy inputs changed or coordination cancelled")]
+    Changed,
+    #[error("Windows copy input listing exceeded its limit")]
+    Limit,
 }
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SyncReport {
@@ -46,109 +50,24 @@ pub fn target_directory(root: &str, name: &str) -> Result<String, WindowsError> 
     Ok(format!("{}\\{name}", root.trim_end_matches('\\')))
 }
 pub async fn sync(source: &Path, target: &Path) -> Result<SyncReport, WindowsError> {
-    let output = tokio::process::Command::new("git")
-        .args(["-c", "core.fsmonitor=false"])
-        .arg("-C")
-        .arg(source)
-        .args(["ls-files", "-co", "--exclude-standard", "-z"])
-        .kill_on_drop(true)
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(WindowsError::Git);
-    }
-    reject_links(source)?;
-    reject_links(target)?;
-    let mut report = SyncReport::default();
-    let mut admitted = Vec::new();
-    let mut case_paths = std::collections::HashMap::new();
-    let mut seen = std::collections::HashSet::new();
-    for bytes in output.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
-        let name = std::str::from_utf8(bytes).map_err(|_| WindowsError::Path)?;
-        let relative = Path::new(name);
-        if !relative
-            .components()
-            .all(|c| matches!(c, Component::Normal(_)))
-            || name.contains('\\')
-        {
-            return Err(WindowsError::Path);
-        }
-        if !seen.insert(name) {
-            continue;
-        }
-        let mut prefix = String::new();
-        for part in name.split('/') {
-            if !valid_component(part) {
-                return Err(WindowsError::Path);
-            }
-            if !prefix.is_empty() {
-                prefix.push('/');
-            }
-            prefix.push_str(part);
-            if case_paths
-                .insert(prefix.to_lowercase(), prefix.clone())
-                .is_some_and(|prior| prior != prefix)
-            {
-                return Err(WindowsError::Path);
-            }
-        }
-        reject_links(&source.join(relative))?;
-        reject_links(&target.join(relative))?;
-        admitted.push(relative.to_path_buf());
-    }
-    tokio::fs::create_dir_all(target).await?;
-    for relative in admitted {
-        let from = source.join(&relative);
-        let metadata = match tokio::fs::symlink_metadata(&from).await {
-            Ok(value) => value,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                report.skipped += 1;
-                continue;
-            }
-            Err(e) => return Err(e.into()),
-        };
-        // Git symlinks and submodule directories are not regular copy inputs.
-        if !metadata.is_file() {
-            report.skipped += 1;
-            continue;
-        }
-        let to = target.join(&relative);
-        if tokio::fs::metadata(&to).await.is_ok_and(|m| {
-            m.is_file()
-                && m.len() == metadata.len()
-                && m.modified().ok() == metadata.modified().ok()
-        }) {
-            report.skipped += 1;
-            continue;
-        }
-        tokio::fs::create_dir_all(to.parent().ok_or(WindowsError::Path)?).await?;
-        tokio::fs::copy(&from, &to).await?;
-        let file = std::fs::OpenOptions::new().write(true).open(&to)?;
-        file.set_times(std::fs::FileTimes::new().set_modified(metadata.modified()?))?;
-        report.copied += 1;
-    }
-    Ok(report)
+    crate::windows_copy::copy_files(source, target).await
 }
 
+#[derive(Clone)]
 pub(crate) struct PreparedCopy {
+    pub identity: crate::windows_copy::CopyIdentity,
     pub source: PathBuf,
     pub target: PathBuf,
     pub cwd: String,
     pub relative_cwd: PathBuf,
 }
-impl PreparedCopy {
-    pub async fn sync(&self) -> Result<SyncReport, WindowsError> {
-        let report = sync(&self.source, &self.target).await?;
-        let cwd = self.target.join(&self.relative_cwd);
-        reject_links(&cwd)?;
-        tokio::fs::create_dir_all(cwd).await?;
-        Ok(report)
-    }
-}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WindowsDefinition {
     pub cwd: String,
     pub def: crate::RunDef,
+    #[serde(default)]
+    pub copy: Option<crate::windows_copy_store::CopyRef>,
 }
 impl crate::RuntimeService {
     /// Only an active recorded wrapper attempt can obtain its immutable Windows command.
@@ -170,6 +89,8 @@ impl crate::RuntimeService {
             return Err(invalid());
         }
         let windows = value.windows.ok_or_else(invalid)?;
+        let reference = windows.copy.as_ref().ok_or_else(invalid)?;
+        let observation = self.observation_intent(id, reference).await?;
         let (env, names) = match &windows.def {
             crate::RunDef::Task(d) => (&d.env, &d.secrets),
             crate::RunDef::Service(d) => (&d.env, &d.secrets),
@@ -195,6 +116,7 @@ impl crate::RuntimeService {
                 cwd: windows.cwd,
                 command: windows.def.command().ok_or_else(invalid)?.into(),
                 env: env.clone(),
+                observation,
                 ports: if let crate::RunDef::Service(d) = &windows.def {
                     d.ports_hint.clone()
                 } else {
@@ -231,7 +153,7 @@ pub(crate) fn valid_component(name: &str) -> bool {
                 )
             })
 }
-fn reject_links(path: &Path) -> Result<(), WindowsError> {
+pub(crate) fn reject_links(path: &Path) -> Result<(), WindowsError> {
     let mut prefix = PathBuf::new();
     for component in path.components() {
         prefix.push(component);
@@ -285,18 +207,15 @@ impl crate::RuntimeService {
 impl crate::RuntimeService {
     pub fn windows_preview(
         &self,
-        name: &str,
+        project_id: &str,
         project: &str,
+        selected_worktree: Option<&str>,
         definitions: &[crate::RunDef],
     ) -> Vec<String> {
         if !definitions.iter().any(crate::launch::is_windows) {
             return Vec::new();
         }
-        let Some(root) = self
-            .execution
-            .as_ref()
-            .and_then(|e| e.windows_root.as_deref())
-        else {
+        let Some(execution) = self.execution.as_ref().filter(|e| e.windows_root.is_some()) else {
             return definitions
                 .iter()
                 .filter(|d| crate::launch::is_windows(d))
@@ -304,13 +223,25 @@ impl crate::RuntimeService {
                 .take(1)
                 .collect();
         };
-        let Ok(directory) = target_directory(root, name) else {
-            return vec![format!("{EXECUTION_NOTICE} · Windows 사본 경로 설정 오류")];
-        };
         definitions
             .iter()
             .filter(|d| crate::launch::is_windows(d))
             .map(|d| {
+                let configured_worktree = match d {
+                    crate::RunDef::Task(d) => d.worktree.as_deref(),
+                    crate::RunDef::Service(d) => d.worktree.as_deref(),
+                    _ => None,
+                };
+                let effective = selected_worktree.or(configured_worktree).unwrap_or("main");
+                let Ok(identity) = crate::windows_copy::CopyIdentity::new(
+                    execution,
+                    project_id,
+                    effective,
+                    Path::new(project),
+                ) else {
+                    return format!("{EXECUTION_NOTICE} · Windows 사본 경로 설정 오류");
+                };
+                let directory = identity.directory();
                 let cwd = match d {
                     crate::RunDef::Task(d) => d.cwd.as_deref(),
                     crate::RunDef::Service(d) => d.cwd.as_deref(),

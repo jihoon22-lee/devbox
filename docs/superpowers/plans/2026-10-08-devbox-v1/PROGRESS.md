@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자2026-10-25 “S6 계획대로 작업 진행 해 주세요”에 따라 `v1/s6-release`의 S6-1a.2 LSP 요청 전 대상 출처를 보완했다. worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반6e76df9b. 독립 재검토 지적0을 확인했고 완료 Biome 뒤 부모가 과제 커밋하고 S6-1a.3으로 진행한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자2026-10-25 구현 승인에 따라 S6-1a.3 Windows 사본 identity·실행 reader 수명을 보완했다. `v1/s6-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반0cf16c1e. 제품48파일·문서4파일의 독립 전체 검토 APPROVE(지적0)를 확인했고 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1a.2 로컬 완료 뒤 S6-1a.3 Windows 사본 identity·실행 reader 수명 보완을 시작한다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
-| 마지막 갱신 | 2026-10-25 · S6-1a.2 causal RED6(최초 stale2·IO budget1·cancel queue1·save rawRev1·R1 omission1)→고유101 직접 영향 PASS, scoped TS·변경 TS Biome PASS. common-dir `devbox-verification/s6-1a2/`에 명령/실패/자원/측정/최종 source를 동결했다. 독립 재검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 전체 검사·Windows/native·push·PR·공개는 미실행. |
+| 다음 제품 작업 | S6-1a.3 로컬 완료 다음은 S6-1a.4 직접 credential echo다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
+| 마지막 갱신 | 2026-10-25 · S6-1a.3 동일 basename RED1·marker 동시 초기화 RED1·관찰 제어 누락 RED1을 보존했다. 직접 관련 고유94 PASS와 incidental2 PASS, scoped TS·메시지 Biome PASS. common-dir `devbox-verification/s6-1a3/`에 source·원본 log·자원 근거. 독립 전체 검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 전체 검사·Windows/native 실기·push·PR·공개 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -82,7 +82,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.2 로컬 완료·1a.3 다음) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.3 로컬 완료·1a.4 다음) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -96,7 +96,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1a.2 고유101 직접 검증·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | S6-1a.3 직접 관련94 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -149,11 +149,22 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1 로컬 완료;1a.2 고유101 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1·1a.2 로컬 완료;1a.3 직접 관련94 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-1a.3 Windows 사본 identity·실행 reader (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반0cf16c1e의 승인 S2 설계는 root+프로젝트 이름을 사용했다. 그 공식을 이번에 정정하며 과거 구현의 계약 위반이라고 쓰지 않는다. 보존된 실제 graph+sync 동일 basename 재현을 A bytes 보존 기대값으로 바꿔 RED1→GREEN을 확인했다. namespace marker 동시 생성도 실제 두 writer 반복 fixture에서 RED1→immutable atomic publication GREEN, 관찰 제어 없는 실행 DTO 수용은 helper RED1→필수 제어 GREEN이다.
+- 사본은 `<root>\.devbox-v1\<owner hash>\<project UUID>\<main 또는 worktree hash>\files`다. owner는 instance/channel/distro/data에 결속하며 worktree는 선택된 실제 소유 resolver identity를 사용한다. source·schema·owner marker를 예약된 별도 위치에 원자적으로 만들고 기존 미소유/불일치/링크·reparse 경로를 거절한다. 기존 basename 사본·사용자 파일·Windows 산출물은 이동/삭제하지 않고 deleted=0을 유지한다. 신뢰 미리보기도 선택 worktree의 실제 사본을 보여준다.
+- WSL prerequisite 완료 뒤 첫 Windows consumer가 content SHA256 revision을 준비한다. git 목록8MiB/65536파일·64KiB chunk 읽기, source 전후 검사·임시 파일 교체로 같은 size/mtime 변경도 감지한다. 동일 revision reader는 재복사 없이 합류하고 source가 바뀌면 typed busy다. caller 취소에도 tracked publisher가 실제 종료할 때까지 writer를 보유하며 서로 다른 사본은 독립 실행한다. 기존 workspace sha2 직접 edge 하나만 추가했고 새 패키지/버전은 없다.
+- durable reader는 Reserved→Dispatching→Submitted→Sealed→Closed를 구분하고 systemd dispatch 이전에 경계를 기록한다. wrapper attempt마다 fresh nonce·Local Job을 쓰며 private Assigned의 PID/FILETIME/SID/session/run/attempt 일치를 DB에 commit한 뒤에만 불변 Grant를 발행한다. commit 뒤 grant 발행 실패는 unknown으로 남기고 재발행하지 않는다. deadline/cancel을 같은 DB writer 안에서도 다시 확인한다. 런 stdout은 proof가 아니며 private control 파일도 OS sandbox라고 주장하지 않는다.
+- 명시 stop/restart는 새 attempt를 seal하고 기존 실제 stop 경로만 사용한다. service 자동 재시작 간격·이전 unknown attempt·단순 Run terminal/PowerShell exit/WSL unit inactive는 reader를 풀지 않는다. 정확한 Windows Job Empty/NotFound 증명만 해당 committed attempt를 닫으며 다른 reader에는 영향이 없다. daemon 재구성은 동일 owner의 죽은 Reserved worker만 복구하고 foreign instance/distro와 unknown은 보존한다. 프로젝트 삭제·reader 예약은 같은 DB writer transaction으로 경합을 막는다.
+- direct와 App0 native는 동일 필수 observation/PreparedCopy 계약을 사용한다. root와 후손을 포함하는 소유 Job은 kill-on-close를 사용하지 않고 별도 서비스/guardian을 추가하지 않는다. 읽기 전용 probe는 원래 SID/session을 확인하며 direct의 세션 불일치/미가용은 동일 Assigned를 App0로 조회한다. 별도 bounded probe slot4, 경로1024개/512KiB batch·응답 cap·deadline을 적용한다. 실제 Windows API/PowerShell 동작은 아직 검증하지 않았다.
+- 직접 관련 고유94 PASS: runtime42·실제 CLI composition1·프로젝트 CRUD1·메시지2·helper48(protocol5/CLI18/Linux native adapter25). marker 필터에 함께 선택된 기존 logfile/detect2는 별도 incidental PASS다. 겹치는 재실행과 테스트 모듈 이동3개는 중복 집계하지 않았다. 이전 preview 기대값1 FAIL은 새 namespace 계약으로 바로잡아 해당1 PASS했고 causal RED와 구분한다. 기존 Windows interop port 시험1은 ignored/NOT_RUN이다.
+- 모든 실행 로그의 실제 memory_enforced=true·CPU4/nice10/jobs2/workers2/threads2와 원본 실패를 `s6-1a3/{summary,commands,resources-index,test-cases,product-freeze}.json` 및 log에 보존한다. helper19파일의 protocol·adapter 검토와 과제 전체 독립 검토 모두 APPROVE(지적0)이며 근거는 `s6-1a3/independent-review.json`이다. generated TS는 정상 gen-ts 경로로 생성했다. scoped 메시지 TS·변경 메시지 Biome PASS; 부모의 완료 Biome·로컬 커밋 근거는 `s6-1a3/commit.json`에 기록한다. 전체 check/clippy/build/E2E·실제 Windows 빌드/Job/PowerShell/다중 consumer 수용은 NOT_RUN(S6-4), commit/push/PR도 이 구현 단계에서는 실행하지 않았다.
 
 ### S6-1a.2 LSP 대상 출처 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

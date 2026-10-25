@@ -265,6 +265,8 @@ async fn windows_native_long_poll_does_not_block_renderer_ping_and_routes_are_pr
         (3, "windows.prepare"),
         (4, "windows.run"),
         (5, "windows.output"),
+        (6, "windows.probe_next"),
+        (7, "windows.probe_output"),
     ] {
         wire.send(json_frame(7, &request(id, method)))
             .await

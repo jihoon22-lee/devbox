@@ -8,6 +8,9 @@ use std::{
 };
 use tokio::{io::AsyncWriteExt, process::Command};
 use zeroize::Zeroizing;
+#[path = "windows_observation.rs"]
+mod observation;
+pub(crate) use observation::{check_paths, observe};
 const PROBE: &str = r#"
 $ErrorActionPreference='Stop'
 try {
@@ -42,6 +45,9 @@ async fn direct(
     executable: &Path,
     started: tokio::sync::oneshot::Sender<()>,
 ) -> Direct {
+    if !request.tracked() {
+        return Direct::Failed;
+    }
     let request = request.clone();
     let executable = executable.to_path_buf();
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -142,6 +148,9 @@ async fn delegated(
     id: &RunIdentity,
     request: &RunWindows,
 ) -> anyhow::Result<i32> {
+    if !request.tracked() {
+        anyhow::bail!("Windows observation is unavailable");
+    }
     let stream = tokio::time::timeout(
         Duration::from_secs(10),
         client.open_stream("windows.run", request),
@@ -206,6 +215,15 @@ mod tests {
             command: "Write-Output $env:TOKEN".into(),
             env: [("TOKEN".into(), "owned-non-ascii-비밀".into())].into(),
             ports: vec![],
+            observation: devbox_protocol::windows::ObservationControl {
+                schema: 1,
+                launch_id: "owned-launch".into(),
+                nonce: "0123456789abcdef0123456789abcdef".into(),
+                job_name: "Local\\Devbox.Observe.0123456789abcdef0123456789abcdef".into(),
+                assigned_path: "C:\\owned\\control\\assigned.json".into(),
+                grant_path: "C:\\owned\\control\\grant.json".into(),
+                closed_path: "C:\\owned\\control\\closed.json".into(),
+            },
         }
     }
     #[tokio::test]
@@ -226,6 +244,23 @@ mod tests {
             Direct::Finished(78)
         );
         assert!(began.await.is_ok());
+    }
+    #[tokio::test]
+    async fn windows_direct_invalid_observation_never_spawns_a_live_adapter() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let marker = temp.path().join("executed");
+        let executable = fake(
+            temp.path(),
+            &format!(
+                "open({:?},'w').write('executed')",
+                marker.to_str().expect("path")
+            ),
+        );
+        let mut invalid = request();
+        invalid.observation.nonce = "invalid".into();
+        let (started, _) = tokio::sync::oneshot::channel();
+        assert_eq!(direct(&invalid, &executable, started).await, Direct::Failed);
+        assert!(!marker.exists());
     }
     #[tokio::test]
     async fn windows_direct_started_failure_never_becomes_unavailable() {

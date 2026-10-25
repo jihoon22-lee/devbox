@@ -115,6 +115,14 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "runtime.run_not_found": { title: "실행을 찾을 수 없습니다.", action: "실행 목록을 새로고침해 주세요." },
   "runtime.not_ready": { title: "서비스가 준비되지 않았습니다.", action: "선행 서비스의 포트와 로그를 확인해 주세요." },
+  "runtime.windows_copy_busy": {
+    title: "Windows 사본을 사용 중인 작업이 있습니다.",
+    action: "기존 작업과 자식 프로세스가 끝난 뒤 다시 시도하세요. 종료 확인이 멈추면 Windows 앱 연결을 확인해 주세요.",
+  },
+  "runtime.windows_copy_unavailable": {
+    title: "Windows 실행 폴더를 안전하게 준비하지 못했습니다.",
+    action: "Windows 앱 연결과 사본 루트 설정, 폴더 권한을 확인한 뒤 다시 시도해 주세요.",
+  },
   "runtime.dependency_failed": {
     title: "선행 실행이 실패해 시작하지 않았습니다.",
     action: "실패한 실행의 로그를 확인해 주세요.",

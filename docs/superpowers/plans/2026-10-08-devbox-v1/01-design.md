@@ -547,7 +547,7 @@ command = "pnpm test"
 [[task]]
 id = "win-build"
 target = "windows"
-command = "pnpm tauri build"     # windows_dir은 config.local.toml의 [windows] 사본 루트 + 프로젝트 이름
+command = "pnpm tauri build"     # windows_dir은 [windows] root 아래 owner/project/worktree 소유 namespace의 files (S6-1a.3)
 
 [[service]]
 id = "web"

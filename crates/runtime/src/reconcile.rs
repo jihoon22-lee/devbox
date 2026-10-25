@@ -24,7 +24,13 @@ impl RuntimeService {
             .as_deref()
             == Some(&p.attempt_id)
         {
-            self.reconcile_one(&p.run_id).await?;
+            let run = self.reconcile_one(&p.run_id).await?;
+            if run.windows.is_some() {
+                let value = self.stored(&p.run_id).await?;
+                if let Some(reference) = value.windows.as_ref().and_then(|w| w.copy.as_ref()) {
+                    self.reconcile_windows_target(&reference.key).await?;
+                }
+            }
         }
         Ok(Done {
             rev: self.db.rev().to_string(),
@@ -146,6 +152,7 @@ impl RuntimeService {
         if self.execution.is_none() {
             return Ok(());
         }
+        self.reconcile_windows_copies().await?;
         let runs = self.tracked_runs().await?;
         if !runs.is_empty() {
             let pattern = format!("devbox-{}-run-*", self.execution()?.paths.instance.as_str());
@@ -172,16 +179,23 @@ impl RuntimeService {
                         .any(|v| v.run.kind == RunKind::Service && v.run.state.is_live()),
                     Err(_) => false,
                 };
+                let has_windows = service
+                    .db
+                    .read(crate::windows_copy_store::needs_reconcile)
+                    .await
+                    .unwrap_or(true);
+                let needs_poll = has_services || has_windows;
                 let deadline =
-                    polling_deadline(&mut next_poll, has_services, tokio::time::Instant::now())
+                    polling_deadline(&mut next_poll, needs_poll, tokio::time::Instant::now())
                         .unwrap_or_else(|| {
                             tokio::time::Instant::now() + Duration::from_secs(86400)
                         });
                 tokio::select! {
                     _ = stopped.cancelled() => break,
                     event = changes.recv() => { if event.is_none() { break; } },
-                    _ = tokio::time::sleep_until(deadline), if has_services => {
+                    _ = tokio::time::sleep_until(deadline), if needs_poll => {
                         next_poll = Some(tokio::time::Instant::now() + Duration::from_secs(10));
+                        if service.reconcile_windows_copies().await.is_err() {tracing::warn!("Windows copy reconciliation unavailable");}
                         if let Ok(runs) = service.tracked_runs().await {
                             for value in runs {
                                 if value.run.kind == RunKind::Service && value.run.state.is_live()

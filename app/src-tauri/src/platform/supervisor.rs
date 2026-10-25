@@ -203,6 +203,10 @@ async fn bridge_once(
         mpsc::channel::<devbox_protocol::windows::WindowsEvent>(16);
     let mut windows_tasks = tokio::task::JoinSet::new();
     let mut windows_waiting = false;
+    let (probe_output, mut probe_events) =
+        mpsc::channel::<devbox_protocol::windows::WindowsProbeReply>(1);
+    let mut probe_waiting = false;
+    let mut probe_active: Option<String> = None;
     let mut windows_runs = std::collections::HashMap::<(String, String), CancellationToken>::new();
     let mut native_pending = NativeQueue::default();
     let mut windows_request_id = 101_u32;
@@ -215,6 +219,11 @@ async fn bridge_once(
                 match permit {
                     Ok(permit) => permit.send(native_pending.0.pop_front().expect("queued native frame")),
                     Err(_) => {bridge_cancel.cancel();}
+                }
+            }
+            Some(reply) = probe_events.recv(), if native_pending.0.len() < 8 => {
+                if probe_active.as_deref()==Some(reply.probe_id.as_str()) {
+                    native_pending.0.push_back(crate::core::windows::probe_output_request(&reply));
                 }
             }
             Some(event) = windows_events.recv(), if native_pending.0.len() < 8 && windows_ack.is_none() => {
@@ -240,6 +249,13 @@ async fn bridge_once(
                 Some(Event::Frame(mut frame))=>{
                     if secrets::is_native(&frame) {
                         use zeroize::Zeroize;
+                        if let Some(request)=crate::core::windows::receive_probe(&frame) {
+                            probe_waiting=false;
+                            if probe_active.is_some() {frame.zeroize();bridge_cancel.cancel();continue;}
+                            probe_active=Some(request.probe_id.clone());
+                            windows_tasks.spawn(super::windows::run_probe(request,probe_output.clone(),bridge_cancel.child_token()));
+                            frame.zeroize();continue;
+                        }
                         if let Some(request) = crate::core::windows::receive(&frame) {
                             windows_waiting = false;
                             if windows_runs.len() >= 4 {frame.zeroize();bridge_cancel.cancel();continue;}
@@ -261,6 +277,10 @@ async fn bridge_once(
                         }
                         let meta = serde_json::from_slice::<Meta>(&frame[devbox_protocol::frame::HEADER_LEN..]).ok();
                         let welcome = meta.as_ref().is_some_and(|m| m.kind == "welcome");
+                        if let Some(meta)=&meta && meta.kind=="response" && meta.id==Some(crate::core::windows::PROBE_OUTPUT_ID) && probe_active.is_some() {
+                            probe_active=None;
+                            if !probe_waiting {native_pending.0.push_back(crate::core::windows::probe_next_request());probe_waiting=true;}
+                        }
                         if let Some(meta) = &meta && meta.kind == "response" && meta.id == windows_ack.as_ref().map(|a|a.0) && windows_ack.is_some() {
                             let (_,key,finished)=windows_ack.take().expect("pending output ACK");
                             if finished || meta.error.is_some() {
@@ -270,6 +290,9 @@ async fn bridge_once(
                         }
 
                         if let Some(outgoing) = native.receive(&frame, &protector) { native_pending.0.push_back(outgoing); }
+                        if welcome && !probe_waiting {
+                            native_pending.0.push_back(crate::core::windows::probe_next_request());probe_waiting=true;
+                        }
                         if welcome && !windows_waiting {
                             native_pending.0.push_back(crate::core::windows::next_request());
                             windows_waiting = true;

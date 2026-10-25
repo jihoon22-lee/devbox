@@ -140,6 +140,12 @@ pub fn has_dependents(tx: &Transaction, id: &str) -> rusqlite::Result<bool> {
     {
         return Ok(true);
     }
+    if has_table("runtime_windows_readers")?
+        && tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runtime_windows_readers WHERE project_id=?1 AND state!='closed')",
+            [id], |row| row.get::<_, bool>(0),
+        )?
+    { return Ok(true); }
     if !has_table("agents_tasks")? {
         return Ok(false);
     }

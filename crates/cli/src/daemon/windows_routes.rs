@@ -6,11 +6,20 @@ use zeroize::Zeroize;
 pub(super) fn internal(method: &str) -> bool {
     matches!(
         method,
-        "windows.prepare" | "windows.run" | "windows.ready" | "windows.next" | "windows.output"
+        "windows.prepare"
+            | "windows.run"
+            | "windows.ready"
+            | "windows.next"
+            | "windows.output"
+            | "windows.probe_next"
+            | "windows.probe_output"
     )
 }
 pub(super) fn native(method: &str) -> bool {
-    matches!(method, "windows.next" | "windows.output")
+    matches!(
+        method,
+        "windows.next" | "windows.output" | "windows.probe_next" | "windows.probe_output"
+    )
 }
 fn fail() -> DispatchError {
     DispatchError::common(CommonError::Internal)
@@ -40,6 +49,23 @@ pub(super) async fn dispatch(
                 .await
                 .map_err(|_| fail())?,
         ),
+        "windows.probe_next" => encode(
+            &s.windows
+                .probe_next(generation, ctx.cancel)
+                .await
+                .map_err(|_| fail())?,
+        ),
+        "windows.probe_output" => {
+            if raw.get().len() > 16 * 1024 {
+                return Err(fail());
+            }
+            s.windows
+                .probe_output(generation, decode::<WindowsProbeReply>(&raw)?)
+                .map_err(|_| fail())?;
+            encode(&devbox_protocol::Done {
+                rev: s.db.rev().to_string(),
+            })
+        }
         "windows.output" => {
             let event = decode::<WindowsEvent>(&raw);
             wipe(raw);
@@ -54,7 +80,13 @@ pub(super) async fn dispatch(
         }
         "windows.prepare" => {
             let id: RunIdentity = decode(&raw)?;
-            encode(&s.runs.prepare_windows(&id).await.map_err(|_| fail())?)
+            let prepared = s.runs.prepare_windows(&id).await.map_err(|_| fail())?;
+            s.runs
+                .clone()
+                .monitor_windows(id, ctx.cancel)
+                .await
+                .map_err(|_| fail())?;
+            encode(&prepared)
         }
         "windows.ready" => {
             let id: RunIdentity = decode(&raw)?;
@@ -83,9 +115,16 @@ pub(super) async fn dispatch(
             if request.command != expected.request.command
                 || request.cwd != expected.request.cwd
                 || request.ports != expected.request.ports
+                || request.observation != expected.request.observation
+                || !request.tracked()
             {
                 return Err(fail());
             }
+            s.runs
+                .clone()
+                .monitor_windows(identity.clone(), ctx.cancel.clone())
+                .await
+                .map_err(|_| fail())?;
             s.runs
                 .claim_windows_native(&identity)
                 .await

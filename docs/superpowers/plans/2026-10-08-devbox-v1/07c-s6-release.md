@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1과 S6-1a.2는 직접 검증·별도 검토 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–3은 직접 검증·독립 전체 검토 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -89,7 +89,7 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 
 ## 5. S6-1a.3 — Windows 사본을 프로젝트·worktree 소유권에 결속
 
-**Files:** `crates/runtime/src/{graph,windows,execution}.rs`, windows/runtime 시험; 필요한 typed 오류·CLI 안내; `01-design.md` Windows 대상 주석·`05-s2-runs.md` Task12 계약을 이 구현 때 함께 정정한다. 이번 계획 작성에서 두 역사 문서를 미리 바꾸지 않는다.
+**Files:** runtime의 graph/execution·copy identity/store/service·observation/reconcile, protocol의 필수 observation DTO·고정 bootstrap, CLI direct/native broker와 native read-only probe·supervisor, 프로젝트 삭제 fence, typed 오류·한국어 안내 및 인접 시험. `01-design.md` 대상 주석·`05-s2-runs.md` Task12 계약도 함께 정정했다.
 
 **결정:** 기존 `[windows] root` 설정 자체는 유지하되 `<root>\\<project name>`를 실행 사본으로 재사용하지 않는다. 새 전용 namespace 아래 **안정 project ID + 실제 worktree identity**를 경로에 사용한다. 표시명은 UI 표시용이며 identity가 아니다. main은 별도 고정 identity, agent worktree는 소유 resolver의 canonical 경로·등록 task/worktree ID에 결속한다. 대소문자/금지 문자/길이 제한에 안전한 ID 구성만 쓴다.
 
@@ -101,12 +101,19 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 - reader별 launch/실제 종료 근거를 추적한다. **마지막 consumer의 종료가 확인된 뒤에만** writer를 다시 허용한다. 한 consumer 완료/취소는 다른 service reader를 해제하지 않는다. launch 전 취소는 자기 pending lease만 정리한다. launch 후 RPC 오류·timeout·native 연결 취소로 Windows child/후손의 종료를 증명하지 못하면 unknown reader를 유지하고 소유 프로세스 확인/명시 reconciliation까지 busy로 둔다. 오류를 종료로 간주하거나 암묵적으로 stop하지 않는다.
 - 직접 interop/native fallback 모두 동일 PreparedCopy 계약을 쓰고 fallback에서 legacy target으로 돌아가지 않는다.
 
-- [ ] RED: 보존된 두 동일 basename 프로젝트 재현을 정식 시험으로 옮긴다. 대상이 달라 A bytes가 보존되어야 한다.
-- [ ] 같은 프로젝트 main/worktree 분리, canonical source 교체·ID 위조, marker 누락/불일치/링크, 기존 legacy 사본 bytes 보존을 시험한다.
-- [ ] GREEN: Windows service→Windows dependent·siblings가 한 번 sync한 coherent revision을 공유, 한 reader 종료 뒤 다른 reader가 남으면 writer 거절, live reader 중 source 변경 거절, 마지막 확인된 종료 뒤 순차 재실행 성공. 선행 WSL 입력 생성 뒤 첫 sync 순서도 확인한다.
-- [ ] launch 전 취소는 자기 pending만 해제, launch 후 unknown child/error/cancel은 busy 유지, 다른 reader 무영향·암묵 stop0회. 소유 Linux fixture 후 실제 Windows 경로/다중 consumer 실행은 S6-4.
-- [ ] 검토: 기존 구현이 승인 설계의 root+이름 공식을 따른 사실을 보존하고, 이번 정정을 과거 구현 위반으로 쓰지 않는다.
-- [ ] 커밋: `fix(runtime): isolate Windows copies by project and worktree`.
+- [x] RED: 실제 graph+sync 동일 basename 두 프로젝트에서 A bytes 보존 기대가 실패1→서로 다른 대상 GREEN. 같은 크기/mtime 입력 변경도 revision에 반영한다.
+- [x] main/worktree·instance/distro 분리, canonical source 교체·marker 누락/불일치/링크, legacy bytes·Windows 산출물 보존을 소유 fixture에서 확인했다. 동시 namespace marker 초기화 RED1→atomic immutable publication GREEN도 추가했다.
+- [x] GREEN: service/dependent·siblings가 같은 revision을 공유하고 source 변경·남은 reader는 writer를 막는다. 마지막 증명 뒤 재실행, WSL prerequisite 뒤 첫 capture, 실제 publisher 종료까지 취소 accounting, 다른 사본 독립성을 확인했다.
+- [x] launch 이전 취소·dead owner 복구·dispatch 경계·자동 restart gap·이전 unknown attempt 보존·project delete fence를 확인했다. direct 세션 불일치를 원래 App0 세션으로 조회하는 실제 CLI composition도 소유 fake process/broker에서 확인했다.
+- [ ] 실제 Windows 경로/Job/PowerShell/다중 consumer 수용은 S6-4이며 Linux fixture나 structural bootstrap 검사를 실기 PASS로 세지 않는다. 기존 Windows interop port 시험1은 ignored/NOT_RUN.
+- [x] 과제 전체 독립 검토 APPROVE·지적0. protocol/helper adapter 부분 검토도 APPROVE이며 기존 root+이름 설계를 이번에 정정한 사실을 보존한다. 근거 `s6-1a3/independent-review.json`.
+- [x] 커밋: `fix(runtime): isolate Windows copies by project and worktree`(로컬).
+
+**현재 구현 계약:** 사본 `files`와 marker/control을 분리하고 owner hash에 instance/channel/distro/data를 결속한다. git 목록8MiB/65536파일·64KiB chunk의 content SHA256과 source 전후 검증을 사용한다. durable reader는 Reserved→Dispatching→Submitted→Sealed→Closed이며 새로운 wrapper attempt마다 unpredictable Local Job·nonce를 생성한다. 고정 bootstrap은 사용자 cwd/env/command 이전에 non-killing Job에 들어가 private Assigned(PID/FILETIME/SID/session/run/attempt)를 발행하고 정확한 Grant를 기다린다. runtime은 DB commit 후에만 immutable Grant를 내고 DB writer 내부에서도 cancel/deadline을 재확인한다. committed-but-unpublished grant는 재발행하지 않는다. user stdout/일반 exit/WSL inactive는 reader 해제 증명이 아니다.
+
+명시 stop/restart는 새로운 attempt를 seal하며 unknown을 자동 종료하지 않는다. read-only Job probe의 정확한 Empty/NotFound만 해당 committed attempt를 닫는다. 서비스 restart 간격·오래된 unknown은 logical reader를 유지한다. direct와 native는 같은 필수 제어를 사용하고 direct SID/session 불일치·미가용은 동일 Assigned를 원래 App0에 조회한다. 별도 bounded probe slot4·경로1024개/512KiB batch와 응답 cap을 적용했다. private control 파일을 OS sandbox라고 부르지 않으며 실제 Job/PInvoke 동작 검증은 남아 있다.
+
+검증: 직접 관련 고유94 PASS(runtime42·CLI composition1·프로젝트1·메시지2·helper48), incidental 기존2 PASS를 분리했다. 중복 재실행/모듈 이동3개는 재집계하지 않았다. basename/marker/필수 observation의 causal RED3 및 변경된 preview 계약 기대1 FAIL을 원본으로 보존한다. `s6-1a3/` source·commands·resources·test-cases가 근거이며 실제 memory_enforced=true다. scoped TS·메시지 Biome PASS, 전체 독립 검토 APPROVE. 완료 Biome 뒤 로컬 커밋으로 보존하며 실제 Windows 빌드/실기·전체 check/clippy/build/E2E·push/PR은 미실행이다. 기존 workspace sha2 edge 하나만 추가했고 패키지/버전 변경은 없다.
 
 ## 6. S6-1a.4 — 직접 입력 credential 헤더·cookie echo 가림
 

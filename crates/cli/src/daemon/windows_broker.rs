@@ -3,10 +3,12 @@ use devbox_protocol::windows::{RunWindows, WindowsEvent, WindowsOutput};
 use std::{collections::HashMap, sync::Mutex};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
+mod probes;
 #[derive(Default)]
 pub(super) struct WindowsBroker {
     state: Mutex<State>,
     ready: tokio::sync::Notify,
+    probes: probes::Probes,
 }
 #[derive(Default)]
 struct State {
@@ -59,6 +61,9 @@ impl WindowsBroker {
         request: RunWindows,
         cancel: CancellationToken,
     ) -> Result<(mpsc::Receiver<WindowsEvent>, CancellationToken), Unavailable> {
+        if !request.tracked() {
+            return Err(Unavailable);
+        }
         let waiting = async {
             loop {
                 let notified = self.ready.notified();
@@ -156,6 +161,15 @@ mod tests {
             command: "owned".into(),
             env: Default::default(),
             ports: vec![],
+            observation: devbox_protocol::windows::ObservationControl {
+                schema: 1,
+                launch_id: "owned-launch".into(),
+                nonce: "0123456789abcdef0123456789abcdef".into(),
+                job_name: "Local\\Devbox.Observe.0123456789abcdef0123456789abcdef".into(),
+                assigned_path: "C:\\owned\\control\\assigned.json".into(),
+                grant_path: "C:\\owned\\control\\grant.json".into(),
+                closed_path: "C:\\owned\\control\\closed.json".into(),
+            },
         }
     }
     fn output(n: u8) -> WindowsEvent {

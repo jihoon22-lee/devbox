@@ -9,6 +9,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
+#[path = "windows_probe.rs"]
+mod observation;
+pub(crate) use observation::run_probe;
 
 struct Length(usize);
 impl io::Write for Length {
@@ -22,6 +25,9 @@ impl io::Write for Length {
 }
 
 fn stdin_payload(request: &RunWindows) -> Result<Zeroizing<Vec<u8>>, ()> {
+    if !request.tracked() {
+        return Err(());
+    }
     // Exact capacity avoids reallocating and leaving old plaintext buffers behind.
     let mut length = Length(0);
     serde_json::to_writer(&mut length, request).map_err(|_| ())?;
@@ -388,6 +394,15 @@ mod tests {
                     command: "fixture".into(),
                     env: Default::default(),
                     ports: vec![18432],
+                    observation: devbox_protocol::windows::ObservationControl {
+                        schema: 1,
+                        launch_id: "owned-launch".into(),
+                        nonce: "0123456789abcdef0123456789abcdef".into(),
+                        job_name: "Local\\Devbox.Observe.0123456789abcdef0123456789abcdef".into(),
+                        assigned_path: "C:\\owned\\control\\assigned.json".into(),
+                        grant_path: "C:\\owned\\control\\grant.json".into(),
+                        closed_path: "C:\\owned\\control\\closed.json".into(),
+                    },
                 },
                 output,
                 token,
