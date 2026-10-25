@@ -15,20 +15,22 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 → e91c9b22, S4 #646 →20dcded6, S5 #645 →a55907a2 모두 squash 머지 완료. S6는 미착수다.** 각 검증 소스의 실제 PASS·FAIL·NOT_RUN과 과거 근거 구분은 §5에 보존한다. |
-| 현재 작업 | S3/S4/S5 작업용 worktree3개·로컬/원격 브랜치3쌍 및 소유 임시 원본 정리 완료. 이 문서 PR은 누락된 최종 기록을 main에 인계하는 정리용 변경이다. PR 머지 뒤 정리용 `docs/cleanup-s4` worktree/브랜치도 제거하고 main만 남긴다. 최종 실제 상태는 `devbox-archive/cleanup-20261025/final-state.json`과 Git을 대조한다. 제품 구현·S6 상세화·제품 시험/빌드는 하지 않았다. |
+| 단계 | **S3 #644 →e91c9b22, S4 #646 →20dcded6, S5 #645 →a55907a2 머지 완료. S6-1 계획 완료·독립 재검토 승인, 제품 구현은 미착수.** 과거 검증 소스별 PASS·FAIL·NOT_RUN은 §5에 보존한다. |
+| 현재 작업 | 사용자 요청에 따라 사전 검토 결과를 포함한 [07c S6 계획](07c-s6-release.md)을 작성하고 두 별도 재검토 승인을 받았다. `origin/main@867b414e` 기반 `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 이번 범위는 계획·로컬 문서 커밋까지이며 push·PR·제품 구현·태그·공개는 하지 않는다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
-| 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 다음 제품 작업 | **S6 미착수.** 선행 S4/S5 머지는 완료됐지만 사용자는 지금 정리만 요청했다. 향후 별도 S6 시작 지시 전 `v1/s6-release`·07c 상세화·제품 변경을 만들지 않는다. 읽기 전용 준비 자료는 착수 근거가 아니다. |
-| 마지막 갱신 | 2026-10-25 · S3/S4/S5 결과 인계·검증 근거 보관/원본 삭제·작업 브랜치/worktree 정리 완료. 공유 Cargo 캐시4개·기존 stash2개·사용자/호스트 자원은 보존했다. S4 자동 리뷰는 NOT_RUN(비활성화)·0회, 그 PR의 독립 검토 대체는 명시 승인에 따른다. S6는 미착수다. |
+| 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
+| 다음 제품 작업 | 계획 로컬 완료 후 대기. 후속 구현 지시를 확인한 뒤 S6-1a.1의 좁은 실패 시험부터 시작한다. 이번 계획은 제품 수정·시험 성공이나 공개 승인을 뜻하지 않는다. |
+| 마지막 갱신 | 2026-10-25 · S6-1 계획 독립 재검토2개 APPROVE, 문서 검사·완료 Biome를 거쳐 로컬 문서 커밋으로 보존. 사전 검토 근거는 common-dir `devbox-archive/pre-s6-review-20261025/`; 계획 동결·검토 근거는 `devbox-archive/s6-plan-20261025/`. 제품 시험/빌드·push·PR·태그 없음. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
+
+**현재 S6 계획 범위(2026-10-25):** 사용자 요청은 사전 검토 발견을 포함한 작업 계획 준비다. 제품 구현은 시작하지 않는다. `07c`의 네 결함 수정·기능 연결·release/updater·SC/미실행 수용·문서/버전/공개 순서를 별도 검토 후 로컬 문서 커밋으로 고정한다. 자동 리뷰는 OFF이며 #646의 독립 검토 대체 승인은 그 PR에 한정된다. S6 PR 전 재활성화 또는 독립 검토 대체 절차를 결정해야 하나 계획 작성을 막지는 않는다. 공개·태그는 별도 명시 승인 전 실행하지 않는다.
 
 
 **종결된 S4 머지 결정(2026-10-25):** 사용자가 자동 리뷰를 껐음을 확인하고 완료된 독립 검토로 대체해 **“머지까지만”** 진행하도록 명시 승인했다. 자동 리뷰는 NOT_RUN(비활성화)·완료0회이며 PASS나 한도 소진이 아니다. 최종346e00ca는 CI40134483816의 Frontend·Rust workspace·E2E와 Windows40134483812 모두 PASS, 독립 최종 제품/근거 감사 지적0이었다. 보호 규칙을 유지해2026-10-24T23:51:18Z에#646을20dcded6으로 squash 머지했고 검증/merge tree 동일·main ff-only 동기화를 확인했다. 이전 문의 당시의 “승인 대기/원인 불명” 상태는 이 결정으로 해소됐다. 근거 `s4-final/merge-authorization.json`, `merge-confirmation.json`, `pr-final-gate-review.json`; 다른 PR의 자동 리뷰 규약이나 공개 릴리스 승인을 바꾸지 않는다.
 
-**현재 정리 요청:** 사용자는 뒤이어 모든 작업 브랜치·worktree·임시 산출물 정리를 요청했고, S6는 미래 작업으로 남겼다. 이 명시적 정리 지시에 따른 `docs/cleanup-s4` 인계 문서 PR은 기능 PR7개 외의 정리 예외(S2 인계와 같은 목적)다. 기존 dirty 문서를 복구용 원본·patch·Git bundle로 보존하고 독립 검토에서 이 문서 변경에 실질 내용이 보존됨을 확인했다. 세 작업 HEAD와 실제 squash merge tree가 각각 같음을 대조한 뒤 보존된 문서만 원복해 clean 확인 → worktree 제거 → prune → 로컬·원격 브랜치 제거를 완료했다. S4 이메일 보호 수정 전 임시 ref도 검증된 bundle로 보존 후 제거했다. 원본 임시 파일 정리는 위 archive 검증 뒤 완료했다. 공유 캐시·미완료 stash2개·prod/사용자 자료는 삭제하지 않았다. 문서 PR 최종 머지·정리용 자원 제거 근거는 위 final-state에 남긴다.
+**이전 정리 요청(완료 이력):** 사용자는 뒤이어 모든 작업 브랜치·worktree·임시 산출물 정리를 요청했고, S6는 미래 작업으로 남겼다. 이 명시적 정리 지시에 따른 `docs/cleanup-s4` 인계 문서 PR은 기능 PR7개 외의 정리 예외(S2 인계와 같은 목적)다. 기존 dirty 문서를 복구용 원본·patch·Git bundle로 보존하고 독립 검토에서 이 문서 변경에 실질 내용이 보존됨을 확인했다. 세 작업 HEAD와 실제 squash merge tree가 각각 같음을 대조한 뒤 보존된 문서만 원복해 clean 확인 → worktree 제거 → prune → 로컬·원격 브랜치 제거를 완료했다. S4 이메일 보호 수정 전 임시 ref도 검증된 bundle로 보존 후 제거했다. 원본 임시 파일 정리는 위 archive 검증 뒤 완료했다. 공유 캐시·미완료 stash2개·prod/사용자 자료는 삭제하지 않았다. 문서 PR 최종 머지·정리용 자원 제거 근거는 위 final-state에 남긴다.
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
@@ -80,7 +82,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 계획 완료·제품 미착수 | 2026-10-25 | | 제품 미착수 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -94,7 +96,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
+| S6 | `v1/s6-release` | S6-1 계획만 · 제품/태그 미착수 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -146,12 +148,24 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AD | S5-6 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 웹훅 수신기·규칙·기록·이진 재전송, 검토 3회(수정 요청2 → APPROVE). 좁은 검증 §5, 전체 수용 S5-9 |
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
-| S6 | 상세화 | S6-1 | `v1/s6-release` | 대기 | | | |
-| S6 | AF | S6-1b–S6-2 |  | 대기 | | | |
+| S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 |  | 대기 | | | 제품 미착수 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-1 계획 상세화 (2026-10-25 · 계획만, 제품 미착수)
+
+- 기준 main867b414e에서 사전 검토의 신규4건을 S6-1a 선행 과제로 배정했다. Env의 실제 미저장 입력 손실, LSP unversioned 새 target의 stale offset 적용, 동일 basename Windows 사본 충돌, 직접 Authorization echo를 구분한다. 뒤 두 항목은 기존 설계/가림 범위의 명시적 보정이며 과거 구현을 승인 계약 위반으로 소급 주장하지 않는다.
+- LSP는 모든 미개방 파일 금지 대신 제한된 요청 전 covered-target baseline·정규화 hash/실제 diskRev·열린 dirty buffer snapshot을 사용한다. coverage 밖이면 전체 거절하고 다음 fresh 요청에서 bounded target hints를 우선할 수 있다. Windows는 project/worktree identity namespace·소유 marker·배타적 sync writer/동일 revision 공유 reader lease로 분리하고 legacy 사본 자동 이전/삭제를 하지 않는 계획이다.
+- S6-1b는 historyId 기반 daemon provenance로 일일/선택 노트 append(본문1MiB·bounded wrapper·최종 note2MiB·CAS/dirty rewrite), editor→기존512KiB 메모리 handoff, HTTP OAuth 명시 승인 UI, 실제 custom vault 지원 번들 가림으로 상세화했다. request raw/row/실제 선택 jar cookie 및 새 response Set-Cookie는 명시적 seed/표시 가림 계약으로 추가하되 일반 literal JSON을 전부 secret으로 분류하지 않는다.
+- 실제 scripts+.github1500줄/workflow2개와 PR Windows22m43·main14m30을 기준으로 안전 검증을 보존한 패키징 중복 통합을 release job보다 먼저 둔다. 세 dependency advisory는 compatible pinned update 조사·좁은 회귀에 배정하고 exploit 확인으로 과장하지 않는다.
+- Rust native updater의 snapshot/broadcast·GitHub digest·명시 설치 확인·all-window barrier·runner/relaunch·daemon 작업 유지, 실제 SC1–10과 S2/S3/S4/S5 미실행 수용 재평가, 버전 원장 한 번 변경·최종 전체검사 한 번·한 PR·보호 CI/squash/main CI·마지막 공개 승인 순서를07c에 적었다. 같은 버전 accept fixture 설치를 실제 공개 업데이트 PASS로 세지 않는다.
+- §8 판정: HTTP authorize·Windows readiness 귀속·custom vault는 포함, quit finish/new-window는 updater 경계에서 bounded reproduction 후 필요한 보정 포함(불필요함이 증명된 경우만 이유를 남겨 이월). 이미 고친 credential root/casing/cfg는 종결 유지. 자동 리뷰 OFF의 S6 절차는 미래 PR 전에 결정하며 #646 예외를 포괄 면제로 쓰지 않는다.
+- 계획 별도 검토1의 보완4건을 반영했다: Windows service/dependent·sibling의 동일 사본 revision 공유와 unknown child lease 보존; 최종 candidate 백업 push/dispatch→정확 Windows artifact→설치 수용→단일 PR; 신규 Set-Cookie/row/jar의 명시적 bounded 가림; installer runner의 operation/quit commit+정확 old process exit 두 조건·취소 disarm. 결과 문서 SHA와 실제 native 실행 SHA는 동등성 근거로 구분하며 hash loop를 만들지 않는다. 원래 동결본·두 검토는 `s6-plan-20261025/review1-before/`에 보존했다.
+- 이번 변경은 계획 문서뿐이다. 제품 구현·시험/빌드·push·PR·tag/release는 하지 않았다. 두 독립 재검토가 APPROVE이며, 문서 검사·완료 Biome 뒤 부모 하네스의 로컬 문서 커밋으로 보존한다. 검토 지적은 Windows 공유 사본 lease·정확 SHA artifact 확보 순서·Cookie/Set-Cookie 가림 범위·설치 runner 승인/종료 결속을 보완해 닫았다. 사전 검토와 계획 artifact는 §1 경로이며 과거 실제 검증 기록은 아래 그대로 보존한다.
+
 
 ### S4-9 공유 검토 화면 (2026-10-25 · 로컬 검증·설치 수용 판정 완료, 최종 감사 APPROVE·PR 대기)
 

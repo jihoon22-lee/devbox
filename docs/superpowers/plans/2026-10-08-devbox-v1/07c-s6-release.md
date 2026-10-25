@@ -1,0 +1,359 @@
+# S6 마무리·출시 실행 계획
+
+- 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
+- 현재 승인 범위: **S6 작업 계획 작성·별도 검토·로컬 문서 커밋까지만**. 제품 구현·시험·push·PR·태그·공개는 이번 요청에 포함되지 않는다.
+- 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
+- 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
+- 이 문서는 [07](07-s4-s6.md)의 S6 요약을 실제 코드에 맞게 구체화한다. 구현 시작은 후속 사용자 지시를 확인한 뒤다.
+
+## 1. 먼저 고칠 네 가지 발견
+
+사전 검토 근거는 Git common-dir `devbox-archive/pre-s6-review-20261025/`의 `summary.json`, `s0-s2-review.json`, `s3-s4-review.json`, `s5-review.json`, `root-evidence-review.json`이다. 모두 위 main 기준이며 제품 수정 없이 좁은 소유 fixture로 확인했다. 아래는 아직 수정하지 않았다.
+
+| ID | 실제 재현·한계 | S6 처리 |
+|---|---|---|
+| S5-ENV-LATE-LOAD · P1 | 환경 A 지연 읽기 → B 선택·편집 → A 완료가 B 미저장 입력을 덮고 현재 환경도 A로 바꿈. 실제 EnvEditor 재현 | S6-1a.1: 읽기 세대와 초안 revision을 함께 검사 |
+| S3S4-LSP-STALE-UNOPENED-TARGET · P2 | Rename 요청 당시 닫힌 B를 외부/새 편집기로 바꾼 뒤 unversioned edit가 오래된 offset으로 다른 식별자를 수정. 일반 저장으로 잘못된 내용도 저장됨 | S6-1a.2: 모든 대상의 요청 시점 출처 증명. 정상 미개방 파일 간 Rename도 유지 |
+| S0S2-WINDOWS-COPY-IDENTITY · P2 | 서로 다른 등록 프로젝트의 basename이 같으면 동일 Windows 사본을 덮음. 실제 graph+sync, Linux 소유 임시 폴더에서 재현; Windows 명령 실행은 하지 않음 | S6-1a.3: 프로젝트·worktree별 사본 소유권. 기존 root+이름 설계 자체를 정정 |
+| S5-LITERAL-AUTH-ECHO · P2 | 직접 Authorization 헤더의 credential echo가 응답 stream/history에 남음. 같은 값의 구조화 Bearer는 가림. 임의 literal JSON까지 secret이라는 주장은 아님 | S6-1a.4: 인식 가능한 credential 헤더·cookie의 명시적 가림 계약 |
+
+네 항목을 기능 연결보다 먼저 닫는다. LSP 재현의 “4 tests pass”는 결함 동작 assertion 2개+안전 제어 2개이며 제품 수용 PASS가 아니다. Windows 사본도 실제 Windows 수용을 대신하지 않는다.
+
+## 2. 작업 순서·공통 완료 조건
+
+| 순서 | 과제 | 의존 | 로컬 커밋 checkpoint |
+|---|---|---|---|
+| 상세화 | S6-1 계획 | main·사전 검토 | `docs(plan): detail S6 release work and review fixes` |
+| AF-1 | S6-1a.1–4 사전 결함 수정 | 계획 실행 지시 | 네 수정 각각 독립 커밋 |
+| AF-2 | S6-1b.1–4 기능 연결·기존 후속 | 네 수정 | 연결마다 독립 커밋 |
+| AF-3 | S6-1c 의존성 보안 업데이트 | 사전 조사·좁은 회귀 | 의존성별 독립 커밋 |
+| AF-4 | S6-2 릴리스·검증 비용 정리 | 위 제품 계약 안정화 | 예산 정리 → 릴리스 job |
+| AG | S6-3 업데이트·종료 경계 | S6-2 자산 계약 | core → Windows/UI 통합 |
+| AH-1 | S6-4 계측·Windows 수용 준비 | 제품 구현 완료 | 계측·최소 원인 수정 |
+| AH-2 | S6-5 문서·S6-6a 버전 | 제품 계약·계측 고정 | 문서·한 번의 1.0.0 bump |
+| AH-3 | S6-6b 최종 검사·PR·머지 | 전체 브랜치 검토 | 최종 결과·수정 커밋 |
+| 공개 | S6-6c 공개 승인·태그 | main CI·수용 근거·명시 승인 | `v1.0.0` 주석 태그 |
+
+S6는 한 브랜치·한 PR이다. 이번 계획 커밋 뒤 push/PR을 만들지 않는다. 구현 시에도 과제마다 전체 검사를 반복하거나 중간 PR을 열지 않는다. 마지막 Windows 수용 artifact를 위한 candidate 백업 push/dispatch는 §16의 명시 순서로 PR 전에 수행한다.
+
+각 구현 과제의 동일한 5단계:
+
+1. 해당 파일·현행 계약을 읽고 좁은 실패 시험을 먼저 실행한다. 재현 fixture는 실제 문제가 생긴 경계에 둔다.
+2. 최소 구현과 typed 오류·한국어 행동 안내를 함께 만든다. RPC는 `method!`/`topic!`에서 생성하고 생성 TS를 손으로 고치지 않는다.
+3. RED→GREEN 및 직접 영향 시험만 실행하고 명령·선택된 시험 수·출처 SHA·자원 결과를 남긴다. 0개 선택·exit75·setup 실패를 시험 성공으로 세지 않는다.
+4. 다른 에이전트가 코드·계약·시험 증거를 검토한다. 지적 수정 뒤 영향 범위만 다시 검사한다.
+5. `PROGRESS` 갱신 → `pnpm exec biome ci .` → 영어 Conventional Commit. 부모가 커밋한다. 후속 과제는 검토가 끝난 계약을 사용한다.
+
+자원 제한은 CONVENTIONS §5 그대로다. Rust 전 `source ~/.cargo/env`; jobs/workers/threads=2, CPU4·nice+10, 지원 cgroup high6GiB/max8GiB/swap1GiB. 이 환경은 child의 `XDG_RUNTIME_DIR=/run/user/1000`, `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`, `DEVBOX_VERIFY_CGROUP=required`를 적용해 제한이 실제 켜졌음을 확인한다. 무거운 검사는 common-dir 잠금 하나, exit75는 조율 후 재개한다. 기존 서비스·Docker·공유 네트워크·prod·사용자 자료를 시험으로 바꾸지 않는다.
+
+파일600줄/컴포넌트300줄을 유지하되 범용 새 프레임워크를 만들지 않는다. 제품/테스트 예산과 `.github`+`scripts` 예산은 별도다. 새 의존성이 필요하면 기존 스택 대안·배포 영향을 먼저 확인한다.
+
+## 3. S6-1a.1 — 환경 늦은 읽기가 새 입력을 덮지 않기
+
+**Files:** `app/src/features/tools/api/EnvEditor.tsx`, 인접 EnvEditor 시험. `useApiTabs` 발행 경로는 필요한 최소 변경만 한다.
+
+**계약:** load 시작 시 `{root, selection, operationGeneration, draftRevision}`을 캡처한다. 새로운 선택·생성·root 전환·unmount는 이전 요청을 무효화한다. 편집도 draftRevision을 바꾸므로 같은 선택의 늦은 읽기가 새 입력을 덮지 못한다. guarded 확인은 시작 전 사용자 의사 확인이며 완료 시 ownership 검사를 대체하지 않는다. 현재 소유 요청만 editing/dirty/선택/환경 발행을 함께 갱신한다. 거절된 응답은 toast나 이전 오류로 새 화면을 덮지 않는다.
+
+- [ ] RED: 보존된 `EnvEditor.preS6.test.tsx`의 A 지연→B 로드→B `/unsaved` 편집→A 완료를 정식 인접 시험으로 옮긴다.
+- [ ] 같은 환경 재읽기 중 입력·새 환경 생성·root 전환·실패 역순·unmount도 필요한 ownership 경계를 시험한다.
+- [ ] GREEN: B 입력·dirty·선택·발행 환경 모두 B 유지, 정상 최초 로드/명시적 버림 뒤 선택은 정상.
+- [ ] 검토: 저장 완료·삭제 뒤 늦은 응답도 확인하고 무관 API store를 재작성하지 않는다.
+- [ ] 커밋: `fix(api): preserve environment drafts across late reads`.
+
+## 4. S6-1a.2 — LSP WorkspaceEdit 모든 대상의 출처 증명
+
+**Files:** `app/src/features/source/editor/{lspCommands,lspWorkspace,lspFiles,lspSession}.ts`, 인접 시험; `crates/lsp/src/{relay,relay_documents,uri,actor,adapters,model}.rs`와 relay 시험; 필요 최소 `crates/documents/src/{code_authority,sys}.rs`의 bounded reader, `crates/cli/src/daemon/lsp.rs`. 단순 파일 길이 분할은 경계 책임에 따른다.
+
+**구체적 전략:** 열린 문서의 snapshot을 유지하고, unversioned multi-file Rename에 **요청 전 데몬이 캡처한 covered-target baseline 집합**을 더한다. 원자적인 전체 프로젝트 snapshot이라고 주장하지 않는다.
+
+- 별도 취소 가능한 job이 canonical project/worktree code authority 안에서 후보를 순회한다. 실제 relay actor의 `client` 처리 안에서 전체 walk/read를 await하지 않아 다른 공유 LSP 메시지를 막지 않는다. 기존 `FilesService.tree`는 per-directory 반복 scan이며 `documents::sys::read_at(limit)`는 EOF까지 hash하므로 그대로 bounded snapshot이라고 재사용하지 않는다.
+- 초기 예산: 파일4,096개, 파일당 기존 CODE_LIMIT5MiB, 총 실제 읽기32MiB, cooperative deadline2초, 순회 entry16,384개, metadata4MiB, client당 pending job1개/daemon 전체4개, token TTL30초. 읽기·열거·hash 중 매 chunk마다 취소/예산을 검사하고 기존 WorkspaceEdit target256개 상한도 유지한다. worker가 실제 끝날 때까지 job accounting을 유지한다. spawn_blocking future를 drop했다고 읽기가 멈췄다고 주장하지 않는다. 캡처5MiB 허용이 기존 LSP packet2MiB admission을 늘리지는 않는다. 숫자는 구현 시 소유 fixture 측정으로 검토할 초기값이며 측정 PASS를 미리 주장하지 않는다.
+- token은 실제 stream/client/server generation·canonical root·Rename request ID에 결속한다. explicit covered keys·미포함 이유를 보관하고 cancel/disconnect/TTL 또는 최종 적용 판정 뒤 해제한다. 응답 도착만으로 유일한 provenance를 지우지 않는다. 비동기 claim/read를 포함한 최종 target 검증·apply ACK 또는 cancel까지 daemon token을 유지한 뒤 한 번만 consume한다. renderer에는 daemon-owned immutable typed baseline을 정확한 pending request에 결속해 전달하며 server가 위조한 proof나 응답 시점 새 캡처를 승인하지 않는다. bounded ephemeral 메모리이며 영구 파일 index를 만들지 않는다.
+- 요청 시 이미 열린 파일은 renderer `{lease, editSeq, text hash}`와 relay가 실제 동기화한 text/server version·raw diskRev를 함께 캡처한다. **기존 dirty buffer는 유효 입력**이므로 disk text와 같아야 한다고 강제하지 않는다. server dispatch 직전에 세대와 열린 버퍼 snapshot이 변하지 않았음을 확인한다.
+- 당시 미개방 파일은 canonical identity·raw DiskRev와 **정규화 text hash**를 따로 캡처한다(CRLF/BOM 차이). 요청 전 job이 확보한 값만 baseline이며 응답 뒤 claim/read한 현재 diskRev로 대체하지 않는다. 서버의 동기화된 문서 상태가 별도로 있으면 그 상태와 모순된 disk baseline을 승인하지 않는다. 이 baseline은 재현된 요청 대기 중 변경을 막는 계약이며 임의 언어 서버의 의미적 정확성이나 파일시스템 전체 원자성을 증명하지 않는다.
+- unversioned 응답의 모든 target은 covered 집합에 있어야 한다. 적용 직전 diskRev 및 현재 buffer를 다시 검사한다. 요청 뒤 새로 열린/dirty인 target도 당시 normalized baseline과 비교한다. 이미 열린 target은 당시 buffer와 비교한다. 전 대상 검증 후 적용하며 하나라도 변했거나 출처가 없으면 전체 edit 거절·기존 버퍼/저널 유지.
+- 정상 미개방 B의 multi-file Rename은 성공해야 한다. 미포함/예산 초과는 해당 범위를 안전하게 확인하지 못했다는 행동 안내로 거절한다. 이전 응답의 canonical target URI를 제한된 힌트로 **다음 요청 캡처에서 우선**할 수 있다. 재시도는 fresh capture 후 서버에 Rename을 새로 요청하며 옛 edit를 재생하지 않는다. target 집합 자체가 예산을 넘으면 범위를 줄여 요청하거나 수동 검토하도록 명시한다. 모든 미개방 파일을 조용히 금지하지 않는다.
+- versioned edit는 기존 relay version 매핑과 canonical authority를 유지한다. unsolicited `workspace/applyEdit`에는 최근 Rename token을 임의 부착하지 않는다. 정확한 versioned owned-document proof가 없으면 `applied:false`로 거절한다. 실패가 공유 server generation을 불필요하게 죽이지 않는다.
+
+- [ ] RED: 보존된 두 재현을 **올바른 내용 유지 기대**로 반전한다. B 외부 디스크 변경과 요청 뒤 B 열기·편집 모두 오래된 edit를 거절해야 한다.
+- [ ] GREEN: 원래 unopened B multi-file 성공 및 이미 dirty인 열린 A+미개방 B 성공, 이미 열린 B 변경 거절, 명시 버전 불일치, generation 교체·wrong stream/request/root·token replay/TTL·cancel/disconnect, snapshot 초과, 중간 파일 삭제/경로 교체, target2 실패 시 target1 무변경, CRLF/BOM·UTF16, 큰/growing 파일의 실제 read budget, capture 중 actor 응답성·취소 후 worker accounting.
+- [ ] 검토: “응답 도착 후 claim/read 성공”과 “서버 offset 출처가 증명됨”을 혼동하지 않는지 별도 점검. 이 경계의 aggregate 비용도 기록한다.
+- [ ] 실제 언어 서버 Rename 수용은 S6-4에 둔다. fake RPC/CodeMirror 시험을 native PASS로 바꾸지 않는다.
+- [ ] 커밋: `fix(lsp): bind workspace edits to target snapshots`.
+
+## 5. S6-1a.3 — Windows 사본을 프로젝트·worktree 소유권에 결속
+
+**Files:** `crates/runtime/src/{graph,windows,execution}.rs`, windows/runtime 시험; 필요한 typed 오류·CLI 안내; `01-design.md` Windows 대상 주석·`05-s2-runs.md` Task12 계약을 이 구현 때 함께 정정한다. 이번 계획 작성에서 두 역사 문서를 미리 바꾸지 않는다.
+
+**결정:** 기존 `[windows] root` 설정 자체는 유지하되 `<root>\\<project name>`를 실행 사본으로 재사용하지 않는다. 새 전용 namespace 아래 **안정 project ID + 실제 worktree identity**를 경로에 사용한다. 표시명은 UI 표시용이며 identity가 아니다. main은 별도 고정 identity, agent worktree는 소유 resolver의 canonical 경로·등록 task/worktree ID에 결속한다. 대소문자/금지 문자/길이 제한에 안전한 ID 구성만 쓴다.
+
+- 새 사본에 schema·project/worktree identity·canonical source를 담은 소유 marker를 배타적으로 만든다. source 파일이 marker를 덮을 수 없는 예약 이름/위치를 사용한다.
+- 이미 존재하는 비어 있지 않은 미소유 디렉터리·다른 identity marker·symlink/reparse 경로는 쓰지 않는다. root 아래 새 namespace도 임의 기존 사용자 자료를 소유로 인수하지 않는다.
+- **기존 basename 사본은 자동 이동·복사·삭제·정리하지 않는다.** 이전 `node_modules`·산출물·수동 수정은 그대로 남는다. 새 사본 사용 안내와 기존 사본 수동 정리 선택지만 문서화하고 실행하지 않는다. 새 사본에도 기존 deleted=0 정책 유지.
+- **배타적인 sync writer와 공유 execution read lease를 분리한다.** 동일 승인 graph/group의 첫 Windows consumer 직전에 coherent copy revision을 한 번 준비한다. 입력 파일을 만드는 선행 WSL prerequisite가 끝나기 전에 미리 고정하지 않는다. Windows service→dependent task·동일 revision의 sibling은 reader로 합류하며 다시 sync하지 않는다.
+- compatible reader는 같은 canonical project/worktree identity와 고정 source/copy revision을 사용한다. 다른 source revision이 필요한 시작이나 나중 graph node는 기존 reader가 있는 사본을 바꾸지 않고 명시적 busy/reconcile 안내로 끝낸다. 같은 graph라는 이유로 바뀐 source를 무조건 호환으로 인정하지 않는다. 서로 다른 project/worktree는 독립 실행한다.
+- reader별 launch/실제 종료 근거를 추적한다. **마지막 consumer의 종료가 확인된 뒤에만** writer를 다시 허용한다. 한 consumer 완료/취소는 다른 service reader를 해제하지 않는다. launch 전 취소는 자기 pending lease만 정리한다. launch 후 RPC 오류·timeout·native 연결 취소로 Windows child/후손의 종료를 증명하지 못하면 unknown reader를 유지하고 소유 프로세스 확인/명시 reconciliation까지 busy로 둔다. 오류를 종료로 간주하거나 암묵적으로 stop하지 않는다.
+- 직접 interop/native fallback 모두 동일 PreparedCopy 계약을 쓰고 fallback에서 legacy target으로 돌아가지 않는다.
+
+- [ ] RED: 보존된 두 동일 basename 프로젝트 재현을 정식 시험으로 옮긴다. 대상이 달라 A bytes가 보존되어야 한다.
+- [ ] 같은 프로젝트 main/worktree 분리, canonical source 교체·ID 위조, marker 누락/불일치/링크, 기존 legacy 사본 bytes 보존을 시험한다.
+- [ ] GREEN: Windows service→Windows dependent·siblings가 한 번 sync한 coherent revision을 공유, 한 reader 종료 뒤 다른 reader가 남으면 writer 거절, live reader 중 source 변경 거절, 마지막 확인된 종료 뒤 순차 재실행 성공. 선행 WSL 입력 생성 뒤 첫 sync 순서도 확인한다.
+- [ ] launch 전 취소는 자기 pending만 해제, launch 후 unknown child/error/cancel은 busy 유지, 다른 reader 무영향·암묵 stop0회. 소유 Linux fixture 후 실제 Windows 경로/다중 consumer 실행은 S6-4.
+- [ ] 검토: 기존 구현이 승인 설계의 root+이름 공식을 따른 사실을 보존하고, 이번 정정을 과거 구현 위반으로 쓰지 않는다.
+- [ ] 커밋: `fix(runtime): isolate Windows copies by project and worktree`.
+
+## 6. S6-1a.4 — 직접 입력 credential 헤더·cookie echo 가림
+
+**Files:** `crates/api/src/{auth,redact,service,history}.rs`, `http/{mod,build,stream}.rs`, `crates/api/tests/` 응답/history 시험. protocol마다 실제 헤더 입력을 받는 경계만 공유한다.
+
+**명시 계약:** 구조화 인증·secret 참조·sensitive 변수/capture에 더하여 다음 **인식 가능한 입력**의 값을 request별 zeroizing redaction seed로 취급한다.
+
+- 대소문자 무관 `Authorization`, `Proxy-Authorization`: 전체 값과 Bearer/Basic 등 credential 부분. 인식 불가능한 scheme도 header 값 자체는 가린다.
+- 명시 목록 `X-API-Key`, `API-Key`, `X-Auth-Token` 같은 credential header 이름. 목록은 테스트·문서에서 동일하게 정의하며 임의 이름의 일반 header를 추측으로 모두 secret 취급하지 않는다.
+- request raw `Cookie` header·구조화 cookie rows·**그 hop에서 실제 선택되어 송신되는 jar cookie values**를 모두 포함한다. Cookie row/jar 조립이 auth 준비보다 늦으므로 최종 outgoing header 조립 후, 각 redirect hop의 응답을 내보내기 전에 값을 seed에 추가한다. 전체 jar나 다른 origin의 cookie를 불필요하게 resolve/수집하지 않는다.
+- **새 계약:** response `Set-Cookie`는 header 이름으로 표시/history 값을 가리고, 새로 발급된 cookie value도 operation seed에 추가한 뒤 그 response head/body/history를 방출한다. redirect hop의 Set-Cookie도 같은 순서다. 기존 stream은 값 seed만 적용하므로 이 기능을 이미 있다고 쓰지 않는다.
+- response cookie seed 추가는 새 credential을 body로 echo한 경우까지 같은 privacy boundary로 보호하기 위한 명시적 확장이다. cookie 이름/Expires·Path·SameSite 등 속성을 credential 값과 혼동하지 않는다. 일반 서버 JSON field를 자동 수집하는 확장은 아니다.
+- operation별 seed 개수/총 bytes/표현 변형의 합산 상한을 기존 redactor 예산과 맞춰 고정한다. 초과하면 typed 실패로 응답 relay/history 기록을 차단하며 raw fallback은 없다. 빈 값은 matching seed로 넣지 않되 credential header 표시 가림은 유지하고, 짧은 nonempty 값은 제외하지 않는다.
+- streaming chunk 경계·문자 encoding/표현 변형은 기존 sanitizer의 지원 계약을 유지하며 decoded body도 검사한다. seed 확정 전 response bytes를 이미 공개한 뒤 뒤늦게 가리는 구현은 하지 않는다.
+- 로그에는 본문/헤더 값을 추가하지 않는다. stream·history 본문·snapshot·후속 노트 export에서 같은 정책을 쓴다. 짧은 credential도 제외하지 않고 과잉 가림 가능성을 명시한다.
+- **임의 literal JSON/body의 문자열을 전부 secret으로 가리는 확장은 하지 않는다.** 기존 일반 응답 가독성·literal echo 시험은 유지한다.
+
+- [ ] RED: 보존된 owned localhost echo fixture로 구조화 Bearer 제어와 직접 Authorization 실패를 정식 회귀로 만든다.
+- [ ] GREEN: 대소문자·Proxy-Authorization·API key, raw Cookie/row/실제 선택 jar echo, 요청 seed에 없던 서로 다른 신규 Set-Cookie value의 header/body/history 가림, redirect hop·chunk split·빈/짧은 값·capacity 초과 fail-closed·history_bytes 디코딩을 확인한다. 무관한 일반 literal JSON/body와 비민감 header는 그대로 보존한다.
+- [ ] 검토: 실제 credential 수집 시점이 body 송출/기록보다 앞인지, 취소/완료 뒤 seed를 장기 저장하지 않는지 확인한다.
+- [ ] 커밋: `fix(api): redact recognized credential header and cookie echoes`.
+
+## 7. S6-1b.1 — API 응답을 일일 기록·선택 노트에 붙이기
+
+**Files:** `app/src/features/tools/api/{ResponseView,ResponseOrigin,backend,sendState}.*`, 응답 수집 adapter; `crates/api/src/` 응답 provenance/export·history 조회; `crates/notes/src/{model,daily_ops,lib}.rs`; `crates/cli/src/daemon/` API–Notes 연결; `app/src/features/notes/rewrite.ts`; 관련 generated RPC/오류 문구. 새 작은 모듈은 기존 서비스 경계 안에 둔다.
+
+**현행 차이:** `notes.append` target은 Inbox/Daily뿐이다. `validate_command_text`의64KiB 검사는 노트 응답1MiB 요구와 맞지 않는다. `ResponseOriginInfo.url`은 renderer가 캡처한 초안 문자열이므로 안전한 export metadata의 원장으로 쓰지 않는다. NOTE_LIMIT=2MiB와 기존 CAS/dirty rewrite 경로는 유지한다.
+
+**계약:**
+
+- [노트에 붙이기]는 **일일 기록 / 고른 노트**를 선택한다. 고른 노트는 현재 vault 내 기존 note identity를 받으며 임의 OS 절대 경로·다른 vault·코드 문서를 쓰지 못한다. Inbox 기존 CLI 동작도 유지한다.
+- typed append target에 note path/identity를 추가하고 현재 vault canonical authority로 검증한다. 삭제/rename/설정 변경 중 대상이 바뀌면 재선택 안내로 거절한다.
+- 기존 `SendEvent::Started.history_id`→`SentResponse.historyId`를 사용한다. CLI orchestration이 typed `{historyId, target}`을 받아 `ApiService.history_get`의 HistoryEntry(method, 치환/가림 후 URL, sent_at_ms, response/body)를 읽어 NotesService에 넘긴다. notes crate가 api crate에 의존하게 하지 않는다. 데몬에서 완료 응답의 request/send ID·출처 root·history identity를 결속해 export한다. renderer가 임의 method/URL/body를 안전한 응답인 것처럼 제출하지 않는다. 개인/프로젝트 origin 권한도 재검증한다.
+- history 아직 미기록/실패·읽기 불가·본문 truncated를 명확히 처리하고 재송신 fallback은 하지 않는다. UI 수신 완료만으로 durable history가 있다고 가정하지 않는다.
+- method·**실제 전송의 가려진 URL**·status·기록된 전송 시각 및 가려진 본문으로 Markdown 블록을 만든다. 늦은 A 응답 아래 현재 B 초안 URL을 붙이지 않는다. URL query/userinfo와 header/cookie echo는 S6-1a.4 sanitizer 경로를 사용한다.
+- 본문은 UTF-8 기준 **최대1MiB**, scalar 경계에서 자르고 잘림을 표시한다. 현재 history_get의 byte cap이 마지막 UTF-8 scalar를 잘랐다면 불완전한 끝 bytes를 제외하고 잘림을 알린다. binary는 크기/종류 안내만 붙이고 임의 decoding하지 않는다. body 안의 backtick이 블록을 닫지 못하도록 충분한 fence를 선택하되 fence/metadata overhead도 별도 상한을 둔다(예:16KiB).
+- 노트 전용 append admission은 최대1MiB 본문+제한된 wrapper를 허용하고 NUL·invalid input을 거절한다. 공용 command64KiB 한도를 올리지 않는다. 최종 note의 BOM/CRLF 포함2MiB 상한과 rewrite RPC 크기 예산을 검사한다. 16MiB frame hard cap을 핑계로 무제한 문자열을 보내지 않는다.
+- `daily_ops::edit_note`의 CAS retry·dirty lease holder rewrite/ACK·disk 확인을 재사용한다. dirty 버퍼 뒤에서 파일을 직접 쓰지 않는다. 복구 초안만 있고 holder 없음/응답 timeout/외부 변경은 보존·typed 실패.
+- 중복 클릭은 operation identity로 한 번만 append하고, 성공 후 목록 조회 실패로 다시 붙이지 않는다. 사용자 새 클릭으로 같은 응답을 다시 붙이는 의도와 retry를 구별한다.
+
+- [ ] RED: 현재64KiB 초과 거절·chosen target 미지원·원래 URL provenance 결여를 각각 좁은 시험으로 고정.
+- [ ] GREEN: 일일/선택 노트 모두, 64KiB+·1MiB 경계·다중바이트·fence·binary·최종2MiB 초과, 신뢰할 수 없는 target/token, dirty rewrite success/timeout·CAS 외부 변경·retry 중복 없음.
+- [ ] UI: 완료된 원래 응답에서 선택기 열기·pending/error/성공 경로. 응답 교체·root 전환은 이전 operation이 새 대상을 바꾸지 못한다.
+- [ ] 최종 E2E에 요청→일일 기록 append 한 경로, 선택 노트·dirty 경로는 좁은 통합 시험으로 덮는다.
+- [ ] 커밋: `feat(api): append sanitized responses to daily and selected notes`.
+
+## 8. S6-1b.2 — 코드 선택을 기존 변환 도구로 보내기
+
+**Files:** `app/src/features/source/editor/CodeEditor.tsx`와 메뉴 연결, `app/src/features/tools/transforms/{handoff,handoff.integration.test}.*`.
+
+**계약:** 기존 `sendToTransforms(text, source)`에 `source: "editor"`만 더한다. EditorView의 명시적 현재 선택을 캡처해 전달한다. 선택 없으면 비활성, 여러 selection은 순서와 구분 정책을 명시한다. 기존512KiB UTF-8 bound·잘림 안내·intentRevision·메모리 전용 store·탐지/도구 선택을 재사용한다. URL/query/localStorage/로그에 선택 본문을 넣지 않는다.
+
+- [ ] RED: 실제 CodeEditor 선택 메뉴가 기존 handoff를 호출하는 통합 시험.
+- [ ] GREEN: JSON 선택·empty·비ASCII512KiB 경계·빠른 연속 보내기·navigation 실패 후 최신 입력 보존. editor 본문/dirty/undo 무변경.
+- [ ] 별도 검토 후 `feat(source): send editor selections to transform tools`.
+
+## 9. S6-1b.3 — HTTP OAuth authorize를 요청 소유 UI action에 연결
+
+**Files:** API SendCollector/daemon backend adapter·send state·요청 화면, `crates/api/src/oauth*`의 기존 authorize/cancel 계약; MCP의 명시적 브라우저 action을 UI 참고로 재사용한다. 별도 OAuth 프레임워크는 추가하지 않는다.
+
+**기존 §8 판정:** #645 `4367201424`는 S6에 포함. 이벤트를 버려 승인 흐름이 끝나지 않는 기능 누락이며 사전 검토의 새 비밀 유출로 부풀리지 않는다.
+
+- [ ] RED: HTTP authorize 이벤트가 실제 요청 화면에 도달하지 않는 좁은 adapter/UI 시험.
+- [ ] 요청ID·origin·tab generation 소유 pending action을 표시하고 사용자 [브라우저에서 승인] 클릭으로만 검증된 authorize URL을 연다. 이벤트 도착만으로 자동 open하지 않는다.
+- [ ] 취소·tab/root 전환·재전송은 pending action/callback ownership을 무효화한다. 늦은 완료는 다른 요청을 성공으로 바꾸지 않는다. 기존 state/PKCE·callback timeout·비밀 가림을 유지한다.
+- [ ] GREEN: authorize→명시 클릭→동일 요청 완료, 취소/늦은 이벤트·잘못된 소유자·브라우저 실패, 승인 전 외부 open0회.
+- [ ] 검토 후 `fix(api): expose request-owned HTTP authorization actions`.
+
+## 10. S6-1b.4 — 지원 번들의 사용자 vault 경로 가림
+
+**Files:** `crates/tools/src/support.rs`·`support/{archive,files,redact,summary}.rs`, CLI tools 생성 연결, Notes settings 접근 경계·support 시험.
+
+**계약:** 현재 home/기본 `~/notes` 추정 대신 실제 NotesService의 canonical vault root를 bundle 시작 시 캡처해 전달한다. secrets-locked이면 로그 생략하는 기존 정책·fixed archive names·0600·제한된 읽기를 유지한다. 사용자 지정 vault가 home 밖이어도 정확 경로와 JSON/debug escaped 표현을 `<notes>`로 가린다. 짧은 prefix가 일반 단어/다른 형제 경로를 지우지 않도록 경로 경계를 검사한다. 설정 변경 중 일관된 snapshot을 쓴다.
+
+- [ ] RED/GREEN: custom vault 절대/escaped·home 내부/외부·겹친 prefix·secrets locked·일반 형제 경로 보존.
+- [ ] 별도 검토 후 `fix(tools): redact the configured notes vault in support bundles`.
+
+## 11. S6-1c — 실제 의존성 경고 세 건 정리
+
+**Files:** `app/package.json`, `pnpm-lock.yaml`, 필요 시 root overrides; 관련 preview/diagram·Vitest 시험만.
+
+기준 검토의 세 advisory는 실제 affected version 정보다. 제품 exploit 재현이나 모든 경고 무해 판정은 아니다. 구현 시 공식 advisory/상위 release notes와 현재 lockfile을 다시 조사해 정확 버전을 pin한다(이번 계획 작성에서 업그레이드하지 않음).
+
+- [ ] `@vitest/mocker`4.1.11의 `GHSA-qxg6-89mg-rqv8`·`GHSA-xp26-3454-mjgp`: 수정4.1.12 이상 중 호환 patch를 Vitest 관련 패키지와 함께 pin. app에서 명시 mocker/interceptor plugin entrypoint가 안 보인 사실과 devdependency 범위를 기록한다. dependency graph + 대표 mock/실제 component 회귀를 실행한다.
+- [ ] Mermaid 경유 KaTeX0.16.47의 `GHSA-238p-pmpm-9mq7`: 수정0.18.2 이상을 받아들이는 **호환 Mermaid 경로**를 조사한다. 무검증 transitive override로 minor/major 경계를 강제하지 않는다. strict mode·htmlLabels=false·network-free diagram·SVG sanitizer 보존; math diagram rendering·유해 SVG 회귀를 실행한다.
+- [ ] 상위 호환 수정이 없거나 새 stack이 필요하면 정확 경로/대안/위험과 후속 판단을 PROGRESS에 남긴다. prior prototype pollution+unsanitized insertion의 exploit chain을 확인하지 않고 현재 앱 XSS라고 쓰지 않는다.
+- [ ] 각 변경 독립 검토·Biome 뒤 `chore(deps): update Vitest security fixes`, `chore(deps): update compatible Mermaid math dependencies` 등 실제 변경에 맞는 커밋.
+
+## 12. S6-2 — 검증 예산을 확보하고 prod 태그 릴리스 job 추가
+
+**Files:** `.github/workflows/{ci,windows}.yml`, `scripts/{win-package,win-sync,win-build}.ps1`, `scripts/tests/windows-*.ps1`, `scripts/{check-inner,build-linux,ci-scope}.sh`, 실제 중복이 확인된 부분만. 새 workflow를 기본안으로 추가하지 않는다.
+
+현재 `.github`+`scripts`는 **1,500줄, workflow2개**로 여유가 없다. 제품 LOC121277는 별도 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 이번 계획은 15분 목표를 조용히 완화하지 않으며 최종 실측 전 달성을 약속하지 않는다.
+
+**먼저 하는 예산 작업:**
+
+- [ ] 현재 파일별 line/call graph와 Windows job timing을 artifact로 남긴다. prod+accept의 별도 Cargo target에서 dependency 재빌드, 반복 `pnpm install`/frontend build/동일 native test, sync/build/dev wrapper와 세 orchestration fixture의 중복 setup을 확인한다.
+- [ ] dependency cache 재사용 또는 순차 target 재사용은 build.rs의 channel 환경 rerun과 산출물 복사/receipt 격리 시험이 보장할 때만 적용한다. prod/accept config·identifier·embedded resource를 섞지 않는다.
+- [ ] 채널 불변 install/frontend 검증은 한 번, 채널별 identifier/resource/self-check는 각 채널에서 유지하도록 package 흐름을 나눈다. Linux provenance gate·실패 전파·환경 복원·owned checkout guard를 없애지 않는다.
+- [ ] 시험의 반복 fixture 생성과 공통 command runner를 기존 scripts 안의 작은 공통 책임으로 통합한다. 제거되는 중복과 추가 release 코드의 line ledger를 만든 뒤 구현한다. 단순 minify/한 줄 압축·코드를 다른 디렉터리로 옮겨 count를 피하는 변경은 하지 않는다.
+- [ ] 핵심 안전 assertion을 유지한 순 감소로 release job·계측에 필요한 여유를 확보한다. 1,500줄을 지키지 못하면 기능/검증 보존 가능한 추가 단순화를 검토하고 한도 위반을 조용히 승인하지 않는다.
+
+**릴리스 계약:**
+
+- `v*` 태그의 엄격 semver/tag↔manifest 버전 검증 → linux-bin musl 테스트·build → Windows prod build·self-check → `release` job.
+- release는 앞 job 성공과 해당 태그 source SHA의 receipt를 확인하며 `contents: write`는 그 job에만 준다. PR/main/dispatch는 릴리스 생성·업로드를 하지 않는다.
+- prod NSIS 정확히 하나를 `devbox-<v>-setup.exe`(v는 버전 숫자, 예: `devbox-1.0.0-setup.exe`)로 올린다. accept installer·receipt·old `Devbox_{v}_x64-setup.exe`·`release-manifest.json`은 공개 자산에 섞지 않는다.
+- 주석 태그 메시지가 릴리스 노트의 원장이다. 태그 메시지/이름을 shell 코드로 interpolation하지 않고 파일/환경 데이터로 넘긴다. updater가 비교할 GitHub asset SHA-256 digest가 제공되는지 확인한다.
+- 중복 tag/release 재실행에서 이미 다른 digest인 자산을 조용히 덮지 않는다. candidate/seal 절차는 만들지 않고 문제가 있으면 다음 patch다.
+- PR/수동 실행 accept 산출물·prod provenance receipt와 source SHA 결속은 유지한다. packaging script는 실제 Windows에서만 빌드한다.
+
+- [ ] RED/GREEN: fixture에서 tag gate·버전 mismatch·Linux 실패·0/2 installer·accept 혼입·태그 본문 특수문자·재실행 digest 충돌을 검증한다. 실제 release API 쓰기는 하지 않는다.
+- [ ] actionlint를 기존 CI의 적절한 job에서 실행. workflow≤3·합계≤1500을 실제 count로 확인한다.
+- [ ] orchestration fake 시험은 native build PASS로 보고하지 않는다. 실제 Windows build/40분 실측은 최종 수용·공개에서 확인한다.
+- [ ] 독립 검토 뒤 `refactor(ci): consolidate Windows packaging verification`, `feat(release): publish production installers from version tags`.
+
+## 13. S6-3 — Rust가 소유하는 업데이트와 안전한 재시작
+
+**Files:** 새 `app/src-tauri/src/core/update*.rs`(순수 상태/자산 검증), `platform/update*.rs`(Windows download/install), core/platform 등록·Tauri commands; `app/src/features/settings/Update.tsx`와 상태 표시줄; `core/quit.rs`, `platform/quit.rs`, `platform/window.rs`, 기존 `core/deploy.rs`/`platform/deploy.rs`. renderer는 도메인 updater 소유자가 아니다. native Cargo에는 현재 HTTP client가 없으므로 reqwest/rustls는 기존 workspace 버전으로, semver는 필요 시 현재 lock의 호환 버전을 확인해 최소 의존 edge만 필요에 따라 추가하고 native TLS provider 초기화·Windows build 영향부터 확인한다. 새 stack/서명 updater는 아니다. 공식 근거: [GitHub release asset digest/API](https://docs.github.com/en/rest/releases/assets?apiVersion=2022-11-28), [Tauri Windows NSIS](https://v2.tauri.app/distribute/windows-installer/)의 currentUser 설치. 공개 asset API의 200/302 응답·redirect와 hash 검증을 함께 시험한다.
+
+### S6-3a 상태·다운로드
+
+- [ ] typed 상태 `idle/checking/available/downloading/ready/installing/failed`에 operation generation·버전·bytes·오류/다음 행동을 둔다. Rust managed state 하나, `update_status()` snapshot + `devbox://update` 모든 창 broadcast를 제공한다. window mount/unmount는 작업 생존과 독립이다.
+- [ ] 릴리스 prod만 하루 한 번/명시 요청에 GitHub latest 확인. `-dev`·dev/accept 채널은 공개 updater를 비활성화한다. accept 시험은 **컴파일된 accept/test 전용 capability**로 소유 fixture I/O를 주입한다. prod의 임의 URL/env bypass는 만들지 않으며 prod 자산·다른 채널을 자동 설치하지 않는다.
+- [ ] strict release version·정확 asset 이름·단일 exe·HTTPS/GitHub 출처·download size/time bound·SHA-256 digest 필수. prerelease/draft·동일/낮은 버전·digest 없음/불일치·다른 채널은 설치 불가.
+- [ ] `%LOCALAPPDATA%` 채널 전용 updates 아래 소유 임시 파일로 streaming download→hash 확인→atomic ready. retry/cancel/generation 교체는 자기 임시 파일만 정리하고 다른 실행의 파일을 지우지 않는다. 설치 전 파일 identity/digest를 다시 확인한다.
+- [ ] RED/GREEN: GitHub fixture 자산 선택·버전·digest·download cancel/race·중복 호출·prod wrong-channel 거절. fixture installer도 소유 marker/source/hash/채널을 검증하고 동결한다. 창 닫기→새 창 snapshot이 같은 진행·취소 권한을 받는 CV-F09 시험.
+- [ ] 독립 검토·`feat(updater): own update state and verified downloads in Rust`.
+
+### S6-3b 설치 확인·all-window 종료·재기동
+
+- [ ] ready 뒤 [업데이트]는 agents/services 실행 수 요약과 데몬 작업 유지 안내를 보여 주고 **명시적으로 설치 확인**받는다. 네이티브 별도 확인 대화상자/서명 updater는 추가하지 않는다(ADR0016).
+- [ ] 기존 all-window prepare/dirty flush barrier를 통과한 경우에만 설치를 시작한다. 실패/timeout/창 거절은 앱·작업 유지, installer 실행0회. 여러 창 중 한 창의 확인으로 다른 dirty 창을 건너뛰지 않는다.
+- [ ] §8 #644 `finish(approved)→새 창 register→RequestExit`를 실제 core/platform 호출 순서로 먼저 좁게 재현한다. updater가 이 경계를 쓰므로 **S6에 포함해 판정**한다. late registration은 승인 generation을 취소하거나 설치 종료 commit 동안 새 창 생성 자체를 막는 동일 정책을 일반 quit와 공유한다.
+- [ ] boundary가 실제 경로상 불가능하다는 근거가 나오면 그 조건·시험·후속 사유를 기록한 뒤만 defer한다. 기존 “손실 미재현”을 새 데이터 손실 PASS/FAIL로 바꾸지 않는다.
+- [ ] runner handoff는 `prepared → armed/ready ACK → committed`로 구분한다. permit은 고유 update operation·quit generation·channel·정확한 old app PID+start identity·검증된 installer identity/hash에 결속한다. runner를 준비해도 **설치/종료 commit 승인과 그 정확한 old app의 실제 종료 둘 다** 확인하기 전 `/S` 실행0회다. bridge drain을 시작했다는 사실은 process exit가 아니다.
+- [ ] prepare 실패/취소·quit 중단이면 runner permit을 disarm하고 만료시킨다. 나중의 무관한 정상 앱 종료가 설치를 되살리지 못한다. commit의 되돌릴 수 없는 경계에서 다른 update·새 창·새 native attempt 진입을 고정된 generation 정책으로 차단한다. caller가 임의 path/permit을 보낸 IPC는 승인 근거가 아니다.
+- [ ] runner는 기존 app Job과 설치 교체 대상 디렉터리 밖의 **소유·동결된 source/hash 경로**에서 실행한다. ready ACK와 operation identity를 확인하고 대기/실행 lifetime에 명시적 상한을 둔다. PID 재사용·stale permit·timeout은 설치 거절이며 자신 소유 파일만 정리한다.
+- [ ] commit+exact process exit를 확인한 runner가 `/S`를 정확히 한 번 실행하고 installer exit·소유 결과를 기록한 뒤 검증된 동일 채널 앱만 relaunch한다. 설치 실패는 다음 시작 상태로 복구 안내한다. app 종료와 함께 runner가 죽거나 NSIS가 아직 실행 중인 old app 파일을 건드리지 않는지 Windows에서 확인한다.
+- [ ] **앱 native fallback Windows attempt는 WSL 작업과 수명이 다르다.** `Connection.begin_exit`가 bridge/supervisor를 취소하며 native attempt는 stream token/Windows 취소 경로에 묶인다. 기존 S2도 child 종료를 완전히 보장하지 않는다. 따라서 활성 app-owned native Windows attempt가 있으면 설치를 막고 완료 대기 또는 기존 실행 UI에서 사용자가 명시적으로 중지하도록 안내한다. updater가 암묵적으로 stop하지 않는다.
+- [ ] Rust가 소유한 active-native-attempt counter/generation을 summary와 최종 quit 직전에 재검사하고 설치 commit 동안 새 native attempt 진입을 막거나 승인 generation을 취소한다. 목록 조회 성공만으로 종료 순간까지 안전하다고 가정하지 않는다. 설명은 WSL 관리/direct daemon 작업 유지와 native fallback 설치 차단을 구분한다.
+- [ ] 새 앱은 기존 deploy/version 경로로 daemon 바이너리 차이를 처리한다. WSL agent tmux·service unit을 stop/kill하지 않는다. bridge 재연결과 기존 세션 재부착을 실제 수용에서 확인하며 모든 Windows 실행이 앱 업데이트 뒤 유지된다고 약속하지 않는다.
+- [ ] 기존 accept 앱은 updater가 없고 모두1.0.0-dev다. accept fixture의 version 검증 우회나 같은 버전 NSIS 재설치를 실제 공개버전 업그레이드 PASS로 쓰지 않는다. 순수 version/hash/state 시험, accept 전용 I/O·installer lifecycle 시험, 다음 patch의 실제 업데이트를 별도 결과로 유지한다.
+- [ ] RED/GREEN: 확인 전 실행0회, prepared runner+quit 실패/취소 뒤 나중 정상 종료에도 설치0회, bridge drain 지연 중 설치0회, PID reuse/stale permit/wrong generation 거절·exact exit 뒤1회, dirty window·새 window/lease·중복 confirm·다운로드 교체·installer 실패·runner 생존/relaunch·작업 요약 unavailable의 명확한 안내, active native attempt 차단/완료 후 재개·summary 이후 새 attempt 진입·최종 quit 재검사·중지 호출0회. updater state의 fake 성공을 NSIS 설치 성공으로 세지 않는다.
+- [ ] 독립 검토·`feat(updater): install after all windows approve shutdown`.
+
+## 14. S6-4 — 성공 기준과 과거 미실행 항목의 실제 측정
+
+### 계측·기존 후속 준비
+
+**Files:** 실제 이벤트 소유 지점 `platform/shortcuts.rs`, bootstrap/connection/UI 첫 데이터 표시; 기존 `scripts/dev-session.py`의 dev timestamp, terminal latency 시험, 필요한 bounded native 수용 도우미. source/runtime의 readiness는 아래 별도 과제로 둔다.
+
+- [ ] SC2 monotonic timestamp는 단축키 수신→팔레트 paint, 프로세스 시작→첫 데이터 paint를 같은 run ID로 결속한다. 단순 RPC ping/DOM 존재를 사용자 표시 시간으로 대체하지 않는다.
+- [ ] SC6는 실제 source 변경 시각→HMR 반영, daemon 변경→ready+browser 재연결을 잰다. dev-session readiness 자체를 전체 reload 시간이라고 쓰지 않는다.
+- [ ] #642 Windows readiness를 S6에 포함: `crates/cli/src/windows_exec.rs` 직접 경로와 `app/src-tauri/src/platform/windows.rs` native 경로 모두 localhost listener의 PID/생성시각·승인된 child/후손 귀속을 확인한다. PID 재사용·후손 종료·조회 실패는 ready=false/명확 실패다.
+- [ ] RED: Windows 소유 unrelated listener만 연 상태에서는 서비스 미준비, 실제 child/후손 listener만 준비. IPv4/IPv6·zero-port·process exit/timeout·직접/native 동등성 좁은 시험. 기존 호스트 listener·방화벽을 바꾸지 않는다.
+- [ ] 검토·`fix(runtime): bind Windows readiness to the owned process tree`; 계측은 별도 `test(acceptance): measure release readiness criteria`.
+
+### SC별 판정 원장
+
+| SC | 실제 측정·기준 | 증거/미실행 처리 |
+|---|---|---|
+| SC1 | 흔적 없는 전용 Windows 계정+systemd WSL에서 setup→첫 데이터, 사용자 행동 배포판 확인≤1회 | 기존 사용자 자료를 지워 계정을 흉내 내지 않음. 계정/독립 환경 없으면 NOT_RUN |
+| SC2 | 전역 단축키→paint≤300ms; cold→첫 데이터 WSL running≤3초/stopped≤10초 | 반복 횟수·cold/warm/cache/배율·raw timing 보존. host WSL shutdown 금지, stopped 측정은 격리 환경/최종 R2 |
+| SC3 | 제목+도구+시작 한 번으로 작업 준비/실행; 실제 hook waiting/turn-end가 목록·Windows 알림≤2초 | Claude/Codex 각각 실제 hook, fake hook PASS로 대체 금지 |
+| SC4 | 창 닫기·daemon 재시작·업데이트 뒤 WSL agent/terminal/service 유지, app-native Windows attempt는 설치 전 별도 차단 | 소유 test instance·tmux/user systemd, 전후 세션 ID·PID/작업 관찰. WSL 종료는 유지 대상 아님 |
+| SC5 | generated code 전수 오류 문구·원인+다음 행동; internal은 진단 ID 동반 | 컴파일/typed map+대표 E2E, raw error/body 노출 없음 |
+| SC6 | UI 변경→실제 daemon 연결 browser≤2초; daemon 변경→restart/reconnect≤15초 | monotonic 구간·source 변경·ready 증거, fake 서버 제외 |
+| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤1500, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음 |
+| SC8 | `bash scripts/loc.sh 200000`, 제품 코드≤20만(관찰 트리거) | 테스트 제외와600줄 제한 별도 보고. 기준121277은 과거 값 |
+| SC9 | 작업 없는 daemon RSS≤60MB·CPU≤0.5% | 실제 `/proc`·systemd, warm-up·표본 간격/기간·background 작업 기록 |
+| SC10 | Windows bridge→daemon→PTY→tmux byte echo p50≤10ms/p95≤25ms; 100MB 출력 중 다른 창 ping p95≤100ms, 종료 후 입력≤1초 | 실제 설치본, 샘플/percentile·출력 flood byte 수. renderer paint 제외 |
+
+실측값이 미달이면 원인·최소 수정/재측정 또는 명시적 미달/다음 patch 계획을 기록한다. 근거 없는 목표 완화·측정 생략은 하지 않는다. 자동화 불가와 제품 실패를 분리한다.
+
+### 실제 Windows 수용 실행 순서
+
+- [ ] 구현 중에는 fixture/좁은 검증까지만. **S6-5·S6-6a 버전 고정과 최종 검사 이후 최종 candidate commit을 PR 없이 백업 push한 뒤 workflow_dispatch로 얻은 정확 source SHA의 성공한 windows.yml artifact**로 설치 수용을 한 번 묶어 실행한다. 준비와 실행 시점을 혼동하지 않는다.
+- [ ] 저장소·workflow·run·source SHA·receipt/installer SHA256·채널을 대조하고 독립 helper 검토/실행 binding을 남긴다. `windows-acceptance` 잠금, PowerShell 절대 경로, 소유 accept 설치/instance만 사용한다.
+- [ ] 시작 전후 prod 설치·파일·unit을 읽기 전용 비교. 소유 표식 없는 accept 자원은 보존하고 해당 실행을 중단·보고한다. UAC/재부팅/사용자 클릭을 우회하지 않는다.
+- [ ] S2 설치1–11 NOT_RUN·12 FAIL 및 prod NOT_PROVEN을 재수행 목록으로 옮기고, 후속 interop 회복만으로 과거 결과를 소급 변경하지 않는다.
+- [ ] S3 설치4/6/7/8·엄격 autosave1초/SC2, S4 실제 LSP2/3/4/7, S5 설치5/6·external LAN·실제 도구 설치 미실행을 항목별로 재평가한다. 다른 SHA의 성공1/6·3/4 등은 historical로 남긴다.
+- [ ] 실제 LSP는 소유 프로젝트/임시 tool 경로로 제공 가능한 서버로 진단·정의·서식·multi-file Rename과 stale refusal을 확인한다. 관리형 installer/숨은 global 설치는 만들지 않는다. 환경 부재면 정확 전제와 NOT_RUN을 기록한다.
+- [ ] HTTP→일일/선택 dirty 노트·editor handoff·OAuth 명시 승인·Windows 복사 분리·service→dependent/sibling 공유 revision/readiness·updater all-window/reconnect·지원 bundle masking을 최종 source에서 확인한다.
+- [ ] LAN/설치/네트워크 변경 시험은 독립 VM/hosted 환경에서만. fake HTTP/LSP 시험은 해당 실제 수용을 대체하지 않는다.
+- [ ] Codex 새 worktree trust waiting·tmux3.4 종료 미확정은 실제 SC3/4/10 실패 시 좁게 원인을 재현한다. 미재현이면 미확정 후속으로 남기고 근거 없는 수정은 하지 않는다.
+- [ ] 소유 자원만 정리하고 retained 목록·prod 불변 비교를 남긴다. R1(30분 idle)·R2(WSL shutdown 시간)는 공개 직전 사용자 확인까지 NOT_RUN. 에이전트가 공유 WSL을 shutdown하지 않는다.
+
+## 15. S6-5 — 실제 사용 문서와 최종 계약 정리
+
+**Files:** `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/ui-terms.md`, `docs/adr/0017-rebuild-single-app-wsl-daemon.md`, 이 계획·PROGRESS와 필요한 설계 계약 위치만.
+
+- [ ] 설치/개발/Windows 스크립트/MCP 등록·문제 해결·진단 ID·지원 bundle·수동 새 앱 설치→v0.9.0 수동 제거를 실제 코드에 맞춘다. v0.9 데이터 자동 이전은 없다.
+- [ ] updater 취소/실패·작업 유지·dirty 창 처리·dev/accept 비활성·구버전 복사 디렉터리 수동 보존 정책을 쓴다.
+- [ ] 화면 한국어 용어를 docs/ui-terms와 맞추고 ADR0017의 채택 상태를 실제 구현 검토 뒤 변경한다.
+- [ ] 과거 실측·검증 SHA·FAIL·NOT_RUN·이전 버전 예제는 역사로 보존한다. 현재 상태 줄만 갱신하며 S6 로컬 완료/PR 수용/공개 완료를 구분한다.
+- [ ] 별도 문서 검토·Biome 뒤 `docs: document v1 installation updates and recovery`.
+
+## 16. S6-6 — 한 번의 버전 변경·최종 검사·공개 경계
+
+### S6-6a 버전 고정
+
+- [ ] `Cargo.toml` workspace, `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json` 및 실제 channel config의 override 유무를 확인한다. 현행 `1.0.0-dev`→`1.0.0`을 **한 번만** 반영한다.
+- [ ] Cargo.lock(두 manifest 경로의 실제 lock)·pnpm importer 등 연결된 generated metadata를 정상 도구로 갱신한다. 모든 packaged binary/resource/manifest가 같은1.0.0인지 검증한다.
+- [ ] 저장소 전체 문자열을 지워 historical docs/fixtures를 변조하지 않는다. 버전 원장 목록과 런타임 포함 경로의 일치 검사로 검증하며 남은 `1.0.0-dev`는 history/dev-disable fixture 등 이유별로 기록한다.
+- [ ] 독립 검토·Biome·`chore(release): set version to 1.0.0`. 아직 tag/release는 없다.
+
+### S6-6b 브랜치 전체·최종 검사·한 PR
+
+- [ ] 전체 브랜치 독립 검토: 네 수정·통합·소유권·redaction·업데이트·문서/근거 일치. 해결되지 않은 항목과 SC 판정을 먼저 고정한다.
+- [ ] 자원 supervisor 아래 최종 **전체 check·workspace/native 해당 clippy·build·E2E를 한 번** 계획된 entrypoint로 실행한다. `scripts/check-inner.sh`가 포함하는 항목은 중복 별도 실행하지 않고 missing scope만 보충한다. 실패 뒤에는 실패/직접 영향 범위만 재실행한다.
+- [ ] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 이번 계획 작성 요청의 push 금지는 그대로다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다.
+- [ ] 그 Windows artifact로 §14 설치 수용·SC 계측을 수행한다. Windows 전용 build/strict Clippy는 Windows 근거를 쓴다. 로컬 Linux 성공을 Windows 성공으로 바꾸지 않는다. 제품/packaging/runtime 입력이 바뀌면 새 candidate·artifact와 영향 수용을 다시 결속한다.
+- [ ] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다.
+- [ ] PROGRESS·단일 PR 본문용 결과에 원본 실패→수정 영향 재검증, ignored/NOT_RUN·historical source·timing·cleanup·hash를 구분해 기록한다. artifact는 common-dir에 bounded JSON/log/trace로 보존하며 새 날짜별 Markdown 보고서를 만들지 않는다.
+- [ ] 결과 문서·최소 영향 수정의 검토와 Biome 뒤 필요한 최종 branch push·**S6 PR 한 번**. `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` 최종 PR SHA 필수 성공 및 branch protection 유지. E2E 등 실제 요구 job도 확인한다.
+- [ ] 자동 리뷰는 현재 사용자 설정상 OFF. #646의 “머지까지만” 독립 검토 대체는 **S6 전체 면제 아님**. S6 PR 전 사용자에게 재활성화 여부 또는 독립 검토 대체 절차를 확인할 결정 항목으로 남긴다. 계획/로컬 구현 준비를 막지 않으며 NOT_RUN(비활성화)을 PASS·한도 소진으로 쓰지 않는다.
+- [ ] 자동 리뷰를 사용하는 결정이면 CONVENTIONS §8의 완료 SHA 최대3회·4회 이후 실제 손실/유출/미승인 실행 차단 기준을 적용한다. 수정은 회차별 묶고 별도 검토한다. 다른 절차는 명시 결정 기록 뒤 적용한다.
+- [ ] 승인된 절차·필수 CI를 모두 충족한 뒤 squash merge, main CI 확인·ff-only 동기화. final branch/merge tree와 source 근거를 비교한다. 공개는 아직 하지 않는다.
+
+### S6-6c 공개 직전 단 한 번의 명시 승인
+
+- [ ] 공개 준비 결과·SC1–10·미실행/미달·설치 산출물·릴리스 노트 초안을 구체적으로 제시한다. 사용자가 판단할 결과를 먼저 완성한다.
+- [ ] 아래13개 참고 확인과 함께 **v1.0.0 공개 승인**을 받는다. 사용자는 목록을 모두 직접 실행하지 않고 승인할 수 있다. 승인 없이 tag push·GitHub Release를 만들지 않는다.
+
+| 번호 | 공개 직전 확인 |
+|---|---|
+| 1–5 | 새 설치 첫 화면, agent 전 과정, service/log, note 작성, v0.9 제거 후 정상 |
+| 6–7 | Windows 배율150%/200% 가독성, 키보드만으로 palette→작업→확인→오류 재시도 |
+| 8–9 | API 응답 일일 기록 append, editor JSON 선택→변환 도구 |
+| 10 | R1:30분 idle 연결·세션 유지(이전까지 NOT_RUN) |
+| 11 | R2:사용자 WSL shutdown 뒤 reconnect·소요 시간(이전까지 NOT_RUN) |
+| 12 | 방해 금지 알림 센터 기록·해제 후 popup/taskbar |
+| 13 | 비내부 WSL 배포판2개 이상 선택 화면; 하나뿐이면 해당 없음 |
+
+- [ ] 승인된 main SHA에 주석 태그 `v1.0.0`과 검토한 release notes를 만들고 push한다. prod setup 하나·digest·source·release≤40분·다운로드를 확인한다.
+- [ ] 공개 installer 새 설치1회는 승인된 독립 Windows 환경에서 확인한다. 다음 patch가 아직 없으면 “실제 공개버전 간 업데이트”는 NOT_RUN으로 두며 fixture/accept updater 수용과 구분한다. patch 출시 때 실제 업데이트1회 확인한다.
+- [ ] 최종 공개 결과·SC/미결·소유 자원 정리를 PROGRESS에 기록한다. clean/merged 확인 후 worktree→prune→local/remote branch 정리, archive/cache/사용자 자료 보존.
+
+## 17. §8 후속 항목 판정·남은 결정
+
+| 항목 | 이번 계획 판정 |
+|---|---|
+| #645 credential root4367201426 | 이미 수정·머지됨. 회귀 유지, 새 결함으로 재개하지 않음 |
+| #645 HTTP authorize4367201424 | S6-1b.3 포함 |
+| #644 quit finish/new-window | S6-3b bounded reproduction·updater 종료 계약에 필요한 보정 포함; 불필요함이 증명된 경우만 이유를 남겨 defer |
+| #642 Windows readiness PID 귀속 | S6-4 포함, 직접/native 모두 확인 |
+| custom vault support masking | S6-1b.4 포함 |
+| Windows 파일명 casing/cfg 과거 수정 | 종결. 기존 회귀·Windows CI로 유지 |
+| 과거 native·SC gaps | S6-4 재수행 목록, 환경 부재·사용자 R1/R2는 정확히 NOT_RUN |
+| 세 dependency advisory | S6-1c 호환 조사·좁은 업데이트, exploit 추정 금지 |
+| 자동 리뷰 OFF | S6 PR 전 절차 결정 미결. #646 예외를 포괄 승인으로 확장하지 않음 |
+| 공개·태그 | 이번 요청에 승인 없음. S6-6c에서만 명시 승인 |
+
+**S6-1 계획의 완료 조건:** 네 새 발견과 기존 요구의 담당 과제·의존·실패 시험·소유 자원·검토/커밋·PR/공개 경계가 빠짐없이 있고, 별도 계획 검토를 통과한다. 계획 작성은 어떤 제품 수정이나 성공 기준 달성을 뜻하지 않는다.
