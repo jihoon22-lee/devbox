@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1만 구현·좁은 검증 완료/별도 검토 대기이며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1과 S6-1a.2는 직접 검증·별도 검토 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -76,11 +76,16 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 - 정상 미개방 B의 multi-file Rename은 성공해야 한다. 미포함/예산 초과는 해당 범위를 안전하게 확인하지 못했다는 행동 안내로 거절한다. 이전 응답의 canonical target URI를 제한된 힌트로 **다음 요청 캡처에서 우선**할 수 있다. 재시도는 fresh capture 후 서버에 Rename을 새로 요청하며 옛 edit를 재생하지 않는다. target 집합 자체가 예산을 넘으면 범위를 줄여 요청하거나 수동 검토하도록 명시한다. 모든 미개방 파일을 조용히 금지하지 않는다.
 - versioned edit는 기존 relay version 매핑과 canonical authority를 유지한다. unsolicited `workspace/applyEdit`에는 최근 Rename token을 임의 부착하지 않는다. 정확한 versioned owned-document proof가 없으면 `applied:false`로 거절한다. 실패가 공유 server generation을 불필요하게 죽이지 않는다.
 
-- [ ] RED: 보존된 두 재현을 **올바른 내용 유지 기대**로 반전한다. B 외부 디스크 변경과 요청 뒤 B 열기·편집 모두 오래된 edit를 거절해야 한다.
-- [ ] GREEN: 원래 unopened B multi-file 성공 및 이미 dirty인 열린 A+미개방 B 성공, 이미 열린 B 변경 거절, 명시 버전 불일치, generation 교체·wrong stream/request/root·token replay/TTL·cancel/disconnect, snapshot 초과, 중간 파일 삭제/경로 교체, target2 실패 시 target1 무변경, CRLF/BOM·UTF16, 큰/growing 파일의 실제 read budget, capture 중 actor 응답성·취소 후 worker accounting.
-- [ ] 검토: “응답 도착 후 claim/read 성공”과 “서버 offset 출처가 증명됨”을 혼동하지 않는지 별도 점검. 이 경계의 aggregate 비용도 기록한다.
+- [x] RED: 보존된 두 재현을 올바른 내용 유지 기대로 반전해 실제2 FAIL을 확인했다. bounded reader1·취소 완료 queue1·저장 ACK rawRev1 및 독립 검토 R1 omission1의 추가 causal RED도 각각 기록했다.
+- [x] GREEN: 문서 권한12·frontend46·LSP41·실제 CLI 어댑터2로 고유101 PASS(여러 직접 영향 실행의 합). 정상 미개방/dirty-open·stale/부분/삭제/identity 교체·버전/세대/소유/TTL/replay·BOM/CRLF와 UTF16 offset·실제 read budget·capture 응답성/취소 accounting을 확인했다. 초기 fixture/TS 설정 실패와 causal RED는 `s6-1a2/summary.json`에서 구분한다.
+- [x] 검토: 요청 전 출처와 응답 후 권한 확인을 구분하고 aggregate 비용을 점검했다. P3 omission 보완은 RED1→좁은2 PASS, 문서의 과거 수치 치환도 원문 복원했다. `s6-1a2/independent-rereview.json` 최종 APPROVE·잔여지적0.
+
+구현 상세: 반환 URI는 요청 전 집합의 canonical key와 정확히 맞아야 하며, 응답 시 alias를 새 canonical 파일로 해석하지 않는다. 누락 target URI는 최대256개 힌트로 다음 명시적 요청의 fresh capture에서 우선하고 이전 edit는 재생하지 않는다. 기존 definition URI 정규화는 유지한다. 일반 응답 authority 실패도 요청 오류로 거절하며 공유 generation을 죽이지 않는다. `didSave`는 raw revision만 갱신해 저장 뒤 Rename과 더 최신 dirty buffer를 모두 유지한다. relay의 synchronized buffer와 모순되어 제외한 canonical disk 후보도 동일 metadata 예산 안에서 `Changed` 사유를 보관하며 기록 공간 부족은 `MetadataLimit`으로 남긴다.
+
+비용 구분: capture의 기본32MiB 실제 읽기/2초 cooperative 경계는 소유40MiB fixture에서1,596ms·32MiB·6 covered로 측정했다. Rename 응답 재정규화/renderer 중복 disk read는 제거했다. 최종 daemon authority는 raw size 합32MiB·각 파일5MiB·target256·2초 cooperative deadline/target별 TTL 검사로 제한하고 첫 불일치에 즉시 중단한다. 성공 읽기는≤32MiB, 변경된 첫 파일이 커졌을 때는≤37MiB다. 이미 시작한 filesystem syscall을 강제로 끊거나 전체 작업 wall time≤2초라고 주장하지 않는다. 최초 미개방 대상의 `documents.claim`과 proof 없는 기존 formatting/unsolicited read는 일반 document/CAS 경로이므로 새 capture IO 상한과 별도다. 기존 스택의 `devbox-documents`·`sha2` workspace 의존 edge만 추가했고 새 패키지/버전은 없다.
+
 - [ ] 실제 언어 서버 Rename 수용은 S6-4에 둔다. fake RPC/CodeMirror 시험을 native PASS로 바꾸지 않는다.
-- [ ] 커밋: `fix(lsp): bind workspace edits to target snapshots`.
+- [x] 커밋: `fix(lsp): bind workspace edits to target snapshots`(로컬).
 
 ## 5. S6-1a.3 — Windows 사본을 프로젝트·worktree 소유권에 결속
 

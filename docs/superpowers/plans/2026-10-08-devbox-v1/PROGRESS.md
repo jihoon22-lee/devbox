@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 구현·고유21 직접 검증·별도 검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자2026-10-25 “S6 계획대로 작업 진행 해 주세요”에 따라 `v1/s6-release`의 S6-1a.1 EnvEditor 늦은 읽기를 수정한다. worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반563523db. 과제별 별도 검토 뒤 부모가 Biome·커밋하고 다음 과제로 진행한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | 사용자2026-10-25 “S6 계획대로 작업 진행 해 주세요”에 따라 `v1/s6-release`의 S6-1a.2 LSP 요청 전 대상 출처를 보완했다. worktree `/home/jihoon/projects/devbox-wt/v1-s6-release`, 기반6e76df9b. 독립 재검토 지적0을 확인했고 완료 Biome 뒤 부모가 과제 커밋하고 S6-1a.3으로 진행한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1a.1 로컬 완료 뒤 S6-1a.2 LSP 대상 출처 보완을 시작한다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
-| 마지막 갱신 | 2026-10-25 · S6-1a.1 causal RED1→환경 관련19 PASS, 추가 환경 검토 gate1·root 확인 정리1 PASS(고유21), 변경3파일 Biome check PASS·근거 동결·독립 검토 APPROVE. 완료 Biome 뒤 로컬 커밋. 검증 artifact는 common-dir `devbox-verification/s6-1a1/`. 전체 검사·빌드·E2E·Windows 실기·push·PR·공개는 이 과제에서 실행하지 않았다. |
+| 다음 제품 작업 | S6-1a.2 로컬 완료 뒤 S6-1a.3 Windows 사본 identity·실행 reader 수명 보완을 시작한다. 현재 push·PR 없음; 공개/태그는 마지막 별도 명시 승인이 필요하다. |
+| 마지막 갱신 | 2026-10-25 · S6-1a.2 causal RED6(최초 stale2·IO budget1·cancel queue1·save rawRev1·R1 omission1)→고유101 직접 영향 PASS, scoped TS·변경 TS Biome PASS. common-dir `devbox-verification/s6-1a2/`에 명령/실패/자원/측정/최종 source를 동결했다. 독립 재검토 APPROVE·잔여지적0, 완료 Biome 뒤 로컬 커밋. 전체 검사·Windows/native·push·PR·공개는 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -82,7 +82,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.1 로컬 완료·1a.2 다음) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1a.2 로컬 완료·1a.3 다음) | 2026-10-25 | | 구현 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -96,7 +96,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | S6-1a.1 구현·좁은 검증 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | S6-1a.2 고유101 직접 검증·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -149,11 +149,23 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1 고유21 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1 로컬 완료;1a.2 고유101 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-1a.2 LSP 대상 출처 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반6e76df9b에서 보존된 stale-unopened 두 재현을 올바른 내용 유지 기대값으로 반전해2 FAIL을 확인했다. 추가로 기존 EOF hash가 read budget을 넘는1 FAIL, 취소 완료가 가득 찬 actor queue에서 사라지는1 FAIL, 저장 ACK 뒤 rawRev가 갱신되지 않는1 FAIL을 확인하고 고쳤다. 중간 fixture 기대값/컴파일/TS 설정·타입 실패는 causal RED와 분리했다.
+- 문서 authority 안의 별도 supervised capture가 canonical covered key·raw DiskRev·정규화 SHA256·미포함 사유를 고정한다. 파일4096·5MiB/파일·실제 읽기32MiB·2초 cooperative deadline·entry16384·metadata4MiB, client1/daemon4 작업 제한이며 실제 worker 종료까지 accounting을 유지한다. 일반 cancel 완료는 queue가 비어질 때까지 전달하고 actor 종료 때만 버린다.
+- 증명은 실제 stream/client·server generation·canonical root·정확한 Rename ID에 결속된다. 응답 뒤 claim/read로 기준점을 만들지 않으며 최종 target 검증/ACK까지 보관하고 TTL30초·cancel/disconnect·finish로 폐기한다. 반환 URI의 alias 재해석을 거절하고, 누락 target URI 힌트는 다음 명시적 fresh 요청에서 동일 authority로 canonical화해 검사한다. versioned mapping은 유지하며 unsolicited unversioned `workspace/applyEdit`는 `applied:false`다.
+- 열린 buffer snapshot/lease/editSeq·relay version과 미개방 raw revision/정규화 hash를 구분한다. dirty-open A+미개방 B의 정상 Rename, 저장 직후 Rename을 유지한다. 새로 열어 수정한 B나 디스크/lease/closing이 바뀐 target 하나라도 있으면 전부 거절하고 동기적 undoable buffer 변경 전에 모든 검증을 끝낸다. 자동 disk save는 없다. `didSave`는 현재 text/version을 덮지 않고 authority rawRev만 갱신한다.
+- 읽기 비용: Rename 응답의 authority 재정규화와 renderer 중복 disk read를 제거했다. 최종 bounded authority는 expected raw size 합32MiB·각5MiB·target256·cooperative2초·각 target TTL을 확인하며 첫 mismatch에서 즉시 중단한다. 성공 raw read≤32MiB, 첫 변경 파일 증가를 포함한 실패 상한≤37MiB다. 개별 syscall 비선점으로 wall time≤2초를 약속하지 않는다. 최초 `documents.claim` 및 proof 없는 formatting/unsolicited 기존 document read의 full-file CAS 비용은 별도다. 전체 프로젝트 원자 snapshot이나 임의 서버의 의미적 정확성을 주장하지 않는다.
+- 고유101 PASS: documents12(중복1 제외), frontend46(새 freshness15·workspace14·session12·transport5), LSP41(lib36·actual actor2·service3), 실제 CLI 어댑터2. actual CLI에서 raw BOM/CRLF revision과 normalized hash, dirty A/unopened B, external stale·wrong stream·fresh retry·ACK replay·edit-save-rename을 확인했다. 테스트 서버는 소유 fake stdio fixture이며 실제 언어 서버/Windows 수용 PASS가 아니다. 소유40MiB capture fixture는1,596ms·실제32MiB·6 covered·ByteLimit이었다.
+- 독립 전체 검토1은 P1/P2 없이 계획 준수 P3 한 건(S6-1a2-R1)을 요청했다. 다른 소유자의 synchronized dirty buffer와 모순된 disk 후보를 제외할 때 canonical key의 `Changed` omission을 동일 metadata 예산으로 보관한다. 공간이 없으면 기존 기록을 유지하고 `MetadataLimit` stop을 남긴다. 실제 capture completion fixture의 누락0→기대1 RED1 뒤 해당 회귀/예산 경계2 PASS(다른34 lib 시험 제외), 추가 authority read0·conflicting B 제외·A+B 전체 증명 거절을 확인했다. 앞선 review/source/artifact는 `review1-before/`에 보존했다. delta 검토에서 발견한 과거 S1 수치 치환 오류도 원문99로 복원했고 역사 suffix의 기준 커밋 동일성을 확인했다. 최종 `independent-rereview.json`은 APPROVE·잔여지적0이다.
+- `devbox-documents`·`sha2` 기존 workspace 의존 edge만 추가했고 패키지/버전 증가는 없다. typed 증명은 정상 `xtask gen-ts`로 생성했으며 새 typed RPC JSON Value 경계는 만들지 않았다. ordinary outside-definition 응답 authority 실패도 기존 generation 오류 대신 해당 요청 오류로 반환한다. URI 권한을 우회하거나 성공 응답을 내지는 않는다.
+- required cgroup/CPU4/nice10/jobs2/workers2/threads2/common lock으로 실행했다. `s6-1a2/summary.json`, `commands.json`, `source-freeze.json`·원본 log/resources가 근거다. 초기 scoped TS artifact 위치의 type-resolution 실패 및 fixture callback 타입1 오류도 보존했고 최종 scoped TS/변경 TS Biome는 PASS다. 독립 최종 검토 APPROVE 뒤 완료 Biome를 실행하고 로컬 커밋한다. 전체 check/clippy/build/E2E·Windows/native·push/PR은 이 과제에서 미실행이다.
 
 ### S6-1a.1 환경 늦은 읽기 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

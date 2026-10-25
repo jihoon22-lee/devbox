@@ -17,6 +17,7 @@ fn access() -> DocumentAccess {
             Ok(DocumentGrant {
                 uri,
                 disk_text: "disk".into(),
+                disk_rev: None,
                 lease_id,
             })
         })
@@ -206,6 +207,7 @@ async fn document_refs_readonly_and_owner_transfer_preserve_one_open_and_monoton
                     uri,
                     lease_id: lease,
                     disk_text: "disk".into(),
+                    disk_rev: None,
                 })
             })
         })
@@ -355,6 +357,7 @@ async fn review_cancelled_or_disconnected_late_reply_has_no_authority_side_effec
                     uri,
                     lease_id,
                     disk_text: String::new(),
+                    disk_rev: None,
                 })
             })
         });
@@ -407,18 +410,22 @@ async fn review_cancelled_or_disconnected_late_reply_has_no_authority_side_effec
             .await
             .expect("live request");
         let id = parse(&live.server[0])["id"].clone();
-        assert!(
-            r.server(
+        let rejected = r
+            .server(
                 &json!({"jsonrpc":"2.0","id":id,"result":{"uri":"file:///dependency/lib.rs"}})
                     .to_string(),
-                &authority
+                &authority,
             )
             .await
-            .is_err()
-        );
+            .expect("ordinary outside target refusal preserves shared generation");
+        assert_eq!(parse(&rejected.clients[0].1)["error"]["code"], -32801);
+        assert!(r.ready());
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }
 
 #[path = "version_tests.rs"]
 mod versions;
+
+#[path = "freshness_tests.rs"]
+mod freshness;

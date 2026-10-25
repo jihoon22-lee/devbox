@@ -44,7 +44,12 @@ async fn context(s: &Services, p: &OpenLsp) -> R<ProjectContext> {
                 path: relative.into(),
             };
             let disk = documents
-                .code_authority(&key, lease_id.as_deref())
+                .code_authority_at(
+                    &key,
+                    lease_id.as_deref(),
+                    &root,
+                    tokio_util::sync::CancellationToken::new(),
+                )
                 .await
                 .map_err(|error| match error {
                     Fail::Domain(DocumentsError::LeaseLost { .. }) => LspError::LeaseLost,
@@ -58,6 +63,7 @@ async fn context(s: &Services, p: &OpenLsp) -> R<ProjectContext> {
             Ok(DocumentGrant {
                 uri,
                 disk_text: disk.text.unwrap_or_default(),
+                disk_rev: disk.rev,
                 lease_id,
             })
         })
@@ -65,6 +71,32 @@ async fn context(s: &Services, p: &OpenLsp) -> R<ProjectContext> {
                 Box<dyn std::future::Future<Output = Result<DocumentGrant, LspError>> + Send>,
             >
     });
+    let documents = s.documents.clone();
+    let capture_root = root.clone();
+    let capture_project = format!("project:{}", p.project_id);
+    let capture: devbox_lsp::adapters::CaptureAccess =
+        Arc::new(move |priority: Vec<String>, cancel| {
+            let documents = documents.clone();
+            let root = capture_root.clone();
+            let project = capture_project.clone();
+            Box::pin(async move {
+                let priority = priority
+                    .into_iter()
+                    .filter_map(|uri| {
+                        let path = devbox_lsp::uri::file_path(&uri)?;
+                        let path = path.strip_prefix(&root).ok()?.to_str()?.to_owned();
+                        Some(DocKey {
+                            root: project.clone(),
+                            path,
+                        })
+                    })
+                    .collect();
+                documents
+                    .capture_code(project, root, priority, cancel)
+                    .await
+                    .map_err(|_| LspError::OutsideProject)
+            })
+        });
     let observe = s.observe.clone();
     let hub = s.hub.clone();
     let project_id = p.project_id.clone();
@@ -130,6 +162,7 @@ async fn context(s: &Services, p: &OpenLsp) -> R<ProjectContext> {
         project_id: p.project_id.clone(),
         root,
         access,
+        capture,
         diagnostics,
         restarted,
     })

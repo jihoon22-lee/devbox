@@ -39,6 +39,9 @@ fn main() -> Result<()> {
     // `search.query` stream lines (JSON Lines of this type).
     ts_rs::TypeVisitor::visit::<devbox_search::SearchChunk>(&mut exporter);
     ts_rs::TypeVisitor::visit::<devbox_lsp::RelayMessage>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_lsp::WorkspaceProof>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_lsp::WorkspaceIdentity>(&mut exporter);
+    ts_rs::TypeVisitor::visit::<devbox_lsp::WorkspaceValidation>(&mut exporter);
     let out = exporter.render()?;
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src/rpc/gen/rpc.ts");
     update_file(&path, &out, check)?;

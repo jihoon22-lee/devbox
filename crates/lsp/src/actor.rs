@@ -30,6 +30,11 @@ pub(crate) enum Command {
         id: u32,
         message: RelayMessage,
     },
+    Captured {
+        client: u32,
+        job: u64,
+        result: Result<devbox_documents::CodeCapture, LspError>,
+    },
     Detach {
         id: u32,
     },
@@ -92,6 +97,7 @@ pub(crate) fn spawn(
             retry_at: None,
             init_deadline: None,
             tasks: TaskTracker::new(),
+            captures: crate::capture::Captures::default(),
         };
         actor.run().await;
         done.cancel();
@@ -115,6 +121,7 @@ struct Actor {
     retry_at: Option<Instant>,
     init_deadline: Option<Instant>,
     tasks: TaskTracker,
+    captures: crate::capture::Captures,
 }
 impl Actor {
     fn now(&self) -> u64 {
@@ -172,6 +179,7 @@ impl Actor {
         self.info().pid = None;
     }
     fn close_clients(&mut self) {
+        self.captures.cancel_all();
         let clients = std::mem::take(&mut self.clients);
         for (_, client) in clients {
             client.close(&self.tasks);
@@ -198,6 +206,7 @@ impl Actor {
         }
     }
     fn detach(&mut self, id: u32) -> Result<(), LspError> {
+        self.captures.cancel(id, None);
         if let Some(client) = self.clients.remove(&id) {
             client.close(&self.tasks);
             self.policy.left(self.now());
@@ -270,10 +279,73 @@ impl Actor {
                     self.detach(id)?;
                 }
             }
+            Command::Captured {
+                client,
+                job,
+                result,
+            } => {
+                let generation = self.generation();
+                match self
+                    .captures
+                    .complete(client, job, generation, result, &mut self.relay)
+                {
+                    Ok(Some(message)) => {
+                        let request = serde_json::from_str::<serde_json::Value>(&message.json)
+                            .ok()
+                            .and_then(|v| v.get("id").cloned())
+                            .unwrap_or_default();
+                        match self
+                            .relay
+                            .client(client, message, &self.project.access)
+                            .await
+                        {
+                            Ok(output) => self.deliver(output)?,
+                            Err(_) => {
+                                self.relay.proofs.cancel(client, &request);
+                                self.deliver(RelayOutput {
+                                    clients: vec![(client, crate::workspace::refused(request))],
+                                    ..Default::default()
+                                })?;
+                            }
+                        }
+                    }
+                    Err(request) => self.deliver(RelayOutput {
+                        clients: vec![(client, crate::workspace::refused(request))],
+                        ..Default::default()
+                    })?,
+                    Ok(None) => {}
+                }
+            }
             Command::Detach { id } => self.detach(id)?,
             Command::Message { id, message } => {
                 if !self.clients.contains_key(&id) {
                     return Ok(());
+                }
+                if let Some((method, request)) = crate::capture::method(&message) {
+                    if method == "$/cancelRequest" {
+                        self.captures.cancel(id, request.as_ref());
+                    }
+                    if method == "textDocument/rename" {
+                        let generation = self.generation();
+                        if let Err((request, _)) = self.captures.start(
+                            id,
+                            generation,
+                            message,
+                            &mut self.relay,
+                            crate::capture::CaptureTask {
+                                access: self.project.capture.clone(),
+                                commands: self.commands.clone(),
+                                tasks: &self.tasks,
+                                stop: &self.stop,
+                            },
+                        ) {
+                            self.deliver(RelayOutput {
+                                clients: vec![(id, crate::workspace::refused(request))],
+                                ..Default::default()
+                            })?;
+                        }
+                        return Ok(());
+                    }
                 }
                 match self.relay.client(id, message, &self.project.access).await {
                     Ok(output) => self.deliver(output)?,
@@ -296,6 +368,7 @@ impl Actor {
         Ok(())
     }
     async fn tick(&mut self) -> Result<(), LspError> {
+        self.relay.proofs.expire();
         let closed: Vec<_> = self
             .clients
             .iter()

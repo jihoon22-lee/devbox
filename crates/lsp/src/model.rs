@@ -108,3 +108,43 @@ domain_error! {
   InstallUnavailable = "lsp.install_unavailable",
  }
 }
+
+/// Daemon-created request provenance, never accepted from the language server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceBaseline {
+    pub uri: String,
+    pub disk_rev: Option<devbox_documents::DiskRev>,
+    pub text_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub lease_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub version: Option<i64>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceProof {
+    pub token: String,
+    pub request_id: String,
+    pub root_uri: String,
+    pub generation: String,
+    pub targets: Vec<WorkspaceBaseline>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceIdentity {
+    pub token: String,
+    pub request_id: String,
+    pub root_uri: String,
+    pub generation: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceValidation {
+    #[serde(flatten)]
+    #[ts(flatten)]
+    pub identity: WorkspaceIdentity,
+    pub targets: Vec<WorkspaceBaseline>,
+}

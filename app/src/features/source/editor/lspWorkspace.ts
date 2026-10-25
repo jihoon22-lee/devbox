@@ -6,6 +6,13 @@ import { keyId } from "../../documents/offlineJournal";
 import { useDocuments } from "../../documents/store";
 import { useSource } from "../store";
 import { validCodeKey } from "./location";
+import {
+  proofIdentity,
+  textHash,
+  type WorkspaceIdentity,
+  type WorkspaceProof,
+  type WorkspaceValidation,
+} from "./lspProof";
 
 export function projectUris(projectId: string, path: string) {
   const base = path.replace(/\/+$/, "");
@@ -42,6 +49,11 @@ export interface EditContext {
   /** Snapshot at request time; local edits while awaiting a response reject the whole change. */
   expected?: ReadonlyMap<string, Doc>;
   version?(uri: string): number | undefined;
+  proof?: WorkspaceProof;
+  validate?(request: WorkspaceValidation): Promise<boolean>;
+  finish?(identity: WorkspaceIdentity): void;
+  /** Unsolicited requests require an exact owned relay version. */
+  unsolicited?: boolean;
 }
 interface Position {
   line: number;
@@ -51,7 +63,10 @@ interface Edit {
   range: { start: Position; end: Position };
   newText: string;
 }
-const refusal = () => new Error("파일 상태가 바뀌었거나 지원하지 않는 변경입니다. 다시 시도해 주세요.");
+const refusal = () =>
+  new Error(
+    "파일 상태가 바뀌었거나 변경 범위를 안전하게 확인하지 못했습니다. 범위를 줄여 이름 바꾸기를 다시 요청하거나 변경을 직접 검토해 주세요.",
+  );
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw refusal();
   return value as Record<string, unknown>;
@@ -121,11 +136,22 @@ function writable(doc: Doc | undefined): doc is Doc & { leaseId: string } {
 
 /** Validate every target before one synchronous, undoable buffer-only commit. */
 export async function applyWorkspaceEdit(context: EditContext, value: unknown): Promise<void> {
+  try {
+    await apply(context, value);
+  } finally {
+    if (context.proof) context.finish?.(proofIdentity(context.proof));
+  }
+}
+async function apply(context: EditContext, value: unknown): Promise<void> {
   if (!context.current()) throw refusal();
   const rows = entries(value);
   if (rows.length > 256) throw refusal();
   const targets = rows.map((row) => ({ ...row, key: context.uris.key(row.uri) }));
   if (new Set(targets.map(({ key }) => keyId(key))).size !== targets.length) throw refusal();
+  const proof = context.proof;
+  if (proof && (proof.rootUri !== context.uris.rootUri || !context.validate || !context.finish)) throw refusal();
+  const baseline = new Map(proof?.targets.map((target) => [target.uri, target]));
+  if (proof && (baseline.size !== targets.length || proof.targets.length !== targets.length)) throw refusal();
   const store = useDocuments.getState();
   const newlyOpened = targets.filter(({ key }) => !store.find(key)).map(({ key }) => key);
   for (const { key } of targets) store.open(key, { kind: "code" });
@@ -134,19 +160,54 @@ export async function applyWorkspaceEdit(context: EditContext, value: unknown): 
     const doc = store.find(key);
     if (!writable(doc) || (version !== undefined && version !== context.version?.(uri))) throw refusal();
     const expected = context.expected?.get(keyId(key));
+    if (context.unsolicited && (version === undefined || !expected)) throw refusal();
+    if (!expected && !baseline.has(uri)) throw refusal();
+    if (proof && !baseline.has(uri)) throw refusal();
     if (
       expected &&
-      (expected.editSeq !== doc.editSeq || expected.leaseId !== doc.leaseId || !sameRev(expected.diskRev, doc.diskRev))
+      (expected.text !== doc.text ||
+        expected.editSeq !== doc.editSeq ||
+        expected.leaseId !== doc.leaseId ||
+        !sameRev(expected.diskRev, doc.diskRev))
     )
       throw refusal();
-    return { doc, text: replacement(doc.text, edits) };
+    return { doc, uri, text: replacement(doc.text, edits) };
   });
+  const validated = await Promise.all(
+    plans.map(async ({ doc, uri }) => {
+      const expected = baseline.get(uri);
+      const hash = await textHash(doc.text);
+      if (
+        expected &&
+        (expected.textHash !== hash ||
+          !exactRev(expected.diskRev, doc.diskRev) ||
+          (expected.leaseId !== undefined &&
+            (expected.leaseId !== doc.leaseId || expected.version !== context.version?.(uri))))
+      )
+        throw refusal();
+      return {
+        uri,
+        diskRev: doc.diskRev ?? null,
+        textHash: hash,
+        leaseId: doc.leaseId,
+        ...(expected?.version !== undefined ? { version: expected.version } : {}),
+      };
+    }),
+  );
   const { lost } = await context.rpc.call("documents.renew", { leaseIds: plans.map(({ doc }) => doc.leaseId) });
   if (lost.length) throw refusal();
-  for (const { doc } of plans) {
+  for (const { doc } of proof ? [] : plans) {
     const disk = await context.rpc.call("documents.read", { key: doc.key, policy: { kind: "code" } });
     if (disk.readOnly || !sameRev(disk.rev, doc.diskRev)) throw refusal();
   }
+  if (
+    proof &&
+    !(await context.validate?.({
+      ...proofIdentity(proof),
+      targets: validated.sort((a, b) => (a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : 0)),
+    }))
+  )
+    throw refusal();
   const current = useDocuments.getState();
   if (
     !context.current() ||
@@ -160,3 +221,12 @@ export async function applyWorkspaceEdit(context: EditContext, value: unknown): 
 }
 
 export type TextEdit = Edit;
+
+function exactRev(
+  a: import("../../../rpc/gen/rpc").DiskRev | null | undefined,
+  b: import("../../../rpc/gen/rpc").DiskRev | null | undefined,
+): boolean {
+  return (
+    a === b || (!!a && !!b && a.hash === b.hash && a.size === b.size && a.ino === b.ino && a.mtimeNs === b.mtimeNs)
+  );
+}

@@ -179,3 +179,187 @@ async fn lsp_rpc_relay_uses_document_authority_and_replaces_problem_diagnostics(
         );
     }
 }
+
+#[tokio::test]
+async fn rename_provenance_uses_real_code_authority_raw_rev_and_dirty_buffer_until_finish() {
+    use devbox_lsp::{WorkspaceIdentity, WorkspaceProof, WorkspaceValidation};
+    use sha2::{Digest, Sha256};
+    let mut d = TestDaemon::fixture();
+    let bin = d.home.path().join("lsp-bin");
+    std::fs::create_dir(&bin).expect("owned bin");
+    let exe = std::env::current_exe()
+        .expect("exe")
+        .parent()
+        .expect("deps")
+        .parent()
+        .expect("debug")
+        .join("examples/fake_lsp");
+    assert!(exe.is_file(), "build owned fake_lsp first");
+    std::os::unix::fs::symlink(exe, bin.join("rust-analyzer")).expect("owned launcher");
+    d.extra_env
+        .push(("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())));
+    d.launch();
+    let client = d.client().await;
+    let other = d.client().await;
+    let root = d.home.path().join("project");
+    std::fs::create_dir(&root).expect("owned root");
+    std::fs::write(root.join("a.rs"), "const a = 1;\n").expect("a");
+    std::fs::write(root.join("b.rs"), "\u{feff}const b = 1;\r\n").expect("b");
+    let project = d.add_project(&client, root.to_str().expect("utf8")).await;
+    let key = |path: &str| DocKey {
+        root: format!("project:{project}"),
+        path: path.into(),
+    };
+    let claim = |path: &str| ClaimDocument {
+        key: key(path),
+        policy: DocPolicy {
+            kind: DocKind::Code,
+        },
+        window_id: "owner".into(),
+    };
+    let a = bounded(client.call::<DocumentsClaim>(&claim("a.rs")))
+        .await
+        .expect("a lease");
+    let lease_a = a.lease_id.expect("a owner");
+    let stream = open(&client, &project).await;
+    let stranger = open(&other, &project).await;
+    let uri_a = devbox_lsp::uri::file_uri(&root.join("a.rs")).expect("a URI");
+    let uri_b = devbox_lsp::uri::file_uri(&root.join("b.rs")).expect("b URI");
+    send(&stream,json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri_a,"version":0,"languageId":"rust","text":"const a = 2;\n"}}}),Some(&lease_a)).await;
+    let request = |id| json!({"jsonrpc":"2.0","id":id,"method":"textDocument/rename","params":{"textDocument":{"uri":uri_a},"newName":"next","changes":{uri_a.clone():[],uri_b.clone():[]}}});
+    send(&stream, request(2), Some(&lease_a)).await;
+    let result = response(&stream).await;
+    let proof: WorkspaceProof =
+        serde_json::from_value(result["result"]["proof"].clone()).expect("daemon proof");
+    assert_eq!(proof.request_id, "2");
+    assert_eq!(proof.targets.len(), 2);
+    assert_eq!(
+        proof.targets[0].text_hash,
+        format!("{:x}", Sha256::digest(b"const a = 2;\n"))
+    );
+    assert_eq!(
+        proof.targets[1].text_hash,
+        format!("{:x}", Sha256::digest(b"const b = 1;\n"))
+    );
+    assert_ne!(
+        proof.targets[1]
+            .disk_rev
+            .as_ref()
+            .expect("raw revision")
+            .hash,
+        proof.targets[1].text_hash
+    );
+    let b = bounded(client.call::<DocumentsClaim>(&claim("b.rs")))
+        .await
+        .expect("newly opened b");
+    let lease_b = b.lease_id.expect("b owner");
+    let identity = |proof: &WorkspaceProof| WorkspaceIdentity {
+        token: proof.token.clone(),
+        request_id: proof.request_id.clone(),
+        root_uri: proof.root_uri.clone(),
+        generation: proof.generation.clone(),
+    };
+    let validation = |proof: &WorkspaceProof| {
+        let mut targets = proof.targets.clone();
+        targets[1].lease_id = Some(lease_b.clone());
+        WorkspaceValidation {
+            identity: identity(proof),
+            targets,
+        }
+    };
+    send(&stranger,json!({"jsonrpc":"2.0","id":3,"method":"devbox/validateWorkspaceEdit","params":validation(&proof)}),None).await;
+    assert_eq!(
+        response(&stranger).await["result"],
+        false,
+        "wrong actual stream"
+    );
+    std::fs::write(root.join("b.rs"), "const external = 3;\n").expect("external edit");
+    send(&stream,json!({"jsonrpc":"2.0","id":3,"method":"devbox/validateWorkspaceEdit","params":validation(&proof)}),None).await;
+    assert_eq!(
+        response(&stream).await["result"],
+        false,
+        "late disk cannot become request baseline"
+    );
+    send(
+        &stream,
+        json!({"jsonrpc":"2.0","method":"devbox/finishWorkspaceEdit","params":identity(&proof)}),
+        None,
+    )
+    .await;
+    // Explicit fresh request captures the changed file and receives a distinct proof.
+    send(&stream, request(4), Some(&lease_a)).await;
+    let fresh = response(&stream).await;
+    let fresh: WorkspaceProof =
+        serde_json::from_value(fresh["result"]["proof"].clone()).expect("fresh proof");
+    assert_ne!(fresh.token, proof.token);
+    send(&stream,json!({"jsonrpc":"2.0","id":5,"method":"devbox/validateWorkspaceEdit","params":validation(&fresh)}),None).await;
+    assert_eq!(
+        response(&stream).await["result"],
+        true,
+        "unchanged captured unopened target and dirty opened source"
+    );
+    send(
+        &stream,
+        json!({"jsonrpc":"2.0","method":"devbox/finishWorkspaceEdit","params":identity(&fresh)}),
+        None,
+    )
+    .await;
+    send(&stream,json!({"jsonrpc":"2.0","id":6,"method":"devbox/validateWorkspaceEdit","params":validation(&fresh)}),None).await;
+    assert_eq!(
+        response(&stream).await["result"],
+        false,
+        "ACK consumes once"
+    );
+    send(
+        &stranger,
+        json!({"jsonrpc":"2.0","id":7,"method":"test/echo","params":"shared generation alive"}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        response(&stranger).await["result"],
+        "shared generation alive"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("a.rs")).expect("disk a"),
+        "const a = 1;\n"
+    );
+    let saved = bounded(client.call::<devbox_documents::DocumentsSave>(
+        &devbox_documents::SaveDocument {
+            lease_id: lease_a.clone(),
+            seq: 1,
+            base_rev: a.rev.clone(),
+            expect: devbox_documents::Expect::Present,
+            text: "const a = 2;\n".into(),
+        },
+    ))
+    .await
+    .expect("explicit user save");
+    send(&stream,json!({"jsonrpc":"2.0","method":"textDocument/didSave","params":{"textDocument":{"uri":uri_a},"text":"const a = 2;\n"}}),Some(&lease_a)).await;
+    send(&stream, request(8), Some(&lease_a)).await;
+    let after_save = response(&stream).await;
+    let after_save: WorkspaceProof =
+        serde_json::from_value(after_save["result"]["proof"].clone()).expect("Rename after save");
+    assert_eq!(after_save.targets[0].disk_rev, Some(saved.rev));
+    send(&stream,json!({"jsonrpc":"2.0","id":9,"method":"devbox/validateWorkspaceEdit","params":validation(&after_save)}),None).await;
+    assert_eq!(
+        response(&stream).await["result"],
+        true,
+        "saving then renaming without another edit remains valid"
+    );
+    send(&stream,json!({"jsonrpc":"2.0","method":"devbox/finishWorkspaceEdit","params":identity(&after_save)}),None).await;
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(d.child.as_ref().expect("daemon").0.id() as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .expect("owned stop");
+    assert!(
+        d.child
+            .as_mut()
+            .expect("daemon")
+            .0
+            .wait()
+            .expect("owned wait")
+            .success()
+    );
+}

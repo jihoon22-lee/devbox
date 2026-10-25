@@ -10,7 +10,9 @@ pub mod servers;
 pub mod adapters;
 pub mod relay;
 
+mod capture;
 mod relay_documents;
+mod workspace;
 
 pub mod diagnostics;
 

@@ -140,6 +140,7 @@ async fn versioned_workspace_edits_are_request_bound_and_rejected_as_a_whole() {
     }
     let changes = |v| json!({"documentChanges":[{"textDocument":{"uri":a,"version":1},"edits":[]},{"textDocument":{"uri":b,"version":v},"edits":[]}]});
     for (client, local) in [(1, 0), (2, 7)] {
+        install_capture(&mut relay, client, 20, &[a, b]);
         let request = relay.client(client, packet(json!({"jsonrpc":"2.0","id":20,"method":"textDocument/rename","params":{"textDocument":{"uri":a},"newName":"next"}})), &access()).await.expect("relay owned client message");
         let id = parse(&request.server[0])["id"].clone();
         let out = relay
@@ -150,10 +151,11 @@ async fn versioned_workspace_edits_are_request_bound_and_rejected_as_a_whole() {
             .await
             .expect("relay owned server message");
         assert_eq!(
-            parse(&out.clients[0].1)["result"]["documentChanges"][0]["textDocument"]["version"],
+            parse(&out.clients[0].1)["result"]["edit"]["documentChanges"][0]["textDocument"]["version"],
             local
         );
     }
+    install_capture(&mut relay, 1, 21, &[a, b]);
     let request = relay.client(1, packet(json!({"jsonrpc":"2.0","id":21,"method":"textDocument/rename","params":{"textDocument":{"uri":a},"newName":"next"}})), &access()).await.expect("relay owned client message");
     let id = parse(&request.server[0])["id"].clone();
     let stale = relay
@@ -170,6 +172,9 @@ async fn versioned_workspace_edits_are_request_bound_and_rejected_as_a_whole() {
         ("textDocument/rename", Value::Null),
         ("test/unrelated", json!(1)),
     ] {
+        if method == "textDocument/rename" {
+            install_capture(&mut relay, 2, 22, &[a, b]);
+        }
         let request = relay
             .client(
                 2,
@@ -194,8 +199,14 @@ async fn versioned_workspace_edits_are_request_bound_and_rejected_as_a_whole() {
             )
             .await
             .expect("relay owned server message");
+        let response = parse(&out.clients[0].1);
+        let edit = if method == "textDocument/rename" {
+            &response["result"]["edit"]
+        } else {
+            &response["result"]
+        };
         assert_eq!(
-            parse(&out.clients[0].1)["result"]["documentChanges"][0]["textDocument"]["version"],
+            edit["documentChanges"][0]["textDocument"]["version"],
             expected
         );
     }
@@ -211,4 +222,32 @@ async fn versioned_workspace_edits_are_request_bound_and_rejected_as_a_whole() {
     assert_eq!(parse(&failed.server[0])["result"]["applied"], false);
     assert!(relay.ready());
     assert!(failed.close.is_empty());
+}
+
+fn install_capture(relay: &mut Relay, client: u32, id: i64, uris: &[&str]) {
+    relay.proofs.cancel(client, &json!(id));
+    let covered = uris
+        .iter()
+        .map(|uri| {
+            (
+                (*uri).to_owned(),
+                crate::WorkspaceBaseline {
+                    uri: (*uri).into(),
+                    disk_rev: None,
+                    text_hash: crate::workspace::text_hash("disk"),
+                    lease_id: None,
+                    version: None,
+                },
+            )
+        })
+        .collect();
+    relay.proofs.insert(
+        1,
+        crate::workspace::captured(
+            client,
+            json!(id),
+            relay.documents.snapshots(client),
+            covered,
+        ),
+    );
 }

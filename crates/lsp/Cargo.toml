@@ -7,6 +7,8 @@ publish.workspace = true
 
 [dependencies]
 devbox-protocol.workspace = true
+devbox-documents.workspace = true
+sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

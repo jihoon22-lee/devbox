@@ -153,10 +153,12 @@ impl Fixture {
                     Ok(DocumentGrant {
                         uri,
                         disk_text: "disk".into(),
+                        disk_rev: None,
                         lease_id,
                     })
                 })
             }),
+            capture: Arc::new(|_, _| Box::pin(async { Err(LspError::LimitExceeded) })),
             diagnostics: Arc::new(|_| Ok(())),
             restarted: Arc::new(|_| {}),
         }

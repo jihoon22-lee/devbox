@@ -74,7 +74,7 @@ pub fn hex(bytes: &[u8]) -> String {
         s
     })
 }
-fn rev_of(hash: String, size: u64, stat: &Stat) -> DiskRev {
+pub(crate) fn rev_of(hash: String, size: u64, stat: &Stat) -> DiskRev {
     let mtime = i128::from(stat.st_mtime) * 1_000_000_000 + stat.st_mtime_nsec as i128;
     DiskRev {
         hash,
