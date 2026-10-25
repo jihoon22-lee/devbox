@@ -230,7 +230,7 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 
 **Files:** `.github/workflows/{ci,windows}.yml`, `scripts/{win-package,win-sync,win-build}.ps1`, `scripts/tests/windows-*.ps1`, `scripts/{check-inner,build-linux,ci-scope}.sh`, 실제 중복이 확인된 부분만. 새 workflow를 기본안으로 추가하지 않는다.
 
-착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤 **1,492줄·workflow2개**다. 남은8줄이 release 구현·검증 예산을 충당한다고 주장하지 않는다. 제품 LOC121277는 별도 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 이번 계획은 15분 목표를 조용히 완화하지 않으며 최종 실측 전 달성을 약속하지 않는다.
+착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤 **1,492줄·workflow2개**다. 2026-10-26 사용자 승인으로 현재 공통 상한은1,800줄이다. 실제1,492줄과 승인 상한을 구분하며 남은 예산이 최종 구현·검증을 충당한다고 아직 주장하지 않는다. 제품 LOC121277는 별도 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 이번 계획은 15분 목표를 조용히 완화하지 않으며 최종 실측 전 달성을 약속하지 않는다.
 
 **먼저 하는 예산 작업:**
 
@@ -239,9 +239,9 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 - [ ] 채널 불변 install/frontend 검증은 한 번, 채널별 identifier/resource/self-check는 각 채널에서 유지하도록 package 흐름을 나눈다. Linux provenance gate·실패 전파·환경 복원·owned checkout guard를 없애지 않는다.
 - [ ] 시험의 반복 fixture 생성과 공통 command runner를 기존 scripts 안의 작은 공통 책임으로 통합한다. 제거되는 중복과 추가 release 코드의 line ledger를 만든 뒤 구현한다. 단순 minify/한 줄 압축·코드를 다른 디렉터리로 옮겨 count를 피하는 변경은 하지 않는다.
 - [x] 좁은 fixture subset: 기존3suite를 단일 진입점으로 합치고 공통 ErrorAction/Reject만 공유했다. 세 GUID/개별 finally·모든 성공/거절/정리 계약은 유지하며 fixture174→168·workflow123→121로 총8줄을 줄였다. 기존34계약 mapping·AST finally3/fake5 동일·YAML의 호출3→1 외 무변경을 확인했다. Windows5.1 UNC와 검증된 owned Temp local copy 모두 host Restricted 정책에서 suite0/NOT_RUN이므로 실제 동등성은 최종 Windows CI 미실행 항목이다. 정책은 바꾸거나 우회하지 않았으며 staging cleanup과 Linux wrapper/Windows host 자원 경계는 `devbox-verification/s6-2-fixtures/`에 기록했다. 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS 뒤 로컬 subset 커밋으로 보존하며 전체 S6-2 완료가 아니다.
-현재1,492줄에 남은 batching/release 검증을 더한 중심 추정은1,709줄(구현 전)이다. 두 독립 계획 검토는 기존2workflow 유지와1,800줄 상한 제안에 합의했지만 사용자 결정 전 기존1,500줄 한도는 바꾸지 않는다. S6-4 helper와추가 musl 회귀 예산·실제timing은 아직 미확정이다. 근거와 결정 대기는 PROGRESS §2를 따른다.
+현재1,492줄에 남은 batching/release 검증을 더한 중심 추정은1,709줄(구현 전)이다. 두 독립 계획 검토의 기존2workflow 유지·상한 조정 제안 뒤 사용자가2026-10-26 “1,800줄로 조정하고 계속 진행 (권장)”을 명시 승인했다. 현재 규범 상한은1,800줄이며 예산 결정 대기는 해소됐다. 이 승인은 최종 fit 또는 SC7 시간 목표 PASS가 아니다. S6-4 helper와 추가 musl 회귀 예산·실제 timing은 아직 미확정이며, 다음 독립 과제로 S6-2 batching을 진행한다. 근거와 승인 기록은 PROGRESS §2·§5를 따른다.
 
-- [ ] 핵심 안전 assertion을 유지한 순 감소로 release job·계측에 필요한 여유를 확보한다. 1,500줄을 지키지 못하면 기능/검증 보존 가능한 추가 단순화를 검토하고 한도 위반을 조용히 승인하지 않는다.
+- [ ] 핵심 안전 assertion을 유지한 순 감소로 release job·계측에 필요한 여유를 확보한다. 승인된1,800줄을 지키지 못하면 기능/검증 보존 가능한 추가 단순화를 검토하고 한도 위반을 조용히 승인하지 않는다.
 
 **릴리스 계약:**
 
@@ -253,7 +253,7 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 - PR/수동 실행 accept 산출물·prod provenance receipt와 source SHA 결속은 유지한다. packaging script는 실제 Windows에서만 빌드한다.
 
 - [ ] RED/GREEN: fixture에서 tag gate·버전 mismatch·Linux 실패·0/2 installer·accept 혼입·태그 본문 특수문자·재실행 digest 충돌을 검증한다. 실제 release API 쓰기는 하지 않는다.
-- [ ] actionlint를 기존 CI의 적절한 job에서 실행. workflow≤3·합계≤1500을 실제 count로 확인한다.
+- [ ] actionlint를 기존 CI의 적절한 job에서 실행. workflow≤3·합계≤1800을 실제 count로 확인한다.
 - [ ] orchestration fake 시험은 native build PASS로 보고하지 않는다. 실제 Windows build/40분 실측은 최종 수용·공개에서 확인한다.
 - [ ] 독립 검토 뒤 `refactor(ci): consolidate Windows packaging verification`, `feat(release): publish production installers from version tags`.
 
@@ -309,7 +309,7 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 | SC4 | 창 닫기·daemon 재시작·업데이트 뒤 WSL agent/terminal/service 유지, app-native Windows attempt는 설치 전 별도 차단 | 소유 test instance·tmux/user systemd, 전후 세션 ID·PID/작업 관찰. WSL 종료는 유지 대상 아님 |
 | SC5 | generated code 전수 오류 문구·원인+다음 행동; internal은 진단 ID 동반 | 컴파일/typed map+대표 E2E, raw error/body 노출 없음 |
 | SC6 | UI 변경→실제 daemon 연결 browser≤2초; daemon 변경→restart/reconnect≤15초 | monotonic 구간·source 변경·ready 증거, fake 서버 제외 |
-| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤1500, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음 |
+| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤1800, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음 |
 | SC8 | `bash scripts/loc.sh 200000`, 제품 코드≤20만(관찰 트리거) | 테스트 제외와600줄 제한 별도 보고. 기준121277은 과거 값 |
 | SC9 | 작업 없는 daemon RSS≤60MB·CPU≤0.5% | 실제 `/proc`·systemd, warm-up·표본 간격/기간·background 작업 기록 |
 | SC10 | Windows bridge→daemon→PTY→tmux byte echo p50≤10ms/p95≤25ms; 100MB 출력 중 다른 창 ping p95≤100ms, 종료 후 입력≤1초 | 실제 설치본, 샘플/percentile·출력 flood byte 수. renderer paint 제외 |

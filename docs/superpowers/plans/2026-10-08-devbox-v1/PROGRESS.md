@@ -16,16 +16,16 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-1c 완료28636607 뒤 S6-2의 Windows fixture 진입점/Reject 중복만 통합했다. 세 GUID·개별 finally와 생산 packaging 경계는 유지했고 scripts+.github 실제1,500→1,492줄(-8), workflow2개다. AST/보존 mapping/workflow 정적 검증을 마쳤으며 Windows fixture runtime은 host Restricted 정책으로 NOT_RUN, 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS 후 로컬 subset 커밋으로 보존한다. |
+| 현재 작업 | S6-2 fixture 완료b5be4dc6 뒤2026-10-26 사용자의1,800줄 상한 조정 승인을 현재 규범에 반영했다. 실제 scripts+.github는1,492줄·workflow2개이며, 예산 결정 대기를 해소해 다음 독립 과제 S6-2 batching으로 이어간다. 이번 변경은 문서 승인 반영만이며 독립 검토 APPROVE·지적0·완료 Biome845 PASS 후 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | Windows fixture subset 로컬 완료 뒤 실제8줄 절감과 남은 S6-2 예산의 한도 결정을 요청한다. frontend batching·target 재사용·release job은 미구현이며 한도 변경 승인은 없다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-26 · fixture174→168·workflow123→121로 합계1,492줄. 기존34계약 mapping, finally3/fake함수5 동일·Reject15→16·안전 throw14 보존, PowerShell5 AST4파일 parse 및 YAML/reference 정적 확인. UNC/localcopy 모두 Restricted 실행정책으로 suite0/NOT_RUN, staging cleanup 확인·정책 무변경. `devbox-verification/s6-2-fixtures/` 근거. 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS; 전체/build/native/E2E/push/PR 미실행. |
+| 다음 제품 작업 | 승인된1,800줄 상한 안에서 S6-2 batching을 별도 과제로 구현한다. release job·target 재사용·최종 fit/timing은 이번 승인 반영에서 구현하거나 검증하지 않았다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-26 · 사용자 “1,800줄로 조정하고 계속 진행 (권장)” 승인 반영. CONVENTIONS§5·01 SC7·07c 현재규범/SC7·수용 README를 일치시키고 실제1,492줄/상한1,800/추정1,709를 구분했다. 전체 저장소 검색상 scripts LOC enforcement 코드 없음; 제품·검사코드 무변경. fixture heading 이하 역사 보존. 독립 검토 APPROVE·지적0·완료 Biome845 PASS, 논리 RED/새 테스트·build/native/CI/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**S6-2 스크립트 예산 결정 필요(2026-10-26):** 승인된 fixture 통합 후 `.github`+`scripts`는 실제1,492줄이며 기존1,500줄 한도는 유지한다. 두 독립 계획 검토는 모든 검증·안전 계약을 보존한 채1,500줄에 들어가는 추가 단순화를 확인하지 못했고,27줄 수준의 workflow 통합은 결합 위험에 비해 부족분을 해결하지 못해 기존2개를 유지하는 데 합의했다. 실제1,492줄에 batching·release job/publisher/회귀/actionlint·최소 musl 시험 명령을 더한 중심 추정은1,709줄이며 구현 결과가 아니다. **공통 상한1,800줄 조정은 제안이며 아직 승인되지 않았다.** 현재 한도를 넘는 후속 구현은 결정 전 진행하지 않는다. S6-4 계측/helper·추가 musl 회귀의 최종 예산과Windows/CI시간은 미확정이다. 근거 `s6-2-committee.json`, `s6-2-budget-decision.json`, `s6-2-fixtures/line-ledger.json`. 한도를 유지하면 release/batching 범위 재설계가 필요하다.
+**S6-2 스크립트 예산 결정 해소(2026-10-26 사용자 명시 승인):** 사용자가 “1,800줄로 조정하고 계속 진행 (권장)”을 선택했다. 이에 `.github`+`scripts`의 현재 규범 상한을1,500줄에서 **1,800줄**로 조정하고 다음 독립 과제인 S6-2 batching을 진행한다. fixture 통합 후 실제 수치는1,492줄·workflow2개이며, 남은 batching/release 검증을 더한1,709줄은 구현 전 중심 추정이다. 승인 상한 자체가 최종 fit 또는15분/40분 timing PASS는 아니다. workflow≤3·자원 제한·필수 CI·단계별 검토·공개/태그 별도 승인 경계는 유지한다. S6-4 helper·추가 musl 회귀의 최종 예산과 Windows/CI 시간은 미확정이다. 이전 제안 근거 `s6-2-committee.json`, `s6-2-budget-decision.json`, 실제 계측 `s6-2-fixtures/line-ledger.json`과 이번 `s6-2-budget-approval/`을 구분한다.
 
 **S6 재개(2026-10-25 사용자 후속 요청):** 사용자가 “토큰 한도가 복구되었어. 이어서 S6 작업 계속 진행해줘”라고 지시했다. 앞선1b.2 완료 후 중단·새 세션 인계 제한은 대체됐다. 완료된083d9660부터 같은 브랜치/worktree에서07c 승인 순서를 계속한다. 과제별 별도 검토·완료 커밋, S6 마지막 한 번의 push/PR 및 공개·태그 별도 승인 경계는 유지한다.
 
@@ -100,7 +100,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a·1b·1c 로컬 완료;2-fixtures1492줄·정적 검증·runtime NOT_RUN·정적 APPROVE·로컬 subset 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한1,800 사용자 승인 반영·다음 batching | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -153,14 +153,17 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a·1b·1c 로컬 완료;2-fixtures1492줄·정적 검증·runtime NOT_RUN·정적 APPROVE·로컬 subset 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a·1b·1c·2-fixtures 완료;상한1,800 사용자 승인 반영·다음 batching |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
+### S6-2 예산 상한 승인 반영 (2026-10-26 · 문서 검증·독립 APPROVE·로컬 완료)
 
-
+- 사용자 명시 선택 “1,800줄로 조정하고 계속 진행 (권장)”에 따라 현재 `.github`+`scripts` 상한을1,500→1,800줄로 조정했다. CONVENTIONS §5·01-design SC7·07c 현재 한도/SC7와 현재 수용 README만 맞추고 PROGRESS §2의 결정 대기를 해소했다. 완료 단계의 과거1,500줄 규칙·실측 원문과 아래 fixture heading부터 끝까지는 byte 동일하게 보존한다.
+- 저장소 전체 rg와 scripts/CI/xtask 진입점 확인에서 해당 물리 LOC 상한 enforcement 코드는 찾지 못했다. `scripts/loc.sh`→`xtask/loc.py`는 Rust/TS 제품 LOC 관찰용으로 이 상한 gate가 아니다. 이번에는 검사 코드를 새로 만들거나 논리 RED·테스트를 추가하지 않았다. 참조 일치·실제 계측·역사 보존 근거는 `devbox-verification/s6-2-budget-approval/`에 기록한다.
+- 현재 실제1,492줄·workflow2개, 승인 상한1,800줄, 남은 작업을 포함한 구현 전 중심 추정1,709줄은 서로 다르다. 최종 fit과 PR CI15분·로컬10분·release40분 목표 달성은 아직 검증하지 않았다. workflow≤3와 자원/필수 CI/공개 승인 규칙은 그대로다. 이번 문서 반영은 독립 검토 APPROVE·지적0와 완료 Biome845 PASS 뒤 로컬 커밋으로 마무리했으며 S6-2 batching을 별도 과제로 진행한다.
 
 ### S6-2-fixtures Windows fixture 진입점 통합 (2026-10-26 · 정적 검증·runtime NOT_RUN·정적 APPROVE·로컬 subset 완료)
 
