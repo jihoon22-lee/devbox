@@ -9,18 +9,26 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 - 날짜는 `YYYY-MM-DD`, 시각이 필요하면 KST.
 - **로컬 근거 경로:** 2026-10-21 정리에서는 과거 검증 근거를 Git common-dir의 `devbox-archive/local-verification-20261021.tar.gz`와 인접 `local-verification-20261021.manifest.json`로 보관한 뒤 풀린 검증·임시 산출물을 정리한다. 보관 완료 후 이 문서와 00·05의 `devbox-verification/...` 경로는 압축 파일 안의 같은 상대 경로이며, `s2-task...`처럼 줄인 경로는 그 아래다. 다음 세션은 manifest와 실제 보관 파일을 확인하고 필요한 근거만 읽는다. 보관·정리 완료 여부는 Git 및 정리 결과와 대조한다.
 
+- **2026-10-25 정리 보관 완료:** Git common-dir `devbox-archive/local-verification-20261025.tar.gz`와 `local-verification-20261025.manifest.json`에 S3/S4/S5 및 과거 소유 임시 근거를 보존했다. 원본5,714,708,925byte·30,153항목(일반 파일26,841·링크1,032·디렉터리2,280), 압축1,958,285,472byte의 파일별 SHA-256·목록 검증 뒤 동일 원본30,153항목을 제거했고 retained=[]다. archive SHA-256은 `cb08876abd0a863c653263369a03eeb65d0548673999cae2b8c72cc03bfc1dbf`다. 해당 `devbox-verification/...`는 archive 내부 동일 상대 경로, 과거 Git 임시 근거는 `legacy-git/`, 임시 파일은 `tmp/`에서 찾는다. 이번 정리 근거·dirty 원본/patch·Git 이력 bundle·문서 검토는 압축 밖 `devbox-archive/cleanup-20261025/`에 보존한다. 기존20261021 보관도 유지한다.
+
 ## 1. 현재 위치
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644 e91c9b22·S5 #645 a55907a2 squash 머지 완료**. 트랙1 S4-2 fa86bc8b·S4-3 0cb5a24f 로컬 완료 및 최종 독립 APPROVE. S4 브랜치에 최신 main을 no-commit merge해 직접 검증을 마쳤고 별도 통합 검토 APPROVE·merge e56a76e8 완료. S4-4 e12fcacf 로컬 완료. S4-5 1416acbe 로컬 완료. S4-6 804143bc 로컬 완료. S4-7 1736d0ad 로컬 완료·별도 재검토 APPROVE. S4-8 00be638d 로컬 완료·별도 재검토 APPROVE. S4-9 공유 검토·브랜치 전체 검토 APPROVE, 로컬 최종 검증·설치 수용 판정 완료, 현재 제품 e6304a7e의5/8 PASS·과거07ebb413의1/6 PASS·2/3/4/7 NOT_RUN. 최종 감사 APPROVE·S4 PR 대기(미머지) |
-| 동시 진행 | 한 세션이 트랙 1(S3→S4)·트랙 2(S5)를 하위 에이전트로 진행(트랙당 구현 또는 검토 하나, 합계 2). 각 트랙 브랜치의 PROGRESS가 자기 트랙 줄의 최신이며, 다른 트랙 줄은 그 브랜치에서 확인한다 |
-| 트랙 1(S3→S4) 위치 | **S3 완료([#644](https://github.com/jihoon22-lee/devbox/pull/644) → e91c9b22), S4-1 상세화 18fefe4c → S4-2 fa86bc8b 완료 → S4-3 0cb5a24f 로컬 완료·최신 main 통합 직접 검증 완료·별도 검토 APPROVE**. 작업 `v1/s4-editor-git` / `/home/jihoon/projects/devbox-wt/v1-s4-editor-git`, S4-2는 fa86bc8b 로컬 커밋 완료(최종 독립 APPROVE), S4-3 서버 수명·중계·진단은 최종 독립 APPROVE 후 0cb5a24f로 로컬 커밋, 통합 merge e56a76e8 뒤 S4-4 e12fcacf 로컬 완료·별도 재검토 APPROVE. S4-5 1416acbe 로컬 완료·별도 재검토 APPROVE, S4-6 804143bc 로컬 완료·별도 재검토 APPROVE, S4-7 1736d0ad 로컬 완료·별도 재검토 APPROVE, S4-8 00be638d 로컬 완료·별도 재검토 APPROVE, S4-9 공유 검토·브랜치 전체 검토 APPROVE, 로컬 최종 검증·설치 수용 판정 완료, 현재 제품 e6304a7e의5/8 PASS·과거07ebb413의1/6 PASS·2/3/4/7 NOT_RUN. 최종 감사 APPROVE·S4 PR 대기(미머지). 검증 소스e56c3096의 정상리뷰3회+상한 예외 확정손실1건 수정·독립 승인, 필수CI3/E2E PASS. 원래항목1·2·3·5·9·10 기록 assertion 및 추가native3/합성데몬1 PASS;4·6·7·8/SC2미실행·strict자동저장1초미입증 보존. `v1/s4-editor-git`는 이 main에서 시작했고 S3 결과 문서를 상세화18fefe4c에 보존 |
-| 트랙 2(S5) 위치 | `v1/s5-tools` · `/home/jihoon/projects/devbox-wt/v1-s5-tools`, 최종 제품 `b18bc740`, Rust target `~/.cache/targets/devbox-s5`. **구현·리뷰 수정·필수 CI3/E2E·영향 설치 수용1·2 완료, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 머지 완료**. 정상 자동 리뷰3회 및 상한 예외4367201426 수정·독립 승인 완료, 4367201424는 §8 이월. 현재 소스 설치1·2 PASS, 429 소스3·4 PASS는 과거 근거, 5·6 NOT_RUN 유지. 상세 §5 |
+| 단계 | **S3 #644 → e91c9b22, S4 #646 →20dcded6, S5 #645 →a55907a2 모두 squash 머지 완료. S6는 미착수다.** 각 검증 소스의 실제 PASS·FAIL·NOT_RUN과 과거 근거 구분은 §5에 보존한다. |
+| 현재 작업 | S3/S4/S5 작업용 worktree3개·로컬/원격 브랜치3쌍 및 소유 임시 원본 정리 완료. 이 문서 PR은 누락된 최종 기록을 main에 인계하는 정리용 변경이다. PR 머지 뒤 정리용 `docs/cleanup-s4` worktree/브랜치도 제거하고 main만 남긴다. 최종 실제 상태는 `devbox-archive/cleanup-20261025/final-state.json`과 Git을 대조한다. 제품 구현·S6 상세화·제품 시험/빌드는 하지 않았다. |
+| 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
+| 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | S2 설치 수용 1–11 NOT_RUN·12 FAIL·prod 불변 NOT_PROVEN(interop errno110, §2 Relay 누적 관찰 참고), Codex 새 worktree 신뢰 화면 waiting 미검출, CI tmux 3.4 서버 종료 원인 미확정, §8 Windows 준비 귀속(S6-1 판정), R1/R2는 S6 공개 직전 사용자 확인 |
-| 마지막 갱신 | 2026-10-25 · S4-8 00be638d 별도 재검토 APPROVE·Biome831 뒤 로컬 완료. S4-9 step1·브랜치 전체 검토 APPROVE, 최초 전체 검사 실패 보존·수정 영향 UI8/E2E3 PASS, TLS 보정 전07ebb Rust1624 PASS·34 ignored·clippy PASS, 최종e630 deps44/CLI2·대상clippy PASS, 현재 e6304a7e/Windows40129996971 설치5/8 PASS·과거1/6 PASS·2/3/4/7 NOT_RUN, 최종 감사 APPROVE·PR 대기, S5 기록 보존 |
+| 다음 제품 작업 | **S6 미착수.** 선행 S4/S5 머지는 완료됐지만 사용자는 지금 정리만 요청했다. 향후 별도 S6 시작 지시 전 `v1/s6-release`·07c 상세화·제품 변경을 만들지 않는다. 읽기 전용 준비 자료는 착수 근거가 아니다. |
+| 마지막 갱신 | 2026-10-25 · S3/S4/S5 결과 인계·검증 근거 보관/원본 삭제·작업 브랜치/worktree 정리 완료. 공유 Cargo 캐시4개·기존 stash2개·사용자/호스트 자원은 보존했다. S4 자동 리뷰는 NOT_RUN(비활성화)·0회, 그 PR의 독립 검토 대체는 명시 승인에 따른다. S6는 미착수다. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
+
+
+**종결된 S4 머지 결정(2026-10-25):** 사용자가 자동 리뷰를 껐음을 확인하고 완료된 독립 검토로 대체해 **“머지까지만”** 진행하도록 명시 승인했다. 자동 리뷰는 NOT_RUN(비활성화)·완료0회이며 PASS나 한도 소진이 아니다. 최종346e00ca는 CI40134483816의 Frontend·Rust workspace·E2E와 Windows40134483812 모두 PASS, 독립 최종 제품/근거 감사 지적0이었다. 보호 규칙을 유지해2026-10-24T23:51:18Z에#646을20dcded6으로 squash 머지했고 검증/merge tree 동일·main ff-only 동기화를 확인했다. 이전 문의 당시의 “승인 대기/원인 불명” 상태는 이 결정으로 해소됐다. 근거 `s4-final/merge-authorization.json`, `merge-confirmation.json`, `pr-final-gate-review.json`; 다른 PR의 자동 리뷰 규약이나 공개 릴리스 승인을 바꾸지 않는다.
+
+**현재 정리 요청:** 사용자는 뒤이어 모든 작업 브랜치·worktree·임시 산출물 정리를 요청했고, S6는 미래 작업으로 남겼다. 이 명시적 정리 지시에 따른 `docs/cleanup-s4` 인계 문서 PR은 기능 PR7개 외의 정리 예외(S2 인계와 같은 목적)다. 기존 dirty 문서를 복구용 원본·patch·Git bundle로 보존하고 독립 검토에서 이 문서 변경에 실질 내용이 보존됨을 확인했다. 세 작업 HEAD와 실제 squash merge tree가 각각 같음을 대조한 뒤 보존된 문서만 원복해 clean 확인 → worktree 제거 → prune → 로컬·원격 브랜치 제거를 완료했다. S4 이메일 보호 수정 전 임시 ref도 검증된 bundle로 보존 후 제거했다. 원본 임시 파일 정리는 위 archive 검증 뒤 완료했다. 공유 캐시·미완료 stash2개·prod/사용자 자료는 삭제하지 않았다. 문서 PR 최종 머지·정리용 자원 제거 근거는 위 final-state에 남긴다.
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
@@ -70,7 +78,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | 04-s1-agents-terminal · 04b-s1-app | 머지 | 2026-10-13 | 2026-10-14 | 최종 자동 리뷰만 이번 PR 한정 생략 승인 |
 | S2 | 05-s2-runs | 머지 | 2026-10-20 | 2026-10-21 | #642 · `1e82e649`, 최종 CI3/E2E PASS·리뷰3회 처리. 선택적 조기 사용 단계이나 실제 설치 검증은 interop 실패로 미실행. 다음 S3·S5 동시 상세화 |
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
-| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | S4-9 로컬 검증·설치 수용 판정 완료·PR #646 CI/리뷰 진행 | 2026-10-25 | | 현재5/8 PASS·과거1/6 PASS·2/3/4/7 NOT_RUN, 미머지 |
+| S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | 07-s4-s6(→ 07c) · S4·S5 뒤 | 대기 | | | **v1.0.0 공개 직전 확인(기다림)** |
 
@@ -84,7 +92,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
-| S4 | `v1/s4-editor-git` | S4-1–S4-9 | PR 열림 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | |
+| S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
 | S6 | `v1/s6-release` | S6-1–S6-6 → 태그 `v1.0.0` | 대기 | | |
 
@@ -130,7 +138,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S4 | 상세화 | S4-1 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-24 | 별도 검토 보완1 반영→APPROVE, 문서8/Biome458 PASS. 제품 미착수 |
 | S4 | X | S4-2–S4-4 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-24 | 2026-10-25 | S4-2 fa86bc8b·S4-3 0cb5a24f·통합 e56a76e8·S4-4 e12fcacf, R1 별도 재검토 APPROVE·Biome800 PASS |
 | S4 | Y | S4-5–S4-7 | `v1/s4-editor-git` | 완료(로컬) | 2026-10-25 | 2026-10-25 | S4-5 1416acbe·S4-6 804143bc·S4-7 1736d0ad, 각각 별도 재검토 APPROVE·Biome PASS |
-| S4 | Z | S4-8–S4-9 → S4 PR | `v1/s4-editor-git` | S4-9 로컬 검증·설치 수용 판정 완료·PR #646 CI/리뷰 진행 | 2026-10-25 | | 제품 e6304a7e·Windows40129996971 설치5/8 PASS. 1/6은07ebb413 과거 PASS, 2/3/4/7 NOT_RUN. 최종 감사 APPROVE·문서1293999f·PR #646 열림 |
+| S4 | Z | S4-8–S4-9 → S4 PR | `v1/s4-editor-git` | 머지 | 2026-10-25 | 2026-10-25 | #646 →20dcded6, 최종346e00ca CI3/E2E PASS·독립 감사 승인·자동 리뷰0회 사용자 비활성화/대체 승인. 설치5/8 e630 PASS·1/6 과거07ebb PASS·2/3/4/7 NOT_RUN |
 | S5 | 상세화 | S5-1 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-21 | 구현·검토 약1.0h(상세화 약0.6h·검토2회·수정 약0.1h), 사용량 한도 대기 약3h 포함 경과 약5h. 별도 검토 1차 CHANGES_REQUIRED(차단5) → 재검토 APPROVE. Biome350 PASS, 빌드·시험 미실행(문서) |
 | S5 | AA | S5-2–S5-3 | `v1/s5-tools` | 완료(로컬) | 2026-10-21 | 2026-10-23 | S5-2 구현 약1.0h·검토2회 약0.5h·수정 약0.2h. S5-3a·3b 구현 약0.6h·검토2회 약0.4h·수정 약0.2h. S5-3c 구현 약0.4h·검토1회 약0.2h. S5-3d 구현 약0.7h·검토 fix1·feat4회 약0.7h·수정4회 약0.4h(세션 재시작·사용량 한도 대기 제외) |
 | S5 | AB | S5-4 | `v1/s5-tools` | 완료(로컬) | 2026-10-23 | 2026-10-23 | 검토 게이트 보안 수정(Step 0) + S5-4 구현 약1.2h·검토 2회 약0.7h·수정 1회 약0.4h(사용량 한도 대기 제외) |
@@ -151,14 +159,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - agent의 `agents.changes`/`agents.patch`/`agents.commits`를 그대로 사용하므로 기준 브랜치 대비·종료 당시 historical snapshot 의미를 잃지 않는다. 빈 파일/patch/commit 배열도 live `git.status`/`git.diff`/`git.log`로 fallback하지 않는다. loading/undefined 상태는 기존 query/error 경계에서 처리한다. review-data 경로는 RPC provider 없이 표시할 수 있고 Git 쓰기 버튼이나 live source 새로고침 제어를 만들지 않는다.
 - 기존 freshness·signature·봤음·빠른 다음 파일·closed 제한·인용 `DiffRange`/renamed oldPath/지시 초안 추가 정책은 agent에 그대로 남았다. 공용 `ui/DiffView`와 parser/range, `useReviewAction`/AgentActions/quote 함수는 수정하지 않았다. agent 커밋 목록 CSS도 유지한다. 기준 반영의 MergePanel preview/apply는 소스 현재 프로젝트가 전환되어도 `{projectId:task.projectId,worktreeId:task.id}`와 원래 preview token을 사용함을 강화된 회귀로 확인했다.
 - RED3(shared review-data 미지원)→GREEN4. 직접 영향10파일에서34 PASS와 신규 commit 시험의 React Query 통지 대기 부족2 FAIL을 보존했고, 시험만 `findBy` 대기로 고쳐 실패 범위2 PASS. **고유 직접36 PASS**, 제품 소스는 영향34 입력과 같고 실패 시험만 바뀌었다. source query-mode2/그룹1/통합7, review adapter3, agent 변경2/봤음·freshness·review·actions/rebase/commits를 포함한다. typecheck PASS·최종 Biome CI833 PASS. source/doc/scope/artifact hash와 모든 실패 원본은 `s4-task9-implementation`에 보존한다.
-- 동결 예외·새 의존성·S5 변경 없음. 이번 승인에 포함된 agent 두 화면 외 agent mutation/ownership 경계는 유지했다. 전체/Rust/CLI/generated/E2E/native/live Git/OSV/main 통합/commit/push/PR은 이 구현 에이전트가 실행하지 않았다. 당시 소스/문서를 동결해 별도 검토로 넘겼고, root의 후속 단계2–5 결과는 아래와 같다. 단계6 PR·머지 완료로 표시하지 않는다.
+- 동결 예외·새 의존성·S5 변경 없음. 이번 승인에 포함된 agent 두 화면 외 agent mutation/ownership 경계는 유지했다. 전체/Rust/CLI/generated/E2E/native/live Git/OSV/main 통합/commit/push/PR은 이 구현 에이전트가 실행하지 않았다. 당시 소스/문서를 동결해 별도 검토로 넘겼고, root의 후속 단계2–5 결과는 아래와 같다. 그 당시 단계6 PR·머지 완료로 표시하지 않았으며, 이후 최종 머지 결과는 아래에 기록한다.
 
 
 **최종 검사와 실패 수정(2026-10-25, 당시 로컬 완료·아래 설치 수용 결과로 후속)**
 - 별도 step1·브랜치 전체 검토 APPROVE 뒤 root가 전체 검사를 한 번 실행했다. 원본 `s4-final/full-check.log`는 exit1이며 frontend1554 PASS/1 case-insensitive 모듈 충돌 FAIL, E2E20 PASS/3 FAIL을 보존한다. Rust workspace test는 `Project.git_warnings` 누락으로 컴파일 중단, clippy는 remote preflight 중첩 if로 실패했다. 이를 전체 PASS로 바꾸지 않는다.
 - 최소 수정은 remote 조건식 결합, agents 시험 fixture의 빈 git_warnings, source `previewHelpers.ts`/`quickOpenRanking.ts` 이름과 해당 import 정리다. LSP E2E는 editor focus 중 앱 단축키를 양보하는 기존 정책에 맞춰 파일 탭에 focus한 뒤 하단 패널을 열며, stale 충돌 알림은 실제 status role로 확인하고 외부 파일 보존 assertion을 추가했다. 최초 HTTP E2E trace는 React/App 모듈의 `ERR_NETWORK_CHANGED`로 화면이 시작하지 못한 근거이며 runtime 제품 결함 수정으로 주장하지 않는다.
 - 수정 영향 frontend4파일/8 PASS·typecheck PASS, 수정 E2E3 PASS(메모리 제한 true), 최종 Biome833 PASS·변경 Rust2파일 rustfmt PASS. 독립 delta 검토 APPROVE. 최초 frontend 명령의 지원하지 않는 minWorkers 인자 오류, memory 제한 false로 완료된 직접 frontend/typecheck, 같은 설정의 E2E 중단 exit130도 별도 보존한다. cgroup 필수 설정으로 재실행한 E2E3만 최종 실패 범위 수용 근거이며 앞선20 PASS와 합쳐 고유23개를 덮지만 단일 전체23 PASS 실행이라고 쓰지 않는다.
-- 모든 후속 supervisor는 명시적 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS와 DEVBOX_VERIFY_CGROUP=required를 사용한다. root가 실패한 Rust workspace test·clippy --keep-going만 공유 lock으로 재검증했다. 통과한 무관 전체 검사는 반복하지 않았다. 당시 제품소스를 동결하고 아래의 정확한 Windows 산출물·설치 수용으로 이어갔다. 현재 PR·머지는 대기다.
+- 모든 후속 supervisor는 명시적 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS와 DEVBOX_VERIFY_CGROUP=required를 사용한다. root가 실패한 Rust workspace test·clippy --keep-going만 공유 lock으로 재검증했다. 통과한 무관 전체 검사는 반복하지 않았다. 당시 제품소스를 동결하고 아래의 정확한 Windows 산출물·설치 수용으로 이어갔다. 그 당시 PR·머지는 대기였으며 이후 최종 머지를 아래에 기록한다.
 - root의 실패 Rust 명령 재실행도 exit1로 보존했다. 최초 git_warnings 보정의 vec![]는 실제 Option 타입과 달라 None으로 다시 고쳤고 agents resume rollback2를 컴파일·실행해 PASS를 확인했다. keep-going에서 드러난 deps 조건3·LSP test-module 위치와 S4 소유 시험의 unwrap을 expect/expect_err로 정리했다(제품 unwrap 변경·lint 억제 없음). 600줄 제한을 위해 conflict 시험 일부를 test-only child로 옮기고 기존18 PASS를 확인했다. 추가로 library 실패에 가려졌던 S4 deps/CLI/native source_external 시험의 같은 패턴을 고쳤으며 assertion·시험 이름·정규화 본문 동등성은 `fix-rust2-coverage.json`에 기록한다. Rust2 입력은 별도 검토 APPROVE(`final-rust2-review.json`) 후 workspace clippy PASS·Rust **1624 PASS/0 FAIL/34 ignored**(`fix-rust2-workspace-result.json`)를 확인했다. ignored는 실행 성공으로 합산하지 않는다. 461.447초·memory enforced true·cgroup peak6,075,981,824B, CPU4/jobs2/threads2 제한으로 완료했다.
 - TLS 보정 전 소스 계측은 LOC121202/160000·제품600줄 초과 없음, scripts+.github1500줄·workflow2개, E2E23개다. 최신 main a55907a2는 기존 통합 e56a76e8을 통해 포함됨을 확인했고 추가 merge가 필요하지 않았다(`main-integration.json`). S4-9 제품 커밋 고정·백업 push 뒤 정확한 SHA의 Windows workflow_dispatch 산출물을 만들었다. 후속 TLS 보정 제품은 e6304a7e이며 설치 수용 결과는 아래에 기록했다. 결과 문서·S4 PR은 마무리 단계다. 이 중간 커밋을 S4 PR 수용 완료로 표시하지 않는다.
 - 준비 당시 외부 설치 도우미는 `s4-final/acceptance`에서 별도 수정 검토 APPROVE_PENDING_BINDING, runtime23개였다. SHA/run UNBOUND·실행 승인 NOT_REVIEWED를 유지하고 그 준비 시점의 Windows/OSV/언어 서버 수용은 모두 NOT_RUN이었다. 언어 서버 부재 항목2/3/4/7을 fake LSP E2E로 대체하지 않는다. 최초 실패·중단·수정 검증 및 source/doc 동결은 `s4-final/fix-*`에 기록한다.
@@ -178,15 +186,21 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - **2·3·4·7 NOT_RUN**: 호스트 실제 LSP catalog 서버가 없고 rust-analyzer proxy의 실제 component도 없었다(`lsp-host-readonly.json`). 숨은 설치·global 도구 변경·fake 서버 대체를 하지 않았다. fake LSP E2E는 자동 회귀 근거일 뿐 설치 수용2/3/4/7의 PASS가 아니다.
 - 두 설치 실행 모두 windows-acceptance 단일 잠금을 다운로드부터 정리까지 유지했고 정리7단계 ALL PASS·retainedResources=[]·prodComparison PASS다. 기존 서비스·Docker·방화벽·공유 네트워크·사용자 설정을 바꾸지 않았다. 실제 설치와 수용은 root가 수행했고 이 최종 문서 작업은 조회·문서 갱신만 했다.
 - 최초 제품 커밋의 GH007 이메일 비공개 거절 뒤 root가 **자신의 미공개 S4 구간만 metadata를 수정**해 공개 noreply로 다시 작성했다. tree·날짜 보존·backup ref·old/new 매핑은 `email-privacy-rewrite.json`; 기존 검증 문단의 옛 SHA를 소급 변경하지 않는다. 검증된 source-commit9da4fca와07ebb413은 동일 tree이며 이후 e630은 별도 TLS 수정이다.
-- 로컬 전체 최초 실패와 범위 수정, TLS 보정 전07ebb Rust1624 PASS/34 ignored, frontend 최초1554 PASS+영향8 PASS(중복 합산 금지), E2E20 PASS+실패 범위3 PASS, TLS RED→deps44/CLI2 및 두 native 실행의 한계는 `s4-final/final-assessment.json`과 bounded artifact manifest에 결속한다. 최종 제품 LOC는 **121277/160000**, 제품600줄 초과0(`loc-after-native-fix.log`)다. 이 문서 갱신에서 검사·빌드·설치·제품 수정은 반복하지 않았다. **S4-9 로컬 검증·수용 판정은 완료, 최종 감사 APPROVE·문서 커밋·S4 PR 하나·필수 CI3·최대3회 리뷰·squash는 대기**이며 S4 머지 완료가 아니다.
+- 로컬 전체 최초 실패와 범위 수정, TLS 보정 전07ebb Rust1624 PASS/34 ignored, frontend 최초1554 PASS+영향8 PASS(중복 합산 금지), E2E20 PASS+실패 범위3 PASS, TLS RED→deps44/CLI2 및 두 native 실행의 한계는 `s4-final/final-assessment.json`과 bounded artifact manifest에 결속한다. 최종 제품 LOC는 **121277/160000**, 제품600줄 초과0(`loc-after-native-fix.log`)다. 이 문서 갱신에서 검사·빌드·설치·제품 수정은 반복하지 않았다. 이 assessment 작성 당시에는 로컬 검증·수용·최종 감사까지만 완료하고 PR 수용을 대기로 남겼다. 이후 최종346e00ca 필수 CI3/E2E와 사용자 승인 독립 검토 대체를 거쳐#646→20dcded6으로 머지했다.
 
-- 최종 근거 감사(`final-independent-audit.json`)와 LOC/검증 시점/승인 시점 표현 보정 확인(`final-metadata-audit.json`) 모두 APPROVE다. 검증한 제품 소스는 e6304a7e로 유지하며 다음은 결과 문서 커밋·S4 PR이다.
+- 최종 근거 감사(`final-independent-audit.json`)와 LOC/검증 시점/승인 시점 표현 보정 확인(`final-metadata-audit.json`) 모두 APPROVE다. 검증한 제품 소스e6304a7e를 유지한 채 결과 문서1293999f와 test-only CI fixture 수정346e00ca를 거쳐#646을 머지했다.
 
 
 **PR #646 최초 Linux CI 실패 보정(2026-10-25, 별도 검토 APPROVE)**
 - head `1293999ff9215facc8776920343fcd5b5e5d55ec` / CI40132707734의 Rust 실패는 `source_safety::config_warning_lists_keys_without_values_or_synthetic_override`의 초기 경고 없음 assertion이었다(`s4-final/pr-ci-first-failure.log`). 소유 임시 global LFS 설정을 child 환경으로 전달해 같은 line7 실패를 RED로 재현했다. 실제 hosted runner의 전역 설정 내용을 관찰했다고 주장하지 않는다.
 - 원인은 fixture 생성 Git 명령만 global/system 설정을 격리했지만 제품 warnings는 의도대로 전역 설정도 읽는 환경 불일치다. 제품은 수정하지 않고 해당 시험만 owned empty/global-LFS 설정의 별도 child에서 실행한다. 각각 정확한 전역/로컬 key 집합과 값 비노출, command-scope의 synthetic fsmonitor override 제외를 보존하며 parent 환경·실제 host/global config는 바꾸지 않는다.
-- source_safety2 PASS(경고 시험 안 empty/global-LFS 두 child가 각각1개 시험 실행함도 확인), targeted clippy·fmt·Biome 결과와 RED 원본은 `s4-final/pr-ci-fix/`에 보존한다. 이 수정은 test-only이며 native/전체 suite는 반복하지 않는다. 독립 검토 APPROVE(`pr-ci-fix/independent-review.json`). 최초 Windows40132707735·Frontend·E2E는 PASS. 자동 리뷰는 아직 응답/한도 안내가 없어 완료 회차0으로 유지하며, 검토된 CI 시험 보정을 먼저 반영한다. 새 SHA의 필수 CI 성공·자동 리뷰 처리·머지는 아직이다.
+- source_safety2 PASS(경고 시험 안 empty/global-LFS 두 child가 각각1개 시험 실행함도 확인), targeted clippy·fmt·Biome 결과와 RED 원본은 `s4-final/pr-ci-fix/`에 보존한다. 이 수정은 test-only이며 native/전체 suite는 반복하지 않는다. 독립 검토 APPROVE(`pr-ci-fix/independent-review.json`). 최초 Windows40132707735·Frontend·E2E는 PASS. 이 수정 당시 자동 리뷰는 응답/한도 안내 없이 완료0회여서 보정부터 반영했고, 이후 필수 CI 성공·사용자 비활성화 확인 및 독립 검토 대체 승인·정상 squash로 종결했다. 자동 리뷰를 실행한 것으로 세지 않는다.
+
+
+**S4 최종 머지·정리 인계(2026-10-25)**
+- 최초 PR Linux CI40132707734의 global Git 설정 경고 시험 실패는 owned empty/global-LFS child fixture 격리만으로 수정했으며 제품 warnings는 전역 설정도 계속 보고한다. 수정 독립 검토·최종346e00ca CI40134483816/Windows40134483812 필수3개와E2E PASS, 보호 규칙 불변을 확인했다. 자동 리뷰·댓글이 관찰되지 않던 문의 단계는 사용자 비활성화 확인/독립 검토 대체 승인으로 종결했고 자동 리뷰 완료 횟수는0이다.
+- #646은20dcded662aee410b75b0eda6999975e61bf64d0으로 squash 머지됐고 tree는검증346e00ca와c698b374da210710b32a36f588bd3a5a3eef90dd로 같다. 설치 sourcee6304a7e 이후 차이는 승인된 test-only fixture와 문서뿐이므로 실제 설치5/8 e630 PASS·1/6 과거07ebb PASS와미실행2/3/4/7을 그대로 보존한다. S3/S5 최종 설치·정리·리뷰 기록은이미 main에 인계돼 있으며 오래된 dirty 문서의 “대기” 머리말로 되돌리지 않는다.
+- 사용자 추가 정리 요청에 따라 S3/S4/S5 dirty 최종 문서·원본 FAIL·출처/승인/cleanup 근거를 보존했다. archive/manifest 검증 뒤 원본30,153항목과 기존 작업 worktree3개·로컬/원격 브랜치3쌍의 정리를 완료했다(§1). 이 문서 PR의 머지와 정리용 worktree/브랜치 제거는 마지막 단계이며 그 결과는 `devbox-archive/cleanup-20261025/final-state.json`에 기록한다. S6는 시작하지 않았다.
 
 ### S4-8 소스 화면 통합 (2026-10-25 · 00be638d 로컬 완료·별도 재검토 APPROVE)
 

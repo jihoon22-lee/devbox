@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-- 상태: **구현·필수 CI·영향 설치 수용 완료, 최종 근거 감사 APPROVE·PR #645 a55907a2 머지 완료** · 최종 제품 `b18bc740`, 브랜치 `v1/s5-tools`, worktree `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 현재 소스 설치1·2 PASS, 과거429 소스3·4 PASS는 역사 근거, 5·6 NOT_RUN 유지. 정상 리뷰3회·차단 예외1건 수정과 독립 승인 완료. 진행 원장은 PROGRESS.md다.
+- 상태: **구현·필수 CI·영향 설치 수용 완료, 최종 근거 감사 APPROVE·PR #645 a55907a2 머지 완료** · 최종 제품 `b18bc740`, 검증 당시 브랜치 `v1/s5-tools`와 worktree `/home/jihoon/projects/devbox-wt/v1-s5-tools`. 현재 소스 설치1·2 PASS, 과거429 소스3·4 PASS는 역사 근거, 5·6 NOT_RUN 유지. 정상 리뷰3회·차단 예외1건 수정과 독립 승인 완료. 진행 원장은 PROGRESS.md다.
 - 상세화 수준: S2까지 실제로 머지된 코드의 이름·시그니처로 S5-2–S5-9의 실패 테스트 → 실패 확인 → 구현 → 통과 → 별도 검토·커밋 순서를 확정했다. 코드 조각은 시작점이며 각 과제의 "핵심 테스트" 전부가 완료 조건이다. 계획 코드는 컴파일해 본 것이 아니다. 같은 의도로 고친 것은 PROGRESS §5에 적는다(00 §3.5).
 - 원래 과제 수준 계획은 [07-s4-s6.md](07-s4-s6.md)의 S5 절이었다. 이 문서가 S5의 실행 원장이고 07에는 작업 묶음 표와 링크만 남긴다.
 
