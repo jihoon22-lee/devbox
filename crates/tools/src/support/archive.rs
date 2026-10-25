@@ -26,7 +26,11 @@ struct Manifest {
 }
 pub(super) fn build(mut input: BundleInput, values: Option<Values>) -> R<SupportBundle> {
     let logs_omitted = values.is_none().then_some("secrets_locked");
-    let redact = Redactor::new(&input.paths.home, values.unwrap_or_default())?;
+    let redact = Redactor::new(
+        &input.paths.home,
+        &input.notes_vault,
+        values.unwrap_or_default(),
+    )?;
     let mut entries = BTreeMap::<String, String>::new();
     for check in &mut input.doctor.checks {
         check.id = redact.text(&check.id)?;
@@ -91,7 +95,7 @@ pub(super) fn build(mut input: BundleInput, values: Option<Values>) -> R<Support
     );
     let mut total = 0usize;
     for text in entries.values_mut() {
-        *text = redact.text(text)?;
+        *text = redact.finish(text)?;
         total = total.saturating_add(text.len());
         if total > files::MAX_TOTAL {
             return Err(ToolsError::SupportTooLarge.into());

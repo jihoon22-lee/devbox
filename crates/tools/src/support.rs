@@ -1,6 +1,7 @@
 //! Support exports are assembled locally; no uploader or automatic transmission.
 mod archive;
 mod files;
+mod paths;
 mod redact;
 mod summary;
 use crate::{R, ToolsError};
@@ -12,7 +13,29 @@ use serde::{Deserialize, Serialize};
 pub struct BundleInput {
     pub paths: Paths,
     pub doctor: DoctorReport,
+    pub notes_vault: VaultSnapshot,
     pub version: String,
+}
+/// One configured alias and its canonical directory, captured before collecting diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VaultSnapshot {
+    pub configured: std::path::PathBuf,
+    pub canonical: std::path::PathBuf,
+}
+impl VaultSnapshot {
+    pub fn capture(configured: &std::path::Path) -> R<Self> {
+        if !configured.is_absolute() || configured.to_str().is_none() {
+            return Err(ToolsError::SupportFailed.into());
+        }
+        let canonical = std::fs::canonicalize(configured).map_err(failed)?;
+        if !canonical.is_dir() || canonical.to_str().is_none() {
+            return Err(ToolsError::SupportFailed.into());
+        }
+        Ok(Self {
+            configured: configured.to_path_buf(),
+            canonical,
+        })
+    }
 }
 #[derive(Debug, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]

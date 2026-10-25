@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -206,8 +206,10 @@ S6는 한 브랜치·한 PR이다. 계획 커밋은 로컬 완료했고 현재 �
 
 **계약:** 현재 home/기본 `~/notes` 추정 대신 실제 NotesService의 canonical vault root를 bundle 시작 시 캡처해 전달한다. secrets-locked이면 로그 생략하는 기존 정책·fixed archive names·0600·제한된 읽기를 유지한다. 사용자 지정 vault가 home 밖이어도 정확 경로와 JSON/debug escaped 표현을 `<notes>`로 가린다. 짧은 prefix가 일반 단어/다른 형제 경로를 지우지 않도록 경로 경계를 검사한다. 설정 변경 중 일관된 snapshot을 쓴다.
 
-- [ ] RED/GREEN: custom vault 절대/escaped·home 내부/외부·겹친 prefix·secrets locked·일반 형제 경로 보존.
-- [ ] 별도 검토 후 `fix(tools): redact the configured notes vault in support bundles`.
+- [x] RED/GREEN: custom vault 절대/escaped·home 내부/외부·겹친 prefix·secrets locked·일반 형제 경로 보존.
+
+실제 NotesService configured/canonical snapshot을 bundle 전에 캡처한다. 캡처 실패는 고정 `SupportFailed`로 종료하고 기본 vault로 fallback하지 않는다. alias retarget 뒤에도 snapshot은 불변이다. 실제 노출 RED1→integration14·경계 unit1·CLI3으로 고유18 PASS, CLI 첫 compile 실패(선택0)도 보존했다. `devbox-verification/s6-1b4/`에 원본·명령·자원·소스 근거를 남겼으며 memory_enforced=true. locked 로그 생략·고정 archive 이름·0600·읽기/secret 제한은 유지한다. 전체/native·push/PR 미실행. 독립 전체 검토 APPROVE·지적0, 완료 Biome844 PASS(1.073초·memory_enforced=true) 뒤 로컬 과제 커밋으로 보존한다.
+- [x] 독립 검토 APPROVE·지적0, 완료 Biome 뒤 `fix(tools): redact the configured notes vault in support bundles`로 로컬 완료.
 
 ## 11. S6-1c — 실제 의존성 경고 세 건 정리
 

@@ -5,14 +5,13 @@ use zeroize::Zeroizing;
 pub(super) type Values = BTreeMap<String, Zeroizing<Vec<u8>>>;
 pub(super) struct Redactor {
     matcher: Option<AhoCorasick>,
-    home: String,
-    notes: String,
+    paths: super::paths::Paths,
     // Keep resolved values zeroizing and scoped to this single bundle.
     _values: Values,
     _patterns: Vec<Zeroizing<Vec<u8>>>,
 }
 impl Redactor {
-    pub(super) fn new(home: &Path, values: Values) -> R<Self> {
+    pub(super) fn new(home: &Path, vault: &super::VaultSnapshot, values: Values) -> R<Self> {
         if values.len() > 2048
             || values.values().map(|value| value.len()).sum::<usize>() > 16 * 1024 * 1024
         {
@@ -49,28 +48,75 @@ impl Redactor {
         };
         Ok(Self {
             matcher,
-            home: home.to_string_lossy().into_owned(),
-            notes: home.join("notes").to_string_lossy().into_owned(),
+            paths: super::paths::Paths::new(home, vault)?,
             _values: values,
             _patterns: patterns,
         })
     }
     pub(super) fn text(&self, text: &str) -> R<String> {
-        let masked = if let Some(matcher) = &self.matcher {
-            let mut bytes = Vec::new();
-            let mut previous = 0;
-            for found in matcher.find_iter(text.as_bytes()) {
-                bytes.extend_from_slice(&text.as_bytes()[previous..found.start()]);
-                bytes.extend_from_slice(b"[REDACTED]");
-                previous = found.end();
-            }
-            bytes.extend_from_slice(&text.as_bytes()[previous..]);
-            String::from_utf8(bytes).map_err(super::failed)?
+        self.apply(text, false)
+    }
+    pub(super) fn finish(&self, text: &str) -> R<String> {
+        self.apply(text, true)
+    }
+    fn apply(&self, text: &str, preserve_masks: bool) -> R<String> {
+        use super::paths::{Span, masks};
+        let protected = if preserve_masks {
+            masks(text)
         } else {
-            text.to_owned()
+            Vec::new()
         };
-        Ok(masked
-            .replace(&self.notes, "<notes>")
-            .replace(&self.home, "~"))
+        let visible = |span: &Span| {
+            let at = protected.partition_point(|mask| mask.end <= span.start);
+            protected.get(at).is_none_or(|mask| mask.start >= span.end)
+        };
+        let mut paths = self
+            .paths
+            .spans(text)
+            .into_iter()
+            .filter(visible)
+            .peekable();
+        let secret_matches: Box<dyn Iterator<Item = Span> + '_> = match &self.matcher {
+            Some(matcher) => Box::new(matcher.find_iter(text.as_bytes()).map(|m| Span {
+                start: m.start(),
+                end: m.end(),
+                kind: 0,
+            })),
+            None => Box::new(std::iter::empty()),
+        };
+        let mut secrets = secret_matches.filter(visible).peekable();
+        let mut out = String::new();
+        let mut cursor = 0;
+        let mut active: Option<Span> = None;
+        loop {
+            let next = match (paths.peek(), secrets.peek()) {
+                (Some(path), Some(secret)) if path.start <= secret.start => paths.next(),
+                (Some(_), Some(_)) | (None, Some(_)) => secrets.next(),
+                (Some(_), None) => paths.next(),
+                (None, None) => None,
+            };
+            let Some(next) = next else { break };
+            if let Some(current) = &mut active
+                && next.start < current.end
+            {
+                // A secret that overlaps a path cannot destroy its full-root match.
+                current.end = current.end.max(next.end);
+                current.kind = current.kind.max(next.kind);
+                continue;
+            }
+            if let Some(current) = active.take() {
+                out.push_str(&text[cursor..current.start]);
+                out.push_str(current.replacement());
+                cursor = current.end;
+            }
+            active = Some(next);
+        }
+        if let Some(current) = active {
+            out.push_str(&text[cursor..current.start]);
+            out.push_str(current.replacement());
+            cursor = current.end;
+        }
+        out.push_str(&text[cursor..]);
+        Ok(out)
     }
 }

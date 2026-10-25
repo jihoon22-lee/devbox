@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 사용자2026-10-25 “토큰 한도가 복구되었어. 이어서 S6 작업 계속 진행해줘”에 따라 이전 세션 중단을 해제하고 S6-1b.3 HTTP OAuth 요청 승인 UI를 구현·직접 검증했다. 기반083d9660, 기존 `v1/s6-release` worktree 유지. 고유30 PASS·scoped TS·변경 TS Biome PASS, 전체 독립 검토 APPROVE·지적0. 완료 Biome 뒤 로컬 과제 커밋으로 보존한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S6-1b.3 완료 커밋08e8f70e 뒤 S6-1b.4 사용자 지정 vault 지원 번들 가림을 구현·직접 검증했다. 실제 NotesService 설정의 configured/canonical 경로 snapshot을 전달하며 고유18 PASS. 독립 전체 검토 APPROVE·지적0, 완료 Biome844 PASS 후 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1b.3 로컬 완료 뒤 승인된07c 순서대로 S6-1b.4 custom vault 지원 번들 가림을 진행한다. 기존 중단/인계 지시는 재개 요청으로 대체됐다. 현재 push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-25 · 실제 rpcBackend/SendCollector→요청 UI 승인 행동 부재 RED1→신규 UI12·adapter4 및 기존14로 고유30 PASS. same-stream history/controller/tab/root 소유권·명시 클릭·취소/늦은 이벤트/브라우저 실패·ordinary background/save-key 보존을 확인했다. `devbox-verification/s6-1b3/`에 명령/원본/자원/source 근거. memory_enforced=true·scoped TS·변경10파일 Biome PASS. 독립 검토 APPROVE·지적0·완료 Biome 뒤 로컬 커밋. 전체/E2E/native/push/PR 미실행. |
+| 다음 제품 작업 | S6-1b.4 로컬 완료 뒤 승인된07c 순서대로 S6-1c를 진행한다. 현재 push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-25 · custom vault 외부 경로 노출 실제 RED1→support integration14·경계 unit1·CLI3으로 고유18 PASS. CLI 첫 compile 실패(시험0)도 보존. `devbox-verification/s6-1b4/` 명령·원본·자원·source 근거, 모든 실행 memory_enforced=true. 독립 검토 APPROVE·지적0·완료 Biome844 PASS, 전체/E2E/native/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -84,7 +84,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(재개·1b.3 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1b.4 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -98,7 +98,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a.1–4·1b.1–2 완료;1b.3 고유30 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a.1–4·1b.1–2 완료;1b.3 완료;1b.4 고유18 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -151,12 +151,19 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–2 로컬 완료;1b.3 고유30 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–2 로컬 완료;1b.3 완료;1b.4 고유18 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
+
+### S6-1b.4 사용자 지정 vault 지원 번들 가림 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반08e8f70e. daemon이 실제 NotesService의 설정 경로를 먼저 복사하고 canonical 디렉터리를 bundle 시작 시 캡처하여 tools에 immutable snapshot으로 넘긴다. 캡처 실패/없어진 vault는 고정 `SupportFailed`로 종료하며 기본 `~/notes`로 대체하지 않는다. 이후 symlink 변경은 이미 캡처한 alias/canonical을 바꾸지 않는다.
+- home 내부/외부의 configured·canonical raw/JSON/debug 표현을 경계 검사 후 `<notes>`로 가린다. home보다 vault가 우선하며 형제 prefix는 보존한다. 겹친 secret 원문도 함께 제거하고 최종 archive pass는 이미 삽입한 marker를 유지한다. root `/`와 trailing separator도 자손을 가린다. secrets locked 로그 생략·archive 고정 이름·0600·읽기 제한·secret 수/바이트 예산은 유지한다.
+- 실제 외부 custom vault 누출 RED1→GREEN1, 최종 support integration14 PASS(기존9+신규5)·root/trailing 경계 unit1 PASS·실제 CLI services/config→snapshot3 PASS로 **고유18 PASS**. CLI 첫 시도는 시험 fixture의 직접 의존성 없는 `toml` 참조로 compile 실패·선택0; 기존 `serde_json` 인용으로 고쳐3 PASS이며 원본 실패 보존, 새 의존성 없음.
+- 근거: Git common-dir `devbox-verification/s6-1b4/`의 `commands.json`, `test-cases.json`, `resources-index.json`, `source-freeze.json`, `summary.json` 및 RED/GREEN·CLI 로그. 모든 wrapper 실행 memory_enforced=true. 소유 temp fixture만 사용했고 host doctor probe·서비스 변경·Windows/native·전체 check/build/E2E·push/PR은 미실행. 독립 전체 검토 APPROVE·지적0(`independent-review.json`), 완료 Biome844 PASS(1.073초·memory_enforced=true) 뒤 로컬 과제 커밋으로 마무리한다.
 
 ### S6-1b.3 HTTP 요청 승인 UI (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 

@@ -23,6 +23,7 @@ mod source_routes;
 pub mod state;
 mod streams;
 mod summary;
+mod support_bundle;
 mod system;
 mod tools_routes;
 mod trust;
@@ -264,3 +265,6 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod response_note_tests;
+
+#[cfg(test)]
+mod support_bundle_tests;
