@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-1b.3 완료 커밋08e8f70e 뒤 S6-1b.4 사용자 지정 vault 지원 번들 가림을 구현·직접 검증했다. 실제 NotesService 설정의 configured/canonical 경로 snapshot을 전달하며 고유18 PASS. 독립 전체 검토 APPROVE·지적0, 완료 Biome844 PASS 후 로컬 과제 커밋으로 보존한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S6-1b.4 완료5034d003 뒤 S6-1c 첫 독립 과제인 Vitest 보안 patch를 적용했다. app devDependency를 정확4.1.12로 고정하고 관련8개 패키지만 갱신했다. 기존 mock/component15 PASS·설치/lock 그래프 확인을 마쳤으며 독립 검토 APPROVE·지적0·완료 Biome844 PASS 후 로컬 과제 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-1b.4 로컬 완료 뒤 승인된07c 순서대로 S6-1c를 진행한다. 현재 push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-25 · custom vault 외부 경로 노출 실제 RED1→support integration14·경계 unit1·CLI3으로 고유18 PASS. CLI 첫 compile 실패(시험0)도 보존. `devbox-verification/s6-1b4/` 명령·원본·자원·source 근거, 모든 실행 memory_enforced=true. 독립 검토 APPROVE·지적0·완료 Biome844 PASS, 전체/E2E/native/push/PR 미실행. |
+| 다음 제품 작업 | S6-1c Vitest 로컬 완료 뒤 Mermaid/KaTeX 호환 보안 갱신을 별도 과제로 진행한다. 현재 Mermaid/KaTeX는 변경하지 않았다. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-25 · 공식 advisory 두 건과 실제 @vitest/mocker4.1.11 경로를 dependency RED 근거로 보존했다(앱 exploit·실패시험 재현 아님). 정확4.1.12 pin/관련8패키지 전환, frozen offline install·기존 mock/component15 PASS(2.924초), 모든 supervised 실행 memory_enforced=true. `devbox-verification/s6-1c-vitest/` 근거. 독립 검토 APPROVE·지적0·완료 Biome844 PASS·로컬 완료, 전체/E2E/native/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -84,7 +84,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1b.4 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(1c-Vitest 로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -98,7 +98,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a.1–4·1b.1–2 완료;1b.3 완료;1b.4 고유18 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest15 PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -151,12 +151,21 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–2 로컬 완료;1b.3 완료;1b.4 고유18 PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a.1–4·1b.1–4 로컬 완료;1c-Vitest15 PASS·독립 APPROVE·로컬 완료 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
 
+
+
+### S6-1c-Vitest 보안 patch (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
+
+- 기반5034d003의 실제 app devDependency 경로 `vitest4.1.11 → @vitest/mocker4.1.11`을 보존하고 [manual mock advisory](https://github.com/advisories/GHSA-qxg6-89mg-rqv8)·[Windows redirect advisory](https://github.com/advisories/GHSA-xp26-3454-mjgp)의 affected/fixed 범위를 다시 확인했다. 두 건 모두4.1.12가 V4 수정 버전이며 [공식 릴리스](https://github.com/vitest-dev/vitest/releases/tag/v4.1.12)의 backport다. 이는 dependency RED 근거이며 현재 앱 exploit 재현이나 인위적 실패시험으로 세지 않는다. Vite 설정은 React plugin만 사용하고 명시 mocker/interceptor plugin은 확인되지 않았다.
+- pnpm9.0.0·Node24.18.0에서 정상 갱신 후 `app/package.json`을 정확 `4.1.12`로 고정했다. 첫 add는 save-exact 요청에도 기존 caret 표기를 유지했으므로 manifest를 보정하고 정상 lockfile-only 갱신·frozen offline install로 일치시켰다. 설치 실패는 없었고, 실제 설치8개(Vitest·expect·mocker·pretty-format·runner·snapshot·spy·utils)와 lock graph가 모두4.1.12다.
+- YAML 구조 비교로 그8개 package/snapshot과 app Vitest importer 외 변화가 없음을 확인했다. 남아 있는 `browser-webdriverio: ^4.1.11`은4.1.12 공식 metadata의 optional peer 범위이며 설치된 구버전이 아니다. Mermaid11.17.2·KaTeX0.16.47과 나머지 의존성은 그대로이며 이 과제에서 해결됐다고 쓰지 않는다.
+- 기존 `transport-tauri.test.ts`11개·`CaptureWindow.test.tsx`4개로 **고유15 PASS**(2.924초). hoisted/partial importOriginal mock, reset/restore, fake timers, 비동기 실패·listener 소유권, 실제 React IME·pending 중복·오류/초안 보존을 확인했다. 시험 source는 변경하지 않았다. 원본 graph/advisory/metadata·명령·JSON 결과·자원·source는 `devbox-verification/s6-1c-vitest/`에 보존한다. 모든 supervised 실행은 required cgroup memory_enforced=true·CPU4·nice10·jobs/workers/test threads2·memory6/8GiB·swap1GiB다.
+- 독립 검토 APPROVE·지적0(`independent-review.json`), 완료 Biome844 PASS(1.695초·memory_enforced=true) 뒤 로컬 과제 커밋으로 마무리한다. 전체 check/build/E2E·Windows/native·exploit 재현·push/PR/공개는 미실행이며1b.4 이하 역사 기록을 byte 동일하게 보존했다. 다음 독립 과제는 Mermaid/KaTeX 호환 갱신이다.
 
 ### S6-1b.4 사용자 지정 vault 지원 번들 가림 (2026-10-25 · 직접 검증·독립 APPROVE·로컬 완료)
 
