@@ -20,7 +20,11 @@ use zeroize::{Zeroize, Zeroizing};
 /// All sessions own bounded seeds; construction/extension failure never falls back to raw output.
 pub(crate) struct Redaction {
     seeds: Seeds,
+    /// Every seed: display, stream and history redaction.
     pub(crate) redactor: Redactor,
+    /// Credential/secret seeds only (no cookie values): the cross-origin redirect and
+    /// header-drop guard, so ordinary cookie values cannot block or strip a hop.
+    pub(crate) guard: Redactor,
     failed: bool,
 }
 impl Redaction {
@@ -33,10 +37,11 @@ impl Redaction {
         for value in values {
             seeds.add(value.as_ref().as_bytes())?;
         }
-        let redactor = Redactor::compile(&seeds)?;
+        let (redactor, guard) = Redactor::compile_both(&seeds)?;
         Ok(Self {
             seeds,
             redactor,
+            guard,
             failed: false,
         })
     }
@@ -52,23 +57,26 @@ impl Redaction {
         }
         let result = collect(&mut self.seeds).and_then(|changed| {
             if changed {
-                Redactor::compile(&self.seeds).map(Some)
+                Redactor::compile_both(&self.seeds).map(Some)
             } else {
                 Ok(None)
             }
         });
         match result {
-            Ok(Some(redactor)) => {
+            Ok(Some((redactor, guard))) => {
                 self.redactor = redactor;
+                self.guard = guard;
                 Ok(())
             }
             Ok(None) => Ok(()),
             Err(error) => {
                 self.failed = true;
-                self.redactor = Redactor {
+                let blocked = Redactor {
                     blocked: true,
                     ..Default::default()
                 };
+                self.redactor = blocked.clone();
+                self.guard = blocked;
                 Err(error)
             }
         }
@@ -110,8 +118,11 @@ impl Redactor {
     {
         Ok(Redaction::new(values)?.redactor)
     }
-    fn compile(seeds: &Seeds) -> Result<Self, ApiError> {
-        let patterns = seeds.patterns()?;
+    fn compile_both(seeds: &Seeds) -> Result<(Self, Self), ApiError> {
+        Ok((Self::compile(seeds, false)?, Self::compile(seeds, true)?))
+    }
+    fn compile(seeds: &Seeds, guard_only: bool) -> Result<Self, ApiError> {
+        let patterns = seeds.patterns(guard_only)?;
         if patterns.is_empty() {
             return Ok(Self::default());
         }
@@ -364,5 +375,28 @@ mod credential_tests {
             crate::REDACTED
         );
         assert!(r.add("small").is_err(), "failure is sticky");
+        assert!(r.guard.contains("anything"), "guard fails closed too");
+    }
+    #[test]
+    fn cookie_values_redact_output_but_only_credentials_guard_hops() {
+        let mut r = Redaction::new(["fixture-secret"]).expect("policy");
+        r.request_headers([
+            ("Cookie", b"sid=fixture-cookie; bare".as_slice()),
+            ("X-API-Key", b"fixture-api".as_slice()),
+        ])
+        .expect("request");
+        r.response_headers([("Set-Cookie", b"state=fixture-state; Path=/".as_slice())])
+            .expect("response");
+        for value in ["fixture-cookie", "bare", "fixture-state"] {
+            assert_eq!(r.redactor.text(value), crate::REDACTED);
+            assert!(!r.guard.contains(value), "{value} never guards");
+        }
+        for value in ["fixture-secret", "fixture-api"] {
+            assert!(r.guard.contains(&format!("?q={value}")));
+        }
+        // The same bytes later seen as a credential start guarding.
+        r.request_headers([("Authorization", b"Bearer fixture-state".as_slice())])
+            .expect("upgrade");
+        assert!(r.guard.contains("?state=fixture-state"));
     }
 }

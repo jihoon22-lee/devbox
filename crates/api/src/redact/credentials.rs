@@ -37,9 +37,9 @@ fn cookie_value(seeds: &mut Seeds, value: &[u8]) -> Result<bool, ApiError> {
     if semantic_cookie(value).is_empty() {
         return Ok(false);
     }
-    let mut changed = seeds.add(value)?;
+    let mut changed = seeds.add_cookie(value)?;
     if value.len() >= 2 && value[0] == b'"' && value[value.len() - 1] == b'"' {
-        changed |= seeds.add(&value[1..value.len() - 1])?;
+        changed |= seeds.add_cookie(&value[1..value.len() - 1])?;
     }
     Ok(changed)
 }
@@ -51,7 +51,7 @@ pub(super) fn request(seeds: &mut Seeds, name: &str, value: &[u8]) -> Result<boo
                 let v = trim(&part[at + 1..]);
                 changed |= cookie_value(seeds, v)?;
             } else if !trim(part).is_empty() {
-                changed |= seeds.add(trim(part))?;
+                changed |= seeds.add_cookie(trim(part))?;
             }
         }
         return Ok(changed);
@@ -92,6 +92,6 @@ pub(super) fn response(seeds: &mut Seeds, name: &str, value: &[u8]) -> Result<bo
     if let Some(at) = pair.iter().position(|b| *b == b'=') {
         cookie_value(seeds, &pair[at + 1..])
     } else {
-        seeds.add(trim(pair))
+        seeds.add_cookie(trim(pair))
     }
 }

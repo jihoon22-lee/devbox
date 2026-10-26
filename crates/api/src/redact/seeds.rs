@@ -9,6 +9,9 @@ const HEX: &[u8; 16] = b"0123456789ABCDEF";
 #[derive(Default)]
 pub(super) struct Seeds {
     values: Zeroizing<Vec<Vec<u8>>>,
+    /// Parallel to `values`: whether the value also guards cross-origin redirects/headers.
+    /// Cookie-derived values only redact display/history (S6-6b B4).
+    guard: Vec<bool>,
     bytes: usize,
 }
 pub(super) fn failed(reason: &str) -> ApiError {
@@ -17,9 +20,23 @@ pub(super) fn failed(reason: &str) -> ApiError {
     }
 }
 impl Seeds {
+    /// A credential or secret value: redacts output and guards cross-origin hops.
     pub fn add(&mut self, value: &[u8]) -> Result<bool, ApiError> {
-        if value.is_empty() || self.values.iter().any(|v| v.as_slice() == value) {
+        self.insert(value, true)
+    }
+    /// A cookie-derived value: redacts output only.
+    pub fn add_cookie(&mut self, value: &[u8]) -> Result<bool, ApiError> {
+        self.insert(value, false)
+    }
+    fn insert(&mut self, value: &[u8], guard: bool) -> Result<bool, ApiError> {
+        if value.is_empty() {
             return Ok(false);
+        }
+        if let Some(at) = self.values.iter().position(|v| v.as_slice() == value) {
+            // The same bytes seen as a credential later must start guarding.
+            let upgrade = guard && !self.guard[at];
+            self.guard[at] |= guard;
+            return Ok(upgrade);
         }
         if self.values.len() >= MAX_SEEDS || value.len() > MAX_SEED_BYTES.saturating_sub(self.bytes)
         {
@@ -27,12 +44,19 @@ impl Seeds {
         }
         self.bytes += value.len();
         self.values.push(value.to_vec());
+        self.guard.push(guard);
         Ok(true)
     }
-    pub fn patterns(&self) -> Result<Zeroizing<Vec<Vec<u8>>>, ApiError> {
+    /// All variants, or only those of guarding (non-cookie) values.
+    pub fn patterns(&self, guard_only: bool) -> Result<Zeroizing<Vec<Vec<u8>>>, ApiError> {
         let mut patterns = Zeroizing::new(Vec::new());
         let mut bytes = 0;
-        for value in self.values.iter() {
+        for (value, _) in self
+            .values
+            .iter()
+            .zip(&self.guard)
+            .filter(|(_, guard)| **guard || !guard_only)
+        {
             pattern(&mut patterns, &mut bytes, value.iter().copied())?;
             pattern(&mut patterns, &mut bytes, encoded(value, true))?;
             pattern(&mut patterns, &mut bytes, encoded(value, false))?;
@@ -171,7 +195,7 @@ mod tests {
         let mut seeds = Seeds::default();
         seeds.add(&vec![0; MAX_SEED_BYTES]).expect("raw budget");
         assert!(
-            seeds.patterns().is_err(),
+            seeds.patterns(false).is_err(),
             "escaped variants exceed aggregate budget"
         );
         let mut patterns = Vec::new();
