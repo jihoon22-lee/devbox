@@ -260,8 +260,24 @@ async fn bridge_once(
                             windows_waiting = false;
                             if windows_runs.len() >= 4 {frame.zeroize();bridge_cancel.cancel();continue;}
                             let token=bridge_cancel.child_token();
+                            let tracking = {
+                                let lifecycle = app.state::<super::quit::QuitState>();
+                                let quit = lifecycle.state.lock().expect("quit state");
+                                app.state::<super::native_activity::Activity>().reserve(&request, quit.sealed())
+                            };
                             windows_runs.insert((request.run_id.clone(),request.attempt_id.clone()),token.clone());
-                            windows_tasks.spawn(super::windows::run_windows(request,windows_output.clone(),token));
+                            if let Some(tracking) = tracking {
+                                windows_tasks.spawn(super::windows::run_windows_tracked(request,windows_output.clone(),token,move |child| tracking.spawned(child)));
+                            } else {
+                                let output=windows_output.clone();
+                                let identity=devbox_protocol::windows::RunIdentity { run_id:request.run_id.clone(),attempt_id:request.attempt_id.clone() };
+                                drop(request);
+                                windows_tasks.spawn(async move {
+                                    let _=output.send(devbox_protocol::windows::WindowsEvent {
+                                        run_id:identity.run_id,attempt_id:identity.attempt_id,event:devbox_protocol::windows::WindowsOutput::Failed,
+                                    }).await;
+                                });
+                            }
                             if windows_runs.len() < 4 {
                                 native_pending.0.push_back(crate::core::windows::next_request());
                                 windows_waiting = true;

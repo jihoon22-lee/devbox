@@ -241,3 +241,19 @@ test("disabled native snapshots never dispatch user actions", async () => {
   await act(async () => result.current.run("check"));
   expect(native.invoke).toHaveBeenCalledTimes(1);
 });
+
+test("installation requires a current captured generation and ticket rather than the generic action dispatcher", async () => {
+  native.invoke.mockResolvedValueOnce(
+    snapshot({ phase: "ready", generation: 7, revision: 10, availableVersion: "1.4.0", nextAction: "install" }),
+  );
+  const { result } = renderHook(useNativeUpdate);
+  await waitFor(() => expect(result.current.snapshot?.phase).toBe("ready"));
+  await act(async () => result.current.run("install" as never));
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  await act(async () => result.current.confirmInstall(6, 81));
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  expect(result.current.issue).toBe("staleOperation");
+  emit(snapshot({ phase: "ready", generation: 8, revision: 11, availableVersion: "1.4.0", nextAction: "install" }));
+  await act(async () => result.current.confirmInstall(8, 0));
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+});

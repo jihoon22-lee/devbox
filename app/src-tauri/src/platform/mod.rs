@@ -27,3 +27,11 @@ pub mod wsl_cleanup;
 pub mod quit;
 
 pub mod update;
+
+pub mod popout;
+
+pub mod update_install;
+
+pub mod update_runner;
+
+pub mod native_activity;

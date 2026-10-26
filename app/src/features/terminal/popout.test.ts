@@ -1,33 +1,23 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { openPopout, popoutLabel } from "./popout";
 
-const native = vi.hoisted(() => ({
-  get: vi.fn(),
-  focus: vi.fn(),
-  created: vi.fn(),
-  listeners: new Map<string, (event: { payload: unknown }) => void>(),
-  stops: vi.fn(),
-}));
+const native = vi.hoisted(() => ({ invoke: vi.fn(), created: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   WebviewWindow: class {
-    static getByLabel = native.get;
-    setFocus = native.focus;
-    constructor(label: string, options: unknown) {
-      native.created(label, options);
+    constructor() {
+      native.created();
+      throw new Error("Renderer creation is forbidden");
     }
-    once(event: string, callback: (message: { payload: unknown }) => void) {
-      native.listeners.set(event, callback);
-      return Promise.resolve(native.stops);
+    static getByLabel() {
+      throw new Error("Renderer lookup is forbidden");
     }
   },
 }));
 afterEach(() => {
-  delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-  native.get.mockReset();
-  native.focus.mockReset();
+  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  native.invoke.mockReset();
   native.created.mockReset();
-  native.listeners.clear();
-  native.stops.mockReset();
   history.replaceState({}, "", "/");
 });
 test("browser popouts reuse/focus the same target, preserve validated search, and report blockers", async () => {
@@ -46,32 +36,59 @@ test("browser popouts reuse/focus the same target, preserve validated search, an
   open.mockReturnValue(null);
   await expect(openPopout("agent", "blocked")).rejects.toThrow("blocked");
 });
-test("native creation deduplicates pending requests, waits for creation, then reuses its window", async () => {
+test("native creation delegates typed identity and pending deduplication without URL or renderer creation", async () => {
   Object.assign(window, { __TAURI_INTERNALS__: {} });
-  native.get.mockResolvedValue(null);
-  native.focus.mockResolvedValue(undefined);
-  const first = openPopout("terminal", "native");
-  const second = openPopout("terminal", "native");
+  history.replaceState({}, "", "/terminal?gateway=wss://private.invalid&renderer=dom&url=https://wrong.invalid");
+  let finish!: (label: string) => void;
+  native.invoke.mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const first = openPopout("terminal", "native/id");
+  const second = openPopout("terminal", "native/id");
   expect(second).toBe(first);
-  await vi.waitFor(() => expect(native.listeners.has("tauri://created")).toBe(true));
-  expect(native.created).toHaveBeenCalledTimes(1);
-  native.listeners.get("tauri://created")!({ payload: null });
+  await vi.waitFor(() =>
+    expect(native.invoke).toHaveBeenCalledWith("popout_create", { kind: "terminal", id: "native/id" }),
+  );
+  expect(native.invoke).toHaveBeenCalledOnce();
+  finish(popoutLabel("terminal", "native/id"));
   await first;
-  expect(native.focus).toHaveBeenCalledTimes(1);
-  expect(native.stops).toHaveBeenCalledTimes(2);
-  native.get.mockResolvedValue({ setFocus: native.focus });
-  await openPopout("terminal", "native");
-  expect(native.created).toHaveBeenCalledTimes(1);
-  expect(native.focus).toHaveBeenCalledTimes(2);
+  native.invoke.mockResolvedValue(popoutLabel("terminal", "native/id"));
+  await openPopout("terminal", "native/id");
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+  expect(native.created).not.toHaveBeenCalled();
 });
-test("native creation errors reject and clear the pending operation for retry", async () => {
+
+test.each(["agents-grid", "capture"] as const)(
+  "native %s omits arbitrary URLs and sends an explicit null identity",
+  async (kind) => {
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    native.invoke.mockResolvedValue(popoutLabel(kind));
+    await openPopout(kind);
+    expect(native.invoke).toHaveBeenCalledWith("popout_create", { kind, id: null });
+    expect(native.created).not.toHaveBeenCalled();
+  },
+);
+
+test("native creation rejection clears the pending request and never exposes raw payload details", async () => {
   Object.assign(window, { __TAURI_INTERNALS__: {} });
-  native.get.mockResolvedValue(null);
-  const first = openPopout("terminal", "native-failed");
-  const rejected = expect(first).rejects.toThrow("native failure");
-  await vi.waitFor(() => expect(native.listeners.has("tauri://error")).toBe(true));
-  native.listeners.get("tauri://error")!({ payload: "native failure" });
-  await rejected;
-  native.get.mockResolvedValue({ setFocus: native.focus });
-  await expect(openPopout("terminal", "native-failed")).resolves.toBeUndefined();
+  native.invoke.mockRejectedValueOnce({ url: "https://private.invalid", body: "secret body" });
+  await expect(openPopout("agent", "retry")).rejects.toThrow(
+    "새 창을 열지 못했습니다. 앱 상태를 확인하고 다시 시도하세요.",
+  );
+  native.invoke.mockResolvedValue(popoutLabel("agent", "retry"));
+  await expect(openPopout("agent", "retry")).resolves.toBeUndefined();
+  expect(native.invoke).toHaveBeenCalledTimes(2);
+});
+
+test("native labels preserve nested Unicode identity and malformed success responses are rejected", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  const id = "work/2026 계획.md";
+  native.invoke.mockResolvedValueOnce(popoutLabel("note", id));
+  await openPopout("note", id);
+  expect(native.invoke).toHaveBeenCalledWith("popout_create", { kind: "note", id });
+  native.invoke.mockResolvedValueOnce("https://wrong.invalid");
+  await expect(openPopout("note", id)).rejects.toThrow("새 창을 열지 못했습니다");
 });

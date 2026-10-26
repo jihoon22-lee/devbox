@@ -271,3 +271,247 @@ fn fixture_wrong_channel_and_changed_installer_are_rejected_before_service_admis
         Err(UpdateError::Digest)
     ));
 }
+
+#[tokio::test]
+async fn install_confirmation_epochs_cancel_cleanup_and_commit_are_fenced() {
+    let (_temp, service) = setup(Duration::ZERO);
+    let worker = tokio::spawn(service.clone().run());
+    service.check(false).unwrap();
+    let available = wait(&service, |s| s.phase == Phase::Available).await;
+    service.download(available.generation).unwrap();
+    let ready = wait(&service, |s| s.phase == Phase::Ready).await;
+    assert_eq!(ready.next_action, Action::Install);
+    assert_eq!(
+        service
+            .install_summary(ready.generation, None, 1, 2)
+            .blocked,
+        Some(install::InstallBlock::NativeUnknown)
+    );
+    assert_eq!(
+        service
+            .install_summary(ready.generation, Some(1), 1, 2)
+            .blocked,
+        Some(install::InstallBlock::NativeActive)
+    );
+    let ticket = service
+        .install_summary(ready.generation, Some(0), 1, 2)
+        .confirmation_id
+        .unwrap();
+    assert!(matches!(
+        service.begin_install(ready.generation, ticket, Some(0), 2, 2),
+        Err(UpdateError::StaleOperation)
+    ));
+    let ticket = service
+        .install_summary(ready.generation, Some(0), 2, 2)
+        .confirmation_id
+        .unwrap();
+    assert!(matches!(
+        service.begin_install(ready.generation, ticket, Some(0), 2, 3),
+        Err(UpdateError::StaleOperation)
+    ));
+    let ticket = service
+        .install_summary(ready.generation, Some(0), 2, 3)
+        .confirmation_id
+        .unwrap();
+    let first = service
+        .begin_install(ready.generation, ticket, Some(0), 2, 3)
+        .unwrap();
+    assert!(
+        service
+            .begin_install(ready.generation, ticket, Some(0), 2, 3)
+            .is_err()
+    );
+    let cancelled = service.cancel(first.generation).unwrap();
+    assert!(first.token.is_cancelled());
+    assert_eq!(first.version, "1.1.0");
+    assert!(first.fixture_install);
+    assert_eq!(cancelled.phase, Phase::Installing);
+    assert_eq!(cancelled.next_action, Action::None);
+    assert_eq!(
+        service.commit_install(first.generation, || panic!(
+            "cancelled runner cannot commit"
+        )),
+        Err(UpdateError::Cancelled)
+    );
+    assert_eq!(
+        service.download(first.generation).unwrap().phase,
+        Phase::Installing
+    );
+    service.install_quarantined(first.generation);
+    assert_eq!(service.snapshot().phase, Phase::Installing);
+    assert_eq!(service.snapshot().next_action, Action::None);
+    assert_eq!(service.snapshot().error, Some(UpdateError::Runner));
+    service.install_aborted(first.generation, UpdateError::Cancelled);
+    first.proof.revalidate().unwrap();
+    let ticket = service
+        .install_summary(first.generation, Some(0), 2, 3)
+        .confirmation_id
+        .unwrap();
+    let next = service
+        .begin_install(first.generation, ticket, Some(0), 2, 3)
+        .unwrap();
+    service.commit_install(next.generation, || Ok(())).unwrap();
+    assert_eq!(service.snapshot().next_action, Action::None);
+    assert!(service.cancel(next.generation).is_err());
+    assert!(
+        service
+            .commit_install(next.generation, || panic!("single commit"))
+            .is_err()
+    );
+    service.install_aborted(next.generation, UpdateError::Runner);
+    assert_eq!(service.snapshot().phase, Phase::Installing);
+    worker.abort();
+    let _ = worker.await;
+}
+
+#[test]
+fn unknown_recovery_blocks_checks_and_known_failure_exposes_recovery() {
+    let (_temp, service) = setup(Duration::ZERO);
+    service.recovered_install(UpdateError::RecoveryRequired, true);
+    let unknown = service.snapshot();
+    assert_eq!(unknown.phase, Phase::Installing);
+    assert_eq!(unknown.next_action, Action::None);
+    assert_eq!(service.check(false).unwrap(), unknown);
+    assert!(service.cancel(unknown.generation).is_err());
+    service.recovered_install(UpdateError::InstallFailed, false);
+    assert_eq!(service.snapshot().phase, Phase::Failed);
+    assert_eq!(service.snapshot().error, Some(UpdateError::InstallFailed));
+    let recovered = service.snapshot();
+    assert_eq!(service.check(true).unwrap(), recovered);
+    assert_eq!(service.check(false).unwrap().phase, Phase::Checking);
+}
+
+#[tokio::test]
+async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch() {
+    use crate::core::quit::Quit;
+    let (temp, service) = setup(Duration::ZERO);
+    let worker = tokio::spawn(service.clone().run());
+    service.check(false).unwrap();
+    let available = wait(&service, |s| s.phase == Phase::Available).await;
+    service.download(available.generation).unwrap();
+    let ready = wait(&service, |s| s.phase == Phase::Ready).await;
+    let ticket = service
+        .install_summary(ready.generation, Some(0), 10, 0)
+        .confirmation_id
+        .unwrap();
+    let work = service
+        .begin_install(ready.generation, ticket, Some(0), 10, 0)
+        .unwrap();
+    {
+        use std::io::Read;
+        let mut first = work.proof.sealed_source().unwrap();
+        let mut second = work.proof.sealed_source().unwrap();
+        let mut byte = [0_u8];
+        first.file.read_exact(&mut byte).unwrap();
+        assert_eq!(byte, [42]);
+        assert_eq!(first.identity, second.identity);
+        assert_eq!(second.size, 100000);
+        second.file.read_exact(&mut byte).unwrap();
+        assert_eq!(
+            byte,
+            [42],
+            "runner read cursors are independent of download proof validation"
+        );
+    }
+    let mut quit = Quit::default();
+    let main = quit.register("main");
+    let note = quit.register("popout-note-dirty");
+    let labels = vec!["main".into(), "popout-note-dirty".into()];
+    let round = quit.start(labels.clone()).unwrap();
+    quit.ack("main", main, round, true);
+    assert_eq!(
+        service.commit_after_quit(
+            &mut quit,
+            install::CommitFence {
+                generation: work.generation,
+                round,
+                labels: &labels,
+                native: (Some(0), 10),
+                expected_native_epoch: 10
+            },
+            || panic!("dirty note must prevent runner commit")
+        ),
+        Err(UpdateError::QuitRejected)
+    );
+    assert!(
+        quit.start(labels.clone()).is_none(),
+        "cleanup still owns the quit round"
+    );
+    quit.unseal(round);
+    for native in [(Some(1), 10), (None, 10), (Some(0), 11)] {
+        let round = quit.start(labels.clone()).unwrap();
+        quit.ack("main", main, round, true);
+        quit.ack("popout-note-dirty", note, round, true);
+        assert!(
+            service
+                .commit_after_quit(
+                    &mut quit,
+                    install::CommitFence {
+                        generation: work.generation,
+                        round,
+                        labels: &labels,
+                        native,
+                        expected_native_epoch: 10
+                    },
+                    || panic!("changed native lifetime must block commit")
+                )
+                .is_err()
+        );
+        assert!(!quit.sealed());
+        assert!(!quit.approved);
+        assert!(quit.start(labels.clone()).is_none());
+        quit.unseal(round);
+    }
+    let round = quit.start(labels.clone()).unwrap();
+    quit.ack("main", main, round, true);
+    quit.ack("popout-note-dirty", note, round, true);
+    drop(work.proof); // Production coordinator releases this clone after the runner ACK.
+    let mut commits = 0;
+    service
+        .commit_after_quit(
+            &mut quit,
+            install::CommitFence {
+                generation: work.generation,
+                round,
+                labels: &labels,
+                native: (Some(0), 10),
+                expected_native_epoch: 10,
+            },
+            || {
+                commits += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(commits, 1);
+    assert_eq!(
+        fs::read_dir(temp.path().join("updates"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("download-"))
+            .count(),
+        0,
+        "original download is cleaned before Tauri directly exits the process"
+    );
+    assert!(
+        service
+            .commit_after_quit(
+                &mut quit,
+                install::CommitFence {
+                    generation: work.generation,
+                    round,
+                    labels: &labels,
+                    native: (Some(0), 10),
+                    expected_native_epoch: 10
+                },
+                || panic!("already committed")
+            )
+            .is_err()
+    );
+    assert!(quit.sealed());
+    assert!(quit.approved);
+    assert!(!quit.reserve_window());
+    assert_eq!(quit.register("popout-note-too-late"), 0);
+    worker.abort();
+    let _ = worker.await;
+}

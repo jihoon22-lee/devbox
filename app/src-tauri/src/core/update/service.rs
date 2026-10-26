@@ -25,7 +25,10 @@ enum Work {
 struct Inner {
     snapshot: Snapshot,
     candidate: Option<Candidate>,
-    ready: Option<ReadyProof>,
+    ready: Option<Arc<ReadyProof>>,
+    ticket: Option<install::Ticket>,
+    committed: bool,
+    recovery_pending: bool,
     cancel: Option<CancellationToken>,
     last_emit: Instant,
 }
@@ -77,6 +80,9 @@ impl Service {
                 },
                 candidate: None,
                 ready: None,
+                ticket: None,
+                committed: false,
+                recovery_pending: false,
                 cancel: None,
                 last_emit: Instant::now(),
             }),
@@ -116,6 +122,12 @@ impl Service {
                 )
             {
                 return Ok(state.snapshot.clone());
+            }
+            if automatic && state.recovery_pending {
+                return Ok(state.snapshot.clone());
+            }
+            if !automatic {
+                state.recovery_pending = false;
             }
             if automatic {
                 let due = SystemTime::now()
@@ -247,7 +259,10 @@ impl Service {
             if generation != state.snapshot.generation {
                 return Err(UpdateError::StaleOperation);
             }
-            if matches!(state.snapshot.phase, Phase::Downloading | Phase::Ready) {
+            if matches!(
+                state.snapshot.phase,
+                Phase::Downloading | Phase::Ready | Phase::Installing
+            ) {
                 return Ok(state.snapshot.clone());
             }
             let candidate = state.candidate.clone().ok_or(UpdateError::StaleOperation)?;
@@ -281,10 +296,10 @@ impl Service {
             state.snapshot.revision += 1;
             match result {
                 Ok(proof) => {
-                    state.ready = Some(proof);
+                    state.ready = Some(Arc::new(proof));
                     state.snapshot.phase = Phase::Ready;
                     state.snapshot.received_bytes = candidate.size;
-                    state.snapshot.next_action = Action::None;
+                    state.snapshot.next_action = Action::Install;
                 }
                 Err(error) => {
                     state.snapshot.phase = Phase::Failed;
@@ -341,6 +356,21 @@ impl Service {
             if generation != state.snapshot.generation {
                 return Err(UpdateError::StaleOperation);
             }
+            if state.snapshot.phase == Phase::Installing {
+                if state.committed {
+                    return Err(UpdateError::StaleOperation);
+                }
+                if let Some(token) = &state.cancel {
+                    token.cancel();
+                }
+                state.snapshot.error = Some(UpdateError::Cancelled);
+                state.snapshot.next_action = Action::None;
+                state.snapshot.revision += 1;
+                let snapshot = state.snapshot.clone();
+                drop(state);
+                self.emit(snapshot.clone());
+                return Ok(snapshot);
+            }
             if !matches!(state.snapshot.phase, Phase::Checking | Phase::Downloading) {
                 return Ok(state.snapshot.clone());
             }
@@ -391,3 +421,6 @@ impl Service {
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod tests;
+
+#[path = "install.rs"]
+pub mod install;

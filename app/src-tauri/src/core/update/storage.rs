@@ -195,8 +195,8 @@ impl Pending {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identity {
-    volume: u64,
-    index: u64,
+    pub volume: u64,
+    pub index: u64,
 }
 pub(super) fn read_locked(path: &Path) -> R<File> {
     safe(path)?;
@@ -244,8 +244,32 @@ pub struct ReadyProof {
     digest: [u8; 32],
     size: u64,
 }
+#[derive(Debug)]
+pub struct SealedSource {
+    pub file: File,
+    pub path: PathBuf,
+    pub size: u64,
+    pub digest: [u8; 32],
+    pub identity: Identity,
+}
 impl ReadyProof {
-    /// Installation will call this seam again immediately before committing its permit (S6-3b).
+    /// Native runner staging consumes this internal read handle, never a renderer path.
+    pub fn sealed_source(&self) -> R<SealedSource> {
+        self.revalidate()?;
+        let path = self.dir.path().join("installer.exe");
+        let file = read_locked(&path)?;
+        if identity(&file)? != self.identity {
+            return Err(UpdateError::Storage);
+        }
+        Ok(SealedSource {
+            file,
+            path,
+            size: self.size,
+            digest: self.digest,
+            identity: self.identity,
+        })
+    }
+    /// Revalidate the download before constructing independent runner staging.
     pub fn revalidate(&self) -> R<()> {
         let mut file = read_locked(&self.dir.path().join("installer.exe"))?;
         if identity(&file)? != self.identity || identity(&self.file)? != self.identity {

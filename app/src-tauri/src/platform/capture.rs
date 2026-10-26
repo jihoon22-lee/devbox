@@ -16,19 +16,31 @@ fn ensure(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return Ok(window);
     }
-    let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("/popout/capture".into()))
-        .title("빠른 캡처")
-        .inner_size(520.0, 220.0)
-        .visible(false)
-        .always_on_top(true)
-        .decorations(false)
-        .resizable(false)
-        .skip_taskbar(true)
-        .build()?;
-    super::window::disable_browser_accelerators_and_show(&window, false, false)?;
-    Ok(window)
+    super::quit::window_admission(app, || {
+        let window =
+            WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("/popout/capture".into()))
+                .title("빠른 캡처")
+                .inner_size(520.0, 220.0)
+                .visible(false)
+                .always_on_top(true)
+                .decorations(false)
+                .resizable(false)
+                .skip_taskbar(true)
+                .build()?;
+        super::window::disable_browser_accelerators_and_show(&window, false, false)?;
+        Ok(window)
+    })
 }
 pub fn show(app: &AppHandle) {
+    if app
+        .state::<super::quit::QuitState>()
+        .state
+        .lock()
+        .expect("quit state")
+        .sealed()
+    {
+        return;
+    }
     *app.state::<Capture>()
         .0
         .lock()

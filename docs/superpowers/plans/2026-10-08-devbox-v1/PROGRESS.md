@@ -16,12 +16,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-2 release 완료5be96c7e 뒤 S6-3a Rust 소유 updater 상태·검증된 다운로드와 설정/상태줄 연결을 구현했다. 단일 worker·pending1·generation/revision, 고정 GitHub/typed 상태·채널별 소유 파일 proof, prod와 accept/test fixture 분리를 유지한다. 직접 고유67 PASS(Rust27+frontend40), 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome850 PASS를 확인해 로컬 완료했다. |
+| 현재 작업 | S6-3a 완료85b48252 뒤 S6-3b 설치 확인·all-window quit·native 실제 수명 gate·분리 runner 구현과 좁은 검증을 마쳤다. coordinator19·frontend/runtime93·native35·runner23, 합계 고유170 PASS. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·새 세션 인계로 고정한다. Windows 소스 확인 NOT_COMPILED·실기 NOT_RUN은 유지한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-3a 로컬 완료 뒤 S6-3b 설치 확인·all-window quit/native-active gate·runner handoff를 진행한다. 이번3a는 installer/quit 실행0이며 실제 Windows·NSIS·전체검사·공개/태그는 미실행이다. scripts+.github1,881/2,000줄·workflow2 유지, 최종 fit/timing은 아직 미검증이다. |
-| 마지막 갱신 | 2026-10-26 · 신규 release singleton RED1·TLS provider 초기화 누락 RED1→Rust 고유27 PASS, frontend 누락UI RED1·늦은 malformed 응답 RED2→40 PASS. 최종 service9 PASS5.138초·frontend scoped TS/Biome PASS, 모든 측정 memory_enforced=true. `devbox-verification/s6-3a/`에 원본/lock/fixture 분리/자원/source 근거. 최종 독립 APPROVE·미해결0·완료 Biome850 PASS(1.108초), 로컬 완료. native/Windows/NSIS/전체검사/push/PR 미실행. |
+| 다음 제품 작업 | 2026-10-26 사용자 한도 소진 지시에 따라 현재 S6-3b 마무리·새 세션 인계까지만 수행한다. S6-4는 미착수이며 새 세션에서 실제 Git/최종 검토·커밋 상태를 대조한 뒤07c §14의 Windows readiness PID 귀속과 SC 계측 준비부터 이어간다. MSVC 소스 확인은 lib.exe 부재로 미완료이며 실제 Windows·NSIS·전체검사는 최종 candidate에서 수행한다. scripts+.github1,881/2,000줄·workflow2다. |
+| 마지막 갱신 | 2026-10-26 · S6-3b 고유170 PASS·제품/문서/근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS(1.386초·memory 적용), 로컬 완료·새 세션 인계. installer 기록 공백 RED→복구10 GREEN 및 원본 실패/재사용/source 근거는 `devbox-verification/s6-3b/`. MSVC 타입 확인은 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS·전체검사·push/PR·공개는 NOT_RUN. S6-4는 미착수. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -90,7 +90,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-3a 로컬 완료·3b 대기) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-3b 로컬 완료·인계) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -158,10 +158,22 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
 | S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 완료(로컬) | 2026-10-25 | 2026-10-26 | 1a·1b·1c·2-fixtures·batching·release 로컬 완료; 상한2,000 추가 승인; release5be96c7e |
-| S6 | AG | S6-3 | `v1/s6-release` | 작업 중(3a 고유67 PASS·최종 APPROVE·로컬 완료) | 2026-10-26 | | 3b 설치/quit 미착수 |
+| S6 | AG | S6-3 | `v1/s6-release` | 로컬 완료(3a67·3b170 PASS·최종 독립 APPROVE) | 2026-10-26 | | 3b 고유170 PASS·실제 Windows/NSIS NOT_RUN |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-3b 설치 확인·종료·재기동 (2026-10-26 · 고유170 PASS·최종 APPROVE·로컬 완료·인계)
+
+- 기반85b48252. Rust ready proof·update generation과 native/window admission epoch에 묶인 확인 ticket, fresh daemon agents/services 요약, native 실행/unknown 차단을 구현했다. generic renderer WebView 생성 권한을 제거하고 typed enum/id popout·capture 생성에 동일 reservation/seal을 적용한다. 공개 URL/path/permit을 renderer가 제출할 수 없다.
+- 기존 quit core의 `finish(true) → late register → ExitRequested 승인` 순서를 RED1로 재현하고 lease/epoch·예약 창·종료 seal로 보정했다. coordinator 고유19 PASS(Quit6+Service12+popout1), 마지막 실제 shared commit-fence 회귀1 PASS5.996초·warnings0은 기존12 중 같은 사례의 보강이다. 모든 dirty ACK·native count0/동일 epoch·취소 fence가 있어야 commit1회이며, 실패 round를 runner actual exit 확인까지 보유하고 stale abort는 새 round를 해제하지 않는다. 이 순수 core 결과를 Windows 데이터 손실 재현/live WebView PASS로 해석하지 않는다.
+- runner 준비/armed ACK 뒤 all-window dirty barrier, 최종 UI-thread native epoch 재검사·seal·commit, 정확한 old app process exit 이후 `/S` 실행을 연결했다. 준비30초가 지나도 끝나지 않는 파일 syscall은 강제 종료됐다고 하지 않는다. 하나의 실제 준비 작업을 보유하며 typed quarantine·신규 admission 차단을 표시한다. 취소/실패 cleanup은 기존 문서 편집을 재개하지만 runner 실제 종료 확인 전 새 설치/창/native attempt를 열지 않는다. Tauri `run()`의 직접 `process::exit` 전에 원본 download proof를 명시 해제하며 runner의 독립 copy만 넘긴다. 실패한 준비는 기존 ready proof로 재시도할 수 있다.
+- native app lifetime ledger는 transport Finished/ACK/reconnect/task drop을 완료로 세지 않는다. 정확한 direct child signal과 보유한 검증 Job의 active0만 해제하며 missing receipt/Job/query 실패는 Unknown으로 보존한다. 별도 관찰은20초/단일 파일 query2초·최대64 entry로 제한하고 updater의 사용자 process/Job stop 호출은0이다. 고유35 PASS(core6+adapter29, 마지막 adapter29는8.078초); 실제 Windows handle/Job fixture1은 작성만 했으며 NOT_RUN이다.
+- frontend/runtime 고유93 PASS(frontend91+runtime2), scoped TS·변경 Biome·Rustfmt·정상 gen-ts 및 up-to-date 검증을 확인했다. 실패한 native/daemon 조회는0으로 표시하지 않으며 확인을 비활성화한다. ready의 캡처 version/generation만 confirm할 수 있다. disabled 채널에서도 복구 상태를 표시하며 live cleanup `runner`와 다음 시작의 unknown `recoveryRequired`를 구분한다. 설치/재실행 실패 기록은 명시적 새 버전 확인 때 다시 actual process 종료를 확인해 acknowledge하고, unknown은 삭제·자동 재시도하지 않는다. 최초/중간 RED와 NotesPage 기존 act 경고의 범위/재사용 근거를 보존한다.
+- runner 고유23 PASS(Gate6+실제 소유 파일7+복구10). 최종 검토가 발견한 installer spawn→Running(PID/start) 기록 전 runner crash 경계를 실제 RED1로 재현했다. Committed/Running/Unknown에서 installer identity가 없거나 기록·process 조회가 실패하면 정상 앱 진입 전에 차단하고, 기록된 installer와 runner가 모두 종료됐음이 확인된 경우만 복구 UI를 허용한다. 최종 recovery10 PASS5.102초·warnings0·memory 적용, 별도 검토 수정 확인·미해결0이다. Windows 전용 runner/API·파일 공유4와 native Job1은 작성만 했으며 NOT_RUN이다.
+- 과제 고유 검증 합계170(프런트엔드91+runtime2+coordinator19+native35+runner23)이며 source별 재사용/원본 실패·경고·동결 근거는 `devbox-verification/s6-3b/`에 보존한다. Windows fixture의 Job assignment에 query-only proof handle을 쓰던 별도 검토 지적도 테스트 소유 원래 child handle로 고쳤다. 제품 관찰 권한은 계속 query/synchronize뿐이다. 제품·문서·근거48파일 최종 독립 APPROVE·미해결0과 완료 Biome852 PASS(1.386초·memory 적용)를 확인했다. 제품 digest `73c8b1745ab7e5d091b66e83c577f6b356ff4d10b44982bfa92fbaeb06e4cef3`, 검토 근거 `independent-review.json`, 완료 커밋·상태는 `completion.json`에 기록한다. 전체 S6 수용이나 Windows 성공을 뜻하지 않는다.
+- WSL의 설치된 MSVC target으로 실행한 좁은 `cargo check --lib --tests`는 dependency ring build의 `lib.exe` 부재 때문에 실패했다. **NOT_COMPILED: 제품 Windows 타입 확인까지 도달하지 못했다.** 실제 Windows app/package build·Tauri/Job/NSIS·재기동·WSL 재부착·전체 검사·push/PR/공개·tag는 NOT_RUN이다. global tool 설치나 우회는 하지 않았다. 모든 실제 좁은 실행은 supervised CPU4/nice+10/jobs2/workers2/test-threads2·memory6/8GiB/swap1GiB 적용을 기록한다.
+- 사용자가 한도 소진으로 현재 작업 마무리와 새 세션 인계를 요청했다. **S6-4는 미착수**다. 새 세션은 같은 `v1/s6-release`·전용 worktree에서 실제 Git/최종 검토·완료 커밋과 source/artifact hash를 대조한 뒤07c §14부터 이어간다. S6 PR 전 자동 리뷰 OFF의 대체/재활성화 절차 결정과 공개·태그의 별도 명시 승인, R1/R2 NOT_RUN 경계는 그대로다. 아래3a 이력부터 끝까지는 원본과 byte 동일하게 보존한다.
 
 ### S6-3a Rust 소유 업데이트 상태·다운로드 (2026-10-26 · 고유67 PASS·최종 APPROVE·로컬 완료)
 

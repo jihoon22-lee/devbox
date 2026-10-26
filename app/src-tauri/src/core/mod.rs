@@ -53,3 +53,9 @@ pub mod quit;
 
 #[cfg(any(windows, test))]
 pub mod update;
+
+#[cfg(any(windows, test))]
+pub mod popout;
+
+#[cfg(any(windows, test))]
+pub mod native_activity;

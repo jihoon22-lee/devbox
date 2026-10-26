@@ -13,6 +13,13 @@ const errors = [
   "storage",
   "cancelled",
   "staleOperation",
+  "nativeActive",
+  "nativeUnknown",
+  "quitRejected",
+  "runner",
+  "installFailed",
+  "relaunchFailed",
+  "recoveryRequired",
 ] as const;
 export type UpdateError = (typeof errors)[number];
 export type UpdateAction = "check" | "download" | "cancel";
@@ -27,7 +34,14 @@ export interface UpdateSnapshot {
   receivedBytes: number;
   totalBytes: number | null;
   error: UpdateError | null;
-  nextAction: "none" | UpdateAction;
+  nextAction: "none" | "install" | UpdateAction;
+}
+export interface InstallSummary {
+  generation: number;
+  confirmationId: number | null;
+  version: string;
+  nativeActive: number | null;
+  blocked: null | "nativeActive" | "nativeUnknown" | "notReady" | "busy";
 }
 export type UpdateIssue = UpdateError | "unavailable" | "invalidSnapshot";
 const integer = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -53,7 +67,8 @@ export function updateSnapshot(value: unknown): UpdateSnapshot | null {
     !integer(candidate.receivedBytes) ||
     !(candidate.totalBytes === null || integer(candidate.totalBytes)) ||
     !(candidate.error === null || errors.includes(candidate.error as UpdateError)) ||
-    !["none", "check", "download", "cancel"].includes(candidate.nextAction ?? "invalid")
+    !["none", "check", "download", "cancel", "install"].includes(candidate.nextAction ?? "invalid") ||
+    (candidate.nextAction === "install" && (candidate.phase !== "ready" || candidate.availableVersion === null))
   )
     return null;
   return {
@@ -69,6 +84,33 @@ export function updateSnapshot(value: unknown): UpdateSnapshot | null {
     error: candidate.error,
     nextAction: candidate.nextAction,
   } as UpdateSnapshot;
+}
+
+export async function readInstallSummary(generation: number): Promise<InstallSummary> {
+  if (!isNative() || !integer(generation)) throw new Error("Native update unavailable");
+  const value = await invoke<unknown>("update_install_summary", { generation });
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid install summary");
+  const candidate = value as Partial<InstallSummary>;
+  if (
+    !integer(candidate.generation) ||
+    !version(candidate.version) ||
+    !(candidate.nativeActive === null || integer(candidate.nativeActive)) ||
+    !(
+      candidate.blocked === null ||
+      ["nativeActive", "nativeUnknown", "notReady", "busy"].includes(candidate.blocked ?? "invalid")
+    ) ||
+    (candidate.blocked === null
+      ? candidate.nativeActive !== 0 || !integer(candidate.confirmationId) || (candidate.confirmationId ?? 0) <= 0
+      : candidate.confirmationId !== null)
+  )
+    throw new Error("Invalid install summary");
+  return {
+    generation: candidate.generation,
+    confirmationId: candidate.confirmationId,
+    version: candidate.version,
+    nativeActive: candidate.nativeActive,
+    blocked: candidate.blocked,
+  } as InstallSummary;
 }
 
 interface View {
@@ -130,27 +172,20 @@ export function useNativeUpdate() {
     };
   }, [native, attempt, receive]);
 
-  const run = async (action: UpdateAction) => {
-    const snapshot = current.current;
-    if (
-      !native ||
-      !view.connected ||
-      pending.current ||
-      !snapshot?.enabled ||
-      snapshot.nextAction !== action ||
-      view.issue === "invalidSnapshot" ||
-      view.issue === "unavailable" ||
-      view.issue === "staleOperation"
-    )
-      return;
+  const actionable = () =>
+    native &&
+    view.connected &&
+    !pending.current &&
+    current.current?.enabled &&
+    view.issue !== "invalidSnapshot" &&
+    view.issue !== "unavailable" &&
+    view.issue !== "staleOperation";
+  const dispatch = async (snapshot: UpdateSnapshot, command: string, args?: Record<string, number>) => {
     const owner = lifetime.current;
     pending.current = true;
     setView((previous) => ({ ...previous, busy: true, issue: null }));
     try {
-      const result =
-        action === "check"
-          ? await invoke<unknown>("update_check")
-          : await invoke<unknown>(`update_${action}`, { generation: snapshot.generation });
+      const result = args ? await invoke<unknown>(command, args) : await invoke<unknown>(command);
       receive(result, owner, snapshot.revision);
     } catch (error) {
       if (owner === lifetime.current && current.current?.revision === snapshot.revision) {
@@ -164,5 +199,31 @@ export function useNativeUpdate() {
       }
     }
   };
-  return { ...view, native, run, refresh: () => setAttempt((value) => value + 1) };
+  const run = async (action: UpdateAction) => {
+    const snapshot = current.current;
+    if (
+      !["check", "download", "cancel"].includes(action) ||
+      !actionable() ||
+      !snapshot ||
+      snapshot.nextAction !== action
+    )
+      return;
+    await dispatch(snapshot, `update_${action}`, action === "check" ? undefined : { generation: snapshot.generation });
+  };
+  const confirmInstall = async (generation: number, confirmationId: number) => {
+    const snapshot = current.current;
+    if (!actionable() || !snapshot) return;
+    if (
+      snapshot.phase !== "ready" ||
+      snapshot.nextAction !== "install" ||
+      snapshot.generation !== generation ||
+      !integer(confirmationId) ||
+      confirmationId <= 0
+    ) {
+      setView((previous) => ({ ...previous, issue: "staleOperation" }));
+      return;
+    }
+    await dispatch(snapshot, "update_install_confirm", { generation, confirmationId });
+  };
+  return { ...view, native, run, confirmInstall, refresh: () => setAttempt((value) => value + 1) };
 }

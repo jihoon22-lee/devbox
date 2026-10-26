@@ -28,6 +28,20 @@ pub enum UpdateError {
     Cancelled,
     #[error("staleOperation")]
     StaleOperation,
+    #[error("nativeActive")]
+    NativeActive,
+    #[error("nativeUnknown")]
+    NativeUnknown,
+    #[error("quitRejected")]
+    QuitRejected,
+    #[error("runner")]
+    Runner,
+    #[error("installFailed")]
+    InstallFailed,
+    #[error("relaunchFailed")]
+    RelaunchFailed,
+    #[error("recoveryRequired")]
+    RecoveryRequired,
 }
 pub type R<T> = Result<T, UpdateError>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -50,6 +64,7 @@ pub enum Action {
     Check,
     Download,
     Cancel,
+    Install,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,3 +87,10 @@ pub struct Snapshot {
     pub error: Option<UpdateError>,
     pub next_action: Action,
 }
+
+pub(crate) mod runner;
+#[cfg(windows)]
+pub(crate) use storage::{Identity, SealedSource};
+
+#[cfg(windows)]
+pub use service::install::{CommitFence, InstallSummary};

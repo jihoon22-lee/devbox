@@ -14,6 +14,10 @@ pub fn run() {
         std::process::exit(core::self_check::run());
     }
     #[cfg(windows)]
+    if let Some(code) = platform::update_runner::entry() {
+        std::process::exit(code);
+    }
+    #[cfg(windows)]
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _| {
             if !platform::notify::handle_arguments(app, &args, true)
@@ -39,6 +43,7 @@ pub fn run() {
         .manage(platform::shortcuts::Shortcuts::default())
         .manage(platform::intents::Intents::default())
         .manage(platform::quit::QuitState::default())
+        .manage(platform::native_activity::Activity::default())
         .manage(connection::Connection::default())
         .manage(platform::activity::Activity::default())
         .manage(platform::capture::Capture::default())
@@ -80,7 +85,10 @@ pub fn run() {
             platform::update::update_status,
             platform::update::update_check,
             platform::update::update_download,
-            platform::update::update_cancel
+            platform::update::update_cancel,
+            platform::update_install::update_install_summary,
+            platform::update_install::update_install_confirm,
+            platform::popout::popout_create
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]

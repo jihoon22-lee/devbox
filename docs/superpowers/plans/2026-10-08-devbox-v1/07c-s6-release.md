@@ -282,20 +282,22 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 ### S6-3b 설치 확인·all-window 종료·재기동
 
-- [ ] ready 뒤 [업데이트]는 agents/services 실행 수 요약과 데몬 작업 유지 안내를 보여 주고 **명시적으로 설치 확인**받는다. 네이티브 별도 확인 대화상자/서명 updater는 추가하지 않는다(ADR0016).
-- [ ] 기존 all-window prepare/dirty flush barrier를 통과한 경우에만 설치를 시작한다. 실패/timeout/창 거절은 앱·작업 유지, installer 실행0회. 여러 창 중 한 창의 확인으로 다른 dirty 창을 건너뛰지 않는다.
-- [ ] §8 #644 `finish(approved)→새 창 register→RequestExit`를 실제 core/platform 호출 순서로 먼저 좁게 재현한다. updater가 이 경계를 쓰므로 **S6에 포함해 판정**한다. late registration은 승인 generation을 취소하거나 설치 종료 commit 동안 새 창 생성 자체를 막는 동일 정책을 일반 quit와 공유한다.
-- [ ] boundary가 실제 경로상 불가능하다는 근거가 나오면 그 조건·시험·후속 사유를 기록한 뒤만 defer한다. 기존 “손실 미재현”을 새 데이터 손실 PASS/FAIL로 바꾸지 않는다.
-- [ ] runner handoff는 `prepared → armed/ready ACK → committed`로 구분한다. permit은 고유 update operation·quit generation·channel·정확한 old app PID+start identity·검증된 installer identity/hash에 결속한다. runner를 준비해도 **설치/종료 commit 승인과 그 정확한 old app의 실제 종료 둘 다** 확인하기 전 `/S` 실행0회다. bridge drain을 시작했다는 사실은 process exit가 아니다.
-- [ ] prepare 실패/취소·quit 중단이면 runner permit을 disarm하고 만료시킨다. 나중의 무관한 정상 앱 종료가 설치를 되살리지 못한다. commit의 되돌릴 수 없는 경계에서 다른 update·새 창·새 native attempt 진입을 고정된 generation 정책으로 차단한다. caller가 임의 path/permit을 보낸 IPC는 승인 근거가 아니다.
-- [ ] runner는 기존 app Job과 설치 교체 대상 디렉터리 밖의 **소유·동결된 source/hash 경로**에서 실행한다. ready ACK와 operation identity를 확인하고 대기/실행 lifetime에 명시적 상한을 둔다. PID 재사용·stale permit·timeout은 설치 거절이며 자신 소유 파일만 정리한다.
+> 2026-10-26 현재: 구현과 고유170 좁은 검증 PASS(coordinator19·frontend/runtime93·native35·runner23), installer 기록 공백 RED→복구10 GREEN 및 최종 소스 검토 미해결0을 확인했다. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·인계로 고정한다. MSVC target 소스 확인은 ring build의 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS는 NOT_RUN이다. 아래 Windows 수용 체크는 로컬 구현 완료와 구분해 최종 candidate까지 남긴다. 사용자 한도 소진 지시에 따라 현 작업 인계를 정리하고 S6-4는 시작하지 않는다. 상세·유일 진행 원장은 PROGRESS의 S6-3b다.
+
+- [x] ready 뒤 [업데이트]는 agents/services 실행 수 요약과 데몬 작업 유지 안내를 보여 주고 **명시적으로 설치 확인**받는다. 네이티브 별도 확인 대화상자/서명 updater는 추가하지 않는다(ADR0016).
+- [x] 기존 all-window prepare/dirty flush barrier를 통과한 경우에만 설치를 시작한다. 실패/timeout/창 거절은 앱·작업 유지, installer 실행0회. 여러 창 중 한 창의 확인으로 다른 dirty 창을 건너뛰지 않는다.
+- [x] §8 #644 `finish(approved)→새 창 register→RequestExit`를 실제 core/platform 호출 순서로 먼저 좁게 재현한다. updater가 이 경계를 쓰므로 **S6에 포함해 판정**한다. late registration은 승인 generation을 취소하거나 설치 종료 commit 동안 새 창 생성 자체를 막는 동일 정책을 일반 quit와 공유한다.
+- [x] boundary를 불가능으로 유보하지 않고 core RED와 공유 admission/최종 fence로 보정했다. 기존 “손실 미재현”을 Windows 데이터 손실 PASS/FAIL로 바꾸지 않았다.
+- [x] runner handoff는 `prepared → armed/ready ACK → committed`로 구분한다. permit은 고유 update operation·quit generation·channel·정확한 old app PID+start identity·검증된 installer identity/hash에 결속한다. runner를 준비해도 **설치/종료 commit 승인과 그 정확한 old app의 실제 종료 둘 다** 확인하기 전 `/S` 실행0회다. bridge drain을 시작했다는 사실은 process exit가 아니다.
+- [x] prepare 실패/취소·quit 중단이면 runner permit을 disarm하고 만료시킨다. 나중의 무관한 정상 앱 종료가 설치를 되살리지 못한다. commit의 되돌릴 수 없는 경계에서 다른 update·새 창·새 native attempt 진입을 고정된 generation 정책으로 차단한다. caller가 임의 path/permit을 보낸 IPC는 승인 근거가 아니다.
+- [x] runner는 기존 app Job과 설치 교체 대상 디렉터리 밖의 **소유·동결된 source/hash 경로**에서 실행한다. ready ACK와 operation identity를 확인하고 대기/실행 lifetime에 명시적 상한을 둔다. PID 재사용·stale permit·timeout은 설치 거절이며 자신 소유 파일만 정리한다.
 - [ ] commit+exact process exit를 확인한 runner가 `/S`를 정확히 한 번 실행하고 installer exit·소유 결과를 기록한 뒤 검증된 동일 채널 앱만 relaunch한다. 설치 실패는 다음 시작 상태로 복구 안내한다. app 종료와 함께 runner가 죽거나 NSIS가 아직 실행 중인 old app 파일을 건드리지 않는지 Windows에서 확인한다.
-- [ ] **앱 native fallback Windows attempt는 WSL 작업과 수명이 다르다.** `Connection.begin_exit`가 bridge/supervisor를 취소하며 native attempt는 stream token/Windows 취소 경로에 묶인다. 기존 S2도 child 종료를 완전히 보장하지 않는다. 따라서 활성 app-owned native Windows attempt가 있으면 설치를 막고 완료 대기 또는 기존 실행 UI에서 사용자가 명시적으로 중지하도록 안내한다. updater가 암묵적으로 stop하지 않는다.
-- [ ] Rust가 소유한 active-native-attempt counter/generation을 summary와 최종 quit 직전에 재검사하고 설치 commit 동안 새 native attempt 진입을 막거나 승인 generation을 취소한다. 목록 조회 성공만으로 종료 순간까지 안전하다고 가정하지 않는다. 설명은 WSL 관리/direct daemon 작업 유지와 native fallback 설치 차단을 구분한다.
+- [x] **앱 native fallback Windows attempt는 WSL 작업과 수명이 다르다.** `Connection.begin_exit`가 bridge/supervisor를 취소하며 native attempt는 stream token/Windows 취소 경로에 묶인다. 기존 S2도 child 종료를 완전히 보장하지 않는다. 따라서 활성 app-owned native Windows attempt가 있으면 설치를 막고 완료 대기 또는 기존 실행 UI에서 사용자가 명시적으로 중지하도록 안내한다. updater가 암묵적으로 stop하지 않는다.
+- [x] Rust가 소유한 active-native-attempt counter/generation을 summary와 최종 quit 직전에 재검사하고 설치 commit 동안 새 native attempt 진입을 막거나 승인 generation을 취소한다. 목록 조회 성공만으로 종료 순간까지 안전하다고 가정하지 않는다. 설명은 WSL 관리/direct daemon 작업 유지와 native fallback 설치 차단을 구분한다.
 - [ ] 새 앱은 기존 deploy/version 경로로 daemon 바이너리 차이를 처리한다. WSL agent tmux·service unit을 stop/kill하지 않는다. bridge 재연결과 기존 세션 재부착을 실제 수용에서 확인하며 모든 Windows 실행이 앱 업데이트 뒤 유지된다고 약속하지 않는다.
-- [ ] 기존 accept 앱은 updater가 없고 모두1.0.0-dev다. accept fixture의 version 검증 우회나 같은 버전 NSIS 재설치를 실제 공개버전 업그레이드 PASS로 쓰지 않는다. 순수 version/hash/state 시험, accept 전용 I/O·installer lifecycle 시험, 다음 patch의 실제 업데이트를 별도 결과로 유지한다.
+- [x] 기존 accept 앱은 updater가 없고 모두1.0.0-dev다. accept fixture의 version 검증 우회나 같은 버전 NSIS 재설치를 실제 공개버전 업그레이드 PASS로 쓰지 않는다. 순수 version/hash/state 시험, accept 전용 I/O·installer lifecycle 시험, 다음 patch의 실제 업데이트를 별도 결과로 유지한다.
 - [ ] RED/GREEN: 확인 전 실행0회, prepared runner+quit 실패/취소 뒤 나중 정상 종료에도 설치0회, bridge drain 지연 중 설치0회, PID reuse/stale permit/wrong generation 거절·exact exit 뒤1회, dirty window·새 window/lease·중복 confirm·다운로드 교체·installer 실패·runner 생존/relaunch·작업 요약 unavailable의 명확한 안내, active native attempt 차단/완료 후 재개·summary 이후 새 attempt 진입·최종 quit 재검사·중지 호출0회. updater state의 fake 성공을 NSIS 설치 성공으로 세지 않는다.
-- [ ] 독립 검토·`feat(updater): install after all windows approve shutdown`.
+- [x] 독립 검토·`feat(updater): install after all windows approve shutdown`(로컬 구현 완료; 위 실제 Windows 수용은 미실행).
 
 ## 14. S6-4 — 성공 기준과 과거 미실행 항목의 실제 측정
 

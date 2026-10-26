@@ -8,10 +8,10 @@ use tokio::sync::Notify;
 
 #[derive(Default)]
 pub struct QuitState {
-    state: Mutex<Quit>,
+    pub(crate) state: Mutex<Quit>,
     changed: Notify,
 }
-fn labels(app: &AppHandle) -> Vec<String> {
+pub(crate) fn labels(app: &AppHandle) -> Vec<String> {
     app.webview_windows()
         .into_keys()
         .filter(|label| note_window(label))
@@ -43,6 +43,9 @@ pub fn quit_window_ready(
         .expect("quit state")
         .register(window.label());
     state.changed.notify_one();
+    if lease == 0 {
+        return Err(IpcError::new("앱 종료를 준비하고 있습니다"));
+    }
     Ok(lease)
 }
 #[tauri::command]
@@ -72,38 +75,8 @@ pub fn quit_prepared(
 #[tauri::command]
 pub async fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
     super::preferences::main_only(&window)?;
+    let round = prepare(&app, &tokio_util::sync::CancellationToken::new()).await?;
     let state = app.state::<QuitState>();
-    let round = state
-        .state
-        .lock()
-        .expect("quit state")
-        .start(labels(&app))
-        .ok_or_else(|| IpcError::new("문서 창의 저장 준비를 기다린 뒤 다시 시도하세요"))?;
-    let result = async {
-        for label in labels(&app) {
-            app.emit_to(&label, "devbox://prepare-quit", round)
-                .map_err(|_| IpcError::new("문서 창에 저장을 요청하지 못했습니다"))?;
-        }
-        loop {
-            // Notify retains a permit when the last ACK arrives between status and await.
-            let status = state
-                .state
-                .lock()
-                .expect("quit state")
-                .status(round, &labels(&app));
-            match status {
-                Status::Ready => return Ok(()),
-                Status::Failed => {
-                    return Err(IpcError::new("문서를 저장하지 못해 종료를 취소했습니다"));
-                }
-                Status::Waiting => state.changed.notified().await,
-            }
-        }
-    };
-    let safe = matches!(
-        tokio::time::timeout(Duration::from_secs(30), result).await,
-        Ok(Ok(()))
-    );
     // Creation/destruction of native windows also runs on the UI thread. Recheck and
     // authorize exit in one UI turn, so a newly created WebView cannot slip past the ACK set.
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -112,9 +85,12 @@ pub async fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcEr
         let state = commit_app.state::<QuitState>();
         let approved = {
             let mut quit = state.state.lock().expect("quit state");
-            let safe = safe && quit.status(round, &labels(&commit_app)) == Status::Ready;
-            quit.finish(round, safe);
-            safe
+            if quit.seal(round, &labels(&commit_app)) {
+                true
+            } else {
+                quit.finish(round, false);
+                false
+            }
         };
         if approved {
             commit_app.exit(0);
@@ -135,4 +111,89 @@ pub async fn quit_app(app: AppHandle, window: WebviewWindow) -> Result<(), IpcEr
             "문서를 안전하게 저장하지 못해 종료를 취소했습니다",
         ))
     }
+}
+
+/// Shared dirty-document barrier for normal quit and installation.
+pub(crate) async fn prepare(
+    app: &AppHandle,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<u64, IpcError> {
+    let round = begin(app)?;
+    match prepare_round(app, round, cancel).await {
+        Ok(()) => Ok(round),
+        Err(error) => {
+            abort(app, round);
+            Err(error)
+        }
+    }
+}
+pub(crate) fn begin(app: &AppHandle) -> Result<u64, IpcError> {
+    app.state::<QuitState>()
+        .state
+        .lock()
+        .expect("quit state")
+        .start(labels(app))
+        .ok_or_else(|| IpcError::new("문서 창의 저장 준비를 기다린 뒤 다시 시도하세요"))
+}
+pub(crate) async fn prepare_round(
+    app: &AppHandle,
+    round: u64,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<(), IpcError> {
+    let state = app.state::<QuitState>();
+    let result = async {
+        for label in labels(app) {
+            app.emit_to(&label, "devbox://prepare-quit", round)
+                .map_err(|_| IpcError::new("문서 창에 저장을 요청하지 못했습니다"))?;
+        }
+        loop {
+            let status = state
+                .state
+                .lock()
+                .expect("quit state")
+                .status(round, &labels(app));
+            match status {
+                Status::Ready => return Ok(()),
+                Status::Failed => {
+                    return Err(IpcError::new("문서를 저장하지 못해 종료를 취소했습니다"));
+                }
+                Status::Waiting => state.changed.notified().await,
+            }
+        }
+    };
+    let safe = tokio::select! {
+        _ = cancel.cancelled() => false,
+        result = tokio::time::timeout(Duration::from_secs(30), result) => matches!(result, Ok(Ok(()))),
+    };
+    if safe {
+        Ok(())
+    } else {
+        Err(IpcError::new(
+            "문서를 안전하게 저장하지 못해 종료를 취소했습니다",
+        ))
+    }
+}
+pub(crate) fn abort(app: &AppHandle, round: u64) {
+    app.state::<QuitState>()
+        .state
+        .lock()
+        .expect("quit state")
+        .unseal(round);
+    resume_documents(app, round);
+}
+pub(crate) fn resume_documents(app: &AppHandle, round: u64) {
+    let _ = app.emit("devbox://cancel-quit", round);
+}
+pub(crate) fn window_admission<T>(
+    app: &AppHandle,
+    create: impl FnOnce() -> tauri::Result<T>,
+) -> tauri::Result<T> {
+    let state = app.state::<QuitState>();
+    if !state.state.lock().expect("quit state").reserve_window() {
+        return Err(std::io::Error::other("앱 종료를 준비하고 있습니다").into());
+    }
+    let result = create();
+    state.state.lock().expect("quit state").complete_window();
+    state.changed.notify_one();
+    result
 }
