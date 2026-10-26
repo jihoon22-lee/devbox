@@ -16,12 +16,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-2 release의 독립 코드 검토 지적0·fake 경계6 test methods/actionlint PASS를 확인했다. 사용자가 “2,000줄로 조정하고 계속 진행 (권장)”을 추가 승인해 현재 scripts+.github1,881/2,000줄 PASS·예산 차단 해소다. 제품/workflow/test는 동결본 그대로이며 최종 독립 검토 APPROVE·미해결0·Biome845 PASS 후 release 과제를 로컬 커밋으로 보존한다. |
+| 현재 작업 | S6-2 release 완료5be96c7e 뒤 S6-3a Rust 소유 updater 상태·검증된 다운로드와 설정/상태줄 연결을 구현했다. 단일 worker·pending1·generation/revision, 고정 GitHub/typed 상태·채널별 소유 파일 proof, prod와 accept/test fixture 분리를 유지한다. 직접 고유67 PASS(Rust27+frontend40), 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome850 PASS를 확인해 로컬 완료했다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-2 release 로컬 완료 뒤 S6-3a 업데이트 상태·다운로드를 진행한다. 기존2workflow·GNU 필수 CI와 채널별 Cargo target 유지 결정을 보존한다. S6-4 계측을 포함한 최종 fit/timing은 미검증이며 push·PR·공개/태그는 아직 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-26 · 사용자2,000줄 승인 반영으로 현재1,881줄 예산 PASS(여유119줄). 기존 동결 제품의 fake subprocess/API6 test methods PASS(0.533초)·actionlint1.7.11+shellcheck PASS(0.279초)·독립 코드 검토 지적0·Biome845 PASS 근거는 유지한다. 이번 승인 반영 최종 독립 검토 APPROVE·미해결0·Biome845 PASS를 확인했고 제품 검증은 재실행하지 않았다. 승인 delta/소스 동결은 `devbox-verification/s6-2-release/budget-resolution/`; 실제 musl/Windows/native/공개/전체검사/시간 측정은 미실행이다. |
+| 다음 제품 작업 | S6-3a 로컬 완료 뒤 S6-3b 설치 확인·all-window quit/native-active gate·runner handoff를 진행한다. 이번3a는 installer/quit 실행0이며 실제 Windows·NSIS·전체검사·공개/태그는 미실행이다. scripts+.github1,881/2,000줄·workflow2 유지, 최종 fit/timing은 아직 미검증이다. |
+| 마지막 갱신 | 2026-10-26 · 신규 release singleton RED1·TLS provider 초기화 누락 RED1→Rust 고유27 PASS, frontend 누락UI RED1·늦은 malformed 응답 RED2→40 PASS. 최종 service9 PASS5.138초·frontend scoped TS/Biome PASS, 모든 측정 memory_enforced=true. `devbox-verification/s6-3a/`에 원본/lock/fixture 분리/자원/source 근거. 최종 독립 APPROVE·미해결0·완료 Biome850 PASS(1.108초), 로컬 완료. native/Windows/NSIS/전체검사/push/PR 미실행. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -90,7 +90,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-2 release 코드 검토 지적0·예산 승인 해소·완료 절차 대기) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-3a 로컬 완료·3b 대기) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -104,7 +104,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한2,000 추가 승인;batching 로컬 완료;release6methods PASS·코드 검토 지적0·예산 해소 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한2,000 추가 승인;batching 로컬 완료;release 로컬 완료;3a 고유67 PASS·최종 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -157,11 +157,23 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a·1b·1c·2-fixtures 완료;상한2,000 추가 승인;batching 로컬 완료;release6methods PASS·코드 검토 지적0·예산 해소 |
-| S6 | AG | S6-3 |  | 대기 | | | |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 완료(로컬) | 2026-10-25 | 2026-10-26 | 1a·1b·1c·2-fixtures·batching·release 로컬 완료; 상한2,000 추가 승인; release5be96c7e |
+| S6 | AG | S6-3 | `v1/s6-release` | 작업 중(3a 고유67 PASS·최종 APPROVE·로컬 완료) | 2026-10-26 | | 3b 설치/quit 미착수 |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-3a Rust 소유 업데이트 상태·다운로드 (2026-10-26 · 고유67 PASS·최종 APPROVE·로컬 완료)
+
+- 기반5be96c7e. native managed Service 하나와 app lifetime worker1개·최신 pending1개가 확인/다운로드를 소유한다. generation과 별도 revision, typed phase/error/nextAction, Rust `CARGO_PKG_VERSION` snapshot을 status/check/download/cancel 명령과 `devbox://update` 모든 창 event로 전달한다. 취소는 token·generation을 먼저 바꾸지만 이전 future/writer·자기 임시 파일의 실제 정리가 끝난 뒤에만 최신 queued 작업을 수행한다. 늦은 progress/result·stale cancel은 새 상태를 바꾸지 않는다.
+- prod + canonical stable 버전만 공개 updater가 켜진다. 자동 확인은 채널 updates의 원자적 last-check stamp로 재시작을 포함해24시간마다 최대1회이며 명시 확인은 별도 사용자 행동이다. 현재1.0.0-dev/dev/accept의 공개 요청은0. GitHub repository/asset API는 고정이고 renderer가 URL/path/metadata/proof를 제출할 수 없다. strict tag/name·단일 asset·uploaded·신규 stable version·SHA256을 검사하며 이전 legacy stable/same release는 업데이트 없음이다.
+- [GitHub asset API의200/302 계약](https://docs.github.com/en/rest/releases/assets?apiVersion=2022-11-28)에 맞춰 metadata1MiB·installer256MiB, connect10초/read15초/metadata30초/download전체300초, redirect최대3회와 정확 HTTPS GitHub host·userinfo/port/fragment 검사를 적용했다. chunk를 소유 temp에 쓰며 size/hash 확인·fsync·no-clobber ready publication 후 실제 파일 identity/digest를 다시 확인한다. Windows는 read-share handle의 volume/fileIndex, Linux fixture는 dev/ino를 사용한다. ReadyProof는 내부에만 남고3b 설치 직전 다시 사용할 재검증 seam을 가진다. 충돌한 예상 밖 파일은 덮거나 지우지 않으며 다른 operation/channel 파일을 정리하지 않는다.
+- standalone native manifest에 semver1.0.28·reqwest0.13.5/rustls0.23 ring/std/tls12를 명시했다(workspace=true 없음). 기존 native reqwest0.13.4에는 TLS graph가 없었으므로 신규22/제거1(net21) node가 HTTP/TLS 경로에 추가됐다. normal Cargo 갱신이며 shared 변경은 앱 direct3edge·Tauri의 기존 reqwest .4→.5와 JNI 버전 표기 구분뿐, 무관 package version/필드는 불변이다. client 생성 전 provider 초기화를 빠뜨린 신규 경로의 실제 panic RED를 보존하고 고쳤다.
+- `build.rs`의 검증된 accept channel에만 custom cfg를 발행하고 production에서는 fixture 모듈/env 진입점이 제외된다. test-enabled 코드에서도 Service는 prod/dev fixture를 거절한다. accept fixture는 compiled SOURCE_SHA·owner marker/channel·metadata/installer SHA/size·실제 file identity를 확인하고 동결한다. 합성 비교 baseline은 fixture 내부에만 있으며 snapshot.currentVersion은 실제 compiled 버전 그대로다. 이 분리는 소스 검토와 Linux cfg(test) 검증이며 실제 accept/prod Windows 바이너리 실행이나 공개 버전 업그레이드 PASS가 아니다.
+- 설정 정보 탭의 Update와 StatusBar가 native adapter를 사용한다. listener 등록 완료→snapshot 순서와 revision으로 역순 event/query/command·늦은 malformed 응답을 거르고, unmount는 unlisten만 한다. 새 화면은 같은 Rust 진행 snapshot/generation을 받아 취소할 수 있다(CV-F09의 core/renderer 경계 시험). browser에서는 native invoke/listen0·Windows 안내, 버전 fake 없음. ready는 다운로드 완료 표시만 하며 설치/종료 명령은0이다.
+- 직접 **고유67 PASS = Rust27(동일 source18+최종 service9) + frontend40(동일 source35+최종 StatusBar5)**. Rust 전체 관련25 PASS3.283초 후 DTO·fixture 부정 회귀를 추가해 service9 PASS5.138초; 실제 loopback HTTP200/302 follow·redirect cap/reject·deadline/request timeout·chunk oversize/digest/cancel, 파일 교체/가림·owned collision,20회 cancel/requeue의 writer1/pending1·이전 writer cleanup·daily stamp·all-window snapshot 경계를 확인했다. loopback HTTP시험의 private test redirect policy와 실제 production HTTPS allowlist 검사는 분리했으며 공개 GitHub TLS handshake나 Windows 파일 공유 실기 PASS로 쓰지 않는다.
+- 원본 RED는 신규 singleton1·TLS provider1, frontend UI부재1·늦은 malformed query/command2다. frontend 첫 scoped TS의 artifact-local types 경로 실패·기존 GitStatus act teardown 경고도 보존했고 경로/cleanup 수정 뒤 TS3.792초 PASS·최종 영향5시험 경고0·변경8파일 Biome PASS를 확인했다. Rust14파일 rustfmt·diff PASS, 모든 측정 memory_enforced=true. `devbox-verification/s6-3a/`에 명령/중복 제거 test/resource/source 동결·frontend/독립 부분검토·fixture-separation·lock-scope가 있다. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome850 PASS(1.108초)를 확인해 로컬 완료했다.
+- scripts/workflows는 바꾸지 않아1,881/2,000줄·2workflow 유지. 기존 서비스/Docker/network설정/userdata를 변경하지 않았고 owned loopback/temp fixture만 사용했다. Windows Tauri 이벤트/파일 identity·실제 accept fixture·NSIS·installer 실행/quit/runner·전체 check/clippy/build/E2E·공개/push/PR은 NOT_RUN이다. 설치 권한·runner 수명/ReadyProof ownership 이전·all-window 종료/native-active gate는3b의 별도 구현이며 이번 결과로 완료 처리하지 않는다.
 
 ### S6-2-release publisher (2026-10-26 · 코드 검토 지적0·2,000줄 승인 반영·최종 독립 APPROVE·로컬 완료)
 

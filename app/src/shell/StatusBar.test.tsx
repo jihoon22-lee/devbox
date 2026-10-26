@@ -1,12 +1,16 @@
 import { focusManager } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useCurrentProject } from "../features/projects/store";
 import { ProjectWire } from "../features/projects/test-wire";
+import * as settings from "../features/settings/open";
 import { RpcProvider } from "../rpc/RpcProvider";
 import { StatusBar } from "./StatusBar";
 
 const navigate = vi.hoisted(() => vi.fn());
+const native = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: native.listen }));
 const methods = ["runtime.summary", "observe.ports", "observe.system"];
 const gib = 1024 ** 3;
 function replyStats(wire: ProjectWire, rev = "1") {
@@ -18,6 +22,10 @@ function replyStats(wire: ProjectWire, rev = "1") {
   wire.reply("observe.system", { memoryTotalBytes: 20 * gib, memoryAvailableBytes: 13.9 * gib });
 }
 afterEach(() => {
+  cleanup();
+  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  native.invoke.mockReset();
+  native.listen.mockReset();
   useCurrentProject.setState({ id: undefined });
   focusManager.setFocused(undefined);
   vi.useRealTimers();
@@ -107,6 +115,39 @@ test("status buttons navigate to existing run and observation views", async () =
   expect(navigate).toHaveBeenLastCalledWith({ to: "/runs", search: { view: "ports" } });
   fireEvent.click(screen.getByRole("button", { name: "WSL 6.1/20GB" }));
   expect(navigate).toHaveBeenLastCalledWith({ to: "/runs", search: { view: "system" } });
+  expect(screen.queryByRole("button", { name: "앱 업데이트 정보" })).not.toBeInTheDocument();
+  expect(native.invoke).not.toHaveBeenCalled();
+  expect(native.listen).not.toHaveBeenCalled();
+});
+
+test("native update status opens the existing About tab without starting an updater command", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  native.listen.mockResolvedValue(vi.fn());
+  native.invoke.mockResolvedValue({
+    enabled: true,
+    disabledReason: null,
+    phase: "ready",
+    generation: 4,
+    revision: 9,
+    currentVersion: "1.2.3",
+    availableVersion: "1.3.0",
+    receivedBytes: 100,
+    totalBytes: 100,
+    error: null,
+    nextAction: "none",
+  });
+  const open = vi.spyOn(settings, "openSettings");
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <StatusBar />
+    </RpcProvider>,
+  );
+  const chip = await screen.findByRole("button", { name: "앱 업데이트 정보" });
+  expect(chip).toHaveTextContent("업데이트 파일 준비 완료");
+  fireEvent.click(chip);
+  expect(open).toHaveBeenCalledWith("about");
+  expect(native.invoke.mock.calls.map(([command]) => command)).toEqual(["update_status"]);
 });
 
 test("failed status queries do not masquerade as empty or zero values", async () => {

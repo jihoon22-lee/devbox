@@ -25,3 +25,5 @@ pub mod install;
 pub mod wsl_cleanup;
 
 pub mod quit;
+
+pub mod update;

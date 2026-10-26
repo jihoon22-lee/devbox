@@ -271,12 +271,14 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 ### S6-3a 상태·다운로드
 
-- [ ] typed 상태 `idle/checking/available/downloading/ready/installing/failed`에 operation generation·버전·bytes·오류/다음 행동을 둔다. Rust managed state 하나, `update_status()` snapshot + `devbox://update` 모든 창 broadcast를 제공한다. window mount/unmount는 작업 생존과 독립이다.
-- [ ] 릴리스 prod만 하루 한 번/명시 요청에 GitHub latest 확인. `-dev`·dev/accept 채널은 공개 updater를 비활성화한다. accept 시험은 **컴파일된 accept/test 전용 capability**로 소유 fixture I/O를 주입한다. prod의 임의 URL/env bypass는 만들지 않으며 prod 자산·다른 채널을 자동 설치하지 않는다.
-- [ ] strict release version·정확 asset 이름·단일 exe·HTTPS/GitHub 출처·download size/time bound·SHA-256 digest 필수. prerelease/draft·동일/낮은 버전·digest 없음/불일치·다른 채널은 설치 불가.
-- [ ] `%LOCALAPPDATA%` 채널 전용 updates 아래 소유 임시 파일로 streaming download→hash 확인→atomic ready. retry/cancel/generation 교체는 자기 임시 파일만 정리하고 다른 실행의 파일을 지우지 않는다. 설치 전 파일 identity/digest를 다시 확인한다.
-- [ ] RED/GREEN: GitHub fixture 자산 선택·버전·digest·download cancel/race·중복 호출·prod wrong-channel 거절. fixture installer도 소유 marker/source/hash/채널을 검증하고 동결한다. 창 닫기→새 창 snapshot이 같은 진행·취소 권한을 받는 CV-F09 시험.
-- [ ] 독립 검토·`feat(updater): own update state and verified downloads in Rust`.
+- [x] typed 상태 `idle/checking/available/downloading/ready/installing/failed`에 operation generation·버전·bytes·오류/다음 행동을 둔다. Rust managed state 하나, `update_status()` snapshot + `devbox://update` 모든 창 broadcast를 제공한다. window mount/unmount는 작업 생존과 독립이다.
+- [x] 릴리스 prod만 하루 한 번/명시 요청에 GitHub latest 확인. `-dev`·dev/accept 채널은 공개 updater를 비활성화한다. accept 시험은 **컴파일된 accept/test 전용 capability**로 소유 fixture I/O를 주입한다. prod의 임의 URL/env bypass는 만들지 않으며 prod 자산·다른 채널을 자동 설치하지 않는다.
+- [x] strict release version·정확 asset 이름·단일 exe·HTTPS/GitHub 출처·download size/time bound·SHA-256 digest 필수. prerelease/draft·동일/낮은 버전·digest 없음/불일치·다른 채널은 설치 불가.
+- [x] `%LOCALAPPDATA%` 채널 전용 updates 아래 소유 임시 파일로 streaming download→hash 확인→atomic ready. retry/cancel/generation 교체는 자기 임시 파일만 정리하고 다른 실행의 파일을 지우지 않는다. 설치 전 파일 identity/digest를 다시 확인한다.
+- [x] RED/GREEN: GitHub fixture 자산 선택·버전·digest·download cancel/race·중복 호출·prod wrong-channel 거절. fixture installer도 소유 marker/source/hash/채널을 검증하고 동결한다. 창 닫기→새 창 snapshot이 같은 진행·취소 권한을 받는 CV-F09 시험.
+- [x] 독립 검토·`feat(updater): own update state and verified downloads in Rust`(로컬).
+
+3a 구현·직접 검증: managed Service/worker1·pending1, generation+revision, 모든 창 event/snapshot과 설정 정보/상태줄을 연결했다. 취소 뒤 실제 writer cleanup 완료 전 다음 작업을 시작하지 않는다. 공개 prod stable만 persisted24h 자동/명시 확인하며 compiledaccept/test fixture는 owner/source/hash/channel/file identity로 분리했다. app 버전은 항상 Rust compiled 값이다. HTTP200/302·redirect3·metadata1MiB/installer256MiB·connect10/read15/metadata30/download300초·no-clobber/hash/identity proof를 적용했다. 재검증 seam은3b 설치 직전에도 다시 호출할 대상으로 준비했으며 설치 자체는0회다. 신규 parser/TLS·frontend 실패를 보존하고 Rust27+frontend40=고유67 PASS, scoped TS·변경 TS Biome·Rustfmt PASS. 소스별 재사용/원본/limits 근거는 `devbox-verification/s6-3a/`. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome850 PASS(1.108초) 뒤 로컬 완료. Windows/실제NSIS/공개TLS handshake/native event 실기와 전체 검증은 미실행이며67 PASS로 대체하지 않는다.
 
 ### S6-3b 설치 확인·all-window 종료·재기동
 

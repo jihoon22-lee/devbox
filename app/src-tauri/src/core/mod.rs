@@ -50,3 +50,6 @@ pub mod install;
 pub mod maintenance;
 #[cfg(any(windows, test))]
 pub mod quit;
+
+#[cfg(any(windows, test))]
+pub mod update;

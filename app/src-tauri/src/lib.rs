@@ -76,7 +76,11 @@ pub fn run() {
             platform::activity::activity_ack,
             platform::capture::capture_hide,
             platform::capture::capture_ready,
-            platform::activity::activity_tray
+            platform::activity::activity_tray,
+            platform::update::update_status,
+            platform::update::update_check,
+            platform::update::update_download,
+            platform::update::update_cancel
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -87,6 +91,7 @@ pub fn run() {
             platform::shortcuts::initialize(app.handle());
             platform::activity::initialize(app.handle());
             platform::capture::initialize(app.handle());
+            platform::update::initialize(app.handle());
             let focus = platform::notify::handle_arguments(
                 app.handle(),
                 &std::env::args().collect::<Vec<_>>(),
