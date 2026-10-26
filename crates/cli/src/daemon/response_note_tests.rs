@@ -166,7 +166,7 @@ async fn request(
     let selected = route(
         router,
         "notes.select_response_target",
-        serde_json::to_value(SelectResponseNote { target }).unwrap(),
+        serde_json::to_value(SelectResponseNote { target }).expect("select params"),
     )
     .await
     .expect("select target through daemon route");
@@ -181,7 +181,7 @@ async fn append(router: &Router<Services>, request: &AppendResponseNote) -> Resp
         route(
             router,
             "notes.append_response",
-            serde_json::to_value(request).unwrap(),
+            serde_json::to_value(request).expect("append params"),
         )
         .await
         .expect("append through daemon route"),
@@ -209,7 +209,7 @@ async fn completed_http_response_routes_to_selected_and_daily_notes_without_rese
         assert!(!saved.contains("fixture-note-secret") && !saved.contains("fixture-note-query"));
         assert!(saved.len() > 64 * 1024);
         assert_eq!(append(&router, &p).await, first);
-        assert_eq!(std::fs::read_to_string(path).unwrap(), saved);
+        assert_eq!(std::fs::read_to_string(path).expect("note"), saved);
     }
     assert_eq!(calls.load(Ordering::SeqCst), 1, "append never resends HTTP");
 }
@@ -228,10 +228,11 @@ async fn committed_append_returns_before_api_lookup_after_history_is_removed() {
     )
     .await;
     let result = append(&router, &p).await;
-    let saved = std::fs::read(home.path().join("notes/chosen.md")).unwrap();
+    let saved = std::fs::read(home.path().join("notes/chosen.md")).expect("chosen note");
     let mut removed = 0;
-    for day in std::fs::read_dir(services.paths.data_dir.join("api-history")).unwrap() {
-        let path = day.unwrap().path().join(format!("{id}.json"));
+    for day in std::fs::read_dir(services.paths.data_dir.join("api-history")).expect("history days")
+    {
+        let path = day.expect("history day").path().join(format!("{id}.json"));
         if path.is_file() {
             std::fs::remove_file(path).expect("remove only owned history entry");
             removed += 1;
@@ -247,7 +248,7 @@ async fn committed_append_returns_before_api_lookup_after_history_is_removed() {
     );
     assert_eq!(append(&router, &p).await, result);
     assert_eq!(
-        std::fs::read(home.path().join("notes/chosen.md")).unwrap(),
+        std::fs::read(home.path().join("notes/chosen.md")).expect("chosen note"),
         saved
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -265,7 +266,7 @@ async fn unknown_history_and_renderer_body_are_rejected_without_mutation() {
         },
     )
     .await;
-    let params = serde_json::to_value(&p).unwrap();
+    let params = serde_json::to_value(&p).expect("append params");
     let error = route(&router, "notes.append_response", params.clone())
         .await
         .expect_err("no export receipt");
@@ -277,7 +278,7 @@ async fn unknown_history_and_renderer_body_are_rejected_without_mutation() {
         .expect_err("body not admitted");
     assert_eq!(error.error.code, "invalid_params");
     assert_eq!(
-        std::fs::read_to_string(home.path().join("notes/chosen.md")).unwrap(),
+        std::fs::read_to_string(home.path().join("notes/chosen.md")).expect("chosen note"),
         "original note\n"
     );
 }

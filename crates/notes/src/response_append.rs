@@ -81,14 +81,13 @@ impl Selection {
             if matches!(self.target, ResponseNoteTarget::Existing { .. }) && rev.is_none() {
                 return changed();
             }
-            if let Some(ino) = &self.file_ino {
-                if rev.is_none_or(|rev| &rev.ino != ino)
+            if let Some(ino) = &self.file_ino
+                && (rev.is_none_or(|rev| &rev.ino != ino)
                     || std::fs::symlink_metadata(&file)
                         .ok()
-                        .is_none_or(|meta| meta.ino().to_string() != *ino || !meta.is_file())
-                {
-                    return changed();
-                }
+                        .is_none_or(|meta| meta.ino().to_string() != *ino || !meta.is_file()))
+            {
+                return changed();
             }
         }
         Ok(())

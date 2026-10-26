@@ -61,7 +61,9 @@ impl Proofs {
             && id.generation == generation.to_string()
             && self.items.get(&id.token).is_some_and(|p| {
                 p.client == client
-                    && p.request.to_string() == id.request_id
+                    // Exact wire form, as minted in `response`; `Value == String` would compare
+                    // only JSON string ids by content and is not the same check.
+                    && serde_json::to_string(&p.request).is_ok_and(|wire| wire == id.request_id)
                     && p.expires > Instant::now()
             })
     }

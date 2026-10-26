@@ -23,16 +23,18 @@ async fn ws_handshake_cookie_is_seeded_before_messages_and_close_reason() {
     let url = format!("ws://{}/", listener.local_addr().expect("address"));
     let server = tokio::spawn(async move {
         let (tcp, _) = listener.accept().await.expect("connection");
-        let mut socket =
-            tokio_tungstenite::accept_hdr_async(tcp, |_: &Request, mut response: Response| {
-                response.headers_mut().append(
-                    "set-cookie",
-                    "session=ws-issued-value; Path=/; HttpOnly"
-                        .parse()
-                        .expect("header"),
-                );
-                Ok(response)
-            })
+        // tungstenite `Callback`의 오류 응답 형식이 정해져 있다.
+        #[allow(clippy::result_large_err)]
+        let callback = |_: &Request, mut response: Response| {
+            response.headers_mut().append(
+                "set-cookie",
+                "session=ws-issued-value; Path=/; HttpOnly"
+                    .parse()
+                    .expect("header"),
+            );
+            Ok(response)
+        };
+        let mut socket = tokio_tungstenite::accept_hdr_async(tcp, callback)
             .await
             .expect("handshake");
         socket
@@ -157,14 +159,16 @@ async fn ws_response_cookie_capacity_failure_emits_no_open_or_message() {
     let url = format!("ws://{}/", listener.local_addr().expect("address"));
     let server = tokio::spawn(async move {
         let (tcp, _) = listener.accept().await.expect("connection");
-        let mut socket =
-            tokio_tungstenite::accept_hdr_async(tcp, |_: &Request, mut response: Response| {
-                response.headers_mut().append(
-                    "set-cookie",
-                    "session=must-not-leak".parse().expect("header"),
-                );
-                Ok(response)
-            })
+        // tungstenite `Callback`의 오류 응답 형식이 정해져 있다.
+        #[allow(clippy::result_large_err)]
+        let callback = |_: &Request, mut response: Response| {
+            response.headers_mut().append(
+                "set-cookie",
+                "session=must-not-leak".parse().expect("header"),
+            );
+            Ok(response)
+        };
+        let mut socket = tokio_tungstenite::accept_hdr_async(tcp, callback)
             .await
             .expect("handshake");
         let _ = socket.send(Message::text("must-not-leak")).await;

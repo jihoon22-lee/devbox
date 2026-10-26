@@ -181,7 +181,7 @@ fn proof_expiry_rejects_validation_and_releases_admission() {
             .is_err()
     );
     assert!(!proofs.pending(CLIENT));
-    assert!(proofs.items.get(&request.identity.token).is_none());
+    assert!(!proofs.items.contains_key(&request.identity.token));
 }
 #[test]
 fn cancel_and_detach_are_bound_to_the_owning_stream_and_request() {

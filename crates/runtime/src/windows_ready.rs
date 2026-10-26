@@ -25,7 +25,7 @@ pub(crate) fn unavailable_listeners() -> WindowsListeners {
 enum Candidate {
     Ready,
     NotReady,
-    Probe(ObservationAssigned, Vec<u16>),
+    Probe(Box<ObservationAssigned>, Vec<u16>),
 }
 fn changed() -> Fail<crate::RuntimeError> {
     Fail::Internal("Windows readiness attempt changed".into())
@@ -44,7 +44,8 @@ impl RuntimeService {
             Candidate::NotReady => return Ok(WindowsReadiness::NotReady),
             Candidate::Probe(assigned, ports) => (assigned, ports),
         };
-        let observed = (self.execution()?.windows_listeners)(assigned.clone(), ports.clone()).await;
+        let observed =
+            (self.execution()?.windows_listeners)((*assigned).clone(), ports.clone()).await;
         if observed != ListenerObservation::Owned {
             return Ok(WindowsReadiness::NotReady);
         }
@@ -100,7 +101,7 @@ impl RuntimeService {
                     .assigned
                     .filter(|assigned| attempt.control.accepts(id, assigned))
                     .ok_or_else(changed)?;
-                Ok(Candidate::Probe(assigned, ports))
+                Ok(Candidate::Probe(Box::new(assigned), ports))
             }
         }
     }

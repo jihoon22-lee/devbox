@@ -35,7 +35,11 @@ mod tests {
     #[tokio::test]
     async fn summary_reports_zero_services_without_live_runs() {
         let f = crate::service_tests::Fixture::new().await;
-        let summary = f.runs.summary(crate::RunSummaryQuery {}).await.unwrap();
+        let summary = f
+            .runs
+            .summary(crate::RunSummaryQuery {})
+            .await
+            .expect("summary");
         assert_eq!((summary.active, summary.active_services), (0, 0));
     }
 
@@ -68,7 +72,10 @@ mod tests {
             .await
             .expect("fixture result");
         assert_eq!(summary.active, 3);
-        assert_eq!(serde_json::to_value(&summary).unwrap()["activeServices"], 2);
+        assert_eq!(
+            serde_json::to_value(&summary).expect("summary json")["activeServices"],
+            2
+        );
         assert_eq!(summary.rev, rev.to_string());
     }
 }
