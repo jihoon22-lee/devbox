@@ -17,7 +17,7 @@ const messages: Record<UpdateIssue, string> = {
   quitRejected: "열린 창의 저장 준비가 끝나지 않아 설치를 취소했습니다. 문서 상태를 확인하고 다시 시도하세요.",
   runner: "업데이트 설치 준비에 실패했습니다. 앱 상태를 확인한 뒤 다시 시도하세요.",
   installFailed: "업데이트 설치에 실패했습니다. 현재 앱 버전과 업데이트 정보를 다시 확인하세요.",
-  relaunchFailed: "업데이트 뒤 앱을 다시 열지 못했습니다. 시작 메뉴에서 devbox를 열어 설치 상태를 확인하세요.",
+  relaunchFailed: "업데이트 뒤 앱을 다시 열지 못했습니다. 시작 메뉴에서 Devbox를 열어 설치 상태를 확인하세요.",
   recoveryRequired: "업데이트 설치 상태를 확인할 수 없습니다. 설치 프로그램이 끝났는지 확인한 뒤 앱을 다시 시작하세요.",
   unavailable: "업데이트 상태를 확인하지 못했습니다. 상태를 다시 불러오세요.",
   invalidSnapshot: "업데이트 상태가 올바르지 않습니다. 상태를 다시 불러오세요.",
@@ -39,7 +39,7 @@ function phaseLabel(snapshot: UpdateSnapshot) {
     case "installing":
       if (snapshot.error === "recoveryRequired") return messages.recoveryRequired;
       if (snapshot.error === "runner")
-        return "업데이트 실행기 정리를 확인하고 있습니다. 확인이 끝날 때까지 기다리세요.";
+        return "업데이트 설치 도우미 정리를 확인하고 있습니다. 확인이 끝날 때까지 기다리세요.";
       if (snapshot.error === "cancelled") return "설치 준비를 취소하고 있습니다.";
       return snapshot.nextAction === "cancel" ? "설치 준비 중입니다." : "앱 종료 후 업데이트를 설치합니다.";
     case "failed":

@@ -52,7 +52,12 @@ export function GateView({
     case "connecting":
       return <View title="WSL의 devbox에 연결하고 있습니다" />;
     case "deploying":
-      return <View title="devbox를 WSL에 설치하고 있습니다" body="처음 실행하거나 업데이트한 뒤 한 번만 합니다." />;
+      return (
+        <View
+          title="devbox를 WSL에 설치하고 있습니다"
+          body="연결을 시작할 때마다 WSL 쪽 실행 파일과 설정을 확인하고 데몬만 다시 시작합니다. 에이전트 작업의 터미널 세션은 그대로 유지됩니다."
+        />
+      );
     case "noWsl":
       return (
         <View

@@ -81,7 +81,7 @@ test("ready requires fresh summary and explicit confirmation before any install 
   expect(native.invoke.mock.calls.map(([name]) => name)).toEqual(["update_status"]);
   fireEvent.click(button);
   const dialog = await screen.findByRole("dialog", { name: "업데이트 설치" });
-  expect(await within(dialog).findByText("에이전트 작업: 실행 중 2개 · 열린 작업 4개")).toBeVisible();
+  expect(await within(dialog).findByText("에이전트 작업: 실행 중 2개 · 열린 에이전트 작업 4개")).toBeVisible();
   expect(within(dialog).getByText("서비스: 실행 중 3개 · 작업·서비스 전체 7개")).toBeVisible();
   expect(within(dialog).getByText(/WSL의 에이전트 작업과 서비스는 계속 실행됩니다/)).toBeVisible();
   expect(native.invoke).toHaveBeenCalledWith("update_install_summary", { generation: 7 });
@@ -245,14 +245,14 @@ test("unknown runner cleanup is a wait state, never a committed-install or retry
   });
   render(<Update />);
   expect(
-    await screen.findByText("업데이트 실행기 정리를 확인하고 있습니다. 확인이 끝날 때까지 기다리세요."),
+    await screen.findByText("업데이트 설치 도우미 정리를 확인하고 있습니다. 확인이 끝날 때까지 기다리세요."),
   ).toBeVisible();
   expect(screen.queryByText("앱 종료 후 업데이트를 설치합니다.")).not.toBeInTheDocument();
   expect(screen.queryByRole("button")).not.toBeInTheDocument();
 });
 
 test.each([
-  [false, "runner", "업데이트 실행기 정리를 확인하고 있습니다. 확인이 끝날 때까지 기다리세요."],
+  [false, "runner", "업데이트 설치 도우미 정리를 확인하고 있습니다. 확인이 끝날 때까지 기다리세요."],
   [
     false,
     "recoveryRequired",

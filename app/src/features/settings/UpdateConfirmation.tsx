@@ -171,7 +171,7 @@ export function UpdateConfirmation({
       {view.counts && (
         <>
           <p>
-            에이전트 작업: 실행 중 {view.counts.agents}개 · 열린 작업 {view.counts.open}개
+            에이전트 작업: 실행 중 {view.counts.agents}개 · 열린 에이전트 작업 {view.counts.open}개
           </p>
           <p>
             서비스: 실행 중 {view.counts.services}개 · 작업·서비스 전체 {view.counts.active}개
