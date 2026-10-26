@@ -43,19 +43,42 @@ pub(crate) async fn check_paths(
         _ => PathObservation::Unavailable,
     }
 }
+pub(crate) async fn listeners(
+    executable: &Path,
+    assigned: &ObservationAssigned,
+    ports: &[u16],
+    cancel: CancellationToken,
+) -> ListenerObservation {
+    match query(
+        executable,
+        WindowsProbe::Listeners {
+            assigned: assigned.clone(),
+            ports: ports.to_vec(),
+        },
+        cancel,
+    )
+    .await
+    {
+        WindowsProbeResult::Listeners { state } => state,
+        _ => ListenerObservation::Unavailable,
+    }
+}
 async fn query(
     executable: &Path,
     request: WindowsProbe,
     cancel: CancellationToken,
 ) -> WindowsProbeResult {
-    let timeout = if matches!(request, WindowsProbe::Paths { .. }) {
+    let timeout = if matches!(
+        request,
+        WindowsProbe::Paths { .. } | WindowsProbe::Listeners { .. }
+    ) {
         Duration::from_secs(5)
     } else {
         Duration::from_secs(3)
     };
     query_with_timeout(executable, request, cancel, timeout).await
 }
-async fn query_with_timeout(
+pub(super) async fn query_with_timeout(
     executable: &Path,
     request: WindowsProbe,
     cancel: CancellationToken,

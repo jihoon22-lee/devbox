@@ -36,6 +36,34 @@ pub(super) fn configure(
         })
     });
     let executable = execution.windows_interop.clone();
+    let native = broker.clone();
+    let stopping = cancel.clone();
+    execution.windows_listeners = Arc::new(move |assigned, ports| {
+        let executable = executable.clone();
+        let native = native.clone();
+        let cancel = stopping.child_token();
+        Box::pin(async move {
+            let observed =
+                crate::windows_exec::listeners(&executable, &assigned, &ports, cancel.clone())
+                    .await;
+            // Direct interop may run in another session; only the native broker can retry it.
+            if !matches!(
+                observed,
+                ListenerObservation::Unavailable | ListenerObservation::IdentityMismatch
+            ) || cancel.is_cancelled()
+            {
+                return observed;
+            }
+            match native
+                .probe(WindowsProbe::Listeners { assigned, ports }, cancel)
+                .await
+            {
+                Ok(WindowsProbeResult::Listeners { state }) => state,
+                _ => ListenerObservation::Unavailable,
+            }
+        })
+    });
+    let executable = execution.windows_interop.clone();
     execution.windows_paths = Arc::new(move |paths| {
         let executable = executable.clone();
         let native = broker.clone();

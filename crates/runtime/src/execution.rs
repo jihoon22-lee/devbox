@@ -51,6 +51,7 @@ pub struct ExecutionConfig {
     pub windows_owner: String,
     pub windows_observation: WindowsObservation,
     pub windows_paths: WindowsPaths,
+    pub windows_listeners: crate::WindowsListeners,
     #[cfg(test)]
     pub(crate) windows_publish_hook: Option<Arc<dyn Fn() + Send + Sync>>,
     pub windows_interop: std::path::PathBuf,
@@ -82,6 +83,7 @@ impl ExecutionConfig {
             windows_paths: Arc::new(|_| {
                 Box::pin(async { devbox_protocol::windows::PathObservation::Unavailable })
             }),
+            windows_listeners: crate::windows_ready::unavailable_listeners(),
             #[cfg(test)]
             windows_publish_hook: None,
             windows_interop: devbox_secrets::keystore::POWERSHELL.into(),

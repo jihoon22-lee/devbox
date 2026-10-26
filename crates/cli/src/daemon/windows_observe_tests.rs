@@ -80,3 +80,76 @@ async fn native_observer_can_reconcile_its_original_session_when_direct_interop_
         cancel.cancel();
     }
 }
+fn listener_config(
+    temp: &std::path::Path,
+    direct: ListenerObservation,
+) -> devbox_runtime::ExecutionConfig {
+    let path = temp.join("probe");
+    let reply = serde_json::to_string(&WindowsProbeResult::Listeners { state: direct })
+        .expect("typed response");
+    std::fs::write(&path,format!("#!/usr/bin/python3\nimport sys,json\nrequest=json.load(sys.stdin)\nassert request['type']=='listeners' and request['ports']==[3000,3001]\nassert request['assigned']['sessionId']==2\nprint({reply:?})\n")).expect("owned executable");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).expect("mode");
+    let paths = Paths::resolve(
+        Instance::parse("test-probe-listeners").expect("instance"),
+        &TestEnv(temp.into()),
+    )
+    .expect("owned paths");
+    let mut execution = devbox_runtime::ExecutionConfig::new(paths);
+    execution.windows_interop = path;
+    execution
+}
+#[tokio::test]
+async fn listener_ownership_falls_back_to_native_only_when_direct_cannot_judge_it() {
+    for direct in [
+        ListenerObservation::IdentityMismatch,
+        ListenerObservation::Unavailable,
+    ] {
+        let temp = tempfile::tempdir().expect("owned helper");
+        let mut execution = listener_config(temp.path(), direct);
+        let broker = Arc::new(WindowsBroker::default());
+        let cancel = CancellationToken::new();
+        configure(&mut execution, broker.clone(), cancel.clone());
+        let native = async {
+            let request = broker
+                .probe_next(7, cancel.clone())
+                .await
+                .expect("original native session");
+            assert_eq!(
+                request.probe,
+                WindowsProbe::Listeners {
+                    assigned: receipt(),
+                    ports: vec![3000, 3001]
+                }
+            );
+            broker
+                .probe_output(
+                    7,
+                    WindowsProbeReply {
+                        probe_id: request.probe_id,
+                        result: WindowsProbeResult::Listeners {
+                            state: ListenerObservation::Owned,
+                        },
+                    },
+                )
+                .expect("exact native result");
+        };
+        let (observed, ()) = tokio::join!(
+            (execution.windows_listeners)(receipt(), vec![3000, 3001]),
+            native
+        );
+        assert_eq!(observed, ListenerObservation::Owned, "{direct:?}");
+        cancel.cancel();
+    }
+    // A definitive direct answer, including an unrelated listener, is final.
+    let temp = tempfile::tempdir().expect("owned helper");
+    let mut execution = listener_config(temp.path(), ListenerObservation::NotOwned);
+    configure(
+        &mut execution,
+        Arc::new(WindowsBroker::default()),
+        CancellationToken::new(),
+    );
+    assert_eq!(
+        (execution.windows_listeners)(receipt(), vec![3000, 3001]).await,
+        ListenerObservation::NotOwned
+    );
+}

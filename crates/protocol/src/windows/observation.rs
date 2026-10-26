@@ -8,6 +8,7 @@ pub const OBSERVATION_GRANT_TIMEOUT_MS: u64 = 15_000;
 pub const MAX_WINDOWS_PROBE_BYTES: usize = 1024 * 1024;
 pub const MAX_WINDOWS_PROBE_PATHS: usize = 1024;
 pub const MAX_WINDOWS_PROBE_PATH_BYTES: usize = 512 * 1024;
+pub const MAX_WINDOWS_PROBE_PORTS: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -51,17 +52,38 @@ pub enum PathObservation {
     Unsafe,
     Unavailable,
 }
+/// Listener ownership for every required port. Only `Owned` can authorize readiness.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ListenerObservation {
+    Owned,
+    /// Some required port has no listener owned by the assigned job, including unrelated ones.
+    NotOwned,
+    Empty,
+    NotFound,
+    IdentityMismatch,
+    Unavailable,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum WindowsProbe {
-    Observation { assigned: ObservationAssigned },
-    Paths { paths: Vec<String> },
+    Observation {
+        assigned: ObservationAssigned,
+    },
+    Paths {
+        paths: Vec<String>,
+    },
+    Listeners {
+        assigned: ObservationAssigned,
+        ports: Vec<u16>,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum WindowsProbeResult {
     Observation { state: ObservationState },
     Paths { state: PathObservation },
+    Listeners { state: ListenerObservation },
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -157,6 +179,13 @@ impl WindowsProbe {
                     && paths.iter().map(String::len).sum::<usize>() <= MAX_WINDOWS_PROBE_PATH_BYTES
                     && paths.iter().all(|p| valid_windows_path(p))
             }
+            // The raw length is capped, so duplicate ports cannot hide an oversize request.
+            Self::Listeners { assigned, ports } => {
+                assigned.valid()
+                    && !ports.is_empty()
+                    && ports.len() <= MAX_WINDOWS_PROBE_PORTS
+                    && !ports.contains(&0)
+            }
         }
     }
     pub fn unavailable(&self) -> WindowsProbeResult {
@@ -166,6 +195,9 @@ impl WindowsProbe {
             },
             Self::Paths { .. } => WindowsProbeResult::Paths {
                 state: PathObservation::Unavailable,
+            },
+            Self::Listeners { .. } => WindowsProbeResult::Listeners {
+                state: ListenerObservation::Unavailable,
             },
         }
     }
@@ -180,7 +212,8 @@ impl WindowsProbeResult {
                 WindowsProbe::Observation { .. },
             ) => *count > 0,
             (Self::Observation { .. }, WindowsProbe::Observation { .. })
-            | (Self::Paths { .. }, WindowsProbe::Paths { .. }) => true,
+            | (Self::Paths { .. }, WindowsProbe::Paths { .. })
+            | (Self::Listeners { .. }, WindowsProbe::Listeners { .. }) => true,
             _ => false,
         }
     }

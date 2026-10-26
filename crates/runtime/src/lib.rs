@@ -13,6 +13,7 @@ mod windows_copy;
 mod windows_copy_service;
 mod windows_copy_store;
 mod windows_observation;
+mod windows_ready;
 pub use agent_test::AgentTestRequest;
 pub mod exit_record;
 mod graph;
@@ -45,6 +46,7 @@ pub use model::*;
 pub use run_model::*;
 pub use schedule_model::*;
 pub use service::RuntimeService;
+pub use windows_ready::WindowsListeners;
 
 pub const MIGRATIONS: &[Migration] = &[
     Migration {

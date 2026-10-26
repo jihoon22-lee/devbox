@@ -35,6 +35,13 @@ pub struct RunIdentity {
     pub run_id: String,
     pub attempt_id: String,
 }
+/// Internal windows.ready reply. Not-ready is a typed result, distinct from route failure.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowsReadiness {
+    Ready,
+    NotReady,
+}
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowsEvent {

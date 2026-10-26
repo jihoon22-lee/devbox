@@ -195,3 +195,58 @@ async fn windows_path_batch_uses_one_helper_and_invalid_or_cancelled_queries_do_
     );
     assert_eq!(fs::read_to_string(marker).expect("calls"), "one");
 }
+#[tokio::test]
+async fn windows_listener_probe_passes_receipt_and_ports_with_typed_bounded_results() {
+    let temp = tempfile::tempdir().expect("fixture");
+    let request = WindowsProbe::Listeners {
+        assigned: assigned(),
+        ports: vec![3000, 3001],
+    };
+    for state in [
+        ListenerObservation::Owned,
+        ListenerObservation::NotOwned,
+        ListenerObservation::NotFound,
+        ListenerObservation::IdentityMismatch,
+    ] {
+        let result = WindowsProbeResult::Listeners { state };
+        let body = format!(
+            "import sys,json\nr=json.load(sys.stdin)\nassert r['type']=='listeners' and r['ports']==[3000,3001]\nassert r['assigned']['pid']==1234\nassert 'GetExtendedTcpTable' in sys.argv[-1]\nprint({:?})",
+            serde_json::to_string(&result).expect("result")
+        );
+        let path = fake(temp.path(), &body);
+        assert_eq!(
+            query(&path, request.clone(), CancellationToken::new()).await,
+            result
+        );
+    }
+    let unavailable = WindowsProbeResult::Listeners {
+        state: ListenerObservation::Unavailable,
+    };
+    for body in [
+        "print('{\"type\":\"observation\",\"state\":{\"state\":\"empty\"}}')",
+        "print(' '*5000)",
+        "import sys\nprint('{\"type\":\"listeners\",\"state\":\"owned\"}')\nsys.exit(1)",
+    ] {
+        let path = fake(temp.path(), body);
+        assert_eq!(
+            query(&path, request.clone(), CancellationToken::new()).await,
+            unavailable
+        );
+    }
+    let marker = temp.path().join("spawned");
+    let path = fake(
+        temp.path(),
+        &format!("open({:?},'w').write('x')", marker.to_str().expect("path")),
+    );
+    for ports in [vec![], vec![0], vec![3000; MAX_WINDOWS_PROBE_PORTS + 1]] {
+        let invalid = WindowsProbe::Listeners {
+            assigned: assigned(),
+            ports,
+        };
+        assert_eq!(
+            query(&path, invalid, CancellationToken::new()).await,
+            unavailable
+        );
+    }
+    assert!(!marker.exists(), "invalid listener probes never spawn");
+}

@@ -22,7 +22,10 @@ async fn query(
     request: WindowsProbe,
     cancel: CancellationToken,
 ) -> WindowsProbeResult {
-    let timeout = if matches!(request, WindowsProbe::Paths { .. }) {
+    let timeout = if matches!(
+        request,
+        WindowsProbe::Paths { .. } | WindowsProbe::Listeners { .. }
+    ) {
         Duration::from_secs(5)
     } else {
         Duration::from_secs(3)

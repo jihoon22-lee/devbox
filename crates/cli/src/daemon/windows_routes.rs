@@ -90,10 +90,8 @@ pub(super) async fn dispatch(
         }
         "windows.ready" => {
             let id: RunIdentity = decode(&raw)?;
-            s.runs.windows_ready(&id).await.map_err(|_| fail())?;
-            encode(&devbox_protocol::Done {
-                rev: s.db.rev().to_string(),
-            })
+            // A not-yet-owned listener is a typed reply; only failures map to Internal.
+            encode(&s.runs.windows_ready(&id).await.map_err(|_| fail())?)
         }
         "windows.run" => {
             if raw.get().len() > MAX_WINDOWS_REQUEST_BYTES {

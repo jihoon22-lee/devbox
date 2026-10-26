@@ -167,25 +167,6 @@ pub(crate) fn reject_links(path: &Path) -> Result<(), WindowsError> {
     Ok(())
 }
 impl crate::RuntimeService {
-    pub async fn windows_ready(&self, id: &devbox_protocol::windows::RunIdentity) -> crate::R<()> {
-        self.reconcile_one(&id.run_id).await?;
-        let _guard = self.run_lock(&id.run_id).await;
-        self.prepare_windows(id).await?;
-        let mut value = self.stored(&id.run_id).await?;
-        if value.run.attempt_id.as_deref() != Some(&id.attempt_id) {
-            return Err(devbox_protocol::Fail::Internal(
-                "Windows readiness attempt changed".into(),
-            ));
-        }
-        if !value.run.ready {
-            value.run.ready = true;
-            self.save_run(&value).await?;
-        }
-        Ok(())
-    }
-}
-
-impl crate::RuntimeService {
     pub async fn claim_windows_native(
         &self,
         id: &devbox_protocol::windows::RunIdentity,

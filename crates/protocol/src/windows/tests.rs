@@ -147,3 +147,117 @@ fn windows_bootstrap_structurally_orders_receipt_and_grant_before_user_input() {
     );
     assert!(!script.contains("Write-Output $assigned"));
 }
+#[test]
+fn windows_listener_probe_bounds_ports_and_pairs_only_with_listener_results() {
+    let probe = |ports: Vec<u16>| WindowsProbe::Listeners {
+        assigned: assigned(),
+        ports,
+    };
+    assert!(probe(vec![3000, 3001]).valid());
+    assert!(probe((1..=MAX_WINDOWS_PROBE_PORTS as u16).collect()).valid());
+    for bad in [
+        vec![],
+        vec![0],
+        vec![3000, 0],
+        vec![3000; MAX_WINDOWS_PROBE_PORTS + 1],
+    ] {
+        assert!(!probe(bad.clone()).valid(), "{bad:?}");
+    }
+    let mut forged = assigned();
+    forged.pid = 0;
+    assert!(
+        !WindowsProbe::Listeners {
+            assigned: forged,
+            ports: vec![3000]
+        }
+        .valid()
+    );
+    let request = probe(vec![3000]);
+    assert_eq!(
+        request.unavailable(),
+        WindowsProbeResult::Listeners {
+            state: ListenerObservation::Unavailable
+        }
+    );
+    for state in [
+        ListenerObservation::Owned,
+        ListenerObservation::NotOwned,
+        ListenerObservation::Empty,
+        ListenerObservation::NotFound,
+        ListenerObservation::IdentityMismatch,
+        ListenerObservation::Unavailable,
+    ] {
+        let result = WindowsProbeResult::Listeners { state };
+        assert!(result.valid_for(&request));
+        assert!(!result.valid_for(&WindowsProbe::Observation {
+            assigned: assigned()
+        }));
+        let wire = serde_json::to_string(&result).expect("result");
+        assert_eq!(
+            serde_json::from_str::<WindowsProbeResult>(&wire).expect("roundtrip"),
+            result
+        );
+    }
+    assert!(
+        !WindowsProbeResult::Paths {
+            state: PathObservation::Safe
+        }
+        .valid_for(&request)
+    );
+    let wire = serde_json::to_string(&request).expect("request");
+    assert!(wire.contains(r#""type":"listeners""#) && wire.contains(r#""ports":[3000]"#));
+    assert_eq!(
+        serde_json::from_str::<WindowsProbe>(&wire).expect("roundtrip"),
+        request
+    );
+    let extra = wire.replacen(r#""ports""#, r#""pid":1,"ports""#, 1);
+    assert!(serde_json::from_str::<WindowsProbe>(&extra).is_err());
+    assert!(
+        serde_json::from_str::<WindowsProbeResult>(
+            r#"{"type":"listeners","state":"owned","pid":1}"#
+        )
+        .is_err()
+    );
+}
+#[test]
+fn windows_ready_reply_is_typed_and_rejects_unknown_fields() {
+    for value in [WindowsReadiness::Ready, WindowsReadiness::NotReady] {
+        let wire = serde_json::to_string(&value).expect("reply");
+        assert_eq!(
+            serde_json::from_str::<WindowsReadiness>(&wire).expect("roundtrip"),
+            value
+        );
+    }
+    // A bare string leaves no room for extra fields; any other shape is rejected.
+    assert_eq!(
+        serde_json::to_string(&WindowsReadiness::NotReady).expect("reply"),
+        r#""notReady""#
+    );
+    for bad in [r#"{"state":"ready"}"#, r#""owned""#, r#"{"rev":"1"}"#] {
+        assert!(
+            serde_json::from_str::<WindowsReadiness>(bad).is_err(),
+            "{bad}"
+        );
+    }
+}
+#[test]
+fn windows_listener_check_compiles_only_in_the_probe_branch_never_the_bootstrap() {
+    // Structural contract only; the C# listener check is not compiled or run on Linux.
+    assert!(!POWERSHELL_BOOTSTRAP.contains("GetExtendedTcpTable"));
+    let probe = include_str!("probe.ps1");
+    let branch = probe
+        .find("$r.type -ceq 'listeners'")
+        .expect("listener branch");
+    let compile = probe
+        .find("public static class DevboxListeners")
+        .expect("type");
+    let observe = probe[branch..]
+        .find("::Observe(")
+        .expect("receipt validation")
+        + branch;
+    assert!(branch < compile && compile < observe);
+    assert!(probe.contains("GetExtendedTcpTable(buffer,ref size,false,family,3,0)"));
+    assert!(probe.contains("IsProcessInJob(process,job,out member)"));
+    assert!(probe.contains("again.Contains(pair)"));
+    assert!(!probe[compile..].contains("TerminateJobObject("));
+}
