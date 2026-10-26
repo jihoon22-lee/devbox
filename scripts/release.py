@@ -34,7 +34,9 @@ def preflight():
         command('git', 'merge-base', '--is-ancestor', sha, 'refs/remotes/origin/main')
     except subprocess.CalledProcessError:
         raise ValueError('Tag commit is not on origin/main') from None
-    return tag, sha, annotation.split('\n\n', 1)[1], remote
+    notes = re.split(r'^-----BEGIN [A-Z ]*SIGNATURE-----$', annotation.partition('\n\n')[2], maxsplit=1, flags=re.M)[0]
+    require(notes.strip(), 'Annotated tag message is empty')
+    return tag, sha, notes, remote
 
 def main():
     identity = preflight()
@@ -53,7 +55,6 @@ def main():
     base = f'repos/{REPO}/releases'
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary)
-        (staging / 'notes.txt').write_text(notes, encoding='utf-8')
         (staging / name).write_bytes(content)
         def api(endpoint, method='GET', payload=None):
             arguments = ['api', endpoint, '--method', method]

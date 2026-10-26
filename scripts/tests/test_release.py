@@ -96,6 +96,8 @@ class Release(unittest.TestCase):
         for options in [dict(writes=['POST', 'POST', 'PATCH']), dict(existing='draft', writes=['PATCH']), dict(existing='public'), dict(preflight=True)]:
             with self.subTest(options=options):
                 self.scenario(**options)
+        for kind in ['PGP', 'SSH']:  # A signed tag publishes only its message.
+            self.scenario(lambda s, r, e, d: s.update(notes=NOTES + f'-----BEGIN {kind} SIGNATURE-----\nfixture\n-----END {kind} SIGNATURE-----\n'), writes=['POST', 'POST', 'PATCH'])
 
     def test_event_gate(self):
         for key, value in [('GITHUB_EVENT_NAME', 'pull_request'), ('GITHUB_EVENT_NAME', 'workflow_dispatch'), ('GITHUB_REF', 'refs/heads/main')]:
@@ -104,7 +106,7 @@ class Release(unittest.TestCase):
     def test_preflight_rejections(self):
         for tag in ['v01.2.3', 'v1.2.3-dev', 'v1.2.3+meta', 'v1.2', 'v1.2.4']:
             self.scenario(lambda s, r, e, d: e.update(GITHUB_REF='refs/tags/' + tag), failure=True)
-        for state in [dict(lightweight=True), dict(remote='c' * 40), dict(duplicate=True), dict(off_main=True)] + [dict(lookup_error=status) for status in [401, 403, 404, 429, 500]]:
+        for state in [dict(lightweight=True), dict(remote='c' * 40), dict(duplicate=True), dict(off_main=True), dict(notes=''), dict(notes=' \n'), dict(notes='-----BEGIN PGP SIGNATURE-----\nx\n')] + [dict(lookup_error=status) for status in [401, 403, 404, 429, 500]]:
             self.scenario(lambda s, r, e, d: s.update(state), existing='draft', failure=True)
         self.scenario(lambda s, r, e, d: e.update(SOURCE_SHA='c' * 40), failure=True)
         for name in ['Cargo.toml', 'app/package.json', 'app/src-tauri/Cargo.toml', 'app/src-tauri/tauri.conf.json']:
