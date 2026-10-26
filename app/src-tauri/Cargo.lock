@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-activity"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "devbox-protocol",
  "regex",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-app"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "devbox-activity",
  "devbox-mux",
@@ -802,7 +802,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-mux"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "bytes",
  "devbox-protocol",
@@ -812,7 +812,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-protocol"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "bytes",
  "serde",
@@ -828,7 +828,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-win"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "devbox-activity",
  "serde",
