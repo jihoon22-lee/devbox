@@ -1,4 +1,5 @@
-//! Operation-owned raw values and bounded byte variants; temporary patterns are zeroized too.
+//! Operation-owned raw values and bounded byte variants. Seeds and pattern buffers are
+//! allocated at their final size and zeroized on drop; matcher-internal copies are not.
 use crate::ApiError;
 use zeroize::Zeroizing;
 pub(crate) const MAX_SEEDS: usize = 1024;
@@ -83,9 +84,12 @@ fn pattern<I: Iterator<Item = u8> + Clone>(
     if patterns.len() >= MAX_PATTERNS || length > MAX_PATTERN_BYTES.saturating_sub(*bytes) {
         return Err(failed("capacity"));
     }
-    // All retained allocation sizes are admitted before collecting the bytes.
+    // All retained allocation sizes are admitted before collecting the bytes. Exact capacity
+    // means no growth reallocation leaves a partial unzeroized copy behind.
     *bytes += length;
-    patterns.push(value.collect());
+    let mut pattern = Vec::with_capacity(length);
+    pattern.extend(value);
+    patterns.push(pattern);
     Ok(())
 }
 fn encoded(value: &[u8], form: bool) -> impl Iterator<Item = u8> + Clone + '_ {
