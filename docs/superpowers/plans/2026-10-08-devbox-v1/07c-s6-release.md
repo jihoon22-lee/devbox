@@ -282,7 +282,7 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 ### S6-3b 설치 확인·all-window 종료·재기동
 
-> 2026-10-26 현재: 구현과 고유170 좁은 검증 PASS(coordinator19·frontend/runtime93·native35·runner23), installer 기록 공백 RED→복구10 GREEN 및 최종 소스 검토 미해결0을 확인했다. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·인계로 고정한다. MSVC target 소스 확인은 ring build의 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS는 NOT_RUN이다. 아래 Windows 수용 체크는 로컬 구현 완료와 구분해 최종 candidate까지 남긴다. 당시 사용자 한도 소진 지시에 따라 인계를 정리하고 S6-4는 시작하지 않았으며, 이후 S6-4a/4b는 로컬 완료했다(§14). 상세·유일 진행 원장은 PROGRESS의 S6-3b다.
+> 2026-10-26 현재: 구현과 고유170 좁은 검증 PASS(coordinator19·frontend/runtime93·native35·runner23), installer 기록 공백 RED→복구10 GREEN 및 최종 소스 검토 미해결0을 확인했다. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·인계로 고정한다. MSVC target 소스 확인은 ring build의 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS는 NOT_RUN이다. 아래 Windows 수용 체크는 로컬 구현 완료와 구분해 최종 candidate까지 남긴다. 당시 사용자 한도 소진 지시에 따라 인계를 정리하고 S6-4는 시작하지 않았으며, 이후 S6-4a/4b는 로컬 완료했다(§14). 상세·유일 진행 원장은 PROGRESS의 S6-3b다. 이후 Windows dispatch40296265668·40305797593에서 MSVC build와 native lib 시험161/161(update_runner·runner 파일 포함)이 Windows에서 PASS했고, 실제 NSIS updater 설치 실행은 여전히 NOT_RUN이다(PROGRESS §5 S6-6b Windows candidate).
 
 - [x] ready 뒤 [업데이트]는 agents/services 실행 수 요약과 데몬 작업 유지 안내를 보여 주고 **명시적으로 설치 확인**받는다. 네이티브 별도 확인 대화상자/서명 updater는 추가하지 않는다(ADR0016).
 - [x] 기존 all-window prepare/dirty flush barrier를 통과한 경우에만 설치를 시작한다. 실패/timeout/창 거절은 앱·작업 유지, installer 실행0회. 여러 창 중 한 창의 확인으로 다른 dirty 창을 건너뛰지 않는다.
