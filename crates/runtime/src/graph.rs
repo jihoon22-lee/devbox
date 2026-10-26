@@ -313,6 +313,14 @@ pub(crate) async fn prepare(
         let selected = canonical_directory(&id, &base.join(cwd.as_deref().unwrap_or("."))).await?;
         *cwd = Some(selected.to_string_lossy().into_owned());
         if target == RunTarget::Windows {
+            if service
+                .execution
+                .as_ref()
+                .and_then(|e| e.windows_root.as_deref())
+                .is_none()
+            {
+                return Err(invalid(&id, "config.local.toml windows.root is required").into());
+            }
             let effective = p
                 .worktree
                 .as_ref()

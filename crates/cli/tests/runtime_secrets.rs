@@ -19,6 +19,10 @@ struct Server {
 }
 impl Server {
     async fn start(f: &RuntimeFixture) -> Self {
+        Self::start_with(f, None).await
+    }
+    /// `listeners` replaces the owned-listener observation of the readiness gate.
+    async fn start_with(f: &RuntimeFixture, listeners: Option<WindowsListeners>) -> Self {
         let mut services = daemon::build_services(f.daemon.paths.clone()).expect("owned services");
         let secrets = Arc::new(
             SecretsService::new(services.db.clone(), f.daemon.paths.clone()).with_keystore(
@@ -29,6 +33,9 @@ impl Server {
         execution.executable = env!("CARGO_BIN_EXE_devbox").into();
         execution.slice = Some(f.slice.clone());
         execution.windows_interop = f.daemon.home.path().join("absent-windows-interop");
+        if let Some(listeners) = listeners {
+            execution.windows_listeners = listeners;
+        }
         let runs = Arc::new(
             RuntimeService::new(
                 services.db.clone(),
