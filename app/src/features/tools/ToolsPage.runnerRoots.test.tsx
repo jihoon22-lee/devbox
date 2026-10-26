@@ -208,8 +208,11 @@ it("late environment read from the old runner root cannot publish into the curre
   await waitFor(() => expect(backend.send).toHaveBeenCalledOnce());
   expect(JSON.stringify(backend.send.mock.calls[0]![0])).not.toContain(credential(project));
   await runner(project);
-  expect(screen.getByLabelText("변수 1 값")).toHaveValue(credential(project));
-  expect(active()?.unreviewed).toBe(true);
+  // S6-1a.1: leaving the root cancels its pending selection; the late read is not
+  // retained as a root-local draft either.
+  expect(screen.getByRole("combobox", { name: "환경" })).toHaveValue("");
+  expect(screen.queryByLabelText("변수 1 값")).not.toBeInTheDocument();
+  expect(active()).toBeNull();
 });
 
 it("switching runner roots cannot leave an old endpoint runnable with the new root environment", async () => {
