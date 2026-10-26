@@ -35,6 +35,8 @@ public static class DevboxObservation {
     [DllImport("kernel32.dll", SetLastError=true)]
     static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll", SetLastError=true)]
+    static extern bool GetExitCodeProcess(IntPtr process, out uint code);
+    [DllImport("kernel32.dll", SetLastError=true)]
     static extern bool GetProcessTimes(IntPtr process, out FileTime created, out FileTime exited, out FileTime kernel, out FileTime user);
     [DllImport("kernel32.dll", SetLastError=true)]
     static extern bool ProcessIdToSessionId(uint pid, out uint session);
@@ -71,16 +73,23 @@ public static class DevboxObservation {
             if(!String.Equals(Sid(),sid,StringComparison.Ordinal) || Session()!=session)
                 return new DevboxJobState("identityMismatch");
             process=OpenProcess(0x1000,false,pid);
+            bool reused=false;
             if(process==IntPtr.Zero) {
                 if(Marshal.GetLastWin32Error()!=87) return new DevboxJobState("unavailable");
             } else if(!String.Equals(Creation(process),creation,StringComparison.Ordinal)) {
-                return new DevboxJobState("identityMismatch");
+                reused=true;
             }
             job=OpenJobObject(4,false,name);
             if(job==IntPtr.Zero) {
                 if(Marshal.GetLastWin32Error()!=2) return new DevboxJobState("unavailable");
-                return new DevboxJobState(process==IntPtr.Zero ? "notFound" : "identityMismatch");
+                // A PID is reused only after the assigned process object is gone. Another holder can
+                // keep an exited process openable; an exit code proves exit, STILL_ACTIVE(259) does not.
+                if(process==IntPtr.Zero || reused) return new DevboxJobState("notFound");
+                uint code;
+                if(!GetExitCodeProcess(process,out code)) return new DevboxJobState("unavailable");
+                return new DevboxJobState(code==259 ? "identityMismatch" : "notFound");
             }
+            if(reused) return new DevboxJobState("identityMismatch");
             if(process!=IntPtr.Zero) {
                 bool member;
                 if(!IsProcessInJob(process,job,out member)) return new DevboxJobState("unavailable");

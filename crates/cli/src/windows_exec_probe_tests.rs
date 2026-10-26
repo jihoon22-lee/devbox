@@ -113,9 +113,26 @@ try {{
         Duration::from_millis(1),
     )
     .await;
+    // An owned holder keeps a handle to the root, so the exited root stays openable while its
+    // job name vanishes with the root's last job handle: exit must still read as gone.
+    let holder = format!(
+        r#"$ErrorActionPreference='Stop'
+$p=[System.Diagnostics.Process]::GetProcessById({pid})
+try {{
+    [void]$p.Handle
+    [Console]::Out.WriteLine((@{{held=$p.Id}} | ConvertTo-Json -Compress))
+    [Console]::Out.Flush()
+    [Console]::In.ReadToEnd() | Out-Null
+}} finally {{ $p.Dispose() }}
+"#,
+        pid = assigned.pid
+    );
+    let (holder, _) = fixture(executable, &holder).await;
     // Release and reap every owned fixture even when an assertion below fails.
     release(root).await;
     let exited = check(vec![v4]).await;
+    release(holder).await;
+    let reaped = check(vec![v4]).await;
     release(other).await;
     assert_eq!(
         only_unrelated,
@@ -139,6 +156,13 @@ try {{
             exited,
             ListenerObservation::NotFound | ListenerObservation::Empty
         ),
-        "exited tree: {exited:?}"
+        "exited tree with a held handle: {exited:?}"
+    );
+    assert!(
+        matches!(
+            reaped,
+            ListenerObservation::NotFound | ListenerObservation::Empty
+        ),
+        "exited tree: {reaped:?}"
     );
 }

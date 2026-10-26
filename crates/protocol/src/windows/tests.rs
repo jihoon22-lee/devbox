@@ -148,6 +148,29 @@ fn windows_bootstrap_structurally_orders_receipt_and_grant_before_user_input() {
     assert!(!script.contains("Write-Output $assigned"));
 }
 #[test]
+fn windows_observe_proves_exit_before_treating_a_missing_job_as_mismatch() {
+    // Structural contract; the real-Windows fixture exercises the API behaviour.
+    let native = include_str!("native.ps1");
+    let start = native.find("DevboxJobState Observe(").expect("observe");
+    let body = &native[start..native.find("public static bool Exists(").expect("end")];
+    let job = body.find("OpenJobObject(4,false,name)").expect("job open");
+    // A creation mismatch (reused PID) is classified only after the job lookup.
+    let reused = body
+        .find("if(reused) return new DevboxJobState(\"identityMismatch\")")
+        .expect("reused with job present");
+    assert!(job < reused);
+    assert!(body[..job].contains("reused=true;"));
+    // Missing job: absent or reused PID, or an exit code, proves exit; STILL_ACTIVE stays closed.
+    assert!(
+        body.contains("if(process==IntPtr.Zero || reused) return new DevboxJobState(\"notFound\")")
+    );
+    assert!(body.contains(
+        "if(!GetExitCodeProcess(process,out code)) return new DevboxJobState(\"unavailable\")"
+    ));
+    assert!(body.contains("code==259 ? \"identityMismatch\" : \"notFound\""));
+    assert!(body.contains("OpenProcess(0x1000,false,pid)"));
+}
+#[test]
 fn windows_listener_probe_bounds_ports_and_pairs_only_with_listener_results() {
     let probe = |ports: Vec<u16>| WindowsProbe::Listeners {
         assigned: assigned(),
