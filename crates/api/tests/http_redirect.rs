@@ -347,26 +347,46 @@ async fn cookie_values_in_a_cross_origin_location_are_followed_and_still_redacte
 }
 
 #[tokio::test]
-async fn short_cookie_value_does_not_drop_unrelated_headers_on_a_cross_origin_hop() {
+async fn custom_header_carrying_a_cookie_value_is_dropped_on_a_cross_origin_hop() {
     let api = Harness::new().await;
     let destination = Server::ok().await;
     let port = destination.addr.port();
     let start = Server::start(handler(move |_| async move {
         Reply::redirect(302, &format!("http://127.0.0.1:{port}/next"))
-            .header("set-cookie", "lang=1; Path=/")
+            .header("set-cookie", "issued=fixture-issued-cookie-466; Path=/")
     }))
     .await;
     let mut input = snapshot("GET", &start.url("/start"));
-    input.cookies.push(header(0, "consent", "1"));
-    input.headers.push(header(0, "x-api-version", "1"));
+    input
+        .cookies
+        .push(header(0, "sid", "fixture-session-cookie-357"));
+    input
+        .headers
+        .push(header(0, "x-session", "fixture-session-cookie-357"));
+    input
+        .headers
+        .push(header(1, "x-echo", "fixture-issued-cookie-466"));
+    input
+        .headers
+        .push(header(2, "x-public", "public-header-value"));
     let events = api.complete(request(input)).await;
     assert_eq!(head(&events).0, 200);
+    let origin = start.only();
+    assert_eq!(origin.header("x-session"), ["fixture-session-cookie-357"]);
     let seen = destination.only();
-    assert_eq!(seen.header("x-api-version"), ["1"]);
+    assert!(
+        seen.header("x-session").is_empty(),
+        "session value never crosses"
+    );
+    assert!(
+        seen.header("x-echo").is_empty(),
+        "issued cookie value never crosses"
+    );
     assert!(
         seen.header("cookie").is_empty(),
         "cookies never cross origins"
     );
+    assert_eq!(seen.header("x-public"), ["public-header-value"]);
 }
 
 #[tokio::test]

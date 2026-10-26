@@ -97,13 +97,14 @@ pub(crate) async fn execute(
     let (mut method, mut url) = (p.method.clone(), p.url.clone());
     let (mut allow_sensitive, mut include_body) = (true, true);
     for hop in 0..=MAX_REDIRECTS {
-        // Cookie values redact output but never strip an unrelated header on a cross-origin hop.
-        let guard = &redaction.guard;
+        // Every seed, cookie values included: a header carrying a session value never crosses
+        // origins (dropping an unrelated short match is the accepted safe side).
+        let redactor = &redaction.redactor;
         let mut map = HeaderMap::new();
         for (name, value) in &p.headers {
             let secret = !allow_sensitive
                 && (!redirect::should_send_header(name.as_str(), false)
-                    || guard.contains(&String::from_utf8_lossy(value.as_bytes())));
+                    || redactor.contains(&String::from_utf8_lossy(value.as_bytes())));
             if secret || !include_body && redirect::is_body_header(name.as_str()) {
                 continue;
             }

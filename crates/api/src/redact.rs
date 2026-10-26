@@ -22,8 +22,9 @@ pub(crate) struct Redaction {
     seeds: Seeds,
     /// Every seed: display, stream and history redaction.
     pub(crate) redactor: Redactor,
-    /// Credential/secret seeds only (no cookie values): the cross-origin redirect and
-    /// header-drop guard, so ordinary cookie values cannot block or strip a hop.
+    /// Credential/secret seeds only (no cookie values): the cross-origin redirect Location
+    /// guard, so a cookie value echoed in a Location (OAuth `state`) does not block the hop.
+    /// The cross-origin header drop keeps using `redactor` (all seeds).
     pub(crate) guard: Redactor,
     failed: bool,
 }
