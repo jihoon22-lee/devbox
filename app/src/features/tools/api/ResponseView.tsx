@@ -1,5 +1,5 @@
 /** 응답: 출처·상태·시간·크기, 헤더, 본문(JSON은 보기 좋게). 실패는 오류 표의 문구로 보인다. */
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { messageFor } from "../../../rpc/messages";
 import { EmptyState, Tabs } from "../../../ui";
 import s from "./Api.module.css";
@@ -28,10 +28,12 @@ export function ResponseView({
   result,
   draft,
   failure,
+  noteAction,
 }: {
   result?: { response: SentResponse; origin: ResponseOriginInfo };
   draft: RequestDraft;
   failure?: { code: string; detail?: unknown };
+  noteAction?: ReactNode;
 }) {
   const [view, setView] = useState<"body" | "headers">("body");
   const response = result?.response;
@@ -49,6 +51,7 @@ export function ResponseView({
   return (
     <>
       <ResponseOrigin origin={result.origin} draft={draft} />
+      {noteAction}
       <div className={s.bar}>
         <strong>{`${response.status} ${response.reason}`}</strong>
         <span className={s.muted}>{`${response.elapsedMs} ms`}</span>

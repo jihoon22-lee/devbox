@@ -24,6 +24,23 @@ pub struct WorktreeLocation {
     pub path: String,
     pub port: u16,
 }
+pub type WindowsObservation = Arc<
+    dyn Fn(
+            devbox_protocol::windows::ObservationAssigned,
+        )
+            -> Pin<Box<dyn Future<Output = devbox_protocol::windows::ObservationState> + Send>>
+        + Send
+        + Sync,
+>;
+pub type WindowsPaths = Arc<
+    dyn Fn(
+            Vec<String>,
+        )
+            -> Pin<Box<dyn Future<Output = devbox_protocol::windows::PathObservation> + Send>>
+        + Send
+        + Sync,
+>;
+#[derive(Clone)]
 pub struct ExecutionConfig {
     pub paths: Paths,
     pub executable: std::path::PathBuf,
@@ -31,10 +48,27 @@ pub struct ExecutionConfig {
     pub readiness: Readiness,
     pub worktree: Option<WorktreeResolver>,
     pub windows_root: Option<String>,
+    pub windows_owner: String,
+    pub windows_observation: WindowsObservation,
+    pub windows_paths: WindowsPaths,
+    pub windows_listeners: crate::WindowsListeners,
+    #[cfg(test)]
+    pub(crate) windows_publish_hook: Option<Arc<dyn Fn() + Send + Sync>>,
     pub windows_interop: std::path::PathBuf,
 }
 impl ExecutionConfig {
     pub fn new(paths: Paths) -> Self {
+        let distro = std::env::var("WSL_DISTRO_NAME")
+            .ok()
+            .or_else(|| std::fs::read_to_string("/etc/machine-id").ok())
+            .unwrap_or_else(|| "unidentified-linux".into());
+        let windows_owner = format!(
+            "{}|{}|{}|{}",
+            paths.instance.as_str(),
+            paths.instance.channel().config().storage_name,
+            distro.trim(),
+            paths.data_dir.display()
+        );
         Self {
             paths,
             executable: std::env::current_exe().expect("running executable"),
@@ -42,6 +76,16 @@ impl ExecutionConfig {
             readiness: Arc::new(|check| Box::pin(async move { check.ports.is_empty() })),
             worktree: None,
             windows_root: None,
+            windows_owner,
+            windows_observation: Arc::new(|_| {
+                Box::pin(async { devbox_protocol::windows::ObservationState::Unavailable })
+            }),
+            windows_paths: Arc::new(|_| {
+                Box::pin(async { devbox_protocol::windows::PathObservation::Unavailable })
+            }),
+            windows_listeners: crate::windows_ready::unavailable_listeners(),
+            #[cfg(test)]
+            windows_publish_hook: None,
             windows_interop: devbox_secrets::keystore::POWERSHELL.into(),
         }
     }
@@ -236,11 +280,6 @@ impl RuntimeService {
         let count = prepared.nodes.len();
         for (index, def) in prepared.nodes.iter().enumerate() {
             self.check_starting()?;
-            if let Some(copy) = prepared.windows.get(def.id()) {
-                copy.sync()
-                    .await
-                    .map_err(|_| Fail::Internal("Windows copy failed".into()))?;
-            }
             let final_node = index + 1 == count;
             let existing = replacement.as_ref().filter(|_| final_node);
             let id = existing
@@ -262,6 +301,34 @@ impl RuntimeService {
                 RunDef::Service(d) => (RunKind::Service, d.restart),
                 RunDef::Schedule(_) => unreachable!("preflight rejects schedules"),
             };
+            if let Some(existing) = existing {
+                if let Some(reference) = existing.windows.as_ref().and_then(|w| w.copy.as_ref()) {
+                    self.seal_windows_copy(&reference.launch_id).await?;
+                }
+                self.stop_unit(&existing.run.unit).await?;
+                let state = Systemd
+                    .show(&existing.run.unit)
+                    .await
+                    .internal("inspect execution before restart")?;
+                if state.load_state != "not-found" {
+                    Systemd
+                        .reset_failed(&existing.run.unit)
+                        .await
+                        .internal("reset execution start limit")?;
+                }
+            }
+            let copy_permit = if let Some(copy) = prepared.windows.get(def.id()) {
+                Some(
+                    self.reserve_windows_copy(
+                        copy.clone(),
+                        id.clone(),
+                        launch::unit_name(&id, &execution.paths),
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            };
             let mut value = StoredRun {
                 source_cwd: match def {
                     RunDef::Task(d) => d.cwd.clone(),
@@ -273,6 +340,7 @@ impl RuntimeService {
                     crate::windows::WindowsDefinition {
                         cwd: w.cwd.clone(),
                         def: def.clone(),
+                        copy: copy_permit.as_ref().map(|p| p.reference.clone()),
                     }
                 }),
                 schedule: prepared.schedule.clone().filter(|_| final_node),
@@ -310,21 +378,10 @@ impl RuntimeService {
                 worktree: prepared.worktree.clone(),
                 start_limit_notified: false,
             };
-            if let Some(existing) = existing {
-                self.stop_unit(&existing.run.unit).await?;
-                // --collect services preserve failed state until this manual reset.
-                let state = Systemd
-                    .show(&existing.run.unit)
-                    .await
-                    .internal("inspect execution before restart")?;
-                if state.load_state != "not-found" {
-                    Systemd
-                        .reset_failed(&existing.run.unit)
-                        .await
-                        .internal("reset execution start limit")?;
-                }
-            }
             self.save_starting_run(&value).await?;
+            if let Some(permit) = &copy_permit {
+                permit.submitted().await?;
+            }
             let args = launch::unit_args_with_executable(
                 def,
                 &id,
@@ -337,6 +394,9 @@ impl RuntimeService {
                 value.run.ended_ms = Some(now_ms());
                 self.save_run(&value).await?;
                 return Err(Fail::Internal("start transient execution failed".into()));
+            }
+            if let Some(permit) = &copy_permit {
+                permit.launched().await?;
             }
             started.push(StartedRun {
                 id: id.clone(),
@@ -489,12 +549,18 @@ impl RuntimeService {
     pub async fn stop(&self, p: RunId) -> R<Run> {
         let _guard = self.run_lock(&p.run_id).await;
         let mut value = self.stored(&p.run_id).await?;
+        if let Some(reference) = value.windows.as_ref().and_then(|w| w.copy.as_ref()) {
+            self.seal_windows_copy(&reference.launch_id).await?;
+        }
         self.stop_unit(&value.run.unit).await?;
         value.run.state = RunState::Stopped;
         value.run.ready = false;
         value.run.pid = None;
         value.run.ended_ms = Some(now_ms());
         self.save_run(&value).await?;
+        if let Some(reference) = value.windows.as_ref().and_then(|w| w.copy.as_ref()) {
+            self.reconcile_windows_target(&reference.key).await?;
+        }
         Ok(value.run)
     }
     pub async fn restart(&self, p: RunId) -> R<Run> {

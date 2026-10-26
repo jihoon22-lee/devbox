@@ -23,7 +23,8 @@ fn run() -> serde_json::Value {
         "cwd": "C:\\dev\\a'b c",
         "command": "Write-Output $env:TEST_SECRET",
         "ports": [18432, 18433],
-        "env": {"TEST_SECRET": "fixture-secret"}
+        "env": {"TEST_SECRET": "fixture-secret"},
+        "observation": {"schema":1,"launchId":"owned-launch","nonce":"0123456789abcdef0123456789abcdef","jobName":"Local\\Devbox.Observe.0123456789abcdef0123456789abcdef","assignedPath":"C:\\owned\\control\\assigned.json","grantPath":"C:\\owned\\control\\grant.json","closedPath":"C:\\owned\\control\\closed.json"}
     })
 }
 
@@ -180,4 +181,120 @@ fn windows_native_ack_failure_cancels_only_matching_attempt() {
     assert!(runs.contains_key(&other_key));
     finish_run(&mut runs, &key);
     assert!(!other.is_cancelled());
+}
+
+#[test]
+fn windows_native_probe_channel_and_capacity_are_independent_of_run_dispatch() {
+    use devbox_protocol::windows::{
+        PathObservation, WindowsProbe, WindowsProbeReply, WindowsProbeRequest, WindowsProbeResult,
+    };
+    let probe = WindowsProbeRequest {
+        probe_id: "owned-probe".into(),
+        probe: WindowsProbe::Paths {
+            paths: (0..1024).map(|n| format!("C:\\owned\\{n}.rs")).collect(),
+        },
+    };
+    let wire = response(PROBE_NEXT_ID, serde_json::to_value(&probe).expect("probe"));
+    assert_eq!(receive_probe(&wire), Some(probe.clone()));
+    assert!(receive(&wire).is_none());
+    let mut renderer = wire.clone();
+    renderer[5..9].copy_from_slice(&7u32.to_le_bytes());
+    assert!(receive_probe(&renderer).is_none());
+    assert!(
+        receive_probe(&response(
+            PROBE_OUTPUT_ID,
+            serde_json::to_value(&probe).expect("probe")
+        ))
+        .is_none()
+    );
+    assert!(receive_probe(&response(PROBE_NEXT_ID, run())).is_none());
+    let mut huge = wire;
+    huge.resize(
+        devbox_protocol::windows::MAX_WINDOWS_PROBE_BYTES + 1025,
+        b' ',
+    );
+    let size = (huge.len() - 4) as u32;
+    huge[..4].copy_from_slice(&size.to_le_bytes());
+    assert!(receive_probe(&huge).is_none());
+    let next = probe_next_request();
+    let ClientMessage::Request { id, method, .. } =
+        serde_json::from_slice(&next[HEADER_LEN..]).expect("probe next")
+    else {
+        panic!("request")
+    };
+    assert_eq!((id, method.as_str()), (PROBE_NEXT_ID, "windows.probe_next"));
+    let reply = WindowsProbeReply {
+        probe_id: probe.probe_id,
+        result: WindowsProbeResult::Paths {
+            state: PathObservation::Unavailable,
+        },
+    };
+    let output = probe_output_request(&reply);
+    let ClientMessage::Request {
+        id, method, params, ..
+    } = serde_json::from_slice(&output[HEADER_LEN..]).expect("reply")
+    else {
+        panic!("request")
+    };
+    assert_eq!(
+        (id, method.as_str()),
+        (PROBE_OUTPUT_ID, "windows.probe_output")
+    );
+    assert_eq!(
+        serde_json::from_str::<WindowsProbeReply>(params.get()).expect("reply identity"),
+        reply
+    );
+}
+#[cfg(not(windows))]
+#[tokio::test]
+async fn windows_native_precancelled_probe_does_not_spawn_or_report_empty() {
+    use devbox_protocol::windows::{WindowsProbe, WindowsProbeRequest};
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+    let (output, mut events) = tokio::sync::mpsc::channel(1);
+    super::platform_compile::run_probe(
+        WindowsProbeRequest {
+            probe_id: "probe".into(),
+            probe: WindowsProbe::Paths {
+                paths: vec!["C:\\owned".into()],
+            },
+        },
+        output,
+        cancel,
+    )
+    .await;
+    assert!(events.recv().await.is_none());
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn windows_native_invalid_observation_never_spawns_a_live_adapter() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().expect("fixture");
+    let marker = temp.path().join("executed");
+    let executable = temp.path().join("owned-fake-powershell");
+    std::fs::write(
+        &executable,
+        format!(
+            "#!/usr/bin/python3\nopen({:?},'w').write('executed')\n",
+            marker.to_str().expect("path")
+        ),
+    )
+    .expect("fixture");
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).expect("mode");
+    let mut request = receive(&response(100, run())).expect("valid request");
+    request.observation.nonce = "invalid".into();
+    let (output, mut events) = tokio::sync::mpsc::channel(1);
+    super::platform_compile::run_with_executable(
+        request,
+        output,
+        tokio_util::sync::CancellationToken::new(),
+        executable.as_os_str(),
+    )
+    .await;
+    assert!(matches!(
+        events.recv().await.expect("failure").event,
+        WindowsOutput::Failed
+    ));
+    assert!(!marker.exists());
 }

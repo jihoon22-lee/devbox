@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-activity"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "devbox-core",
@@ -710,7 +710,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-agents"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-core",
  "devbox-git",
@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-api"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "aho-corasick",
  "bytes",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-cli"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-core"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-protocol",
  "rusqlite",
@@ -849,7 +849,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-deps"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-protocol",
  "reqwest",
@@ -868,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-documents"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-core",
  "devbox-protocol",
@@ -888,7 +888,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-git"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-protocol",
  "nix 0.30.1",
@@ -906,13 +906,15 @@ dependencies = [
 
 [[package]]
 name = "devbox-lsp"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "bytes",
+ "devbox-documents",
  "devbox-protocol",
  "rustix",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -922,7 +924,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-mux"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "devbox-protocol",
@@ -932,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-notes"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "ammonia",
  "chrono",
@@ -958,7 +960,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-observe"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -980,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-projects"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "data-encoding",
  "devbox-core",
@@ -1005,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-protocol"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "serde",
@@ -1021,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-runtime"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1034,6 +1036,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -1046,7 +1049,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-search"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-core",
  "devbox-documents",
@@ -1073,7 +1076,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-secrets"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "chacha20poly1305",
  "data-encoding",
@@ -1097,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-terminal"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-core",
  "devbox-projects",
@@ -1119,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-tools"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "aho-corasick",
  "devbox-core",
@@ -1140,7 +1143,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-webhooks"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "data-encoding",
@@ -1164,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-win"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "devbox-activity",
  "serde",
@@ -4518,7 +4521,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.0.0-dev"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "devbox-activity",

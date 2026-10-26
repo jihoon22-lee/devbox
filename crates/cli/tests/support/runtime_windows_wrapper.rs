@@ -109,12 +109,38 @@ async fn finish(f: &RuntimeFixture, run: &Run) -> devbox_runtime::exit_record::E
     })
     .await
 }
+/// Listener seam of the daemon readiness gate: ownership is whatever the test says it is.
+fn listeners(owned: &Arc<std::sync::atomic::AtomicBool>) -> WindowsListeners {
+    let owned = owned.clone();
+    Arc::new(move |_, _| {
+        let owned = owned.load(std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            if owned {
+                ListenerObservation::Owned
+            } else {
+                ListenerObservation::NotOwned
+            }
+        })
+    })
+}
+async fn is_ready(f: &RuntimeFixture, client: &Client, project: &str, id: &str) -> bool {
+    f.runs(client, project)
+        .await
+        .iter()
+        .any(|r| r.id == id && r.ready)
+}
+// Since S6-4a a native `Ready` is only a hint: readiness needs the runtime gate (a Committed
+// attempt receipt plus an Owned listener). Since S6-1a.3 the stored Windows run also needs a
+// copy reference whose reader/attempt rows live in the runtime's private copy store under the
+// real `/mnt/<drive>` mapping. No public seam seeds that owned namespace, so this ignored test
+// encodes the contract but cannot pass until the fixture can create an owned copy reference.
 #[tokio::test]
-#[ignore = "needs owned systemd user fixture"]
+#[ignore = "needs owned systemd user fixture and an owned Windows copy reference"]
 async fn windows_native_worker_preserves_logs_secrets_ready_exit_and_restart_policy() {
     let mut f = RuntimeFixture::new();
     f.daemon.stop();
-    let server = Server::start(&f).await;
+    let owned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let server = Server::start_with(&f, Some(listeners(&owned))).await;
     let app = bootstrap(&f).await;
     let client = f.daemon.client().await;
     let project = f.project(&client).await;
@@ -144,15 +170,15 @@ async fn windows_native_worker_preserves_logs_secrets_ready_exit_and_restart_pol
         "first Ready precedes database observation"
     );
     event(&app, &request, WindowsOutput::Ready).await;
+    // The hint wakes the wrapper's gate poll, but an unowned listener keeps ready=false.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(
+        !is_ready(&f, &client, &project, &run.id).await,
+        "a native Ready hint alone never marks the run ready"
+    );
+    owned.store(true, std::sync::atomic::Ordering::SeqCst);
     bounded(async {
-        loop {
-            if f.runs(&client, &project)
-                .await
-                .iter()
-                .any(|r| r.id == run.id && r.ready)
-            {
-                break;
-            }
+        while !is_ready(&f, &client, &project, &run.id).await {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })

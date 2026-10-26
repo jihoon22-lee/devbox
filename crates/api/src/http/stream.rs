@@ -122,7 +122,7 @@ pub(crate) fn headers(map: &reqwest::header::HeaderMap, redactor: &Redactor) -> 
     map.iter()
         .map(|(n, v)| Pair {
             name: n.as_str().to_owned(),
-            value: redactor.text(&String::from_utf8_lossy(v.as_bytes())),
+            value: redactor.header(n.as_str(), v.as_bytes()),
         })
         .collect()
 }
@@ -142,6 +142,11 @@ pub(crate) async fn relay(
     out.http_version = version(response.version()).to_owned();
     out.headers = headers(response.headers(), redactor);
     out.head_ms = started.elapsed().as_millis() as i64;
+    // A later redirect response may introduce a credential already present in
+    // an earlier Location. Refresh the complete published redirect list.
+    for redirect in &mut out.redirects {
+        redirect.location = redactor.text(&redirect.location);
+    }
     let media = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)

@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export type PopoutKind = "terminal" | "agent" | "agents-grid" | "note" | "code" | "capture";
 const pending = new Map<string, Promise<void>>();
 const browserWindows = new Map<string, Window>();
@@ -28,45 +30,12 @@ export function openPopout(kind: PopoutKind, id?: string): Promise<void> {
       popup.focus();
       return;
     }
-    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-    const previous = await WebviewWindow.getByLabel(label);
-    if (previous) {
-      await previous.setFocus();
-      return;
+    try {
+      const created = await invoke<unknown>("popout_create", { kind, id: id ?? null });
+      if (created !== label) throw new Error("Unexpected popout identity");
+    } catch {
+      throw new Error("새 창을 열지 못했습니다. 앱 상태를 확인하고 다시 시도하세요.");
     }
-    const popup = new WebviewWindow(label, {
-      url: path,
-      title: "devbox",
-      width: 1000,
-      height: 700,
-      minWidth: 480,
-      minHeight: 320,
-    });
-    await new Promise<void>((resolve, reject) => {
-      let done = false;
-      const unlisten: (() => void)[] = [];
-      const finish = (error?: unknown) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        unlisten.forEach((stop) => stop());
-        if (error) reject(error);
-        else resolve();
-      };
-      const timer = setTimeout(() => finish(new Error("Popout creation timed out")), 15_000);
-      const listen = (event: "tauri://created" | "tauri://error") => {
-        void popup
-          .once(event, (message) => finish(event === "tauri://error" ? new Error(String(message.payload)) : undefined))
-          .then((stop) => {
-            if (done) stop();
-            else unlisten.push(stop);
-          })
-          .catch(finish);
-      };
-      listen("tauri://created");
-      listen("tauri://error");
-    });
-    await popup.setFocus();
   })();
   pending.set(label, operation);
   void operation

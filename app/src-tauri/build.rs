@@ -16,6 +16,18 @@ fn main() {
     });
     let channel = channel::AppChannel::parse(&selected).expect("invalid DEVBOX_APP_CHANNEL");
     println!("cargo:rustc-env=DEVBOX_COMPILED_CHANNEL={selected}");
+    println!("cargo:rustc-check-cfg=cfg(devbox_update_fixture)");
+    if channel == channel::AppChannel::Accept {
+        println!("cargo:rustc-cfg=devbox_update_fixture");
+        println!("cargo:rerun-if-env-changed=SOURCE_SHA");
+        let source = std::env::var("SOURCE_SHA").unwrap_or_default();
+        let source = if source.len() == 40 && source.bytes().all(|b| b.is_ascii_hexdigit()) {
+            source
+        } else {
+            String::new()
+        };
+        println!("cargo:rustc-env=DEVBOX_UPDATE_FIXTURE_SOURCE={source}");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut config: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string("tauri.conf.json").expect("Tauri config"),

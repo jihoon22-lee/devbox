@@ -15,3 +15,18 @@ test("agent errors use actual generated file details and terminal codes", () => 
   expect(messageFor("terminal.cwd_invalid").action).toContain("WSL");
   expect(messageFor("terminal.title_too_long", { limit: 256 }).action).toContain("256");
 });
+
+test("redaction failure actions distinguish capacity and rejected server input", () => {
+  expect(messageFor("api.redaction_failed", { reason: "capacity" }).action).toContain("크기");
+  expect(messageFor("api.redaction_failed", { reason: "input" }).action).toContain("서버 응답");
+  expect(messageFor("api.redaction_failed", { reason: "matcher" }).action).toContain("다시 시도");
+  expect(messageFor("api.redaction_failed", { reason: "fixture-sensitive-detail" }).action).not.toContain(
+    "fixture-sensitive-detail",
+  );
+});
+
+test("response export distinguishes pending history from unavailable provenance without echoing details", () => {
+  expect(messageFor("notes.response_unavailable", { reason: "pending" }).title).toContain("저장");
+  expect(messageFor("notes.response_unavailable", { reason: "provenance" }).action).toContain("이전 세션");
+  expect(messageFor("notes.append_uncertain").action).toContain("같은 작업");
+});

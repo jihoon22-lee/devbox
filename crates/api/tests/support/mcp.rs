@@ -89,6 +89,7 @@ pub struct Options {
     pub s256: bool,
     pub token_bytes: usize,
     pub sse: bool,
+    pub credential_echo: bool,
     /// 인가 서버 메타데이터의 `issuer`를 다른 값으로(RFC 8414 §3.3 위반).
     pub bad_issuer: bool,
     /// 보호 자원 메타데이터의 `resource`를 다른 값으로(RFC 9728 §3.3 위반).
@@ -103,6 +104,7 @@ impl Default for Options {
             s256: true,
             token_bytes: 48,
             sse: false,
+            credential_echo: false,
             bad_issuer: false,
             bad_resource: false,
             tls: false,
@@ -292,7 +294,7 @@ async fn handle(
             let Some(id) = msg.get("id").cloned() else {
                 return reply(202, "", String::new());
             };
-            let result = match msg["method"].as_str() {
+            let mut result = match msg["method"].as_str() {
                 Some("initialize") => serde_json::json!({
                     "protocolVersion": "2025-06-18",
                     "capabilities": {"tools": {}},
@@ -307,12 +309,24 @@ async fn handle(
                 // 받은 Authorization을 되돌려 준다(토큰이 이벤트에서 가려지는지 본다).
                 _ => serde_json::json!({"echo": msg["params"], "authorization": auth.clone()}),
             };
+            let cookie = if msg["method"] == "initialize" { "mcp-initial-issued" } else { "mcp-next-issued" };
+            if ctx.options.credential_echo {
+                let echo = format!("{} {cookie} ordinary-literal", auth.as_deref().unwrap_or(""));
+                if msg["method"] == "initialize" {
+                    result["serverInfo"]["name"] = serde_json::Value::String(echo);
+                } else {
+                    result = serde_json::json!({"echo": echo});
+                }
+            }
             let text = serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string();
             let mut r = if ctx.options.sse && msg["method"] != "initialize" {
                 reply(200, "text/event-stream", format!("event: message\ndata: {text}\n\n"))
             } else {
                 reply(200, "application/json", text)
             };
+            if ctx.options.credential_echo {
+                r.headers_mut().append("set-cookie", format!("session={cookie}; Path=/").parse().expect("cookie"));
+            }
             if msg["method"] == "initialize" {
                 r.headers_mut().insert("mcp-session-id", "sess-1".parse().expect("sid"));
             }

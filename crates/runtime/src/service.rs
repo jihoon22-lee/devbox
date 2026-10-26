@@ -24,6 +24,7 @@ pub struct RuntimeService {
     pub(crate) run_watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) scheduler: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
+    pub(crate) copy_tasks: tokio_util::task::TaskTracker,
     pub(crate) stopping: tokio_util::sync::CancellationToken,
 }
 
@@ -42,6 +43,7 @@ impl RuntimeService {
             watcher: AsyncMutex::default(),
             scheduler: AsyncMutex::default(),
             run_watcher: AsyncMutex::default(),
+            copy_tasks: tokio_util::task::TaskTracker::new(),
             stopping: tokio_util::sync::CancellationToken::new(),
         }
     }

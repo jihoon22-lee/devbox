@@ -317,7 +317,10 @@ async fn secret_reference_is_resolved_on_send_and_kept_as_reference_in_history()
         .iter()
         .find(|h| h.name == "x-echo-authorization")
         .expect("echo header");
-    assert_eq!(echoed.value, "Bearer [REDACTED]");
+    assert_eq!(
+        echoed.value, "[REDACTED]",
+        "recognized Authorization includes the whole field value"
+    );
     assert_eq!(body(&events), b"echo [REDACTED]");
     let stream_text = serde_json::to_string(&events).expect("events json");
     assert!(!stream_text.contains("fixture-token-value"));

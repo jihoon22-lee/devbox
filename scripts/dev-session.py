@@ -46,13 +46,53 @@ def vite_announced(log, port):
     plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", log)
     return bool(re.search(rf"^[\t ]*(?:➜[\t ]*)?Local:[\t ]+http://(?:localhost|127\.0\.0\.1):{port}/[\t ]*\r?$", plain, re.MULTILINE))
 
+def signal_group(child):
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+def reap(child):
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(child.pid, signal.SIGKILL)
+        child.wait()
+
+def cleanup(children):
+    # Signal every group before any wait: an interrupt while reaping must not leave a child unsignalled.
+    for child in reversed(children):
+        signal_group(child)
+    for child in reversed(children):
+        reap(child)
+
+def restart(daemon, children, relaunch, probe):
+    """SC6: replace only a daemon this session started; Vite and the gateway keep running."""
+    if daemon is None:
+        print('Devbox: restart refused; this session reuses a daemon it did not start', flush=True)
+        return None
+    began = time.monotonic()
+    print(f'Devbox: daemon restart requested monotonic={began:.3f}', flush=True)
+    signal_group(daemon)
+    reap(daemon)
+    children.remove(daemon)  # Only once reaped, so an interrupt still leaves it to cleanup().
+    daemon = relaunch()
+    probe()
+    ended = time.monotonic()
+    print(f'Devbox: daemon ready monotonic={ended:.3f} elapsed_ms={(ended - began) * 1000:.0f}', flush=True)
+    return daemon
+
 def main():
     children = []
+    daemon = None
+    restart_requested = threading.Event()
     def stop(_signum, _frame):
         raise KeyboardInterrupt
     # Handlers precede the first child; finally also covers partial startup failures.
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, stop)
+    # SIGUSR1, not SIGHUP, so a terminal hangup still ends the session instead of restarting.
+    signal.signal(signal.SIGUSR1, lambda _signum, _frame: restart_requested.set())
     def start(command, env, **options):
         child = subprocess.Popen(command, env=env, start_new_session=True, **options)
         children.append(child)
@@ -72,13 +112,14 @@ def main():
     try:
         meta = json.loads(subprocess.check_output(['cargo', 'metadata', '--format-version', '1', '--no-deps']))
         binary = str(Path(meta['target_directory']) / 'debug/devbox')
+        daemon_command = [binary, 'daemon', '--foreground']
         env = dict(os.environ, DEVBOX_INSTANCE='dev')
         runtime = runtime_directory(env)
         path = runtime / 'devbox-dev.sock'
         try:
             hello(path)
         except (OSError, ValueError):
-            start([binary, 'daemon', '--foreground'], env)
+            daemon = start(daemon_command, env)
             ready(lambda: hello(path))
         token = secrets.token_hex(24)
         gateway = start([binary, 'dev-gateway', '--port', '1451', '--token', token], env, stdout=subprocess.PIPE)
@@ -112,20 +153,13 @@ def main():
         ready(frontend_ready)
         print('Devbox: http://localhost:1450', flush=True)
         while all(child.poll() is None for child in children):
+            if restart_requested.is_set():
+                restart_requested.clear()
+                daemon = restart(daemon, children, lambda: start(daemon_command, env), lambda: ready(lambda: hello(path)))
             time.sleep(0.25)
         raise RuntimeError('development child exited')
     finally:
-        for child in reversed(children):
-            try:
-                os.killpg(child.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        for child in reversed(children):
-            try:
-                child.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
+        cleanup(children)
 
 if __name__ == '__main__':
     try:

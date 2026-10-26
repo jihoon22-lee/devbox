@@ -2,8 +2,13 @@ use std::collections::VecDeque;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AppIntent {
-    Palette,
-    BottomTerminal { was_focused: bool },
+    /// A global-shortcut palette carries an SC2 trace ID; tray/menu opens carry none.
+    Palette {
+        trace: Option<u64>,
+    },
+    BottomTerminal {
+        was_focused: bool,
+    },
     Quit,
 }
 #[derive(Default)]
@@ -52,12 +57,15 @@ mod tests {
     #[test]
     fn cold_intents_wait_for_listeners_and_stale_cleanup_preserves_new_listener() {
         let mut intents = PendingIntents::default();
-        intents.enqueue(AppIntent::Palette);
+        intents.enqueue(AppIntent::Palette { trace: Some(1) });
         assert!(intents.front().is_none());
         let old = intents.ready();
         let latest = intents.ready();
         intents.not_ready(old);
-        assert_eq!(intents.front(), Some(&AppIntent::Palette));
+        assert_eq!(
+            intents.front(),
+            Some(&AppIntent::Palette { trace: Some(1) })
+        );
         intents.delivered();
         assert!(intents.front().is_none());
         intents.not_ready(latest);

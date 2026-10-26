@@ -4,6 +4,7 @@ import { type EditorView, keymap, showDialog } from "@codemirror/view";
 import { keyId } from "../../documents/offlineJournal";
 import { useDocuments } from "../../documents/store";
 import { useSource } from "../store";
+import type { WorkspaceProof } from "./lspProof";
 import { applyWorkspaceEdit, type EditContext } from "./lspWorkspace";
 
 export function commandContext(context: EditContext): EditContext {
@@ -18,7 +19,10 @@ function position(view: EditorView) {
   return { line: line.number - 1, character: at - line.from };
 }
 export function lspCommands(client: LSPClient, uri: string, context: EditContext, report: (text: string) => void) {
-  const fail = () => report("언어 서버 작업을 적용하지 못했습니다. 파일 상태와 연결을 확인해 주세요.");
+  const fail = () =>
+    report(
+      "파일 상태가 바뀌었거나 변경 범위를 안전하게 확인하지 못했습니다. 범위를 줄여 다시 요청하거나 변경을 직접 검토해 주세요.",
+    );
   const format = (view: EditorView) => {
     if (!context.current()) return false;
     client.sync();
@@ -52,12 +56,14 @@ export function lspCommands(client: LSPClient, uri: string, context: EditContext
         if (!newName.trim()) return;
         client.sync();
         const snapshot = commandContext(context);
-        const edits = await client.request("textDocument/rename", {
+        const result = await client.request("textDocument/rename", {
           textDocument: { uri },
           position: position(view),
           newName,
         });
-        if (edits) await applyWorkspaceEdit(snapshot, edits);
+        const response = result as { edit?: unknown; proof?: WorkspaceProof } | null;
+        if (!response?.proof) throw new Error("변경 출처를 확인하지 못했습니다.");
+        await applyWorkspaceEdit({ ...snapshot, proof: response.proof }, response.edit ?? { changes: {} });
       })
       .catch(fail);
     return true;

@@ -1,7 +1,7 @@
 use devbox_core::{Db, Env, Instance, Paths};
 use devbox_protocol::system::{Check, DoctorReport, Status};
 use devbox_secrets::{SecretsService, SetSecret, crypto::Key};
-use devbox_tools::support::{BundleInput, create_bundle};
+use devbox_tools::support::{BundleInput, VaultSnapshot, create_bundle};
 use std::{collections::BTreeMap, io::Read};
 struct FixtureEnv(String);
 impl Env for FixtureEnv {
@@ -37,7 +37,10 @@ async fn fixture() -> (tempfile::TempDir, Db, Paths, SecretsService) {
     (temp, db, paths, secrets)
 }
 fn input(paths: &Paths) -> BundleInput {
+    let vault = paths.home.join("notes");
+    std::fs::create_dir_all(&vault).expect("explicit owned default vault");
     BundleInput {
+        notes_vault: VaultSnapshot::capture(&vault).expect("vault snapshot"),
         paths: paths.clone(),
         doctor: DoctorReport {
             checks: vec![Check {
@@ -379,3 +382,38 @@ async fn support_bundle_masks_known_raw_json_and_debug_representations() {
     }
     assert_eq!(log.matches("[REDACTED]").count(), 3);
 }
+
+#[tokio::test]
+async fn support_bundle_masks_the_configured_vault_outside_home() {
+    let (_temp, _db, paths, secrets) = fixture().await;
+    let outside = tempfile::tempdir().expect("owned external vault");
+    let vault = outside.path().join("private-vault");
+    std::fs::create_dir(&vault).expect("owned vault");
+    let configured = serde_json::to_string(vault.to_str().expect("path")).expect("quoted path");
+    std::fs::write(
+        paths.config_dir.join("config.local.toml"),
+        format!("[notes]\nvault={configured}\n"),
+    )
+    .expect("configuration");
+    std::fs::write(
+        paths.log_dir.join("daemon.today.log"),
+        format!("note={}/private.md", vault.display()),
+    )
+    .expect("owned log");
+    let mut data = input(&paths);
+    data.notes_vault = VaultSnapshot::capture(&vault).expect("configured vault snapshot");
+    let bundle = create_bundle(data, &secrets).await.expect("bundle");
+    let files = entries(&bundle.path);
+    let log = files
+        .iter()
+        .find(|(name, _)| name.starts_with("logs/"))
+        .expect("log")
+        .1;
+    assert_eq!(
+        log, "note=<notes>/private.md",
+        "configured external vault must not be disclosed"
+    );
+}
+
+#[path = "support_bundle/paths.rs"]
+mod path_tests;

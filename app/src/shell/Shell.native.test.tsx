@@ -38,6 +38,21 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
   vi.unstubAllGlobals();
 });
+// Registry keyed by event name: the StrictMode double mount may call listen twice, but only live registrations count.
+function trackListeners() {
+  const live = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  mocks.listen.mockImplementation(async (name: string, callback) => {
+    const callbacks = live.get(name) ?? new Set();
+    callbacks.add(callback);
+    live.set(name, callbacks);
+    return () => callbacks.delete(callback);
+  });
+  return {
+    count: (name: string) => live.get(name)?.size ?? 0,
+    names: () => [...live].filter(([, callbacks]) => callbacks.size > 0).map(([name]) => name),
+    emit: (name: string, payload: unknown) => live.get(name)?.forEach((callback) => callback({ payload })),
+  };
+}
 async function setup() {
   const wire = new ProjectWire();
   const view = render(
@@ -59,11 +74,7 @@ async function setup() {
 }
 test("main Shell consumes cold intent after mounting and second-instance activation opens list detail from grid", async () => {
   window.history.replaceState({}, "", "/notes?gateway=ws%3A%2F%2Ffixture&renderer=dom");
-  const listeners = new Set<(event: { payload: unknown }) => void>();
-  mocks.listen.mockImplementation(async (_name, callback) => {
-    listeners.add(callback);
-    return () => listeners.delete(callback);
-  });
+  const listeners = trackListeners();
   mocks.invoke.mockImplementation((name) =>
     Promise.resolve(name === "pending_navigation" ? intent(1, "a1") : undefined),
   );
@@ -73,24 +84,35 @@ test("main Shell consumes cold intent after mounting and second-instance activat
   expect(window.location.pathname).toBe("/agents");
   expect(window.location.search).toContain("view=list");
   expect(window.location.search).toContain("gateway=");
-  expect(listeners.size).toBe(1);
+  // One navigation subscription for the window plus the status bar's single updater subscription (devbox://update).
+  await waitFor(() => expect(listeners.count("devbox://update")).toBe(1));
+  expect(listeners.count("devbox://navigate")).toBe(1);
+  expect(listeners.names().sort()).toEqual(["devbox://navigate", "devbox://update"]);
   const subscriptions = wire.sent.filter((message) => message.topic === "agents.attention");
   fireEvent.click(screen.getByRole("button", { name: "격자" }));
   await waitFor(() => expect(window.location.search).toContain("view=grid"));
-  await act(async () => listeners.forEach((callback) => callback({ payload: intent(2, "b2") })));
+  await act(async () => listeners.emit("devbox://navigate", intent(2, "b2")));
   await waitFor(() => expect(window.location.search).toContain("id=b2"));
   expect(window.location.search).toContain("view=list");
   expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(subscriptions.length);
   view.unmount();
-  expect(listeners.size).toBe(0);
+  expect(listeners.names()).toEqual([]);
 });
 test("popout identity does not subscribe to navigation or invoke native counts on an ordinary section route", async () => {
   mocks.label = "popout-agent-a1";
   window.history.replaceState({}, "", "/agents?renderer=dom");
-  const { wire } = await setup();
-  expect(mocks.listen).not.toHaveBeenCalled();
-  expect(mocks.invoke).not.toHaveBeenCalled();
+  const listeners = trackListeners();
+  const { wire, view } = await setup();
+  // Any window that renders the status bar follows the all-window updater broadcast; nothing else is subscribed.
+  await waitFor(() => expect(listeners.count("devbox://update")).toBe(1));
+  expect(listeners.names()).toEqual(["devbox://update"]);
+  expect(mocks.listen.mock.calls.every(([name]) => name === "devbox://update")).toBe(true);
+  // The only native call is the read-only updater snapshot; no navigation or count commands.
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("update_status"));
+  expect(mocks.invoke.mock.calls.map(([name]) => name)).toEqual(["update_status"]);
   expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
+  view.unmount();
+  expect(listeners.names()).toEqual([]);
 });
 test("global bottom terminal brings a background open panel forward and focuses the existing session, while foreground open panel hides", async () => {
   const { view } = await setup();

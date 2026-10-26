@@ -26,7 +26,9 @@ pub struct Relay {
     cache: Option<Value>,
     requests: BTreeMap<u64, Pending>,
     server_requests: BTreeMap<String, Pending>,
-    documents: Documents,
+    pub(crate) documents: Documents,
+    pub(crate) proofs: crate::workspace::Proofs,
+    capture_hints: BTreeMap<u32, Vec<String>>,
 }
 impl Relay {
     pub fn new(root_uri: String, generation: u64) -> Self {
@@ -42,6 +44,8 @@ impl Relay {
             requests: BTreeMap::new(),
             server_requests: BTreeMap::new(),
             documents: Documents::default(),
+            proofs: crate::workspace::Proofs::default(),
+            capture_hints: BTreeMap::new(),
         }
     }
     pub fn attach(&mut self, client: u32) -> Result<(), LspError> {
@@ -97,6 +101,9 @@ impl Relay {
         if !self.initialized.contains(&client) {
             return Err(LspError::Protocol);
         }
+        if method.starts_with("devbox/") {
+            return self.workspace_control(client, &method, value, access).await;
+        }
         if method == "shutdown" {
             let id = request_id(&value)?;
             out.clients.push((
@@ -111,6 +118,7 @@ impl Relay {
         }
         if method == "$/cancelRequest" {
             let id = value.pointer("/params/id").ok_or(LspError::InvalidInput)?;
+            self.proofs.cancel(client, id);
             if let Some(global) = self
                 .requests
                 .iter()
@@ -270,7 +278,18 @@ impl Relay {
             if !self.requests.contains_key(&global) {
                 return Ok(out);
             }
-            crate::uri::normalize(&mut value, access, 0).await?;
+            let workspace_edit = self.requests.get(&global).is_some_and(|p| p.workspace_edit);
+            // Rename targets must already be canonical keys in the pre-request covered
+            // set. Current authority is checked in the final validation, never recaptured
+            // here. This also rejects a server alias retargeted while the request waited.
+            if !workspace_edit && crate::uri::normalize(&mut value, access, 0).await.is_err() {
+                if let Some(pending) = self.requests.remove(&global) {
+                    self.proofs.cancel(pending.client, &pending.id);
+                    out.clients
+                        .push((pending.client, crate::workspace::refused(pending.id)));
+                }
+                return Ok(out);
+            }
             if let Some(pending) = self.requests.remove(&global) {
                 value["id"] = pending.id.clone();
                 let current = !pending.workspace_edit
@@ -280,12 +299,38 @@ impl Relay {
                 if !current {
                     value = json!({"jsonrpc":"2.0","id":pending.id,"error":{"code":-32801,"message":"Document version changed"}});
                 }
-                out.clients.push((pending.client, value.to_string()));
+                self.workspace_response(&pending, &mut value);
+                let encoded = value.to_string();
+                if encoded.len() > crate::framing::MAX_BODY {
+                    self.proofs.cancel(pending.client, &pending.id);
+                    out.clients
+                        .push((pending.client, crate::workspace::refused(pending.id)));
+                } else {
+                    out.clients.push((pending.client, encoded));
+                }
             }
             // Late replies to cancelled/disconnected requests are deliberately ignored.
             return Ok(out);
         }
-        crate::uri::normalize(&mut value, access, 0).await?;
+        let apply = value.get("method").and_then(Value::as_str) == Some("workspace/applyEdit");
+        if apply {
+            let owned = value.pointer("/params/edit").is_some_and(|edit| {
+                self.initialized
+                    .iter()
+                    .any(|client| self.documents.owned_versioned(*client, edit))
+            });
+            if !owned {
+                out.server.push(json!({"jsonrpc":"2.0","id":request_id(&value)?,"result":{"applied":false,"failureReason":"Exact owned document versions required"}}).to_string());
+                return Ok(out);
+            }
+        }
+        if let Err(error) = crate::uri::normalize(&mut value, access, 0).await {
+            if !apply {
+                return Err(error);
+            }
+            out.server.push(json!({"jsonrpc":"2.0","id":request_id(&value)?,"result":{"applied":false,"failureReason":"Document authority changed"}}).to_string());
+            return Ok(out);
+        }
         if value.get("method").and_then(Value::as_str) == Some("$/cancelRequest") {
             if let Some(original) = value.pointer("/params/id")
                 && let Some((id, pending)) =
@@ -360,9 +405,10 @@ impl Relay {
                 return Ok(out);
             };
             if value.get("method").and_then(Value::as_str) == Some("workspace/applyEdit")
-                && value
-                    .pointer_mut("/params/edit")
-                    .is_some_and(|edit| !self.documents.workspace_versions(client, edit))
+                && value.pointer_mut("/params/edit").is_none_or(|edit| {
+                    !self.documents.owned_versioned(client, edit)
+                        || !self.documents.workspace_versions(client, edit)
+                })
             {
                 out.server.push(json!({"jsonrpc":"2.0","id":original,"result":{"applied":false,"failureReason":"Document version changed"}}).to_string());
                 return Ok(out);
@@ -386,7 +432,18 @@ impl Relay {
         }
         Ok(out)
     }
+    pub(crate) fn take_capture_hints(&mut self, client: u32) -> Vec<String> {
+        self.capture_hints.remove(&client).unwrap_or_default()
+    }
+    pub(crate) fn capture_allowed(&mut self, client: u32) -> bool {
+        self.initialized.contains(&client) && !self.proofs.pending(client)
+    }
+    pub(crate) fn root(&self) -> &str {
+        &self.root
+    }
     pub fn detach(&mut self, client: u32) -> RelayOutput {
+        self.proofs.detach(client);
+        self.capture_hints.remove(&client);
         self.members.remove(&client);
         self.initialized.remove(&client);
         self.waiting.retain(|p| p.client != client);
@@ -442,3 +499,5 @@ fn request_id(value: &Value) -> Result<Value, LspError> {
 }
 #[cfg(test)]
 mod tests;
+
+mod workspace;

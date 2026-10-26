@@ -2,6 +2,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use zeroize::Zeroize;
+mod observation;
+pub use observation::*;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RunWindows {
@@ -11,6 +13,14 @@ pub struct RunWindows {
     pub command: String,
     pub env: BTreeMap<String, String>,
     pub ports: Vec<u16>,
+    pub observation: ObservationControl,
+}
+impl RunWindows {
+    pub fn tracked(&self) -> bool {
+        valid_windows_identity(&self.run_id)
+            && valid_windows_identity(&self.attempt_id)
+            && self.observation.valid()
+    }
 }
 impl Drop for RunWindows {
     fn drop(&mut self) {
@@ -24,6 +34,13 @@ impl Drop for RunWindows {
 pub struct RunIdentity {
     pub run_id: String,
     pub attempt_id: String,
+}
+/// Internal windows.ready reply. Not-ready is a typed result, distinct from route failure.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowsReadiness {
+    Ready,
+    NotReady,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -44,7 +61,16 @@ pub enum WindowsOutput {
 }
 // Both adapters use a fixed bootstrap. All user input (including secret env) is stdin JSON.
 // The child emits UTF-8 so the Linux wrapper's byte redactor sees the original secret bytes.
-pub const POWERSHELL_BOOTSTRAP: &str = r#"$ErrorActionPreference='Stop'; $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding=$utf8; [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8; try { $r=[Console]::In.ReadToEnd() | ConvertFrom-Json; foreach($p in $r.env.PSObject.Properties) { [Environment]::SetEnvironmentVariable($p.Name,[string]$p.Value,'Process') }; Set-Location -LiteralPath $r.cwd; $global:LASTEXITCODE=0; & ([ScriptBlock]::Create($r.command)); $ok=$?; $code=$global:LASTEXITCODE; if($code -ne 0) { exit $code }; if(!$ok) { exit 1 }; exit 0 } catch { [Console]::Error.WriteLine('Windows execution failed'); exit 1 }"#;
+pub const POWERSHELL_BOOTSTRAP: &str = concat!(
+    include_str!("windows/native.ps1"),
+    "\n",
+    include_str!("windows/bootstrap.ps1")
+);
+pub const POWERSHELL_OBSERVATION_PROBE: &str = concat!(
+    include_str!("windows/native.ps1"),
+    "\n",
+    include_str!("windows/probe.ps1")
+);
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -52,6 +78,11 @@ pub struct PreparedWindows {
     pub interop: String,
     pub request: RunWindows,
     pub injected: Vec<String>,
+    /// The service's readiness window; the wrapper backs off its gate polling after it.
+    pub ready_timeout_sec: u32,
 }
 
 pub const MAX_WINDOWS_REQUEST_BYTES: usize = 8 * 1024 * 1024;
+
+#[cfg(test)]
+mod tests;

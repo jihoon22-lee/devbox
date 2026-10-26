@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import packageJson from "../package.json" with { type: "json" };
 import { decodeFrame } from "../src/rpc/frame";
 import { expect, test } from "./support";
 
@@ -31,14 +32,14 @@ test("new daemon identity resets subscriptions and queries while retaining proje
   await page.keyboard.press("Control+Shift+O");
   // A second real client observes the public reset callback, independently of UI refreshes.
   await page.evaluate(
-    async ({ gatewayUrl, instance }) => {
+    async ({ gatewayUrl, instance, version }) => {
       const load = (path: string) => import(/* @vite-ignore */ path);
       const [{ RpcClient }, { wsTransport }] = await Promise.all([
         load("/src/rpc/client.ts"),
         load("/src/rpc/transport-ws.ts"),
       ]);
       const client = new RpcClient(wsTransport(`${gatewayUrl}&observer=reset`), {
-        version: "1.0.0-dev",
+        version,
         instance,
         client: "test",
       });
@@ -47,7 +48,8 @@ test("new daemon identity resets subscriptions and queries while retaining proje
       Object.assign(window, { resetObservation: observation });
       client.start();
     },
-    { gatewayUrl: stack.gatewayUrl, instance: stack.instance },
+    // Same source as the app's __APP_VERSION__ and the daemon handshake (package.json).
+    { gatewayUrl: stack.gatewayUrl, instance: stack.instance, version: packageJson.version },
   );
   const observedReset = () =>
     page.evaluate(() => {

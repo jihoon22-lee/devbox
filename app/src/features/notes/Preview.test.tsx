@@ -72,7 +72,15 @@ test("mermaid renders in strict mode, skips budget placeholders and replaces onl
   const host = await shown();
   await waitFor(() => expect(host.querySelector("svg")).not.toBeNull());
   expect(mermaid.initialize).toHaveBeenCalledWith(
-    expect.objectContaining({ startOnLoad: false, securityLevel: "strict" }),
+    expect.objectContaining({
+      startOnLoad: false,
+      securityLevel: "strict",
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
+      layout: "dagre",
+      theme: "default",
+      look: "classic",
+    }),
   );
   expect(mermaid.render).toHaveBeenCalledTimes(1);
   expect(mermaid.render.mock.calls[0]?.[1]).toBe("graph TD; A-->B");

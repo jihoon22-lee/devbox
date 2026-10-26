@@ -764,10 +764,10 @@ match interop.run(&prepared).await {
 - Modify: `crates/core/src/config.rs`(`config.local.toml`의 `[windows] root = 'C:\dev'`)
 
 **Interfaces:**
-- 대상 폴더 `windows_dir = <root>\<프로젝트 이름>`. 원장은 local-only `[windows] root` 하나이며 미사용 `pc.windows_root`는 엄격 파싱 오류로 제거한다(자동 설정 변경 없음).
+- S6-1a.3 정정: 대상은 `<root>\.devbox-v1\<owner hash>\<project UUID>\<main 또는 worktree hash>\files`이며 marker·content revision·공유 reader의 실제 종료 증명을 사용한다([07c §5](07c-s6-release.md)). S2 당시 구현은 승인된 root+프로젝트 이름 설계를 따랐으며 이번에 그 설계를 정정한다. 원장은 local-only `[windows] root` 하나이고 legacy 사본은 자동 이전/삭제하지 않는다. 미사용 `pc.windows_root`는 엄격 파싱 오류다(자동 설정 변경 없음).
 - `sync(project_dir, windows_dir) -> SyncReport { copied, deleted, skipped }`
   - 대상 목록: `git ls-files -co --exclude-standard -z`
-  - `/mnt/<drive>/...`로 바꾼 경로에 크기·mtime이 다른 파일만 복사하고 mtime을 보존한다. 목록에 없는 대상 쪽 파일은 지우지 않는다(`deleted=0`, `node_modules` 같은 Windows 쪽 산출물 보호). source/target의 링크 경로와 Windows 금지 파일명·대소문자 충돌은 복사 전 거절한다.
+  - S6-1a.3부터 `/mnt/<drive>/...`로 바꾼 소유 경로에 content SHA256이 다른 파일을 임시 파일로 복사·교체하고 mtime을 보존한다. 목록에 없는 대상 쪽 파일은 지우지 않는다(`deleted=0`, `node_modules` 같은 Windows 쪽 산출물 보호). source/target의 링크 경로와 Windows 금지 파일명·대소문자 충돌은 복사 전 거절한다.
 - 실행:
   - 기존 exec-attempt/exec 래퍼 안에서 고정 PowerShell bootstrap을 실행한다. cwd·command·env는 JSON stdin으로만 보내며 `Set-Location -LiteralPath`와 `ScriptBlock.Create`로 공백/작은따옴표를 보존한다. 비밀 값은 argv·스크립트 literal·공개 RPC에 넣지 않는다.
   - interop process spawn이 시작 전에 실패한 경우만 Windows 앱에 한 번 위임한다. App0의 `windows.next/output`, Cli0의 `windows.prepare/run/ready`는 공개 선언/renderer에서 제외한다. native 최대 4개, 출력 큐 16칸 및 ACK 기반 backpressure를 사용한다. 현재 run/attempt와 연결 세대를 대조하며 run별 native-attempt 파일이 재연결 재위임을 막는다.

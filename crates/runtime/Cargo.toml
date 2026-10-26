@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+sha2.workspace = true
 zeroize.workspace = true
 devbox-secrets.workspace = true
 devbox-core.workspace = true

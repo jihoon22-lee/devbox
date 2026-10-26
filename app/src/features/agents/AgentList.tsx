@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { messageFor } from "../../rpc/messages";
+import { useFirstDataPaint } from "../../shell/paintTrace";
 import { Button, EmptyState, ErrorState } from "../../ui";
 import { useProjectData } from "../projects/ProjectData";
 import { AgentRow } from "./AgentRow";
@@ -22,6 +23,8 @@ export function AgentList({
   const names = new Map((projects.data?.items ?? []).map((p) => [p.id, p.name]));
   const error = data.list.error && messageFor(data.list.error.code, data.list.error.detail);
   const metricsError = data.statsError ?? data.resourcesError;
+  // SC2 cold start ends when the default first screen shows its list or empty state, not at transport readiness.
+  useFirstDataPaint(Boolean(data.list.data && !error));
   return (
     <div className={s.list}>
       <div className={s.header}>{header}</div>

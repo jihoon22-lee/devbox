@@ -20,7 +20,7 @@ pub(crate) struct Prepared {
     pub(crate) timeout: std::time::Duration,
     pub(crate) follow: bool,
     /// 가림기에 넣을 직접 입력 인증 값.
-    pub(crate) seeds: Vec<String>,
+    pub(crate) seeds: zeroize::Zeroizing<Vec<String>>,
 }
 
 fn headers(s: &RequestSnapshot) -> Result<Vec<(HeaderName, HeaderValue)>, ApiError> {
@@ -124,6 +124,6 @@ pub(crate) fn prepare(s: &RequestSnapshot) -> Result<Prepared, ApiError> {
         tls,
         timeout,
         follow: s.follow_redirects,
-        seeds,
+        seeds: zeroize::Zeroizing::new(seeds),
     })
 }

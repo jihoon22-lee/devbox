@@ -1,7 +1,7 @@
 /** 열린 요청 탭(초안은 화면 메모리에만), 고른 환경, 실행기 세션. */
 import { create } from "zustand";
 import type { CollectionRoot, Pair } from "../../../rpc/gen/rpc";
-import type { SentResponse } from "./backend";
+import type { SendAuthorization, SentResponse } from "./backend";
 import { emptyDraft, type RequestDraft } from "./model/draft";
 import { draftFromFile, fileFromDraft } from "./model/fileDraft";
 import { type ParsedRequestFile, parseRequestFile } from "./model/requestFile";
@@ -11,6 +11,13 @@ import type { ResponseOriginInfo } from "./sendState";
 export interface SendResult {
   response: SentResponse;
   origin: ResponseOriginInfo;
+}
+
+export interface HttpAuthorization extends SendAuthorization {
+  owner: AbortController;
+  opening: boolean;
+  opened: boolean;
+  error?: string;
 }
 
 export interface ApiTab {
@@ -29,6 +36,7 @@ export interface ApiTab {
   failure?: { code: string; detail?: unknown };
   notice?: string;
   sending?: boolean;
+  authorization?: HttpAuthorization;
   /** 프로젝트 파일을 이 PC에서 그 digest로 검토했는지(개인 루트는 늘 참). 거짓이면 첫 저장 전에 확인한다. */
   reviewed: boolean;
   /** 마지막 저장이 `api.collection_conflict`였음([다시 읽기]를 보인다). */
@@ -93,8 +101,14 @@ export function beginSend(id: string): AbortController | null {
 export function endSend(id: string, controller: AbortController): void {
   if (inflight.get(id) === controller) inflight.delete(id);
 }
+export const ownsSend = (id: string, controller: AbortController) =>
+  inflight.get(id) === controller && !controller.signal.aborted;
 export function abortSend(id: string): void {
-  inflight.get(id)?.abort();
+  const controller = inflight.get(id);
+  if (!controller) return;
+  inflight.delete(id);
+  controller.abort();
+  useApiTabs.getState().updateById(id, { sending: false, authorization: undefined, failure: { code: "cancelled" } });
 }
 export const isSending = (id: string) => inflight.has(id);
 export const useApiTabs = create<ApiTabs>((set, get) => ({

@@ -113,7 +113,7 @@ it("root roundtrip restores dirty values and the review bit that the controls di
   expect(backend.write).not.toHaveBeenCalled();
 });
 
-it.each(["read", "review", "save"] as const)("late old-root %s updates only its saved draft", async (operation) => {
+it.each(["read", "review", "save"] as const)("late old-root %s cannot change the active root", async (operation) => {
   const { backend, switchRoot } = setup();
   const user = userEvent.setup();
   switchRoot(b);
@@ -167,8 +167,15 @@ it.each(["read", "review", "save"] as const)("late old-root %s updates only its 
   });
   expect(backend.send).not.toHaveBeenCalled();
   switchRoot(a);
-  expect(screen.getByLabelText("변수 1 값")).toHaveValue(
-    operation === "save" ? "https://a.invalid/saved" : "https://a.invalid",
-  );
-  expect(active()?.unreviewed).toBe(operation === "read");
+  if (operation === "read") {
+    // Leaving the root cancels pending selection; saved/reviewed writes retain
+    // their existing root-local acknowledgement behavior.
+    expect(screen.queryByLabelText("변수 1 값")).not.toBeInTheDocument();
+    expect(active()).toBeNull();
+  } else {
+    expect(screen.getByLabelText("변수 1 값")).toHaveValue(
+      operation === "save" ? "https://a.invalid/saved" : "https://a.invalid",
+    );
+    expect(active()?.unreviewed).toBe(false);
+  }
 });

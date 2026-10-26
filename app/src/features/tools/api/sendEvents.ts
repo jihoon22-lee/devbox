@@ -1,6 +1,6 @@
 /** `api.send` 스트림의 NDJSON 이벤트(`SendEvent`)를 응답 하나로 모은다. 화면 메모리의 본문은 10 MiB까지다. */
 import type { SendEvent } from "../../../rpc/gen/rpc";
-import { SendFailure, type SentResponse } from "./backend";
+import { type SendAuthorization, SendFailure, type SentResponse } from "./backend";
 import type { ApiResponse } from "./lib/template";
 
 export const MAX_SCREEN_BODY_BYTES = 10 * 1024 * 1024;
@@ -33,6 +33,8 @@ export class SendCollector {
   ended = false;
   failure: SendFailure | null = null;
 
+  constructor(private onAuthorize?: (event: SendAuthorization | null) => void) {}
+
   push(bytes: Uint8Array): void {
     this.pending += this.decoder.decode(bytes, { stream: true });
     let at = this.pending.indexOf("\n");
@@ -45,13 +47,19 @@ export class SendCollector {
   }
 
   private event(event: SendEvent): void {
+    if (this.ended || this.failure) return;
     const r = this.response;
     switch (event.type) {
       case "started":
+        if (r.historyId !== null || typeof event.historyId !== "string" || !event.historyId) {
+          this.failure = new SendFailure("internal");
+          return;
+        }
         r.historyId = event.historyId;
         r.sentAtMs = event.sentAtMs;
         break;
       case "head":
+        this.onAuthorize?.(null);
         Object.assign(r, {
           status: event.status,
           reason: event.reason,
@@ -72,13 +80,17 @@ export class SendCollector {
         break;
       }
       case "end":
+        this.onAuthorize?.(null);
         Object.assign(r, { sizeBytes: event.sizeBytes, elapsedMs: event.elapsedMs, binary: event.binary });
         this.ended = true;
         break;
       case "failed":
+        this.onAuthorize?.(null);
         this.failure = new SendFailure(event.error.code, event.error.detail);
         break;
       case "authorize":
+        if (!r.historyId || typeof event.url !== "string") this.failure = new SendFailure("internal");
+        else this.onAuthorize?.({ historyId: r.historyId, url: event.url });
         break;
     }
   }

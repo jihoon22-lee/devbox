@@ -27,6 +27,7 @@ pub struct ProjectContext {
     pub project_id: String,
     pub root: PathBuf,
     pub access: DocumentAccess,
+    pub capture: crate::adapters::CaptureAccess,
     pub diagnostics: DiagnosticSink,
     pub restarted: RestartSink,
 }

@@ -1,7 +1,11 @@
 //! Document storage: write scope, edit leases, CAS saves with atomic exchange,
 //! data-folder journals, no-replace moves and external change observation.
 //! Document text, titles and paths are never written to logs or error details.
+mod capture;
+mod capture_budget;
+mod capture_io;
 mod code_authority;
+pub use capture::{CaptureReason, CodeBaseline, CodeCapture, CodeOmission};
 mod commits;
 mod entries;
 mod entry_model;

@@ -218,6 +218,10 @@ pub struct RequestOrigin {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SendRequest {
+    // Captured tab root, including unsaved project drafts. Legacy omission sends but cannot export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub source_root: Option<CollectionRoot>,
     pub snapshot: RequestSnapshot,
     pub env: EnvSnapshot,
     pub run_id: Option<String>,

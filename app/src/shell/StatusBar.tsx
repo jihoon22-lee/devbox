@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAgentSummary } from "../features/agents/AgentData";
 import { memoryLabel, useSystemMetrics } from "../features/runs/systemMetrics";
+import { UpdateStatus } from "../features/settings/Update";
 import { GitStatus } from "../features/source/GitStatus";
 import { useConnection } from "../rpc/connection";
 import { useRpcQuery, useTopicInvalidation } from "../rpc/query";
@@ -70,6 +71,7 @@ export function StatusBar() {
       </button>
       <GitStatus />
       <span style={{ flex: 1 }} />
+      <UpdateStatus />
       {daemonVersion && <span>데몬 {daemonVersion}</span>}
     </footer>
   );

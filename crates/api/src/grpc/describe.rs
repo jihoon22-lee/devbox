@@ -136,13 +136,46 @@ fn request<T>(
     request
 }
 
+enum ReflectionError {
+    Status(tonic::Status),
+    Redaction(ApiError),
+}
+impl From<ApiError> for ReflectionError {
+    fn from(error: ApiError) -> Self {
+        Self::Redaction(error)
+    }
+}
+fn reflection_status(
+    status: tonic::Status,
+    redaction: &mut crate::redact::Redaction,
+) -> ReflectionError {
+    match redaction.response_headers(super::metadata::headers(status.metadata())) {
+        Ok(()) => ReflectionError::Status(status),
+        Err(error) => ReflectionError::Redaction(error),
+    }
+}
+async fn reflected<T>(
+    response: tonic::Response<tonic::Streaming<T>>,
+    redaction: &mut crate::redact::Redaction,
+) -> Result<Option<T>, ReflectionError> {
+    redaction.response_headers(super::metadata::headers(response.metadata()))?;
+    // Preserve first-response semantics: this call drops the reflection stream after one answer.
+    // Unconsumed trailers are not accepted metadata and cannot retroactively change that answer.
+    response
+        .into_inner()
+        .message()
+        .await
+        .map_err(|status| reflection_status(status, redaction))
+}
+
 impl Reflection {
     /// 요청 하나를 보내고 답 하나를 받는다(양방향 스트림을 요청마다 새로 연다: 단순·상한이 쉬움).
     async fn ask(
         &mut self,
         metadata: &tonic::metadata::MetadataMap,
         query: Query,
-    ) -> Result<Answer, tonic::Status> {
+        redaction: &mut crate::redact::Redaction,
+    ) -> Result<Answer, ReflectionError> {
         Ok(match self {
             Reflection::V1(c) => {
                 use pb::server_reflection_response::MessageResponse as R;
@@ -151,11 +184,14 @@ impl Reflection {
                     host: String::new(),
                     message_request: Some(query.v1()),
                 };
-                let mut stream = c
+                let response = c
                     .server_reflection_info(request(message, metadata))
+                    .await
+                    .map_err(|status| reflection_status(status, redaction))?;
+                match reflected(response, redaction)
                     .await?
-                    .into_inner();
-                match stream.message().await?.and_then(|r| r.message_response) {
+                    .and_then(|r| r.message_response)
+                {
                     Some(R::ListServicesResponse(list)) => {
                         Answer::Services(list.service.into_iter().map(|s| s.name).collect())
                     }
@@ -170,11 +206,14 @@ impl Reflection {
                     host: String::new(),
                     message_request: Some(query.alpha()),
                 };
-                let mut stream = c
+                let response = c
                     .server_reflection_info(request(message, metadata))
+                    .await
+                    .map_err(|status| reflection_status(status, redaction))?;
+                match reflected(response, redaction)
                     .await?
-                    .into_inner();
-                match stream.message().await?.and_then(|r| r.message_response) {
+                    .and_then(|r| r.message_response)
+                {
                     Some(R::ListServicesResponse(list)) => {
                         Answer::Services(list.service.into_iter().map(|s| s.name).collect())
                     }
@@ -234,8 +273,13 @@ pub(crate) fn transport(status: &tonic::Status) -> Option<ApiError> {
     Some(ApiError::network(kind))
 }
 
-fn status_error(status: tonic::Status) -> ApiError {
-    transport(&status).unwrap_or_else(|| ApiError::grpc("reflection_failed"))
+fn status_error(error: ReflectionError) -> ApiError {
+    match error {
+        ReflectionError::Status(status) => {
+            transport(&status).unwrap_or_else(|| ApiError::grpc("reflection_failed"))
+        }
+        ReflectionError::Redaction(error) => error,
+    }
 }
 
 /// 서술자 바이트를 모으고 의존 파일을 차례로 받는다(이름이 같은데 내용이 다르면 거절).
@@ -313,7 +357,7 @@ impl Accumulator {
     }
 }
 
-pub(crate) async fn from_reflection(p: &Prepared) -> Result<DescriptorPool, ApiError> {
+pub(crate) async fn from_reflection(p: &mut Prepared) -> Result<DescriptorPool, ApiError> {
     let channel = super::connect::channel(p)?;
     let size = super::MAX_MESSAGE_BYTES;
     let mut client = Reflection::V1(
@@ -321,17 +365,19 @@ pub(crate) async fn from_reflection(p: &Prepared) -> Result<DescriptorPool, ApiE
             .max_decoding_message_size(size)
             .max_encoding_message_size(size),
     );
-    let services = match client.ask(&p.metadata, Query::List).await {
+    let services = match client.ask(&p.metadata, Query::List, &mut p.redaction).await {
         Ok(answer) => answer,
-        Err(status) if status.code() == tonic::Code::Unimplemented => {
+        Err(ReflectionError::Status(status)) if status.code() == tonic::Code::Unimplemented => {
             client = Reflection::Alpha(
                 AlphaClient::new(channel)
                     .max_decoding_message_size(size)
                     .max_encoding_message_size(size),
             );
-            match client.ask(&p.metadata, Query::List).await {
+            match client.ask(&p.metadata, Query::List, &mut p.redaction).await {
                 Ok(answer) => answer,
-                Err(status) if status.code() == tonic::Code::Unimplemented => {
+                Err(ReflectionError::Status(status))
+                    if status.code() == tonic::Code::Unimplemented =>
+                {
                     return Err(ApiError::grpc("reflection_unavailable"));
                 }
                 Err(status) => return Err(status_error(status)),
@@ -351,14 +397,20 @@ pub(crate) async fn from_reflection(p: &Prepared) -> Result<DescriptorPool, ApiE
         bytes: 0,
     };
     for name in names {
-        match client.ask(&p.metadata, Query::Symbol(name)).await {
+        match client
+            .ask(&p.metadata, Query::Symbol(name), &mut p.redaction)
+            .await
+        {
             Ok(Answer::Files(raw)) => acc.add(raw)?,
             Ok(_) => return Err(ApiError::grpc("reflection_failed")),
             Err(status) => return Err(status_error(status)),
         }
     }
     while let Some(dep) = acc.missing() {
-        match client.ask(&p.metadata, Query::File(dep)).await {
+        match client
+            .ask(&p.metadata, Query::File(dep), &mut p.redaction)
+            .await
+        {
             Ok(Answer::Files(raw)) if !raw.is_empty() => acc.add(raw)?,
             Ok(_) => return Err(ApiError::grpc("descriptor")),
             Err(status) => return Err(status_error(status)),
@@ -367,7 +419,7 @@ pub(crate) async fn from_reflection(p: &Prepared) -> Result<DescriptorPool, ApiE
     acc.pool()
 }
 
-pub(crate) async fn pool(p: &Prepared) -> Result<(DescriptorPool, CatalogSource), ApiError> {
+pub(crate) async fn pool(p: &mut Prepared) -> Result<(DescriptorPool, CatalogSource), ApiError> {
     match &p.proto_files {
         Some(files) => {
             let files = files.clone();
@@ -429,7 +481,22 @@ pub(crate) fn catalog_of(
     Ok(GrpcCatalog { source, services })
 }
 
-pub(crate) async fn catalog(p: &Prepared) -> Result<GrpcCatalog, ApiError> {
+pub(crate) async fn catalog(p: &mut Prepared) -> Result<GrpcCatalog, ApiError> {
     let (pool, source) = pool(p).await?;
-    catalog_of(&pool, source)
+    let catalog = catalog_of(&pool, source)?;
+    let contains = |text: &str| p.redaction.redactor.contains(text);
+    if catalog.services.iter().any(|service| {
+        contains(&service.name)
+            || service.methods.iter().any(|method| {
+                contains(&method.name)
+                    || contains(&method.full_name)
+                    || contains(&method.input_default)
+            })
+    }) {
+        // Catalog strings are dispatch identities too: refuse instead of changing their meaning.
+        return Err(ApiError::RedactionFailed {
+            reason: "input".into(),
+        });
+    }
+    Ok(catalog)
 }

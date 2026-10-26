@@ -28,6 +28,16 @@ pub(crate) struct Plan {
     user_auth: bool,
 }
 
+impl Plan {
+    pub(crate) fn seed(&self, redaction: &mut crate::redact::Redaction) -> Result<(), ApiError> {
+        redaction.request_headers(
+            self.headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )
+    }
+}
+
 pub(crate) fn prepare(
     filled: &RequestSnapshot,
     resolver: Option<&Resolver>,
@@ -176,10 +186,6 @@ impl Http {
         }
     }
 
-    pub(crate) fn token(&self) -> Option<&str> {
-        self.token.as_deref().map(|t| t.as_str())
-    }
-
     pub(crate) fn set_protocol(&mut self, version: &str) {
         if version.len() <= 64 && validate::field_value(version).is_ok() {
             self.protocol = Some(version.to_owned());
@@ -219,8 +225,19 @@ impl Http {
             .map_err(|e| crate::http::kind(&e))
     }
 
-    pub(crate) async fn send(&mut self, message: &[u8], tx: &StreamTx) -> Result<(), ApiError> {
+    pub(crate) async fn send(
+        &mut self,
+        message: &[u8],
+        tx: &StreamTx,
+        redaction: &mut crate::redact::Redaction,
+    ) -> Result<(), ApiError> {
         let mut response = self.post(message).await?;
+        redaction.response_headers(
+            response
+                .headers()
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED
             && !self.plan.user_auth
             && !self.tried_oauth
@@ -242,8 +259,15 @@ impl Http {
                 },
             )
             .await?;
+            redaction.add(token.as_str())?;
             self.token = Some(token);
             response = self.post(message).await?;
+            redaction.response_headers(
+                response
+                    .headers()
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_bytes())),
+            )?;
         }
         let status = response.status();
         if status == reqwest::StatusCode::ACCEPTED {

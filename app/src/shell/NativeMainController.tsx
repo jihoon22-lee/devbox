@@ -49,7 +49,17 @@ export function NativeMainController({ ready }: { ready: boolean }) {
     void (async () => {
       try {
         for (const [name, receive] of [
-          ["devbox://palette", () => useNativeRuntime.getState().push({ kind: "palette" })],
+          [
+            "devbox://palette",
+            (payload: { traceId?: unknown } | null) =>
+              useNativeRuntime
+                .getState()
+                .push(
+                  typeof payload?.traceId === "number"
+                    ? { kind: "palette", traceId: payload.traceId }
+                    : { kind: "palette" },
+                ),
+          ],
           [
             "devbox://bottom-terminal",
             (payload: { wasFocused: boolean }) =>

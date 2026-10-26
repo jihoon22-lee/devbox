@@ -6,6 +6,7 @@ import { CodegenDialog } from "./CodegenDialog";
 import { HistoryList } from "./HistoryList";
 import { RequestEditor } from "./RequestEditor";
 import { RequestTabs } from "./RequestTabs";
+import { ResponseNoteAction } from "./ResponseNoteAction";
 import { ResponseView } from "./ResponseView";
 import { useActiveTab, useApiTabs } from "./store";
 import { useNarrow } from "./useNarrow";
@@ -40,7 +41,19 @@ export function ApiWorkspace() {
               }
             />
             {view === "response" ? (
-              <ResponseView result={tab.result} draft={tab.draft} failure={tab.failure} />
+              <ResponseView
+                result={tab.result}
+                draft={tab.draft}
+                failure={tab.failure}
+                noteAction={
+                  tab.result && (
+                    <ResponseNoteAction
+                      historyId={tab.result.response.historyId}
+                      ownerKey={`${tab.id}:${JSON.stringify(tab.root)}:${tab.result.response.sentAtMs}`}
+                    />
+                  )
+                }
+              />
             ) : (
               <HistoryList
                 origin={tab.path ? { root: tab.root, path: tab.path } : null}

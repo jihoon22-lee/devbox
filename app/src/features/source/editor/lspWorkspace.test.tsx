@@ -6,6 +6,7 @@ import { EditorHost } from "../../documents/EditorHost";
 import { memoryJournal } from "../../documents/offlineJournal";
 import { useDocuments } from "../../documents/store";
 import { FakeDocumentsDaemon } from "../../documents/test-daemon";
+import { capturedContext } from "./lspProof.fixture";
 import { applyWorkspaceEdit, projectUris } from "./lspWorkspace";
 
 const a = { root: "project:p", path: "src/a.ts" },
@@ -33,7 +34,7 @@ async function setup() {
   stop = useDocuments.getState().connect(rpc, { journal: memoryJournal() });
   useDocuments.getState().open(a, { kind: "code" });
   await useDocuments.getState().settled();
-  return { rpc, uris, current: () => true };
+  return capturedContext(rpc, uris, [a, b]);
 }
 test("multi-file edit claims unopened file, uses UTF16 and remains undoable and manually saved", async () => {
   const context = await setup();

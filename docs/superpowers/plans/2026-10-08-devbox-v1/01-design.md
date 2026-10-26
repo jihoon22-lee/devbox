@@ -72,7 +72,7 @@
 | SC4 | 앱 창 닫기·데몬 재시작·앱 업데이트 뒤에도 에이전트·터미널 세션과 서비스가 유지 (WSL 종료·PC 재부팅은 제외. 재부팅 뒤에는 에이전트 "재개"로 이어감) | L2 + 에이전트 실제 user systemd·Windows 설치본 스모크(§11, 04b Task 24) |
 | SC5 | 사용자에게 보이는 오류는 모두 정해진 코드와 "원인 + 다음 행동" 문구로 끝난다. `internal`은 진단 ID와 함께만 나온다 | 생성 타입의 전수 검사(컴파일 오류) |
 | SC6 | 개발 루프: 화면 코드 변경 → 실제 데몬에 연결된 브라우저 화면 반영 2초 이내. 데몬 코드 변경 → 재시작·재연결 15초 이내 | 개발 스크립트 |
-| SC7 | 검증 비용: PR CI 15분 이내, 로컬 전체 테스트(L3 포함) 10분 이내, 릴리스 워크플로 40분 이내. `.github` + `scripts` 합계 1,500줄 이하, 워크플로 3개 이하. flaky 테스트는 발견한 PR에서 고치거나 지운다(재시도 래퍼 금지) | CI 기록, 줄 수 |
+| SC7 | 검증 비용: PR CI 15분 이내, 로컬 전체 테스트(L3 포함) 10분 이내, 릴리스 워크플로 40분 이내. `.github` + `scripts` 합계 2,000줄 이하(2026-10-26 사용자 추가 승인), 워크플로 3개 이하. flaky 테스트는 발견한 PR에서 고치거나 지운다(재시도 래퍼 금지) | CI 기록, 줄 수 |
 | SC8 | 규모 예산(관찰용 트리거, 게이트 아님): 제품 코드(Rust + TS, 테스트 제외) S1 끝 6만, S3 끝 12만, S6 끝 20만 줄 이하. 초과하면 다음 S 전에 단순화를 검토 | 줄 수 통계 |
 | SC9 | 데몬 유휴 자원: 실행 중인 작업이 없을 때 RSS 60MB 이하, CPU 0.5% 이하 | `systemctl --user status`, `/proc` |
 | SC10 | 터미널 반응: 입력 1바이트 → 같은 바이트의 출력 수신(브리지·데몬·PTY·tmux 경유, 화면 그리기 제외) p50 10ms·p95 25ms 이하. 한 터미널이 100MB를 출력하는 동안 다른 창의 `system.ping` p95 100ms 이하, 출력이 끝난 뒤 그 터미널 입력이 1초 안에 반영 | S0a 측정(IR-6), S1 Task 24 계측 |
@@ -109,7 +109,7 @@
 | 터미널 | 셸 연동 최소 범위(OSC 7 현재 위치 → 새 탭·분할 위치, 벨 표시) | 단순화 | ShellIntegration |
 | 터미널 | 기존 zellij 세션에 붙기 | 단순화 | 새 세션은 tmux로 |
 | 실행 | 작업(일회성)·서비스(상시)·예약(cron, DST 고려). 의존 순서, 재시작 정책(systemd), 환경 변수·비밀 참조, 실행할 worktree 선택 | 유지 | `runtime-engine` |
-| 실행 | 서비스 준비 상태: `ports_hint` 포트가 수신 중이면 "준비됨"(관찰만). 서비스 의존 순서는 앞 서비스의 준비됨을 기다린다(기본 60초, 넘으면 실패). health 실패로 재시작하지 않는다 | 단순화 | v0.9.0 health probe·유예·health 재시작 폐기(AR-F02, IR-4) |
+| 실행 | 서비스 준비 상태: `ports_hint` 포트가 수신 중이면 "준비됨"(관찰만). Windows 대상 서비스는 port마다 그 실행의 소유 Windows Job 안 프로세스가 연 loopback·wildcard listener가 있을 때만 준비됨이며, 무관 listener·조회 실패는 미준비다. port가 없는 Windows 서비스는 시작 시 준비됨(S6-4a). 서비스 의존 순서는 앞 서비스의 준비됨을 기다린다(기본 60초, 넘으면 실패). health 실패로 재시작하지 않는다 | 단순화 | v0.9.0 health probe·유예·health 재시작 폐기(AR-F02, IR-4) |
 | 실행 | 작업 자동 감지(package.json·Makefile·justfile·Cargo·docker compose) | 유지 | tasks ImportDialog |
 | 실행 | 로그: 실시간 tail, 검색·필터, 여러 소스 병합 보기. 소스는 devbox 실행·파일 tail·Docker/Podman 컨테이너 | 유지 | `logs-engine` |
 | 실행 | Docker 컨테이너 목록·상태·시작/중지/재시작, 포트의 컨테이너 표시 | 유지 | `terminal-engine` docker_ps·docker_action |
@@ -507,15 +507,15 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 
 | 상태 | 화면 | 사용자 동작 |
 |---|---|---|
-| WSL 미설치 | "WSL이 필요합니다" + 설명 | [WSL 설치](관리자 권한 `wsl --install`) → 재부팅 → 자동 시작으로 이어서 진행 |
+| WSL 미설치 | "WSL이 필요합니다" + 관리자 PowerShell `wsl --install`·PC 재시작 안내 | [다시 시도]. 설계의 [WSL 설치] 버튼·자동 이어서 진행은 구현되지 않음(설계 차이, S6-5 확인) |
 | 배포판 여러 개 | 배포판 선택(기본 배포판 미리 선택). 도구 내부용 배포판(`docker-desktop*`·`rancher-desktop*`·`podman-machine*`)은 세지도 보이지도 않는다. 이 PC처럼 Ubuntu + docker-desktop이면 고르기 없이 Ubuntu | 선택 |
-| WSL1 배포판 | "WSL2만 지원" + 변환 명령 안내 | — |
-| systemd 꺼짐 | 설명 + [자동으로 켜기] | `/etc/wsl.conf` 수정 후 `wsl --shutdown`. 이때 실행 중인 모든 WSL 프로그램이 종료된다는 확인을 받음 |
-| tmux 없음·3.2 미만 | 설치 명령 안내 | [터미널에서 설치] |
-| linger·setup 실패 | 실패 단계와 로그 열기 | [다시 시도][로그 열기][진단] |
-| 데몬 버전 재배치 중 | 진행 표시 | — |
+| WSL1 배포판 | "WSL2만 지원" + 변환 명령 안내 | [다시 시도] |
+| systemd 꺼짐 | `/etc/wsl.conf`에 `[boot] systemd=true`를 넣고 `wsl --shutdown`하라는 안내와 실행 중인 WSL 프로그램이 모두 종료된다는 경고 | 사용자가 직접 수정한 뒤 [다시 시도]. 설계의 [자동으로 켜기]는 구현되지 않음(설계 차이) |
+| tmux 없음·3.2 미만 | 별도 연결 화면 상태 없음. doctor 점검(설정 → 앱 진단)이 결과를 보여 준다 | 설계의 [터미널에서 설치]는 구현되지 않음(설계 차이) |
+| linger·setup 실패 | "WSL 쪽 설치에 실패했습니다" + 실패 내용 | [다시 시도]. [로그 열기][진단] 버튼은 연결 화면에 없고 설정 → 앱 진단에서 확인(설계 차이) |
+| WSL 쪽 배치·setup 중(연결 시작마다, 데몬 서비스만 재시작) | 진행 표시 | — |
 | 데몬 끊김 | 상단 배너 "다시 연결 중". 터미널 위에는 "입력 전송 안 됨"을 덮어 표시. 5회 실패하면 버튼 표시 | [다시 시도][WSL 재시작][진단] |
-| 업데이트 설치 중 | 진행 창 | 실패하면 이전 버전 실행 안내 |
+| 업데이트 설치 중 | 설정 정보·상태 표시줄의 설치 준비 상태 | [설치 준비 취소]. 설치·재실행 실패는 다음 실행 때 원인 안내, 상태 불명은 자동 재시도 없이 설치 프로그램 종료 확인 안내 |
 | 비밀 키 불일치 | §6.3 | [복구 문자열 입력][비밀 다시 입력] |
 | hook 미연결 | 에이전트 목록 상단 배너 "상태 알림이 연결되지 않았습니다" | [연결 확인](doctor의 hook 점검) |
 
@@ -547,7 +547,7 @@ command = "pnpm test"
 [[task]]
 id = "win-build"
 target = "windows"
-command = "pnpm tauri build"     # windows_dir은 config.local.toml의 [windows] 사본 루트 + 프로젝트 이름
+command = "pnpm tauri build"     # windows_dir은 [windows] root 아래 owner/project/worktree 소유 namespace의 files (S6-1a.3)
 
 [[service]]
 id = "web"
@@ -923,13 +923,13 @@ agents = [{ tool = "claude", worktree = false }]
   3. 첫 화면(에이전트)이 열린다.
   - 관리자 권한은 필요 없다(WSL 설치가 필요한 경우는 예외).
 - **업데이트(릴리스 빌드만):**
-  1. 앱이 하루 한 번과 요청 시 GitHub Releases `latest`를 조회한다.
+  1. prod 채널의 정식(`x.y.z`) 버전 앱만 24시간에 최대 한 번(재시작해도 유지되는 마지막 확인 시각 기준)과 요청 시 GitHub Releases `latest`를 조회한다.
   2. 새 버전이면 상태 표시줄·설정에 알린다.
-  3. "업데이트" → `devbox-<v>-setup.exe` 다운로드 → GitHub 자산 digest(SHA-256)와 비교 → 실행 중 작업 요약을 보여 주고 확인받는다.
-  4. 앱이 종료되고 `/S`로 setup이 실행된 뒤 앱이 다시 열린다.
+  3. [업데이트 다운로드] → `devbox-<v>-setup.exe` 하나를 받아 크기·GitHub 자산 digest(SHA-256)와 비교 → [업데이트] → 실행 중 작업 요약을 보여 주고 확인받는다. 앱이 실행한 Windows 작업이 진행 중이거나 상태를 모르면 설치를 막고 사용자가 직접 끝내게 한다. 업데이터는 그 작업을 중지하지 않는다.
+  4. 모든 창이 종료(열린 문서 저장 준비)를 승인하고 이전 앱 process 종료가 확인된 뒤 `/S`로 setup이 실행되고 앱이 다시 열린다. 실패·상태 불명은 다음 실행에서 표시하며 상태 불명은 자동 재시도하지 않는다.
   5. 새 앱이 데몬을 다시 배치한다(§4.6).
   - 서명 기반 Tauri updater는 쓰지 않는다(ADR 0016).
-  - 개발 빌드(`1.0.0-dev`)는 업데이트 확인을 끈다.
+  - 개발 빌드(`1.0.0-dev`)와 dev·accept 채널은 업데이트 확인을 끈다.
 - **자산 이름:** `devbox-<v>-setup.exe`. v0.9.0 업데이터가 찾는 `Devbox_{v}_x64-setup.exe`·`release-manifest.json`과 겹치지 않는다. v1.0.0 릴리스 노트에 "새 앱 수동 설치 → v0.9.0 수동 제거"를 적는다.
 - **제거:** NSIS 제거 프로그램이 Windows 쪽을 지운다. WSL 쪽 데이터는 남긴다. 앱 진단의 "WSL 쪽 정리" 버튼이 unit과 바이너리를 지운다.
 - **self-check:** `Devbox.exe --self-check`는 실행 여부와 내장 Linux 바이너리 버전 일치만 확인한다.

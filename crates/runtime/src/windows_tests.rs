@@ -264,7 +264,17 @@ async fn this_pc_only_windows_run_ignores_stale_project_trust() {
         .await
         .expect("fixture result");
     assert_eq!(graph.ids(), vec!["win"]);
-    assert_eq!(graph.windows["win"].cwd, "C:\\owned-copy\\repo");
+    assert!(
+        graph.windows["win"]
+            .cwd
+            .starts_with("C:\\owned-copy\\.devbox-v1\\")
+    );
+    assert!(
+        graph.windows["win"]
+            .cwd
+            .ends_with(&format!("\\{}\\main\\files", f.project))
+    );
+    assert_eq!(graph.windows["win"].identity.project_id, f.project);
     git(&f.root.path().join("repo"), &["init", "-q"]);
     let owned_target = f.root.path().join("owned windows target");
     let report = sync(&graph.windows["win"].source, &owned_target)
@@ -391,12 +401,79 @@ async fn windows_preview_exposes_copy_directory_and_termination_notice() {
         target: RunTarget::Windows,
         ..Default::default()
     });
-    let preview = f.runs.windows_preview("repo", "/owned/repo", &[def]);
+    let expected = crate::windows_copy::CopyIdentity::new(
+        f.runs.execution().expect("execution"),
+        &f.project,
+        "main",
+        std::path::Path::new("/owned/repo"),
+    )
+    .expect("identity")
+    .directory();
+    let preview = f
+        .runs
+        .windows_preview(&f.project, "/owned/repo", None, &[def]);
     assert_eq!(
         preview,
         vec![format!(
-            "win · C:\\owned-copy\\repo\\sub dir's · {}",
+            "win · {expected}\\sub dir's · {}",
             crate::windows::EXECUTION_NOTICE
         )]
     );
+}
+
+#[tokio::test]
+async fn windows_selected_worktree_preview_matches_the_prepared_execution_directory() {
+    use crate::*;
+    let mut f = crate::service_tests::Fixture::new().await;
+    configure(&mut f);
+    let worktree = f.root.path().join("owned-worktree");
+    fs::create_dir_all(worktree.join("sub")).expect("owned worktree");
+    let resolved = worktree.to_string_lossy().into_owned();
+    let path = resolved.clone();
+    std::sync::Arc::get_mut(&mut f.runs)
+        .expect("sole fixture runtime")
+        .execution
+        .as_mut()
+        .expect("execution")
+        .worktree = Some(std::sync::Arc::new(move |_, id| {
+        assert_eq!(id, "owned-agent");
+        let path = path.clone();
+        Box::pin(async move { Ok(WorktreeLocation { path, port: 18432 }) })
+    }));
+    let def = RunDef::Task(TaskDef {
+        id: "win".into(),
+        command: "exit 0".into(),
+        cwd: Some("sub".into()),
+        target: RunTarget::Windows,
+        ..Default::default()
+    });
+    f.runs
+        .define(DefineRun {
+            project_id: f.project.clone(),
+            save_to: SaveTo::ThisPc,
+            def: def.clone(),
+        })
+        .await
+        .expect("definition");
+    let graph = f
+        .runs
+        .authorize_run_graph(&StartRun {
+            project_id: f.project.clone(),
+            id: "win".into(),
+            worktree: Some("owned-agent".into()),
+        })
+        .await
+        .expect("prepared worktree");
+    let preview = f
+        .runs
+        .windows_preview(&f.project, &resolved, Some("owned-agent"), &[def]);
+    assert_eq!(
+        preview,
+        vec![format!(
+            "win · {} · {}",
+            graph.windows["win"].cwd,
+            crate::windows::EXECUTION_NOTICE
+        )]
+    );
+    assert_eq!(graph.windows["win"].identity.worktree_id, "owned-agent");
 }

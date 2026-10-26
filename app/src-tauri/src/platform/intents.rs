@@ -17,7 +17,14 @@ pub fn disconnect(app: &AppHandle) {
 fn drain(app: &AppHandle, state: &mut PendingIntents) {
     while let Some(intent) = state.front() {
         let result = match intent {
-            AppIntent::Palette => app.emit_to("main", "devbox://palette", ()),
+            AppIntent::Palette { trace } => {
+                #[derive(Clone, serde::Serialize)]
+                #[serde(rename_all = "camelCase")]
+                struct Palette {
+                    trace_id: Option<u64>,
+                }
+                app.emit_to("main", "devbox://palette", Palette { trace_id: *trace })
+            }
             AppIntent::Quit => app.emit_to("main", "devbox://quit", ()),
             AppIntent::BottomTerminal { was_focused } => {
                 #[derive(Clone, serde::Serialize)]

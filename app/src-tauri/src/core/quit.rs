@@ -9,6 +9,9 @@ pub struct Quit {
     registrations: BTreeMap<String, u64>,
     round: Option<Round>,
     pub approved: bool,
+    epoch: u64,
+    sealed: bool,
+    pending_windows: usize,
 }
 struct Round {
     id: u64,
@@ -22,7 +25,68 @@ pub enum Status {
     Ready,
 }
 impl Quit {
+    fn mutated(&mut self) {
+        if self.sealed && self.approved {
+            return;
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.approved {
+            self.round = None;
+        }
+        self.approved = false;
+        if let Some(round) = &mut self.round {
+            round.failed = true;
+        }
+    }
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub fn reserve_window(&mut self) -> bool {
+        if self.sealed {
+            return false;
+        }
+        self.mutated();
+        self.pending_windows += 1;
+        true
+    }
+    pub fn complete_window(&mut self) {
+        self.pending_windows = self.pending_windows.saturating_sub(1);
+    }
+    pub fn seal(&mut self, id: u64, labels: &[String]) -> bool {
+        if self.status(id, labels) != Status::Ready {
+            return false;
+        }
+        self.sealed = true;
+        self.approved = true;
+        true
+    }
+    pub fn revoke(&mut self, id: u64) {
+        if let Some(round) = &mut self.round
+            && round.id == id
+        {
+            self.sealed = false;
+            self.approved = false;
+            round.failed = true;
+        }
+    }
+    pub fn unseal(&mut self, id: u64) {
+        if self.round.as_ref().is_some_and(|round| round.id == id) {
+            self.sealed = false;
+            self.finish(id, false);
+        }
+    }
+    pub fn sealed(&self) -> bool {
+        self.sealed
+    }
+    pub fn hold(&mut self) {
+        self.sealed = true;
+        self.approved = false;
+    }
     pub fn register(&mut self, label: &str) -> u64 {
+        if self.sealed && self.approved {
+            return 0;
+        }
+        self.mutated();
         self.sequence += 1;
         self.invalidate(label);
         self.registrations.insert(label.into(), self.sequence);
@@ -30,11 +94,19 @@ impl Quit {
     }
     pub fn unregister(&mut self, label: &str, lease: u64) {
         if self.registrations.get(label) == Some(&lease) {
+            self.mutated();
             self.invalidate(label);
             self.registrations.remove(label);
         }
     }
     pub fn invalidate(&mut self, label: &str) {
+        if self.sealed {
+            return;
+        }
+        if self.approved {
+            self.round = None;
+        }
+        self.approved = false;
         if let Some(round) = &mut self.round
             && round.windows.contains_key(label)
         {
@@ -42,7 +114,7 @@ impl Quit {
         }
     }
     pub fn start(&mut self, labels: Vec<String>) -> Option<u64> {
-        if self.round.is_some() || self.approved {
+        if self.round.is_some() || self.approved || self.sealed || self.pending_windows > 0 {
             return None;
         }
         let windows: Option<BTreeMap<_, _>> = labels
@@ -79,7 +151,8 @@ impl Quit {
         let Some(round) = &self.round else {
             return Status::Failed;
         };
-        if round.id != id
+        if self.pending_windows > 0
+            || round.id != id
             || round.failed
             || labels.len() != round.windows.len()
             || labels
@@ -97,7 +170,9 @@ impl Quit {
     }
     pub fn finish(&mut self, id: u64, approved: bool) {
         if self.round.as_ref().is_some_and(|round| round.id == id) {
-            self.round = None;
+            if !approved {
+                self.round = None;
+            }
             self.approved = approved;
         }
     }
@@ -183,5 +258,62 @@ mod tests {
         quit.ack("popout-note-a", next_lease, next, true);
         quit.invalidate("main");
         assert_eq!(quit.status(next, &windows()), Status::Failed);
+    }
+    #[test]
+    fn late_registration_after_finish_revokes_the_exitrequested_authorization() {
+        let mut quit = Quit::default();
+        let main = quit.register("main");
+        let labels = vec!["main".into()];
+        let round = quit.start(labels.clone()).unwrap();
+        quit.ack("main", main, round, true);
+        assert_eq!(quit.status(round, &labels), Status::Ready);
+        // Mirrors platform quit's UI closure, then a late WebView registration, then ExitRequested.
+        quit.finish(round, true);
+        quit.register("popout-note-late");
+        assert!(
+            !quit.approved,
+            "ExitRequested must not trust approval from the older window/lease set"
+        );
+    }
+
+    #[test]
+    fn reservations_and_seal_gate_both_creation_and_registration() {
+        let mut quit = Quit::default();
+        let main = quit.register("main");
+        let labels = vec!["main".into()];
+        let epoch = quit.epoch();
+        assert!(quit.reserve_window());
+        assert!(quit.epoch() > epoch);
+        assert!(quit.start(labels.clone()).is_none());
+        quit.complete_window();
+        let first = quit.start(labels.clone()).unwrap();
+        quit.ack("main", main, first, true);
+        assert!(quit.reserve_window());
+        quit.complete_window();
+        assert!(!quit.seal(first, &labels));
+        quit.finish(first, false);
+        let second = quit.start(labels.clone()).unwrap();
+        quit.ack("main", main, second, true);
+        assert!(quit.seal(second, &labels));
+        assert!(quit.sealed());
+        quit.unseal(first);
+        assert!(quit.sealed(), "stale abort cannot release another round");
+        assert!(!quit.reserve_window());
+        assert_eq!(quit.register("popout-note-late"), 0);
+        assert!(quit.approved);
+        quit.unseal(second);
+        assert!(!quit.approved);
+        assert!(!quit.sealed());
+        let third = quit.start(labels.clone()).unwrap();
+        quit.hold();
+        assert_ne!(
+            quit.register("main"),
+            0,
+            "existing renderer can renew its lease during disarmed cleanup"
+        );
+        assert!(!quit.approved);
+        assert!(!quit.reserve_window());
+        quit.unseal(third);
+        assert!(quit.start(labels).is_some());
     }
 }

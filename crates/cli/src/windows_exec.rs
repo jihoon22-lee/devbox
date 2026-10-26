@@ -8,29 +8,16 @@ use std::{
 };
 use tokio::{io::AsyncWriteExt, process::Command};
 use zeroize::Zeroizing;
-const PROBE: &str = r#"
-$ErrorActionPreference='Stop'
-try {
-    $ports=[Console]::In.ReadToEnd() | ConvertFrom-Json
-    foreach($port in $ports) {
-        $open=$false
-        foreach($address in @('127.0.0.1','::1')) {
-            $family=if($address -eq '::1') { [System.Net.Sockets.AddressFamily]::InterNetworkV6 } else { [System.Net.Sockets.AddressFamily]::InterNetwork }
-            $c=[System.Net.Sockets.TcpClient]::new($family)
-            try {
-                $t=$c.ConnectAsync($address,[int]$port)
-                if($t.Wait(200) -and $c.Connected) { $open=$true; break }
-            } catch {} finally { $c.Dispose() }
-        }
-        if(!$open) { exit 1 }
-    }
-    exit 0
-} catch { exit 1 }
-"#;
+#[path = "windows_observation.rs"]
+mod observation;
+pub(crate) use observation::{check_paths, listeners, observe};
 
 #[cfg(test)]
 #[path = "windows_exec_probe_tests.rs"]
 mod probe_tests;
+#[cfg(test)]
+#[path = "windows_exec_ready_tests.rs"]
+mod ready_tests;
 #[derive(Debug, PartialEq, Eq)]
 enum Direct {
     Unavailable,
@@ -42,6 +29,9 @@ async fn direct(
     executable: &Path,
     started: tokio::sync::oneshot::Sender<()>,
 ) -> Direct {
+    if !request.tracked() {
+        return Direct::Failed;
+    }
     let request = request.clone();
     let executable = executable.to_path_buf();
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -65,42 +55,74 @@ async fn direct(
         }
     }).await.unwrap_or(Direct::Failed)
 }
-async fn probe(executable: &Path, ports: &[u16]) -> bool {
-    probe_with_timeout(executable, ports, Duration::from_secs(2)).await
+/// The daemon gate is the only readiness authority. Not-ready replies and failures retry
+/// at the cadence; a hint (native Ready event) only wakes an earlier retry.
+/// Gate polling schedule. Each not-ready probe starts PowerShell on Windows, so after the
+/// service's readiness window the wrapper backs off exponentially instead of polling every
+/// second for the run's whole life. Not-ready semantics are unchanged; a native Ready hint
+/// still wakes the next poll immediately.
+#[derive(Clone, Copy, Debug)]
+struct Cadence {
+    base: Duration,
+    settle: Duration,
+    max: Duration,
 }
-async fn probe_with_timeout(executable: &Path, ports: &[u16], timeout: Duration) -> bool {
-    let executable = executable.to_path_buf();
-    let bytes = serde_json::to_vec(ports).expect("port DTO");
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let _guard = cancel.clone().drop_guard();
-    tokio::spawn(async move {
-        let mut child=match Command::new(executable).args(["-NoProfile","-NonInteractive","-Command",PROBE])
-            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true).spawn(){Ok(child)=>child,Err(_)=>return false};
-        let mut input=child.stdin.take().expect("probe stdin");
-        let operation=async {input.write_all(&bytes).await?;drop(input);child.wait().await};
-        let status=tokio::select! {_=cancel.cancelled()=>None,result=tokio::time::timeout(timeout,operation)=>result.ok().and_then(Result::ok)};
-        match status {Some(status)=>status.success(),None=>{let _=child.kill().await;let _=child.wait().await;false}}
-    }).await.unwrap_or(false)
-}
-async fn readiness(
-    client: &crate::client::Client,
-    id: &RunIdentity,
-    request: &RunWindows,
-    executable: &Path,
-) {
-    if request.ports.is_empty() {
-        std::future::pending::<()>().await;
-        return;
-    }
-    loop {
-        if probe(executable, &request.ports).await
-            && client.raw_call("windows.ready", id, None).await.is_ok()
-        {
-            std::future::pending::<()>().await;
-            return;
+impl Cadence {
+    fn windows(ready_timeout_sec: u32) -> Self {
+        Self {
+            base: Duration::from_secs(1),
+            settle: Duration::from_secs(ready_timeout_sec.into()),
+            max: Duration::from_secs(30),
         }
-        tokio::time::sleep(Duration::from_secs(1)).await;
     }
+    #[cfg(test)]
+    fn fixed(delay: Duration) -> Self {
+        Self {
+            base: delay,
+            settle: Duration::MAX,
+            max: delay,
+        }
+    }
+    /// Delay after a not-ready reply at `elapsed` since polling began.
+    fn next(&self, previous: Option<Duration>, elapsed: Duration) -> Duration {
+        if elapsed < self.settle {
+            return self.base;
+        }
+        previous
+            .map_or(self.base, |delay| delay.saturating_mul(2))
+            .clamp(self.base, self.max)
+    }
+}
+async fn poll_ready<F, P>(mut accept: F, hint: &tokio::sync::Notify, cadence: Cadence)
+where
+    F: FnMut() -> P,
+    P: std::future::Future<Output = bool>,
+{
+    let started = tokio::time::Instant::now();
+    let mut delay = None;
+    while !accept().await {
+        let next = cadence.next(delay, started.elapsed());
+        delay = Some(next);
+        tokio::select! {_=tokio::time::sleep(next)=>{},_=hint.notified()=>{}}
+    }
+}
+async fn accepted(client: &crate::client::Client, id: &RunIdentity) -> bool {
+    let reply = client.raw_call("windows.ready", id, None).await;
+    matches!(
+        reply.ok().map(|text| serde_json::from_str(&text)),
+        Some(Ok(WindowsReadiness::Ready))
+    )
+}
+/// Never completes; the wrapper never asks the gate for a no-port service.
+async fn readiness<F, P>(ports: &[u16], accept: F, hint: &tokio::sync::Notify, cadence: Cadence)
+where
+    F: FnMut() -> P,
+    P: std::future::Future<Output = bool>,
+{
+    if !ports.is_empty() {
+        poll_ready(accept, hint, cadence).await;
+    }
+    std::future::pending::<()>().await;
 }
 pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     let attempt_id = std::env::var("DEVBOX_RUN_ATTEMPT")
@@ -118,16 +140,25 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         prepared.request.env.insert(key.clone(), value);
     }
     let interop = std::path::PathBuf::from(prepared.interop);
+    let cadence = Cadence::windows(prepared.ready_timeout_sec);
     let request = prepared.request;
     let (started, began) = tokio::sync::oneshot::channel();
     let direct = direct(&request, &interop, started);
     tokio::pin!(direct);
-    let result = tokio::select! {result=&mut direct=>result,_=async { if began.await.is_ok() {readiness(&client,&id,&request,&interop).await;} std::future::pending::<()>().await; }=>unreachable!()};
+    let hint = tokio::sync::Notify::new();
+    let ready = async {
+        if began.await.is_ok() {
+            let accept = || accepted(&client, &id);
+            readiness(&request.ports, accept, &hint, cadence).await;
+        }
+        std::future::pending::<()>().await;
+    };
+    let result = tokio::select! {result=&mut direct=>result,_=ready=>unreachable!()};
     let code = match result {
         Direct::Finished(code) => Some(code),
         Direct::Failed => None,
         // Unknown completion must not trigger systemd service auto-restart.
-        Direct::Unavailable => delegated(&client, &id, &request).await.ok(),
+        Direct::Unavailable => delegated(&client, &id, &request, cadence).await.ok(),
     };
     if let Some(code) = code {
         devbox_runtime::exit_record::ExitStore::new(&paths.data_dir.join("runs"), &id.run_id)?
@@ -141,16 +172,45 @@ async fn delegated(
     client: &crate::client::Client,
     id: &RunIdentity,
     request: &RunWindows,
+    cadence: Cadence,
 ) -> anyhow::Result<i32> {
+    if !request.tracked() {
+        anyhow::bail!("Windows observation is unavailable");
+    }
     let stream = tokio::time::timeout(
         Duration::from_secs(10),
         client.open_stream("windows.run", request),
     )
     .await
     .map_err(|_| anyhow::anyhow!("Windows execution result is unknown"))??;
+    let read = || async { stream.read_chunk().await.map_err(anyhow::Error::from) };
+    let accept = || accepted(client, id);
+    relay(read, id, &request.ports, accept, cadence).await
+}
+/// Reads native events while polling the daemon gate concurrently. A not-ready reply never
+/// aborts the stream, so an unrelated listener seen first cannot strand the run.
+async fn relay<R, RF, C, A, AF>(
+    mut read: R,
+    id: &RunIdentity,
+    ports: &[u16],
+    accept: A,
+    cadence: Cadence,
+) -> anyhow::Result<i32>
+where
+    R: FnMut() -> RF,
+    RF: std::future::Future<Output = anyhow::Result<Option<C>>>,
+    C: AsRef<[u8]>,
+    A: FnMut() -> AF,
+    AF: std::future::Future<Output = bool>,
+{
+    let hint = tokio::sync::Notify::new();
+    let ready = readiness(ports, accept, &hint, cadence);
+    tokio::pin!(ready);
     let mut bytes = Zeroizing::new(Vec::new());
-    while let Some(chunk) = stream.read_chunk().await? {
-        bytes.extend_from_slice(&chunk);
+    loop {
+        let chunk = tokio::select! {chunk=read()=>chunk?,_=&mut ready=>unreachable!()};
+        let Some(chunk) = chunk else { break };
+        bytes.extend_from_slice(chunk.as_ref());
         loop {
             if bytes.len() < 4 {
                 break;
@@ -171,9 +231,8 @@ async fn delegated(
                 WindowsOutput::Stdout { data } => tokio::io::stdout().write_all(&data).await?,
                 WindowsOutput::Stderr { data } => tokio::io::stderr().write_all(&data).await?,
                 WindowsOutput::Heartbeat => {}
-                WindowsOutput::Ready => {
-                    client.raw_call("windows.ready", id, None).await?;
-                }
+                // A connect-level hint only; the gate decides ownership.
+                WindowsOutput::Ready => hint.notify_one(),
                 WindowsOutput::Finished { code } => return Ok(code),
                 WindowsOutput::Failed => anyhow::bail!("Windows execution failed"),
             }
@@ -206,6 +265,15 @@ mod tests {
             command: "Write-Output $env:TOKEN".into(),
             env: [("TOKEN".into(), "owned-non-ascii-비밀".into())].into(),
             ports: vec![],
+            observation: devbox_protocol::windows::ObservationControl {
+                schema: 1,
+                launch_id: "owned-launch".into(),
+                nonce: "0123456789abcdef0123456789abcdef".into(),
+                job_name: "Local\\Devbox.Observe.0123456789abcdef0123456789abcdef".into(),
+                assigned_path: "C:\\owned\\control\\assigned.json".into(),
+                grant_path: "C:\\owned\\control\\grant.json".into(),
+                closed_path: "C:\\owned\\control\\closed.json".into(),
+            },
         }
     }
     #[tokio::test]
@@ -228,6 +296,23 @@ mod tests {
         assert!(began.await.is_ok());
     }
     #[tokio::test]
+    async fn windows_direct_invalid_observation_never_spawns_a_live_adapter() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let marker = temp.path().join("executed");
+        let executable = fake(
+            temp.path(),
+            &format!(
+                "open({:?},'w').write('executed')",
+                marker.to_str().expect("path")
+            ),
+        );
+        let mut invalid = request();
+        invalid.observation.nonce = "invalid".into();
+        let (started, _) = tokio::sync::oneshot::channel();
+        assert_eq!(direct(&invalid, &executable, started).await, Direct::Failed);
+        assert!(!marker.exists());
+    }
+    #[tokio::test]
     async fn windows_direct_started_failure_never_becomes_unavailable() {
         let temp = tempfile::tempdir().expect("fixture result");
         let path = fake(temp.path(), "import sys\nsys.exit(9)");
@@ -246,55 +331,5 @@ mod tests {
             Some(nix::sys::signal::Signal::SIGUSR2 as i32)
         );
         assert_eq!(unknown_exit().code(), None);
-    }
-    #[tokio::test]
-    async fn windows_probe_timeout_and_cancellation_reap_owned_process() {
-        let temp = tempfile::tempdir().expect("fixture result");
-        let pidfile = temp.path().join("pid");
-        let body = format!(
-            "import os,time\nf=open({:?},'w')\ntime.sleep(0.03)\nf.write(str(os.getpid()))\nf.flush()\ntime.sleep(60)",
-            pidfile.to_str().expect("fixture value")
-        );
-        let path = fake(temp.path(), &body);
-        assert!(!probe_with_timeout(&path, &[12345], Duration::from_millis(250)).await);
-        let pid = fs::read_to_string(&pidfile).expect("fixture result");
-        assert!(!Path::new(&format!("/proc/{pid}")).exists());
-        fs::remove_file(&pidfile).expect("fixture result");
-        let task = tokio::spawn(async move {
-            probe_with_timeout(&path, &[12345], Duration::from_secs(60)).await
-        });
-        // File creation precedes the PID write; wait for a complete positive identity.
-        let pid = tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if let Ok(text) = fs::read_to_string(&pidfile)
-                    && let Ok(pid) = text.parse::<u32>()
-                    && pid > 1
-                {
-                    break pid;
-                }
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .expect("fixture result");
-        eprintln!("owned cancelled probe pid={pid}");
-        task.abort();
-        let _ = task.await;
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while Path::new(&format!("/proc/{pid}")).exists() {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
-        })
-        .await
-        .expect("fixture result");
-    }
-    #[tokio::test]
-    async fn windows_direct_probe_passes_ports_to_windows_process_stdin() {
-        let temp = tempfile::tempdir().expect("fixture result");
-        let path = fake(
-            temp.path(),
-            "import sys,json\nassert json.load(sys.stdin)==[12345,12346]\nassert 'TcpClient' in sys.argv[-1]\nsys.exit(0)",
-        );
-        assert!(probe(&path, &[12345, 12346]).await);
     }
 }

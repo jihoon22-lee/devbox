@@ -20,6 +20,9 @@ service Echo {
   rpc Slow(Payload) returns (stream Payload);
   rpc Fail(Payload) returns (Payload);
   rpc Client(stream Payload) returns (Payload);
+  rpc Credentials(Payload) returns (Payload);
+  rpc CredentialTrailers(Payload) returns (Payload);
+  rpc CredentialStream(Payload) returns (stream Payload);
 }
 "#;
 
@@ -89,6 +92,49 @@ impl tonic::server::UnaryService<Payload> for Unary {
     }
 }
 
+struct Credentials(bool);
+impl tonic::server::UnaryService<Payload> for Credentials {
+    type Response = Payload;
+    type Future = BoxFuture<Response<Payload>, Status>;
+    fn call(&mut self, request: Request<Payload>) -> Self::Future {
+        let trailer = self.0;
+        Box::pin(async move {
+            let credential = request
+                .metadata()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            let issued = if trailer {
+                "grpc-trailer-issued"
+            } else {
+                "grpc-header-issued"
+            };
+            let text = format!("{credential} {issued} ordinary-literal");
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(
+                "set-cookie",
+                format!("session={issued}; Path=/").parse().expect("cookie"),
+            );
+            metadata.insert("x-api-key", "response-only-key".parse().expect("key"));
+            metadata.insert("x-readable", "ordinary-literal".parse().expect("ordinary"));
+            if trailer {
+                Err(Status::with_metadata(
+                    tonic::Code::PermissionDenied,
+                    text,
+                    metadata,
+                ))
+            } else {
+                let mut response = Response::new(Payload {
+                    name: text,
+                    count: 1,
+                });
+                *response.metadata_mut() = metadata;
+                Ok(response)
+            }
+        })
+    }
+}
+
 struct Failing;
 impl tonic::server::UnaryService<Payload> for Failing {
     type Response = Payload;
@@ -96,6 +142,38 @@ impl tonic::server::UnaryService<Payload> for Failing {
     fn call(&mut self, request: Request<Payload>) -> Self::Future {
         let name = request.into_inner().name;
         Box::pin(async move { Err(Status::permission_denied(format!("denied:{name}"))) })
+    }
+}
+
+struct CredentialStream;
+impl tonic::server::ServerStreamingService<Payload> for CredentialStream {
+    type Response = Payload;
+    type ResponseStream = Messages;
+    type Future = BoxFuture<Response<Messages>, Status>;
+    fn call(&mut self, _: Request<Payload>) -> Self::Future {
+        Box::pin(async move {
+            let mut metadata = tonic::metadata::MetadataMap::new();
+            metadata.insert(
+                "set-cookie",
+                "session=grpc-trailer-issued; Path=/"
+                    .parse()
+                    .expect("cookie"),
+            );
+            metadata.insert("x-api-key", "response-only-key".parse().expect("key"));
+            let items = vec![
+                Ok(Payload {
+                    name: "ordinary-literal".into(),
+                    count: 1,
+                }),
+                Err(Status::with_metadata(
+                    tonic::Code::PermissionDenied,
+                    "grpc-trailer-issued ordinary-literal",
+                    metadata,
+                )),
+            ];
+            let stream: Messages = Box::pin(futures::stream::iter(items));
+            Ok(Response::new(stream))
+        })
     }
 }
 
@@ -171,6 +249,11 @@ impl Service<http::Request<tonic::body::Body>> for Echo {
             Ok(match path.as_str() {
                 "/demo.Echo/Unary" => grpc.unary(Unary, request).await,
                 "/demo.Echo/Fail" => grpc.unary(Failing, request).await,
+                "/demo.Echo/Credentials" => grpc.unary(Credentials(false), request).await,
+                "/demo.Echo/CredentialTrailers" => grpc.unary(Credentials(true), request).await,
+                "/demo.Echo/CredentialStream" => {
+                    grpc.server_streaming(CredentialStream, request).await
+                }
                 "/demo.Echo/Server" => {
                     grpc.server_streaming(Streaming(state, false), request)
                         .await
@@ -178,6 +261,95 @@ impl Service<http::Request<tonic::body::Body>> for Echo {
                 "/demo.Echo/Slow" => grpc.server_streaming(Streaming(state, true), request).await,
                 _ => Status::unimplemented("").into_http(),
             })
+        })
+    }
+}
+
+struct HeldReflection {
+    descriptors: Vec<Vec<u8>>,
+}
+#[tonic::async_trait]
+impl tonic_reflection::pb::v1::server_reflection_server::ServerReflection for HeldReflection {
+    type ServerReflectionInfoStream = Pin<
+        Box<
+            dyn futures::Stream<
+                    Item = Result<tonic_reflection::pb::v1::ServerReflectionResponse, Status>,
+                > + Send,
+        >,
+    >;
+    async fn server_reflection_info(
+        &self,
+        request: Request<tonic::Streaming<tonic_reflection::pb::v1::ServerReflectionRequest>>,
+    ) -> Result<Response<Self::ServerReflectionInfoStream>, Status> {
+        use futures::StreamExt;
+        use tonic_reflection::pb::v1 as pb;
+        let original = request
+            .into_inner()
+            .message()
+            .await?
+            .ok_or_else(|| Status::invalid_argument("missing"))?;
+        let answer = match original.message_request.as_ref() {
+            Some(pb::server_reflection_request::MessageRequest::ListServices(_)) => {
+                pb::server_reflection_response::MessageResponse::ListServicesResponse(
+                    pb::ListServiceResponse {
+                        service: vec![pb::ServiceResponse {
+                            name: "demo.Echo".into(),
+                        }],
+                    },
+                )
+            }
+            _ => pb::server_reflection_response::MessageResponse::FileDescriptorResponse(
+                pb::FileDescriptorResponse {
+                    file_descriptor_proto: self.descriptors.clone(),
+                },
+            ),
+        };
+        let response = pb::ServerReflectionResponse {
+            valid_host: String::new(),
+            original_request: Some(original),
+            message_response: Some(answer),
+        };
+        Ok(Response::new(Box::pin(
+            futures::stream::iter([Ok(response)]).chain(futures::stream::pending()),
+        )))
+    }
+}
+
+#[derive(Clone)]
+struct CookieReflection<S> {
+    inner: S,
+    cookie: Option<&'static str>,
+}
+impl<S: tonic::server::NamedService> tonic::server::NamedService for CookieReflection<S> {
+    const NAME: &'static str = S::NAME;
+}
+impl<S> Service<http::Request<tonic::body::Body>> for CookieReflection<S>
+where
+    S: Service<
+            http::Request<tonic::body::Body>,
+            Response = http::Response<tonic::body::Body>,
+            Error = Infallible,
+        > + Send
+        + 'static,
+    S::Future: Send + 'static,
+{
+    type Response = http::Response<tonic::body::Body>;
+    type Error = Infallible;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+    fn call(&mut self, request: http::Request<tonic::body::Body>) -> Self::Future {
+        let future = self.inner.call(request);
+        let cookie = self.cookie;
+        Box::pin(async move {
+            let mut response = future.await?;
+            if let Some(cookie) = cookie {
+                response
+                    .headers_mut()
+                    .append("set-cookie", cookie.parse().expect("cookie"));
+            }
+            Ok(response)
         })
     }
 }
@@ -200,6 +372,13 @@ impl GrpcServer {
     }
     /// `alpha`면 reflection v1alpha만 띄운다(v1은 Unimplemented → 클라이언트가 v1alpha로 넘어가야 함).
     pub async fn start_with(reflection: Option<Vec<u8>>, alpha: bool) -> Self {
+        Self::start_cookie(reflection, alpha, None).await
+    }
+    pub async fn start_cookie(
+        reflection: Option<Vec<u8>>,
+        alpha: bool,
+        cookie: Option<&'static str>,
+    ) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind owned fixture");
@@ -219,13 +398,52 @@ impl GrpcServer {
             let builder = tonic_reflection::server::Builder::configure()
                 .register_encoded_file_descriptor_set(&set);
             router = if alpha {
-                router.add_service(builder.build_v1alpha().expect("reflection v1alpha"))
+                router.add_service(CookieReflection {
+                    inner: builder.build_v1alpha().expect("reflection v1alpha"),
+                    cookie,
+                })
             } else {
-                router.add_service(builder.build_v1().expect("reflection v1"))
+                router.add_service(CookieReflection {
+                    inner: builder.build_v1().expect("reflection v1"),
+                    cookie,
+                })
             };
         }
         let task = tokio::spawn(async move {
             let _ = router.serve_with_incoming(incoming).await;
+        });
+        Self {
+            state,
+            address,
+            task,
+        }
+    }
+    pub async fn held_reflection(encoded: Vec<u8>) -> Self {
+        let set: prost_reflect::prost_types::FileDescriptorSet =
+            prost::Message::decode(encoded.as_slice()).expect("descriptor");
+        let held = HeldReflection {
+            descriptors: set.file.iter().map(prost::Message::encode_to_vec).collect(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("owned listener");
+        let address = listener.local_addr().expect("address");
+        let state = Arc::new(State::default());
+        let echo = Echo(state.clone());
+        let incoming = futures::stream::unfold(listener, |listener| async {
+            let socket = listener.accept().await.map(|(socket, _)| socket);
+            Some((socket, listener))
+        });
+        let task = tokio::spawn(async move {
+            let _ = tonic::transport::Server::builder()
+                .add_service(echo)
+                .add_service(
+                    tonic_reflection::pb::v1::server_reflection_server::ServerReflectionServer::new(
+                        held,
+                    ),
+                )
+                .serve_with_incoming(incoming)
+                .await;
         });
         Self {
             state,

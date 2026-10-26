@@ -1,9 +1,11 @@
 import { useRpcQuery } from "../../rpc/query";
 import { QueryResult } from "./QueryResult";
+import { Update } from "./Update";
 export function AboutSettings() {
   const info = useRpcQuery("system.info", {});
   return (
     <>
+      <Update />
       <section aria-label="데몬 정보">
         <h3>데몬 정보</h3>
         <QueryResult pending={info.isPending} error={info.error} retry={() => void info.refetch()}>

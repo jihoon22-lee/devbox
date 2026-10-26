@@ -25,6 +25,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ env.SOURCE_SHA }}
+      - run: python3 scripts/release.py
       - id: diff
         env:
           EVENT: ${{ github.event_name }}
@@ -43,7 +44,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools tmux
+      - run: python3 scripts/verify-resources.py -- cargo test --locked -p devbox-cli --lib --release --target x86_64-unknown-linux-musl
       - run: bash scripts/build-linux.sh release
       - run: |
           mkdir out
@@ -102,11 +104,10 @@ jobs:
         run: |
           $receipt = Get-Content app/src-tauri/resources/linux-receipt.json -Raw | ConvertFrom-Json
           if ($receipt.source_sha -ne $env:SOURCE_SHA -or $receipt.sha256 -ne (Get-FileHash app/src-tauri/resources/devbox-linux).Hash.ToLowerInvariant()) { throw 'Linux artifact provenance mismatch' }
-          & ./scripts/tests/windows-sync.ps1
-          & ./scripts/tests/windows-package.ps1
-          & ./scripts/tests/windows-dev.ps1
-          & ./scripts/win-package.ps1 -Verify
-          if ('${{ github.event_name }}' -in @('pull_request', 'workflow_dispatch')) { & ./scripts/win-package.ps1 -Channel accept }
+          & ./scripts/tests/windows-orchestration.ps1
+          $channels = @('prod')
+          if ('${{ github.event_name }}' -in @('pull_request', 'workflow_dispatch')) { $channels += 'accept' }
+          & ./scripts/win-package.ps1 -Verify -Channel $channels
       - uses: actions/upload-artifact@v4
         if: needs.changes.outputs.code == 'true'
         with:
@@ -121,3 +122,18 @@ jobs:
           path: app/src-tauri/target/accept/release/bundle/nsis/
           if-no-files-found: error
           retention-days: 14
+  release:
+    needs: [changes, linux-bin, windows]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ env.SOURCE_SHA }}", fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { name: devbox-setup, path: installer }
+      - run: python3 scripts/release.py installer
+        env:
+          GH_TOKEN: ${{ github.token }}

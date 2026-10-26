@@ -5,7 +5,7 @@
 use super::buffer::Buffer;
 use super::sse_parse::SseParser;
 use super::{CONNECT_TIMEOUT, RealtimeEvent};
-use crate::redact::Redactor;
+use crate::redact::Redaction;
 use crate::tls::{self, Resolver};
 use crate::validate;
 use crate::{ApiError, Auth, Body, RequestSnapshot, SseOpen};
@@ -26,6 +26,16 @@ pub(crate) struct Prepared {
     headers: Vec<(HeaderName, HeaderValue)>,
     client: reqwest::Client,
     last_event_id: Option<String>,
+}
+
+impl Prepared {
+    pub(crate) fn seed(&self, redaction: &mut Redaction) -> Result<(), ApiError> {
+        redaction.request_headers(
+            self.headers
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )
+    }
 }
 
 pub(crate) fn snapshot(p: &SseOpen) -> RequestSnapshot {
@@ -85,7 +95,7 @@ pub(crate) fn prepare(
 pub(crate) struct Session {
     pub(crate) prepared: Prepared,
     pub(crate) tx: devbox_protocol::stream::StreamTx,
-    pub(crate) redactor: Redactor,
+    pub(crate) redaction: Redaction,
     pub(crate) clock: crate::Clock,
     /// 세션이 끝나 Session이 버려질 때 자리를 돌려준다.
     pub(crate) _permit: tokio::sync::OwnedSemaphorePermit,
@@ -115,7 +125,7 @@ fn is_event_stream(response: &reqwest::Response) -> bool {
 }
 
 /// 연결 하나: 응답 머리를 확인하고 본문을 끝까지 읽는다.
-async fn connection(s: &Session, state: &mut State, buffer: &Buffer) -> Ended {
+async fn connection(s: &mut Session, state: &mut State, buffer: &Buffer) -> Ended {
     let closed = s.tx.closed();
     let p = &s.prepared;
     let mut request = p
@@ -138,6 +148,14 @@ async fn connection(s: &Session, state: &mut State, buffer: &Buffer) -> Ended {
         Err(_) | Ok(Err(_)) => return Ended::Dropped { delivered: false },
         Ok(Ok(response)) => response,
     };
+    if let Err(error) = s.redaction.response_headers(
+        response
+            .headers()
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_bytes())),
+    ) {
+        return Ended::Stop(super::failed(&error));
+    }
     let status = response.status().as_u16();
     if status == 204 {
         return Ended::Stop(RealtimeEvent::Closed {
@@ -179,9 +197,9 @@ async fn connection(s: &Session, state: &mut State, buffer: &Buffer) -> Ended {
             let size = event.data.len();
             buffer.message(
                 RealtimeEvent::SseEvent {
-                    id: event.id.as_deref().map(|id| s.redactor.text(id)),
-                    event: Some(s.redactor.text(&event.event)),
-                    data: s.redactor.text(&event.data),
+                    id: event.id.as_deref().map(|id| s.redaction.redactor.text(id)),
+                    event: Some(s.redaction.redactor.text(&event.event)),
+                    data: s.redaction.redactor.text(&event.data),
                     retry_ms: event.retry_ms.map(|ms| ms as i64),
                     at_ms: (s.clock)(),
                 },
@@ -197,7 +215,7 @@ async fn connection(s: &Session, state: &mut State, buffer: &Buffer) -> Ended {
     }
 }
 
-async fn session(s: &Session, buffer: &Buffer) -> &'static str {
+async fn session(s: &mut Session, buffer: &Buffer) -> &'static str {
     let closed = s.tx.closed();
     let mut state = State {
         last_event_id: s.prepared.last_event_id.clone(),
@@ -231,7 +249,10 @@ async fn session(s: &Session, buffer: &Buffer) -> &'static str {
                 recent.push_back(now);
                 buffer.control(RealtimeEvent::Reconnecting {
                     attempt,
-                    last_event_id: state.last_event_id.as_deref().map(|id| s.redactor.text(id)),
+                    last_event_id: state
+                        .last_event_id
+                        .as_deref()
+                        .map(|id| s.redaction.redactor.text(id)),
                 });
                 let wait = state
                     .retry_ms
@@ -252,16 +273,17 @@ async fn session(s: &Session, buffer: &Buffer) -> &'static str {
 }
 
 /// 세션과 화면 쓰기를 함께 돌린다. 반환 뒤에는 연결·쓰기가 끝나 있고 세션 자리(permit)도 돌아간다.
-pub(crate) async fn run(s: Session) {
+pub(crate) async fn run(mut s: Session) {
     let started = std::time::Instant::now();
     let buffer = Buffer::default();
-    let closed = s.tx.closed();
+    let tx = s.tx.clone();
+    let closed = tx.closed();
     let work = async {
-        let outcome = session(&s, &buffer).await;
+        let outcome = session(&mut s, &buffer).await;
         buffer.end();
         outcome
     };
-    let (outcome, written) = tokio::join!(work, super::drain(&buffer, &s.tx));
+    let (outcome, written) = tokio::join!(work, super::drain(&buffer, &tx));
     if written.is_ok() && !closed.is_cancelled() {
         s.tx.finish().await;
     }

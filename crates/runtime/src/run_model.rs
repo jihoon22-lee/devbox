@@ -96,7 +96,9 @@ pub struct RunDetail {
 #[serde(deny_unknown_fields)]
 pub struct RunSummaryQuery {}
 #[derive(Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub rev: String,
     pub active: u32,
+    pub active_services: u32,
 }

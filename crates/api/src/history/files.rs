@@ -71,7 +71,11 @@ fn atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// 본문(이미 가린 것)이 1MiB 이하면 JSON 안에, 넘으면 `.body`에 둔다.
-pub(crate) fn write(root: &Path, mut entry: HistoryEntry, body: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write(
+    root: &Path,
+    mut entry: HistoryEntry,
+    body: &[u8],
+) -> std::io::Result<super::proof::Receipt> {
     let day = day(entry.sent_at_ms);
     if body.len() > INLINE_BODY {
         atomic(&body_path(root, &day, &entry.id), body)?;
@@ -80,7 +84,8 @@ pub(crate) fn write(root: &Path, mut entry: HistoryEntry, body: &[u8]) -> std::i
         entry.body_base64 = data_encoding::BASE64.encode(body);
     }
     let json = serde_json::to_vec(&entry).map_err(std::io::Error::other)?;
-    atomic(&entry_path(root, &day, &entry.id), &json)
+    atomic(&entry_path(root, &day, &entry.id), &json)?;
+    Ok(super::proof::Receipt::new(entry.id, day, &json, body))
 }
 
 /// 화면에는 본문을 1MiB까지만 준다.

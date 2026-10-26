@@ -53,6 +53,15 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
   const [ask, setAsk] = useState<() => void>();
   const [saving, setSaving] = useState(false);
   const writing = useRef(false);
+  const reads = useRef({ key, generation: 0 });
+  useLayoutEffect(() => {
+    const owner = { key, generation: 0 };
+    reads.current = owner;
+    setAsk(undefined);
+    return () => {
+      owner.generation++;
+    };
+  }, [key]);
   const files = list.items.filter((item) => isEnvPath(item.path));
   const dirty = isDirtyEnv(editing);
 
@@ -63,8 +72,8 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
         byRoot: { ...state.byRoot, [key]: typeof next === "function" ? next(current) : { ...current, ...next } },
       };
     });
-  // 활성 환경은 지금 보이는 루트의 초안에서만 발행한다. 이전 루트의 비동기 작업은
-  // 그 루트의 초안만 갱신하므로 현재 보내기·실행기·코드 생성 입력을 덮어쓰지 않는다.
+  // 활성 환경은 지금 보이는 루트의 초안에서만 발행한다. 이전 루트의 읽기는
+  // 무효화하고, 쓰기 ACK는 원래 루트에 남겨 현재 송신·실행 입력을 덮지 않는다.
   useLayoutEffect(() => {
     useApiTabs
       .getState()
@@ -79,16 +88,27 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
   const guarded = (action: () => void) => (dirty ? setAsk(() => action) : action());
 
   const load = async (path: string) => {
+    const owner = reads.current;
+    const generation = ++owner.generation;
+    // Immutable editing identity is the draft revision, including edits reverted
+    // to their old text and save/review acknowledgements that advance metadata.
+    const revision = useEnvDrafts.getState().byRoot[key]?.editing;
+    const ownsRead = () =>
+      reads.current === owner &&
+      owner.key === key &&
+      owner.generation === generation &&
+      useEnvDrafts.getState().byRoot[key]?.editing === revision;
     patch({ notice: undefined });
     if (!path) return apply(undefined);
     try {
       const read = await backend.read(root, path);
+      if (!ownsRead()) return;
       const file = parseEnvFile(read.text);
       const rows = file.variables.map((v) => row(v.name, v.value));
       const unreviewed = root.kind === "project" && !read.reviewed;
       apply({ path, digest: read.digest, name: file.name, rows, baseline: snapshot(file.name, rows), unreviewed });
     } catch (error) {
-      patch({ notice: errorText(error, "환경 파일을 읽지 못했습니다.") });
+      if (ownsRead()) patch({ notice: errorText(error, "환경 파일을 읽지 못했습니다.") });
     }
   };
   const confirmReview = async () => {

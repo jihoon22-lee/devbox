@@ -153,7 +153,10 @@ async fn live_cross_origin_redirect_strips_auth_and_redacts_every_return_path() 
         .iter()
         .find(|h| h.name == "set-cookie")
         .expect("set-cookie");
-    assert_eq!(set_cookie.value, "sid=[REDACTED]");
+    assert_eq!(
+        set_cookie.value, "[REDACTED]",
+        "Set-Cookie display is masked by header name"
+    );
     assert_eq!(redirects.len(), 1);
     assert!(redirects[0].location.contains("request_id=redirect-ok"));
     assert!(
@@ -298,4 +301,115 @@ async fn same_origin_redirect_keeps_credentials() {
     assert_eq!(next.method, "PUT");
     assert_eq!(next.header("authorization"), ["Bearer same-origin"]);
     assert_eq!(next.body_text(), "{}");
+}
+
+/// Cookie-derived values (response Set-Cookie and request cookie rows) are display-redaction
+/// seeds only: an OAuth-style `state` echoed in a cross-origin Location is followed.
+#[tokio::test]
+async fn cookie_values_in_a_cross_origin_location_are_followed_and_still_redacted() {
+    let api = Harness::new().await;
+    let destination = Server::ok().await;
+    let port = destination.addr.port();
+    let start = Server::start(handler(move |_| async move {
+        Reply::redirect(
+            302,
+            &format!(
+                "http://127.0.0.1:{port}/authorize?state=fixture-state-cookie-913&sid=fixture-row-cookie-824"
+            ),
+        )
+        .header("set-cookie", "oauth_state=fixture-state-cookie-913; Path=/")
+    }))
+    .await;
+    let mut input = snapshot("GET", &start.url("/login"));
+    input
+        .cookies
+        .push(header(0, "sid", "fixture-row-cookie-824"));
+    let events = api.complete(request(input)).await;
+    let (status, _, redirects) = head(&events);
+    assert_eq!(status, 200, "cross-origin hop is followed");
+    assert_eq!(destination.requests().len(), 1);
+    assert_eq!(
+        destination.only().query_pairs(),
+        [
+            ("state".into(), "fixture-state-cookie-913".into()),
+            ("sid".into(), "fixture-row-cookie-824".into())
+        ]
+    );
+    assert_eq!(redirects.len(), 1);
+    let text = serde_json::to_string(&events).expect("events");
+    for value in ["fixture-state-cookie-913", "fixture-row-cookie-824"] {
+        assert!(!text.contains(value), "display stays redacted");
+        assert!(
+            !contains(&api.history_bytes(), value),
+            "history stays redacted"
+        );
+    }
+}
+
+#[tokio::test]
+async fn custom_header_carrying_a_cookie_value_is_dropped_on_a_cross_origin_hop() {
+    let api = Harness::new().await;
+    let destination = Server::ok().await;
+    let port = destination.addr.port();
+    let start = Server::start(handler(move |_| async move {
+        Reply::redirect(302, &format!("http://127.0.0.1:{port}/next"))
+            .header("set-cookie", "issued=fixture-issued-cookie-466; Path=/")
+    }))
+    .await;
+    let mut input = snapshot("GET", &start.url("/start"));
+    input
+        .cookies
+        .push(header(0, "sid", "fixture-session-cookie-357"));
+    input
+        .headers
+        .push(header(0, "x-session", "fixture-session-cookie-357"));
+    input
+        .headers
+        .push(header(1, "x-echo", "fixture-issued-cookie-466"));
+    input
+        .headers
+        .push(header(2, "x-public", "public-header-value"));
+    let events = api.complete(request(input)).await;
+    assert_eq!(head(&events).0, 200);
+    let origin = start.only();
+    assert_eq!(origin.header("x-session"), ["fixture-session-cookie-357"]);
+    let seen = destination.only();
+    assert!(
+        seen.header("x-session").is_empty(),
+        "session value never crosses"
+    );
+    assert!(
+        seen.header("x-echo").is_empty(),
+        "issued cookie value never crosses"
+    );
+    assert!(
+        seen.header("cookie").is_empty(),
+        "cookies never cross origins"
+    );
+    assert_eq!(seen.header("x-public"), ["public-header-value"]);
+}
+
+#[tokio::test]
+async fn direct_authorization_value_in_a_cross_origin_location_still_blocks() {
+    let api = Harness::new().await;
+    let destination = Server::ok().await;
+    let port = destination.addr.port();
+    let redirect = Server::start(handler(move |_| async move {
+        Reply::redirect(
+            302,
+            &format!("http://127.0.0.1:{port}/finish?token=fixture-direct-auth-735"),
+        )
+    }))
+    .await;
+    let mut input = snapshot("GET", &redirect.url("/start"));
+    // The same bytes also arrive as a cookie row: the credential origin must win.
+    input
+        .cookies
+        .push(header(0, "mirror", "fixture-direct-auth-735"));
+    input
+        .headers
+        .push(header(0, "Authorization", "Bearer fixture-direct-auth-735"));
+    let events = api.complete(request(input)).await;
+    assert_eq!(failure_kind(&events), "api.network:redirect");
+    assert_eq!(destination.accepted_connections(), 0);
 }

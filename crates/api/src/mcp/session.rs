@@ -4,7 +4,7 @@
 use super::{McpEvent, McpInput, McpList, http, stdio};
 use crate::ApiError;
 use crate::realtime::ws::Lines;
-use crate::redact::Redactor;
+use crate::redact::Redaction;
 use bytes::Bytes;
 use devbox_protocol::stream::StreamTx;
 use serde_json::{Value, json};
@@ -25,7 +25,7 @@ pub(crate) struct Session {
     pub(crate) transport: Prepared,
     pub(crate) tx: StreamTx,
     pub(crate) input: mpsc::Receiver<Bytes>,
-    pub(crate) values: Vec<String>,
+    pub(crate) redaction: Redaction,
     pub(crate) _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -35,23 +35,22 @@ enum Conn {
 }
 
 impl Conn {
-    async fn send(&mut self, message: &Value, tx: &StreamTx) -> Result<(), ApiError> {
+    async fn send(
+        &mut self,
+        message: &Value,
+        tx: &StreamTx,
+        redaction: &mut Redaction,
+    ) -> Result<(), ApiError> {
         let bytes = serde_json::to_vec(message).map_err(|_| ApiError::mcp("encode"))?;
         match self {
             Conn::Stdio(c) => c.send(&bytes).await,
-            Conn::Http(h) => h.send(&bytes, tx).await,
+            Conn::Http(h) => h.send(&bytes, tx, redaction).await,
         }
     }
     async fn recv(&mut self) -> Result<Option<Vec<u8>>, ApiError> {
         match self {
             Conn::Stdio(c) => c.recv().await,
             Conn::Http(h) => h.recv().await,
-        }
-    }
-    fn token(&self) -> Option<String> {
-        match self {
-            Conn::Stdio(_) => None,
-            Conn::Http(h) => h.token().map(str::to_owned),
         }
     }
     async fn close(self) {
@@ -147,22 +146,12 @@ fn ui_id(input: &McpInput) -> &str {
 
 struct Driver<'a> {
     tx: &'a StreamTx,
-    redactor: Redactor,
-    values: Vec<String>,
+    redaction: Redaction,
     next: i64,
     pending: HashMap<i64, (String, Instant)>,
 }
 
 impl Driver<'_> {
-    fn refresh(&mut self, conn: &Conn) {
-        if let Some(token) = conn.token()
-            && !self.values.contains(&token)
-        {
-            self.values.push(token);
-            self.redactor = Redactor::new(&self.values);
-        }
-    }
-
     async fn emit(&self, event: McpEvent) -> Result<(), ApiError> {
         write(self.tx, &event)
             .await
@@ -170,7 +159,7 @@ impl Driver<'_> {
     }
 
     fn shown(&self, value: &Value) -> String {
-        self.redactor.text(&value.to_string())
+        self.redaction.redactor.text(&value.to_string())
     }
 
     /// 서버 메시지 하나. 응답이면 `(id, 결과)`를 돌려준다.
@@ -188,7 +177,7 @@ impl Driver<'_> {
                 } else {
                     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "method not supported" } })
                 };
-                conn.send(&reply, self.tx).await?;
+                conn.send(&reply, self.tx, &mut self.redaction).await?;
             }
             return Ok(None);
         }
@@ -207,8 +196,7 @@ impl Driver<'_> {
                 "clientInfo": { "name": "devbox", "version": env!("CARGO_PKG_VERSION") },
             },
         });
-        conn.send(&init, self.tx).await?;
-        self.refresh(conn);
+        conn.send(&init, self.tx, &mut self.redaction).await?;
         let deadline = Instant::now() + super::REQUEST_TIMEOUT;
         let reply = loop {
             let next = tokio::time::timeout_at(deadline, conn.recv())
@@ -229,18 +217,19 @@ impl Driver<'_> {
         if let Conn::Http(h) = conn {
             h.set_protocol(&protocol);
         }
-        let text = |v: &Value| self.redactor.text(v.as_str().unwrap_or(""));
-        let ready = McpEvent::Ready {
-            server_name: text(&result["serverInfo"]["name"]),
-            server_version: text(&result["serverInfo"]["version"]),
-            protocol_version: self.redactor.text(&protocol),
-            capabilities_json: self.shown(result.get("capabilities").unwrap_or(&json!({}))),
-        };
         conn.send(
             &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
             self.tx,
+            &mut self.redaction,
         )
         .await?;
+        let text = |v: &Value| self.redaction.redactor.text(v.as_str().unwrap_or(""));
+        let ready = McpEvent::Ready {
+            server_name: text(&result["serverInfo"]["name"]),
+            server_version: text(&result["serverInfo"]["version"]),
+            protocol_version: self.redaction.redactor.text(&protocol),
+            capabilities_json: self.shown(result.get("capabilities").unwrap_or(&json!({}))),
+        };
         self.emit(ready).await
     }
 
@@ -273,9 +262,9 @@ impl Driver<'_> {
         conn.send(
             &json!({ "jsonrpc": "2.0", "id": rpc, "method": method, "params": params }),
             self.tx,
+            &mut self.redaction,
         )
         .await?;
-        self.refresh(conn);
         Ok(())
     }
 
@@ -291,7 +280,10 @@ impl Driver<'_> {
             (None, Some(error)) => McpEvent::Error {
                 id,
                 code: error["code"].as_i64().unwrap_or(-32603),
-                message: self.redactor.text(error["message"].as_str().unwrap_or("")),
+                message: self
+                    .redaction
+                    .redactor
+                    .text(error["message"].as_str().unwrap_or("")),
             },
             _ => McpEvent::Error {
                 id,
@@ -350,7 +342,7 @@ pub(crate) async fn run(s: Session) {
         transport,
         tx,
         mut input,
-        values,
+        redaction,
         _permit,
     } = s;
     let closed = tx.closed();
@@ -368,8 +360,7 @@ pub(crate) async fn run(s: Session) {
     };
     let mut driver = Driver {
         tx: &tx,
-        redactor: Redactor::new(&values),
-        values,
+        redaction,
         next: 0,
         pending: HashMap::new(),
     };

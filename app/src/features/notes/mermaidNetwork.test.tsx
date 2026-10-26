@@ -1,10 +1,35 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { Preview } from "./Preview";
 import { NotesWire } from "./test-wire";
 
+const fetchAttempt = vi.fn();
+const imageUrls: string[] = [];
+let xhrAttempt: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  imageUrls.length = 0;
+  class TrackedImage {
+    naturalWidth = 10;
+    naturalHeight = 10;
+    set src(url: string) {
+      imageUrls.push(url);
+    }
+    async decode() {}
+  }
+  vi.stubGlobal("Image", TrackedImage);
+  fetchAttempt.mockReset();
+  vi.stubGlobal("fetch", fetchAttempt.mockRejectedValue(new Error("unexpected resource request")));
+  xhrAttempt = vi.spyOn(XMLHttpRequest.prototype, "open").mockImplementation(() => {
+    throw new Error("unexpected XHR");
+  });
+});
+
 afterEach(() => {
+  expect(imageUrls).toEqual([]);
+  expect(fetchAttempt).not.toHaveBeenCalled();
+  expect(xhrAttempt).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -14,16 +39,6 @@ test.each([
   'sequenceDiagram\nparticipant A\nproperties A: {"icon":"https://example.invalid/tracker.png"}\nA->>A: hi',
   'sequenceDiagram\nparticipant A\nproperties A: {"icon":"tracker.png"}\nA->>A: hi',
 ])("real Mermaid cannot load or insert resource images: %s", async (source) => {
-  const urls: string[] = [];
-  class TrackedImage {
-    naturalWidth = 10;
-    naturalHeight = 10;
-    set src(url: string) {
-      urls.push(url);
-    }
-    async decode() {}
-  }
-  vi.stubGlobal("Image", TrackedImage);
   const wire = new NotesWire();
   wire.handlers["notes.render"] = () => ({
     html: '<div class="mermaid-block" data-idx="0"></div>',
@@ -35,7 +50,7 @@ test.each([
     </RpcProvider>,
   );
   await screen.findByText("외부 리소스 차단을 위해 이 다이어그램 종류나 문법은 표시하지 않습니다.");
-  expect(urls).toEqual([]);
+  expect(imageUrls).toEqual([]);
 });
 
 test.each(["flowchart TD; A-->B", "sequenceDiagram\nparticipant A\nA->>A: hi"])(
@@ -60,6 +75,13 @@ test.each(["flowchart TD; A-->B", "sequenceDiagram\nparticipant A\nA->>A: hi"])(
         </RpcProvider>,
       );
       await waitFor(() => expect(view.container.querySelector("svg")).not.toBeNull());
+      const svg = view.container.querySelector("svg");
+      const labels = [...(svg?.querySelectorAll("text,tspan") ?? [])].map((el) => el.textContent).join(" ");
+      expect(labels).toContain("A");
+      expect(labels).toContain(source.startsWith("flowchart") ? "B" : "hi");
+      expect(svg?.querySelector("path,line,rect")).not.toBeNull();
+      expect(svg?.querySelector("image,use,foreignObject,[href],[src]")).toBeNull();
+      expect(svg?.outerHTML).not.toMatch(/url\(\s*["']?(?:https?:|\/\/)|@import/i);
     } finally {
       if (textLength) Object.defineProperty(SVGElement.prototype, "getComputedTextLength", textLength);
       else Reflect.deleteProperty(SVGElement.prototype, "getComputedTextLength");

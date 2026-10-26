@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub struct Services {
-    pub(super) windows: super::windows_broker::WindowsBroker,
+    pub(super) windows: Arc<super::windows_broker::WindowsBroker>,
     pub(super) runtime: super::system::Runtime,
     pub version: &'static str,
     pub daemon_id: String,

@@ -121,6 +121,31 @@ async fn graph_rejects_windows_command_templates_reserved_env_and_locked_secrets
             ));
         }
     }
+    f.runs
+        .define(DefineRun {
+            project_id: f.project.clone(),
+            save_to: SaveTo::ThisPc,
+            def: RunDef::Task(TaskDef {
+                id: "win".into(),
+                command: "true".into(),
+                target: RunTarget::Windows,
+                ..Default::default()
+            }),
+        })
+        .await
+        .expect("define");
+    let Err(devbox_protocol::Fail::Domain(RuntimeError::DefInvalid { reason, .. })) = f
+        .runs
+        .authorize_run_graph(&StartRun {
+            project_id: f.project.clone(),
+            id: "win".into(),
+            worktree: None,
+        })
+        .await
+    else {
+        panic!("a Windows target without windows.root must be a typed DefInvalid");
+    };
+    assert!(reason.contains("windows.root"), "{reason}");
     assert!(
         f.runs
             .runs(RunsQuery {

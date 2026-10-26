@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { ApiFixture } from "./api-fixture-server";
 import { expect, test } from "./support";
 
@@ -49,6 +51,28 @@ test("paste a cURL command, import it, send and show status, body and origin", a
     await expect(origin).toContainText("GET");
     await expect(origin).toContainText(`${fixture.url}${path}`);
     expect(fixture.received.find((item) => item.path === path)?.trace).toBe("e2e");
+    // End may precede the durable history record. Wait for that record, without resending.
+    await expect
+      .poll(async () => {
+        const history = await stack.rpc("api.history", { before: null, limit: 16, origin: null });
+        return history.items.some((entry) => entry.url === `${fixture.url}${path}` && entry.outcome === "ok");
+      })
+      .toBe(true);
+    await page.getByRole("button", { name: "노트에 붙이기", exact: true }).click();
+    const append = page.getByRole("dialog", { name: "응답을 노트에 붙이기" });
+    await expect(append.getByLabel("붙일 곳")).toHaveValue("daily");
+    await append.getByRole("button", { name: "붙이기", exact: true }).click();
+    await expect(page.getByText(/daily\/.*에 붙였습니다\./)).toBeVisible();
+    const daily = join(stack.home, "notes", "daily");
+    await expect
+      .poll(() =>
+        readdirSync(daily)
+          .filter((name) => name.endsWith(".md"))
+          .map((name) => readFileSync(join(daily, name), "utf8"))
+          .join("\n"),
+      )
+      .toContain('"hello":"world"');
+    expect(fixture.received.filter((item) => item.path === path)).toHaveLength(1);
   } finally {
     await fixture.stop();
   }

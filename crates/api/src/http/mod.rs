@@ -7,28 +7,12 @@ pub(crate) mod stream;
 use crate::auth::{self, PreparedAuth, TokenCache};
 use crate::cookies::{self, Jar};
 use crate::events::Events;
-use crate::redact::Redactor;
+pub(crate) use crate::redact::Redaction;
 use crate::validate::{MAX_REDIRECTS, is_sensitive_name};
 use crate::{ApiError, Redirect};
 use build::Prepared;
 use reqwest::header::{AUTHORIZATION, COOKIE, HeaderMap, HeaderValue, LOCATION};
 use stream::{Captured, Stop};
-
-/// 가림 대상 값과 그 가림기. OAuth 토큰을 받으면 늘어난다.
-pub(crate) struct Redaction {
-    pub(crate) values: Vec<String>,
-    pub(crate) redactor: Redactor,
-}
-impl Redaction {
-    pub(crate) fn new(values: Vec<String>) -> Self {
-        let redactor = Redactor::new(&values);
-        Self { values, redactor }
-    }
-    fn add(&mut self, value: &str) {
-        self.values.push(value.to_owned());
-        self.redactor = Redactor::new(&self.values);
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct DnsFailed;
@@ -103,7 +87,7 @@ pub(crate) async fn execute(
     // 브라우저 인증을 기다린 시간은 빼고, 모든 hop과 본문이 시한 하나를 공유한다.
     let deadline = tokio::time::Instant::now() + p.timeout;
     if let Some((token, _)) = &bearer {
-        redaction.add(token);
+        redaction.add(token).map_err(Stop::Fail)?;
     }
     let bearer_value = bearer
         .as_ref()
@@ -113,6 +97,8 @@ pub(crate) async fn execute(
     let (mut method, mut url) = (p.method.clone(), p.url.clone());
     let (mut allow_sensitive, mut include_body) = (true, true);
     for hop in 0..=MAX_REDIRECTS {
+        // Every seed, cookie values included: a header carrying a session value never crosses
+        // origins (dropping an unrelated short match is the accepted safe side).
         let redactor = &redaction.redactor;
         let mut map = HeaderMap::new();
         for (name, value) in &p.headers {
@@ -140,6 +126,14 @@ pub(crate) async fn execute(
         {
             map.insert(COOKIE, value);
         }
+        // Only this hop's actual outgoing headers (including selected/overridden
+        // cookies) contribute inferred values; never seed the entire stored jar.
+        redaction
+            .request_headers(
+                map.iter()
+                    .map(|(name, value)| (name.as_str(), value.as_bytes())),
+            )
+            .map_err(Stop::Fail)?;
         let mut builder = x.client.request(method.clone(), url.clone()).headers(map);
         if include_body {
             builder = body::apply(builder, &p.body, p.user_content_type)
@@ -150,6 +144,15 @@ pub(crate) async fn execute(
             .await
             .map_err(|_| Stop::Fail(ApiError::network("timeout")))?
             .map_err(|e| Stop::Fail(kind(&e)))?;
+        // Newly issued cookies must be known before any redirect/head/body emission.
+        redaction
+            .response_headers(
+                response
+                    .headers()
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_bytes())),
+            )
+            .map_err(Stop::Fail)?;
         if let Some(jar) = x.jar {
             jar.store(&url, response.headers());
         }
@@ -178,7 +181,9 @@ pub(crate) async fn execute(
             }
             // 화면에는 서버가 준 위치만 보인다(같은 origin GET으로 다시 붙인 GraphQL query 제외).
             let shown = redaction.redactor.text(next.as_str());
-            if !allow_sensitive && shown != next.as_str() {
+            // Credentials/secrets in a cross-origin destination block; cookie values (e.g. an
+            // OAuth `state` also set as a cookie) are only redacted in what is shown.
+            if !allow_sensitive && redaction.guard.contains(next.as_str()) {
                 return Err(blocked());
             }
             if redirect::switches_to_get(status, &method) {

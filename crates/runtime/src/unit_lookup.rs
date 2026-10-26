@@ -19,18 +19,30 @@ impl RuntimeService {
 
 impl RuntimeService {
     pub async fn summary(&self, _: crate::RunSummaryQuery) -> R<crate::RunSummary> {
-        let (active, rev) = self.db.read(|tx| {
-            let active = tx.query_row("SELECT count(*) FROM runtime_runs WHERE json_extract(body,'$.run.state') IN ('starting','running','restarting')", [], |row| row.get(0))?;
-            Ok((active, devbox_core::current_rev(tx)?))
+        let (active, active_services, rev) = self.db.read(|tx| {
+            let (active, services) = tx.query_row("SELECT count(*),count(CASE WHEN json_extract(body,'$.run.kind')='service' THEN 1 END) FROM runtime_runs WHERE json_extract(body,'$.run.state') IN ('starting','running','restarting')", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            Ok((active, services, devbox_core::current_rev(tx)?))
         }).await.internal("read live execution summary")?;
         Ok(crate::RunSummary {
             rev: rev.to_string(),
             active,
+            active_services,
         })
     }
 }
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn summary_reports_zero_services_without_live_runs() {
+        let f = crate::service_tests::Fixture::new().await;
+        let summary = f
+            .runs
+            .summary(crate::RunSummaryQuery {})
+            .await
+            .expect("summary");
+        assert_eq!((summary.active, summary.active_services), (0, 0));
+    }
+
     #[tokio::test]
     async fn summary_counts_all_live_runs_beyond_recent_history_at_one_revision() {
         let f = crate::service_tests::Fixture::new().await;
@@ -48,7 +60,8 @@ mod tests {
         let (_, rev) = f.db.write(move |tx| {
             for n in 0..303 {
                 let state = match n { 0 => "starting", 1 => "running", 2 => "restarting", _ => "exited" };
-                let body = serde_json::json!({"run":{"state":state,"defId":"same-definition"}}).to_string();
+                let kind = if n % 2 == 0 { "service" } else { "task" };
+                let body = serde_json::json!({"run":{"state":state,"kind":kind,"defId":"same-definition"}}).to_string();
                 tx.execute("INSERT INTO runtime_runs(id,project_id,started_ms,body) VALUES(?1,?2,?3,?4)", (format!("summary-{n}"), if n == 2 {&other} else {&project}, n, body))?;
             }
             Ok(())
@@ -59,6 +72,10 @@ mod tests {
             .await
             .expect("fixture result");
         assert_eq!(summary.active, 3);
+        assert_eq!(
+            serde_json::to_value(&summary).expect("summary json")["activeServices"],
+            2
+        );
         assert_eq!(summary.rev, rev.to_string());
     }
 }

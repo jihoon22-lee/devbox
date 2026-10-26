@@ -93,3 +93,15 @@ test("a current confirmed empty snapshot can quit directly and pending quit requ
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await act(async () => finish());
 });
+test("native palette events carry only a numeric trace ID into the intent queue", async () => {
+  render(<NativeMainController ready={false} />);
+  await waitFor(() => expect(listeners.has("devbox://palette")).toBe(true));
+  act(() => listeners.get("devbox://palette")?.({ payload: { traceId: 5 } }));
+  act(() => listeners.get("devbox://palette")?.({ payload: { traceId: null } }));
+  act(() => listeners.get("devbox://palette")?.({ payload: null }));
+  expect(useNativeRuntime.getState().intents).toEqual([
+    { kind: "palette", traceId: 5 },
+    { kind: "palette" },
+    { kind: "palette" },
+  ]);
+});

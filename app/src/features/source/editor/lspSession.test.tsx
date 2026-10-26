@@ -10,6 +10,7 @@ import { useDocuments } from "../../documents/store";
 import { FakeDocumentsDaemon } from "../../documents/test-daemon";
 import { useSource } from "../store";
 import { useEditorLsp } from "./lsp";
+import { capturedContext } from "./lspProof.fixture";
 import { connectLsp, type EditorLspSession } from "./lspSession";
 import { projectUris } from "./lspWorkspace";
 
@@ -71,7 +72,23 @@ class LspDaemon extends FakeDocumentsDaemon {
                 },
               }
             : this.results.get(request.method);
-        queueMicrotask(() => this.reply(index, { jsonrpc: "2.0", id: request.id, result }));
+        if (request.method === "textDocument/rename") {
+          const edit = result as { documentChanges: { textDocument: { uri: string } }[] };
+          const keys = edit.documentChanges.map((row) => uris.key(row.textDocument.uri));
+          void capturedContext(this, uris, keys).then(({ proof }) => {
+            proof!.requestId = JSON.stringify(request.id);
+            for (const target of proof!.targets)
+              if (target.leaseId) target.version = session!.files.getFile(target.uri)!.version;
+            this.reply(index, { jsonrpc: "2.0", id: request.id, result: { edit, proof } });
+          });
+        } else
+          queueMicrotask(() =>
+            this.reply(index, {
+              jsonrpc: "2.0",
+              id: request.id,
+              result: request.method === "devbox/validateWorkspaceEdit" ? true : result,
+            }),
+          );
       },
     };
   }
@@ -367,11 +384,12 @@ test("R1 daemon-canonical punctuation URI reaches installed-client diagnostics a
       method: "workspace/applyEdit",
       params: {
         edit: {
-          changes: {
-            [canonical]: [
-              { range: { start: { line: 0, character: 2 }, end: { line: 0, character: 3 } }, newText: "b" },
-            ],
-          },
+          documentChanges: [
+            {
+              textDocument: { uri: canonical, version: 0 },
+              edits: [{ range: { start: { line: 0, character: 2 }, end: { line: 0, character: 3 } }, newText: "b" }],
+            },
+          ],
         },
       },
     }),

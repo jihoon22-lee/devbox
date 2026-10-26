@@ -2,6 +2,9 @@
 //! 시작 때와 24시간마다 30일 넘은 날짜 폴더·행을 지운다.
 mod files;
 mod index;
+mod proof;
+pub(crate) use files::day;
+pub(crate) use proof::Receipt;
 pub(crate) mod sanitize;
 
 use crate::service::Clock;
@@ -49,17 +52,22 @@ impl History {
         (self.clock)()
     }
 
-    pub(crate) async fn record(&self, entry: HistoryEntry, body: Vec<u8>) -> std::io::Result<()> {
+    pub(crate) async fn record(
+        &self,
+        entry: HistoryEntry,
+        body: Vec<u8>,
+    ) -> std::io::Result<Receipt> {
         let root = self.root.clone();
         let stored = entry.clone();
-        tokio::task::spawn_blocking(move || files::write(&root, stored, &body))
+        let receipt = tokio::task::spawn_blocking(move || files::write(&root, stored, &body))
             .await
             .map_err(std::io::Error::other)??;
         let day = files::day(entry.sent_at_ms);
         self.index
             .write(move |tx| index::insert(tx, &entry, &day))
             .await
-            .map_err(std::io::Error::other)
+            .map_err(std::io::Error::other)?;
+        Ok(receipt)
     }
 
     pub(crate) async fn page(&self, q: HistoryQuery) -> R<HistoryPage> {
@@ -113,6 +121,14 @@ impl History {
             .await
             .internal("read api history")?
             .map_err(|_| ApiError::HistoryNotFound.into())
+    }
+
+    /// Only the receipt created after this daemon's successful durable write admits export.
+    pub(crate) async fn export_get(&self, receipt: Receipt) -> std::io::Result<HistoryEntry> {
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || proof::read(&root, &receipt))
+            .await
+            .map_err(std::io::Error::other)?
     }
 
     /// 30일 넘은 행과 날짜 폴더를 지운다.

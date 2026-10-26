@@ -70,7 +70,14 @@ export async function connectLsp(
     const owner = client,
       stream = transport,
       workspace = files!;
-    const context: EditContext = { rpc, uris, current: () => live, version: (uri) => workspace.getFile(uri)?.version };
+    const context: EditContext = {
+      rpc,
+      uris,
+      current: () => live,
+      version: (uri) => workspace.getFile(uri)?.version,
+      validate: async (request) => (await owner.request("devbox/validateWorkspaceEdit", request)) === true,
+      finish: (identity) => owner.notification("devbox/finishWorkspaceEdit", identity),
+    };
     // The library defers notifications through initializing.then(). Capture full text
     // now, before a subsequent sync advances the workspace to another version.
     owner.notification = (method: string, params: unknown) => {
@@ -96,7 +103,7 @@ export async function connectLsp(
     stream.intercept = (message) => {
       if (message.method !== "workspace/applyEdit" || message.id === undefined) return false;
       const incoming = message.params as { edit?: unknown } | undefined;
-      const snapshot = commandContext(context);
+      const snapshot = commandContext({ ...context, unsolicited: true });
       void applyWorkspaceEdit(snapshot, incoming?.edit)
         .then(
           () => ({ applied: true }),

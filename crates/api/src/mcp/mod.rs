@@ -240,6 +240,10 @@ impl ApiService {
                 session::Prepared::Http(http::prepare(&filled, self.inner.resolver.as_ref())?)
             }
         };
+        let mut redaction = crate::redact::Redaction::new(&values)?;
+        if let session::Prepared::Http(plan) = &transport {
+            plan.seed(&mut redaction)?;
+        }
         let permit = self.session_slot()?;
         let ends = ctx.open_stream().map_err(|_| ApiError::StreamUnsupported)?;
         let stream_id = ends.id;
@@ -247,7 +251,7 @@ impl ApiService {
             transport,
             tx: ends.tx,
             input: ends.input,
-            values,
+            redaction,
             _permit: permit,
         }));
         Ok(StreamOpened { stream_id })

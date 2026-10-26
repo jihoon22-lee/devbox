@@ -11,6 +11,7 @@ mod lsp;
 pub mod observe;
 mod outbox;
 mod problems;
+mod response_note;
 pub mod routes;
 mod secret_routes;
 pub mod server;
@@ -22,10 +23,12 @@ mod source_routes;
 pub mod state;
 mod streams;
 mod summary;
+mod support_bundle;
 mod system;
 mod tools_routes;
 mod trust;
 mod windows_broker;
+mod windows_observe;
 mod windows_routes;
 
 use devbox_core::{Config, Db, Hub, Paths, log};
@@ -107,7 +110,9 @@ fn build_services_with_runtime(
             cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
         },
     ));
+    let windows = Arc::new(windows_broker::WindowsBroker::default());
     let mut execution = devbox_runtime::ExecutionConfig::new(paths.clone());
+    windows_observe::configure(&mut execution, windows.clone(), runtime.shutdown.clone());
     execution.readiness = observe::readiness();
     execution.windows_root = config.windows.root.clone();
     execution.slice = std::env::var("DEVBOX_TEST_SLICE").ok().filter(|slice| {
@@ -171,7 +176,7 @@ fn build_services_with_runtime(
     let git = source_git::service(&hub);
     let deps = source_deps::service(&hub);
     Ok(Arc::new(Services {
-        windows: windows_broker::WindowsBroker::default(),
+        windows,
         runtime,
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
@@ -257,3 +262,9 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod response_note_tests;
+
+#[cfg(test)]
+mod support_bundle_tests;

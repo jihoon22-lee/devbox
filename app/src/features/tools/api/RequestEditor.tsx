@@ -8,6 +8,7 @@ import { BodyEditor } from "./BodyEditor";
 import type { RequestDraft, Row } from "./model/draft";
 import { ParamTable } from "./ParamTable";
 import { MaskedDialog, SaveAsNewDialog } from "./SaveDialogs";
+import { approveHttpAuthorization } from "./sendAuthorization";
 import { type ApiTab, isDirty, useApiTabs } from "./store";
 import { UrlBar } from "./UrlBar";
 import { useSave } from "./useSave";
@@ -81,6 +82,24 @@ export function RequestEditor({ tab }: { tab: ApiTab }) {
           새 요청으로 저장
         </Button>
       </div>
+      {tab.authorization && (
+        <Banner
+          tone="info"
+          actions={
+            <Button
+              disabled={tab.authorization.opening}
+              onClick={() => tab.authorization && void approveHttpAuthorization(tab.id, tab.authorization)}
+            >
+              브라우저에서 승인
+            </Button>
+          }
+        >
+          {tab.authorization.error ??
+            (tab.authorization.opened
+              ? "브라우저에서 승인을 마치면 이 요청이 이어집니다."
+              : "이 요청은 브라우저 승인이 필요합니다. 직접 승인한 뒤 요청이 이어집니다.")}
+        </Banner>
+      )}
       {!tab.reviewed && (
         <Banner tone="info">
           이 PC에서 아직 검토하지 않은 파일입니다. 비밀 참조·파일 경로를 확인한 뒤 저장하거나 보내면 검토로 기록합니다.

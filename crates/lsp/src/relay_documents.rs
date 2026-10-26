@@ -12,6 +12,8 @@ struct Document {
     owner_version: i64,
     server_version: i64,
     text: String,
+    text_hash: String,
+    disk_rev: Option<devbox_documents::DiskRev>,
 }
 struct Reference {
     version: i64,
@@ -30,7 +32,7 @@ impl Documents {
             return Ok(self.close(client, &uri));
         }
         if method == "textDocument/didSave" {
-            let doc = self.items.get(&uri).ok_or(LspError::Protocol)?;
+            let doc = self.items.get_mut(&uri).ok_or(LspError::Protocol)?;
             if !doc.refs.contains_key(&client)
                 || grant
                     .lease_id
@@ -48,6 +50,7 @@ impl Documents {
                 }
                 params["text"] = saved.clone();
             }
+            doc.disk_rev = grant.disk_rev;
             return Ok(vec![
                 json!({"jsonrpc":"2.0","method":method,"params":params}).to_string(),
             ]);
@@ -92,6 +95,10 @@ impl Documents {
             } else {
                 grant.disk_text
             };
+            if text.len() > crate::framing::MAX_BODY {
+                return Err(LspError::LimitExceeded);
+            }
+            let text_hash = crate::workspace::text_hash(&text);
             let doc = Document {
                 refs: BTreeMap::from([(
                     client,
@@ -105,6 +112,8 @@ impl Documents {
                 owner_version: version,
                 server_version: 1,
                 text,
+                text_hash,
+                disk_rev: grant.disk_rev,
             };
             let out=json!({"jsonrpc":"2.0","method":method,"params":{"textDocument":{"uri":uri,"languageId":language,"version":1,"text":doc.text}}}).to_string();
             self.items.insert(uri, doc);
@@ -146,6 +155,8 @@ impl Documents {
             doc.snapshot = doc.server_version;
         }
         doc.text = text.to_owned();
+        doc.text_hash = crate::workspace::text_hash(text);
+        doc.disk_rev = grant.disk_rev;
         doc.refs.insert(
             client,
             Reference {
@@ -230,6 +241,53 @@ impl Documents {
         }
         true
     }
+    pub(crate) fn snapshots(&self, client: u32) -> BTreeMap<String, crate::WorkspaceBaseline> {
+        self.items
+            .iter()
+            .filter_map(|(uri, doc)| {
+                let (owner, lease) = doc.owner.as_ref()?;
+                if *owner != client {
+                    return None;
+                }
+                Some((
+                    uri.clone(),
+                    crate::WorkspaceBaseline {
+                        uri: uri.clone(),
+                        disk_rev: doc.disk_rev.clone(),
+                        text_hash: doc.text_hash.clone(),
+                        lease_id: Some(lease.clone()),
+                        version: self.renderer_version(uri, client, Some(doc.server_version)),
+                    },
+                ))
+            })
+            .collect()
+    }
+    pub(crate) fn compatible_disk(&self, uri: &str, hash: &str) -> bool {
+        self.items.get(uri).is_none_or(|doc| doc.text_hash == hash)
+    }
+    pub(crate) fn owned_versioned(&self, client: u32, edit: &Value) -> bool {
+        if edit.get("changes").is_some() {
+            return false;
+        }
+        edit.get("documentChanges")
+            .and_then(Value::as_array)
+            .is_some_and(|rows| {
+                rows.len() <= 256
+                    && rows.iter().all(|row| {
+                        let Some(uri) = row.pointer("/textDocument/uri").and_then(Value::as_str)
+                        else {
+                            return false;
+                        };
+                        let Some(version) =
+                            row.pointer("/textDocument/version").and_then(Value::as_i64)
+                        else {
+                            return false;
+                        };
+                        self.owner(uri) == Some(client)
+                            && self.renderer_version(uri, client, Some(version)).is_some()
+                    })
+            })
+    }
     pub fn owner(&self, uri: &str) -> Option<u32> {
         self.items.get(uri)?.owner.as_ref().map(|(id, _)| *id)
     }
@@ -245,6 +303,7 @@ mod tests {
         let grant = || DocumentGrant {
             uri: uri.into(),
             disk_text: "saved A".into(),
+            disk_rev: None,
             lease_id: Some("L1".into()),
         };
         docs.notification(
@@ -255,14 +314,32 @@ mod tests {
         )
         .expect("open");
         docs.notification(1,"textDocument/didChange",&json!({"params":{"textDocument":{"version":2},"contentChanges":[{"text":"unsaved B"}]}}),grant()).expect("edit while save pending");
+        let saved_rev = devbox_documents::DiskRev {
+            hash: "saved-on-disk".into(),
+            size: 7,
+            mtime_ns: "2".into(),
+            ino: "3".into(),
+        };
         for saved in [json!({"params":{"text":"saved A"}}), json!({"params":{}})] {
+            let mut saved_grant = grant();
+            saved_grant.disk_rev = Some(saved_rev.clone());
             let out = docs
-                .notification(1, "textDocument/didSave", &saved, grant())
+                .notification(1, "textDocument/didSave", &saved, saved_grant)
                 .expect("save ACK");
             let sent: Value = serde_json::from_str(&out[0]).expect("save notification");
             assert_eq!(sent.pointer("/params/text"), saved.pointer("/params/text"));
             assert_eq!(docs.items[uri].text, "unsaved B");
             assert_eq!(docs.items[uri].owner_version, 2);
+            let proof = docs.snapshots(1);
+            assert_eq!(
+                proof[uri].disk_rev,
+                Some(saved_rev.clone()),
+                "Rename after save must use the acknowledged raw revision"
+            );
+            assert_eq!(
+                proof[uri].text_hash,
+                crate::workspace::text_hash("unsaved B")
+            );
         }
         assert!(
             docs.notification(2, "textDocument/didSave", &json!({"params":{}}), grant())

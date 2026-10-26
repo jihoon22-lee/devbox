@@ -50,3 +50,14 @@ pub mod install;
 pub mod maintenance;
 #[cfg(any(windows, test))]
 pub mod quit;
+
+#[cfg(any(windows, test))]
+pub mod update;
+
+#[cfg(any(windows, test))]
+pub mod popout;
+
+#[cfg(any(windows, test))]
+pub mod native_activity;
+#[cfg(any(windows, test))]
+pub mod paint_trace;
