@@ -27,7 +27,7 @@ tracing 로그·TanStack 등 v1 설계가 승인한 스택은 해당 단계에�
 전체 검증·clippy·build·E2E·Windows/WSL 실기는 PR 모든 과제 완료 뒤 한 번 모아 실행한다. Windows 설치본 스모크는 00 §2.2·01 §11대로 에이전트가 수행하며 S1 Task 2 직후에는 S0b 범위 조기 스모크도 가능하면 한 번 수행한다.
 실패를 고친 뒤 실패·영향 범위만 재실행한다. 통과한 무관한 검사는 반복하지 않는다.
 완료 커밋·push 전 `pnpm exec biome ci .`를 실행한다. flaky 테스트는 해당 PR에서 수정하거나 제거한다.
-`.github`+`scripts`는 합계 1,800줄 이하, 워크플로는 3개 이하를 유지한다(2026-10-26 사용자 승인).
+`.github`+`scripts`는 합계 2,000줄 이하, 워크플로는 3개 이하를 유지한다(2026-10-26 사용자 추가 승인).
 
 로컬 검증은 Cargo jobs 2·Vitest workers 2·Rust test threads 2, CPU 4개·nice +10으로 제한한다.
 사용 가능한 cgroup에서 memory high 6GiB/max 8GiB·swap max 1GiB를 적용한다.

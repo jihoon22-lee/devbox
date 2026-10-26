@@ -228,22 +228,27 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 
 ## 12. S6-2 — 검증 예산을 확보하고 prod 태그 릴리스 job 추가
 
-**Files:** `.github/workflows/{ci,windows}.yml`, `scripts/{win-package,win-sync,win-build}.ps1`, `scripts/tests/windows-*.ps1`, `scripts/{check-inner,build-linux,ci-scope}.sh`, 실제 중복이 확인된 부분만. 새 workflow를 기본안으로 추가하지 않는다.
+**Files:** `.github/workflows/{ci,windows}.yml`, `scripts/{win-package,win-sync,win-build}.ps1`, `scripts/tests/windows-*.ps1`, `scripts/{release,dogfood}.py`, `scripts/tests/test_release.py`, `scripts/{check-inner,build-linux,ci-scope}.sh`, 실제 중복이 확인된 부분만. 새 workflow를 기본안으로 추가하지 않는다.
 
-착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤 **1,492줄·workflow2개**다. 2026-10-26 사용자 승인으로 현재 공통 상한은1,800줄이다. 실제1,492줄과 승인 상한을 구분하며 남은 예산이 최종 구현·검증을 충당한다고 아직 주장하지 않는다. 제품 LOC121277는 별도 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 이번 계획은 15분 목표를 조용히 완화하지 않으며 최종 실측 전 달성을 약속하지 않는다.
+착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤1,492줄이었다. batching/release 구현 후 현재는 **1,881줄·workflow2개**다. 2026-10-26 사용자는 앞선1,800줄 승인에 이어 “2,000줄로 조정하고 계속 진행 (권장)”을 명시 승인했으며 현재 공통 상한은2,000줄이다. 현재 예산은119줄 남지만 S6-4 계측 등을 포함한 최종 fit은 아직 확인하지 않았다. 제품 LOC121277는 별도 과거 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 시간 목표는 바꾸지 않으며 최종 실측 전 달성을 약속하지 않는다.
 
 **먼저 하는 예산 작업:**
 
-- [ ] 현재 파일별 line/call graph와 Windows job timing을 artifact로 남긴다. prod+accept의 별도 Cargo target에서 dependency 재빌드, 반복 `pnpm install`/frontend build/동일 native test, sync/build/dev wrapper와 세 orchestration fixture의 중복 setup을 확인한다.
-- [ ] dependency cache 재사용 또는 순차 target 재사용은 build.rs의 channel 환경 rerun과 산출물 복사/receipt 격리 시험이 보장할 때만 적용한다. prod/accept config·identifier·embedded resource를 섞지 않는다.
+- [x] 파일별 line/call 구조와 중복 setup을 조사하고 fixture/batching/release의 실제 line ledger를 artifact로 남겼다. 반복 install/frontend/native 검증을 한 invocation으로 묶고 필요한 채널별 검증을 보존했다.
+- [ ] 실제 Windows job timing·dependency 재빌드 비용은 최종 수용에서 측정한다. 과거 PR22분43초/main14분30초와 새 실측을 구분한다.
+- [x] shared Cargo target 도입 대신 prod/accept/dev의 채널별 target을 유지하기로 결정했다. 기존 cache와 config·identifier·embedded resource·receipt 격리를 보존하며 추가 target 공유를 미구현 결함으로 취급하지 않는다.
 - [x] 채널 불변 install/frontend 검증은 한 번, 채널별 identifier/resource/self-check는 각 채널에서 유지하도록 package 흐름을 나눈다. Linux provenance gate·실패 전파·환경 복원·owned checkout guard를 없애지 않는다.
-- [ ] 시험의 반복 fixture 생성과 공통 command runner를 기존 scripts 안의 작은 공통 책임으로 통합한다. 제거되는 중복과 추가 release 코드의 line ledger를 만든 뒤 구현한다. 단순 minify/한 줄 압축·코드를 다른 디렉터리로 옮겨 count를 피하는 변경은 하지 않는다.
+- [x] 실제 공유 책임만 통합했다. Windows fixture 공통 진입점·ErrorAction/Reject, release preflight/publish validator와 기존 receipt/gh helper, 하나의 fake adapter를 재사용한다. 기존 dogfood 시험과의 receipt 표본만을 위한 추가 helper는 만들지 않았다. 구현 전후 line ledger를 보존했으며 assertion 삭제·한 줄 압축·count 밖 이전은 하지 않았다.
 - [x] 좁은 fixture subset: 기존3suite를 단일 진입점으로 합치고 공통 ErrorAction/Reject만 공유했다. 세 GUID/개별 finally·모든 성공/거절/정리 계약은 유지하며 fixture174→168·workflow123→121로 총8줄을 줄였다. 기존34계약 mapping·AST finally3/fake5 동일·YAML의 호출3→1 외 무변경을 확인했다. Windows5.1 UNC와 검증된 owned Temp local copy 모두 host Restricted 정책에서 suite0/NOT_RUN이므로 실제 동등성은 최종 Windows CI 미실행 항목이다. 정책은 바꾸거나 우회하지 않았으며 staging cleanup과 Linux wrapper/Windows host 자원 경계는 `devbox-verification/s6-2-fixtures/`에 기록했다. 정적 독립 검토 APPROVE·지적0·완료 Biome845 PASS 뒤 로컬 subset 커밋으로 보존하며 전체 S6-2 완료가 아니다.
-batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 추정은1,709줄(구현 전)이었다. 두 독립 계획 검토의 기존2workflow 유지·상한 조정 제안 뒤 사용자가2026-10-26 “1,800줄로 조정하고 계속 진행 (권장)”을 명시 승인했다. 현재 규범 상한은1,800줄이며 예산 결정 대기는 해소됐다. 이 승인은 최종 fit 또는 SC7 시간 목표 PASS가 아니다. S6-4 helper와 추가 musl 회귀 예산·실제 timing은 아직 미확정이며, S6-2 batching 직접 검증은 아래 기록하며 다음 독립 과제에서 release 작업을 진행한다. 근거와 승인 기록은 PROGRESS §2·§5를 따른다.
+batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 추정은1,709줄(구현 전)이었다. 두 독립 계획 검토 뒤 사용자가2026-10-26 “1,800줄로 조정하고 계속 진행 (권장)”을 먼저 승인했다. 실제 batching131줄/release258줄 증가로1,881줄이 되어 당시 상한보다81줄 초과했고, 이전 추정25줄/192줄은 합계172줄을 과소 추정했다. 특히 회귀 시험 규모 추정이 부족했다. 이 실패와 후속2,000줄 승인 기록은 PROGRESS §2·§5에 함께 보존한다. 현재 예산 충족은 S6-4 helper 등을 포함한 최종 fit 또는 SC7 시간 목표 PASS가 아니다.
 
 **Batching 직접 검증(2026-10-26):** 순서 있는 `-Channel` 배열 한 invocation에서 install/frontend 각1회·native Verify 기존1묶음을 유지하고, 채널별 target/config/resource/self-check/receipt는 그대로 분리했다. frontend 성공 후 소유 임시 JSON에만 beforeBuildCommand 빈 문자열을 덧붙이고 같은 전체 채널 JSON을 env와 CLI 파일로 전달한다. dev hook·single-channel·실패 전파·env/cwd 복원은 유지한다. 검증된 portable PowerShell7.6.9 Linux에서 실제 script의 PackageOnly baseline PASS→ordered 배열 RED→28case PASS; Windows/native PASS가 아니며 기본 Windows CI는 sync/package/dev3suite를 유지한다. 실제1,492→1,623줄(+131)·workflow2; 상한1,800 이내지만 release/musl/shared target/timing은 이번 범위 밖이다. 근거 `devbox-verification/s6-2-batching/`, 독립 검토 APPROVE·지적0·완료 Biome845 PASS 뒤 로컬 완료했다. 검토 후 소유 portable 도구만 정리했고 원본 metadata/hash/log는 보존한다.
 
-- [ ] 핵심 안전 assertion을 유지한 순 감소로 release job·계측에 필요한 여유를 확보한다. 승인된1,800줄을 지키지 못하면 기능/검증 보존 가능한 추가 단순화를 검토하고 한도 위반을 조용히 승인하지 않는다.
+- [x] 핵심 안전 assertion을 유지하고 책임 공유를 적용했으나1,800줄에는 맞지 않아 실제 초과분을 공개했다. 사용자 추가 승인 후 현재1,881/2,000줄을 확인했다. 남은 계측을 포함한 최종 예산은 다시 실측하며 상한을 조용히 변경하지 않는다.
+
+2026-10-26 batching e220e25d 뒤 tag preflight/publisher·fake회귀·musl CLI release 시험 게이트·actionlint를 구현했고 독립 코드 검토 지적0·기존 Biome845 PASS를 확인했다. 최초 검토의 **1,881/1,800줄 FAIL·예산 차단1**은 당시 원본으로 보존한다. 이후 사용자2,000줄 승인으로 현재 **1,881/2,000줄 PASS·workflow2**이며 예산 결정 대기는 해소됐다. 실제 musl/Windows build·공개 API·timing은 미실행이고 근거는 PROGRESS §2·§5와 `s6-2-release/`를 따른다.
+
+이번 추가 승인은 현재 release 구현의 예산 차단을 해소한다. 제품/workflow/test는 검토 동결본 그대로이며 승인 반영 문서의 최종 독립 검토·Biome·로컬 커밋 뒤 S6-3a를 진행한다. 공개/tag 승인은 아니며 최종 수용·시간 측정은 별도로 남는다. 이전 미승인 제안 원본 `s6-2-release/budget-decision.json`과 승인 반영 근거 `s6-2-release/budget-resolution/`을 구분한다.
 
 **릴리스 계약:**
 
@@ -254,10 +259,11 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 - 중복 tag/release 재실행에서 이미 다른 digest인 자산을 조용히 덮지 않는다. candidate/seal 절차는 만들지 않고 문제가 있으면 다음 patch다.
 - PR/수동 실행 accept 산출물·prod provenance receipt와 source SHA 결속은 유지한다. packaging script는 실제 Windows에서만 빌드한다.
 
-- [ ] RED/GREEN: fixture에서 tag gate·버전 mismatch·Linux 실패·0/2 installer·accept 혼입·태그 본문 특수문자·재실행 digest 충돌을 검증한다. 실제 release API 쓰기는 하지 않는다.
-- [ ] actionlint를 기존 CI의 적절한 job에서 실행. workflow≤3·합계≤1800을 실제 count로 확인한다.
+- [x] RED/GREEN: 실제 publisher 진입점의 fake subprocess/API6 test methods PASS. tag gate·버전/source/manifest mismatch·Linux 명령 실패 전파·0/2 installer·accept 혼입·태그 본문 특수문자·재실행 digest 충돌·draft/public 경계를 검증했다. 실제 release API 쓰기는0이다.
+- [x] 공식 actionlint1.7.11을 기존 CI changes job에 추가하고 로컬 actionlint+shellcheck로 두 workflow를 검사했다. 현재 workflow2≤3·합계1,881≤2,000을 실제 count로 확인했다. hosted Docker action 실행은 최종 CI에 남는다.
 - [ ] orchestration fake 시험은 native build PASS로 보고하지 않는다. 실제 Windows build/40분 실측은 최종 수용·공개에서 확인한다.
-- [ ] 독립 검토 뒤 `refactor(ci): consolidate Windows packaging verification`, `feat(release): publish production installers from version tags`.
+- [x] batching 독립 APPROVE·Biome845 PASS 뒤 e220e25d로 로컬 완료했고 release 독립 코드 검토는 지적0이다.
+- [x] 사용자2,000줄 승인 반영 최종 독립 검토 APPROVE·미해결0·Biome845 PASS 뒤 `feat(release): publish production installers from version tags`로 로컬 완료했다. 실제 태그·공개·native/최종 CI는 아직 미실행이다.
 
 ## 13. S6-3 — Rust가 소유하는 업데이트와 안전한 재시작
 
@@ -311,7 +317,7 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 | SC4 | 창 닫기·daemon 재시작·업데이트 뒤 WSL agent/terminal/service 유지, app-native Windows attempt는 설치 전 별도 차단 | 소유 test instance·tmux/user systemd, 전후 세션 ID·PID/작업 관찰. WSL 종료는 유지 대상 아님 |
 | SC5 | generated code 전수 오류 문구·원인+다음 행동; internal은 진단 ID 동반 | 컴파일/typed map+대표 E2E, raw error/body 노출 없음 |
 | SC6 | UI 변경→실제 daemon 연결 browser≤2초; daemon 변경→restart/reconnect≤15초 | monotonic 구간·source 변경·ready 증거, fake 서버 제외 |
-| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤1800, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음 |
+| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤2000, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음 |
 | SC8 | `bash scripts/loc.sh 200000`, 제품 코드≤20만(관찰 트리거) | 테스트 제외와600줄 제한 별도 보고. 기준121277은 과거 값 |
 | SC9 | 작업 없는 daemon RSS≤60MB·CPU≤0.5% | 실제 `/proc`·systemd, warm-up·표본 간격/기간·background 작업 기록 |
 | SC10 | Windows bridge→daemon→PTY→tmux byte echo p50≤10ms/p95≤25ms; 100MB 출력 중 다른 창 ping p95≤100ms, 종료 후 입력≤1초 | 실제 설치본, 샘플/percentile·출력 flood byte 수. renderer paint 제외 |

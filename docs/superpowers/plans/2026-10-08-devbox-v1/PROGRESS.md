@@ -16,16 +16,20 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 항목 | 값 |
 |---|---|
 | 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | 상한 승인d108b1d6 뒤 S6-2 frontend/package batching을 구현·좁은 검증했다. 한 invocation의 순서 있는 채널 배열에서 install/frontend 각1회·native Verify1묶음, 채널별 target/config/resource/self-check/receipt는 유지한다. Linux portable PowerShell에서 실제 package script의 fake 도구28case PASS, 독립 검토 APPROVE·지적0·완료 Biome845 PASS 후 로컬 과제 커밋으로 보존한다. |
+| 현재 작업 | S6-2 release의 독립 코드 검토 지적0·fake 경계6 test methods/actionlint PASS를 확인했다. 사용자가 “2,000줄로 조정하고 계속 진행 (권장)”을 추가 승인해 현재 scripts+.github1,881/2,000줄 PASS·예산 차단 해소다. 제품/workflow/test는 동결본 그대로이며 최종 독립 검토 APPROVE·미해결0·Biome845 PASS 후 release 과제를 로컬 커밋으로 보존한다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-2 batching 로컬 완료 뒤 release publisher/actionlint/musl gate를 별도 과제로 진행한다. 현재 실제 scripts+.github1,623줄/상한1,800·workflow2, 최종 fit/timing·Windows 실기 미검증. push·PR 없음; 공개/태그는 별도 명시 승인 전 실행하지 않는다. |
-| 마지막 갱신 | 2026-10-26 · 체크섬 검증 PowerShell7.6.9로 기존 package baseline PASS, ordered channel 배열 실제 RED→최종28case PASS(1.634초·memory_enforced=true). frontend 성공 뒤 owned 임시 config로 Tauri hook만 억제하며 같은 JSON env와 CLI file을 사용한다. 초기 startup 인수 전달·fixture 숨김 파일 정리 실패 원본도 보존. `devbox-verification/s6-2-batching/`에 공식/소스/명령/자원/LOC 근거. 독립 검토·완료 Biome 대기; native/Windows/전체검사/push/PR 미실행. |
+| 다음 제품 작업 | S6-2 release 로컬 완료 뒤 S6-3a 업데이트 상태·다운로드를 진행한다. 기존2workflow·GNU 필수 CI와 채널별 Cargo target 유지 결정을 보존한다. S6-4 계측을 포함한 최종 fit/timing은 미검증이며 push·PR·공개/태그는 아직 실행하지 않는다. |
+| 마지막 갱신 | 2026-10-26 · 사용자2,000줄 승인 반영으로 현재1,881줄 예산 PASS(여유119줄). 기존 동결 제품의 fake subprocess/API6 test methods PASS(0.533초)·actionlint1.7.11+shellcheck PASS(0.279초)·독립 코드 검토 지적0·Biome845 PASS 근거는 유지한다. 이번 승인 반영 최종 독립 검토 APPROVE·미해결0·Biome845 PASS를 확인했고 제품 검증은 재실행하지 않았다. 승인 delta/소스 동결은 `devbox-verification/s6-2-release/budget-resolution/`; 실제 musl/Windows/native/공개/전체검사/시간 측정은 미실행이다. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**S6-2 스크립트 예산 결정 해소(2026-10-26 사용자 명시 승인):** 사용자가 “1,800줄로 조정하고 계속 진행 (권장)”을 선택했다. 이에 `.github`+`scripts`의 현재 규범 상한을1,500줄에서 **1,800줄**로 조정하고 다음 독립 과제인 S6-2 batching을 진행한다. fixture 통합 후 실제 수치는1,492줄·workflow2개이며, 남은 batching/release 검증을 더한1,709줄은 구현 전 중심 추정이다. 승인 상한 자체가 최종 fit 또는15분/40분 timing PASS는 아니다. workflow≤3·자원 제한·필수 CI·단계별 검토·공개/태그 별도 승인 경계는 유지한다. S6-4 helper·추가 musl 회귀의 최종 예산과 Windows/CI 시간은 미확정이다. 이전 제안 근거 `s6-2-committee.json`, `s6-2-budget-decision.json`, 실제 계측 `s6-2-fixtures/line-ledger.json`과 이번 `s6-2-budget-approval/`을 구분한다.
+**S6-2 release 예산 결정 해소(2026-10-26 사용자 추가 승인):** 사용자가 **“2,000줄로 조정하고 계속 진행 (권장)”**을 명시 승인했다. 현재 `.github`+`scripts` 규범 상한은2,000줄이며 실제 **1,881/2,000줄 PASS·여유119줄·workflow2개**다. 최초1,881/1,800줄 FAIL과 독립 검토의 코드 지적0·예산 차단1(CHANGES_REQUESTED)은 당시 원본으로 보존하고, 이번 승인이 그 예산 차단을 해소한다. 제품/workflow/test 변경 없이 현재 규범5문서만 반영하며 최종 독립 검토 APPROVE·Biome845 PASS 뒤 release 로컬 커밋으로 마무리하고 S6-3a로 진행한다. 공개/tag 승인은 아니다.
+
+추정 오차도 유지한다. batching1,623줄 뒤 publisher95·fake회귀145·workflow18줄이 더해져1,881줄이 됐다. 이전 중심 추정은1,492+25+192=1,709줄이었으나 실제는1,492+131+258=1,881줄로172줄 더 컸고, 특히 회귀 시험 규모를 과소 추정했다. 공통 validator·기존 receipt/gh helper·fixture adapter를 재사용했으며 assertion 삭제·한 줄 압축·count 밖 이전은 하지 않았다. 기존 dogfood 시험과 공유되는 receipt 표본만으로는 추가 helper를 정당화할 감소가 없다. 채널별 Cargo target을 유지하며 S6-4 계측 등을 포함한 최종 fit/SC7 시간은 여전히 미확정이다. 이전 제안/FAIL 원본 `s6-2-release/budget-decision.json`, `independent-review.json`, `line-ledger.json`과 이번 승인 반영 `s6-2-release/budget-resolution/`을 구분한다.
+
+**이전 S6-2 스크립트 예산 결정(2026-10-26 최초 승인 이력):** 사용자가 “1,800줄로 조정하고 계속 진행 (권장)”을 선택했다. 이에 당시 `.github`+`scripts` 상한을1,500줄에서 **1,800줄**로 조정하고 S6-2 batching을 진행했다. fixture 통합 후 실제 수치는1,492줄·workflow2개이며, 남은 batching/release 검증을 더한1,709줄은 구현 전 중심 추정이다. 승인 상한 자체가 최종 fit 또는15분/40분 timing PASS는 아니다. workflow≤3·자원 제한·필수 CI·단계별 검토·공개/태그 별도 승인 경계는 유지한다. S6-4 helper·추가 musl 회귀의 최종 예산과 Windows/CI 시간은 미확정이다. 이전 제안 근거 `s6-2-committee.json`, `s6-2-budget-decision.json`, 실제 계측 `s6-2-fixtures/line-ledger.json`과 이번 `s6-2-budget-approval/`을 구분한다.
 
 **S6 재개(2026-10-25 사용자 후속 요청):** 사용자가 “토큰 한도가 복구되었어. 이어서 S6 작업 계속 진행해줘”라고 지시했다. 앞선1b.2 완료 후 중단·새 세션 인계 제한은 대체됐다. 완료된083d9660부터 같은 브랜치/worktree에서07c 승인 순서를 계속한다. 과제별 별도 검토·완료 커밋, S6 마지막 한 번의 push/PR 및 공개·태그 별도 승인 경계는 유지한다.
 
@@ -86,7 +90,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-2 batching28case PASS·독립 APPROVE·로컬 완료) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-2 release 코드 검토 지적0·예산 승인 해소·완료 절차 대기) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -100,7 +104,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한1,800 승인;batching28case PASS·독립 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한2,000 추가 승인;batching 로컬 완료;release6methods PASS·코드 검토 지적0·예산 해소 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -153,11 +157,19 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S5 | AE | S5-7–S5-8 | `v1/s5-tools` | 완료(로컬) | 2026-10-24 | 2026-10-24 | S5-7a `2acd3eee`·7b `b762b582`·7c `d55cd7c6`·8a1 `de7a04dd`·8a2 `56c65372` 완료, 8b 최종 재검토 APPROVE. 최종 검증·설치 수용 S5-9 |
 | S5 | 마무리 | S5-9 → S5 PR | `v1/s5-tools` | 머지 | 2026-10-24 | 2026-10-24 | 최종b18bc740 필수CI3/E2E·Windows dispatch PASS, 영향 설치1·2 PASS. 과거429 설치3·4 PASS/5·6 NOT_RUN 보존. 정상리뷰3회+차단예외1건 수정·독립 승인, 최종 근거 감사 APPROVE·PR #645 → a55907a2 squash 완료 |
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
-| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a·1b·1c·2-fixtures 완료;상한1,800 승인;batching28case PASS·독립 APPROVE·로컬 완료 |
+| S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 작업 중 | 2026-10-25 | | 1a·1b·1c·2-fixtures 완료;상한2,000 추가 승인;batching 로컬 완료;release6methods PASS·코드 검토 지적0·예산 해소 |
 | S6 | AG | S6-3 |  | 대기 | | | |
 | S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
 
 ## 5. 계획과 달라진 점
+
+### S6-2-release publisher (2026-10-26 · 코드 검토 지적0·2,000줄 승인 반영·최종 독립 APPROVE·로컬 완료)
+
+- 기반e220e25d. push `refs/tags/v*`의 strict stable semver·4manifest·checkout/peeled SHA·원격 annotated tag 객체를 검증한다. changes/release checkout은 fetch-depth0을 사용하고 태그 메시지는 raw stdout→UTF8 파일/JSON 데이터로 전달한다. `dogfood.verify`의 source/run/repository/workflow/prod/hash를 재사용한 뒤 singleton/version/재읽은 bytes hash를 확인한다.
+- 기존 windows.yml의 성공한 changes/linux-bin/windows에 의존하는 release job만 contents:write를 갖는다. 인증된 전체 page 목록에서 exact tag를 찾고 오류/복수 match를 부재로 처리하지 않는다. 단일 job 내부 draft→canonical EXE 업로드→fresh state/size/SHA256/identity 확인→publish를 수행한다. 동일 public 자산은 무변경 성공, 다른 digest·starter·누락 digest·추가 자산·다른 metadata는 거절하며 삭제/clobber는 없다. 이는 별도 candidate/seal workflow나 수동 단계가 아니다.
+- 기존 GNU workspace 필수 시험은 유지한다. musl은 산출물 대상 `devbox-cli --lib --release` 시험을 선행한 뒤 기존 release build를 실행한다. local win-dev가 호출하는 build-linux.sh에는 시험을 추가하지 않았다. 공식 actionlint1.7.11 Docker action을 기존 CI changes job에 추가했고 로컬에서는 공식 archive metadata/checksum을 확인한 binary와 기존 shellcheck로 변경2workflow를 검사했다. pyflakes 대상 Python-shell step은 없다; 실제 CI Docker 실행은 미실행이다.
+- RED: publisher 미존재로8 test methods 오류 → 최종 공통 scenario를 사용하는6 test methods PASS(0.533초). 실제 publisher main에서 subprocess/API를 모두 fixture adapter로 교체하고 환경을 비워 실제 token/config/network 접근을 막는다. tag/event/source/4manifest·receipt·0/2 EXE·accept·특수문자 notes·lookup401/403/404/429/500·new/draft/public·digest/state/extra asset/metadata 충돌과 실제 workflow musl 명령의 fake exit42 전파를 검증했다. 초기 supervisor는 D-Bus 환경 부재로 시작 실패했고 기존 사용자 bus 환경을 지정한 모든 실제 검증은 memory_enforced=true다.
+- 실제 **1,623→1,881줄(+258)**, workflow2개(publisher95, test145, workflow18)다. 최초 상한1,800의81줄 초과로 독립 검토는 코드 지적0·예산 차단1(CHANGES_REQUESTED)을 기록했고 기존 동결본 Biome845 PASS를 확인했다. 이후 사용자2,000줄 명시 승인으로 현재 **1,881/2,000줄 PASS·예산 차단 해소**다. 승인 반영 최종 독립 검토 APPROVE·미해결0·Biome845 PASS 뒤 로컬 커밋으로 보존하며 다음 제품 과제는 S6-3a다. 채널별 Cargo target을 유지하기로 결정했고 추가 공유를 미구현 결함으로 취급하지 않는다. 실제 musl compile/test·Windows/native·공개 API 쓰기·tag/dispatch/push/PR·SC7 시간과 최종 fit은 NOT_RUN/UNPROVEN이다. 최초 검토/FAIL 원본은 `devbox-verification/s6-2-release/`, 승인 delta와 최종 source freeze는 그 아래 `budget-resolution/`에 보존한다. 제품/workflow/test는 변경하지 않았고 아래 batching heading부터 끝까지는 byte 동일하게 유지했다.
 
 ### S6-2-batching frontend/package 준비 통합 (2026-10-26 · 직접 검증·독립 APPROVE·로컬 완료)
 
