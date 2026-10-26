@@ -12,18 +12,11 @@ async fn notify(
 ) {
     client.raw_call("agents.event", json!({"agentId":id,"source":"codex","payload":json!({"type":"agent-turn-complete","thread-id":thread,"turn-id":turn,"cwd":cwd,"last-assistant-message":"done"}).to_string()}), None).await.expect("completion candidate");
 }
-fn timestamp(d: &TestDaemon) -> String {
-    let output = d
-        .environment("date")
-        .args(["-u", "+%Y-%m-%dT%H:%M:%S.%3NZ"])
-        .stdout(std::process::Stdio::piped())
-        .output()
-        .expect("fixture clock");
-    assert!(output.status.success());
-    String::from_utf8(output.stdout)
-        .expect("timestamp")
-        .trim()
-        .into()
+/// Millisecond UTC timestamp from the same system clock the daemon reads. Shelling out to
+/// `date +%3N` is not portable: uutils `date` ignores the width and drops leading zeros, so
+/// `.065…` became `.65…` and turn two could sort before turn one.
+fn timestamp() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 fn record(time: &str, kind: &str, payload: Value) -> String {
     json!({"timestamp":time,"type":kind,"payload":payload}).to_string() + "\n"
@@ -60,7 +53,7 @@ async fn exact_primary_thread_and_current_turn_gate_completion_over_rpc() {
     assert!(format!("{missing:?}").contains("agents.session_metadata"));
     d.wait_for(&client, &id, "running", Duration::from_secs(2))
         .await;
-    let time = timestamp(&d);
+    let time = timestamp();
     let dir = d
         .home
         .path()
@@ -121,7 +114,7 @@ async fn exact_primary_thread_and_current_turn_gate_completion_over_rpc() {
         (9, 3, 4, 2)
     );
     assert!(!usage.truncated);
-    let time = timestamp(&d);
+    let time = timestamp();
     body += &record(
         &time,
         "event_msg",
