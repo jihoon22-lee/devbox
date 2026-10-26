@@ -124,6 +124,10 @@ impl crate::RuntimeService {
                 },
             },
             injected,
+            ready_timeout_sec: match &windows.def {
+                crate::RunDef::Service(d) => d.ready_timeout_sec,
+                _ => 0,
+            },
         })
     }
 }

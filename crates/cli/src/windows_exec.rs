@@ -57,13 +57,53 @@ async fn direct(
 }
 /// The daemon gate is the only readiness authority. Not-ready replies and failures retry
 /// at the cadence; a hint (native Ready event) only wakes an earlier retry.
-async fn poll_ready<F, P>(mut accept: F, hint: &tokio::sync::Notify, cadence: Duration)
+/// Gate polling schedule. Each not-ready probe starts PowerShell on Windows, so after the
+/// service's readiness window the wrapper backs off exponentially instead of polling every
+/// second for the run's whole life. Not-ready semantics are unchanged; a native Ready hint
+/// still wakes the next poll immediately.
+#[derive(Clone, Copy, Debug)]
+struct Cadence {
+    base: Duration,
+    settle: Duration,
+    max: Duration,
+}
+impl Cadence {
+    fn windows(ready_timeout_sec: u32) -> Self {
+        Self {
+            base: Duration::from_secs(1),
+            settle: Duration::from_secs(ready_timeout_sec.into()),
+            max: Duration::from_secs(30),
+        }
+    }
+    #[cfg(test)]
+    fn fixed(delay: Duration) -> Self {
+        Self {
+            base: delay,
+            settle: Duration::MAX,
+            max: delay,
+        }
+    }
+    /// Delay after a not-ready reply at `elapsed` since polling began.
+    fn next(&self, previous: Option<Duration>, elapsed: Duration) -> Duration {
+        if elapsed < self.settle {
+            return self.base;
+        }
+        previous
+            .map_or(self.base, |delay| delay.saturating_mul(2))
+            .clamp(self.base, self.max)
+    }
+}
+async fn poll_ready<F, P>(mut accept: F, hint: &tokio::sync::Notify, cadence: Cadence)
 where
     F: FnMut() -> P,
     P: std::future::Future<Output = bool>,
 {
+    let started = tokio::time::Instant::now();
+    let mut delay = None;
     while !accept().await {
-        tokio::select! {_=tokio::time::sleep(cadence)=>{},_=hint.notified()=>{}}
+        let next = cadence.next(delay, started.elapsed());
+        delay = Some(next);
+        tokio::select! {_=tokio::time::sleep(next)=>{},_=hint.notified()=>{}}
     }
 }
 async fn accepted(client: &crate::client::Client, id: &RunIdentity) -> bool {
@@ -74,7 +114,7 @@ async fn accepted(client: &crate::client::Client, id: &RunIdentity) -> bool {
     )
 }
 /// Never completes; the wrapper never asks the gate for a no-port service.
-async fn readiness<F, P>(ports: &[u16], accept: F, hint: &tokio::sync::Notify, cadence: Duration)
+async fn readiness<F, P>(ports: &[u16], accept: F, hint: &tokio::sync::Notify, cadence: Cadence)
 where
     F: FnMut() -> P,
     P: std::future::Future<Output = bool>,
@@ -100,6 +140,7 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         prepared.request.env.insert(key.clone(), value);
     }
     let interop = std::path::PathBuf::from(prepared.interop);
+    let cadence = Cadence::windows(prepared.ready_timeout_sec);
     let request = prepared.request;
     let (started, began) = tokio::sync::oneshot::channel();
     let direct = direct(&request, &interop, started);
@@ -108,7 +149,7 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     let ready = async {
         if began.await.is_ok() {
             let accept = || accepted(&client, &id);
-            readiness(&request.ports, accept, &hint, Duration::from_secs(1)).await;
+            readiness(&request.ports, accept, &hint, cadence).await;
         }
         std::future::pending::<()>().await;
     };
@@ -117,7 +158,7 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         Direct::Finished(code) => Some(code),
         Direct::Failed => None,
         // Unknown completion must not trigger systemd service auto-restart.
-        Direct::Unavailable => delegated(&client, &id, &request).await.ok(),
+        Direct::Unavailable => delegated(&client, &id, &request, cadence).await.ok(),
     };
     if let Some(code) = code {
         devbox_runtime::exit_record::ExitStore::new(&paths.data_dir.join("runs"), &id.run_id)?
@@ -131,6 +172,7 @@ async fn delegated(
     client: &crate::client::Client,
     id: &RunIdentity,
     request: &RunWindows,
+    cadence: Cadence,
 ) -> anyhow::Result<i32> {
     if !request.tracked() {
         anyhow::bail!("Windows observation is unavailable");
@@ -143,7 +185,7 @@ async fn delegated(
     .map_err(|_| anyhow::anyhow!("Windows execution result is unknown"))??;
     let read = || async { stream.read_chunk().await.map_err(anyhow::Error::from) };
     let accept = || accepted(client, id);
-    relay(read, id, &request.ports, accept, Duration::from_secs(1)).await
+    relay(read, id, &request.ports, accept, cadence).await
 }
 /// Reads native events while polling the daemon gate concurrently. A not-ready reply never
 /// aborts the stream, so an unrelated listener seen first cannot strand the run.
@@ -152,7 +194,7 @@ async fn relay<R, RF, C, A, AF>(
     id: &RunIdentity,
     ports: &[u16],
     accept: A,
-    cadence: Duration,
+    cadence: Cadence,
 ) -> anyhow::Result<i32>
 where
     R: FnMut() -> RF,

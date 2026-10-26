@@ -78,6 +78,8 @@ pub struct PreparedWindows {
     pub interop: String,
     pub request: RunWindows,
     pub injected: Vec<String>,
+    /// The service's readiness window; the wrapper backs off its gate polling after it.
+    pub ready_timeout_sec: u32,
 }
 
 pub const MAX_WINDOWS_REQUEST_BYTES: usize = 8 * 1024 * 1024;

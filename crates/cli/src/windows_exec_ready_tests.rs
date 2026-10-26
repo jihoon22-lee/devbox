@@ -42,7 +42,11 @@ async fn direct_poll_keeps_asking_the_gate_after_not_ready_until_accepted() {
     let calls = Arc::new(AtomicUsize::new(0));
     tokio::time::timeout(
         Duration::from_secs(2),
-        poll_ready(gate(&calls, 3), &Notify::new(), Duration::from_millis(10)),
+        poll_ready(
+            gate(&calls, 3),
+            &Notify::new(),
+            Cadence::fixed(Duration::from_millis(10)),
+        ),
     )
     .await
     .expect("accepted after retries");
@@ -58,7 +62,7 @@ async fn no_port_service_never_asks_the_gate() {
             &[],
             gate(&calls, 1),
             &Notify::new(),
-            Duration::from_millis(1),
+            Cadence::fixed(Duration::from_millis(1)),
         ),
     )
     .await;
@@ -74,7 +78,13 @@ async fn native_ready_hint_with_not_ready_gate_keeps_the_stream_and_later_succee
     let read = || async { Ok(rx.lock().await.recv().await) };
     let id = identity();
     // A long cadence proves the second poll was woken by the native Ready hint.
-    let relayed = relay(read, &id, &[3000], gate(&calls, 2), Duration::from_secs(60));
+    let relayed = relay(
+        read,
+        &id,
+        &[3000],
+        gate(&calls, 2),
+        Cadence::fixed(Duration::from_secs(60)),
+    );
     let native = async {
         until(&calls, 1).await;
         tx.send(frame(WindowsOutput::Ready)).await.expect("hint");
@@ -97,4 +107,49 @@ async fn native_ready_hint_with_not_ready_gate_keeps_the_stream_and_later_succee
         2,
         "accepted once, then stops polling"
     );
+}
+
+#[test]
+fn cadence_is_one_second_inside_the_ready_window_then_backs_off_to_thirty() {
+    let cadence = Cadence::windows(10);
+    let second = Duration::from_secs(1);
+    assert_eq!(cadence.next(None, Duration::ZERO), second);
+    assert_eq!(cadence.next(Some(second), Duration::from_secs(9)), second);
+    let mut delay = second;
+    let mut seen = Vec::new();
+    for _ in 0..7 {
+        delay = cadence.next(Some(delay), Duration::from_secs(11));
+        seen.push(delay.as_secs());
+    }
+    assert_eq!(seen, [2, 4, 8, 16, 30, 30, 30]);
+    // A zero window (no explicit timeout) backs off from the first not-ready reply.
+    assert_eq!(
+        Cadence::windows(0).next(Some(second), Duration::ZERO),
+        2 * second
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn gate_polls_follow_the_back_off_and_a_ready_hint_still_wakes_at_once() {
+    let start = tokio::time::Instant::now();
+    let polls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hint = Arc::new(Notify::new());
+    let polling = {
+        let polls = polls.clone();
+        let hint = hint.clone();
+        tokio::spawn(async move {
+            let accept = || {
+                polls.lock().expect("polls").push(start.elapsed().as_secs());
+                std::future::ready(false)
+            };
+            poll_ready(accept, &hint, Cadence::windows(3)).await;
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(18_500)).await;
+    // 1 s inside the 3 s readiness window, then 2, 4, 8 s (next would be 16 s later).
+    assert_eq!(*polls.lock().expect("polls"), [0, 1, 2, 3, 5, 9, 17]);
+    hint.notify_one();
+    tokio::time::sleep(Duration::from_millis(1)).await;
+    assert_eq!(*polls.lock().expect("polls"), [0, 1, 2, 3, 5, 9, 17, 18]);
+    polling.abort();
 }
