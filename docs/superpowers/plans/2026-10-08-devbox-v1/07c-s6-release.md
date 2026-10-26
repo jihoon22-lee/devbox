@@ -380,7 +380,6 @@ S6-6b 결과(19cff21e, PROGRESS §5): SC1·SC3·SC4·SC5·SC6·SC8·SC9·SC10 �
 
 - [x] (사용자 결정 2026-10-26 “v1.0.0 공식 버전 배포하기 전에 임시 rc 릴리스를 진행하자”, “모든 릴리스는 main 브랜치에서”로 추가) 임시 RC prerelease. — 결과: #649 → `28eb2a91`(rc tag→prerelease 허용·버전 `1.0.0-rc.1`), main `28eb2a91`의 주석 태그 `v1.0.0-rc.1`, release run40340583942 SUCCESS, GitHub prerelease asset `devbox-1.0.0-rc.1-setup.exe` sha256 `a96cfc92…8909cce`, `releases/latest`는 `v0.9.0` 유지. RC Windows 설치·실행 수용 NOT_RUN, RC→1.0.0 수동 설치 미시험. 공식 `v1.0.0` 승인이 아니다(PROGRESS §5).
 - [ ] 버전 되돌림 PR `1.0.0-rc.1`→`1.0.0`(공식 공개 전 필수; 그 전까지 main 빌드는 updater가 꺼짐, PROGRESS §8 RC M4). I1은 이 공개 전 release-gating으로 남는다(PROGRESS §8).
-
 - [ ] 공개 준비 결과·SC1–10·미실행/미달·설치 산출물·릴리스 노트 초안을 구체적으로 제시한다. 사용자가 판단할 결과를 먼저 완성한다.
 - [ ] 아래13개 참고 확인과 함께 **v1.0.0 공개 승인**을 받는다. 사용자는 목록을 모두 직접 실행하지 않고 승인할 수 있다. 승인 없이 tag push·GitHub Release를 만들지 않는다.
 
