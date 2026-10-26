@@ -90,7 +90,7 @@ pub struct Snapshot {
 
 pub(crate) mod runner;
 #[cfg(windows)]
-pub(crate) use storage::{Identity, SealedSource};
+pub(crate) use storage::SealedSource;
 
 #[cfg(windows)]
 pub use service::install::{CommitFence, InstallSummary};

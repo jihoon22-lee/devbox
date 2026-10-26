@@ -206,7 +206,9 @@ async fn port_open(_port: u16) -> bool {
     false
 }
 
-#[cfg(test)]
+// Only the Linux protocol tests (`core::windows::platform_compile`) drive the adapter directly;
+// Windows always goes through `run_windows_tracked`.
+#[cfg(all(test, not(windows)))]
 pub async fn run_windows(
     request: RunWindows,
     output: Sender<WindowsEvent>,
@@ -232,7 +234,7 @@ pub async fn run_windows_tracked(
     .await;
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 pub(crate) async fn run_with_executable(
     request: RunWindows,
     output: Sender<WindowsEvent>,
