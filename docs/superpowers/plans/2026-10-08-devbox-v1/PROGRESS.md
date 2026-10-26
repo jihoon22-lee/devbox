@@ -15,13 +15,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료, S6-2·S6-3a·S6-3b 로컬 완료, S6-4a·T1b·S6-4b·T2b 독립 APPROVE 후 로컬 완료(push·PR 없음).** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-4a/4b 로컬 완료(§14 실제 수용·SC 측정은 S6-6b) 뒤 S6-5 사용 문서·최종 계약을 커밋했고 독립 문서 검토 1차 지적을 화면 문구 수정`a23e6b32`와 문서 수정으로 반영해 재검토를 기다린다. S6-4a `313a6095`(Windows readiness 단일 gate·소유 job 귀속, 좁은 runtime6·protocol8·CLI21+ignored1·app19 PASS), T1b `95a742f9`(windows.root 누락 typed 오류 복구, runtime lib148 PASS), S6-4b `496b1c78`+수정`7d638599`(SC2/SC6 계측만), T2b `25d1bbb0`(updater 방송 시험 정렬)는 각각 독립 APPROVE다. C# listener 컴파일·Windows 실기·실제 SC2/SC6 표본·MSVC 확인은 NOT_RUN/NOT_COMPILED다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료, S6-2·S6-3a·S6-3b 로컬 완료, S6-4a·T1b·S6-4b·T2b 독립 APPROVE 후 로컬 완료, S6-5 문서 독립 재검토 통과 후 로컬 완료, S6-6a 버전 1.0.0 고정 로컬 커밋(독립 검토 대기, push·PR·tag 없음).** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S6-6a: 제품 버전을 `1.0.0-dev`→`1.0.0`으로 한 번 고정하고(네 manifest·두 Cargo.lock의 로컬 패키지 줄만) 독립 검토를 기다린다. 앞서 S6-4a/4b 로컬 완료(§14 실제 수용·SC 측정은 S6-6b) 뒤 S6-5 사용 문서·최종 계약을 커밋했고 독립 문서 검토 1차 지적을 화면 문구 수정`a23e6b32`와 문서 수정으로 반영해 재검토(`s6-5/re-review-1.md`)에서 통과했다. S6-4a `313a6095`(Windows readiness 단일 gate·소유 job 귀속, 좁은 runtime6·protocol8·CLI21+ignored1·app19 PASS), T1b `95a742f9`(windows.root 누락 typed 오류 복구, runtime lib148 PASS), S6-4b `496b1c78`+수정`7d638599`(SC2/SC6 계측만), T2b `25d1bbb0`(updater 방송 시험 정렬)는 각각 독립 APPROVE다. C# listener 컴파일·Windows 실기·실제 SC2/SC6 표본·MSVC 확인은 NOT_RUN/NOT_COMPILED다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. S6 PR 자동 리뷰 절차는 2026-10-26 사용자 결정(독립 검토 대체, §2)으로 해소했다. R1/R2·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | S6-5 문서 커밋·별도 문서 검토 → S6-6a 버전1.0.0 한 번 고정 → S6-6b 전체 검사·candidate 백업 push·windows.yml dispatch 뒤 §14 Windows 수용·SC 측정(C# listener fixture·5초 예산·direct/native 동등성 gating 포함) → S6 PR 한 번(자동 리뷰 대신 독립 검토 최대3회, 필수 CI3). scripts+.github1,954/2,000줄·workflow2다. 공개·tag는 별도 명시 승인 전 하지 않는다. |
-| 마지막 갱신 | 2026-10-26 · S6-5 문서(`1c3f729a`)·화면 문구 수정(`a23e6b32`)·검토 수정 기록, 재검토 대기. 그 전 S6-4a·T1b·S6-4b(수정1회)·T2b 로컬 완료와 S6 PR 자동 리뷰 독립 검토 대체 결정을 기록. 근거 `devbox-verification/s6-4a/`·`s6-4a-stale/`·`s6-4b/`·`s6-4b-stale/`·`s6-5/`. 실제 Windows/NSIS·SC2/SC6 표본·전체검사·push/PR·공개는 NOT_RUN. |
+| 다음 제품 작업 | S6-6a 독립 검토 → S6-6b 전체 검사·candidate 백업 push·windows.yml dispatch 뒤 §14 Windows 수용·SC 측정(C# listener fixture·5초 예산·direct/native 동등성 gating 포함) → S6 PR 한 번(자동 리뷰 대신 독립 검토 최대3회, 필수 CI3). scripts+.github1,954/2,000줄·workflow2다. 공개·tag는 별도 명시 승인 전 하지 않는다. |
+| 마지막 갱신 | 2026-10-26 · S6-6a 버전 1.0.0 고정(근거 `devbox-verification/s6-6a/`)·S6-5 재검토 통과 기록. 그 전 S6-5 문서(`1c3f729a`)·화면 문구 수정(`a23e6b32`)·검토 수정 기록. 그 전 S6-4a·T1b·S6-4b(수정1회)·T2b 로컬 완료와 S6 PR 자동 리뷰 독립 검토 대체 결정을 기록. 근거 `devbox-verification/s6-4a/`·`s6-4a-stale/`·`s6-4b/`·`s6-4b-stale/`·`s6-5/`. 실제 Windows/NSIS·SC2/SC6 표본·전체검사·push/PR·공개는 NOT_RUN. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
@@ -93,7 +93,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-4a/4b 로컬 완료(§14 실제 수용·SC 측정은 S6-6b)·S6-5 검토 수정 중) | 2026-10-25 | | 구현 재개 승인 · PR 자동 리뷰 독립 검토 대체(2026-10-26) · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-4a/4b 로컬 완료(§14 실제 수용·SC 측정은 S6-6b)·S6-5 문서 로컬 완료·S6-6a 버전 고정 검토 대기) | 2026-10-25 | | 구현 재개 승인 · PR 자동 리뷰 독립 검토 대체(2026-10-26) · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -165,6 +165,15 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | AH | S6-4–S6-6 → S6 PR | `v1/s6-release` | 작업 중 | 2026-10-26 | | S6-4a·T1b·S6-4b·T2b 로컬 완료(Windows 실기·SC 표본 NOT_RUN), S6-5 문서·문구 수정 커밋·재검토 대기 |
 
 ## 5. 계획과 달라진 점
+
+### S6-6a 버전 1.0.0 한 번 고정 (2026-10-26 · 로컬 커밋·독립 검토 대기)
+
+- 기반295c384f, 커밋 `chore(release): set version to 1.0.0`. `Cargo.toml` workspace, `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json` 네 파일의 한 줄씩만 `1.0.0-dev`→`1.0.0`으로 바꿨다(전역 치환 없음). `tauri.accept.conf.json`·`tauri.dev.conf.json`에는 version override가 없다. 사전 인벤토리(`s6-6a-preparation.json`, 기반85b48252)는 현재 트리에서 다시 확인했다.
+- 락은 `cargo update --workspace --offline`(루트와 `--manifest-path app/src-tauri/Cargo.toml`)으로 갱신했다. 변경은 루트 `Cargo.lock` 22줄·`app/src-tauri/Cargo.lock` 5줄의 로컬 `devbox-*`/`xtask`/`devbox-app` version 줄뿐이고 외부 의존성 변경은 0이다(diff는 `+version = "1.0.0"`/`-version = "1.0.0-dev"` 쌍만, 증명 `s6-6a/lock-diff.patch`·`lock-diff-stat.txt`). `cargo metadata --locked --offline`이 두 manifest 모두 통과하고 패키지 version은 모두 1.0.0이다. pnpm-lock은 importer에 앱 version을 기록하지 않아 바꾸지 않았고 `pnpm install --frozen-lockfile --offline`이 통과한다.
+- 남은 `1.0.0-dev` 70건을 분류했다(`s6-6a/remaining-1.0.0-dev-classification.json`): history24(계획·PROGRESS), README의 dev 비활성 설명1, updater dev-disable fixture2(`release.rs`·`service_tests.rs`는 자체 `-dev` 값을 쓰며 패키지 version을 읽지 않음), 자체 완결 시험 literal43(self_check는 version을 인자로 받음·`envelopes.json`은 protocol/TS 왕복 형태만 확인·mock wire·script fixture). 런타임 포함 경로는 0건이다. `CARGO_PKG_VERSION`(daemon/CLI/app), `app/package.json`→`__APP_VERSION__`·`dev-session.py`·`release.py` 태그↔manifest 비교·windows.yml이 만드는 `devbox-version.txt`는 모두 같은 1.0.0 소스에서 나온다. README의 현재 사실 한 구절("현재 브랜치 빌드 포함")만 고쳤다.
+- 이제 prod 빌드의 updater는 정식 `1.0.0`이라 활성이다. dev-disable 시험은 자체 fixture version을 써서 그대로 통과한다.
+- 좁은 검증(supervisor·memory_enforced): protocol 42, app `core::update`·`self_check`·`secrets` lib 63, Python release/dev-session/dogfood 13, Vitest 4파일71 PASS, Biome CI PASS. 전체 check·clippy·build·E2E, Windows 실기, push/PR/tag/릴리스는 **NOT_RUN**이다(S6-6b).
+- S6-5 독립 문서 재검토(`s6-5/re-review-1.md`)에서 지적이 모두 ADDRESSED여서 07c §15 마지막 칸을 체크했다.
 
 ### S6-5 사용 문서·최종 계약 정리 (2026-10-26 · 문서 검토 1차 Needs fixes→수정1회·재검토 대기·로컬 커밋)
 

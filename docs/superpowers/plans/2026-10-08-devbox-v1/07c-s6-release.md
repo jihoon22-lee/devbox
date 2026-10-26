@@ -350,16 +350,16 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 - [x] updater 취소/실패·작업 유지·dirty 창 처리·dev/accept 비활성·구버전 복사 디렉터리 수동 보존 정책을 쓴다. — 결과: README 앱 업데이트 절과 01 §10 갱신. 실제 Windows 업데이트 수용은 NOT_RUN.
 - [x] 화면 한국어 용어를 docs/ui-terms와 맞추고 ADR0017의 채택 상태를 실제 구현 검토 뒤 변경한다. — 결과: ui-terms에 "앱 업데이트" 추가, ADR0017은 이미 채택이라 R1/R2 현재 경계(공개 직전 확인까지 NOT_RUN)만 갱신. 문서 검토 중 찾은 화면 문구 4건(ConnectionGate 배치 안내 "한 번만"·`Update.tsx` "업데이트 실행기"→"업데이트 설치 도우미"·"열린 작업"→"열린 에이전트 작업"·"devbox"→"Devbox")은 `a23e6b32`에서 문구만 고쳤고 ui-terms에 "업데이트 설치 도우미"를 더했다.
 - [x] 과거 실측·검증 SHA·FAIL·NOT_RUN·이전 버전 예제는 역사로 보존한다. 현재 상태 줄만 갱신하며 S6 로컬 완료/PR 수용/공개 완료를 구분한다. — 결과: README 상태 줄을 교체(S6 로컬 구현 중, PR·머지·공개 전)했다. 과거 기록은 보존했고, 지워진 worktree를 가리키던 현재 사용 안내(README 개발 절, app/README의 `v1/s0b-skeleton`·`C:\dev\devbox-s0b` 예제와 `target/release` 경로)만 자리표시자·`target/<채널>/release`로 바꿨다.
-- [ ] 별도 문서 검토·Biome 뒤 `docs: document v1 installation updates and recovery`.
+- [x] 별도 문서 검토·Biome 뒤 `docs: document v1 installation updates and recovery`. — 결과: 독립 문서 검토 1차 Needs fixes(`devbox-verification/s6-5/independent-review.md`)→수정 `a23e6b32`·`295c384f`→재검토(`devbox-verification/s6-5/re-review-1.md`)에서 지적 모두 ADDRESSED. 문서 커밋 `1c3f729a docs: document v1 installation updates and recovery`.
 
 ## 16. S6-6 — 한 번의 버전 변경·최종 검사·공개 경계
 
 ### S6-6a 버전 고정
 
-- [ ] `Cargo.toml` workspace, `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json` 및 실제 channel config의 override 유무를 확인한다. 현행 `1.0.0-dev`→`1.0.0`을 **한 번만** 반영한다.
-- [ ] Cargo.lock(두 manifest 경로의 실제 lock)·pnpm importer 등 연결된 generated metadata를 정상 도구로 갱신한다. 모든 packaged binary/resource/manifest가 같은1.0.0인지 검증한다.
-- [ ] 저장소 전체 문자열을 지워 historical docs/fixtures를 변조하지 않는다. 버전 원장 목록과 런타임 포함 경로의 일치 검사로 검증하며 남은 `1.0.0-dev`는 history/dev-disable fixture 등 이유별로 기록한다.
-- [ ] 독립 검토·Biome·`chore(release): set version to 1.0.0`. 아직 tag/release는 없다.
+- [x] `Cargo.toml` workspace, `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json` 및 실제 channel config의 override 유무를 확인한다. 현행 `1.0.0-dev`→`1.0.0`을 **한 번만** 반영한다. — 결과: 네 파일 한 줄씩만 바꿨고 `tauri.accept.conf.json`·`tauri.dev.conf.json`에는 version override가 없다.
+- [x] Cargo.lock(두 manifest 경로의 실제 lock)·pnpm importer 등 연결된 generated metadata를 정상 도구로 갱신한다. 모든 packaged binary/resource/manifest가 같은1.0.0인지 검증한다. — 결과: `cargo update --workspace --offline`을 두 manifest에 실행해 로컬 패키지 version 줄만 바뀌었다(루트22·app5, 외부 의존성 변경0). pnpm-lock은 importer에 앱 version을 기록하지 않아 변경 없고 `pnpm install --frozen-lockfile --offline`이 통과한다. 런타임 포함 경로(`CARGO_PKG_VERSION`·`app/package.json`→`__APP_VERSION__`·`devbox-version.txt`·`dev-session.py`·`release.py` 태그↔manifest)는 모두 같은 소스에서 나와 일치한다.
+- [x] 저장소 전체 문자열을 지워 historical docs/fixtures를 변조하지 않는다. 버전 원장 목록과 런타임 포함 경로의 일치 검사로 검증하며 남은 `1.0.0-dev`는 history/dev-disable fixture 등 이유별로 기록한다. — 결과: 남은 70건을 history24·dev-disable 문서1·dev-disable fixture2·시험 fixture43(자체 완결 literal)로 분류했고 런타임 포함 경로는 0건이다. README의 "현재 브랜치 빌드 포함" 한 구절만 현재 사실에 맞춰 고쳤다.
+- [ ] 독립 검토·Biome·`chore(release): set version to 1.0.0`. 아직 tag/release는 없다. — 결과: Biome CI·커밋 완료(tag/release 없음). 독립 검토는 컨트롤러가 별도로 실행한 뒤 이 칸을 체크한다.
 
 ### S6-6b 브랜치 전체·최종 검사·한 PR
 
