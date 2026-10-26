@@ -54,6 +54,6 @@ Windows Cargo 산출물은 채널마다 소유 트리의 `app/src-tauri/target/<
 Windows 네이티브 fmt·clippy·테스트·NSIS 빌드·self-check는 `Rust (Windows)` CI가 실행한다.
 WSL 검사 성공은 Windows 네이티브 실행 성공을 뜻하지 않는다.
 
-공개 릴리스는 `vX.Y.Z` 형식의 주석 태그 push에서만 `windows.yml`의 release job이 실행한다. `scripts/release.py`가 태그와
+`windows.yml`의 release job은 `v*` 태그 push에서 실행되고, `scripts/release.py`는 `vX.Y.Z` 형식의 주석 태그만 공개한다(형식이 다른 `v*` 태그나 주석 없는 태그는 공개 전에 실패한다). release.py는 태그와
 네 manifest 버전·원본 SHA·원격 주석 태그를 대조하고, 검증된 prod 설치 파일 하나를 `devbox-<버전>-setup.exe`로 올린 뒤 draft를 공개한다.
 태그·공개는 사용자의 별도 명시 승인 뒤에만 만든다.
