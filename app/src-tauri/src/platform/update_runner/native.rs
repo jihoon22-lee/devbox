@@ -28,7 +28,10 @@ use windows::{
             RemoteDesktop::ProcessIdToSessionId,
             Threading::*,
         },
-        UI::Shell::{FOLDERID_LocalAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
+        UI::{
+            Shell::{FOLDERID_LocalAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
+            WindowsAndMessaging::{MB_ICONWARNING, MB_OK, MB_SETFOREGROUND, MessageBoxW},
+        },
     },
     core::{BOOL, PCWSTR, PWSTR},
 };
@@ -183,6 +186,20 @@ pub fn process_live(expected: ProcessIdentity) -> Result<bool> {
         return Ok(false);
     }
     Ok(!exited(raw(&process))?)
+}
+/// Modal notice without an owner window; startup has not created any window yet.
+pub fn notice(title: &str, body: &str) {
+    let wide = |text: &str| text.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (title, body) = (wide(title), wide(body));
+    // SAFETY: both buffers are NUL-terminated UTF-16 and outlive this blocking call.
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(body.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONWARNING | MB_SETFOREGROUND,
+        )
+    };
 }
 pub fn local_root() -> Result<PathBuf> {
     let pointer = unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, KF_FLAG_DEFAULT, None) }

@@ -301,3 +301,16 @@ fn more_than_sixty_four_runner_stages_still_fail_closed() {
         |_| Ok(false)
     )));
 }
+#[test]
+fn blocked_start_notice_names_the_channel_stage_folder_and_manual_recovery() {
+    for channel in [AppChannel::Prod, AppChannel::Accept] {
+        let identifier = channel.config().identifier;
+        let (title, body) = blocked_notice(identifier);
+        assert_eq!(title, "Devbox를 시작하지 않았습니다");
+        assert!(body.ends_with(&format!(
+            "\n%LOCALAPPDATA%\\{identifier}\\updates\\install-*"
+        )));
+        assert!(body.contains("설치 프로그램이 실행 중이면 끝날 때까지 기다린 뒤"));
+        assert!(body.contains("install-로 시작하는 폴더를 지운 뒤"));
+    }
+}

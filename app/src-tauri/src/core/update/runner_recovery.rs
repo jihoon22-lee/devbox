@@ -220,6 +220,20 @@ pub fn early_busy(
 pub fn startup_blocked(result: Result<bool>) -> bool {
     result.unwrap_or(true)
 }
+/// Title and body of the native notice for a blocked start. Release builds have no console, so
+/// the user must see the exact owned folder and the manual recovery (README 문제 해결).
+pub fn blocked_notice(identifier: &str) -> (String, String) {
+    let stages = format!(r"%LOCALAPPDATA%\{identifier}\updates\install-*");
+    (
+        "Devbox를 시작하지 않았습니다".into(),
+        format!(
+            "이전 업데이트 설치가 끝났는지 확인하지 못해 Devbox를 시작하지 않았습니다.\n\n\
+             업데이트 설치 프로그램이 실행 중이면 끝날 때까지 기다린 뒤 Devbox를 다시 시작하세요.\n\n\
+             설치 프로그램이 실행 중이 아닌데도 이 안내가 계속 나오면 아래 위치의 install-로 시작하는 폴더를 지운 뒤 \
+             Devbox를 다시 시작하세요. updates 안의 다른 파일과 폴더는 지우지 마세요.\n{stages}"
+        ),
+    )
+}
 pub fn acknowledge(
     root: &Path,
     channel: AppChannel,

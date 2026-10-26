@@ -322,6 +322,11 @@ pub fn entry() -> Option<i32> {
         eprintln!(
             "업데이트가 진행 중이거나 설치 종료를 확인하지 못했습니다. 설치 상태를 확인한 뒤 앱을 다시 시작하세요."
         );
+        // Release builds have no console: show the folder and manual recovery before exiting.
+        let (title, body) = crate::core::update::runner::recovery::blocked_notice(
+            crate::core::channel::CHANNEL.config().identifier,
+        );
+        native::notice(&title, &body);
         Some(3)
     } else {
         None
