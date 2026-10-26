@@ -46,16 +46,25 @@ def vite_announced(log, port):
     plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", log)
     return bool(re.search(rf"^[\t ]*(?:➜[\t ]*)?Local:[\t ]+http://(?:localhost|127\.0\.0\.1):{port}/[\t ]*\r?$", plain, re.MULTILINE))
 
-def terminate(child):
+def signal_group(child):
     try:
         os.killpg(child.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
+
+def reap(child):
     try:
         child.wait(timeout=5)
     except subprocess.TimeoutExpired:
         os.killpg(child.pid, signal.SIGKILL)
         child.wait()
+
+def cleanup(children):
+    # Signal every group before any wait: an interrupt while reaping must not leave a child unsignalled.
+    for child in reversed(children):
+        signal_group(child)
+    for child in reversed(children):
+        reap(child)
 
 def restart(daemon, children, relaunch, probe):
     """SC6: replace only a daemon this session started; Vite and the gateway keep running."""
@@ -64,8 +73,9 @@ def restart(daemon, children, relaunch, probe):
         return None
     began = time.monotonic()
     print(f'Devbox: daemon restart requested monotonic={began:.3f}', flush=True)
-    children.remove(daemon)  # Its exit is expected and must not end the session.
-    terminate(daemon)
+    signal_group(daemon)
+    reap(daemon)
+    children.remove(daemon)  # Only once reaped, so an interrupt still leaves it to cleanup().
     daemon = relaunch()
     probe()
     ended = time.monotonic()
@@ -149,8 +159,7 @@ def main():
             time.sleep(0.25)
         raise RuntimeError('development child exited')
     finally:
-        for child in reversed(children):
-            terminate(child)
+        cleanup(children)
 
 if __name__ == '__main__':
     try:

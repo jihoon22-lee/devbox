@@ -55,6 +55,7 @@ class OwnedDevelopmentSession(unittest.TestCase):
     def test_restart_replaces_only_the_owned_daemon_and_announces_monotonic_times(self):
         old, new, gateway, vite = Mock(pid=11), Mock(pid=12), Mock(pid=13), Mock(pid=14)
         children = [old, gateway, vite]
+        old.wait.side_effect = lambda **_: self.assertIn(old, children)
         probe = Mock()
         out = io.StringIO()
         with patch.object(session.os, 'killpg') as kill, patch.object(session.time, 'monotonic', side_effect=[10.0, 12.5]), \
@@ -68,6 +69,15 @@ class OwnedDevelopmentSession(unittest.TestCase):
         vite.wait.assert_not_called()
         self.assertEqual(out.getvalue().splitlines(), ['Devbox: daemon restart requested monotonic=10.000',
                                                        'Devbox: daemon ready monotonic=12.500 elapsed_ms=2500'])
+
+    def test_cleanup_signals_every_child_before_reaping_any(self):
+        events = []
+        children = [Mock(pid=pid) for pid in (21, 22, 23)]
+        for child in children:
+            child.wait.side_effect = lambda child=child, **_: events.append(('wait', child.pid))
+        with patch.object(session.os, 'killpg', side_effect=lambda pid, sig: events.append(('kill', pid))):
+            session.cleanup(children)
+        self.assertEqual(events, [('kill', 23), ('kill', 22), ('kill', 21), ('wait', 23), ('wait', 22), ('wait', 21)])
 
     def test_restart_refuses_a_reused_daemon_without_signalling(self):
         gateway = Mock(pid=13)

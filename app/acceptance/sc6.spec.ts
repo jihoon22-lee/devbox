@@ -12,6 +12,7 @@ const statusBar = join(root, "app/src/shell/StatusBar.tsx");
 const daemonSource = join(root, "crates/cli/src/daemon/mod.rs");
 const anchor = '"데몬 연결됨"';
 const count = Number(process.env.DEVBOX_SC6_SAMPLES ?? 5);
+const buildJobs = 2; // AGENTS.md Cargo jobs 2; buildMs depends on it.
 const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const painted = () =>
   new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -68,7 +69,10 @@ test("SC6 development loop raw timings", async ({ page }) => {
     const now = new Date();
     utimesSync(daemonSource, now, now);
     const buildStarted = performance.now();
-    const build = spawnSync("cargo", ["build", "--locked", "--bin", "devbox"], { cwd: root, stdio: "inherit" });
+    const build = spawnSync("cargo", ["build", "--locked", `-j${buildJobs}`, "--bin", "devbox"], {
+      cwd: root,
+      stdio: "inherit",
+    });
     const buildMs = performance.now() - buildStarted;
     if (build.status !== 0) throw new Error(`cargo build failed with ${build.status}`);
     const done = new Promise<void>((resolve) => {
@@ -96,7 +100,7 @@ test("SC6 development loop raw timings", async ({ page }) => {
     watch = undefined;
     daemon.push({ buildMs, restartMs, totalMs: buildMs + restartMs });
   }
-  const result = { criterion: "SC6", clock: "harness performance.now()", ui, daemon };
+  const result = { criterion: "SC6", clock: "harness performance.now()", buildJobs, ui, daemon };
   console.log(JSON.stringify(result));
   if (process.env.DEVBOX_SC6_OUTPUT)
     writeFileSync(process.env.DEVBOX_SC6_OUTPUT, `${JSON.stringify(result, null, 2)}\n`);
