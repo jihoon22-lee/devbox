@@ -12,24 +12,25 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-SHA, TAG = 'a' * 40, 'v1.2.3'
+SHA = 'a' * 40
 NOTES = 'Notes "quoted" `literal` $(touch escaped)\nsecond line\n\n'
-ASSET = dict(id=9, name='devbox-1.2.3-setup.exe', size=7, state='uploaded', digest='sha256:' + hashlib.sha256(b'fixture').hexdigest())
+ASSET = dict(id=9, size=7, state='uploaded', digest='sha256:' + hashlib.sha256(b'fixture').hexdigest())
 
 class Release(unittest.TestCase):
-    def scenario(self, change=None, existing=None, failure=False, writes=None, preflight=False):
+    def scenario(self, change=None, existing=None, failure=False, writes=None, preflight=False, version='1.2.3'):
+        TAG, asset = 'v' + version, dict(ASSET, name=f'devbox-{version}-setup.exe')
         with tempfile.TemporaryDirectory() as temporary, contextlib.chdir(temporary):
             root = Path(temporary)
             for name, text in [('Cargo.toml', '[workspace.package]\nversion="1.2.3"'), ('app/src-tauri/Cargo.toml', '[package]\nversion="1.2.3"'), ('app/package.json', '{"version":"1.2.3"}'), ('app/src-tauri/tauri.conf.json', '{"version":"1.2.3"}')]:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(text)
+                path.write_text(text.replace('1.2.3', version))
             directory = root / 'artifact'
             directory.mkdir()
             (directory / 'Devbox-setup.exe').write_bytes(b'fixture')
-            receipt = dict(source_sha=SHA, run_id='42', repository='jihoon22-lee/devbox', workflow='.github/workflows/windows.yml', channel='prod', version='1.2.3', installers={'Devbox-setup.exe': ASSET['digest'][7:]})
-            release = dict(id=7, tag_name=TAG, name=TAG, body=NOTES, target_commitish=SHA, prerelease=False, draft=existing != 'public') if existing else None
-            state = dict(release=release, assets=[copy.deepcopy(ASSET)] if existing else [], notes=NOTES)
+            receipt = dict(source_sha=SHA, run_id='42', repository='jihoon22-lee/devbox', workflow='.github/workflows/windows.yml', channel='prod', version=version, installers={'Devbox-setup.exe': ASSET['digest'][7:]})
+            release = dict(id=7, tag_name=TAG, name=TAG, body=NOTES, target_commitish=SHA, prerelease='-rc.' in version, draft=existing != 'public') if existing else None
+            state = dict(release=release, assets=[copy.deepcopy(asset)] if existing else [], notes=NOTES)
             environment = dict(GITHUB_EVENT_NAME='push', GITHUB_REF='refs/tags/' + TAG, SOURCE_SHA=SHA, GITHUB_RUN_ID='42', GITHUB_REPOSITORY=receipt['repository'], GH_TOKEN='fixture-only', GH_CONFIG_DIR=str(root / 'empty-gh'))
             calls = []
             if change:
@@ -64,11 +65,12 @@ class Release(unittest.TestCase):
                     payload = json.loads(Path(args[args.index('--input') + 1]).read_text())
                     self.assertEqual(payload['body'], NOTES)
                     self.assertTrue(payload['draft'])
+                    self.assertIs(payload['prerelease'], '-rc.' in version)
                     state['release'] = dict(payload, id=7)
                 elif method == 'POST':
                     self.assertEqual(Path(args[args.index('--input') + 1]).read_bytes(), b'fixture')
-                    self.assertEqual(endpoint, 'https://uploads.github.com/repos/jihoon22-lee/devbox/releases/7/assets?name=devbox-1.2.3-setup.exe')
-                    state['assets'] = [dict(ASSET, **state.get('uploaded', {}))]
+                    self.assertEqual(endpoint, 'https://uploads.github.com/repos/jihoon22-lee/devbox/releases/7/assets?name=' + asset['name'])
+                    state['assets'] = [dict(asset, **state.get('uploaded', {}))]
                     return json.dumps(state['assets'][0])
                 elif endpoint.endswith('/assets'):
                     return json.dumps([state['assets']])
@@ -79,7 +81,7 @@ class Release(unittest.TestCase):
                     self.assertIn(method, ['GET', 'PATCH'])
                     if method == 'PATCH':
                         self.assertEqual(json.loads(Path(args[args.index('--input') + 1]).read_text()), {'draft': False})
-                        self.assertEqual(state['assets'], [ASSET])
+                        self.assertEqual(state['assets'], [asset])
                         self.assertGreaterEqual(calls.count('GET'), 4)
                         state['release']['draft'] = False
                 return json.dumps(state['release'])
@@ -91,6 +93,8 @@ class Release(unittest.TestCase):
                     runpy.run_path(str(ROOT / 'scripts/release.py'), run_name='__main__')
             self.assertEqual([call for call in calls if call != 'GET'], writes or [])
             self.assertFalse((root / 'escaped').exists())
+            if not failure and not preflight and state['release']:
+                self.assertEqual((state['release']['draft'], state['release']['prerelease']), (False, '-rc.' in version))
 
     def test_success_and_retries(self):
         for options in [dict(writes=['POST', 'POST', 'PATCH']), dict(existing='draft', writes=['PATCH']), dict(existing='public'), dict(preflight=True)]:
@@ -99,12 +103,22 @@ class Release(unittest.TestCase):
         for kind in ['PGP', 'SSH']:  # A signed tag publishes only its message.
             self.scenario(lambda s, r, e, d: s.update(notes=NOTES + f'-----BEGIN {kind} SIGNATURE-----\nfixture\n-----END {kind} SIGNATURE-----\n'), writes=['POST', 'POST', 'PATCH'])
 
+    def test_release_candidate_publishes_as_prerelease(self):
+        for options in [dict(writes=['POST', 'POST', 'PATCH']), dict(existing='draft', writes=['PATCH']), dict(existing='public'), dict(preflight=True)]:
+            self.scenario(version='1.2.3-rc.1', **options)
+            self.scenario(version='0.10.0-rc.12', **options)
+        for version in ['1.2.3-rc.0', '1.2.3-rc.01', '1.2.3-rc', '1.2.3-beta.1', '1.2.3-rc.1+build', '1.2.3-RC.1', '1.2.3-rc.1.2', '1.2.3-rc.-1']:
+            self.scenario(version=version, failure=True)  # Manifests agree, so only the tag grammar rejects.
+        self.scenario(lambda s, r, e, d: e.update(GITHUB_REF='refs/tags/v1.2.3'), version='1.2.3-rc.1', failure=True)
+        for version, existing in [('1.2.3-rc.1', 'draft'), ('1.2.3-rc.1', 'public'), ('1.2.3', 'draft'), ('1.2.3', 'public')]:  # Existing prerelease flag must match the tag.
+            self.scenario(lambda s, r, e, d: s['release'].update(prerelease=not s['release']['prerelease']), existing=existing, version=version, failure=True)
+
     def test_event_gate(self):
         for key, value in [('GITHUB_EVENT_NAME', 'pull_request'), ('GITHUB_EVENT_NAME', 'workflow_dispatch'), ('GITHUB_REF', 'refs/heads/main')]:
             self.scenario(lambda s, r, e, d: e.update({key: value}))
 
     def test_preflight_rejections(self):
-        for tag in ['v01.2.3', 'v1.2.3-dev', 'v1.2.3+meta', 'v1.2', 'v1.2.4']:
+        for tag in ['v01.2.3', 'v1.2.3-dev', 'v1.2.3+meta', 'v1.2', 'v1.2.4', 'v1.2.3-rc.1']:
             self.scenario(lambda s, r, e, d: e.update(GITHUB_REF='refs/tags/' + tag), failure=True)
         for state in [dict(lightweight=True), dict(remote='c' * 40), dict(duplicate=True), dict(off_main=True), dict(notes=''), dict(notes=' \n'), dict(notes='-----BEGIN PGP SIGNATURE-----\nx\n')] + [dict(lookup_error=status) for status in [401, 403, 404, 429, 500]]:
             self.scenario(lambda s, r, e, d: s.update(state), existing='draft', failure=True)

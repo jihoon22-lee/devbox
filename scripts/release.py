@@ -19,7 +19,8 @@ def preflight():
     if os.environ['GITHUB_EVENT_NAME'] != 'push' or not ref.startswith('refs/tags/v'):
         return None
     tag = ref.removeprefix('refs/tags/')
-    require(re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag), 'Invalid stable release tag')
+    # Stable vX.Y.Z or a release candidate vX.Y.Z-rc.N; rc tags publish as GitHub prereleases.
+    require(re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?', tag), 'Invalid release tag')
     sha = os.environ['SOURCE_SHA']
     require(re.fullmatch('[0-9a-f]{40}', sha) and os.environ['GITHUB_REPOSITORY'] == REPO, 'Invalid source/repository')
     versions = [json.loads(Path(p).read_text())['version'] for p in ['app/package.json', 'app/src-tauri/tauri.conf.json']]
@@ -51,7 +52,7 @@ def main():
     content = (directory / next(iter(receipt['installers']))).read_bytes()
     digest = 'sha256:' + hashlib.sha256(content).hexdigest()
     require(digest[7:] == next(iter(receipt['installers'].values())).lower(), 'Installer changed after verification')
-    expected = dict(tag_name=tag, target_commitish=sha, name=tag, body=notes, prerelease=False)
+    expected = dict(tag_name=tag, target_commitish=sha, name=tag, body=notes, prerelease='-rc.' in tag)
     base = f'repos/{REPO}/releases'
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary)
