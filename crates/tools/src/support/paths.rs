@@ -21,19 +21,28 @@ impl Span {
 pub(super) struct Paths {
     forms: Vec<(String, u8)>,
 }
+/// `/` admits `file:///<root>`: an absolute root can only follow `/` as a doubled separator.
 fn before(text: &str, at: usize) -> bool {
     at == 0
         || text[..at]
             .chars()
             .next_back()
-            .is_some_and(|c| c.is_whitespace() || "\"'`=([{,:;<>".contains(c))
+            .is_some_and(|c| c.is_whitespace() || "\"'`=([{,:;<>/".contains(c))
 }
+/// Characters that end a path in logs, JSON, Debug output and prose.
+fn terminator(c: char) -> bool {
+    c.is_whitespace() || "\"'`)]},;:<>\\".contains(c)
+}
+/// The root ends at a separator, an escape (`\n`, `\"`) or a terminator. A `.` ends it only
+/// as sentence punctuation, so a sibling such as `<root>.old` is never treated as the root.
 fn after(text: &str, at: usize) -> bool {
-    at == text.len()
-        || text[at..]
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_whitespace() || "/\"'`)]},;:<>".contains(c))
+    let mut rest = text[at..].chars();
+    match rest.next() {
+        None => true,
+        Some('/') => true,
+        Some('.') => rest.next().is_none_or(terminator),
+        Some(c) => terminator(c),
+    }
 }
 impl Paths {
     pub fn new(home: &Path, vault: &VaultSnapshot) -> R<Self> {
@@ -128,5 +137,35 @@ mod tests {
                 .any(|s| s.start == 5 && s.end == 11 && s.kind == 2)
         );
         assert!(paths.spans("note=/alias-sibling/private.md").is_empty());
+    }
+    #[test]
+    fn uri_escaped_and_sentence_forms_are_masked_but_siblings_are_not() {
+        let vault = VaultSnapshot {
+            configured: "/mnt/d/vault".into(),
+            canonical: "/mnt/d/vault".into(),
+        };
+        let paths = Paths::new(Path::new("/home/person"), &vault).expect("paths");
+        let kinds = |text: &str| -> Vec<(usize, usize, u8)> {
+            paths
+                .spans(text)
+                .iter()
+                .map(|s| (s.start, s.end, s.kind))
+                .collect()
+        };
+        assert_eq!(kinds("file:///mnt/d/vault/a.md"), [(7, 19, 2)]);
+        assert_eq!(kinds("file:///home/person/x"), [(7, 19, 1)]);
+        assert_eq!(kinds(r#""/mnt/d/vault\n""#), [(1, 13, 2)]);
+        assert_eq!(kinds(r#"{\"vault\":\"/mnt/d/vault\"}"#), [(13, 25, 2)]);
+        assert_eq!(kinds("saved in /mnt/d/vault."), [(9, 21, 2)]);
+        assert_eq!(kinds("in /mnt/d/vault. Next"), [(3, 15, 2)]);
+        for sibling in [
+            "/mnt/d/vault.old/a.md",
+            "/mnt/d/vault-old/a.md",
+            "/mnt/d/vaults",
+            "/home/person2/x",
+            "/home/person.bak",
+        ] {
+            assert!(kinds(sibling).is_empty(), "{sibling}");
+        }
     }
 }
