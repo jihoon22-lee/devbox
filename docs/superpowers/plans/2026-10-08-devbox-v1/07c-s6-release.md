@@ -1,8 +1,8 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b·S6-5(문서)·S6-6a(버전 1.0.0 고정, 독립 검토 APPROVE)도 로컬 완료했고, S6-6b 로컬 전체 브랜치 검토·전체 검사(원본 FAIL 보존)·수정 wave(18커밋)·재검증도 로컬 완료했다. 이어 Windows 수정 `f3b09d20`·`19cff21e` 뒤 candidate 19cff21e를 백업 push(PR 없음)·windows.yml dispatch(run40305797593 SUCCESS)하고 그 artifact로 accept 설치 수용을 수행했다(2차 G1·G2·A1·A2·A4 PASS, A6 FAIL, A3·A5 NOT_RUN; 그 밖의 SC 실측·R1/R2·실제 GitHub release·PR·tag는 NOT_RUN, PROGRESS §5). S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16).
-- 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b·S6-5(문서)·S6-6a(버전 1.0.0 고정, 독립 검토 APPROVE)도 로컬 완료했고, S6-6b 로컬 전체 브랜치 검토·전체 검사(원본 FAIL 보존)·수정 wave(18커밋)·재검증도 로컬 완료했다. 이어 Windows 수정 `f3b09d20`·`19cff21e` 뒤 candidate 19cff21e를 백업 push(PR 없음)·windows.yml dispatch(run40305797593 SUCCESS)하고 그 artifact로 accept 설치 수용을 수행했다(2차 G1·G2·A1·A2·A4 PASS, A6 FAIL, A3·A5 NOT_RUN; 그 밖의 SC 실측·R1/R2·실제 GitHub release·PR·tag는 NOT_RUN, PROGRESS §5). S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16). 이후 S6 PR #648(head `9849c8b2`)은 독립 검토 1/3 APPROVE·필수 CI SUCCESS·사용자 squash 승인 뒤 2026-10-26 `8b53484b`로 머지됐고, 사용자 RC 결정으로 #649(`28eb2a91`)·주석 태그 `v1.0.0-rc.1`·GitHub prerelease를 main에서 공개했다(RC Windows 수용 NOT_RUN, PROGRESS §5). 남은 것은 §16 S6-6c(버전 되돌림 PR → I1 release-gating → 공식 `v1.0.0` 별도 명시 승인)다.
+- 작업 위치(머지 뒤 2026-10-27 제거): `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
 - 이 문서는 [07](07-s4-s6.md)의 S6 요약을 실제 코드에 맞게 구체화한다. 계획 커밋563523db 뒤 사용자 구현 지시를 확인하고 S6-1a.1을 시작했다.
@@ -322,7 +322,7 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 | SC4 | 창 닫기·daemon 재시작·업데이트 뒤 WSL agent/terminal/service 유지, app-native Windows attempt는 설치 전 별도 차단 | 소유 test instance·tmux/user systemd, 전후 세션 ID·PID/작업 관찰. WSL 종료는 유지 대상 아님 |
 | SC5 | generated code 전수 오류 문구·원인+다음 행동; internal은 진단 ID 동반 | 컴파일/typed map+대표 E2E, raw error/body 노출 없음 |
 | SC6 | UI 변경→실제 daemon 연결 browser≤2초; daemon 변경→restart/reconnect≤15초 | monotonic 구간·source 변경·ready 증거, fake 서버 제외 |
-| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤2000, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음. S6-6b raw(windows.yml dispatch, PR CI 아님): 40296265668 changes7초·linux-bin10m08s·Rust (Windows)27m45s, 40305797593 changes10초·linux-bin12m21s·Rust (Windows)13m25s(40292765183은 Windows clippy FAILURE). PR CI·로컬 전체·release 시간은 미측정 |
+| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤2000, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음. S6-6b raw(windows.yml dispatch, PR CI 아님): 40296265668 changes7초·linux-bin10m08s·Rust (Windows)27m45s, 40305797593 changes10초·linux-bin12m21s·Rust (Windows)13m25s(40292765183은 Windows clippy FAILURE). 그 당시 PR CI·로컬 전체·release 시간은 미측정이었다. 이후 PR CI raw: #648 Frontend5m30s·Rust (Cargo workspace)11m52s·e2e10m08s·linux-bin12m45s·Rust (Windows)27m24s, #649 Rust (Windows)17m47s(둘 다 15분 미달, PASS 아님). RC release run40340583942 job별 linux-bin12m43s·Rust (Windows)11m48s·release16s(≤40분 합계 판정 없음). 로컬 전체 시간은 미측정(PROGRESS §8 SC7 행) |
 | SC8 | `bash scripts/loc.sh 200000`, 제품 코드≤20만(관찰 트리거) | 테스트 제외와600줄 제한 별도 보고. 기준121277은 과거 값 |
 | SC9 | 작업 없는 daemon RSS≤60MB·CPU≤0.5% | 실제 `/proc`·systemd, warm-up·표본 간격/기간·background 작업 기록 |
 | SC10 | Windows bridge→daemon→PTY→tmux byte echo p50≤10ms/p95≤25ms; 100MB 출력 중 다른 창 ping p95≤100ms, 종료 후 입력≤1초 | 실제 설치본, 샘플/percentile·출력 flood byte 수. renderer paint 제외 |
@@ -370,14 +370,16 @@ S6-6b 결과(19cff21e, PROGRESS §5): SC1·SC3·SC4·SC5·SC6·SC8·SC9·SC10 �
 - [x] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 과제별 중간 push/PR을 하지 않고 이 최종 수용 준비 시점에만 수행한다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다. — 결과: 40292765183@d48f19de FAILURE(Windows clippy)→`f3b09d20`→40296265668 SUCCESS→실제 Windows fixture로 찾은 `19cff21e`→**40305797593@19cff21e SUCCESS**(최종 candidate). head SHA·receipt·installer/linux SHA256·채널 대조 일치(PROGRESS §5).
 - [x] 그 Windows artifact로 §14 설치 수용·SC 계측을 수행한다. Windows 전용 build/strict Clippy는 Windows 근거를 쓴다. 로컬 Linux 성공을 Windows 성공으로 바꾸지 않는다. 제품/packaging/runtime 입력이 바뀌면 새 candidate·artifact와 영향 수용을 다시 결속한다. — 결과: 수행(일부 FAIL/NOT_RUN 기록). 19cff21e artifact로 phase-2 2회, 2차 G1·G2·A1·A2·A4 PASS, A6 FAIL, A3·A5 NOT_RUN, SC는 SC2 raw·SC7 raw만(PASS 판정 없음). `19cff21e` 제품 수정 뒤 새 candidate·artifact로 다시 결속했다.
 - [x] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다. — 결과: `docs(progress): record S6 Windows candidate and installer acceptance`는 PROGRESS·07c만 바꾼다(제품/packaging/runtime 입력 불변). native 실행은 source 19cff21e·run40305797593 산출물이며 문서 SHA에서 다시 실행하지 않았다.
-- [ ] PROGRESS·단일 PR 본문용 결과에 원본 실패→수정 영향 재검증, ignored/NOT_RUN·historical source·timing·cleanup·hash를 구분해 기록한다. artifact는 common-dir에 bounded JSON/log/trace로 보존하며 새 날짜별 Markdown 보고서를 만들지 않는다.
-- [ ] 결과 문서·최소 영향 수정의 검토와 Biome 뒤 필요한 최종 branch push·**S6 PR 한 번**. `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` 최종 PR SHA 필수 성공 및 branch protection 유지. E2E 등 실제 요구 job도 확인한다.
-- [ ] 자동 리뷰는 현재 사용자 설정상 OFF. #646의 “머지까지만” 독립 검토 대체는 **S6 전체 면제 아님**. **사용자 결정(2026-10-26): “독립 검토로 대체 (Recommended)”.** S6 PR 자동 리뷰는 NOT_RUN(비활성화)으로 기록하고 PASS·한도 소진으로 쓰지 않는다. 이 결정은 S6 PR에만 적용한다.
-- [ ] 하네스 독립 코드·보안 검토가 CONVENTIONS §8 상한(완료 SHA 최대3회·4회 이후 실제 손실/유출/미승인 실행 차단 기준만 수정, 나머지 PROGRESS §8)을 그대로 적용해 자동 리뷰를 대신한다. 수정은 회차별 묶고 별도 검토한다. 필수 CI3·branch protection은 바꾸지 않으며 공개/tag 승인이 아니다.
-- [ ] 승인된 절차·필수 CI를 모두 충족한 뒤 squash merge, main CI 확인·ff-only 동기화. final branch/merge tree와 source 근거를 비교한다. 공개는 아직 하지 않는다.
+- [x] PROGRESS·단일 PR 본문용 결과에 원본 실패→수정 영향 재검증, ignored/NOT_RUN·historical source·timing·cleanup·hash를 구분해 기록한다. artifact는 common-dir에 bounded JSON/log/trace로 보존하며 새 날짜별 Markdown 보고서를 만들지 않는다. — 결과: PROGRESS §5 S6-6b와 #648 본문에 원본 FAIL→수정 범위 재검증·NOT_RUN·dispatch raw 시간·수용 소유 자원 정리·candidate installer hash를 구분해 기록했다. 독립 검토 Minor4(본문 표현)는 PR 본문 수정으로 처리했다. 근거는 common-dir bounded artifact이며 2026-10-27 archive `devbox-archive/cleanup-20261026/`에 보관했다.
+- [x] 결과 문서·최소 영향 수정의 검토와 Biome 뒤 필요한 최종 branch push·**S6 PR 한 번**. `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` 최종 PR SHA 필수 성공 및 branch protection 유지. E2E 등 실제 요구 job도 확인한다. — 결과: #648(head `9849c8b2`) 한 번. 필수 PR CI 모두 SUCCESS, raw Frontend (pnpm) 5m30s·Rust (Cargo workspace) 11m52s·e2e 10m08s·linux-bin 12m45s·Rust (Windows) 27m24s(SC7 15분 미달). 2026-10-27 조회 기준 main 필수 status check는 `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 3개 그대로다.
+- [x] 자동 리뷰는 현재 사용자 설정상 OFF. #646의 “머지까지만” 독립 검토 대체는 **S6 전체 면제 아님**. **사용자 결정(2026-10-26): “독립 검토로 대체 (Recommended)”.** S6 PR 자동 리뷰는 NOT_RUN(비활성화)으로 기록하고 PASS·한도 소진으로 쓰지 않는다. 이 결정은 S6 PR에만 적용한다. — 결과: #648 자동 리뷰는 NOT_RUN(비활성화)으로 기록했다.
+- [x] 하네스 독립 코드·보안 검토가 CONVENTIONS §8 상한(완료 SHA 최대3회·4회 이후 실제 손실/유출/미승인 실행 차단 기준만 수정, 나머지 PROGRESS §8)을 그대로 적용해 자동 리뷰를 대신한다. 수정은 회차별 묶고 별도 검토한다. 필수 CI3·branch protection은 바꾸지 않으며 공개/tag 승인이 아니다. — 결과: 1/3회째 APPROVE(Critical·Important 0, Minor4는 PR 본문 표현 → 본문 수정, 보고 `devbox-verification/s6-6b/pr648-review-r1.md`). 추가 회차 없음.
+- [x] 승인된 절차·필수 CI를 모두 충족한 뒤 squash merge, main CI 확인·ff-only 동기화. final branch/merge tree와 source 근거를 비교한다. 공개는 아직 하지 않는다. — 결과: 사용자 승인(2026-10-26 세션 “Rust 통과하면 자체 검토 후 … 알아서 squash merge”) 뒤 2026-10-26T13:39:21Z `8b53484b` squash 머지, tree는 9849c8b2와 동일. main CI·Windows@8b53484b SUCCESS. 2026-10-27 로컬 main은 origin/main(`28eb2a91`)과 일치한다. 공식 공개는 하지 않았다.
 
 ### S6-6c 공개 직전 단 한 번의 명시 승인
 
+- [x] (사용자 결정 2026-10-26 “v1.0.0 공식 버전 배포하기 전에 임시 rc 릴리스를 진행하자”, “모든 릴리스는 main 브랜치에서”로 추가) 임시 RC prerelease. — 결과: #649 → `28eb2a91`(rc tag→prerelease 허용·버전 `1.0.0-rc.1`), main `28eb2a91`의 주석 태그 `v1.0.0-rc.1`, release run40340583942 SUCCESS, GitHub prerelease asset `devbox-1.0.0-rc.1-setup.exe` sha256 `a96cfc92…8909cce`, `releases/latest`는 `v0.9.0` 유지. RC Windows 설치·실행 수용 NOT_RUN, RC→1.0.0 수동 설치 미시험. 공식 `v1.0.0` 승인이 아니다(PROGRESS §5).
+- [ ] 버전 되돌림 PR `1.0.0-rc.1`→`1.0.0`(공식 공개 전 필수; 그 전까지 main 빌드는 updater가 꺼짐, PROGRESS §8 RC M4). I1은 이 공개 전 release-gating으로 남는다(PROGRESS §8).
 - [ ] 공개 준비 결과·SC1–10·미실행/미달·설치 산출물·릴리스 노트 초안을 구체적으로 제시한다. 사용자가 판단할 결과를 먼저 완성한다.
 - [ ] 아래13개 참고 확인과 함께 **v1.0.0 공개 승인**을 받는다. 사용자는 목록을 모두 직접 실행하지 않고 승인할 수 있다. 승인 없이 tag push·GitHub Release를 만들지 않는다.
 
@@ -407,7 +409,9 @@ S6-6b 결과(19cff21e, PROGRESS §5): SC1·SC3·SC4·SC5·SC6·SC8·SC9·SC10 �
 | Windows 파일명 casing/cfg 과거 수정 | 종결. 기존 회귀·Windows CI로 유지 |
 | 과거 native·SC gaps | S6-4 재수행 목록, 환경 부재·사용자 R1/R2는 정확히 NOT_RUN |
 | 세 dependency advisory | S6-1c 호환 조사·좁은 업데이트, exploit 추정 금지 |
-| 자동 리뷰 OFF | 해소(사용자 결정 2026-10-26): S6 PR은 독립 검토로 대체, 자동 리뷰 NOT_RUN(비활성화), CONVENTIONS §8 상한·필수 CI3·보호 규칙 유지. #646 예외를 포괄 승인으로 확장하지 않음 |
-| 공개·태그 | 구현 지시와 별개로 승인 없음. S6-6c에서만 명시 승인 |
+| 자동 리뷰 OFF | 해소(사용자 결정 2026-10-26): S6 PR은 독립 검토로 대체, 자동 리뷰 NOT_RUN(비활성화), CONVENTIONS §8 상한·필수 CI3·보호 규칙 유지. #646 예외를 포괄 승인으로 확장하지 않음. #648은 독립 검토 1/3 APPROVE·자동 리뷰 NOT_RUN으로 머지(`8b53484b`) |
+| 공개·태그 | 임시 RC `v1.0.0-rc.1` prerelease만 사용자 결정(2026-10-26)으로 main에서 공개 완료. 공식 `v1.0.0` tag·release는 승인 없음, S6-6c에서만 명시 승인 |
+| S6-6b Windows 수용 잔여(S1 key·NSIS key) | 해소(사용자 결정 2026-10-26): S1 `HKCU\Software\github\Devbox`는 정확값 guard 뒤 삭제, NSIS 제조사 key 잔존은 Tauri upstream 동작으로 수용·hook 없음(PROGRESS §8) |
+| S6-6b runtime I1 | 실제 Windows CONFIRMED·미수정. v1.0.0 공개 전 release-gating 유지(PROGRESS §8) |
 
 **S6-1 계획의 완료 조건:** 네 새 발견과 기존 요구의 담당 과제·의존·실패 시험·소유 자원·검토/커밋·PR/공개 경계가 빠짐없이 있고, 별도 계획 검토를 통과한다. 계획 작성은 어떤 제품 수정이나 성공 기준 달성을 뜻하지 않는다.
