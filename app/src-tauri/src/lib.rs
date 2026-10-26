@@ -9,6 +9,9 @@ use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 pub fn run() {
+    // SC2 cold start begins here; OS loader time before Rust `main` is excluded.
+    #[cfg(windows)]
+    let started = std::time::Instant::now();
     // This path deliberately precedes Tauri/WebView2 initialization.
     if std::env::args_os().any(|arg| arg == "--self-check") {
         std::process::exit(core::self_check::run());
@@ -47,6 +50,7 @@ pub fn run() {
         .manage(connection::Connection::default())
         .manage(platform::activity::Activity::default())
         .manage(platform::capture::Capture::default())
+        .manage(platform::paint_trace::PaintTrace::new(started))
         .invoke_handler(tauri::generate_handler![
             connection::gate_status,
             connection::gate_retry,
@@ -81,6 +85,8 @@ pub fn run() {
             platform::activity::activity_ack,
             platform::capture::capture_hide,
             platform::capture::capture_ready,
+            platform::paint_trace::palette_painted,
+            platform::paint_trace::first_data_painted,
             platform::activity::activity_tray,
             platform::update::update_status,
             platform::update::update_check,

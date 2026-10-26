@@ -1,5 +1,9 @@
 import { create } from "zustand";
-export type NativeIntent = { kind: "palette" } | { kind: "bottom-terminal"; wasFocused: boolean };
+import { reportPalettePaint } from "./paintTrace";
+/** `traceId` is set only by the native global shortcut; `deferred` marks a wait behind another dialog. */
+export type NativeIntent =
+  | { kind: "palette"; traceId?: number; deferred?: boolean }
+  | { kind: "bottom-terminal"; wasFocused: boolean };
 /** This main-host state survives gate/transport remounts; unknown is never a zero snapshot. */
 export const useNativeRuntime = create<{
   openTasks: number | null;
@@ -28,9 +32,24 @@ export function consumeNativeIntents(run: (intent: NativeIntent) => void) {
         processing = true;
         useNativeRuntime.setState({ intents: remaining });
         processing = false;
+        for (const intent of intents)
+          if (intent.kind === "palette" && intent.traceId !== undefined)
+            reportPalettePaint(intent.traceId, "alreadyOpen", intent.deferred === true);
       }
     }
-    if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+    if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) {
+      const intents = useNativeRuntime.getState().intents;
+      if (intents.some((intent) => intent.kind === "palette" && intent.traceId !== undefined && !intent.deferred)) {
+        processing = true;
+        useNativeRuntime.setState({
+          intents: intents.map((intent) =>
+            intent.kind === "palette" && intent.traceId !== undefined ? { ...intent, deferred: true } : intent,
+          ),
+        });
+        processing = false;
+      }
+      return;
+    }
     const [intent, ...remaining] = useNativeRuntime.getState().intents;
     if (!intent) return;
     processing = true;

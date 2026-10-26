@@ -59,3 +59,5 @@ pub mod popout;
 
 #[cfg(any(windows, test))]
 pub mod native_activity;
+#[cfg(any(windows, test))]
+pub mod paint_trace;

@@ -40,7 +40,7 @@ import { ToolsCommands } from "../features/tools/ToolsCommands";
 import { ToolsPage } from "../features/tools/ToolsPage";
 import { ToastHost } from "../ui/Toast";
 import { registerBottomTab } from "./BottomPanel";
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette, type PaletteTrace } from "./CommandPalette";
 import { useCommands } from "./commands";
 import { Frame } from "./Frame";
 import { type Binding, useKeymap } from "./keymap";
@@ -57,6 +57,7 @@ export function Shell() {
       : !window.name.startsWith("popout-") && !window.location.pathname.startsWith("/popout/"),
   );
   const [palette, setPalette] = useState(false);
+  const [paletteTrace, setPaletteTrace] = useState<PaletteTrace>();
   const [projects, setProjects] = useState(false);
   const router = useMemo(
     () =>
@@ -93,6 +94,7 @@ export function Shell() {
     if (!ownsAttention || !("__TAURI_INTERNALS__" in window)) return;
     return consumeNativeIntents((intent) => {
       if (intent.kind === "palette") {
+        setPaletteTrace(intent.traceId === undefined ? undefined : { id: intent.traceId, deferred: !!intent.deferred });
         setPalette(true);
         return;
       }
@@ -232,7 +234,14 @@ export function Shell() {
         <SourceCommands navigate={() => void router.navigate({ to: "/source" })} />
         <RunStopUndo />
         <ToastHost />
-        <CommandPalette open={palette} onOpenChange={setPalette} />
+        <CommandPalette
+          open={palette}
+          trace={paletteTrace}
+          onOpenChange={(open) => {
+            setPalette(open);
+            if (!open) setPaletteTrace(undefined);
+          }}
+        />
         <ProjectSwitcher
           open={projects}
           onOpenChange={setProjects}

@@ -63,7 +63,7 @@ pub fn initialize(app: &AppHandle) -> tauri::Result<()> {
             "activity-storage" => super::window::focus_main(app),
             "palette" => {
                 super::window::focus_main(app);
-                super::intents::dispatch(app, AppIntent::Palette);
+                super::intents::dispatch(app, AppIntent::Palette { trace: None });
             }
             "quit" => {
                 super::window::focus_main(app);

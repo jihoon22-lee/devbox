@@ -35,3 +35,4 @@ pub mod update_install;
 pub mod update_runner;
 
 pub mod native_activity;
+pub mod paint_trace;

@@ -2,7 +2,21 @@ import { useEffect, useId, useState } from "react";
 import { Dialog, Kbd } from "../ui";
 import s from "./CommandPalette.module.css";
 import { useCommands } from "./commands";
-export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+import { afterPaint, reportPalettePaint } from "./paintTrace";
+/** A native global-shortcut request; tray, menu and in-app opens carry no trace. */
+export type PaletteTrace = { id: number; deferred: boolean };
+export function CommandPalette({
+  open,
+  trace,
+  onOpenChange,
+}: {
+  open: boolean;
+  trace?: PaletteTrace;
+  onOpenChange: (open: boolean) => void;
+}) {
+  useEffect(() => {
+    if (open && trace) return afterPaint(() => reportPalettePaint(trace.id, "painted", trace.deferred));
+  }, [open, trace]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="명령" width={560} contentId="devbox-command-palette">
       {open && <PaletteContents onClose={() => onOpenChange(false)} />}

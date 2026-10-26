@@ -6,7 +6,7 @@ use crate::core::{
         self, Registration, ShortcutAction, ShortcutOwners, ShortcutStatus, parse_accelerator,
     },
 };
-use std::{io, sync::Mutex};
+use std::{io, sync::Mutex, time::Instant};
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -41,6 +41,8 @@ pub fn pressed(
     if event.state != ShortcutState::Pressed {
         return;
     }
+    // SC2 starts at native receipt, before the binding lookup and focusing main.
+    let received = Instant::now();
     let state = app.state::<Shortcuts>();
     let bindings = state.0.lock().unwrap_or_else(|error| error.into_inner());
     let action = bindings.owners.action(shortcut.id, &bindings.registered);
@@ -50,7 +52,9 @@ pub fn pressed(
             super::capture::show(app);
             return;
         }
-        Some(ShortcutAction::Palette) => AppIntent::Palette,
+        Some(ShortcutAction::Palette) => AppIntent::Palette {
+            trace: Some(super::paint_trace::palette_trace(app, received)),
+        },
         Some(ShortcutAction::BottomTerminal) => AppIntent::BottomTerminal {
             was_focused: app
                 .get_webview_window("main")
