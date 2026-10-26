@@ -46,6 +46,9 @@ pub fn initialize(app: &AppHandle) {
             service
         }
     };
+    // The single-instance plugin has already exited any second process, and no update work has
+    // started: downloads left by an earlier direct process exit have no live owner.
+    let _ = service.sweep_stale_downloads();
     // Inspect only owned runner stages before automatic discovery can obscure recovery.
     use super::update_runner::RecoveryOutcome;
     let mut pending_recovery = false;

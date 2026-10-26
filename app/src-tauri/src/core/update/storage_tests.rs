@@ -105,3 +105,60 @@ fn ready_publication_does_not_replace_an_unexpected_file_and_root_marker_is_rech
     assert!(root.pending().is_err());
     assert!(root.automatic_due(100000).is_err());
 }
+#[test]
+fn startup_sweep_removes_only_leaked_owned_download_directories() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("updates");
+    let root = Root::open(&path, AppChannel::Prod).unwrap();
+    // Leaked like a process exit: owners never drop.
+    let mut writer = root.pending().unwrap();
+    writer.push(b"abc", 3).unwrap();
+    let proof = writer.finish(&candidate(b"abc")).unwrap();
+    std::mem::forget(proof);
+    let mut partial = root.pending().unwrap();
+    partial.push(b"a", 3).unwrap();
+    std::mem::forget(partial);
+    let user = path.join("download-user");
+    fs::create_dir(&user).unwrap();
+    fs::write(user.join("notes.txt"), "keep").unwrap();
+    fs::write(path.join("download-file"), "keep").unwrap();
+    let stage = path.join("install-stage");
+    fs::create_dir(&stage).unwrap();
+    fs::write(stage.join("installer.exe"), "keep").unwrap();
+    #[cfg(unix)]
+    {
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("installer.exe"), "keep").unwrap();
+        std::os::unix::fs::symlink(&outside, path.join("download-link")).unwrap();
+    }
+    assert_eq!(downloads(&path), if cfg!(unix) { 5 } else { 4 });
+    assert_eq!(sweep_downloads(&path, AppChannel::Prod), Ok(2));
+    assert_eq!(fs::read_to_string(user.join("notes.txt")).unwrap(), "keep");
+    assert_eq!(
+        fs::read_to_string(path.join("download-file")).unwrap(),
+        "keep"
+    );
+    assert_eq!(
+        fs::read_to_string(stage.join("installer.exe")).unwrap(),
+        "keep"
+    );
+    #[cfg(unix)]
+    assert_eq!(
+        fs::read_to_string(temp.path().join("outside/installer.exe")).unwrap(),
+        "keep"
+    );
+    assert_eq!(sweep_downloads(&path, AppChannel::Prod), Ok(0));
+}
+#[test]
+fn startup_sweep_never_creates_a_root_or_touches_another_channel() {
+    let temp = tempfile::tempdir().unwrap();
+    let absent = temp.path().join("absent");
+    assert_eq!(sweep_downloads(&absent, AppChannel::Prod), Ok(0));
+    assert!(!absent.exists());
+    let path = temp.path().join("updates");
+    let root = Root::open(&path, AppChannel::Accept).unwrap();
+    std::mem::forget(root.pending().unwrap());
+    assert!(sweep_downloads(&path, AppChannel::Prod).is_err());
+    assert_eq!(downloads(&path), 1);
+}

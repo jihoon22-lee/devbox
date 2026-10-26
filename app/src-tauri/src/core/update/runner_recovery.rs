@@ -69,16 +69,17 @@ fn entries(root: &Path, channel: AppChannel) -> Result<Vec<Entry>> {
         return Ok(Vec::new());
     }
     let mut result = Vec::new();
-    for (index, entry) in fs::read_dir(root)
-        .map_err(|_| RunnerError::Storage)?
-        .enumerate()
-    {
-        if index >= 64 {
-            return Err(RunnerError::Unknown);
-        }
+    // Only runner stages count toward the bound: leaked `download-*` or other root entries
+    // must never turn into a permanent startup block.
+    let mut stages = 0;
+    for entry in fs::read_dir(root).map_err(|_| RunnerError::Storage)? {
         let entry = entry.map_err(|_| RunnerError::Storage)?;
         if !entry.file_name().to_string_lossy().starts_with("install-") {
             continue;
+        }
+        stages += 1;
+        if stages > 64 {
+            return Err(RunnerError::Unknown);
         }
         match ownership(&entry.path().join("owner.json"), channel)? {
             Ownership::Other => continue,

@@ -515,3 +515,16 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
     worker.abort();
     let _ = worker.await;
 }
+#[test]
+fn startup_sweep_runs_only_on_the_configured_owned_root() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("updates");
+    let root = Root::open(&path, AppChannel::Prod).unwrap();
+    std::mem::forget(root.pending().unwrap());
+    let service = Service::new(AppChannel::Prod, "1.0.0", Some(path.clone()), |_| {});
+    assert_eq!(service.sweep_stale_downloads(), Ok(1));
+    assert_eq!(
+        Service::new(AppChannel::Prod, "1.0.0", None, |_| {}).sweep_stale_downloads(),
+        Ok(0)
+    );
+}

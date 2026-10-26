@@ -120,6 +120,75 @@ impl Root {
         })
     }
 }
+/// Names this module creates inside a `download-*` directory: the tempfile and its sealed copy.
+fn download_entry(name: &std::ffi::OsStr) -> bool {
+    name == "installer.exe" || name.to_str().is_some_and(|name| name.starts_with(".tmp"))
+}
+fn plain(meta: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {
+            return false;
+        }
+    }
+    !meta.file_type().is_symlink()
+}
+/// Removes `download-*` directories left behind when the process exited without dropping their
+/// owners (Tauri exits the process directly). Call only from the single main instance before any
+/// update work starts. Only an existing root with this channel's marker is touched; never
+/// `install-*`, never a link/reparse point, and a directory with an entry this module did not
+/// create is preserved. Returns how many directories were removed.
+pub fn sweep_downloads(path: &Path, channel: AppChannel) -> R<usize> {
+    if !path.try_exists().map_err(|_| UpdateError::Storage)? {
+        return Ok(0);
+    }
+    let root = Root::open(path, channel)?;
+    let mut removed = 0;
+    for entry in fs::read_dir(&root.path).map_err(|_| UpdateError::Storage)? {
+        let entry = entry.map_err(|_| UpdateError::Storage)?;
+        if !entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with("download-"))
+        {
+            continue;
+        }
+        let dir = entry.path();
+        let Ok(meta) = fs::symlink_metadata(&dir) else {
+            continue;
+        };
+        if !meta.is_dir() || !plain(&meta) {
+            continue;
+        }
+        let Ok(items) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut files = Vec::new();
+        let mut owned = true;
+        for item in items {
+            let Ok(item) = item else {
+                owned = false;
+                break;
+            };
+            let meta = fs::symlink_metadata(item.path());
+            if !download_entry(&item.file_name())
+                || !meta.is_ok_and(|meta| meta.is_file() && plain(&meta))
+            {
+                owned = false;
+                break;
+            }
+            files.push(item.path());
+        }
+        if owned
+            && files.iter().all(|file| fs::remove_file(file).is_ok())
+            && fs::remove_dir(&dir).is_ok()
+        {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
 pub fn bounded(path: &Path, cap: u64) -> R<Vec<u8>> {
     safe(path)?;
     let file = File::open(path).map_err(|_| UpdateError::Storage)?;

@@ -103,6 +103,14 @@ impl Service {
     pub fn snapshot(&self) -> Snapshot {
         self.lock().snapshot.clone()
     }
+    /// Startup-only: remove `download-*` leaked by a previous process exit. The caller must be the
+    /// single main instance and run this before any check/download work starts.
+    pub fn sweep_stale_downloads(&self) -> R<usize> {
+        match &self.root {
+            Some(root) => super::storage::sweep_downloads(root, self.channel),
+            None => Ok(0),
+        }
+    }
     fn storage(&self) -> R<Root> {
         Root::open(
             self.root.as_deref().ok_or(UpdateError::Storage)?,

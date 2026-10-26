@@ -269,3 +269,35 @@ fn acknowledgment_preserves_unexpected_user_entry_and_replaced_installer() {
     assert_eq!(fs::read(&manifest.installer).unwrap(), bytes);
     assert!(dir.join("owner.json").exists());
 }
+#[test]
+fn leaked_downloads_and_other_root_entries_never_count_toward_the_stage_bound() {
+    let (_temp, manifest) = recorded(Outcome::Installed, None, None);
+    for n in 0..100 {
+        fs::create_dir(root(&manifest).join(format!("download-leak{n}"))).unwrap();
+        fs::write(root(&manifest).join(format!(".tmp{n}")), b"").unwrap();
+    }
+    assert!(!startup_blocked(early_busy(
+        root(&manifest),
+        AppChannel::Prod,
+        |_| Ok(false)
+    )));
+    assert_eq!(
+        inspect(root(&manifest), AppChannel::Prod, |_| Ok(false))
+            .unwrap()
+            .outcome,
+        RecoveryOutcome::Success
+    );
+}
+#[test]
+fn more_than_sixty_four_runner_stages_still_fail_closed() {
+    let (_temp, manifest) = recorded(Outcome::Installed, None, None);
+    // One recorded stage plus 64 ownerless ones exceeds the bound.
+    for n in 0..64 {
+        fs::create_dir(root(&manifest).join(format!("install-extra{n}"))).unwrap();
+    }
+    assert!(startup_blocked(early_busy(
+        root(&manifest),
+        AppChannel::Prod,
+        |_| Ok(false)
+    )));
+}
