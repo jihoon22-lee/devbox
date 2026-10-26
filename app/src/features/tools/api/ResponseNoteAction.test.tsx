@@ -120,3 +120,22 @@ it("late success does not replace the new response state and a missing history d
   );
   expect(screen.queryByRole("button", { name: "노트에 붙이기" })).not.toBeInTheDocument();
 });
+
+it("an operation mismatch lets the user reselect the target instead of repeating the same intent", async () => {
+  const backend = new FakeBackend();
+  const user = userEvent.setup();
+  backend.appendResponse.mockRejectedValueOnce(new SendFailure("notes.append_operation_mismatch"));
+  mount(backend);
+  await user.click(screen.getByRole("button", { name: "노트에 붙이기" }));
+  await user.click(screen.getByRole("button", { name: "붙이기" }));
+  await screen.findByRole("alert");
+  expect(screen.getByLabelText("붙일 곳")).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "대상 다시 선택" }));
+  expect(screen.getByLabelText("붙일 곳")).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "붙이기" }));
+  await screen.findByText("chosen.md에 붙였습니다.");
+  expect(backend.selectResponseTarget).toHaveBeenCalledTimes(2);
+  expect(backend.appendResponse.mock.calls[1]![0].operationId).not.toBe(
+    backend.appendResponse.mock.calls[0]![0].operationId,
+  );
+});

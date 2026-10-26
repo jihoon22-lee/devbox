@@ -76,7 +76,13 @@ function Action({ historyId }: { historyId: string }) {
   }
   const message = error ? messageFor(error.code as never, error.detail) : null;
   const canReselect =
-    error && ["notes.response_target_changed", "notes.too_large", "notes.invalid_input"].includes(error.code);
+    error &&
+    [
+      "notes.response_target_changed",
+      "notes.append_operation_mismatch",
+      "notes.too_large",
+      "notes.invalid_input",
+    ].includes(error.code);
   return (
     <>
       <div className={s.bar}>
