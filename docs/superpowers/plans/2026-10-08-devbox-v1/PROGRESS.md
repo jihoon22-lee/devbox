@@ -168,6 +168,11 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 ## 5. 계획과 달라진 점
 
+### S6 커밋 작성자 이메일 재작성 (2026-10-26 · 사용자 승인·tree 동일·push 전)
+
+- 첫 백업 push가 GitHub 이메일 비공개 보호로 거부됐다. 원인은 이 저장소 로컬 `.git/config` user.email이 개인 주소로 바뀌어 S6 커밋47개 중33개(ed0175b7 이후 일부)가 그 주소로 작성된 것이다. 사용자가 2026-10-26 “noreply로 작성자 재작성”을 승인했다. 아직 push하지 않은 `867b414e..`의 작성자/커밋터 이메일만 noreply로 바꿨고 메시지·날짜·파일 내용은 그대로다. 47개 모두 tree가 동일하며(`git diff` 빈 결과) 앞의5개를 제외한42개 SHA가 바뀌었다. 로컬 user.email도 noreply로 되돌렸다.
+- **이 문서와 근거 artifact에 적힌 이전 커밋 SHA(예: 313a6095·63ac80ba·e86529a5·6b7b1fb3)는 재작성 전 값이다.** 같은 tree의 새 SHA는 `devbox-verification/s6-6b/email-rewrite/mapping.json`(이전→새·tree·제목)에서 찾는다. 이전 이력은 로컬 ref `refs/devbox-backup/s6-pre-email-rewrite`와 `pre-rewrite.bundle`로 보존했다. 내용이 같으므로 이전 SHA의 로컬 검증·검토 결과는 같은 tree에 그대로 적용되며 Windows/native 결과는 여전히 NOT_RUN이다. 과거 기록 문장은 바꾸지 않는다.
+
 ### S6-6b 로컬 최종 검토·전체 검사·수정 (2026-10-26 · 원본 전체 검사 FAIL 보존→수정 18커밋→실패 범위 재검증 PASS·재검토 통과·로컬 완료)
 
 - 전체 브랜치 독립 검토: 867b414e..63ac80ba(27커밋)를 6영역으로 나눠 읽기 전용 검토했다. 근거 `devbox-verification/s6-6b/final-review-{rust-runtime,rust-api,rust-docs,native,front,ci-docs}.md`. Critical은 6영역 모두 없다. rust-docs·rust-api·rust-runtime·front는 **Ready**(차단 없음), ci-docs는 **Ready with doc conditions**(README 상태 줄·낡은 원장 줄 갱신, 이 커밋에서 처리), native는 **Needs fixes**: I1 필수 Windows CI `clippy --all-targets -D warnings`가 미사용 `Identity` 재노출·test 전용 `run_windows`/`run_with_executable` dead_code로 실패할 위험, I2 차단된 시작이 무음 exit 3이고 안내된 복구가 적용되지 않음, I3 누수된 `download-*`가 64개 복구 상한을 채워 앱이 영구히 시작 못 함. 영역별 minor는 아래 수정 대상이 아닌 항목만 §8에 옮겼다.
