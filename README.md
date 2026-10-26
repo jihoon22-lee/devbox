@@ -2,7 +2,7 @@
 
 Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·돌리고·지켜보고·기록하는 개인 개발 허브.
 
-- 상태: v1.0.0 재구축 중. S0b–S5는 main에 머지됐고 S6(마무리·출시)은 `v1/s6-release` 브랜치에서 로컬로 구현 중이다. S6 PR·머지와 v1 공개 릴리스는 아직 하지 않았다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
+- 상태: v1.0.0 재구축 중. S0b–S5는 main에 머지됐고 S6(마무리·출시)은 설치·업데이트·릴리스 워크플로, 성공 기준 계측 도구, 사용 문서와 버전 1.0.0 고정을 담는다. v1 공개 릴리스와 `v1.0.0` 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
 - 이전 소스: [v0.9.0 태그](https://github.com/jihoon22-lee/devbox/tree/v0.9.0). 공개 상태는 GitHub Release에서 확인한다.
 - 설계: [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md)
 - 진행 원장: [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)

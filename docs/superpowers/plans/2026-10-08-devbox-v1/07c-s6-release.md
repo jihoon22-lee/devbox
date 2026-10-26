@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b도 로컬 완료했고(Windows 실기 NOT_RUN), S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16).
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b·S6-5(문서)·S6-6a(버전 1.0.0 고정, 독립 검토 APPROVE)도 로컬 완료했고, S6-6b 로컬 전체 브랜치 검토·전체 검사(원본 FAIL 보존)·수정 wave(18커밋)·재검증도 로컬 완료했다(Windows 실기·SC 측정·실제 GitHub release·push·PR·tag는 NOT_RUN). S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16).
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -230,7 +230,7 @@ Mermaid11 최신11.17.2는 affected KaTeX 경로여서 upstream Mermaid12.2.0을
 
 **Files:** `.github/workflows/{ci,windows}.yml`, `scripts/{win-package,win-sync,win-build}.ps1`, `scripts/tests/windows-*.ps1`, `scripts/{release,dogfood}.py`, `scripts/tests/test_release.py`, `scripts/{check-inner,build-linux,ci-scope}.sh`, 실제 중복이 확인된 부분만. 새 workflow를 기본안으로 추가하지 않는다.
 
-착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤1,492줄이었다. batching/release 구현 후 현재는 **1,881줄·workflow2개**다. 2026-10-26 사용자는 앞선1,800줄 승인에 이어 “2,000줄로 조정하고 계속 진행 (권장)”을 명시 승인했으며 현재 공통 상한은2,000줄이다. 현재 예산은119줄 남지만 S6-4 계측 등을 포함한 최종 fit은 아직 확인하지 않았다. 제품 LOC121277는 별도 과거 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 시간 목표는 바꾸지 않으며 최종 실측 전 달성을 약속하지 않는다.
+착수 기준 `.github`+`scripts`는1,500줄·workflow2개였고, Windows fixture 진입점 subset의 실제 순 감소8줄 뒤1,492줄이었다. batching/release 구현 직후에는 1,881줄·workflow2개였고 S6-4b 계측·S6-6b 수정까지 반영한 현재는 **1,967줄·workflow2개**다. 2026-10-26 사용자는 앞선1,800줄 승인에 이어 “2,000줄로 조정하고 계속 진행 (권장)”을 명시 승인했으며 현재 공통 상한은2,000줄이다. 구현 직후 여유는119줄이었고 현재 예산은33줄 남는다. S6-4 계측과 S6-6b 수정을 포함한 줄 수 fit은 1,967/2,000줄로 확인했으나 SC7 시간은 아직 측정하지 않았다. 제품 LOC121277는 별도 과거 관찰값이다. PR Windows22분43초는 SC7 15분 미달이며 product main14분30초가 이전 PR 미달을 지우지 않는다. 01 SC7의 PR15분과 00 §3의 CI15분/Windows40분 표기가 다르므로 두 실제 경과를 병기하고 적용 기준을 명시한다. 시간 목표는 바꾸지 않으며 최종 실측 전 달성을 약속하지 않는다.
 
 **먼저 하는 예산 작업:**
 
@@ -282,7 +282,7 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 ### S6-3b 설치 확인·all-window 종료·재기동
 
-> 2026-10-26 현재: 구현과 고유170 좁은 검증 PASS(coordinator19·frontend/runtime93·native35·runner23), installer 기록 공백 RED→복구10 GREEN 및 최종 소스 검토 미해결0을 확인했다. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·인계로 고정한다. MSVC target 소스 확인은 ring build의 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS는 NOT_RUN이다. 아래 Windows 수용 체크는 로컬 구현 완료와 구분해 최종 candidate까지 남긴다. 사용자 한도 소진 지시에 따라 현 작업 인계를 정리하고 S6-4는 시작하지 않는다. 상세·유일 진행 원장은 PROGRESS의 S6-3b다.
+> 2026-10-26 현재: 구현과 고유170 좁은 검증 PASS(coordinator19·frontend/runtime93·native35·runner23), installer 기록 공백 RED→복구10 GREEN 및 최종 소스 검토 미해결0을 확인했다. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·인계로 고정한다. MSVC target 소스 확인은 ring build의 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS는 NOT_RUN이다. 아래 Windows 수용 체크는 로컬 구현 완료와 구분해 최종 candidate까지 남긴다. 당시 사용자 한도 소진 지시에 따라 인계를 정리하고 S6-4는 시작하지 않았으며, 이후 S6-4a/4b는 로컬 완료했다(§14). 상세·유일 진행 원장은 PROGRESS의 S6-3b다.
 
 - [x] ready 뒤 [업데이트]는 agents/services 실행 수 요약과 데몬 작업 유지 안내를 보여 주고 **명시적으로 설치 확인**받는다. 네이티브 별도 확인 대화상자/서명 updater는 추가하지 않는다(ADR0016).
 - [x] 기존 all-window prepare/dirty flush barrier를 통과한 경우에만 설치를 시작한다. 실패/timeout/창 거절은 앱·작업 유지, installer 실행0회. 여러 창 중 한 창의 확인으로 다른 dirty 창을 건너뛰지 않는다.
@@ -359,12 +359,12 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 - [x] `Cargo.toml` workspace, `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/tauri.conf.json` 및 실제 channel config의 override 유무를 확인한다. 현행 `1.0.0-dev`→`1.0.0`을 **한 번만** 반영한다. — 결과: 네 파일 한 줄씩만 바꿨고 `tauri.accept.conf.json`·`tauri.dev.conf.json`에는 version override가 없다.
 - [x] Cargo.lock(두 manifest 경로의 실제 lock)·pnpm importer 등 연결된 generated metadata를 정상 도구로 갱신한다. 모든 packaged binary/resource/manifest가 같은1.0.0인지 검증한다. — 결과: `cargo update --workspace --offline`을 두 manifest에 실행해 로컬 패키지 version 줄만 바뀌었다(루트22·app5, 외부 의존성 변경0). pnpm-lock은 importer에 앱 version을 기록하지 않아 변경 없고 `pnpm install --frozen-lockfile --offline`이 통과한다. 런타임 포함 경로(`CARGO_PKG_VERSION`·`app/package.json`→`__APP_VERSION__`·`devbox-version.txt`·`dev-session.py`·`release.py` 태그↔manifest)는 모두 같은 소스에서 나와 일치한다.
 - [x] 저장소 전체 문자열을 지워 historical docs/fixtures를 변조하지 않는다. 버전 원장 목록과 런타임 포함 경로의 일치 검사로 검증하며 남은 `1.0.0-dev`는 history/dev-disable fixture 등 이유별로 기록한다. — 결과: 남은 70건을 history24·dev-disable 문서1·dev-disable fixture2·시험 fixture43(자체 완결 literal)로 분류했고 런타임 포함 경로는 0건이다. README의 "현재 브랜치 빌드 포함" 한 구절만 현재 사실에 맞춰 고쳤다.
-- [ ] 독립 검토·Biome·`chore(release): set version to 1.0.0`. 아직 tag/release는 없다. — 결과: Biome CI·커밋 완료(tag/release 없음). 독립 검토는 컨트롤러가 별도로 실행한 뒤 이 칸을 체크한다.
+- [x] 독립 검토·Biome·`chore(release): set version to 1.0.0`. 아직 tag/release는 없다. — 결과: Biome CI·커밋 완료(tag/release 없음). 독립 검토(`devbox-verification/s6-6a/independent-review.md`, 295c384f..63ac80ba) APPROVE(Critical0/Important0); minor는 §4 AH 행 갱신과 `1.0.0-dev` 70→74 표기이며 PROGRESS에서 처리했다.
 
 ### S6-6b 브랜치 전체·최종 검사·한 PR
 
-- [ ] 전체 브랜치 독립 검토: 네 수정·통합·소유권·redaction·업데이트·문서/근거 일치. 해결되지 않은 항목과 SC 판정을 먼저 고정한다.
-- [ ] 자원 supervisor 아래 최종 **전체 check·workspace/native 해당 clippy·build·E2E를 한 번** 계획된 entrypoint로 실행한다. `scripts/check-inner.sh`가 포함하는 항목은 중복 별도 실행하지 않고 missing scope만 보충한다. 실패 뒤에는 실패/직접 영향 범위만 재실행한다.
+- [x] 전체 브랜치 독립 검토: 네 수정·통합·소유권·redaction·업데이트·문서/근거 일치. 해결되지 않은 항목과 SC 판정을 먼저 고정한다. — 결과(로컬): 63ac80ba에서 6영역 검토(`devbox-verification/s6-6b/final-review-{rust-runtime,rust-api,rust-docs,native,front,ci-docs}.md`). rust-docs·rust-api·rust-runtime·front Ready, ci-docs Ready with doc conditions, native Needs fixes(I1–I3)였고 모두 수정 wave와 재검토(`fix-wave-re-review.md`·`n1-re-review.md`)로 닫았다. 남은 지적은 PROGRESS §8에 고정했고 SC1–SC10은 모두 실측 없음(NOT_RUN)으로 유지한다.
+- [x] 자원 supervisor 아래 최종 **전체 check·workspace/native 해당 clippy·build·E2E를 한 번** 계획된 entrypoint로 실행한다. `scripts/check-inner.sh`가 포함하는 항목은 중복 별도 실행하지 않고 missing scope만 보충한다. 실패 뒤에는 실패/직접 영향 범위만 재실행한다. — 결과(로컬): 63ac80ba 전체 check는 **FAIL**(종료1·1550.6초·memory_enforced=true; workspace clippy·`agents_codex`·Vitest 1/1690·E2E 1/23)이며 원본으로 보존한다. 수정 18커밋(63ac80ba..e86529a5) 뒤 실패/직접 영향 범위만 재실행해 workspace·native clippy, Rust 시험, Vitest 1692, typecheck, E2E 23/23, scripts 26, gen-ts, rustfmt, Biome, `pnpm build`가 PASS했다(상세 PROGRESS §5 S6-6b). 수정 후 전체 check 재실행은 하지 않았고 Windows/MSVC 항목은 NOT_RUN이다.
 - [ ] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 과제별 중간 push/PR을 하지 않고 이 최종 수용 준비 시점에만 수행한다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다.
 - [ ] 그 Windows artifact로 §14 설치 수용·SC 계측을 수행한다. Windows 전용 build/strict Clippy는 Windows 근거를 쓴다. 로컬 Linux 성공을 Windows 성공으로 바꾸지 않는다. 제품/packaging/runtime 입력이 바뀌면 새 candidate·artifact와 영향 수용을 다시 결속한다.
 - [ ] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다.
