@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다.
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b도 로컬 완료했고(Windows 실기 NOT_RUN), S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16).
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -305,11 +305,12 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 **Files:** 실제 이벤트 소유 지점 `platform/shortcuts.rs`, bootstrap/connection/UI 첫 데이터 표시; 기존 `scripts/dev-session.py`의 dev timestamp, terminal latency 시험, 필요한 bounded native 수용 도우미. source/runtime의 readiness는 아래 별도 과제로 둔다.
 
-- [ ] SC2 monotonic timestamp는 단축키 수신→팔레트 paint, 프로세스 시작→첫 데이터 paint를 같은 run ID로 결속한다. 단순 RPC ping/DOM 존재를 사용자 표시 시간으로 대체하지 않는다.
-- [ ] SC6는 실제 source 변경 시각→HMR 반영, daemon 변경→ready+browser 재연결을 잰다. dev-session readiness 자체를 전체 reload 시간이라고 쓰지 않는다.
-- [ ] #642 Windows readiness를 S6에 포함: `crates/cli/src/windows_exec.rs` 직접 경로와 `app/src-tauri/src/platform/windows.rs` native 경로 모두 localhost listener의 PID/생성시각·승인된 child/후손 귀속을 확인한다. PID 재사용·후손 종료·조회 실패는 ready=false/명확 실패다.
-- [ ] RED: Windows 소유 unrelated listener만 연 상태에서는 서비스 미준비, 실제 child/후손 listener만 준비. IPv4/IPv6·zero-port·process exit/timeout·직접/native 동등성 좁은 시험. 기존 호스트 listener·방화벽을 바꾸지 않는다.
-- [ ] 검토·`fix(runtime): bind Windows readiness to the owned process tree`; 계측은 별도 `test(acceptance): measure release readiness criteria`.
+- [x] SC2 monotonic timestamp는 단축키 수신→팔레트 paint, 프로세스 시작→첫 데이터 paint를 같은 run ID로 결속한다. 단순 RPC ping/DOM 존재를 사용자 표시 시간으로 대체하지 않는다. — 결과(계측만, `496b1c78`): native `Instant`→bounded16 trace→이중 rAF ack, `run()` 첫 `Instant`→AgentList daemon 데이터 paint, 같은 `run=` process ID. 실제 설치본 표본 NOT_RUN·Windows 컴파일 NOT_COMPILED.
+- [x] SC6는 실제 source 변경 시각→HMR 반영, daemon 변경→ready+browser 재연결을 잰다. dev-session readiness 자체를 전체 reload 시간이라고 쓰지 않는다. — 결과(계측만): `dev-session.py` SIGUSR1 소유 daemon 재시작·monotonic 출력, `app/acceptance/sc6.spec.ts`(UI 표시·buildMs/restartMs 분리), 2단계 정리 수정`7d638599`. 실제 실측 NOT_RUN.
+- [x] #642 Windows readiness를 S6에 포함: `crates/cli/src/windows_exec.rs` 직접 경로와 `app/src-tauri/src/platform/windows.rs` native 경로 모두 localhost listener의 PID/생성시각·승인된 child/후손 귀속을 확인한다. PID 재사용·후손 종료·조회 실패는 ready=false/명확 실패다. — 결과(`313a6095`): runtime 단일 gate(durable Committed receipt)와 `WindowsProbe::Listeners`를 direct→native 공유 경로로 사용, receipt 검증 뒤 job 귀속(`IsProcessInJob`)+table 재읽기, 실패·불일치는 typed not-ready. port 없는 Windows 서비스는 기존 `wait_ready` 유지(판정). C# 컴파일·Windows 실행 NOT_RUN.
+- [x] RED: Windows 소유 unrelated listener만 연 상태에서는 서비스 미준비, 실제 child/후손 listener만 준비. IPv4/IPv6·zero-port·process exit/timeout·직접/native 동등성 좁은 시험. 기존 호스트 listener·방화벽을 바꾸지 않는다. — 결과: Linux gate RED5→GREEN(unrelated→미준비·owned→준비·Unavailable/IdentityMismatch/Empty/NotFound·Intent/Revoked/Closed·lock), runtime6·protocol8(port0 거절 포함)·CLI21·app19 PASS. IPv4/IPv6·exit/timeout 실제 Windows fixture는 작성만(ignored·NOT_RUN), direct/native Windows 동등성 NOT_RUN.
+- [x] 검토·`fix(runtime): bind Windows readiness to the owned process tree`; 계측은 별도 `test(acceptance): measure release readiness criteria`. — 결과: `313a6095` 독립 APPROVE(+기존 회귀 `95a742f9` APPROVE), `496b1c78`+`7d638599` 재검토 APPROVE, 시험 정렬 `25d1bbb0` APPROVE(로컬).
+- [ ] Windows gating: `DevboxListeners` C# 컴파일·ignored interop fixture·Listeners 5초 예산 계측·direct/native 동등성은 아래 실제 Windows 수용에서 실행한다. 그 전까지 NOT_RUN이며 실패하면 port 있는 Windows 서비스가 준비되지 않는다.
 
 ### SC별 판정 원장
 
@@ -369,8 +370,8 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 - [ ] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다.
 - [ ] PROGRESS·단일 PR 본문용 결과에 원본 실패→수정 영향 재검증, ignored/NOT_RUN·historical source·timing·cleanup·hash를 구분해 기록한다. artifact는 common-dir에 bounded JSON/log/trace로 보존하며 새 날짜별 Markdown 보고서를 만들지 않는다.
 - [ ] 결과 문서·최소 영향 수정의 검토와 Biome 뒤 필요한 최종 branch push·**S6 PR 한 번**. `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` 최종 PR SHA 필수 성공 및 branch protection 유지. E2E 등 실제 요구 job도 확인한다.
-- [ ] 자동 리뷰는 현재 사용자 설정상 OFF. #646의 “머지까지만” 독립 검토 대체는 **S6 전체 면제 아님**. S6 PR 전 사용자에게 재활성화 여부 또는 독립 검토 대체 절차를 확인할 결정 항목으로 남긴다. 계획/로컬 구현 준비를 막지 않으며 NOT_RUN(비활성화)을 PASS·한도 소진으로 쓰지 않는다.
-- [ ] 자동 리뷰를 사용하는 결정이면 CONVENTIONS §8의 완료 SHA 최대3회·4회 이후 실제 손실/유출/미승인 실행 차단 기준을 적용한다. 수정은 회차별 묶고 별도 검토한다. 다른 절차는 명시 결정 기록 뒤 적용한다.
+- [ ] 자동 리뷰는 현재 사용자 설정상 OFF. #646의 “머지까지만” 독립 검토 대체는 **S6 전체 면제 아님**. **사용자 결정(2026-10-26): “독립 검토로 대체 (Recommended)”.** S6 PR 자동 리뷰는 NOT_RUN(비활성화)으로 기록하고 PASS·한도 소진으로 쓰지 않는다. 이 결정은 S6 PR에만 적용한다.
+- [ ] 하네스 독립 코드·보안 검토가 CONVENTIONS §8 상한(완료 SHA 최대3회·4회 이후 실제 손실/유출/미승인 실행 차단 기준만 수정, 나머지 PROGRESS §8)을 그대로 적용해 자동 리뷰를 대신한다. 수정은 회차별 묶고 별도 검토한다. 필수 CI3·branch protection은 바꾸지 않으며 공개/tag 승인이 아니다.
 - [ ] 승인된 절차·필수 CI를 모두 충족한 뒤 squash merge, main CI 확인·ff-only 동기화. final branch/merge tree와 source 근거를 비교한다. 공개는 아직 하지 않는다.
 
 ### S6-6c 공개 직전 단 한 번의 명시 승인
@@ -399,12 +400,12 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 | #645 credential root4367201426 | 이미 수정·머지됨. 회귀 유지, 새 결함으로 재개하지 않음 |
 | #645 HTTP authorize4367201424 | S6-1b.3 포함 |
 | #644 quit finish/new-window | S6-3b bounded reproduction·updater 종료 계약에 필요한 보정 포함; 불필요함이 증명된 경우만 이유를 남겨 defer |
-| #642 Windows readiness PID 귀속 | S6-4 포함, 직접/native 모두 확인 |
+| #642 Windows readiness PID 귀속 | S6-4 포함, 직접/native 모두 확인. S6-4a `313a6095` 구현·독립 APPROVE, 실제 Windows 실행·동등성은 §14 수용까지 NOT_RUN |
 | custom vault support masking | S6-1b.4 포함 |
 | Windows 파일명 casing/cfg 과거 수정 | 종결. 기존 회귀·Windows CI로 유지 |
 | 과거 native·SC gaps | S6-4 재수행 목록, 환경 부재·사용자 R1/R2는 정확히 NOT_RUN |
 | 세 dependency advisory | S6-1c 호환 조사·좁은 업데이트, exploit 추정 금지 |
-| 자동 리뷰 OFF | S6 PR 전 절차 결정 미결. #646 예외를 포괄 승인으로 확장하지 않음 |
+| 자동 리뷰 OFF | 해소(사용자 결정 2026-10-26): S6 PR은 독립 검토로 대체, 자동 리뷰 NOT_RUN(비활성화), CONVENTIONS §8 상한·필수 CI3·보호 규칙 유지. #646 예외를 포괄 승인으로 확장하지 않음 |
 | 공개·태그 | 구현 지시와 별개로 승인 없음. S6-6c에서만 명시 승인 |
 
 **S6-1 계획의 완료 조건:** 네 새 발견과 기존 요구의 담당 과제·의존·실패 시험·소유 자원·검토/커밋·PR/공개 경계가 빠짐없이 있고, 별도 계획 검토를 통과한다. 계획 작성은 어떤 제품 수정이나 성공 기준 달성을 뜻하지 않는다.

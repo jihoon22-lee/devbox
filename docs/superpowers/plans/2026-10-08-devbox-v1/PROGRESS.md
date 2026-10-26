@@ -15,15 +15,17 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료.** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6-3a 완료85b48252 뒤 S6-3b 설치 확인·all-window quit·native 실제 수명 gate·분리 runner 구현과 좁은 검증을 마쳤다. coordinator19·frontend/runtime93·native35·runner23, 합계 고유170 PASS. 제품·문서·근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS 뒤 로컬 완료·새 세션 인계로 고정한다. Windows 소스 확인 NOT_COMPILED·실기 NOT_RUN은 유지한다. |
+| 단계 | **S3 #644·S4 #646·S5 #645 머지 완료. S6 계획563523db 뒤 사용자 구현 승인, S6-1a.1 별도 검토 APPROVE 후 로컬 완료, S6-1a.2 고유101 직접 검증·독립 재검토 APPROVE 후 로컬 완료, S6-1a.3 직접 관련94 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1a.4 직접 관련74 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.1 직접 관련69 PASS·독립 전체 검토 APPROVE 후 로컬 완료, S6-1b.2 고유16 PASS·독립 APPROVE 후 로컬 완료, S6-1b.3 고유30 PASS·독립 APPROVE 후 로컬 완료, S6-1b.4 고유18 PASS·독립 APPROVE 후 로컬 완료, S6-1c Vitest15 PASS·독립 APPROVE 후 로컬 완료, Mermaid26 PASS·독립 APPROVE 후 로컬 완료, S6-2·S6-3a·S6-3b 로컬 완료, S6-4a·T1b·S6-4b·T2b 독립 APPROVE 후 로컬 완료(push·PR 없음).** 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S6-4 로컬 완료 뒤 S6-5 사용 문서·최종 계약 정리 진행. S6-4a `313a6095`(Windows readiness 단일 gate·소유 job 귀속, 좁은 runtime6·protocol8·CLI21+ignored1·app19 PASS), T1b `95a742f9`(windows.root 누락 typed 오류 복구, runtime lib148 PASS), S6-4b `496b1c78`+수정`7d638599`(SC2/SC6 계측만), T2b `25d1bbb0`(updater 방송 시험 정렬)는 각각 독립 APPROVE다. C# listener 컴파일·Windows 실기·실제 SC2/SC6 표본·MSVC 확인은 NOT_RUN/NOT_COMPILED다. |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
-| 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. R1/R2·자동 리뷰 절차·공개 승인 경계는 유지한다. |
-| 다음 제품 작업 | 2026-10-26 사용자 한도 소진 지시에 따라 현재 S6-3b 마무리·새 세션 인계까지만 수행한다. S6-4는 미착수이며 새 세션에서 실제 Git/최종 검토·커밋 상태를 대조한 뒤07c §14의 Windows readiness PID 귀속과 SC 계측 준비부터 이어간다. MSVC 소스 확인은 lib.exe 부재로 미완료이며 실제 Windows·NSIS·전체검사는 최종 candidate에서 수행한다. scripts+.github1,881/2,000줄·workflow2다. |
-| 마지막 갱신 | 2026-10-26 · S6-3b 고유170 PASS·제품/문서/근거 최종 독립 APPROVE·미해결0·완료 Biome852 PASS(1.386초·memory 적용), 로컬 완료·새 세션 인계. installer 기록 공백 RED→복구10 GREEN 및 원본 실패/재사용/source 근거는 `devbox-verification/s6-3b/`. MSVC 타입 확인은 lib.exe 부재로 NOT_COMPILED, 실제 Windows/NSIS·전체검사·push/PR·공개는 NOT_RUN. S6-4는 미착수. |
+| 이어받은 미결 | 사전 검토 신규4건(Env 늦은 읽기·LSP 새 target 출처·Windows 사본 identity·직접 credential echo)은 S6-1a에 배정. 기존 OAuth/vault/readiness/quit 후속과 과거 native gaps·SC1–10은07c 담당 과제에 배정. S6 PR 자동 리뷰 절차는 2026-10-26 사용자 결정(독립 검토 대체, §2)으로 해소했다. R1/R2·공개 승인 경계는 유지한다. |
+| 다음 제품 작업 | S6-5 문서 커밋·별도 문서 검토 → S6-6a 버전1.0.0 한 번 고정 → S6-6b 전체 검사·candidate 백업 push·windows.yml dispatch 뒤 §14 Windows 수용·SC 측정(C# listener fixture·5초 예산·direct/native 동등성 gating 포함) → S6 PR 한 번(자동 리뷰 대신 독립 검토 최대3회, 필수 CI3). scripts+.github1,954/2,000줄·workflow2다. 공개·tag는 별도 명시 승인 전 하지 않는다. |
+| 마지막 갱신 | 2026-10-26 · S6-4a·T1b·S6-4b(수정1회)·T2b 로컬 완료와 S6 PR 자동 리뷰 독립 검토 대체 결정을 기록. 근거 `devbox-verification/s6-4a/`·`s6-4a-stale/`·`s6-4b/`·`s6-4b-stale/`. 실제 Windows/NSIS·SC2/SC6 표본·전체검사·push/PR·공개는 NOT_RUN. |
 
 ## 2. 막힌 것 · 사용자 결정 대기
+
+**S6 PR 자동 리뷰 처리 결정(2026-10-26 사용자 결정):** 자동 리뷰가 OFF인 상태에서 사용자가 **“독립 검토로 대체 (Recommended)”**를 선택했다. S6 PR의 자동 코드·보안 리뷰는 NOT_RUN(비활성화)으로 기록하며 PASS나 한도 소진으로 쓰지 않는다. 하네스의 독립 코드·보안 검토가 CONVENTIONS §8 상한(리뷰가 끝난 서로 다른 SHA 최대3회, 4회째부터는 실제 데이터 손실·비밀 유출·승인하지 않은 실행만 수정하고 나머지는 §8 후속)을 그대로 적용해 대신한다. 필수 CI3(`Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`)와 branch protection은 바꾸지 않는다. 아래 2026-10-25 “현재 S6 구현 승인”의 재활성화/대체 절차 미결은 이 결정으로 해소되며 그 문단은 원본대로 둔다. S6 PR에 한정하고 다른 PR의 규약을 바꾸지 않는다. 공개 릴리스·tag 승인이 아니다.
 
 **S6-2 release 예산 결정 해소(2026-10-26 사용자 추가 승인):** 사용자가 **“2,000줄로 조정하고 계속 진행 (권장)”**을 명시 승인했다. 현재 `.github`+`scripts` 규범 상한은2,000줄이며 실제 **1,881/2,000줄 PASS·여유119줄·workflow2개**다. 최초1,881/1,800줄 FAIL과 독립 검토의 코드 지적0·예산 차단1(CHANGES_REQUESTED)은 당시 원본으로 보존하고, 이번 승인이 그 예산 차단을 해소한다. 제품/workflow/test 변경 없이 현재 규범5문서만 반영하며 최종 독립 검토 APPROVE·Biome845 PASS 뒤 release 로컬 커밋으로 마무리하고 S6-3a로 진행한다. 공개/tag 승인은 아니다.
 
@@ -42,6 +44,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-26 | S6 PR 자동 리뷰 OFF 처리 | 사용자 | 결정: “독립 검토로 대체 (Recommended)”. 자동 리뷰 NOT_RUN(비활성화), 하네스 독립 코드·보안 검토 최대3회(CONVENTIONS §8 상한), 필수 CI3·보호 규칙 불변. 07c §16 S6-6b·§17 반영. 공개/tag 승인 아님 |
 | 2026-10-25 | S4 설치 수용에서 확인된 deps 최초 TLS 패닉: `crates/deps/Cargo.toml`에 기존 `rustls.workspace` 직접 의존, Cargo.lock의 devbox-deps 의존 목록 한 줄 추가 | 부모 하네스 승인 · 네트워크 없는 fresh-process RED 재현 | 기존 workspace rustls 0.23/ring 정책 재사용, 새 패키지·버전·feature·인증서 검증 우회 없음. OSV가 첫 TLS 호출이어도 provider를 초기화하고 audit worker panic을 typed 실패로 종료. 별도 검토 APPROVE·e6304a7e/Windows40129996971의 실제 OSV 수용8 PASS(§5) |
 | 2026-10-25 | S4-5 소유 worktree resolver의 최소 동결 예외: `crates/agents/src/cleanup.rs`의 `AgentsService::owned_worktree`를 public으로 노출(visibility만) | 부모 하네스 사전 승인 | 기존 DB Resources::Owned·정규 경로·등록/lock·common-dir 검사 그대로 재사용. CLI는 요청 worktree/task ID로 service에서 읽은 AgentTask와 projectId 일치 확인 후 호출하며 caller task 필드는 받지 않음. 소유/cleanup 정책 변경 없음 |
 | 2026-10-25 | S4-4 실제 LSP 진단 연결의 S4-3 최소 보정: `crates/lsp/src/{relay_documents,relay}.rs`와 직접 회귀 | 부모 하네스 사전 승인 | renderer local version과 독립 server version을 ref별 동일 텍스트 snapshot에 결속해 번역. 후속 승인으로 Pending rename 응답 종류에 결속된 WorkspaceEdit와 workspace/applyEdit의 versioned documentChanges만 같은 helper로 번역하며 실패는 요청 단위 ContentModified/applied:false(공유 generation 유지). stale/future server version은 renderer에 재표기하지 않음. 기존 Problems generation/version 필터와 로그본문 비기록 유지, core/protocol 동결 보존 |
@@ -90,7 +93,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | [06-s3-knowledge](06-s3-knowledge.md) · 트랙1 | 완료(S3 PR 머지) | 2026-10-21 | 2026-10-24 | #644 → e91c9b22. 결과·미실행·상한예외는 §5 |
 | S4 | [07a-s4-editor-git](07a-s4-editor-git.md) · 트랙1 | squash 머지 완료 | 2026-10-25 | 2026-10-25 | #646 →20dcded6. 필수CI3/E2E PASS·사용자 승인 독립 검토 대체, source별 native/NOT_RUN은 §5 |
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
-| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-3b 로컬 완료·인계) | 2026-10-25 | | 구현 재개 승인 · 공개 별도 승인 |
+| S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | 작업 중(S6-4 로컬 완료·S6-5 진행) | 2026-10-25 | | 구현 재개 승인 · PR 자동 리뷰 독립 검토 대체(2026-10-26) · 공개 별도 승인 |
 
 ## 4. PR (모두 7개)
 
@@ -104,7 +107,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
-| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한2,000 추가 승인;batching 로컬 완료;release 로컬 완료;3a 고유67 PASS·최종 APPROVE·로컬 완료 | 작업 중 | | push·PR 없음 |
+| S6 | `v1/s6-release` | 1a·1b·1c·2-fixtures 로컬 완료;상한2,000 추가 승인;batching 로컬 완료;release 로컬 완료;3a 고유67 PASS·최종 APPROVE·로컬 완료;3b 로컬 완료;4a·4b 로컬 완료 | 작업 중 | | push·PR 없음 |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
@@ -159,9 +162,40 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 | S6 | 상세화 | S6-1 | `v1/s6-release` | 완료(계획·로컬) | 2026-10-25 | 2026-10-25 | 독립 재검토2개 APPROVE·제품 미착수 |
 | S6 | AF | S6-1a 신규4건·1b 연결·1c 의존성·S6-2 | `v1/s6-release` | 완료(로컬) | 2026-10-25 | 2026-10-26 | 1a·1b·1c·2-fixtures·batching·release 로컬 완료; 상한2,000 추가 승인; release5be96c7e |
 | S6 | AG | S6-3 | `v1/s6-release` | 로컬 완료(3a67·3b170 PASS·최종 독립 APPROVE) | 2026-10-26 | | 3b 고유170 PASS·실제 Windows/NSIS NOT_RUN |
-| S6 | AH | S6-4–S6-6 → S6 PR |  | 대기 | | | |
+| S6 | AH | S6-4–S6-6 → S6 PR | `v1/s6-release` | 작업 중 | 2026-10-26 | | S6-4a·T1b·S6-4b·T2b 로컬 완료(Windows 실기·SC 표본 NOT_RUN), S6-5 진행 |
 
 ## 5. 계획과 달라진 점
+
+### S6-4b 후속 T2b Shell.native 시험의 updater 방송 정렬 (2026-10-26 · 시험만·독립 APPROVE·로컬 완료)
+
+- 기반7d638599, 커밋`25d1bbb0 test(shell): align native shell listeners with the updater broadcast`(시험1파일). S6-4b 검증 중 `app/src/shell/Shell.native.test.tsx` 2/4 실패가 기반95a742f9에서도 같은 단언으로 실패함을 확인했다. 원인은 S6-3a85b48252의 StatusBar `UpdateStatus`→`useNativeUpdate()`가 Frame을 그리는 창마다 `devbox://update`를 1회 구독하는 정상 계약이고, 시험이 updater 이전 listener 집합을 하나의 Set으로 세던 stale 기대였다. 제품은 바꾸지 않았다. 실제 `/popout/*` 경로는 RouterFrame이 Frame을 생략해 구독하지 않는다(`router.tsx` 확인).
+- 기대는 완화하지 않고 강화했다. event 이름별 live 등록 수(main은 navigate1·update1·그 외0, label만 popout인 일반 구역 경로는 update1·navigation0·native invoke `update_status`만), unmount 뒤 live0, StrictMode 중복 등록 누수 검출을 유지한다. RED 2실패/2통과 → GREEN4/4, 영향7파일54시험·Update.install28·tsc·Biome858 PASS(supervisor·memory 적용). 독립 검토 APPROVE(Critical0/Important0) `s6-4b-stale/independent-review.md`. 실행 결과는 과제 보고서 기록이며 이 과제의 별도 실행 로그 artifact는 없다. 남은 minor는 실제 `/popout/*` 창이 update listener를 등록하지 않는다는 Shell 수준 단언이 없다는 점이다.
+- 이 정렬 전에는 S6 PR의 필수 Frontend CI가 실패했을 branch 전용 회귀다(main 무관). 전체 frontend 검사·E2E는 S6-6b에서 한 번 실행하며 이번에는 NOT_RUN이다.
+
+### S6-4b SC2·SC6 계측 (2026-10-26 · 계측만·실제 측정 NOT_RUN·수정1회 뒤 독립 재검토 APPROVE·로컬 완료)
+
+- 기반95a742f9, 커밋`496b1c78 test(acceptance): measure release readiness criteria`(24파일)와 수정`7d638599 fix(acceptance): keep dev-session cleanup two-phase`(4파일). 성공 기준 달성이 아니라 측정 도구만 추가했다. 새 UI 문구·의존성·generated RPC 변경은 없다.
+- SC2 단축키→팔레트 paint: `platform/shortcuts.rs`가 Pressed 직후 native `Instant`를 잡고 bounded16 trace store(`core/paint_trace.rs`, 초과 시 가장 오래된 trace drop·로그)를 거쳐 `AppIntent::Palette{trace}`→intent emit→NativeMainController→nativeRuntime→Shell→CommandPalette 이중 rAF 뒤 main 전용 `palette_painted` ack까지 이어 `palette-painted run=… elapsed_ms=…`를 stderr에 남긴다. already-open·deferred·stale/unknown을 구분하고 tray/menu/Ctrl+K는 trace0이다. 값은 ack IPC 반환을 포함한 상한이다.
+- SC2 cold→첫 데이터: `lib.rs::run()` 첫 줄 `Instant`(OS loader 제외)→AgentList가 daemon 데이터(또는 빈 상태)를 그리고 이중 rAF 뒤 `first_data_painted` 1회(`visible=` 포함). transport/gate ready는 표본이 아니며 시작 구역 에이전트(또는 last=`/agents`) 전제를 README에 적었다. 같은 `run=`(process ID)로 두 표본을 결속한다.
+- SC6: `scripts/dev-session.py`가 SIGUSR1에 자기 소유 daemon만 재시작(재사용 daemon은 신호 없이 거절)하고 monotonic 시각을 출력한다. `app/acceptance/sc6.spec.ts`·`sc6.config.ts`(CI/e2e 밖, 이번에 실행 안 함)는 harness `performance.now()` 단일 시계로 UI 변경→표시, daemon mtime 변경→`cargo build --locked -j2`(buildMs)+SIGUSR1→새 daemonId welcome·이후 `agents.list` 응답·연결 표시(restartMs)를 raw JSON으로 남긴다. 절차 원장은 `app/acceptance/README.md` SC2/SC6 절이다.
+- 검증: RED rust3/3·python 2실패+2오류/5·vitest 4/10·sc6 3/3 → GREEN rust5·python5·vitest28파일114·playwright `--list`1(실행 안 함)·tsc·rustfmt9파일·Biome858 PASS, 모두 memory_enforced=true. vitest RED의 popout 사례1은 단언 범위 오류였고 구현 전에 좁혔다. Windows MSVC `cargo check`는 ring build의 MSVC/clang 부재로 **NOT_COMPILED**(s6-3b와 같은 환경 원인)이며 `cfg(windows)` 변경은 수기 검토뿐이다.
+- 독립 검토 1차 Needs fixes: Important1(종료 정리가 자식별 순차 SIGTERM/대기로 바뀌어 반복 interrupt 시 gateway·daemon이 고아가 될 수 있음)과 minor(README 시작 구역 전제, harness cargo jobs, restart 중 고아 창). 수정1회로 `signal_group`/`reap`/`cleanup` 2단계 정리, restart의 reap 뒤 제거, README·`-j2`·`buildJobs` 기록을 반영했다. fix RED(새 시험 오류1·실패1)→GREEN python6·sc6 vitest3·tsc·playwright `--list`·Biome PASS, 재검토 all addressed·신규 지적0(`s6-4b/re-review-1.md`). 남은 minor: `visible=`가 ack 시점 값, SIGUSR1 main loop 경로의 얇은 시험, cleanup reap 중 두 번째 interrupt 시 SIGKILL fallback 생략 가능(모두 SIGTERM은 받음).
+- `.github`+`scripts` 1,881→1,935→**1,954/2,000줄**·workflow2. 실제 SC2(설치본 단축키·cold WSL running/stopped)·SC6(소유 dev-session 실측) 표본은 **NOT_RUN**이며 어떤 SC도 PASS로 쓰지 않는다. 근거 `devbox-verification/s6-4b/`(commands.json·RED/GREEN/fix1 로그·independent-review.md·re-review-1.md).
+
+### S6-4a 후속 T1b Windows root 누락의 typed 정의 오류 복구 (2026-10-26 · runtime lib148 PASS·독립 APPROVE·로컬 완료)
+
+- 커밋`95a742f9 fix(runtime): keep a missing Windows root a typed definition error`(4파일). S6-4a 시험 중 `graph_rejects_windows_command_templates_reserved_env_and_locked_secrets`가 기반9de39919에서도 실패함을 확인했다. S6-1a.3 4f24ecc6이 `CopyIdentity::new(service.execution()?, …)`로 바꾸면서 execution 설정 없음은 `Fail::Internal`, root 없는 execution은 일반 경로 오류가 되어 “config.local.toml windows.root is required” DefInvalid 안내가 사라진 제품 회귀였다. `graph.rs`에서 CopyIdentity 전에 root 검사를 복구했고 root가 설정된 경로의 S6-1a.3 사본 계약은 그대로다.
+- 시험은 DefInvalid·reason의 `windows.root` 포함을 더 정확히 단언한다. 좁은1 PASS, runtime lib148/148 PASS, `runtime_secrets --no-run` 컴파일·경고0, Biome852 PASS(memory 적용). 독립 검토 APPROVE(Critical0/Important0) `s6-4a-stale/independent-review.md`. minor는 execution 있음+root None 사례 시험 없음, root 부재 이중 검사다.
+- ignored systemd wrapper 시험의 native 사례는 S6-4a 계약(Ready hint만으로는 미준비, NotOwned→Owned 전환 뒤 준비)으로 갱신하고 `start_with`로 공개 `windows_listeners` seam을 주입했다. 그러나 S6-1a.3 이후 소유 Windows 사본 참조를 공개 seam으로 seed할 수 없어 같은 파일들의 ignored4개는 실행해도 통과할 수 없다(CI·check-inner 미실행). **NOT_RUN**이며 §8 후속에 적었다.
+
+### S6-4a Windows readiness의 소유 프로세스 트리 결속 (2026-10-26 · 좁은 시험 PASS·ignored1·독립 APPROVE·Windows NOT_RUN·로컬 완료)
+
+- 기반9de39919, 커밋`313a6095 fix(runtime): bind Windows readiness to the owned process tree`(18파일). #642 4331589592 이월(§8)을 다루는 구현이다. `crates/runtime/src/windows_ready.rs`의 `windows_ready_gate`가 port 있는 Windows 서비스 ready의 단일 권한이다. 저장된 run live·`run.attempt_id`·ExitStore current attempt 일치와 durable copy store attempt의 `Committed`·`assigned`·`control.accepts`를 요구하며, receipt와 정렬·중복 제거한 `ports_hint`는 caller가 아니라 DB에서 읽는다. ready는 sticky다.
+- probe는 run_lock 밖에서 수행하고 `Owned` 뒤 lock 안에서 같은 receipt/ports·live attempt를 재계산한 경우에만 ready를 쓴다(probe 중 restart가 이김). 새 `WindowsProbe::Listeners{assigned,ports}`(빈 목록·port0·64개 초과 거절)를 기존 direct interop→native broker(Unavailable/IdentityMismatch에만 fallback) 경로로 보낸다. `probe.ps1` listeners 분기의 C# `DevboxListeners`는 `DevboxObservation.Observe`로 receipt를 검증한 뒤 IPv4/IPv6 loopback·wildcard LISTEN row의 PID를 handle 보유 상태로 `IsProcessInJob` 확인하고 table을 다시 읽어 귀속을 재확인한다. 부모 PID를 따라가지 않으며 API·compile 실패는 모두 Unavailable(fail-closed)이다. bootstrap `native.ps1`은 바꾸지 않았다.
+- `windows.ready`는 typed `ready`/`notReady`를 반환하고 실제 실패만 Internal이다. CLI direct/native는 하나의 1초 `poll_ready` loop를 공유하며 native `Ready` event는 재시도를 깨우는 hint일 뿐이고 not-ready가 stream을 중단하지 않는다(재시도 함정 없음). 기존 TcpClient port-only PROBE와 그 Linux 시험2개를 제거했다.
+- 검증: 이전 gate 로직 scaffold에 RED5/5(unrelated listener ready·Unavailable ready·probe 미사용·Intent attempt ready·lock 시험) → GREEN runtime6·protocol8·CLI21(+ignored1)·app `platform_compile`19 PASS, rustfmt·Biome PASS, 모두 memory_enforced=true. lock 시험 hang 시도 로그도 보존했다. runtime windows 필터 실패1은 기반에서도 같은 기존 실패였고 T1b가 고쳤다.
+- 독립 검토 APPROVE(Critical0/Important0) `s6-4a/independent-review.md`, C# layout desk-check 오류0. **NOT_RUN:** C# listener 코드는 한 번도 컴파일·실행되지 않았고(로컬 C# 컴파일러 없음), ignored interop fixture `windows_listener_ownership_accepts_only_the_assigned_job_tree`(unrelated만 NotOwned·IPv4/IPv6·dual-stack 후손 Owned·timeout·종료 후 NotFound/Empty), 실제 Windows direct/native 동등성도 미실행이다. compile 실패 시 port 있는 모든 Windows 서비스가 ready_timeout까지 미준비가 되므로 이 fixture를 Windows 수용의 gating 항목으로 둔다.
+- 알려진 한계: Listeners 5초 예산(PowerShell 5.1 기동+Add-Type 2회)은 Windows에서 미계측이며 gating 수용 항목이다. 같은 port에 소유 wildcard와 더 구체적인 무관 loopback listener가 섞이면 Owned로 판정한다. Check/Observe의 job 소실 분류가 다르다(둘 다 미준비). 컨트롤러 판정: port 없는 Windows 서비스는 귀속할 listener가 없으므로 기존 `wait_ready`가 시작 시 ready로 둔다(`execution.rs`, 이번 변경 없음). 근거 `devbox-verification/s6-4a/`(commands.json·RED/GREEN 로그·기반 실패 로그·independent-review.md). scripts/.github 변경0.
 
 ### S6-3b 설치 확인·종료·재기동 (2026-10-26 · 고유170 PASS·최종 APPROVE·로컬 완료·인계)
 
@@ -1520,6 +1554,7 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 
 | 날짜 | PR · 회차 | 지적(링크) | 별도 검토 판정 | 처리 |
 |---|---|---|---|---|
+| 2026-10-26 | S6(PR 전) · T1b 독립 검토 minor | ignored systemd wrapper 시험4개(`crates/cli/tests/runtime_secrets.rs`·`support/runtime_windows_wrapper.rs`)가 S6-1a.3 이후 소유 Windows 사본 참조·committed receipt를 seed할 공개 seam이 없어 실행해도 통과할 수 없음. 형제 시험의 ignore 사유 “needs owned systemd user fixture”도 실제 원인을 가림 | 별도 검토 APPROVE의 minor. CI·check-inner가 실행하지 않는 ignored 시험이며 실제 데이터 손실·비밀 유출·미승인 실행 아님. 근거 `s6-4a-stale/independent-review.md` | 이번 수정 안 함·NOT_RUN(PASS 아님). 후속에서 공개 owned-copy 시험 seam·receipt seed를 만든 뒤 ignore 사유 정정·실행 |
 | 2026-10-24 | #645 · 상한 이후 예외1 | [4367201426 실행기 컬렉션 환경 루트](https://github.com/jihoon22-lee/devbox/pull/645#discussion_r4367201426) | BLOCKING_CONFIRMED. 실제 개인 runner의 backend.send에 프로젝트 전용 credential이 포함되는 일반 실행 경로를 독립 재현. 근거 `pr-review-4/independent-classification.json` | 비밀 유출 기준으로 이번 최소 수정·직접 영향 회귀, 별도 수정 검토 APPROVE. 정상 리뷰 재시작/대기 없음 |
 | 2026-10-24 | #645 · 상한 이후 후속 | [4367201424 HTTP OAuth authorize UI 누락](https://github.com/jihoon22-lee/devbox/pull/645#discussion_r4367201424) | VALID_NON_BLOCKING. SendCollector authorize 이벤트를 UI action으로 잇지 않아 승인 브라우저가 열리지 않고 대기/timeout. 실제 손실·비밀 유출·미승인 실행은 재현 없음 | 이번 수정 안 함. 향후 범위를 정해 명시적 브라우저 승인 action/event 전달·owner/cancel 처리를 검토. 근거 `pr-review-4/independent-classification.json` |
 
