@@ -109,7 +109,7 @@
 | 터미널 | 셸 연동 최소 범위(OSC 7 현재 위치 → 새 탭·분할 위치, 벨 표시) | 단순화 | ShellIntegration |
 | 터미널 | 기존 zellij 세션에 붙기 | 단순화 | 새 세션은 tmux로 |
 | 실행 | 작업(일회성)·서비스(상시)·예약(cron, DST 고려). 의존 순서, 재시작 정책(systemd), 환경 변수·비밀 참조, 실행할 worktree 선택 | 유지 | `runtime-engine` |
-| 실행 | 서비스 준비 상태: `ports_hint` 포트가 수신 중이면 "준비됨"(관찰만). 서비스 의존 순서는 앞 서비스의 준비됨을 기다린다(기본 60초, 넘으면 실패). health 실패로 재시작하지 않는다 | 단순화 | v0.9.0 health probe·유예·health 재시작 폐기(AR-F02, IR-4) |
+| 실행 | 서비스 준비 상태: `ports_hint` 포트가 수신 중이면 "준비됨"(관찰만). Windows 대상 서비스는 port마다 그 실행의 소유 Windows Job 안 프로세스가 연 loopback·wildcard listener가 있을 때만 준비됨이며, 무관 listener·조회 실패는 미준비다. port가 없는 Windows 서비스는 시작 시 준비됨(S6-4a). 서비스 의존 순서는 앞 서비스의 준비됨을 기다린다(기본 60초, 넘으면 실패). health 실패로 재시작하지 않는다 | 단순화 | v0.9.0 health probe·유예·health 재시작 폐기(AR-F02, IR-4) |
 | 실행 | 작업 자동 감지(package.json·Makefile·justfile·Cargo·docker compose) | 유지 | tasks ImportDialog |
 | 실행 | 로그: 실시간 tail, 검색·필터, 여러 소스 병합 보기. 소스는 devbox 실행·파일 tail·Docker/Podman 컨테이너 | 유지 | `logs-engine` |
 | 실행 | Docker 컨테이너 목록·상태·시작/중지/재시작, 포트의 컨테이너 표시 | 유지 | `terminal-engine` docker_ps·docker_action |
@@ -515,7 +515,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 | linger·setup 실패 | 실패 단계와 로그 열기 | [다시 시도][로그 열기][진단] |
 | 데몬 버전 재배치 중 | 진행 표시 | — |
 | 데몬 끊김 | 상단 배너 "다시 연결 중". 터미널 위에는 "입력 전송 안 됨"을 덮어 표시. 5회 실패하면 버튼 표시 | [다시 시도][WSL 재시작][진단] |
-| 업데이트 설치 중 | 진행 창 | 실패하면 이전 버전 실행 안내 |
+| 업데이트 설치 중 | 설정 정보·상태 표시줄의 설치 준비 상태 | [설치 준비 취소]. 설치·재실행 실패는 다음 실행 때 원인 안내, 상태 불명은 자동 재시도 없이 설치 프로그램 종료 확인 안내 |
 | 비밀 키 불일치 | §6.3 | [복구 문자열 입력][비밀 다시 입력] |
 | hook 미연결 | 에이전트 목록 상단 배너 "상태 알림이 연결되지 않았습니다" | [연결 확인](doctor의 hook 점검) |
 
@@ -923,13 +923,13 @@ agents = [{ tool = "claude", worktree = false }]
   3. 첫 화면(에이전트)이 열린다.
   - 관리자 권한은 필요 없다(WSL 설치가 필요한 경우는 예외).
 - **업데이트(릴리스 빌드만):**
-  1. 앱이 하루 한 번과 요청 시 GitHub Releases `latest`를 조회한다.
+  1. prod 채널의 정식(`x.y.z`) 버전 앱만 24시간에 최대 한 번(재시작해도 유지되는 마지막 확인 시각 기준)과 요청 시 GitHub Releases `latest`를 조회한다.
   2. 새 버전이면 상태 표시줄·설정에 알린다.
-  3. "업데이트" → `devbox-<v>-setup.exe` 다운로드 → GitHub 자산 digest(SHA-256)와 비교 → 실행 중 작업 요약을 보여 주고 확인받는다.
-  4. 앱이 종료되고 `/S`로 setup이 실행된 뒤 앱이 다시 열린다.
+  3. [업데이트 다운로드] → `devbox-<v>-setup.exe` 하나를 받아 크기·GitHub 자산 digest(SHA-256)와 비교 → [업데이트] → 실행 중 작업 요약을 보여 주고 확인받는다. 앱이 실행한 Windows 작업이 진행 중이거나 상태를 모르면 설치를 막고 사용자가 직접 끝내게 한다. 업데이터는 그 작업을 중지하지 않는다.
+  4. 모든 창이 종료(열린 문서 저장 준비)를 승인하고 이전 앱 process 종료가 확인된 뒤 `/S`로 setup이 실행되고 앱이 다시 열린다. 실패·상태 불명은 다음 실행에서 표시하며 상태 불명은 자동 재시도하지 않는다.
   5. 새 앱이 데몬을 다시 배치한다(§4.6).
   - 서명 기반 Tauri updater는 쓰지 않는다(ADR 0016).
-  - 개발 빌드(`1.0.0-dev`)는 업데이트 확인을 끈다.
+  - 개발 빌드(`1.0.0-dev`)와 dev·accept 채널은 업데이트 확인을 끈다.
 - **자산 이름:** `devbox-<v>-setup.exe`. v0.9.0 업데이터가 찾는 `Devbox_{v}_x64-setup.exe`·`release-manifest.json`과 겹치지 않는다. v1.0.0 릴리스 노트에 "새 앱 수동 설치 → v0.9.0 수동 제거"를 적는다.
 - **제거:** NSIS 제거 프로그램이 Windows 쪽을 지운다. WSL 쪽 데이터는 남긴다. 앱 진단의 "WSL 쪽 정리" 버튼이 unit과 바이너리를 지운다.
 - **self-check:** `Devbox.exe --self-check`는 실행 여부와 내장 Linux 바이너리 버전 일치만 확인한다.

@@ -346,10 +346,10 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 **Files:** `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/ui-terms.md`, `docs/adr/0017-rebuild-single-app-wsl-daemon.md`, 이 계획·PROGRESS와 필요한 설계 계약 위치만.
 
-- [ ] 설치/개발/Windows 스크립트/MCP 등록·문제 해결·진단 ID·지원 bundle·수동 새 앱 설치→v0.9.0 수동 제거를 실제 코드에 맞춘다. v0.9 데이터 자동 이전은 없다.
-- [ ] updater 취소/실패·작업 유지·dirty 창 처리·dev/accept 비활성·구버전 복사 디렉터리 수동 보존 정책을 쓴다.
-- [ ] 화면 한국어 용어를 docs/ui-terms와 맞추고 ADR0017의 채택 상태를 실제 구현 검토 뒤 변경한다.
-- [ ] 과거 실측·검증 SHA·FAIL·NOT_RUN·이전 버전 예제는 역사로 보존한다. 현재 상태 줄만 갱신하며 S6 로컬 완료/PR 수용/공개 완료를 구분한다.
+- [x] 설치/개발/Windows 스크립트/MCP 등록·문제 해결·진단 ID·지원 bundle·수동 새 앱 설치→v0.9.0 수동 제거를 실제 코드에 맞춘다. v0.9 데이터 자동 이전은 없다. — 결과: README 설치·첫 실행·v0.9.0·문제 해결 절, app/README의 채널별 `target/<채널>/release`·dogfood `--channel`·release job 안내(문서만).
+- [x] updater 취소/실패·작업 유지·dirty 창 처리·dev/accept 비활성·구버전 복사 디렉터리 수동 보존 정책을 쓴다. — 결과: README 앱 업데이트 절과 01 §10 갱신. 실제 Windows 업데이트 수용은 NOT_RUN.
+- [x] 화면 한국어 용어를 docs/ui-terms와 맞추고 ADR0017의 채택 상태를 실제 구현 검토 뒤 변경한다. — 결과: ui-terms에 "앱 업데이트" 추가, ADR0017은 이미 채택이라 R1/R2 현재 경계(공개 직전 확인까지 NOT_RUN)만 갱신. `Update.tsx`의 "업데이트 실행기"는 ui-terms "실행기"와 겹친다(코드 문구 후속).
+- [x] 과거 실측·검증 SHA·FAIL·NOT_RUN·이전 버전 예제는 역사로 보존한다. 현재 상태 줄만 갱신하며 S6 로컬 완료/PR 수용/공개 완료를 구분한다. — 결과: README 상태 줄만 교체(S6 로컬 구현 중, PR·머지·공개 전).
 - [ ] 별도 문서 검토·Biome 뒤 `docs: document v1 installation updates and recovery`.
 
 ## 16. S6-6 — 한 번의 버전 변경·최종 검사·공개 경계
