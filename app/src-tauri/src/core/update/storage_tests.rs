@@ -105,19 +105,30 @@ fn ready_publication_does_not_replace_an_unexpected_file_and_root_marker_is_rech
     assert!(root.pending().is_err());
     assert!(root.automatic_due(100000).is_err());
 }
+/// Models a process exit: every handle is closed, the owned directory and its files remain.
+fn exited(pending: Pending) {
+    let Pending { file, dir, .. } = pending;
+    drop(file.keep().unwrap());
+    let _ = dir.keep();
+}
+fn exited_ready(proof: ReadyProof) {
+    let ReadyProof { file, dir, .. } = proof;
+    drop(file);
+    let _ = dir.keep();
+}
 #[test]
 fn startup_sweep_removes_only_leaked_owned_download_directories() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("updates");
     let root = Root::open(&path, AppChannel::Prod).unwrap();
-    // Leaked like a process exit: owners never drop.
+    // Leaked like a process exit: owners never drop, handles are closed.
     let mut writer = root.pending().unwrap();
     writer.push(b"abc", 3).unwrap();
     let proof = writer.finish(&candidate(b"abc")).unwrap();
-    std::mem::forget(proof);
+    exited_ready(proof);
     let mut partial = root.pending().unwrap();
     partial.push(b"a", 3).unwrap();
-    std::mem::forget(partial);
+    exited(partial);
     let user = path.join("download-user");
     fs::create_dir(&user).unwrap();
     fs::write(user.join("notes.txt"), "keep").unwrap();
@@ -158,7 +169,7 @@ fn startup_sweep_never_creates_a_root_or_touches_another_channel() {
     assert!(!absent.exists());
     let path = temp.path().join("updates");
     let root = Root::open(&path, AppChannel::Accept).unwrap();
-    std::mem::forget(root.pending().unwrap());
+    exited(root.pending().unwrap());
     assert!(sweep_downloads(&path, AppChannel::Prod).is_err());
     assert_eq!(downloads(&path), 1);
 }

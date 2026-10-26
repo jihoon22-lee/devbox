@@ -519,8 +519,11 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
 fn startup_sweep_runs_only_on_the_configured_owned_root() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("updates");
-    let root = Root::open(&path, AppChannel::Prod).unwrap();
-    std::mem::forget(root.pending().unwrap());
+    Root::open(&path, AppChannel::Prod).unwrap();
+    // A download left by an earlier process exit: no open handle remains.
+    let leaked = path.join("download-leaked");
+    std::fs::create_dir(&leaked).unwrap();
+    std::fs::write(leaked.join("installer.exe"), b"partial").unwrap();
     let service = Service::new(AppChannel::Prod, "1.0.0", Some(path.clone()), |_| {});
     assert_eq!(service.sweep_stale_downloads(), Ok(1));
     assert_eq!(
