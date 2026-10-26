@@ -42,6 +42,11 @@ class Release(unittest.TestCase):
                         if state.get('lightweight'):
                             raise subprocess.CalledProcessError(1, args)
                         return ('object ' + SHA + '\ntype commit\ntag ' + TAG + '\n\n' + state['notes']).encode()
+                    if args[1] in ('fetch', 'merge-base'):
+                        self.assertEqual(args[2:], ('--no-tags', 'origin', '+refs/heads/main:refs/remotes/origin/main') if args[1] == 'fetch' else ('--is-ancestor', SHA, 'refs/remotes/origin/main'))
+                        if args[1] == 'merge-base' and state.get('off_main'):
+                            raise subprocess.CalledProcessError(1, args)
+                        return ''
                     if args[1] == 'ls-remote':
                         return 'b' * 40 + '\trefs/tags/' + TAG + '\n' + state.get('remote', SHA) + '\trefs/tags/' + TAG + '^{}'
                     self.assertEqual(args[:2], ('git', 'rev-parse'))
@@ -99,7 +104,7 @@ class Release(unittest.TestCase):
     def test_preflight_rejections(self):
         for tag in ['v01.2.3', 'v1.2.3-dev', 'v1.2.3+meta', 'v1.2', 'v1.2.4']:
             self.scenario(lambda s, r, e, d: e.update(GITHUB_REF='refs/tags/' + tag), failure=True)
-        for state in [dict(lightweight=True), dict(remote='c' * 40), dict(duplicate=True)] + [dict(lookup_error=status) for status in [401, 403, 404, 429, 500]]:
+        for state in [dict(lightweight=True), dict(remote='c' * 40), dict(duplicate=True), dict(off_main=True)] + [dict(lookup_error=status) for status in [401, 403, 404, 429, 500]]:
             self.scenario(lambda s, r, e, d: s.update(state), existing='draft', failure=True)
         self.scenario(lambda s, r, e, d: e.update(SOURCE_SHA='c' * 40), failure=True)
         for name in ['Cargo.toml', 'app/package.json', 'app/src-tauri/Cargo.toml', 'app/src-tauri/tauri.conf.json']:

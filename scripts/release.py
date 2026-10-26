@@ -29,6 +29,11 @@ def preflight():
     require(command('git', 'rev-parse', 'HEAD') == sha == command('git', 'rev-parse', ref + '^{commit}'), 'Tag/source mismatch')
     remote = command('git', 'ls-remote', '--exit-code', 'origin', ref, ref + '^{}')
     require(set(remote.splitlines()) == {command('git', 'rev-parse', ref) + '\t' + ref, sha + '\t' + ref + '^{}'}, 'Remote annotated tag mismatch')
+    command('git', 'fetch', '--no-tags', 'origin', '+refs/heads/main:refs/remotes/origin/main')
+    try:  # Only commits that reached main (and its required PR CI) may be published.
+        command('git', 'merge-base', '--is-ancestor', sha, 'refs/remotes/origin/main')
+    except subprocess.CalledProcessError:
+        raise ValueError('Tag commit is not on origin/main') from None
     return tag, sha, annotation.split('\n\n', 1)[1], remote
 
 def main():
