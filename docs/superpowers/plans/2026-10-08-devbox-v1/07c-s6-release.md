@@ -1,7 +1,7 @@
 # S6 마무리·출시 실행 계획
 
 - 작성: 2026-10-25. 기준 `origin/main@867b414e14af9db8a6c75019befbe6ef80e250d8`.
-- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b·S6-5(문서)·S6-6a(버전 1.0.0 고정, 독립 검토 APPROVE)도 로컬 완료했고, S6-6b 로컬 전체 브랜치 검토·전체 검사(원본 FAIL 보존)·수정 wave(18커밋)·재검증도 로컬 완료했다(Windows 실기·SC 측정·실제 GitHub release·push·PR·tag는 NOT_RUN). S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16).
+- 현재 승인 범위: **2026-10-25 사용자 “S6 계획대로 작업 진행 해 주세요”에 따라 S6 구현을 승인했다.** 앞선 계획만 작성 제한은 대체되었으며, 과제별 구현·좁은 검증·별도 검토 순서로 진행한다. 현재 S6-1a.1–4·1b.1–2는 로컬 완료했다. 사용자2026-10-25 토큰 복구 후 재개 지시로 앞선 중단·인계 제한을 대체했고1b.3도 직접 검증·독립 APPROVE 뒤 로컬 완료했다.1b.4도 고유18 직접 검증 PASS·독립 APPROVE 뒤 로컬 완료했으며 공개·태그는 §16의 별도 명시 승인 전 실행하지 않는다. 이후 S6-1c·S6-2·S6-3a/3b·S6-4a/4b·S6-5(문서)·S6-6a(버전 1.0.0 고정, 독립 검토 APPROVE)도 로컬 완료했고, S6-6b 로컬 전체 브랜치 검토·전체 검사(원본 FAIL 보존)·수정 wave(18커밋)·재검증도 로컬 완료했다. 이어 Windows 수정 `f3b09d20`·`19cff21e` 뒤 candidate 19cff21e를 백업 push(PR 없음)·windows.yml dispatch(run40305797593 SUCCESS)하고 그 artifact로 accept 설치 수용을 수행했다(2차 G1·G2·A1·A2·A4 PASS, A6 FAIL, A3·A5 NOT_RUN; 그 밖의 SC 실측·R1/R2·실제 GitHub release·PR·tag는 NOT_RUN, PROGRESS §5). S6 PR 자동 리뷰는 2026-10-26 사용자 결정으로 독립 검토로 대체한다(§16).
 - 작업 위치: `v1/s6-release`, `/home/jihoon/projects/devbox-wt/v1-s6-release`. 진행 원장은 [PROGRESS](PROGRESS.md).
 - 선행: S3 #644, S4 #646, S5 #645 및 정리 문서가 main에 통합됨. 과거 설치 시험의 PASS·FAIL·NOT_RUN은 소스 SHA별로 유지한다.
 - 실행 방식: 사용 가능한 하네스의 **과제별 구현 → 다른 에이전트 검토**. 별도 planning 스킬이나 특정 모델을 요구하지 않는다.
@@ -310,37 +310,39 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 - [x] #642 Windows readiness를 S6에 포함: `crates/cli/src/windows_exec.rs` 직접 경로와 `app/src-tauri/src/platform/windows.rs` native 경로 모두 localhost listener의 PID/생성시각·승인된 child/후손 귀속을 확인한다. PID 재사용·후손 종료·조회 실패는 ready=false/명확 실패다. — 결과(`313a6095`): runtime 단일 gate(durable Committed receipt)와 `WindowsProbe::Listeners`를 direct→native 공유 경로로 사용, receipt 검증 뒤 job 귀속(`IsProcessInJob`)+table 재읽기, 실패·불일치는 typed not-ready. port 없는 Windows 서비스는 기존 `wait_ready` 유지(판정). C# 컴파일·Windows 실행 NOT_RUN.
 - [x] RED: Windows 소유 unrelated listener만 연 상태에서는 서비스 미준비, 실제 child/후손 listener만 준비. IPv4/IPv6·zero-port·process exit/timeout·직접/native 동등성 좁은 시험. 기존 호스트 listener·방화벽을 바꾸지 않는다. — 결과: Linux gate RED5→GREEN(unrelated→미준비·owned→준비·Unavailable/IdentityMismatch/Empty/NotFound·Intent/Revoked/Closed·lock), runtime6·protocol8(port0 거절 포함)·CLI21·app19 PASS. IPv4/IPv6·exit/timeout 실제 Windows fixture는 작성만(ignored·NOT_RUN), direct/native Windows 동등성 NOT_RUN.
 - [x] 검토·`fix(runtime): bind Windows readiness to the owned process tree`; 계측은 별도 `test(acceptance): measure release readiness criteria`. — 결과: `313a6095` 독립 APPROVE(+기존 회귀 `95a742f9` APPROVE), `496b1c78`+`7d638599` 재검토 APPROVE, 시험 정렬 `25d1bbb0` APPROVE(로컬).
-- [ ] Windows gating: `DevboxListeners` C# 컴파일·ignored interop fixture·Listeners 5초 예산 계측·direct/native 동등성은 아래 실제 Windows 수용에서 실행한다. 그 전까지 NOT_RUN이며 실패하면 port 있는 Windows 서비스가 준비되지 않는다.
+- [ ] Windows gating: `DevboxListeners` C# 컴파일·ignored interop fixture·Listeners 5초 예산 계측·direct/native 동등성은 아래 실제 Windows 수용에서 실행한다. 그 전까지 NOT_RUN이며 실패하면 port 있는 Windows 서비스가 준비되지 않는다. — 결과(실제 Windows): listener fixture f3b09d20 7/8, exited tree FAIL→`19cff21e` 수정 뒤 PASS×2(독립 APPROVE). 19cff21e accept 수용 G1 PASS(probe 판정 정상; 다만 I1 전제 CONFIRMED — 분리된 자손이 bootstrap보다 오래 살 때 notFound가 나오는 결함 재현·미수정, PROGRESS §8), G2 PASS(direct 경로 5 cold 표본, Listeners 최대 0.907초/5초·Observation 최대 0.737초/3초), A4 PASS(무관 listener→미준비, 소유 child→go 뒤 0.782초 ready). direct/native 동등성은 NOT_RUN이라 미체크.
 
 ### SC별 판정 원장
 
 | SC | 실제 측정·기준 | 증거/미실행 처리 |
 |---|---|---|
 | SC1 | 흔적 없는 전용 Windows 계정+systemd WSL에서 setup→첫 데이터, 사용자 행동 배포판 확인≤1회 | 기존 사용자 자료를 지워 계정을 흉내 내지 않음. 계정/독립 환경 없으면 NOT_RUN |
-| SC2 | 전역 단축키→paint≤300ms; cold→첫 데이터 WSL running≤3초/stopped≤10초 | 반복 횟수·cold/warm/cache/배율·raw timing 보존. host WSL shutdown 금지, stopped 측정은 격리 환경/최종 R2 |
+| SC2 | 전역 단축키→paint≤300ms; cold→첫 데이터 WSL running≤3초/stopped≤10초 | 반복 횟수·cold/warm/cache/배율·raw timing 보존. host WSL shutdown 금지, stopped 측정은 격리 환경/최종 R2. S6-6b raw(19cff21e accept): cold→첫 데이터 9036ms(1차)·6093ms(2차), 각 1표본·WSL running·설치 뒤 첫 daemon 시작 — 3초 미달(PASS 아님). 단축키→paint(A3)·stopped는 NOT_RUN |
 | SC3 | 제목+도구+시작 한 번으로 작업 준비/실행; 실제 hook waiting/turn-end가 목록·Windows 알림≤2초 | Claude/Codex 각각 실제 hook, fake hook PASS로 대체 금지 |
 | SC4 | 창 닫기·daemon 재시작·업데이트 뒤 WSL agent/terminal/service 유지, app-native Windows attempt는 설치 전 별도 차단 | 소유 test instance·tmux/user systemd, 전후 세션 ID·PID/작업 관찰. WSL 종료는 유지 대상 아님 |
 | SC5 | generated code 전수 오류 문구·원인+다음 행동; internal은 진단 ID 동반 | 컴파일/typed map+대표 E2E, raw error/body 노출 없음 |
 | SC6 | UI 변경→실제 daemon 연결 browser≤2초; daemon 변경→restart/reconnect≤15초 | monotonic 구간·source 변경·ready 증거, fake 서버 제외 |
-| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤2000, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음 |
+| SC7 | PR CI≤15분, 로컬 전체(L3 포함)≤10분, release≤40분; scripts+.github≤2000, workflows≤3 | PR/main·queue/실행·cache별 raw 기록. 이전 PR22m43와 main14m30 구분; 한도 미달을 PASS라 하지 않음. S6-6b raw(windows.yml dispatch, PR CI 아님): 40296265668 changes7초·linux-bin10m08s·Rust (Windows)27m45s, 40305797593 changes10초·linux-bin12m21s·Rust (Windows)13m25s(40292765183은 Windows clippy FAILURE). PR CI·로컬 전체·release 시간은 미측정 |
 | SC8 | `bash scripts/loc.sh 200000`, 제품 코드≤20만(관찰 트리거) | 테스트 제외와600줄 제한 별도 보고. 기준121277은 과거 값 |
 | SC9 | 작업 없는 daemon RSS≤60MB·CPU≤0.5% | 실제 `/proc`·systemd, warm-up·표본 간격/기간·background 작업 기록 |
 | SC10 | Windows bridge→daemon→PTY→tmux byte echo p50≤10ms/p95≤25ms; 100MB 출력 중 다른 창 ping p95≤100ms, 종료 후 입력≤1초 | 실제 설치본, 샘플/percentile·출력 flood byte 수. renderer paint 제외 |
 
 실측값이 미달이면 원인·최소 수정/재측정 또는 명시적 미달/다음 patch 계획을 기록한다. 근거 없는 목표 완화·측정 생략은 하지 않는다. 자동화 불가와 제품 실패를 분리한다.
 
+S6-6b 결과(19cff21e, PROGRESS §5): SC1·SC3·SC4·SC5·SC6·SC8·SC9·SC10 실측은 NOT_RUN이다. SC1·SC3·SC4·SC9·SC10 사유(전용 계정 없음, 실제 hook·UI helper·terminal probe build 미이식, idle daemon 표본은 이 harness 밖)는 `acceptance/harness/runs/19cff21e-d2254acc/acceptance.json` `notRun`에 있고, SC5·SC6·SC8은 이번 설치 수용 범위 밖이라 실행하지 않았다. SC2는 raw 첫 데이터 표본만, SC7은 dispatch raw 시간만 있다. 어느 SC도 PASS로 판정하지 않았다.
+
 ### 실제 Windows 수용 실행 순서
 
-- [ ] 구현 중에는 fixture/좁은 검증까지만. **S6-5·S6-6a 버전 고정과 최종 검사 이후 최종 candidate commit을 PR 없이 백업 push한 뒤 workflow_dispatch로 얻은 정확 source SHA의 성공한 windows.yml artifact**로 설치 수용을 한 번 묶어 실행한다. 준비와 실행 시점을 혼동하지 않는다.
-- [ ] 저장소·workflow·run·source SHA·receipt/installer SHA256·채널을 대조하고 독립 helper 검토/실행 binding을 남긴다. `windows-acceptance` 잠금, PowerShell 절대 경로, 소유 accept 설치/instance만 사용한다.
-- [ ] 시작 전후 prod 설치·파일·unit을 읽기 전용 비교. 소유 표식 없는 accept 자원은 보존하고 해당 실행을 중단·보고한다. UAC/재부팅/사용자 클릭을 우회하지 않는다.
-- [ ] S2 설치1–11 NOT_RUN·12 FAIL 및 prod NOT_PROVEN을 재수행 목록으로 옮기고, 후속 interop 회복만으로 과거 결과를 소급 변경하지 않는다.
-- [ ] S3 설치4/6/7/8·엄격 autosave1초/SC2, S4 실제 LSP2/3/4/7, S5 설치5/6·external LAN·실제 도구 설치 미실행을 항목별로 재평가한다. 다른 SHA의 성공1/6·3/4 등은 historical로 남긴다.
-- [ ] 실제 LSP는 소유 프로젝트/임시 tool 경로로 제공 가능한 서버로 진단·정의·서식·multi-file Rename과 stale refusal을 확인한다. 관리형 installer/숨은 global 설치는 만들지 않는다. 환경 부재면 정확 전제와 NOT_RUN을 기록한다.
-- [ ] HTTP→일일/선택 dirty 노트·editor handoff·OAuth 명시 승인·Windows 복사 분리·service→dependent/sibling 공유 revision/readiness·updater all-window/reconnect·지원 bundle masking을 최종 source에서 확인한다.
-- [ ] LAN/설치/네트워크 변경 시험은 독립 VM/hosted 환경에서만. fake HTTP/LSP 시험은 해당 실제 수용을 대체하지 않는다.
-- [ ] Codex 새 worktree trust waiting·tmux3.4 종료 미확정은 실제 SC3/4/10 실패 시 좁게 원인을 재현한다. 미재현이면 미확정 후속으로 남기고 근거 없는 수정은 하지 않는다.
-- [ ] 소유 자원만 정리하고 retained 목록·prod 불변 비교를 남긴다. R1(30분 idle)·R2(WSL shutdown 시간)는 공개 직전 사용자 확인까지 NOT_RUN. 에이전트가 공유 WSL을 shutdown하지 않는다.
+- [x] 구현 중에는 fixture/좁은 검증까지만. **S6-5·S6-6a 버전 고정과 최종 검사 이후 최종 candidate commit을 PR 없이 백업 push한 뒤 workflow_dispatch로 얻은 정확 source SHA의 성공한 windows.yml artifact**로 설치 수용을 한 번 묶어 실행한다. 준비와 실행 시점을 혼동하지 않는다. — 결과: candidate 19cff21e·run40305797593 artifact로 phase-2 수용 2회(1차 원본 FAIL 보존, harness만 수정 뒤 2차). artifact 결속은 같다.
+- [x] 저장소·workflow·run·source SHA·receipt/installer SHA256·채널을 대조하고 독립 helper 검토/실행 binding을 남긴다. `windows-acceptance` 잠금, PowerShell 절대 경로, 소유 accept 설치/instance만 사용한다. — 결과: 두 installer receipt가 저장소·workflow·source·run·channel을 결속(linux receipt는 source·sha256만), A1 PASS. helper 검토 `review-approval-run1`(manifest 1176e6a4)·`review-approval`(dfa0262b) APPROVED_WITH_CONDITIONS, 각 run에 `review-approval-used.json`.
+- [x] 시작 전후 prod 설치·파일·unit을 읽기 전용 비교. 소유 표식 없는 accept 자원은 보존하고 해당 실행을 중단·보고한다. UAC/재부팅/사용자 클릭을 우회하지 않는다. — 결과: 2차 v1 prod unchanged; legacy v0.x external writer changed 1 file(`C:\Users\USER\AppData\Local\Devbox\integration\wsl-desktop\v1\summary.json`, 사용자 v0.6 writer). 1차는 분리 전 비교라 FAIL(같은 파일)로 보존.
+- [x] S2 설치1–11 NOT_RUN·12 FAIL 및 prod NOT_PROVEN을 재수행 목록으로 옮기고, 후속 interop 회복만으로 과거 결과를 소급 변경하지 않는다. — 결과: 재수행 목록에 올렸으나 S2 1–11·12·prod 설치는 이번에도 NOT_RUN(accept 설치 경로만 A1/A2로 재실행), 과거 결과는 그대로.
+- [x] S3 설치4/6/7/8·엄격 autosave1초/SC2, S4 실제 LSP2/3/4/7, S5 설치5/6·external LAN·실제 도구 설치 미실행을 항목별로 재평가한다. 다른 SHA의 성공1/6·3/4 등은 historical로 남긴다. — 결과: 항목별 사유와 함께 모두 NOT_RUN 유지(`acceptance.json` `notRun`; UI helper 미이식·실제 LSP 없음·LAN은 격리 환경 전용·도구 설치 미승인).
+- [ ] 실제 LSP는 소유 프로젝트/임시 tool 경로로 제공 가능한 서버로 진단·정의·서식·multi-file Rename과 stale refusal을 확인한다. 관리형 installer/숨은 global 설치는 만들지 않는다. 환경 부재면 정확 전제와 NOT_RUN을 기록한다. — 결과: 호스트에 실제 language server가 없고 숨은/global 설치 미승인이라 S4 LSP2/3/4/7 NOT_RUN.
+- [ ] HTTP→일일/선택 dirty 노트·editor handoff·OAuth 명시 승인·Windows 복사 분리·service→dependent/sibling 공유 revision/readiness·updater all-window/reconnect·지원 bundle masking을 최종 source에서 확인한다. — 결과: 단일 소유 Windows 서비스 copy·readiness만 A4 PASS. 나머지(HTTP→노트·editor handoff·OAuth 승인·다중 worktree 복사 분리·dependent/sibling·updater all-window·bundle masking A5)는 UI helper 미이식 등으로 NOT_RUN.
+- [ ] LAN/설치/네트워크 변경 시험은 독립 VM/hosted 환경에서만. fake HTTP/LSP 시험은 해당 실제 수용을 대체하지 않는다. — 결과: 격리 VM/hosted 환경이 없어 S5 external LAN·실제 도구 설치 NOT_RUN.
+- [ ] Codex 새 worktree trust waiting·tmux3.4 종료 미확정은 실제 SC3/4/10 실패 시 좁게 원인을 재현한다. 미재현이면 미확정 후속으로 남기고 근거 없는 수정은 하지 않는다. — 결과: SC3/4/10을 실행하지 않아 재현 시도 없음(미확정 후속 유지).
+- [x] 소유 자원만 정리하고 retained 목록·prod 불변 비교를 남긴다. R1(30분 idle)·R2(WSL shutdown 시간)는 공개 직전 사용자 확인까지 NOT_RUN. 에이전트가 공유 WSL을 shutdown하지 않는다. — 결과: 1차 실제 잔여(WSL accept 경로·unit17·실패 run unit·소유 fixture·NSIS key; Windows 소유 경로는 이미 없음, driver 목록은 22개)는 검토된 `cleanup_run1.py --execute`로 정리, 2차 실행 뒤 읽기 전용 증명 깨끗. A6은 1·2차 모두 FAIL(원본 유지). S1 `HKCU\Software\github\Devbox`·legacy v0.x는 보존. R1/R2 NOT_RUN, WSL shutdown 안 함.
 
 ## 15. S6-5 — 실제 사용 문서와 최종 계약 정리
 
@@ -365,9 +367,9 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 
 - [x] 전체 브랜치 독립 검토: 네 수정·통합·소유권·redaction·업데이트·문서/근거 일치. 해결되지 않은 항목과 SC 판정을 먼저 고정한다. — 결과(로컬): 63ac80ba에서 6영역 검토(`devbox-verification/s6-6b/final-review-{rust-runtime,rust-api,rust-docs,native,front,ci-docs}.md`). rust-docs·rust-api·rust-runtime·front Ready, ci-docs Ready with doc conditions, native Needs fixes(I1–I3)였고 모두 수정 wave와 재검토(`fix-wave-re-review.md`·`n1-re-review.md`)로 닫았다. 남은 지적은 PROGRESS §8에 고정했고 SC1–SC10은 모두 실측 없음(NOT_RUN)으로 유지한다.
 - [x] 자원 supervisor 아래 최종 **전체 check·workspace/native 해당 clippy·build·E2E를 한 번** 계획된 entrypoint로 실행한다. `scripts/check-inner.sh`가 포함하는 항목은 중복 별도 실행하지 않고 missing scope만 보충한다. 실패 뒤에는 실패/직접 영향 범위만 재실행한다. — 결과(로컬, 원본 FAIL, 범위 재검증 PASS): 63ac80ba 전체 check는 **FAIL**(종료1·1550.6초·memory_enforced=true, cgroup peak 6,447,607,808B가 memory.high 6GiB를 약간 넘었고 max 8GiB 미만; workspace clippy·`agents_codex`·Vitest 1/1690·E2E 1/23)이며 원본으로 보존한다. 수정 18커밋(63ac80ba..e86529a5) 뒤 실패/직접 영향 범위만 재실행해 workspace·native clippy, Rust 시험, Vitest 1692, typecheck, E2E 23/23, scripts 26, gen-ts, rustfmt, Biome, `pnpm build`가 PASS했다(상세 PROGRESS §5 S6-6b). 수정 후 전체 check 재실행은 하지 않았고 Windows/MSVC 항목은 NOT_RUN이다.
-- [ ] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 과제별 중간 push/PR을 하지 않고 이 최종 수용 준비 시점에만 수행한다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다.
-- [ ] 그 Windows artifact로 §14 설치 수용·SC 계측을 수행한다. Windows 전용 build/strict Clippy는 Windows 근거를 쓴다. 로컬 Linux 성공을 Windows 성공으로 바꾸지 않는다. 제품/packaging/runtime 입력이 바뀌면 새 candidate·artifact와 영향 수용을 다시 결속한다.
-- [ ] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다.
+- [x] 전체 제품/버전·로컬 검사 완료 → 최종 Biome CI → **candidate commit 고정 → 백업 branch push(PR 없음) → windows.yml workflow_dispatch** 순서로 원격에 정확 source를 제공한다. 이는00 §3의 설치 artifact용 기존 백업 push 예외이며 과제별 중간 push/PR을 하지 않고 이 최종 수용 준비 시점에만 수행한다. dispatch ref의 실제 run head가 candidate SHA인지 확인하고 성공·receipt/hash/채널을 대조한다. — 결과: 40292765183@d48f19de FAILURE(Windows clippy)→`f3b09d20`→40296265668 SUCCESS→실제 Windows fixture로 찾은 `19cff21e`→**40305797593@19cff21e SUCCESS**(최종 candidate). head SHA·receipt·installer/linux SHA256·채널 대조 일치(PROGRESS §5).
+- [x] 그 Windows artifact로 §14 설치 수용·SC 계측을 수행한다. Windows 전용 build/strict Clippy는 Windows 근거를 쓴다. 로컬 Linux 성공을 Windows 성공으로 바꾸지 않는다. 제품/packaging/runtime 입력이 바뀌면 새 candidate·artifact와 영향 수용을 다시 결속한다. — 결과: 수행(일부 FAIL/NOT_RUN 기록). 19cff21e artifact로 phase-2 2회, 2차 G1·G2·A1·A2·A4 PASS, A6 FAIL, A3·A5 NOT_RUN, SC는 SC2 raw·SC7 raw만(PASS 판정 없음). `19cff21e` 제품 수정 뒤 새 candidate·artifact로 다시 결속했다.
+- [x] 결과 문서만의 후속 커밋은 실제 native 실행 SHA와 runtime/build 입력 동등성·재사용 출처를 CONVENTIONS §8에 따라 남긴다. 새 문서 SHA에서 binary를 다시 실행했다고 쓰지 않는다. 문서가 바뀔 때마다 불필요하게 hash/build loop를 돌리지 않는다. — 결과: `docs(progress): record S6 Windows candidate and installer acceptance`는 PROGRESS·07c만 바꾼다(제품/packaging/runtime 입력 불변). native 실행은 source 19cff21e·run40305797593 산출물이며 문서 SHA에서 다시 실행하지 않았다.
 - [ ] PROGRESS·단일 PR 본문용 결과에 원본 실패→수정 영향 재검증, ignored/NOT_RUN·historical source·timing·cleanup·hash를 구분해 기록한다. artifact는 common-dir에 bounded JSON/log/trace로 보존하며 새 날짜별 Markdown 보고서를 만들지 않는다.
 - [ ] 결과 문서·최소 영향 수정의 검토와 Biome 뒤 필요한 최종 branch push·**S6 PR 한 번**. `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` 최종 PR SHA 필수 성공 및 branch protection 유지. E2E 등 실제 요구 job도 확인한다.
 - [ ] 자동 리뷰는 현재 사용자 설정상 OFF. #646의 “머지까지만” 독립 검토 대체는 **S6 전체 면제 아님**. **사용자 결정(2026-10-26): “독립 검토로 대체 (Recommended)”.** S6 PR 자동 리뷰는 NOT_RUN(비활성화)으로 기록하고 PASS·한도 소진으로 쓰지 않는다. 이 결정은 S6 PR에만 적용한다.
@@ -400,7 +402,7 @@ batching 착수 전1,492줄에 남은 batching/release 검증을 더한 중심 �
 | #645 credential root4367201426 | 이미 수정·머지됨. 회귀 유지, 새 결함으로 재개하지 않음 |
 | #645 HTTP authorize4367201424 | S6-1b.3 포함 |
 | #644 quit finish/new-window | S6-3b bounded reproduction·updater 종료 계약에 필요한 보정 포함; 불필요함이 증명된 경우만 이유를 남겨 defer |
-| #642 Windows readiness PID 귀속 | S6-4 포함, 직접/native 모두 확인. S6-4a `313a6095` 구현·독립 APPROVE, 실제 Windows 실행·동등성은 §14 수용까지 NOT_RUN |
+| #642 Windows readiness PID 귀속 | S6-4 포함, 직접/native 모두 확인. S6-4a `313a6095` 구현·독립 APPROVE. 실제 Windows: listener fixture(exited tree 수정 `19cff21e` 뒤 PASS)·accept 수용 A4 PASS(무관 listener→미준비, 소유 child→ready). direct/native 동등성은 NOT_RUN |
 | custom vault support masking | S6-1b.4 포함 |
 | Windows 파일명 casing/cfg 과거 수정 | 종결. 기존 회귀·Windows CI로 유지 |
 | 과거 native·SC gaps | S6-4 재수행 목록, 환경 부재·사용자 R1/R2는 정확히 NOT_RUN |
