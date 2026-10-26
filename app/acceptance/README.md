@@ -32,10 +32,10 @@ Record repetitions, cold/warm and WSL running/stopped conditions with the raw li
 
 ## SC6 — development loop harness
 
-`sc6.spec.ts` measures raw samples on the harness's own `performance.now()` clock. It is not run by CI or e2e and must not be pointed at a user's live session. Start an owned session (`python3 scripts/dev-session.py`) that itself started the dev daemon. If it reports reusing an existing daemon, restart is refused and the daemon phase fails. Then, with the same checkout clean:
+`sc6.spec.ts` measures raw samples on the harness's own `performance.now()` clock. It is not run by CI or e2e and must not be pointed at a user's live session. From this checkout's root, start an owned session with a fresh one-off token, `DEVBOX_SC6_SESSION_TOKEN=<token> python3 scripts/dev-session.py` (16–128 characters of `A-Z a-z 0-9 _ -`), that itself started the dev daemon. If it reports reusing an existing daemon, restart is refused and the daemon phase fails. The harness refuses any process that is not `scripts/dev-session.py` running in this checkout with that exact token in its environment, so it never signals a session it was not explicitly given. Then, with the same checkout clean:
 
 ```sh
-DEVBOX_SC6_SESSION_PID=<dev-session pid> DEVBOX_SC6_OUTPUT=<evidence>/sc6.json \
+DEVBOX_SC6_SESSION_PID=<dev-session pid> DEVBOX_SC6_SESSION_TOKEN=<token> DEVBOX_SC6_OUTPUT=<evidence>/sc6.json \
   pnpm --filter app exec playwright test -c acceptance/sc6.config.ts
 ```
 

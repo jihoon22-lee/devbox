@@ -1,4 +1,4 @@
-import { markSource, ReconnectWatch, rpcMessage } from "../acceptance/sc6-measurement";
+import { markSource, ownedSession, ReconnectWatch, rpcMessage } from "../acceptance/sc6-measurement";
 import { FRAME, jsonFrame } from "./rpc/frame";
 
 test("source marking replaces exactly one anchor and refuses ambiguous or already-marked files", () => {
@@ -32,4 +32,36 @@ test("reconnect completes only after a new daemon answers a data request sent af
   expect(watch.received({ type: "response", id: 4, error: { code: "internal" } })).toBe(false);
   watch.sent({ type: "request", id: 5, method: "agents.list" });
   expect(watch.received({ type: "response", id: 5 })).toBe(true);
+});
+
+test("SC6 only adopts this checkout's dev-session started with the harness's own token", () => {
+  const token = "owned-sc6-token-0123";
+  const env = { DEVBOX_SC6_SESSION_PID: "4242", DEVBOX_SC6_SESSION_TOKEN: token };
+  const proc = (cmdline: string[], environ: string[], cwd = "/checkout") => ({
+    fields: (pid: number, name: "cmdline" | "environ") => {
+      if (pid !== 4242) throw new Error("other pid");
+      return name === "cmdline" ? cmdline : environ;
+    },
+    cwd: () => cwd,
+  });
+  const session = ["python3", "scripts/dev-session.py", ""];
+  const marked = ["HOME=/home/owner", `DEVBOX_SC6_SESSION_TOKEN=${token}`, ""];
+  expect(ownedSession(env, "/checkout", proc(session, marked))).toBe(4242);
+  // A live session without the marker, a different token, another checkout or another program.
+  for (const candidate of [
+    proc(session, ["HOME=/home/owner", ""]),
+    proc(session, ["DEVBOX_SC6_SESSION_TOKEN=someone-elses-token", ""]),
+    proc(session, marked, "/other-checkout"),
+    proc(["python3", "scripts/other.py", ""], marked),
+  ])
+    expect(() => ownedSession(env, "/checkout", candidate)).toThrow("DEVBOX_SC6_SESSION_TOKEN");
+  for (const bad of [{ ...env, DEVBOX_SC6_SESSION_TOKEN: "short" }, { ...env, DEVBOX_SC6_SESSION_PID: "1" }, {}])
+    expect(() => ownedSession(bad, "/checkout", proc(session, marked))).toThrow("DEVBOX_SC6_SESSION_TOKEN");
+  const unreadable = {
+    fields: () => {
+      throw new Error("EACCES");
+    },
+    cwd: () => "/checkout",
+  };
+  expect(() => ownedSession(env, "/checkout", unreadable)).toThrow("DEVBOX_SC6_SESSION_TOKEN");
 });

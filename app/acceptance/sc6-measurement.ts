@@ -1,5 +1,37 @@
 import { decodeFrame, FRAME } from "../src/rpc/frame";
 
+export interface ProcReader {
+  fields(pid: number, name: "cmdline" | "environ"): string[];
+  cwd(pid: number): string;
+}
+
+/**
+ * SIGUSR1 restarts a dev-session's daemon, so never adopt an arbitrary (possibly live) session:
+ * the process must be this checkout's scripts/dev-session.py, started with the same one-off
+ * DEVBOX_SC6_SESSION_TOKEN that the harness was given (an explicit owned marker).
+ */
+export function ownedSession(env: Record<string, string | undefined>, root: string, proc: ProcReader): number {
+  const pid = Number(env.DEVBOX_SC6_SESSION_PID);
+  const token = env.DEVBOX_SC6_SESSION_TOKEN ?? "";
+  const refuse = new Error(
+    "Set DEVBOX_SC6_SESSION_PID and DEVBOX_SC6_SESSION_TOKEN to a scripts/dev-session.py of this checkout started with that token",
+  );
+  if (!Number.isInteger(pid) || pid <= 1 || !/^[A-Za-z0-9_-]{16,128}$/.test(token)) throw refuse;
+  const safely = <T>(read: () => T, fallback: T) => {
+    try {
+      return read();
+    } catch {
+      return fallback;
+    }
+  };
+  const owned =
+    safely(() => proc.fields(pid, "cmdline"), []).some((part) => part.endsWith("scripts/dev-session.py")) &&
+    safely(() => proc.fields(pid, "environ"), []).includes(`DEVBOX_SC6_SESSION_TOKEN=${token}`) &&
+    safely(() => proc.cwd(pid), "") === root;
+  if (!owned) throw refuse;
+  return pid;
+}
+
 export type RpcMessage = { type?: string; id?: number; method?: string; daemonId?: string; error?: unknown };
 
 /** Replaces the single owned anchor; any ambiguity is refused so the restore stays byte-identical. */
