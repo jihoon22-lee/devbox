@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "../../ui";
 import { type UpdateIssue, type UpdateSnapshot, useNativeUpdate } from "./nativeUpdate";
 import { openSettings } from "./open";
@@ -163,5 +164,3 @@ export function UpdateStatus() {
     </button>
   );
 }
-
-import { useState } from "react";
