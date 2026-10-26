@@ -33,7 +33,7 @@ pub fn inspect(app: &AppHandle) -> Result<Recovery> {
 }
 pub struct PrepareFailure {
     pub error: RunnerError,
-    pub quarantine: Option<Prepared>,
+    pub quarantine: Option<Box<Prepared>>,
 }
 impl From<RunnerError> for PrepareFailure {
     fn from(error: RunnerError) -> Self {
@@ -171,7 +171,7 @@ pub async fn prepare(
                 let exited = ready.abort().await.unwrap_or(false);
                 Err(PrepareFailure {
                     error: RunnerError::Timeout,
-                    quarantine: (!exited).then_some(ready),
+                    quarantine: (!exited).then_some(Box::new(ready)),
                 })
             }
             Err(mut failed) => {
@@ -297,7 +297,7 @@ fn prepare_blocking(
             }
             Err(PrepareFailure {
                 error,
-                quarantine: (!exited).then_some(ready),
+                quarantine: (!exited).then_some(Box::new(ready)),
             })
         }
     }
