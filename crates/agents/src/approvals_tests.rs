@@ -16,12 +16,14 @@ impl Hooks {
         }
     }
     fn send(&mut self, payload: Value) -> bool {
-        self.send_from("L", payload)
+        self.send_text("L", &payload.to_string())
     }
     fn send_from(&mut self, launch: &str, payload: Value) -> bool {
-        let payload = payload.to_string();
-        let events = parse(HookSource::Claude, &payload, None);
-        let approval = approval(&payload);
+        self.send_text(launch, &payload.to_string())
+    }
+    fn send_text(&mut self, launch: &str, payload: &str) -> bool {
+        let events = parse(HookSource::Claude, payload, None);
+        let approval = approval(payload);
         self.approvals
             .apply(&mut self.task, launch, approval, events)
     }
@@ -40,6 +42,18 @@ fn notification() -> Value {
     json!({"hook_event_name":"Notification","notification_type":"permission_prompt","message":"needs Bash"})
 }
 const ENDINGS: [&str; 3] = ["PostToolUse", "PostToolUseFailure", "PermissionDenied"];
+/// Deeper than serde_json's recursion limit: the hook parser skips it, but no key can be
+/// built from it.
+fn too_deep(event: &str) -> String {
+    let (open, close) = ("[".repeat(200), "]".repeat(200));
+    format!(r#"{{"hook_event_name":"{event}","tool_name":"Write","tool_input":{open}{close}}}"#)
+}
+fn key_of(approval: Option<Approval>) -> ApprovalKey {
+    match approval {
+        Some(Approval::Requested(key) | Approval::Finished(key)) => key,
+        other => panic!("no approval key: {other:?}"),
+    }
+}
 
 #[test]
 fn a_parallel_tool_ending_keeps_the_approval_wait() {
@@ -177,4 +191,109 @@ fn tool_input_matches_regardless_of_key_order_and_whitespace() {
         key("s1", "Edit", &json!(null)),
         key("", "s1Edit", &json!(null))
     );
+}
+
+#[test]
+fn a_request_whose_input_cannot_be_keyed_keeps_the_wait_closed() {
+    let make = json!({"command":"make"});
+    // The request joins a recorded wait, or begins one.
+    for joins in [true, false] {
+        let mut h = Hooks::new();
+        if joins {
+            h.send(call("PermissionRequest", None, "Bash", &make));
+        }
+        assert!(h.send_text("L", &too_deep("PermissionRequest")), "{joins}");
+        assert_eq!(h.state(), AgentState::Waiting);
+        for event in ENDINGS {
+            assert!(!h.send(call(event, None, "Bash", &make)), "{event}");
+            assert!(!h.send_text("L", &too_deep(event)), "{event}");
+            assert_eq!(h.state(), AgentState::Waiting, "{joins} {event}");
+        }
+    }
+}
+
+#[test]
+fn a_wait_with_more_approvals_than_the_cap_fails_closed() {
+    const CAP: usize = 64;
+    let inputs: Vec<Value> = (0..=CAP)
+        .map(|n| json!({"command": format!("make {n}")}))
+        .collect();
+    // Up to the cap, every approval is recorded and the last ending resumes the wait.
+    let mut h = Hooks::new();
+    for input in &inputs[..CAP] {
+        h.send(call("PermissionRequest", None, "Bash", input));
+    }
+    for input in &inputs[1..CAP] {
+        assert!(!h.send(call("PostToolUse", None, "Bash", input)));
+    }
+    assert!(h.send(call("PostToolUse", None, "Bash", &inputs[0])));
+    assert_eq!(h.state(), AgentState::Running);
+    // One distinct approval more drops the record, and no ending resumes the wait.
+    let mut h = Hooks::new();
+    for input in &inputs {
+        h.send(call("PermissionRequest", None, "Bash", input));
+    }
+    for input in &inputs {
+        assert!(!h.send(call("PostToolUse", None, "Bash", input)));
+    }
+    assert_eq!(h.state(), AgentState::Waiting);
+}
+
+#[test]
+fn another_requester_waiting_keeps_the_wait_closed() {
+    let make = json!({"command":"make"});
+    // A background agent or teammate is blocked: not one of the recorded approvals.
+    let teammate = json!({"hook_event_name":"Notification","notification_type":"agent_needs_input","message":"tester needs your input"});
+    let mut h = Hooks::new();
+    h.send(call("PermissionRequest", None, "Bash", &make));
+    assert!(h.send(teammate));
+    assert!(!h.send(call("PostToolUse", None, "Bash", &make)));
+    assert_eq!(h.state(), AgentState::Waiting);
+    // The approval's own permission prompt keeps the record.
+    let mut h = Hooks::new();
+    h.send(call("PermissionRequest", None, "Bash", &make));
+    assert!(h.send(notification()));
+    assert!(h.send(call("PostToolUse", None, "Bash", &make)));
+    assert_eq!(h.state(), AgentState::Running);
+}
+
+#[test]
+fn tool_input_of_any_json_type_is_keyed_by_its_value() {
+    let make = json!({"command":"make"});
+    let inputs = [
+        json!(["a", 1]),
+        json!("a"),
+        json!(null),
+        json!(1),
+        json!(true),
+        json!({}),
+    ];
+    for (index, input) in inputs.iter().enumerate() {
+        let requested = key_of(approval(
+            &call("PermissionRequest", None, "Bash", input).to_string(),
+        ));
+        let ended = key_of(approval(
+            &call("PostToolUse", None, "Bash", input).to_string(),
+        ));
+        assert_eq!(requested, ended, "{input}");
+        for other in &inputs[index + 1..] {
+            assert_ne!(requested, key("", "Bash", other), "{input} {other}");
+        }
+    }
+    // An absent tool_input is null.
+    let absent = approval(r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#);
+    assert_eq!(key_of(absent), key("", "Bash", &json!(null)));
+    // JSON escapes spell the same text.
+    let plain = approval(
+        r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"A/é"}}"#,
+    );
+    let escaped = approval(
+        r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"\u0041\/\u00e9"}}"#,
+    );
+    assert_eq!(key_of(plain), key_of(escaped));
+    // The main agent has no agent_id; an empty one hashes the same way.
+    let absent = approval(&call("PermissionRequest", None, "Bash", &make).to_string());
+    let empty = approval(&call("PostToolUse", Some(""), "Bash", &make).to_string());
+    assert_eq!(key_of(absent), key_of(empty));
+    assert_eq!(key_of(empty), key("", "Bash", &make));
 }

@@ -87,3 +87,89 @@ async fn a_user_review_ends_the_wait_and_its_approvals() {
     assert_eq!(f.state().await, AgentState::Review);
     assert!(!f.svc.approvals.has_pending("a"));
 }
+
+#[tokio::test]
+async fn a_tool_ending_without_a_recorded_approval_opens_no_write() {
+    let f = Fixture::new().await;
+    let launch = launched(&f).await;
+    let make = json!({"command":"make"});
+    let prompt = json!({"hook_event_name":"Notification","notification_type":"permission_prompt","message":"needs Bash"});
+    // Running, then a notification-only wait: neither has a recorded approval.
+    for waiting in [false, true] {
+        if waiting {
+            deliver(&f, &launch, prompt.clone()).await;
+            assert_eq!(f.state().await, AgentState::Waiting);
+        }
+        let before = f.svc.get("a").await.expect("task");
+        let revision = f.svc.db.rev();
+        // Another connection holds the write lock, so a write transaction would wait 5 s.
+        let lock = rusqlite::Connection::open(&f.svc.paths.db_path).expect("owned database");
+        lock.execute_batch("BEGIN IMMEDIATE")
+            .expect("owned write lock");
+        for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            let ending = deliver(&f, &launch, call(event, "Bash", &make));
+            let done = tokio::time::timeout(std::time::Duration::from_secs(1), ending)
+                .await
+                .expect("no write transaction");
+            assert_eq!(done.rev, revision.to_string(), "{waiting} {event}");
+        }
+        lock.execute_batch("ROLLBACK").expect("owned write lock");
+        assert_eq!(f.svc.db.rev(), revision);
+        assert_eq!(f.svc.get("a").await.expect("unchanged task"), before);
+    }
+}
+
+#[tokio::test]
+async fn closing_exiting_or_losing_the_session_forgets_the_approvals() {
+    let make = json!({"command":"make"});
+    for path in ["exited", "session lost", "closed"] {
+        let f = Fixture::new().await;
+        let launch = launched(&f).await;
+        deliver(&f, &launch, call("PermissionRequest", "Bash", &make)).await;
+        assert!(f.svc.approvals.has_pending("a"), "{path}");
+        match path {
+            // The lifecycle hook the tool's shell sends when it exits.
+            "exited" => {
+                let exit = AgentEventParams {
+                    agent_id: "a".into(),
+                    launch_id: None,
+                    source: HookSource::Exit,
+                    payload: launch.clone(),
+                    code: Some(0),
+                };
+                f.svc.event(exit).await.expect("exit hook");
+            }
+            // How session reconciliation applies a missing tmux session.
+            "session lost" => {
+                let lost = |t: &mut AgentTask| apply_event(t, &AgentEvent::SessionLost, now_ms());
+                f.svc.update("a", lost).await.expect("session lost");
+            }
+            _ => {
+                let review = crate::closed_review::ClosedReview {
+                    changes: AgentChanges {
+                        base: "main".into(),
+                        ahead: 0,
+                        behind: 0,
+                        head_oid: "head".into(),
+                        base_oid: "base".into(),
+                        files: vec![],
+                    },
+                    commits: vec![],
+                };
+                let usage = AgentUsage {
+                    tokens: None,
+                    truncated: false,
+                };
+                let how = crate::state::CloseHow::Discarded;
+                let closed = f
+                    .svc
+                    .close_record("a", how, None, "head".into(), usage, review);
+                closed.await.expect("closed record");
+            }
+        }
+        assert_ne!(f.state().await, AgentState::Waiting, "{path}");
+        assert!(!f.svc.approvals.has_pending("a"), "{path}");
+        deliver(&f, &launch, call("PostToolUse", "Bash", &make)).await;
+        assert_ne!(f.state().await, AgentState::Running, "{path}");
+    }
+}

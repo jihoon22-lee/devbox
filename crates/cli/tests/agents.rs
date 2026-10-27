@@ -259,6 +259,75 @@ async fn send_is_refused_while_waiting_and_the_pane_receives_nothing() {
 }
 
 #[tokio::test]
+async fn a_request_that_cannot_be_paired_keeps_sends_refused_until_the_turn_ends() {
+    let mut d = fixture_with(RECORDER);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let client = d.client().await;
+    let project = d.add_project(&client, &repo).await;
+    let id = d.create_agent(&client, &project, "fake", false).await;
+    let running = d
+        .wait_for(&client, &id, "running", Duration::from_secs(10))
+        .await;
+    let pane = format!("={}:", running["terminalId"].as_str().expect("terminal"));
+    let screen = |d: &TestDaemon| d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane]);
+    let make = json!({"command":"make"});
+    let request =
+        json!({"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":make});
+    claude_hook(&d, &client, &id, request).await;
+    // A second dialog whose input is deeper than serde_json's recursion limit: no key.
+    let mut deep = json!([]);
+    for _ in 0..200 {
+        deep = json!([deep]);
+    }
+    let second =
+        json!({"hook_event_name":"PermissionRequest","tool_name":"Write","tool_input":deep});
+    claude_hook(&d, &client, &id, second).await;
+    let ended = json!({"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":make});
+    claude_hook(&d, &client, &id, ended).await;
+    let waiting = d
+        .wait_for(&client, &id, "waiting", Duration::from_secs(2))
+        .await;
+    assert_eq!(
+        waiting["attention"]["message"],
+        "Write 사용 승인이 필요합니다."
+    );
+    let text = "owned-s7-4-unpaired";
+    let refused = client
+        .raw_call("agents.send", json!({"id":id,"text":text}), None)
+        .await
+        .expect_err("send while the second dialog is open");
+    assert!(
+        matches!(&refused, devbox_cli::client::ClientError::Rpc { code, .. } if code == "agents.awaiting_input"),
+        "{refused:?}"
+    );
+    assert!(!screen(&d).contains(text));
+    assert!(
+        !d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"])
+            .contains(text)
+    );
+    // The end of the turn still ends the wait.
+    claude_hook(&d, &client, &id, json!({"hook_event_name":"Stop"})).await;
+    d.wait_for(&client, &id, "idle", Duration::from_secs(2))
+        .await;
+    client
+        .raw_call("agents.send", json!({"id":id,"text":text}), None)
+        .await
+        .expect("send after the turn ends");
+    let received = d.home.path().join("received");
+    support::bounded(async {
+        while !std::fs::read_to_string(&received).is_ok_and(|lines| lines.ends_with('\n')) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert_eq!(
+        std::fs::read_to_string(&received).expect("received input"),
+        format!("{text}\n")
+    );
+}
+
+#[tokio::test]
 async fn failed_setup_is_visible_and_keeps_owned_shell() {
     let mut d = fixture();
     let repo = d.git_repo("projects/setup");

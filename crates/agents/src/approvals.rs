@@ -3,10 +3,14 @@
 //! Claude's PermissionRequest records a digest of its tool call. PostToolUse,
 //! PostToolUseFailure and PermissionDenied for the same call remove it, and the wait
 //! resumes when none is left. Digests live only in this process and are never stored
-//! or logged. A wait that no recorded request began (a notification-only wait, a
-//! dropped request, or records a daemon restart lost) may hold a dialog this process
-//! never saw. It fails closed, even if requests follow: only a prompt, a finished turn
-//! or a lifecycle event can end it.
+//! or logged.
+//!
+//! A wait may hold a dialog no recorded approval can end. Then it fails closed, even if
+//! requests follow, and only a prompt, a finished turn or a lifecycle event can end it.
+//! That is the case when no recorded request began the wait (a notification-only wait,
+//! a dropped request, or records a daemon restart lost), when a request cannot be keyed,
+//! when another requester waits for the user, or when more than [`MAX_KEYS`] distinct
+//! approvals are pending.
 use crate::{
     model::AgentTask,
     service::{apply_event, now_ms},
@@ -34,7 +38,13 @@ pub enum Approval {
     Requested(ApprovalKey),
     /// PostToolUse, PostToolUseFailure or PermissionDenied: this tool call is over.
     Finished(ApprovalKey),
+    /// A dialog no recorded approval can end: a request that cannot be keyed, or another
+    /// requester that waits for the user.
+    Untracked,
 }
+
+/// Distinct approvals one wait tracks. More fail closed.
+pub(crate) const MAX_KEYS: usize = 64;
 
 /// Key order and whitespace in `tool_input` do not matter.
 pub fn key(agent: &str, tool: &str, input: &serde_json::Value) -> ApprovalKey {
@@ -136,13 +146,25 @@ impl Approvals {
             pending.remove(&task.id);
             return changed;
         }
-        if let (Some(Approval::Requested(key)), true) = (approval, tracked) {
-            let wait = pending.entry(task.id.clone()).or_insert_with(|| Pending {
-                launch: launch.into(),
-                seq: task.activity_seq,
-                keys: HashMap::new(),
-            });
-            *wait.keys.entry(key).or_default() += 1;
+        match approval {
+            Some(Approval::Requested(key)) if tracked => {
+                let wait = pending.entry(task.id.clone()).or_insert_with(|| Pending {
+                    launch: launch.into(),
+                    seq: task.activity_seq,
+                    keys: HashMap::new(),
+                });
+                if wait.keys.len() >= MAX_KEYS && !wait.keys.contains_key(&key) {
+                    pending.remove(&task.id);
+                    return changed;
+                }
+                let count = wait.keys.entry(key).or_default();
+                *count = count.saturating_add(1);
+            }
+            Some(Approval::Untracked) => {
+                pending.remove(&task.id);
+                return changed;
+            }
+            _ => {}
         }
         if let Some(wait) = pending.get_mut(&task.id) {
             wait.seq = task.activity_seq;
@@ -153,7 +175,7 @@ impl Approvals {
     pub(crate) fn forget(&self, id: &str) {
         self.pending().remove(id);
     }
-    #[cfg(test)]
+    /// Whether the task has a record, possibly stale. Without one no ending can resume.
     pub(crate) fn has_pending(&self, id: &str) -> bool {
         self.pending().contains_key(id)
     }

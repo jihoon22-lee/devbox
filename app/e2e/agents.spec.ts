@@ -65,8 +65,10 @@ test("new task → approval in terminal → idle → instruct → diff → squas
   // The kept draft goes out once the agent waits for its next instruction.
   await compose.press("Control+Enter");
   await expect
-    .poll(async () => (await stack.rpc("agents.get", { id: id as string })).followUps.map((entry) => entry.text))
-    .toEqual(["yes"]);
+    .poll(async () =>
+      (await stack.rpc("agents.get", { id: id as string })).followUps.map(({ text, delivery }) => ({ text, delivery })),
+    )
+    .toEqual([{ text: "yes", delivery: "delivered" }]);
   await expect(idle).toBeVisible({ timeout: 10_000 });
   await page.getByRole("tab", { name: "변경", exact: true }).click();
   await expect(page.getByRole("tabpanel", { name: "변경" })).toContainText("agent.txt");

@@ -189,6 +189,17 @@ impl AgentsService {
         } else {
             None
         };
+        // Claude ends every tool call with a hook. Without a recorded approval the ending
+        // changes nothing, so skip it before keying its input or opening a write.
+        if launch.is_some()
+            && !self.approvals.has_pending(&task.id)
+            && crate::hooks::claude_event(&p.payload)
+                .is_some_and(|event| crate::hooks::ends_tool_call(&event))
+        {
+            return Ok(Done {
+                rev: self.db.rev().to_string(),
+            });
+        }
         let approval = launch
             .as_ref()
             .and_then(|_| crate::hooks::approval(&p.payload));

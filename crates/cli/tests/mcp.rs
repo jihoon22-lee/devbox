@@ -374,6 +374,10 @@ async fn agent_send_reports_awaiting_input() {
         !d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane])
             .contains(text)
     );
+    assert!(
+        !d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"])
+            .contains(text)
+    );
     m.finish();
 }
 

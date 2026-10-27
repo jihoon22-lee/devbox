@@ -1,4 +1,4 @@
-use crate::approvals::{Approval, key};
+use crate::approvals::{Approval, ApprovalKey, key};
 use crate::plan::sh_quote;
 use crate::state::AgentEvent;
 use serde::{Deserialize, Serialize};
@@ -117,16 +117,12 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
                 }],
                 // The service applies this only when it ends the wait's last approval
                 // (see `approval`). Tool input, output and errors are never read here.
-                "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
-                    vec![AgentEvent::OutputResumed]
-                }
+                event if ends_tool_call(event) => vec![AgentEvent::OutputResumed],
                 "Notification" => match p.notification_type.as_deref() {
                     Some("idle_prompt") => vec![AgentEvent::TurnComplete { message: None }],
-                    Some("permission_prompt" | "agent_needs_input") => {
-                        vec![AgentEvent::NeedsInput {
-                            message: p.message.unwrap_or_default(),
-                        }]
-                    }
+                    Some(kind) if asks_user(kind) => vec![AgentEvent::NeedsInput {
+                        message: p.message.unwrap_or_default(),
+                    }],
                     _ => vec![],
                 },
                 "Stop" => vec![AgentEvent::TurnComplete {
@@ -138,32 +134,72 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
     }
 }
 
+/// Notifications that ask the user something: an approval's own permission prompt, or
+/// a background agent or teammate that is blocked ("<label> needs your input").
+fn asks_user(kind: &str) -> bool {
+    matches!(kind, "permission_prompt" | "agent_needs_input")
+}
+
+/// Claude's hook event name. The rest of the payload, tool input and output included, is
+/// skipped without being built.
+pub(crate) fn claude_event(payload: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Event {
+        hook_event_name: String,
+    }
+    serde_json::from_str::<Event>(payload)
+        .ok()
+        .map(|event| event.hook_event_name)
+}
+
+/// Claude sends one of these for every tool call that ends.
+pub(crate) fn ends_tool_call(event: &str) -> bool {
+    matches!(
+        event,
+        "PostToolUse" | "PostToolUseFailure" | "PermissionDenied"
+    )
+}
+
 /// Pairs Claude's approval request with the end of that tool call. Only a digest of
 /// (`agent_id`, `tool_name`, `tool_input`) leaves here; `tool_response` is never read.
 pub(crate) fn approval(payload: &str) -> Option<Approval> {
+    match claude_event(payload)?.as_str() {
+        // A request that cannot be keyed (e.g. input deeper than serde_json's recursion
+        // limit) still opens a dialog.
+        "PermissionRequest" => {
+            Some(call_key(payload).map_or(Approval::Untracked, Approval::Requested))
+        }
+        // An ending that cannot be keyed ends nothing.
+        event if ends_tool_call(event) => call_key(payload).map(Approval::Finished),
+        "Notification" => {
+            #[derive(Deserialize)]
+            struct Notice {
+                notification_type: Option<String>,
+            }
+            let kind = serde_json::from_str::<Notice>(payload)
+                .ok()?
+                .notification_type?;
+            // Someone other than the recorded approvals is waiting for the user.
+            (asks_user(&kind) && kind != "permission_prompt").then_some(Approval::Untracked)
+        }
+        _ => None,
+    }
+}
+
+fn call_key(payload: &str) -> Option<ApprovalKey> {
     #[derive(Deserialize)]
     struct Call {
-        hook_event_name: String,
         agent_id: Option<String>,
         tool_name: Option<String>,
         #[serde(default)]
         tool_input: serde_json::Value,
     }
     let call: Call = serde_json::from_str(payload).ok()?;
-    let key = || {
-        key(
-            call.agent_id.as_deref().unwrap_or_default(),
-            call.tool_name.as_deref().unwrap_or_default(),
-            &call.tool_input,
-        )
-    };
-    match call.hook_event_name.as_str() {
-        "PermissionRequest" => Some(Approval::Requested(key())),
-        "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
-            Some(Approval::Finished(key()))
-        }
-        _ => None,
-    }
+    Some(key(
+        call.agent_id.as_deref().unwrap_or_default(),
+        call.tool_name.as_deref().unwrap_or_default(),
+        &call.tool_input,
+    ))
 }
 
 #[cfg(test)]
