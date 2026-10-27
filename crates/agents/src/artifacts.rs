@@ -1,14 +1,18 @@
 //! Content-addressed files that tool sessions load from `agent-hooks/`.
 use sha2::{Digest, Sha256};
 use std::{
-    io::{Error, ErrorKind},
+    io::{Error, ErrorKind, Write},
     path::{Path, PathBuf},
 };
 
-/// Writes `<dir>/<stem>-<first 16 hex of sha256(body)>.<ext>` once (0600, create_new).
+/// Writes `<dir>/<stem>-<first 16 hex of sha256(body)>.<ext>` (0600) once.
 /// A running session keeps reading the file it started with, so a new body gets a new
 /// name and an existing name is reused only when it is a regular file with the same
-/// bytes; anything else is `AlreadyExists`. Callers hold `AgentsService::hook_files`.
+/// bytes; anything else is `AlreadyExists`.
+/// The body is synced in a temporary file in `dir` and published by a rename that never
+/// replaces an existing name. Concurrent writers therefore need no lock, and an
+/// interrupted write leaves at most a stray temporary file, never a partial file at the
+/// final name. Existing callers still hold `AgentsService::hook_files`.
 pub(crate) fn write_artifact(
     dir: &Path,
     stem: &str,
@@ -18,8 +22,21 @@ pub(crate) fn write_artifact(
     let digest = Sha256::digest(body.as_bytes());
     let hash: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
     let path = dir.join(format!("{stem}-{hash}.{ext}"));
-    match crate::prepare::private_file(&path, body, false) {
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+    crate::prepare::no_symlink_ancestors(dir)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let private = std::fs::Permissions::from_mode(0o600);
+        temporary.as_file().set_permissions(private)?;
+    }
+    temporary.write_all(body.as_bytes())?;
+    temporary.as_file().sync_all()?;
+    match temporary.persist_noclobber(&path) {
+        Ok(_) => Ok(path),
+        Err(error) if error.error.kind() == ErrorKind::AlreadyExists => {
+            // Dropping the unpublished temporary file deletes it.
+            drop(error.file);
             let same = std::fs::symlink_metadata(&path)?.file_type().is_file()
                 && std::fs::read(&path)? == body.as_bytes();
             if same {
@@ -31,7 +48,8 @@ pub(crate) fn write_artifact(
                 ))
             }
         }
-        written => written.map(|()| path),
+        // Converting drops, and so deletes, the temporary file.
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -42,6 +60,7 @@ mod tests {
         fs,
         io::ErrorKind,
         os::unix::fs::{PermissionsExt, symlink},
+        sync::atomic::{AtomicBool, Ordering},
     };
 
     #[test]
@@ -92,5 +111,50 @@ mod tests {
                 .file_type()
                 .is_symlink()
         );
+    }
+
+    #[test]
+    fn concurrent_writers_of_the_same_body_all_succeed() {
+        let dir = tempfile::tempdir().expect("owned artifact directory");
+        let body = "devbox hook artifact body\n".repeat(1 << 16);
+        assert!(body.len() >= 1 << 20);
+        // No lock around the calls; the writers spin on one flag so they start together.
+        let go = AtomicBool::new(false);
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        while !go.load(Ordering::Acquire) {
+                            std::hint::spin_loop();
+                        }
+                        write_artifact(dir.path(), "claude", "json", &body)
+                    })
+                })
+                .collect();
+            go.store(true, Ordering::Release);
+            handles
+                .into_iter()
+                .map(|writer| writer.join().expect("writer thread"))
+                .collect()
+        });
+        let first = results[0].as_ref().expect("first writer").clone();
+        for result in &results {
+            assert_eq!(result.as_ref().expect("every writer succeeds"), &first);
+        }
+        assert_eq!(fs::read(&first).expect("artifact"), body.as_bytes());
+        assert_eq!(fs::read_dir(dir.path()).expect("artifacts").count(), 1);
+    }
+
+    #[test]
+    fn stray_temp_file_does_not_block_a_write() {
+        let dir = tempfile::tempdir().expect("owned artifact directory");
+        let body = "full hook settings body";
+        // What an interrupted write may leave: part of the body under a temporary name.
+        let stray = dir.path().join(".tmpABC123");
+        fs::write(&stray, &body[..4]).expect("owned stray file");
+        let path = write_artifact(dir.path(), "claude", "json", body).expect("write");
+        assert_eq!(fs::read(&path).expect("artifact"), body.as_bytes());
+        assert_eq!(fs::read(&stray).expect("stray file"), &body.as_bytes()[..4]);
+        assert_eq!(fs::read_dir(dir.path()).expect("artifacts").count(), 2);
     }
 }

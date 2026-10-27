@@ -20,13 +20,18 @@ pub(crate) fn private_dir(path: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+/// Refuses a directory that is, or sits below, a symlink before a private file is created in it.
+pub(crate) fn no_symlink_ancestors(dir: &Path) -> std::io::Result<()> {
+    for ancestor in dir.ancestors() {
+        if std::fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(std::io::Error::other("symlink private file ancestor"));
+        }
+    }
+    Ok(())
+}
 pub(crate) fn private_file(path: &Path, body: &str, executable: bool) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
-        for ancestor in parent.ancestors() {
-            if std::fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink()) {
-                return Err(std::io::Error::other("symlink private file ancestor"));
-            }
-        }
+        no_symlink_ancestors(parent)?;
     }
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
