@@ -22,7 +22,8 @@ use tokio::{io::AsyncReadExt, process::Command, time::Instant};
 const SHELL_TIMEOUT: Duration = Duration::from_secs(5);
 const OUTPUT_LIMIT: usize = 64 * 1024;
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
-/// Found or not, a result is reused this long: the shell runs at most once per 5 minutes.
+/// How long [`resolve`] reuses a lookup the shell answered, found or not. Each environment check
+/// looks again with [`refresh`], and a lookup the shell did not answer is never kept.
 const CACHE_FOR: Duration = Duration::from_secs(5 * 60);
 const MARKER: u8 = 0x1e;
 /// The program name stays `$1`; it is never part of the script.
@@ -135,15 +136,27 @@ impl ResolvedCommand {
     }
 }
 
+/// What the interactive shell answered about one program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellAnswer {
+    /// The shell ran the lookup and printed both markers. Between them: an absolute path, or
+    /// `None` when `command -v` found nothing or something that is not a file (an alias, a
+    /// function, a builtin).
+    Answered(Option<PathBuf>),
+    /// No answer: the shell timed out, could not start, printed more than 64 KiB, or ended
+    /// without its markers.
+    NoAnswer,
+}
+
 /// Asks the user's interactive shell where a command is.
 pub trait ShellProbe: Send + Sync {
-    /// The shell's stdout for `command -v -- <program>`, or `None` when the shell did not run to
-    /// the end. It can hold anything the user's shell prints: never log or keep it.
-    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, Option<Vec<u8>>>;
+    /// The shell's answer for `command -v -- <program>`. Nothing else of what the shell prints
+    /// leaves the probe.
+    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, ShellAnswer>;
 }
 
 impl<T: ShellProbe + ?Sized> ShellProbe for Arc<T> {
-    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, Option<Vec<u8>>> {
+    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, ShellAnswer> {
         (**self).command_v(program)
     }
 }
@@ -153,11 +166,35 @@ impl<T: ShellProbe + ?Sized> ShellProbe for Arc<T> {
 pub struct InteractiveShell;
 
 impl ShellProbe for InteractiveShell {
-    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, Option<Vec<u8>>> {
+    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, ShellAnswer> {
         let mut command = Command::new("bash");
         command.args(["-ic", SCRIPT, "devbox-probe", program]);
-        Box::pin(async move { run(command, SHELL_TIMEOUT).await.map(|(_, stdout)| stdout) })
+        Box::pin(async move {
+            // The exit status says nothing here: the markers are the answer.
+            answer(run(command, SHELL_TIMEOUT).await.map(|(_, stdout)| stdout))
+        })
     }
+}
+
+/// The answer in the shell's stdout: the value between its last two markers, passed on only
+/// when it is an absolute path. Output without both markers is no answer; so is none at all (a
+/// timeout, a failed start, more than 64 KiB).
+fn answer(stdout: Option<Vec<u8>>) -> ShellAnswer {
+    let Some(stdout) = stdout.filter(|stdout| stdout.len() <= OUTPUT_LIMIT) else {
+        return ShellAnswer::NoAnswer;
+    };
+    let Some(end) = stdout.iter().rposition(|&b| b == MARKER) else {
+        return ShellAnswer::NoAnswer;
+    };
+    let Some(start) = stdout[..end].iter().rposition(|&b| b == MARKER) else {
+        return ShellAnswer::NoAnswer;
+    };
+    let path = std::str::from_utf8(&stdout[start + 1..end])
+        .ok()
+        .filter(|text| !text.chars().any(char::is_control))
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute());
+    ShellAnswer::Answered(path)
 }
 
 /// The program a profile command starts, when it can be found the way a shell would: a plain
@@ -174,7 +211,9 @@ pub fn program_of(command: &str) -> Option<&str> {
 }
 
 /// Where `program` is. A path is only checked; a name is asked of the interactive shell first
-/// and looked up in `service_path` after. The result is cached for 5 minutes.
+/// and looked up in `service_path` after. The result is reused for 5 minutes, unless the shell
+/// gave no answer (it timed out, say): then the service `PATH`'s result serves this call only,
+/// and the next one asks the shell again.
 pub async fn resolve(
     program: &str,
     service_path: &OsStr,
@@ -186,17 +225,23 @@ pub async fn resolve(
     }
 }
 
-/// [`resolve`] without the cache: looks again and keeps the answer for the next [`resolve`]
-/// with the same `service_path`. The environment check looks this way, so a CLI installed
-/// since the last lookup is used by the next task start.
+/// [`resolve`] without the cache: looks again and, when the shell answered, keeps the result for
+/// the next [`resolve`] with the same `service_path`. The environment check looks this way, so a
+/// CLI installed since the last lookup is used by the next task start. Without an answer the
+/// kept result stays as it was; the service `PATH`'s result is only returned.
 pub async fn refresh(
     program: &str,
     service_path: &OsStr,
     probe: &impl ShellProbe,
 ) -> Option<ResolvedCommand> {
-    let found = find(program, service_path, probe).await;
-    remember((program.to_owned(), service_path.to_owned()), found.clone());
-    found
+    let lookup = find(program, service_path, probe).await;
+    if lookup.keep {
+        remember(
+            (program.to_owned(), service_path.to_owned()),
+            lookup.found.clone(),
+        );
+    }
+    lookup.found
 }
 
 /// The first executable `program` in the absolute folders of `path`, as a shell finds it.
@@ -210,46 +255,46 @@ pub fn search_path(program: &str, path: &OsStr) -> Option<PathBuf> {
         .find(|candidate| executable(candidate))
 }
 
-async fn find(
-    program: &str,
-    service_path: &OsStr,
-    probe: &impl ShellProbe,
-) -> Option<ResolvedCommand> {
-    if program.is_empty() || program.chars().any(char::is_control) {
-        return None;
-    }
-    let (program, source) = if program.contains('/') {
-        (usable(Path::new(program))?, CommandSource::ServicePath)
-    } else {
-        let stdout = tokio::time::timeout(SHELL_TIMEOUT, probe.command_v(program))
-            .await
-            .ok()
-            .flatten();
-        match stdout.as_deref().and_then(marked_path) {
-            Some(path) => (path, CommandSource::InteractiveShell),
-            None => (
-                search_path(program, service_path)?,
-                CommandSource::ServicePath,
-            ),
-        }
-    };
-    Some(ResolvedCommand {
+/// One lookup's result, and whether it may be kept.
+struct Lookup {
+    found: Option<ResolvedCommand>,
+    /// `false` when the interactive shell gave no answer and the service `PATH` stood in for it:
+    /// that result is for this lookup only.
+    keep: bool,
+}
+
+async fn find(program: &str, service_path: &OsStr, probe: &impl ShellProbe) -> Lookup {
+    let found = |program, source| ResolvedCommand {
         program,
         source,
         version: None,
-    })
-}
-
-/// The value between the last two markers, when it names an executable by absolute path.
-fn marked_path(stdout: &[u8]) -> Option<PathBuf> {
-    if stdout.len() > OUTPUT_LIMIT {
-        return None;
+    };
+    if program.is_empty() || program.chars().any(char::is_control) {
+        return Lookup {
+            found: None,
+            keep: true,
+        };
     }
-    let end = stdout.iter().rposition(|&b| b == MARKER)?;
-    let start = stdout[..end].iter().rposition(|&b| b == MARKER)?;
-    usable(Path::new(
-        std::str::from_utf8(&stdout[start + 1..end]).ok()?,
-    ))
+    if program.contains('/') {
+        return Lookup {
+            found: usable(Path::new(program)).map(|path| found(path, CommandSource::ServicePath)),
+            keep: true,
+        };
+    }
+    let answer = tokio::time::timeout(SHELL_TIMEOUT, probe.command_v(program))
+        .await
+        .unwrap_or(ShellAnswer::NoAnswer);
+    let (shell, keep) = match answer {
+        ShellAnswer::Answered(path) => (path.and_then(|path| usable(&path)), true),
+        ShellAnswer::NoAnswer => (None, false),
+    };
+    let found = match shell {
+        Some(path) => Some(found(path, CommandSource::InteractiveShell)),
+        None => {
+            search_path(program, service_path).map(|path| found(path, CommandSource::ServicePath))
+        }
+    };
+    Lookup { found, keep }
 }
 
 fn usable(path: &Path) -> Option<PathBuf> {
@@ -426,10 +471,10 @@ fn remember(key: Key, found: Option<ResolvedCommand>) {
 /// Unit tests answer every lookup with an owned executable; they never run the user's shell.
 #[cfg(test)]
 pub(crate) fn fixture_shell(home: &Path) -> Arc<dyn ShellProbe> {
-    struct Fixed(Vec<u8>);
+    struct Fixed(PathBuf);
     impl ShellProbe for Fixed {
-        fn command_v<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Option<Vec<u8>>> {
-            Box::pin(async move { Some(self.0.clone()) })
+        fn command_v<'a>(&'a self, _: &'a str) -> BoxFuture<'a, ShellAnswer> {
+            Box::pin(async move { ShellAnswer::Answered(Some(self.0.clone())) })
         }
     }
     let dir = home.join("fixture-bin");
@@ -443,7 +488,7 @@ pub(crate) fn fixture_shell(home: &Path) -> Arc<dyn ShellProbe> {
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700))
             .expect("owned fixture mode");
     }
-    Arc::new(Fixed(format!("\x1e{}\x1e", tool.display()).into_bytes()))
+    Arc::new(Fixed(tool))
 }
 
 #[cfg(all(test, unix))]

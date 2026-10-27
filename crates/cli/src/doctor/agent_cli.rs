@@ -22,8 +22,9 @@ impl OsProbe {
     }
 }
 
-/// Looks the four agent CLIs up afresh and asks each one found for its version. The fresh
-/// answers replace the cached ones, so the next task start uses a CLI installed since.
+/// Looks the four agent CLIs up afresh and asks each one found for its version. The shell's fresh
+/// answers replace the cached ones, so the next task start uses a CLI installed since; a lookup
+/// the shell did not answer leaves the cached one as it was.
 pub(super) fn look_up(path: &str, shell: &impl ShellProbe) -> Probed<Vec<Option<AgentCommand>>> {
     let path = OsString::from(path);
     runner::block_on(async {

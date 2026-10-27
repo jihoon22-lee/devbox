@@ -1,4 +1,5 @@
 use super::*;
+use devbox_agents::command_path::ShellAnswer;
 use futures::future::BoxFuture;
 use std::{
     fs,
@@ -7,22 +8,21 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-/// Answers with the paths it was given, or with nothing, and counts the lookups.
+/// Answers with the paths it was given, or that nothing was found, and counts the lookups.
 #[derive(Default)]
 struct Shell {
     answers: Vec<(&'static str, PathBuf)>,
     asked: AtomicUsize,
 }
 impl ShellProbe for Shell {
-    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, Option<Vec<u8>>> {
+    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, ShellAnswer> {
         self.asked.fetch_add(1, Ordering::SeqCst);
         let answer = self
             .answers
             .iter()
             .find(|(name, _)| *name == program)
-            .map(|(_, path)| path.display().to_string())
-            .unwrap_or_default();
-        Box::pin(async move { Some(format!("\x1e{answer}\x1e").into_bytes()) })
+            .map(|(_, path)| path.clone());
+        Box::pin(async move { ShellAnswer::Answered(answer) })
     }
 }
 fn tool(dir: &Path, name: &str, body: &str) -> PathBuf {

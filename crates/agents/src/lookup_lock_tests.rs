@@ -1,6 +1,9 @@
 //! Looking a CLI up never starts it, and never holds a lock other tasks need.
 use super::*;
-use crate::{command_path::ShellProbe, tracker::Binding};
+use crate::{
+    command_path::{ShellAnswer, ShellProbe},
+    tracker::Binding,
+};
 use devbox_protocol::Fail;
 use futures::future::BoxFuture;
 use std::time::Duration;
@@ -15,14 +18,16 @@ struct Held {
     gate: tokio::sync::Semaphore,
 }
 impl ShellProbe for Held {
-    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, Option<Vec<u8>>> {
+    fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, ShellAnswer> {
         if program != HELD {
             return self.inner.command_v(program);
         }
         Box::pin(async move {
             self.entered.notify_one();
-            let _released = self.gate.acquire().await.ok()?;
-            Some(b"\x1e\x1e".to_vec())
+            match self.gate.acquire().await {
+                Ok(_released) => ShellAnswer::Answered(None),
+                Err(_) => ShellAnswer::NoAnswer,
+            }
         })
     }
 }

@@ -76,7 +76,8 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         devbox_agents::validate_input(agent.prompt.as_deref().unwrap_or_default())
             .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
     }
-    // Each agent's CLI, looked up the way its start looks; the start then reuses the answer.
+    // Each agent's CLI, looked up the way its start looks. The start reuses the shell's answer;
+    // without one it asks the shell again.
     for agent in &config.agents {
         if let Some(command) = s.agents.missing_tool(&agent.tool).await {
             return Err(ProjectsError::LaunchToolMissing { command }.into());
