@@ -1,7 +1,7 @@
 # 진행 원장
 
 devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계획 문서의 체크박스와 상태 줄은 보조다.
-세션을 시작하고 끝낼 때 [00-roadmap §3.1](00-roadmap.md)의 인계 절차대로 이 파일을 읽고 고친다.
+세션을 시작하고 끝낼 때 [CONVENTIONS §11](../../../../CONVENTIONS.md)의 인계 절차(2026-10-27 전에는 [00-roadmap §3.1](00-roadmap.md))대로 이 파일을 읽고 고친다.
 
 **읽는 법**
 - 이 파일은 PR과 함께 main에 들어간다. 작업 중인 브랜치가 있으면 **그 브랜치의 이 파일이 더 최신**이다(§3.1 2단계에서 찾는다).
@@ -17,17 +17,20 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S3 #644·S4 #646·S5 #645·S6 #648 모두 squash 머지 완료(S6 → `8b53484b`, 2026-10-26).** 사용자 결정으로 임시 RC #649 → `28eb2a91` squash 머지 뒤 main `28eb2a91`의 주석 태그 `v1.0.0-rc.1`로 GitHub prerelease를 공개했다(release run40340583942 SUCCESS). 공식 `v1.0.0` tag·release는 없으며 S6-6c 남은 단계다. 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S6 머지·RC1 prerelease 결과와 2026-10-27 정리를 main에 인계하는 문서 PR(본 PR, `docs/s6-release-handoff` / `/home/jihoon/projects/devbox-wt/v1-rc1`, §5 “S6 머지·RC1 prerelease·정리 인계”). S6 worktree `devbox-wt/v1-s6-release`, 로컬·원격 `v1/s6-release`·`release/1.0.0-rc.1`, 로컬 backup ref 제거와 근거 보관(§5)은 완료했다. 이 문서 PR 머지 뒤 그 브랜치·worktree와 남은 소유 /tmp 작업 파일·이후 검증 영수증도 제거해 main만 남긴다. 제품 변경·빌드·설치 실행은 하지 않았다. 이전 S6 진행 기록은 §5 S6-6b 항목들에 그대로 둔다. |
+| 단계 | **S7(rc.2 보강) 작업 중 — 2026-10-27 착수.** S3 #644·S4 #646·S5 #645·S6 #648은 모두 squash 머지됐고(S6 → `8b53484b`, 2026-10-26) 사용자 결정으로 임시 RC #649 → `28eb2a91` 머지 뒤 main `28eb2a91`의 주석 태그 `v1.0.0-rc.1`로 GitHub prerelease를 공개했다(release run40340583942 SUCCESS). 인계 문서 #650이 `b6e5eba8`로 머지됐다(2026-10-27). 공식 `v1.0.0` tag·release는 없다. 사용자가 2026-10-27 [10-s7-s8-release](10-s7-s8-release.md)의 실행을 승인했다(§2). 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S7 브랜치 `v1/s7-rc2`, worktree `/home/jihoon/projects/devbox-wt/v1-s7-rc2`, 계획 [10-s7-s8-release](10-s7-s8-release.md)(origin/main `b6e5eba8`에서 분기). **S7-0(규칙·원장·cache)** 의 문서 수정과 cache 정리를 반영했다(독립 문서 검토는 이 커밋 뒤). **다음 S7-1**(B1: 업데이트 뒤에도 hook이 끊기지 않게). S6·RC 브랜치·worktree 정리와 근거 보관은 완료했고(§5), #650의 `docs/s6-release-handoff` 브랜치와 `devbox-wt/v1-rc1` worktree도 머지 뒤 제거돼 있다(2026-10-27 확인: worktree는 main과 `v1-s7-rc2`뿐, 원격 브랜치는 main뿐). 이전 S6 진행 기록은 §5 S6-6b 항목들에 그대로 둔다. push·PR·태그는 하지 않았다(push는 S7-14의 후보 직전, PR은 S7-15). |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | I1(Windows 사본 reader의 고아 자손 notFound, 실제 Windows CONFIRMED·미수정, Devbox 소유 사본만 영향)은 **v1.0.0 공개 전 release-gating**(§8). A6 FAIL·A3/A5 NOT_RUN·SC2 raw 미달·SC7 PR Windows 15분 미달(§8). RC1 Windows 설치·실행 수용 NOT_RUN, RC→1.0.0 수동 설치 미시험, release publisher의 stable 경로 미실행. R1/R2는 v1.0.0 공개 직전 사용자 확인으로 유지한다. |
-| 다음 제품 작업 | S6-6c: 버전 되돌림 PR `1.0.0-rc.1`→`1.0.0`(공식 공개 전 필수; 그 전까지 main 빌드는 updater가 꺼짐, §8 RC M4) → I1 release-gating 처리(§8 처리 칸) → 공개 준비 결과·07c §16 S6-6c 13개 참고 확인(목록 불변) 제시 → **공식 `v1.0.0` tag·GitHub Release는 별도 명시 사용자 승인 뒤에만**. scripts+.github1,982/2,000줄·workflow2다. |
-| 마지막 갱신 | 2026-10-27 · S6 #648 squash 머지(`8b53484b`)·RC #649(`28eb2a91`)·`v1.0.0-rc.1` prerelease·§8 Windows 잔여2건 사용자 결정·로컬 근거 archive(`devbox-archive/cleanup-20261026/`)와 S6/RC 브랜치·worktree 정리를 기록. 문서만 변경했고 제품·빌드·설치 실행은 없다. 그 전 2026-10-26 · S6-6b Windows candidate(19cff21e·run40305797593)·accept 설치 수용 결과와 로컬 최종 검토·전체 검사·수정 기록(§5 S6-6b). |
+| 다음 제품 작업 | **S7-1**(B1 hook 안정) → S7-2·3(B2 기능 저하 시작·화면) → S7-4(B3 보내기 차단) → S7-5–S7-9(Codex 신뢰 화면, CLI 경로·환경 점검 4종, opencode·pi, Shift+Enter) → S7-10(I1) → 승인된 선택 과제 O1–O6 → S7-11·12(문서 P0, MIT·고지) → S7-13·14(브랜치 전체 검토·`1.0.0-rc.2` 버전·Windows accept 수용) → S7-15(PR·리뷰·머지) → S7-16(rc.2 prerelease, **별도 승인**) → S8(`1.0.0`). 공식 `v1.0.0` tag·GitHub Release는 S8-5의 별도 명시 사용자 승인 뒤에만 한다. 이전 S6-6c의 남은 단계는 이 계획이 이어받는다: 버전 되돌림 S8-1, I1 S7-10, RC 수용·13개 확인 S7-14·S7-16·S8-5(그 전까지 main 빌드는 updater가 꺼져 있다, §8 RC M4). scripts+.github 1,982/2,000줄·workflow 2다. |
+| 운영 기록(2026-10-27) | **D2:** GitHub 비공개 취약점 신고(Private vulnerability reporting)는 이미 켜져 있었다(API 응답 `{"enabled":true}`) — 변경 없음. **cache(S7-0 단계 3):** `~/.cache/targets/`의 `devbox-s5`(70 GiB, S5 전용)·`devbox-platform-check`(23 GiB)·`devbox-native-lsp`(470 MiB)를 삭제하고(뒤의 둘은 D1), cargo-sweep 0.8.0을 설치했다. `cargo sweep --time 3`이 63.22 GiB를 정리했으나(271→213 GiB) 150 GiB를 넘어 `debug/incremental/`을 비웠다 → 공유 target `~/.cache/targets/devbox` 67 GiB, 디스크 사용 564G→269G. `scripts/sweep.sh`는 고치지 않았다(정리 유보 no-op). |
+| 마지막 갱신 | 2026-10-27 · S7-0 착수 반영: CONVENTIONS에 PR 리뷰 규칙(결정 5)과 00 §3의 유효 규칙을 옮김(§5·8·11)·AGENTS·00 포인터·이 원장(§1·§2·§4)·`.gitignore`(`.pi/tasks/`). 문서만 변경했고 제품 코드·빌드·설치 실행은 없다. 그 전 2026-10-27 · S6 #648 squash 머지(`8b53484b`)·RC #649(`28eb2a91`)·`v1.0.0-rc.1` prerelease·§8 Windows 잔여2건 사용자 결정·로컬 근거 archive(`devbox-archive/cleanup-20261026/`)와 S6/RC 브랜치·worktree 정리를 기록. 문서만 변경했고 제품·빌드·설치 실행은 없다. 그 전 2026-10-26 · S6-6b Windows candidate(19cff21e·run40305797593)·accept 설치 수용 결과와 로컬 최종 검토·전체 검사·수정 기록(§5 S6-6b). |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**S6 머지·RC 뒤 순서(2026-10-27 갱신):** S6 PR #648은 `8b53484b`로 squash 머지됐고, 사용자 결정에 따라 임시 RC `v1.0.0-rc.1`을 main에서 GitHub prerelease로 공개했다(아래 두 문단, §5). 다음은 S6-6c다: 버전 되돌림 PR(`1.0.0-rc.1`→`1.0.0`, 공식 공개 전 필수) → I1 release-gating 처리(§8) → 공개 준비 결과·13개 참고 확인 제시 → **공식 `v1.0.0` tag·GitHub Release는 별도 명시 사용자 승인 뒤에만**. release publisher의 stable 경로는 아직 실제 GitHub에서 실행된 적이 없다(§8 ci-docs M2). 이전 사용자 판단 대기 2건(S1 잔여 key·NSIS 제조사 key)은 아래 결정으로 종결됐다.
+**S7·S8 순서(2026-10-27 사용자 승인):** 사용자가 [10-s7-s8-release](10-s7-s8-release.md)의 결정 1–6과 §2.2·§2.3 질문에 "네 권장대로 진행해주세요"로 답해 S7(rc.2 보강)·S8(1.0.0)의 실행을 승인했다(아래 표의 2026-10-27 행). 다음은 S7-1이다. rc.2 prerelease(S7-16)와 공식 `v1.0.0` 공개(S8-5)는 각각 그 시점의 별도 명시 승인 뒤에만 하며, 이 승인은 공개·tag 승인이 아니다. 아래 S6-6c 순서는 이 계획으로 대체됐다.
+
+**S6 머지·RC 뒤 순서(2026-10-27 갱신, 같은 날 위 S7·S8 계획으로 대체):** S6 PR #648은 `8b53484b`로 squash 머지됐고, 사용자 결정에 따라 임시 RC `v1.0.0-rc.1`을 main에서 GitHub prerelease로 공개했다(아래 두 문단, §5). 다음은 S6-6c다: 버전 되돌림 PR(`1.0.0-rc.1`→`1.0.0`, 공식 공개 전 필수) → I1 release-gating 처리(§8) → 공개 준비 결과·13개 참고 확인 제시 → **공식 `v1.0.0` tag·GitHub Release는 별도 명시 사용자 승인 뒤에만**. release publisher의 stable 경로는 아직 실제 GitHub에서 실행된 적이 없다(§8 ci-docs M2). 이전 사용자 판단 대기 2건(S1 잔여 key·NSIS 제조사 key)은 아래 결정으로 종결됐다.
 
 **종결된 S6 머지 결정(2026-10-26):** #648 최종 head `9849c8b2`는 하네스 독립 검토(자동 리뷰 대체) 1/3회 APPROVE(Critical·Important 0, Minor4는 PR 본문 표현이라 본문 수정으로 처리; 보고 `devbox-verification/s6-6b/pr648-review-r1.md`)를 받았다. 필수 PR CI는 모두 SUCCESS이며 raw 시간은 Frontend (pnpm) 5m30s·Rust (Cargo workspace) 11m52s·e2e 10m08s·linux-bin 12m45s·Rust (Windows) 27m24s다(SC7 PR 15분 목표는 Windows job이 미달, raw만 기록). 자동 리뷰는 NOT_RUN(비활성화, 사용자 결정 “독립 검토로 대체”)이며 PASS나 한도 소진이 아니다. 사용자는 2026-10-26 세션에서 “Rust 통과하면 자체 검토 후 … 알아서 squash merge”로 승인했고, 보호 규칙을 유지해 2026-10-26T13:39:21Z에 `8b53484b`로 squash 머지했다(tree는 9849c8b2와 동일). main CI·Windows@8b53484b SUCCESS. 이 승인은 공식 공개·tag 승인이 아니다.
 
@@ -56,6 +59,13 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 날짜 | 무엇 | 누구 결정 | 상태 |
 |---|---|---|---|
+| 2026-10-27 | [10-s7-s8-release](10-s7-s8-release.md) §2.2·§2.3 질문 답과 계획 실행 승인 | 사용자 | 결정: "네 권장대로 진행해주세요". 선택 과제 O1–O6(데몬 재시작 빠른 길·N1, Codex rollout 한도, EnvEditor 늦은 저장, 준비 중 세션 소실, 폐기 스냅샷, 새 작업 창·에이전트 머리 보강)은 **포함**하고 O7(실행기 패널의 OAuth 승인 연결)은 **1.0 이후**로 둔다. D1 `devbox-platform-check`·`devbox-native-lsp` cache는 **삭제**(S7-0에서 완료), D2 비공개 취약점 신고는 **켜기**(이미 켜져 있어 변경 없음). 계획 실행 승인. rc.2 prerelease(S7-16)와 `v1.0.0` 공개(S8-5)는 각각 그 시점의 별도 명시 승인 뒤에만 |
+| 2026-10-27 | 결정 1 · rc.2 방향과 범위(B1–B7), opencode·pi 기본 지원 | 사용자 | 결정: "rc.2 계획 승인". 범위는 10 §2.1. opencode·pi 기본 지원은 01 §2의 설계 범위 변경으로 기록한다 |
+| 2026-10-27 | 결정 2 · I1(Windows 사본 reader가 살아 있는 고아 자손을 놓침) | 사용자 | 결정: "I1 를 1.0.0 출시 전에 고치는 게 나으면 고치자". S7-10에서 고친다. 실제 Windows로 확인하지 못하면 1.0.0 공개를 막는 NOT_RUN으로 남긴다 |
+| 2026-10-27 | 결정 3 · 라이선스 | 사용자 | 결정: "라이선스는 그냥 MIT로 해도 될 것 같아". S7-12(MIT·제3자 고지) |
+| 2026-10-27 | 결정 4 · 문서 정리 | 사용자 | 결정: "문서 정리 꼭 하자". 공개 설치 파일과 함께 나가는 문서는 S7-11, 통폐합·PROGRESS 재구성·계획 문서 보관은 S8-2 |
+| 2026-10-27 | 결정 5 · PR 리뷰 규칙 | 사용자 | 결정: "자동 리뷰가 켜져 있으면 이용하고(최대 3회) 없으면 1회의 독립 검토만". 2026-10-14 3회 상한 결정을 이어받아 CONVENTIONS §8을 개정했다(S7-0). 켜짐·꺼짐은 PR을 연 뒤 10분 안의 봇 요약 댓글로 판정한다. S7-15·S8-4에 적용하며, 꺼짐이면 자동 리뷰는 NOT_RUN(꺼짐)으로 기록하고 PASS로 쓰지 않는다 |
+| 2026-10-27 | 결정 6 · 빌드 cache 삭제와 sweep | 사용자 | 결정: "빌드 캐시는 삭제하자. sweep은 권장대로". S7-0에서 실행했고 전후 크기는 §1 "운영 기록(2026-10-27)"에 있다. 정리 절차(`cargo sweep --time 3`, 그래도 150 GiB 아래가 아니면 `debug/incremental/`만 비움)는 CONVENTIONS §5로 옮겼고 `scripts/sweep.sh`는 정리 유보 no-op 그대로 둔다 |
 | 2026-10-26 | 임시 RC prerelease `v1.0.0-rc.1` | 사용자 | 결정: “v1.0.0 공식 버전 배포하기 전에 임시 rc 릴리스를 진행하자”, “모든 릴리스는 main 브랜치에서”. #649 → `28eb2a91`, 주석 태그 `v1.0.0-rc.1`·GitHub prerelease 공개(§5). 공식 `v1.0.0` 승인 아님 |
 | 2026-10-26 | S1 잔여 `HKCU\Software\github\Devbox`·NSIS 제조사 key 잔존 | 사용자 | 결정: “상업적 제품이라면 어떻게 했을지 검토해서 권장하는 방향으로 진행”. S1 key는 정확값 guard 뒤 삭제, NSIS key는 Tauri upstream 동작으로 수용·hook 없음(위 문단, §8) |
 | 2026-10-26 | S6 PR #648 squash merge | 사용자 | 승인: “Rust 통과하면 자체 검토 후 … 알아서 squash merge”. 독립 검토 1/3 APPROVE·필수 CI SUCCESS 뒤 `8b53484b`, main CI·Windows SUCCESS. 공개/tag 승인 아님 |
@@ -110,27 +120,31 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | S5 | 07-s4-s6 → [07b-s5-tools](07b-s5-tools.md) · 트랙2 | squash 머지 | 2026-10-21 | 2026-10-24 | #645 → a55907a2. 현재1·2 PASS, 과거3·4/5·6 NOT_RUN 구분은 §5 |
 | S6 | [07c](07c-s6-release.md) · S4·S5 뒤 | squash 머지 완료(#648 → `8b53484b`)·임시 RC `v1.0.0-rc.1` prerelease 공개, S6-6c 공식 공개 대기 | 2026-10-25 | 2026-10-26(머지) | 구현 재개 승인 · PR 자동 리뷰 독립 검토 대체(2026-10-26) · squash 승인 · RC 결정 · 공식 v1.0.0 공개 별도 승인 |
 
-## 4. PR (모두 7개)
+## 4. PR
 
-하위 프로젝트 하나 = 브랜치 하나 = PR 하나다(00-roadmap §3). 머지하면 PR 번호와 머지 날짜를 적는다.
+하위 프로젝트 하나 = 브랜치 하나 = PR 하나다(CONVENTIONS §8). 머지하면 PR 번호와 머지 날짜를 적는다. S0b–S6의 기능 PR은 7개였고(S7·S8도 각각 하나), 표의 그 밖의 행(수정·인계 문서·임시 RC)은 사용자 지시나 검토 결과에 따른 예외다.
 
 | PR | 브랜치 | 범위 | 상태 | PR 번호 | 머지 |
 |---|---|---|---|---|---|
 | S0b | `v1/s0b-skeleton` | S0b Task 1–24 (+ 계획 폴더) | 머지 | #638 | 2026-10-13 · `820576c9` |
+| S0b 후속 수정 | `fix/core/schema-version` | 지원하지 않는 DB 스키마를 변경 전에 거절하도록 수정(S0b 머지 뒤 늦게 도착한 자동 리뷰 지적; `crates/core` db·CONVENTIONS·03·03b·04·PROGRESS) | squash 머지 | [#639](https://github.com/jihoon22-lee/devbox/pull/639) | 2026-10-13 · `fb6bc69d` |
 | S1 | `v1/s1-agents-terminal` | S1 Task 1–24 | 머지 | #640 | 2026-10-14 · `c475e511` |
+| S1 인계 문서 | `v1/s2-runs` | S1 수용 기록·S2 착수 전 보강 문서(AGENTS·CONVENTIONS·00·01·04·04b·05·06·07·PROGRESS) | squash 머지 | [#641](https://github.com/jihoon22-lee/devbox/pull/641) | 2026-10-14 · `4cb0e833` |
 | S2 | `v1/s2-runs` | S2 Task 1–16(15b·15c 포함) | 머지 | #642 | 2026-10-21 · `1e82e649` |
+| S2 인계 문서 | `docs/s2-handoff` | S2 결과 문서 3개(00·05·PROGRESS) 인계 | squash 머지 | [#643](https://github.com/jihoon22-lee/devbox/pull/643) | 2026-10-21 · `329b2ee9` |
 | S3 | `v1/s3-knowledge` | S3 Task1–12 | squash 머지 | [#644](https://github.com/jihoon22-lee/devbox/pull/644) | 2026-10-24 · e91c9b22 |
 | S4 | `v1/s4-editor-git` | S4-1–S4-9 | squash 머지 | [#646](https://github.com/jihoon22-lee/devbox/pull/646) | 2026-10-25 ·20dcded6 |
 | S5 | `v1/s5-tools` | S5-1–S5-9 | 머지 | #645 | 2026-10-24 |
+| S3–S5 정리 문서 | `docs/cleanup-s4` | S3–S5 결과 문서 보존·작업 공간 정리(00·06·07·07a·07b·PROGRESS) | squash 머지 | [#647](https://github.com/jihoon22-lee/devbox/pull/647) | 2026-10-25 · `867b414e` |
 | S6 | `v1/s6-release` | S6-1–S6-6b(최종 head `9849c8b2`) | squash 머지 | [#648](https://github.com/jihoon22-lee/devbox/pull/648) | 2026-10-26 · `8b53484b` |
 | S6 임시 RC | `release/1.0.0-rc.1` | rc tag→GitHub prerelease 허용(`scripts/release.py`)·버전 `1.0.0-rc.1` | squash 머지 | [#649](https://github.com/jihoon22-lee/devbox/pull/649) | 2026-10-26 · `28eb2a91` |
-| 인계 문서 | `docs/s6-release-handoff` | S6 머지·RC1 prerelease·정리 인계(README·PROGRESS·00·07·07c) | #650(본 PR) | | |
+| S6 인계 문서 | `docs/s6-release-handoff` | S6 머지·RC1 prerelease·정리 인계(README·PROGRESS·00·07·07c) | squash 머지 | [#650](https://github.com/jihoon22-lee/devbox/pull/650) | 2026-10-27 · `b6e5eba8` |
 
 P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 2026-10-14 사용자 지시로 S1 인계·S2 착수 전 보강 문서만 담은 별도 문서 PR #641을 하나 더 머지했다(`4cb0e833`, 이전 `v1/s2-runs`의 문서 커밋 5개). 7개 PR 구성은 바꾸지 않는다.
 
-2026-10-26 사용자 RC 결정에 따른 #649와 2026-10-27 정리 인계 문서 PR(본 PR)도 #641·#647처럼 7개 기능 PR 구성 밖의 사용자 지시 예외다.
+2026-10-26 사용자 RC 결정에 따른 #649와 2026-10-27 정리 인계 문서 PR #650도 #641·#647처럼 7개 기능 PR 구성 밖의 사용자 지시 예외다. #639(S0b 머지 뒤 늦게 도착한 자동 리뷰의 결함 수정)와 #643(S2 인계 문서)도 같은 방식으로 7개에 세지 않는다.
 
 ## 4.1 작업 묶음 (브랜치 안의 중간 지점)
 
