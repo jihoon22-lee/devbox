@@ -119,6 +119,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "Windows 사본을 사용 중인 작업이 있습니다.",
     action: "기존 작업과 자식 프로세스가 끝난 뒤 다시 시도하세요. 종료 확인이 멈추면 Windows 앱 연결을 확인해 주세요.",
   },
+  "windows.config_invalid": {
+    title: "Windows 설정을 읽지 못해 Windows 사본으로 실행하지 않았습니다.",
+    action: "config.local.toml의 [windows] 항목과 설정 파일 형식을 고친 뒤 [다시 설정]을 눌러 주세요.",
+  },
   "runtime.windows_copy_unavailable": {
     title: "Windows 실행 폴더를 안전하게 준비하지 못했습니다.",
     action: "Windows 앱 연결과 사본 루트 설정, 폴더 권한을 확인한 뒤 다시 시도해 주세요.",
@@ -418,6 +422,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     action: "기록 저장 중이면 잠시 뒤 다시 확인하세요. 이전 세션이나 변경된 기록은 내보내지 않습니다.",
   },
   "notes.conflict": { title: "노트가 계속 바뀌고 있어 쓰지 못했습니다.", action: "잠시 뒤 다시 시도해 주세요." },
+  "notes.disabled": {
+    title: "노트 설정을 읽지 못해 노트를 껐습니다.",
+    action: "설정 파일의 [notes] 항목을 고친 뒤 [다시 설정]을 눌러 주세요.",
+  },
   "search.invalid_regex": { title: "정규식이 올바르지 않습니다.", action: "괄호와 특수 문자를 확인해 주세요." },
   "search.invalid_input": { title: "검색 입력값을 확인해 주세요.", action: "검색어 길이와 결과 개수를 줄여 보세요." },
   "search.project_not_found": {
@@ -426,6 +434,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "search.not_found": { title: "저장된 검색을 찾을 수 없습니다." },
   "search.stream_unsupported": { title: "이 연결에서는 통합 검색을 쓸 수 없습니다.", action: "앱에서 검색해 주세요." },
+  "search.disabled": {
+    title: "검색 설정을 읽지 못해 검색을 껐습니다.",
+    action: "설정 파일의 [search] 항목을 고친 뒤 [다시 설정]을 눌러 주세요.",
+  },
   "activity.invalid_rules": {
     title: "개인정보 규칙에 고칠 항목이 있습니다.",
     action: "표시된 규칙을 고친 뒤 다시 저장해 주세요.",

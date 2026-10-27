@@ -276,3 +276,41 @@ async fn graph_uses_the_agent_resolver_directory_and_port() {
         Some(f.root.path().join("repo").to_str().expect("path"))
     );
 }
+
+#[tokio::test]
+async fn windows_runs_refuse_to_start_while_windows_config_is_invalid() {
+    let owned = crate::windows_copy_test_support::owned().await;
+    let mut config = owned.config.clone();
+    // The daemon drops an invalid `[windows]` and records why.
+    config.windows_root = None;
+    config.windows_config_invalid = Some("config.local.toml [windows]: invalid type".into());
+    let runs = RuntimeService::new(
+        owned.f.db.clone(),
+        owned.f.hub.clone(),
+        owned.f.projects.clone(),
+    )
+    .with_execution(config);
+    runs.define(DefineRun {
+        project_id: owned.f.project.clone(),
+        save_to: SaveTo::ThisPc,
+        def: RunDef::Task(TaskDef {
+            id: "win".into(),
+            command: "true".into(),
+            target: RunTarget::Windows,
+            ..Default::default()
+        }),
+    })
+    .await
+    .expect("define");
+    let Err(devbox_protocol::Fail::Domain(RuntimeError::WindowsConfigInvalid { message })) = runs
+        .authorize_run_graph(&StartRun {
+            project_id: owned.f.project.clone(),
+            id: "win".into(),
+            worktree: None,
+        })
+        .await
+    else {
+        panic!("a Windows run must refuse to start with windows.config_invalid");
+    };
+    assert!(message.contains("[windows]"), "{message}");
+}

@@ -96,5 +96,7 @@ domain_error! {
         SecretsLocked = "secrets_locked",
         SecretKeyMismatch = "secrets.key_mismatch",
         SecretMissing { names: Vec<String> } = "runtime.secret_missing",
+        // `[windows]` did not load: runs that need the Windows copy do not start.
+        WindowsConfigInvalid { message: String } = "windows.config_invalid",
     }
 }

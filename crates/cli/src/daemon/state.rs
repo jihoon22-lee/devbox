@@ -6,6 +6,7 @@ use std::time::Instant;
 pub struct Services {
     pub(super) windows: Arc<super::windows_broker::WindowsBroker>,
     pub(super) runtime: super::system::Runtime,
+    pub(super) startup: super::startup::Startup,
     pub version: &'static str,
     pub daemon_id: String,
     pub paths: Paths,

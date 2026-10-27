@@ -128,7 +128,11 @@ folder: string, title: string,
 template: string | null, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
 export type CreatedNote = { path: string, rev: DiskRev, };
-export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
+export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, 
+/**
+ * What runs on defaults or is off since this daemon started; absent when nothing is.
+ */
+startupProblems?: Array<StartupProblem>, };
 export type DailyNote = { path: string, created: boolean, };
 export type DailyParams = { 
 /**
@@ -378,7 +382,7 @@ export type NoteHits = { rev: string, items: Array<NoteHit>, truncated: boolean,
 export type NotePath = { path: string, };
 export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
 export type NotesChanged = { rev: string, paths: Array<string>, };
-export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.response_unavailable", "detail": { reason: string, } } | { "code": "notes.response_target_changed" } | { "code": "notes.append_uncertain" } | { "code": "notes.append_operation_mismatch" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" };
+export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.response_unavailable", "detail": { reason: string, } } | { "code": "notes.response_target_changed" } | { "code": "notes.append_uncertain" } | { "code": "notes.append_operation_mismatch" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" } | { "code": "notes.disabled" };
 export type NotesQuery = { text: string, 
 /**
  * `1..=50`.
@@ -555,7 +559,7 @@ export type RunTarget = "linux" | "windows";
 export type RunsQuery = { projectId: string | null, limit: number, };
 export type RunsResult = { rev: string, items: Array<Run>, };
 export type RuntimeChange = { rev: string, projectId: string, };
-export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "runtime.windows_copy_busy" } | { "code": "runtime.windows_copy_unavailable" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } };
+export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "runtime.windows_copy_busy" } | { "code": "runtime.windows_copy_unavailable" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } } | { "code": "windows.config_invalid", "detail": { message: string, } };
 export type SaveDocument = { leaseId: string, seq: number, baseRev: DiskRev | null, expect: Expect, text: string, };
 export type SaveSearch = { name: string, query: SearchQuery, };
 export type SaveTo = "project" | "thisPc";
@@ -588,7 +592,7 @@ done: boolean,
  */
 truncated: boolean, };
 export type SearchCursor = { sources: Array<SourceCursor>, };
-export type SearchError = { "code": "search.invalid_regex", "detail": { position: number, } } | { "code": "search.invalid_input" } | { "code": "search.project_not_found" } | { "code": "search.not_found" } | { "code": "search.stream_unsupported" };
+export type SearchError = { "code": "search.invalid_regex", "detail": { position: number, } } | { "code": "search.invalid_input" } | { "code": "search.project_not_found" } | { "code": "search.not_found" } | { "code": "search.stream_unsupported" } | { "code": "search.disabled" };
 export type SearchHit = { root: string, path: string, 
 /**
  * Note title (notes scope).
@@ -663,6 +667,7 @@ url: string, headers: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot,
 lastEventId: string | null, origin: RequestOrigin | null, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
+export type StartupProblem = { "kind": "configFile", file: string, message: string, } | { "kind": "configSection", file: string, section: string, message: string, } | { "kind": "agentsReconcile", message: string, };
 export type StashEntry = { oid: string, reference: string, subject: string, };
 export type Status = "ok" | "warn" | "fail";
 export type StatusSummary = { branch: string | null, ahead: number, behind: number, staged: number, unstaged: number, untracked: number, conflicted: Array<string>, clean: boolean, };
@@ -1283,6 +1288,7 @@ export const RPC_ERROR_CODES = [
   "notes.append_uncertain",
   "notes.busy",
   "notes.conflict",
+  "notes.disabled",
   "notes.exists",
   "notes.invalid_image",
   "notes.invalid_input",
@@ -1345,6 +1351,7 @@ export const RPC_ERROR_CODES = [
   "runtime.secret_missing",
   "runtime.windows_copy_busy",
   "runtime.windows_copy_unavailable",
+  "search.disabled",
   "search.invalid_input",
   "search.invalid_regex",
   "search.not_found",
@@ -1376,5 +1383,6 @@ export const RPC_ERROR_CODES = [
   "webhooks.limit_reached",
   "webhooks.not_found",
   "webhooks.storage",
+  "windows.config_invalid",
 ] as const;
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number];

@@ -10,6 +10,7 @@ pub mod tracker;
 pub use actions::AgentTestSpec;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
+pub use lifecycle::KnownTasks;
 pub use limits::input as validate_input;
 pub use model::*;
 pub use service::{AgentRuntime, AgentsService};

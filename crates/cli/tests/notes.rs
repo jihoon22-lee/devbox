@@ -85,13 +85,66 @@ async fn configured_vault_is_used_for_documents_and_logs() {
     d.stop();
 }
 
-#[test]
-fn unknown_notes_settings_stop_service_assembly() {
-    for text in ["[notes]\nvalt = '~/x'\n", "[notes]\nvault = 'relative'\n"] {
-        let d = with_config(text);
-        let built = devbox_cli::daemon::build_services(d.paths.clone());
-        assert!(built.is_err(), "{text}");
-    }
+/// Invalid `[notes]`/`[search]` turn those features off with a reported problem; the
+/// daemon still starts and never falls back to the default `~/notes` vault.
+#[tokio::test]
+async fn invalid_notes_and_search_settings_turn_those_features_off() {
+    let mut d = with_config("[notes]\nvault = 'relative'\n[search]\nexclud = []\n");
+    d.launch();
+    let client = d.client().await;
+    let refused = |result: Result<String, devbox_cli::client::ClientError>| match result {
+        Err(devbox_cli::client::ClientError::Rpc { code, .. }) => code,
+        other => panic!("expected a refusal, got {other:?}"),
+    };
+    let empty = serde_json::json!({});
+    assert_eq!(
+        refused(client.raw_call("notes.tags", &empty, None).await),
+        "notes.disabled"
+    );
+    assert_eq!(
+        refused(
+            client
+                .raw_call("notes.read", serde_json::json!({ "path": "a.md" }), None)
+                .await
+        ),
+        "notes.disabled"
+    );
+    assert_eq!(
+        refused(client.raw_call("search.saved", &empty, None).await),
+        "search.disabled"
+    );
+    assert_eq!(
+        refused(
+            client
+                .raw_call(
+                    "documents.read",
+                    serde_json::json!({ "key": { "root": "vault", "path": "a.md" } }),
+                    None
+                )
+                .await
+        ),
+        "documents.out_of_scope"
+    );
+    let info: serde_json::Value = serde_json::from_str(
+        &client
+            .raw_call("system.info", &empty, None)
+            .await
+            .expect("system.info"),
+    )
+    .expect("system.info JSON");
+    let file = d.paths.config_dir.join("config.toml").display().to_string();
+    let sections: Vec<_> = info["startupProblems"]
+        .as_array()
+        .expect("startup problems")
+        .iter()
+        .map(|p| {
+            assert_eq!(p["kind"], "configSection", "{p}");
+            assert_eq!(p["file"], file.as_str(), "{p}");
+            p["section"].as_str().expect("section").to_owned()
+        })
+        .collect();
+    assert_eq!(sections, ["notes", "search"]);
+    assert!(!d.home.path().join("notes").exists());
 }
 
 /// AR-D01 through the real daemon: it stops right after moving the note (test hook,

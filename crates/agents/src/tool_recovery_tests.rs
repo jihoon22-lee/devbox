@@ -147,3 +147,48 @@ async fn durable_tool_marker_never_resurrects_or_overrides_unproven_launches() {
     }
     f.svc.terminal.tmux().kill_server().await;
 }
+
+/// A retry after the daemon began serving must not fail launches started meanwhile:
+/// a task created in the window is `Preparing` without a terminal until `prepare` ends.
+#[tokio::test]
+async fn late_reconcile_only_touches_tasks_unchanged_since_the_first_attempt() {
+    let f = Fixture::new().await;
+    // No tmux server runs for this fixture, so every terminal counts as gone.
+    let lost = seed(&f, AgentState::Running, false, "current", "", Some("gone")).await;
+    let mut relaunched = lost.clone();
+    relaunched.id = "relaunched".into();
+    relaunched.terminal_id = Some("old-terminal".into());
+    async fn put(f: &Fixture, task: AgentTask) {
+        f.svc
+            .db
+            .write(move |tx| {
+                store::put(tx, &task)?;
+                store::put_binding(tx, &task.id, &Binding::new(0))
+            })
+            .await
+            .expect("owned task");
+    }
+    put(&f, relaunched.clone()).await;
+    let known = f.svc.known_tasks().await.expect("tasks before serving");
+    let mut created = lost.clone();
+    created.id = "created".into();
+    created.state = AgentState::Preparing;
+    created.terminal_id = None;
+    created.branch = Some("agent/created".into());
+    created.worktree_path = Some(f.root.path().join("absent").to_string_lossy().into_owned());
+    put(&f, created.clone()).await;
+    relaunched.terminal_id = Some("new-terminal".into());
+    put(&f, relaunched.clone()).await;
+    f.svc
+        .reconcile_known(Some(&known))
+        .await
+        .expect("late reconcile");
+    let current = f.svc.get(&lost.id).await.expect("lost task");
+    assert_eq!(current.state, AgentState::Failed);
+    assert_eq!(current.reason.as_deref(), Some("session_lost"));
+    assert_eq!(f.svc.get("created").await.expect("created task"), created);
+    assert_eq!(
+        f.svc.get("relaunched").await.expect("relaunched task"),
+        relaunched
+    );
+}

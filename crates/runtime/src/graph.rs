@@ -313,6 +313,13 @@ pub(crate) async fn prepare(
         let selected = canonical_directory(&id, &base.join(cwd.as_deref().unwrap_or("."))).await?;
         *cwd = Some(selected.to_string_lossy().into_owned());
         if target == RunTarget::Windows {
+            if let Some(message) = service
+                .execution
+                .as_ref()
+                .and_then(|e| e.windows_config_invalid.clone())
+            {
+                return Err(RuntimeError::WindowsConfigInvalid { message }.into());
+            }
             if service
                 .execution
                 .as_ref()

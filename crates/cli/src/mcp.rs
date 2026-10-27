@@ -5,14 +5,15 @@ mod protocol;
 mod runs;
 mod tools;
 use crate::client::Client;
-use devbox_core::{Config, Paths};
+use devbox_core::Paths;
 use input::{Input, Line};
 use protocol::*;
 use tokio::io::AsyncWriteExt;
 
 pub async fn run() -> anyhow::Result<()> {
     let paths = crate::paths()?;
-    let config = Config::load(&paths)?;
+    // A broken `[mcp]` (or config file) leaves write access off; the rest still loads.
+    let config = devbox_core::config::load_lenient(&paths).config;
     let mut server = Server {
         paths,
         write: config.mcp.write,

@@ -207,3 +207,204 @@ async fn system_info_reports_daemon_os_hostname_when_available() {
     #[cfg(not(target_os = "linux"))]
     assert!(info.hostname.is_none());
 }
+
+/// `system.info.startupProblems` as the app reads it on the wire.
+async fn startup_problems(client: &Client) -> Vec<serde_json::Value> {
+    let info: serde_json::Value = serde_json::from_str(
+        &client
+            .raw_call("system.info", serde_json::json!({}), None)
+            .await
+            .expect("system.info"),
+    )
+    .expect("system.info JSON");
+    info.get("startupProblems")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn config_file(d: &TestDaemon) -> std::path::PathBuf {
+    d.paths.config_dir.join("config.toml")
+}
+
+#[tokio::test]
+async fn daemon_starts_with_a_broken_config_and_reports_problems() {
+    let mut d = TestDaemon::fixture();
+    d.write_config(
+        "[[agents.profiles]]\nid = 'broken'\nlabel = 'Broken'\ncommand = 'broken'\nhooks = 'nonsense'\n",
+    );
+    d.launch();
+    let c = d.client().await;
+    c.call::<Ping>(&PingParams {})
+        .await
+        .expect("daemon answers");
+    let problems = startup_problems(&c).await;
+    let file = config_file(&d).display().to_string();
+    assert!(
+        problems.iter().any(|p| p["kind"] == "configSection"
+            && p["file"] == file.as_str()
+            && p["section"] == "agents.profiles"
+            && p["message"].as_str().is_some_and(|m| m.contains("broken"))),
+        "{problems:?}"
+    );
+    let profiles = c
+        .call::<devbox_agents::AgentsProfiles>(&PingParams {})
+        .await
+        .expect("agent profiles");
+    assert_eq!(profiles.items, devbox_agents::profile::builtin());
+}
+
+#[tokio::test]
+async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
+    use sha2::{Digest, Sha256};
+    let mut d = TestDaemon::fixture();
+    d.write_config("[secrets]\nnames = ['KEEP']\n[notes\nvault = '~/kept'\n");
+    d.launch();
+    let app = support::bounded(Client::connect(&d.socket, ClientKind::App, &d.instance))
+        .await
+        .expect("app client");
+    let problems = startup_problems(&app).await;
+    let file = config_file(&d);
+    assert!(
+        matches!(problems.as_slice(), [p] if p["kind"] == "configFile"
+            && p["file"] == file.display().to_string().as_str()),
+        "{problems:?}"
+    );
+    // A syntax error turns notes off; the daemon must not fall back to a default vault.
+    assert!(!d.home.path().join("notes").exists());
+    // Nor can activity read its privacy rules, so it stores no window titles.
+    let rules = app
+        .call::<devbox_activity::ActivityRules>(&devbox_activity::NoParams {})
+        .await
+        .expect("activity rules");
+    assert!(rules.rules.mask_all_titles);
+    let key = devbox_secrets::crypto::Key::from_bytes([7; 32]);
+    app.raw_call(
+        "secrets.bootstrap",
+        &devbox_protocol::secrets::Bootstrap {
+            key_id: key.id(),
+            blob: b"synthetic-sealed-fixture".to_vec(),
+        },
+        None,
+    )
+    .await
+    .expect("bootstrap fixture key");
+    app.raw_call(
+        "secrets.unlock",
+        &devbox_protocol::secrets::Unlock { key: vec![7; 32] },
+        None,
+    )
+    .await
+    .expect("unlock fixture key");
+    let before = Sha256::digest(std::fs::read(&file).expect("broken config"));
+    let refused = app
+        .call::<devbox_secrets::Set>(&devbox_secrets::SetSecret {
+            name: "TOKEN".into(),
+            value: "owned-secret-value".into(),
+        })
+        .await
+        .expect_err("a secret name cannot be added to a broken config.toml");
+    assert!(
+        matches!(&refused, ClientError::Rpc { code, .. } if code == "secrets.invalid_input"),
+        "{refused:?}"
+    );
+    // The activity rules writer refuses the same file, and titles stay masked.
+    let refused = app
+        .call::<devbox_activity::ActivitySetRules>(&devbox_activity::SetRules {
+            rules: Default::default(),
+            idle_threshold_ms: 300_000,
+        })
+        .await
+        .expect_err("activity rules cannot be written into a broken config.toml");
+    assert!(
+        matches!(&refused, ClientError::Rpc { code, .. } if code == "activity.config_unavailable"),
+        "{refused:?}"
+    );
+    let rules = app
+        .call::<devbox_activity::ActivityRules>(&devbox_activity::NoParams {})
+        .await
+        .expect("activity rules after the refused write");
+    assert!(rules.rules.mask_all_titles);
+    assert_eq!(
+        Sha256::digest(std::fs::read(&file).expect("broken config")),
+        before
+    );
+}
+
+#[tokio::test]
+async fn valid_toml_with_an_invalid_section_survives_an_activity_rule_write() {
+    let mut d = TestDaemon::fixture();
+    let block = "# owned profile with a typo\n[[agents.profiles]]\nid = 'typo' # keep\nlable = 'Typo'\ncommand = 'typo'\nhooks = 'none'\n";
+    let original = format!("[pc]\nname = 'desk'\n\n{block}");
+    d.write_config(&original);
+    d.launch();
+    let c = d.client().await;
+    c.call::<devbox_activity::ActivitySetRules>(&devbox_activity::SetRules {
+        rules: devbox_activity::model::privacy::PrivacyRules {
+            redact_title_patterns: vec!["secret".into()],
+            ..Default::default()
+        },
+        idle_threshold_ms: 300_000,
+    })
+    .await
+    .expect("rules are written next to the invalid section");
+    let after = std::fs::read_to_string(config_file(&d)).expect("written config");
+    assert!(after.starts_with(&original), "{after}");
+    assert!(after[original.len()..].contains("[activity]"), "{after}");
+}
+
+#[tokio::test]
+async fn agents_initialize_failure_does_not_stop_the_daemon() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut d = TestDaemon::fixture();
+    // Only this daemon sees the shim; it never starts or contacts a real tmux server.
+    let bin = d.home.path().join("fake-tmux-bin");
+    std::fs::create_dir(&bin).expect("owned shim folder");
+    let failing = d.home.path().join("tmux-list-fails");
+    std::fs::write(&failing, b"").expect("owned failure marker");
+    std::fs::write(
+        bin.join("tmux"),
+        format!(
+            "#!/bin/sh\nif [ \"$5\" = list-sessions ] && [ -e '{}' ]; then\n  echo 'fake tmux: list failed' >&2\n  exit 1\nfi\nexit 0\n",
+            failing.display()
+        ),
+    )
+    .expect("owned shim");
+    std::fs::set_permissions(bin.join("tmux"), std::fs::Permissions::from_mode(0o700))
+        .expect("owned shim mode");
+    let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
+        &std::env::var_os("PATH").expect("test PATH"),
+    )))
+    .expect("shim PATH");
+    d.extra_env
+        .push(("PATH".into(), path.into_string().expect("UTF-8 PATH")));
+    d.launch();
+    let c = d.client().await;
+    c.call::<Ping>(&PingParams {})
+        .await
+        .expect("daemon answers while tmux fails");
+    let problems = startup_problems(&c).await;
+    assert!(
+        problems.iter().any(|p| p["kind"] == "agentsReconcile"
+            && p["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("fake tmux: list failed"))),
+        "{problems:?}"
+    );
+    std::fs::remove_file(&failing).expect("tmux recovers");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while startup_problems(&c)
+        .await
+        .iter()
+        .any(|p| p["kind"] == "agentsReconcile")
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a background retry clears the problem"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    c.call::<Ping>(&PingParams {})
+        .await
+        .expect("daemon still answers");
+}

@@ -151,6 +151,31 @@ fn local_false_overrides_shared_write_true() {
     );
     m.finish();
 }
+/// An invalid `[mcp]` in either file keeps write tools off; the server still starts.
+#[test]
+fn invalid_config_starts_read_only_even_with_shared_write_true() {
+    let d = TestDaemon::fixture();
+    d.write_config("[mcp]\nwrite=true\n[[agents.profiles]]\nid='typo'\nlable='Typo'\n");
+    std::fs::write(
+        d.paths.config_dir.join("config.local.toml"),
+        "[mcp]\nwrite='yes'\n",
+    )
+    .expect("owned fixture");
+    let mut m = Mcp::start(&d);
+    assert_eq!(
+        names(&m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))),
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read"
+        ]
+    );
+    m.finish();
+}
 fn agent_fixture(write: bool) -> TestDaemon {
     let d = TestDaemon::fixture();
     d.paths.ensure_dirs().expect("owned fixture");

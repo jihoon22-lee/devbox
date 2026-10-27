@@ -2,6 +2,9 @@ use crate::{CoreError, Paths};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
+mod lenient;
+pub use lenient::{ConfigLoad, Disabled, load_lenient};
+
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -61,6 +64,9 @@ pub struct TerminalProfile {
 pub struct AgentsConfig {
     pub profiles: Vec<toml::Value>,
     pub cleanup_after_close: Option<bool>,
+    /// The file `profiles` came from (lists replace, so it is one file); set by [`load_lenient`].
+    #[serde(skip)]
+    pub profiles_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -171,7 +177,7 @@ mod tests {
     use crate::{CoreError, Env, Instance, Paths};
     use std::path::{Path, PathBuf};
 
-    fn paths_in(dir: &Path) -> Paths {
+    pub(super) fn paths_in(dir: &Path) -> Paths {
         struct E(String);
         impl Env for E {
             fn var(&self, key: &str) -> Option<String> {
@@ -188,7 +194,7 @@ mod tests {
         .expect("parse fixture instance")
     }
 
-    fn write(p: &Paths, file: &str, text: &str) {
+    pub(super) fn write(p: &Paths, file: &str, text: &str) {
         std::fs::create_dir_all(&p.config_dir).expect("create fixture directory");
         std::fs::write(p.config_dir.join(file), text).expect("write fixture file");
     }

@@ -23,6 +23,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
                 started_ms: s.started_ms,
                 data_dir: s.paths.data_dir.display().to_string(),
                 config_path: s.paths.config_dir.join("config.toml").display().to_string(),
+                startup_problems: s.startup.problems(),
             })
         })
         .register::<devbox_protocol::system::Doctor, _, _>(|s, _, _| async move {

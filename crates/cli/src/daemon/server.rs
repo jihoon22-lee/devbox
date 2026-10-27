@@ -67,14 +67,13 @@ pub async fn serve(
         .initialize()
         .await
         .map_err(|_| io::Error::other("initialize secrets"))?;
-    services
-        .agents
-        .initialize()
-        .await
-        .map_err(|error| io::Error::other(format!("initialize agents: {error:?}")))?;
+    // A tmux that cannot list sessions yet must not keep the daemon down.
+    let agents_pending = super::startup::initialize_agents(&services).await;
     services.runs.initialize().await.map_err(|error| {
         io::Error::other(format!("initialize execution definitions: {error:?}"))
     })?;
+    let agents_retry = agents_pending
+        .map(|known| super::startup::retry_agents(services.clone(), known, shutdown.clone()));
     let daemon = Arc::new(Daemon {
         router: routes::router(services.clone()),
         topics: routes::declared().topics.into_iter().collect(),
@@ -100,6 +99,9 @@ pub async fn serve(
     while connections.join_next().await.is_some() {}
     daemon.dedupe.tracker.close();
     daemon.dedupe.tracker.wait().await;
+    if let Some(retry) = agents_retry {
+        let _ = retry.await;
+    }
     daemon.services.agents.shutdown().await;
     daemon.services.runs.shutdown().await;
     daemon.services.observe.shutdown().await;

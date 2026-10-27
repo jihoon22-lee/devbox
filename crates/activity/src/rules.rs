@@ -48,29 +48,37 @@ pub fn valid_idle(ms: i64) -> bool {
 impl ActivitySettings {
     /// Never fails: a table that does not parse becomes "mask all titles".
     pub fn from_table(table: &toml::Table) -> Self {
-        match toml::Value::Table(table.clone()).try_into::<Raw>() {
-            Ok(raw) => Self {
-                rules: PrivacyRules {
-                    excluded_processes: raw.excluded_processes,
-                    excluded_title_patterns: raw.excluded_title_patterns,
-                    redact_title_patterns: raw.redact_title_patterns,
-                    mask_all_titles: raw.mask_all_titles,
-                },
-                idle_threshold_ms: if valid_idle(raw.idle_threshold_ms) {
-                    raw.idle_threshold_ms
-                } else {
-                    DEFAULT_IDLE_THRESHOLD_MS
-                },
-                readable: true,
+        Self::try_from_table(table).unwrap_or_else(|_| Self::unreadable())
+    }
+
+    /// The settings, or why the table does not parse (the daemon reports it).
+    pub fn try_from_table(table: &toml::Table) -> Result<Self, toml::de::Error> {
+        let raw = toml::Value::Table(table.clone()).try_into::<Raw>()?;
+        Ok(Self {
+            rules: PrivacyRules {
+                excluded_processes: raw.excluded_processes,
+                excluded_title_patterns: raw.excluded_title_patterns,
+                redact_title_patterns: raw.redact_title_patterns,
+                mask_all_titles: raw.mask_all_titles,
             },
-            Err(_) => Self {
-                rules: PrivacyRules {
-                    mask_all_titles: true,
-                    ..PrivacyRules::default()
-                },
-                idle_threshold_ms: DEFAULT_IDLE_THRESHOLD_MS,
-                readable: false,
+            idle_threshold_ms: if valid_idle(raw.idle_threshold_ms) {
+                raw.idle_threshold_ms
+            } else {
+                DEFAULT_IDLE_THRESHOLD_MS
             },
+            readable: true,
+        })
+    }
+
+    /// `[activity]` did not load: store no titles.
+    pub fn unreadable() -> Self {
+        Self {
+            rules: PrivacyRules {
+                mask_all_titles: true,
+                ..PrivacyRules::default()
+            },
+            idle_threshold_ms: DEFAULT_IDLE_THRESHOLD_MS,
+            readable: false,
         }
     }
 

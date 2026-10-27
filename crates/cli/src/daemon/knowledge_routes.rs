@@ -23,6 +23,22 @@ async fn leased(
     }
 }
 
+/// `[notes]` did not load: there is no vault, and no default one is assumed.
+fn notes_on(s: &Services) -> Result<(), Fail<notes::NotesError>> {
+    match s.startup.disabled.notes {
+        true => Err(notes::NotesError::Disabled.into()),
+        false => Ok(()),
+    }
+}
+
+/// `[search]` did not load.
+fn search_on(s: &Services) -> Result<(), Fail<search::SearchError>> {
+    match s.startup.disabled.search {
+        true => Err(search::SearchError::Disabled.into()),
+        false => Ok(()),
+    }
+}
+
 pub(super) fn register(router: Router<Services>) -> Router<Services> {
     router
         .register::<documents::DocumentsClaim, _, _>(|s, ctx, p| async move {
@@ -55,42 +71,102 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         .register::<documents::DocumentsRename, _, _>(|s, _, p| async move {
             s.documents.rename(p).await
         })
-        .register::<notes::NotesRead, _, _>(|s, _, p| async move { s.notes.read(p).await })
-        .register::<notes::NotesTree, _, _>(|s, _, p| async move { s.notes.tree(p).await })
-        .register::<notes::NotesCreate, _, _>(|s, _, p| async move { s.notes.create(p).await })
-        .register::<notes::NotesDelete, _, _>(|s, _, p| async move { s.notes.delete(p).await })
-        .register::<notes::NotesRestore, _, _>(|s, _, p| async move { s.notes.restore(p).await })
-        .register::<notes::NotesTags, _, _>(|s, _, p| async move { s.notes.tags(p).await })
-        .register::<notes::NotesBacklinks, _, _>(
-            |s, _, p| async move { s.notes.backlinks(p).await },
-        )
-        .register::<notes::NotesResolve, _, _>(|s, _, p| async move { s.notes.resolve(p).await })
-        .register::<notes::NotesRender, _, _>(|s, _, p| async move { s.notes.render(p).await })
-        .register::<notes::NotesAttach, _, _>(|s, _, p| async move { s.notes.attach(p).await })
-        .register::<notes::NotesTemplates, _, _>(
-            |s, _, p| async move { s.notes.templates(p).await },
-        )
-        .register::<notes::NotesRename, _, _>(|s, _, p| async move { s.notes.rename(p).await })
+        .register::<notes::NotesRead, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.read(p).await
+        })
+        .register::<notes::NotesTree, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.tree(p).await
+        })
+        .register::<notes::NotesCreate, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.create(p).await
+        })
+        .register::<notes::NotesDelete, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.delete(p).await
+        })
+        .register::<notes::NotesRestore, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.restore(p).await
+        })
+        .register::<notes::NotesTags, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.tags(p).await
+        })
+        .register::<notes::NotesBacklinks, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.backlinks(p).await
+        })
+        .register::<notes::NotesResolve, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.resolve(p).await
+        })
+        .register::<notes::NotesRender, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.render(p).await
+        })
+        .register::<notes::NotesAttach, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.attach(p).await
+        })
+        .register::<notes::NotesTemplates, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.templates(p).await
+        })
+        .register::<notes::NotesRename, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.rename(p).await
+        })
         .register::<notes::NotesRenameStatus, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
             s.notes.rename_status(p).await
         })
         .register::<notes::NotesRewriteReply, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
             s.notes.rewrite_reply(p).await
         })
-        .register::<notes::NotesDaily, _, _>(|s, _, p| async move { s.notes.daily(p).await })
+        .register::<notes::NotesDaily, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.daily(p).await
+        })
         .register::<notes::NotesSelectResponseTarget, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
             s.notes.select_response_target(p).await
         })
-        .register::<notes::NotesAppendResponse, _, _>(|s, _, p| super::response_note::append(s, p))
-        .register::<notes::NotesAppend, _, _>(|s, _, p| async move { s.notes.append(p).await })
-        .register::<notes::NotesInsertSummary, _, _>(|s, _, p| super::summary::insert(s, p))
+        .register::<notes::NotesAppendResponse, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            super::response_note::append(s, p).await
+        })
+        .register::<notes::NotesAppend, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            s.notes.append(p).await
+        })
+        .register::<notes::NotesInsertSummary, _, _>(|s, _, p| async move {
+            notes_on(&s)?;
+            super::summary::insert(s, p).await
+        })
         .register::<search::SearchQueryStream, _, _>(|s, ctx, p| async move {
+            search_on(&s)?;
             s.search.query(ctx, p).await
         })
-        .register::<search::SearchNotes, _, _>(|s, _, p| async move { s.search.notes(p).await })
-        .register::<search::SearchSaved, _, _>(|s, _, p| async move { s.search.saved(p).await })
-        .register::<search::SearchSave, _, _>(|s, _, p| async move { s.search.save(p).await })
-        .register::<search::SearchUnsave, _, _>(|s, _, p| async move { s.search.unsave(p).await })
+        .register::<search::SearchNotes, _, _>(|s, _, p| async move {
+            search_on(&s)?;
+            s.search.notes(p).await
+        })
+        .register::<search::SearchSaved, _, _>(|s, _, p| async move {
+            search_on(&s)?;
+            s.search.saved(p).await
+        })
+        .register::<search::SearchSave, _, _>(|s, _, p| async move {
+            search_on(&s)?;
+            s.search.save(p).await
+        })
+        .register::<search::SearchUnsave, _, _>(|s, _, p| async move {
+            search_on(&s)?;
+            s.search.unsave(p).await
+        })
         .register::<activity::ActivityIngest, _, _>(
             |s, _, p| async move { s.activity.ingest(p).await },
         )

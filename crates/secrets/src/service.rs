@@ -208,8 +208,9 @@ impl SecretsService {
         Ok(self.key.clone().lock_owned().await)
     }
     pub async fn list(&self) -> R<Vec<SecretInfo>> {
-        let configured = devbox_core::Config::load(&self.paths)
-            .internal("read secret names")?
+        // An invalid config.toml lists only stored names; the daemon reports the file.
+        let configured = devbox_core::config::load_lenient(&self.paths)
+            .config
             .secrets
             .names;
         let values = self
