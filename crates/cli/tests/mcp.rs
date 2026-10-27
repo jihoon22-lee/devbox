@@ -279,6 +279,16 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
     let id = d.create_agent(&c, &project, "owned-fake", false).await;
     d.wait_for(&c, &id, "waiting", Duration::from_secs(10))
         .await;
+    // The fixture starts at a permission prompt; its PostToolUse lets sends through.
+    let hook = r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#;
+    c.raw_call(
+        "agents.event",
+        json!({"agentId":id,"launchId":d.agent_launch(&id).await,"source":"claude","payload":hook}),
+        None,
+    )
+    .await
+    .expect("owned fixture");
+    d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
     let mut m = Mcp::start(&d);
     let tools = m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}));
     assert_eq!(
@@ -333,6 +343,36 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
     assert_eq!(
         error["result"]["content"][0]["text"],
         "에이전트 작업을 찾을 수 없습니다."
+    );
+    m.finish();
+}
+#[tokio::test]
+async fn agent_send_reports_awaiting_input() {
+    let mut d = agent_fixture(true);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let c = d.client().await;
+    let project = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &project, "owned-fake", false).await;
+    let waiting = d
+        .wait_for(&c, &id, "waiting", Duration::from_secs(10))
+        .await;
+    let mut m = Mcp::start(&d);
+    let text = "owned-mcp-instruction";
+    let refused = m.tool("devbox_agent_send", json!({"id":id,"text":text}));
+    assert_eq!(refused["result"]["isError"], true);
+    assert_eq!(
+        refused["result"]["content"][0]["text"],
+        "에이전트가 선택을 기다리고 있습니다. 터미널에서 승인이나 선택을 마친 뒤 다시 보내세요."
+    );
+    let after = d.wait_for(&c, &id, "waiting", Duration::from_secs(2)).await;
+    for field in ["attention", "followUps", "activitySeq"] {
+        assert_eq!(after[field], waiting[field], "{field}");
+    }
+    let pane = format!("={}:", after["terminalId"].as_str().expect("terminal"));
+    assert!(
+        !d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane])
+            .contains(text)
     );
     m.finish();
 }

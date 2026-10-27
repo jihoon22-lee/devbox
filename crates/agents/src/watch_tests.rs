@@ -83,6 +83,24 @@ fn in_flight_output_cannot_replace_new_hook_terminal_or_turn() {
     assert!(!old.current(&old.task, &binding));
 }
 #[test]
+fn output_observation_only_resumes_its_own_wait() {
+    // `apply_event` lets any OutputResumed end a wait; this filter keeps quiet
+    // output from ending a hook's permission wait.
+    let mut output = task();
+    apply_event(&mut output, &AgentEvent::OutputWaiting, 1);
+    assert!(eligible(&output));
+    let mut hook = task();
+    apply_event(
+        &mut hook,
+        &AgentEvent::NeedsInput {
+            message: "permission".into(),
+        },
+        1,
+    );
+    assert_eq!(hook.state, AgentState::Waiting);
+    assert!(!eligible(&hook));
+}
+#[test]
 fn invalid_profile_regex_is_a_typed_configuration_error() {
     let config: devbox_core::Config = toml::from_str(
         "[[agents.profiles]]\nid='x'\nlabel='X'\ncommand='x'\nhooks='none'\nwaitingPatterns=['[']",

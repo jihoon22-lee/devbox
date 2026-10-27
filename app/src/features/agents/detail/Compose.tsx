@@ -4,6 +4,7 @@ import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Button, Kbd, TextArea } from "../../../ui";
+import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
 import { useAgentResult } from "./data";
 import { useDrafts } from "./drafts";
@@ -11,12 +12,16 @@ import { useDrafts } from "./drafts";
 export { useDrafts } from "./drafts";
 export function Compose({
   agentId,
+  agentState,
   disabled,
   focusRequest,
+  onShowTerminal,
 }: {
   agentId: string;
+  agentState?: AgentTask["state"];
   disabled?: boolean;
   focusRequest?: number;
+  onShowTerminal?: () => void;
 }) {
   const text = useDrafts((state) => state.text[agentId] ?? "");
   const send = useRpcMutation("agents.send");
@@ -28,6 +33,8 @@ export function Compose({
     pending = useRef(false),
     enterDown = useRef(false);
   const lifetime = useRef(0);
+  // Pasted text and Enter could answer the tool's approval prompt. The draft stays editable.
+  const waiting = agentState === "waiting";
   // biome-ignore lint/correctness/useExhaustiveDependencies: Changing the target cancels its queued composition intent.
   useEffect(() => {
     lifetime.current++;
@@ -47,7 +54,7 @@ export function Compose({
       queued.current = true;
       return;
     }
-    if (disabled || state !== "ready" || pending.current || !value.trim()) return;
+    if (disabled || waiting || state !== "ready" || pending.current || !value.trim()) return;
     const capturedId = agentId;
     const drafts = useDrafts.getState();
     if ((drafts.text[agentId] ?? "") !== value) drafts.set(agentId, value);
@@ -123,10 +130,20 @@ export function Compose({
       <Button
         type="submit"
         variant="primary"
-        disabled={disabled || state !== "ready" || !text.trim() || send.isPending}
+        disabled={disabled || waiting || state !== "ready" || !text.trim() || send.isPending}
       >
         보내기 <Kbd keys={["Ctrl", "Enter"]} />
       </Button>
+      {waiting && (
+        <p role="status">
+          에이전트가 터미널에서 선택을 기다리는 동안에는 보낼 수 없습니다.{" "}
+          {onShowTerminal && (
+            <Button size="sm" onClick={onShowTerminal}>
+              터미널 보기
+            </Button>
+          )}
+        </p>
+      )}
       {error && (
         <p role="alert">
           {error.title} {error.action}

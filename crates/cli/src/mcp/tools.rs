@@ -168,6 +168,9 @@ fn message_for(error: &ClientError) -> &'static str {
             "agents.session_missing" => {
                 "에이전트 실행이 끊겼습니다. 에이전트 작업을 재개해 주세요."
             }
+            "agents.awaiting_input" => {
+                "에이전트가 선택을 기다리고 있습니다. 터미널에서 승인이나 선택을 마친 뒤 다시 보내세요."
+            }
             "agents.invalid_input" | "invalid_params" => {
                 "에이전트 작업의 입력값이 올바르지 않습니다."
             }

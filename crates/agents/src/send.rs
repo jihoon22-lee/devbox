@@ -115,6 +115,11 @@ impl AgentsService {
                             state: "changed".into(),
                         }));
                     }
+                    // The last state read before the paste, in the single writer: pasted
+                    // text and Enter never answer an approval or question committed first.
+                    if task.state == AgentState::Waiting {
+                        return Ok(Err(AgentsError::AwaitingInput));
+                    }
                     let launch = store::binding(tx, &id)?.and_then(|binding| binding.launch_id);
                     let before = task.clone();
                     task.follow_ups.push(FollowUp {

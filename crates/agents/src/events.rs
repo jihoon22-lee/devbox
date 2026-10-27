@@ -32,9 +32,9 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
     if matches!(event, AgentEvent::OutputWaiting) && t.state != AgentState::Running {
         return false;
     }
-    if matches!(event, AgentEvent::OutputResumed)
-        && t.attention.as_ref().is_none_or(|a| a.kind != "output")
-    {
+    // Any resumption ends any wait (Claude's PostToolUse ends a permission wait).
+    // Output observation only resumes its own waits: see `watch::eligible`.
+    if matches!(event, AgentEvent::OutputResumed) && t.state != AgentState::Waiting {
         return false;
     }
     if t.state == AgentState::Closed {

@@ -226,6 +226,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "지시 전달 결과를 확인할 수 없습니다.",
     action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",
   },
+  "agents.awaiting_input": {
+    title: "에이전트가 선택을 기다리고 있습니다.",
+    action: "터미널에서 승인이나 선택을 마친 뒤 다시 보내세요.",
+  },
   "agents.resume_unavailable": {
     title: "에이전트를 이어서 실행할 수 없습니다.",
     action: "이전 도구 실행을 확인할 수 없습니다. 새 작업을 만들어 주세요.",

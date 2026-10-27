@@ -143,6 +143,23 @@ impl TestDaemon {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
+    /// Query this fixture's own tmux server (`-L devbox-<test instance>`), never the default one.
+    pub fn tmux(&self, args: &[&str]) -> String {
+        let output = self
+            .environment("tmux")
+            .args(["-L", &format!("devbox-{}", self.instance)])
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .expect("owned tmux");
+        assert!(
+            output.status.success(),
+            "owned tmux {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
     pub fn kill_tmux_server(&self) {
         let _ = self
             .environment("tmux")

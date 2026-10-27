@@ -59,7 +59,7 @@ pub fn parse_codex_candidate(payload: &str) -> Option<CodexCompletionCandidate> 
 pub fn claude_settings(devbox: &str) -> String {
     let command = format!("{} agent event --from claude", sh_quote(devbox));
     let hook = serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": command }] }]);
-    serde_json::json!({ "hooks": { "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook, "Notification": hook, "Stop": hook } }).to_string()
+    serde_json::json!({ "hooks": { "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook, "PostToolUse": hook, "Notification": hook, "Stop": hook } }).to_string()
 }
 pub fn codex_notify_arg(devbox: &str) -> String {
     format!(
@@ -109,6 +109,9 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
                         p.tool_name.unwrap_or_else(|| "도구".into())
                     ),
                 }],
+                // A finished tool means any approval is over. `tool_input` and
+                // `tool_response` are never read: they can hold file contents and output.
+                "PostToolUse" => vec![AgentEvent::OutputResumed],
                 "Notification" => match p.notification_type.as_deref() {
                     Some("idle_prompt") => vec![AgentEvent::TurnComplete { message: None }],
                     Some("permission_prompt" | "agent_needs_input") => {
@@ -235,6 +238,7 @@ mod tests {
             "SessionStart",
             "UserPromptSubmit",
             "PermissionRequest",
+            "PostToolUse",
             "Notification",
             "Stop",
         ] {
@@ -248,5 +252,31 @@ mod tests {
             serde_json::from_str(notify.strip_prefix("notify=").expect("owned fixture"))
                 .expect("owned fixture");
         assert_eq!(args[0], "/b/\"quoted\\path");
+    }
+    #[test]
+    fn claude_settings_include_post_tool_use() {
+        let settings: serde_json::Value =
+            serde_json::from_str(&claude_settings("/b/devbox")).expect("owned fixture");
+        // Every tool, like the other hooks: any finished tool means the approval is over.
+        assert_eq!(
+            settings["hooks"]["PostToolUse"],
+            serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": "'/b/devbox' agent event --from claude" }] }])
+        );
+    }
+    #[test]
+    fn post_tool_use_maps_to_output_resumed() {
+        // Tool input and output can hold file contents or command output. Only the event
+        // name is read; the payload never reaches the event, and so never the task row.
+        let payload = serde_json::json!({
+            "hook_event_name": "PostToolUse",
+            "session_id": "sess-1",
+            "tool_name": "Bash",
+            "tool_input": { "command": "cat .env" },
+            "tool_response": { "stdout": "OWNED_SECRET_MARKER=sk-live-0123456789", "stderr": "" },
+        })
+        .to_string();
+        let events = parse(HookSource::Claude, &payload, None);
+        assert_eq!(events, vec![E::OutputResumed]);
+        assert!(!format!("{events:?}").contains("OWNED_SECRET_MARKER"));
     }
 }

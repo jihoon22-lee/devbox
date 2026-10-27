@@ -34,6 +34,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
     !!task?.terminalId && sessions.items.some((session) => session.id === task.terminalId && session.alive);
   if (!task) return detail.error ? <QueryError query={detail} /> : <EmptyState title="에이전트 작업을 불러오는 중…" />;
   const instruct = () => setFocus((previous) => (previous ?? 0) + 1);
+  const showTerminal = () => setTab("terminal");
   return (
     <article className={s.detail} aria-label="에이전트 작업 상세">
       <AgentHeader
@@ -53,7 +54,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         sessionAlive={sessionAlive}
         sessionKnown={!!sessions.data}
         onInstruct={instruct}
-        onResume={() => setTab("terminal")}
+        onResume={showTerminal}
         onTest={(runId) => {
           useAgentRuns.getState().set(id, runId);
           setTab("run");
@@ -93,7 +94,13 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         {tab === "run" && <RunTab task={task} />}
       </div>
       {task.state !== "closed" && (
-        <Compose agentId={id} disabled={!sessionAlive || task.toolExited} focusRequest={focus} />
+        <Compose
+          agentId={id}
+          agentState={task.state}
+          disabled={!sessionAlive || task.toolExited}
+          focusRequest={focus}
+          onShowTerminal={showTerminal}
+        />
       )}
     </article>
   );

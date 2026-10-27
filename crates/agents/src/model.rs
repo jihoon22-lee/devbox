@@ -317,6 +317,7 @@ domain_error! {
         TeardownCommandTooLong { limit_bytes: u32 } = "agents.teardown_command_too_long",
         TeardownCommandInvalid = "agents.teardown_command_invalid",
         DeliveryUnknown = "agents.delivery_unknown",
+        AwaitingInput = "agents.awaiting_input",
         ResumeUnavailable = "agents.resume_unavailable",
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",

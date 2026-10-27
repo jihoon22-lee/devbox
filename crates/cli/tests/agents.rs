@@ -19,6 +19,10 @@ while read -r answer; do :; done
 "#;
 
 fn fixture() -> TestDaemon {
+    fixture_with(FAKE)
+}
+
+fn fixture_with(script: &str) -> TestDaemon {
     let d = TestDaemon::fixture();
     d.paths.ensure_dirs().expect("owned dirs");
     std::fs::write(
@@ -27,7 +31,7 @@ fn fixture() -> TestDaemon {
     )
     .expect("tmux config");
     let tool = d.home.path().join("fake-tool.sh");
-    std::fs::write(&tool, FAKE).expect("owned fake tool");
+    std::fs::write(&tool, script).expect("owned fake tool");
     let command = format!(
         "bash {}",
         devbox_core::sh_quote(tool.to_str().expect("path"))
@@ -81,6 +85,10 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
         started.elapsed() < Duration::from_secs(2),
         "SC3 hook-to-query deadline"
     );
+    // Sending is refused during the approval; the approved tool's PostToolUse ends it.
+    claude_hook(&d, &client, &id, json!({"hook_event_name":"PostToolUse"})).await;
+    d.wait_for(&client, &id, "running", Duration::from_secs(2))
+        .await;
     client
         .raw_call("agents.send", json!({"id":id,"text":"yes"}), None)
         .await
@@ -155,6 +163,89 @@ async fn measure_hook(
         elapsed.as_secs_f64() * 1000.0
     );
     assert!(elapsed < Duration::from_secs(2), "SC3 hook event deadline");
+}
+
+/// Deliver a Claude hook the way the hook CLI does, for the agent's current launch.
+async fn claude_hook(d: &TestDaemon, client: &devbox_cli::client::Client, id: &str, hook: Value) {
+    client
+        .raw_call(
+            "agents.event",
+            json!({"agentId":id,"launchId":d.agent_launch(id).await,"source":"claude","payload":hook.to_string()}),
+            None,
+        )
+        .await
+        .expect("owned Claude hook");
+}
+
+const RECORDER: &str = r#"#!/usr/bin/env bash
+while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/received"; done
+"#;
+
+#[tokio::test]
+async fn send_is_refused_while_waiting_and_the_pane_receives_nothing() {
+    let mut d = fixture_with(RECORDER);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let client = d.client().await;
+    let project = d.add_project(&client, &repo).await;
+    let id = d.create_agent(&client, &project, "fake", false).await;
+    let running = d
+        .wait_for(&client, &id, "running", Duration::from_secs(10))
+        .await;
+    let pane = format!("={}:", running["terminalId"].as_str().expect("terminal"));
+    let screen = |d: &TestDaemon| d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane]);
+    let hook = json!({"hook_event_name":"PermissionRequest","tool_name":"Bash"});
+    claude_hook(&d, &client, &id, hook).await;
+    let waiting = d
+        .wait_for(&client, &id, "waiting", Duration::from_secs(2))
+        .await;
+    let text = "owned-s7-4-instruction";
+    let refused = client
+        .raw_call("agents.send", json!({"id":id,"text":text}), None)
+        .await
+        .expect_err("send while the agent waits for approval");
+    assert!(
+        matches!(&refused, devbox_cli::client::ClientError::Rpc { code, .. } if code == "agents.awaiting_input"),
+        "{refused:?}"
+    );
+    let after = d
+        .wait_for(&client, &id, "waiting", Duration::from_secs(2))
+        .await;
+    for field in ["attention", "followUps", "activitySeq"] {
+        assert_eq!(after[field], waiting[field], "{field}");
+    }
+    assert!(!screen(&d).contains(text));
+    assert!(
+        !d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"])
+            .contains(text)
+    );
+    let hook = json!({"hook_event_name":"PostToolUse","tool_name":"Bash"});
+    claude_hook(&d, &client, &id, hook).await;
+    d.wait_for(&client, &id, "running", Duration::from_secs(2))
+        .await;
+    let sent: Value = serde_json::from_str(
+        &client
+            .raw_call("agents.send", json!({"id":id,"text":text}), None)
+            .await
+            .expect("the same send after the approval"),
+    )
+    .expect("task");
+    assert_eq!(sent["followUps"].as_array().expect("history").len(), 1);
+    // The tool reads its input in order: one line proves the refused send never arrived.
+    let received = d.home.path().join("received");
+    support::bounded(async {
+        while !std::fs::read_to_string(&received).is_ok_and(|lines| lines.ends_with('\n'))
+            || !screen(&d).contains(text)
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert_eq!(
+        std::fs::read_to_string(&received).expect("received input"),
+        format!("{text}\n")
+    );
+    assert_eq!(screen(&d).matches(text).count(), 1);
 }
 
 #[tokio::test]
