@@ -211,7 +211,7 @@ async fn timeout_or_relative_result_returns_none() {
         assert_eq!(
             resolve("fixture-cli", &path, &shell).await,
             None,
-            "{stdout}"
+            "case {case}"
         );
         assert_eq!(shell.asked(), 1);
     }
