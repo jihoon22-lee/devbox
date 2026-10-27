@@ -162,18 +162,64 @@ test("no pre-connection copy says 데몬, including details and an unreadable lo
   expect(screen.getByText("내장 실행 파일을 확인하고 필요한 서비스를 시작합니다.")).toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/터미널 세션은 그대로/);
   cleanup();
+  const writeText = vi.fn(async (_text: string) => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   mocks.invoke.mockImplementation(async (cmd) => {
     if (cmd === "gate_status") return failed("setupFailed", "1", "서비스 다시 시작 실패: unit unavailable");
-    if (cmd === "daemon_log_tail") return Promise.reject({ message: "journalctl: No journal files were found." });
+    // A failed run carries journalctl's output in its message.
+    if (cmd === "daemon_log_tail")
+      return Promise.reject({
+        message: "journalctl: No journal files were found.\nAuthorization: Bearer ghp_abcdefghijklmnopqrstuv",
+      });
   });
   render(<ConnectionGate>native child</ConnectionGate>);
   await userEvent.click(await screen.findByRole("button", { name: "자세히" }));
   const details = await screen.findByRole("region", { name: "연결 실패 자세히" });
-  expect(await within(details).findByText(/로그를 읽지 못했습니다/)).toBeInTheDocument();
+  const shown = await within(details).findByText(/로그를 읽지 못했습니다/);
   expect(within(details).getByText("서비스 다시 시작 실패: unit unavailable")).toBeInTheDocument();
+  // A failed read can still be copied, exactly as shown.
+  await userEvent.click(within(details).getByRole("button", { name: "복사" }));
+  expect(writeText.mock.calls[0]?.[0]).toContain(`최근 로그\n${shown.textContent}\n`);
+  expect(shown.textContent).toContain("journalctl: No journal files were found.");
+  // That output is redacted like a read tail, on screen and on the clipboard.
+  expect(shown).toHaveTextContent("Authorization: Bearer [REDACTED]");
+  expect(writeText.mock.calls[0]?.[0]).not.toContain("ghp_");
   expect(document.body.textContent).not.toMatch(/데몬/);
   for (const labelled of document.querySelectorAll("[aria-label]"))
     expect(labelled.getAttribute("aria-label")).not.toMatch(/데몬/);
+});
+test("the log tail waits before 복사, opens at its newest line and is redacted as it is copied", async () => {
+  const writeText = vi.fn(async (_text: string) => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  // jsdom has no layout; give the log box a height to scroll to.
+  vi.spyOn(Element.prototype, "scrollHeight", "get").mockReturnValue(4800);
+  let deliver!: (text: string) => void;
+  mocks.invoke.mockImplementation((cmd) =>
+    cmd === "gate_status"
+      ? Promise.resolve(failed("bridgeFailed", "1", "bridge exited with status 1"))
+      : cmd === "daemon_log_tail"
+        ? new Promise((resolve) => {
+            deliver = resolve;
+          })
+        : Promise.resolve(undefined),
+  );
+  render(<ConnectionGate>native child</ConnectionGate>);
+  await userEvent.click(await screen.findByRole("button", { name: "자세히" }));
+  const details = await screen.findByRole("region", { name: "연결 실패 자세히" });
+  const copy = within(details).getByRole("button", { name: "복사" });
+  expect(within(details).getByText("로그를 읽는 중입니다…")).toBeInTheDocument();
+  expect(copy).toBeDisabled();
+  await act(async () => deliver("starting\nAuthorization: Bearer ghp_abcdefghijklmnopqrstuv\nlast line\n"));
+  const box = within(details).getByText(/last line/);
+  expect(box).toHaveTextContent("Authorization: Bearer [REDACTED]");
+  expect(box.textContent).not.toContain("ghp_");
+  expect(box.scrollTop).toBe(4800);
+  expect(copy).toBeEnabled();
+  await userEvent.click(copy);
+  const copied = writeText.mock.calls[0]?.[0] ?? "";
+  expect(copied).toContain(`최근 로그\n${box.textContent}\n`);
+  expect(copied).toContain("Authorization: Bearer [REDACTED]\nlast line");
+  expect(copied).not.toContain("ghp_");
 });
 test("post-ready recovery retains user state and permits repeated retry and distro selection", async () => {
   let latest = {

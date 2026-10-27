@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { redactKnownTokenPatterns } from "../features/tools/api/lib/secretPatterns";
 import { Button } from "../ui";
 import type { GateStatus } from "./ConnectionGate";
 
@@ -14,20 +15,27 @@ const pre = { margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontS
 export function GateDetails({ failure, onClose }: { failure: GateStatus; onClose: () => void }) {
   const [log, setLog] = useState<Log>({ state: "loading" });
   const [notice, setNotice] = useState("");
+  const box = useRef<HTMLPreElement>(null);
   useEffect(() => {
     let current = true;
     invoke<string>("daemon_log_tail", { lines: LINES }).then(
       (text) => {
-        if (current) setLog({ state: "read", text });
+        // Shown and copied text are the same redacted text.
+        if (current) setLog({ state: "read", text: redactKnownTokenPatterns(text) });
       },
       (error: unknown) => {
-        if (current) setLog({ state: "failed", reason: reasonOf(error) });
+        // A failed run's message can carry journal lines too.
+        if (current) setLog({ state: "failed", reason: redactKnownTokenPatterns(reasonOf(error)) });
       },
     );
     return () => {
       current = false;
     };
   }, []);
+  // The cause is usually in the newest lines, so the box opens at its end.
+  useLayoutEffect(() => {
+    if (log.state === "read" && box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [log.state]);
   const step = failure.state === "setupFailed" ? "WSL 쪽 설치" : "WSL 쪽 devbox 연결";
   const text =
     log.state === "loading"
@@ -62,9 +70,13 @@ export function GateDetails({ failure, onClose }: { failure: GateStatus; onClose
       </p>
       {failure.detail && <pre style={pre}>{failure.detail}</pre>}
       <strong>최근 로그</strong>
-      <pre style={{ ...pre, maxHeight: 240, overflow: "auto", color: "var(--fg-muted)" }}>{text}</pre>
+      <pre ref={box} style={{ ...pre, maxHeight: 240, overflow: "auto", color: "var(--fg-muted)" }}>
+        {text}
+      </pre>
       <span style={{ display: "flex", gap: 8 }}>
-        <Button onClick={() => void copy()}>복사</Button>
+        <Button disabled={log.state === "loading"} onClick={() => void copy()}>
+          복사
+        </Button>
         <Button onClick={onClose}>닫기</Button>
       </span>
       {notice && <p role="status">{notice}</p>}

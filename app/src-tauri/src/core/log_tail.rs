@@ -74,7 +74,8 @@ mod tests {
         // 90,004 bytes; the newest 64 KiB would start inside a three-byte character.
         let long = format!("a{}끝", "가".repeat(30_000));
         let kept = cap(&long);
-        assert_eq!(kept.len(), MAX_BYTES - 1);
+        assert_eq!(MAX_BYTES, 64 * 1024);
+        assert_eq!(kept.len(), 65_535);
         assert!(kept.starts_with('가') && kept.ends_with('끝'));
         assert!(long.ends_with(kept));
     }
