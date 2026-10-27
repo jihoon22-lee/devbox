@@ -1,0 +1,14 @@
+# 문자열 기반(실제 화면 아님). codex-cli 0.164.0 실행 파일의 문자열(strings)에서 화면 문장을 가져왔다.
+# 사용자 설정(~/.codex)을 바꾸지 않고는 이 화면을 띄울 수 없고, 폴더 신뢰 화면에서 아무것도 고르지 않는 녹화로는 그 뒤에 닿을 수 없어 실제 화면은 녹화하지 못했다.
+# 문장: "Hooks need review", "1 hook is new or changed.", "Hooks can run outside the sandbox after you trust them.", "Trust all and continue", "Continue without trusting (hooks won't run)".
+# 줄 배치·번호·› 표시는 trust.txt를 본떠 가정한 것이다. 실제 화면 확인은 S7-14에서 나타날 때만 하고, 나타나지 않으면 NOT_RUN이다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Hooks need review
+
+  1 hook is new or changed.
+  Hooks can run outside the sandbox after you trust them.
+
+› 1. Trust all and continue
+  2. Continue without trusting (hooks won't run)

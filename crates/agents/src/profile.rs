@@ -23,7 +23,8 @@ pub struct ToolProfile {
     pub waiting_patterns: Vec<String>,
 }
 
-/// 기본 프로필. Codex 0.162.1 S0a에서 관찰한 승인 화면. 다른 UI 유형·버전은 실제 fixture로 보강한다.
+/// 기본 프로필. Codex 승인 화면은 0.162.1 S0a 관찰, 폴더 신뢰 화면은 0.164.0 실제 녹화, hook 검토 화면은
+/// 0.164.0 실행 파일 문자열(실제 화면 아님)이다. 다른 UI 유형·버전은 실제 fixture로 보강한다.
 pub fn builtin() -> Vec<ToolProfile> {
     vec![
         ToolProfile {
@@ -40,6 +41,14 @@ pub fn builtin() -> Vec<ToolProfile> {
             hooks: Hooks::Codex,
             waiting_patterns: vec![
                 r"(?im)^\s*3\. No, and tell Codex what to do differently \(esc\)\s*\n\s*Press enter to confirm or esc to cancel\s*$".into(),
+                // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
+                // capture). Codex wraps the question to the terminal width, which can push it out of
+                // the matched tail, so this anchors on the first choice row, always among the last rows.
+                r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?Trust and continue\s*$".into(),
+                // Hooks review. Evidence: crates/agents/tests/fixtures/codex-0.164.0/hooks-review.txt
+                // (문자열 기반: sentences from the 0.164.0 binary, not a real capture). Either choice row
+                // marks the prompt; "N hooks need review before they can run." is only a notice.
+                r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust all and continue|Continue without trusting \(hooks won['’]t run\))".into(),
             ],
         },
     ]

@@ -161,3 +161,74 @@ fn session_metadata_keeps_initial_approval_detection_eligible() {
     assert!(!observation.observe(started.clone(), "approval".into(), now + QUIET));
     assert!(observation.observe(started, "approval".into(), now + QUIET * 2));
 }
+
+/// Fixtures in `tests/fixtures/codex-0.164.0/` start with `#` provenance lines and a `---`
+/// line. Only the text after that line is the pane, so the header never reaches the matcher.
+fn screen(fixture: &str) -> &str {
+    fixture
+        .split_once("\n---\n")
+        .expect("fixture header ends with a --- line")
+        .1
+}
+fn codex_patterns() -> Vec<Regex> {
+    profile::compiled(&crate::AgentProfiles {
+        items: profile::builtin(),
+    })
+    .expect("owned fixture")
+    .remove("codex")
+    .expect("builtin codex profile")
+}
+
+#[test]
+fn codex_trust_screen_is_waiting() {
+    let patterns = codex_patterns();
+    let trust = screen(include_str!("../tests/fixtures/codex-0.164.0/trust.txt"));
+    assert!(matches_waiting(&patterns, trust));
+    // Moving the cursor to the other choice leaves it the same prompt.
+    let moved = trust.replacen("› 1. Trust and continue", "  1. Trust and continue", 1);
+    let moved = moved.replacen("  2. Back", "› 2. Back", 1);
+    assert_ne!(moved, trust);
+    assert!(matches_waiting(&patterns, &moved));
+    // The same screen re-wrapped to 60 columns: the question now starts on the 8th non-empty
+    // row from the bottom, outside the 6 rows `matches_waiting` reads, so only the choice rows
+    // can identify the prompt.
+    let narrow = "  Folder access\n  /tmp/devbox-codex-fixture\n\n  Trust this folder? Codex can read, edit, and run files\n  here, subject to your permission settings. Folder\n  settings can run code automatically, even without a\n  model request. Continue only if you trust these files.\n  Your trust decision will be saved.\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n\n  enter continue · esc back\n";
+    let question = Regex::new(r"(?m)^\s*Trust this folder\?").expect("owned fixture");
+    assert!(!matches_waiting(&[question], narrow));
+    assert!(matches_waiting(&patterns, narrow));
+    // Output below the prompt means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn codex_hooks_review_screen_is_waiting() {
+    let patterns = codex_patterns();
+    let review = screen(include_str!(
+        "../tests/fixtures/codex-0.164.0/hooks-review.txt"
+    ));
+    assert!(matches_waiting(&patterns, review));
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{review}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn codex_working_screen_is_not_waiting() {
+    let patterns = codex_patterns();
+    let working = screen(include_str!("../tests/fixtures/codex-0.164.0/working.txt"));
+    assert!(!matches_waiting(&patterns, working));
+    // A hooks notice, or the trust question quoted in output, is not the prompt itself.
+    for line in [
+        "3 hooks need review before they can run.",
+        "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings.",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{working}\n{line}")),
+            "{line}"
+        );
+    }
+}
