@@ -191,3 +191,72 @@ async fn failed_setup_is_visible_and_keeps_owned_shell() {
             .any(|t| t["id"] == task["terminalId"] && t["alive"] == true)
     );
 }
+
+#[tokio::test]
+async fn claude_task_starts_after_the_devbox_path_changes() {
+    let mut d = TestDaemon::fixture();
+    d.paths.ensure_dirs().expect("owned dirs");
+    std::fs::write(
+        d.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .expect("tmux config");
+    let tool = d.home.path().join("fake-claude.sh");
+    std::fs::write(
+        &tool,
+        "#!/usr/bin/env bash\nwhile read -r line; do :; done\n",
+    )
+    .expect("owned fake tool");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(tool.to_str().expect("path"))
+    );
+    d.write_config(&format!(
+        "[[agents.profiles]]\nid='fake-claude'\nlabel='Fake Claude'\ncommand={}\nhooks='claude'\n",
+        serde_json::to_string(&command).expect("TOML quoted string")
+    ));
+    let repo = d.git_repo("projects/update");
+    let mut project = None;
+    let mut started = Vec::new();
+    // Same data directory, a different devbox path per daemon run, as across an update.
+    // Each path links to the real binary like the installed `bin/devbox` does.
+    for name in ["a", "b"] {
+        let devbox = d.home.path().join(name).join("devbox");
+        std::fs::create_dir_all(devbox.parent().expect("parent")).expect("owned bin directory");
+        std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_devbox"), &devbox)
+            .expect("owned devbox link");
+        let devbox = devbox.to_str().expect("fixture UTF-8").to_owned();
+        d.extra_env.retain(|(key, _)| key != "DEVBOX_TEST_BIN");
+        d.extra_env.push(("DEVBOX_TEST_BIN".into(), devbox.clone()));
+        d.restart();
+        let client = d.client().await;
+        if project.is_none() {
+            project = Some(d.add_project(&client, &repo).await);
+        }
+        let project = project.as_deref().expect("project");
+        let id = d.create_agent(&client, project, "fake-claude", true).await;
+        d.wait_for(&client, &id, "running", Duration::from_secs(10))
+            .await;
+        started.push((devbox, claude_settings_file(&d, &id)));
+    }
+    assert_ne!(started[0].1, started[1].1);
+    for (devbox, settings) in &started {
+        let body = std::fs::read_to_string(settings).expect("owned settings");
+        assert!(
+            body.contains(&format!("'{devbox}' agent event --from claude")),
+            "{settings}: {body}"
+        );
+    }
+}
+
+fn claude_settings_file(d: &TestDaemon, id: &str) -> String {
+    let script = d.paths.data_dir.join("agents").join(id).join("start.sh");
+    let script = std::fs::read_to_string(script).expect("owned start script");
+    let (_, rest) = script
+        .split_once("--settings '")
+        .expect("Claude settings argument");
+    rest.split_once('\'')
+        .expect("quoted settings path")
+        .0
+        .into()
+}

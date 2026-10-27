@@ -13,6 +13,14 @@ fn hello() -> ClientMessage {
         instance: "test-r".into(),
     }
 }
+fn hello_as(client: ClientKind, version: &str) -> ClientMessage {
+    ClientMessage::Hello {
+        version: version.into(),
+        protocol: PROTOCOL_VERSION,
+        client,
+        instance: "test-r".into(),
+    }
+}
 fn request(id: u32, method: &str) -> ClientMessage {
     ClientMessage::Request {
         id,
@@ -282,4 +290,108 @@ async fn windows_native_long_poll_does_not_block_renderer_ping_and_routes_are_pr
         .await
         .expect("fixture result")
         .expect("fixture result");
+}
+
+#[tokio::test]
+async fn cli_and_mcp_hello_accept_another_version_with_the_same_protocol() {
+    for client in [ClientKind::Cli, ClientKind::Mcp] {
+        assert!(hello_accepts(
+            client,
+            "1.0.0-rc.1",
+            PROTOCOL_VERSION,
+            "1.0.0-rc.2"
+        ));
+        assert!(hello_accepts(
+            client,
+            "1.0.0-rc.2",
+            PROTOCOL_VERSION,
+            "1.0.0-rc.2"
+        ));
+    }
+    let temp = tempfile::tempdir().expect("fixture result");
+    let d = daemon(&temp, Arc::new(tokio::sync::Notify::new()));
+    let older = format!("{}-older", crate::VERSION);
+    for client in [ClientKind::Cli, ClientKind::Mcp] {
+        let (peer, server) = UnixStream::pair().expect("fixture result");
+        let serving = tokio::spawn(connection(server, d.clone(), CancellationToken::new()));
+        let mut wire = Wire::new(peer, FrameCodec::default());
+        wire.send(json_frame(0, &hello_as(client, &older)))
+            .await
+            .expect("fixture result");
+        // An older client accepts only a Welcome that repeats its own version.
+        assert!(matches!(
+            receive(&mut wire).await,
+            ServerMessage::Welcome { version, protocol, .. }
+                if version == older && protocol == PROTOCOL_VERSION
+        ));
+        wire.send(json_frame(0, &request(1, "system.ping")))
+            .await
+            .expect("fixture result");
+        assert!(matches!(
+            receive(&mut wire).await,
+            ServerMessage::Response {
+                id: 1,
+                result: Some(_),
+                error: None,
+                ..
+            }
+        ));
+        drop(wire);
+        bounded(serving)
+            .await
+            .expect("fixture result")
+            .expect("fixture result");
+    }
+    d.dedupe.tracker.close();
+    bounded(d.dedupe.tracker.wait()).await;
+}
+
+#[tokio::test]
+async fn app_hello_rejects_another_version() {
+    for client in [ClientKind::App, ClientKind::Dev, ClientKind::Test] {
+        assert!(
+            !hello_accepts(client, "1.0.0-rc.1", PROTOCOL_VERSION, "1.0.0-rc.2"),
+            "{client:?}"
+        );
+        assert!(
+            hello_accepts(client, "1.0.0-rc.2", PROTOCOL_VERSION, "1.0.0-rc.2"),
+            "{client:?}"
+        );
+    }
+    // The app redeploys from the daemon's own version, so a rejection never echoes.
+    let temp = tempfile::tempdir().expect("fixture result");
+    let d = daemon(&temp, Arc::new(tokio::sync::Notify::new()));
+    let (peer, server) = UnixStream::pair().expect("fixture result");
+    let serving = tokio::spawn(connection(server, d, CancellationToken::new()));
+    let mut wire = Wire::new(peer, FrameCodec::default());
+    let older = format!("{}-older", crate::VERSION);
+    wire.send(json_frame(0, &hello_as(ClientKind::App, &older)))
+        .await
+        .expect("fixture result");
+    assert!(matches!(
+        receive(&mut wire).await,
+        ServerMessage::Welcome { version, .. } if version == crate::VERSION
+    ));
+    assert!(bounded(wire.next()).await.is_none());
+    assert!(bounded(serving).await.expect("fixture result").is_err());
+}
+
+#[test]
+fn every_client_rejects_another_protocol() {
+    for client in [
+        ClientKind::App,
+        ClientKind::Cli,
+        ClientKind::Mcp,
+        ClientKind::Dev,
+        ClientKind::Test,
+    ] {
+        for version in ["1.0.0-rc.2", "1.0.0-rc.1"] {
+            for protocol in [0, PROTOCOL_VERSION + 1] {
+                assert!(
+                    !hello_accepts(client, version, protocol, "1.0.0-rc.2"),
+                    "{client:?} {version} {protocol}"
+                );
+            }
+        }
+    }
 }

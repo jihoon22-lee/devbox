@@ -1,6 +1,7 @@
 mod agent_test;
 mod debug;
 mod dedupe;
+mod exe;
 mod hostname;
 mod knowledge;
 mod knowledge_routes;
@@ -91,7 +92,12 @@ fn build_services_with_runtime(
         config.terminal,
     ));
     let profiles = devbox_agents::profile::configured(&config.agents)?;
-    let executable = std::env::current_exe()?;
+    // Debug builds of test instances may pin the path hooks run, so a daemon test can
+    // change it across restarts the way an update does.
+    let executable = match std::env::var_os("DEVBOX_TEST_BIN") {
+        Some(path) if cfg!(debug_assertions) && paths.instance.is_test() => path.into(),
+        _ => exe::stable_devbox_path(&std::env::current_exe()?),
+    };
     let devbox_bin = executable
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("executable path is not UTF-8"))?

@@ -146,21 +146,11 @@ impl AgentsService {
             let _hook_files = self.hook_files.lock().await;
             let hooks = self.paths.data_dir.join("agent-hooks");
             private_dir(&hooks).map_err(|e| internal("agent hooks directory", e))?;
-            let path = hooks.join("claude.json");
+            // A changed devbox path gets a new file; running sessions keep their old one,
+            // including the pre-content-addressed `claude.json`.
             let body = crate::hooks::claude_settings(&self.devbox_bin);
-            match private_file(&path, &body, false) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file())
-                        || std::fs::read_to_string(&path)
-                            .map_err(|e| internal("read agent hooks", e))?
-                            != body
-                    {
-                        return Err(internal("agent hooks", "existing file differs").into());
-                    }
-                }
-                Err(e) => return Err(internal("agent hooks", e).into()),
-            };
+            let path = crate::artifacts::write_artifact(&hooks, "claude", "json", &body)
+                .map_err(|e| internal("agent hooks", e))?;
             Some(path.to_string_lossy().into_owned())
         } else {
             None
