@@ -1,6 +1,7 @@
 use super::{OsProbe, runner};
+use devbox_agents::command_path::{self, CommandSource, InteractiveShell};
 use devbox_tools::doctor::{
-    AgentAuth, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions,
+    AgentAuth, AgentCommand, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions,
 };
 use std::path::{Path, PathBuf};
 const GH_AUTH_ARGS: &[&str] = &["auth", "status", "--no-refresh"];
@@ -11,6 +12,8 @@ fn config_root(agent: AgentTool) -> Probed<PathBuf> {
     let (key, default) = match agent {
         AgentTool::Claude => ("CLAUDE_CONFIG_DIR", ".claude"),
         AgentTool::Codex => ("CODEX_HOME", ".codex"),
+        // Their sign-in files are not checked.
+        AgentTool::Opencode | AgentTool::Pi => return Err(ProbeIssue::Unavailable),
     };
     config_root_from(&home, std::env::var_os(key).map(PathBuf::from), default)
 }
@@ -122,27 +125,53 @@ impl Probe for OsProbe {
         let root = config_root(agent)?;
         let file = root.join(match agent {
             AgentTool::Claude => ".credentials.json",
-            AgentTool::Codex => "auth.json",
+            _ => "auth.json",
         });
+        // The version of the CLI a task runs; the tool check above has cached its lookup.
+        let path = std::ffi::OsString::from(self.daemon_path());
+        let version = runner::block_on(async {
+            Ok(
+                command_path::resolve(agent.binary(), &path, &InteractiveShell)
+                    .await
+                    .and_then(|found| found.version),
+            )
+        })?;
         runner::run(async {
             Ok(AgentAuth {
-                version: runner::version(agent.binary(), &["--version"]).await?,
+                version,
                 file_present: runner::file_exists(file).await?,
             })
         })
     }
-    fn agent_hook(&self, agent: AgentTool) -> Probed<bool> {
-        let file = config_root(agent)?.join(match agent {
-            AgentTool::Claude => "settings.json",
-            AgentTool::Codex => "config.toml",
-        });
-        runner::run(async {
-            match runner::read_text(file).await {
-                Ok(text) => devbox_tools::doctor::hook_present(agent, &text),
-                Err(ProbeIssue::Missing) => Ok(false),
-                Err(issue) => Err(issue),
-            }
+    fn agent_command(&self, agent: AgentTool, path: &str) -> Probed<Option<AgentCommand>> {
+        let path = std::ffi::OsString::from(path);
+        runner::block_on(async {
+            // All four at once: the 5-minute cache then answers the other three calls.
+            let mut all = futures::future::join_all(
+                AgentTool::ALL
+                    .map(|tool| command_path::resolve(tool.binary(), &path, &InteractiveShell)),
+            )
+            .await;
+            let index = AgentTool::ALL.iter().position(|tool| *tool == agent);
+            let Some(found) = index.and_then(|index| all.swap_remove(index)) else {
+                return Ok(None);
+            };
+            let login = command_path::search_path(agent.binary(), &path)
+                .filter(|login| !same_file(login, &found.program));
+            Ok(Some(AgentCommand {
+                path: found.program.display().to_string(),
+                interactive: found.source == CommandSource::InteractiveShell,
+                version: found.version,
+                login_path: login.map(|login| login.display().to_string()),
+            }))
         })
+    }
+}
+/// Two names for one installed CLI (a symlink, say) are not two different CLIs.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 #[cfg(test)]

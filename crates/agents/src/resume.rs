@@ -81,6 +81,7 @@ impl AgentsService {
                 id: task.profile.clone(),
             },
         )?;
+        let tool = self.resolve_tool(&profile).await?;
         let session_id = if profile.hooks == crate::profile::Hooks::Codex {
             self.refresh_binding(&task, true).await?.thread_id
         } else {
@@ -115,6 +116,10 @@ impl AgentsService {
             workdir: task.workdir.clone(),
             setup: vec![],
             tool_command: profile.command.clone(),
+            tool_dir: tool
+                .as_ref()
+                .and_then(crate::command_path::ResolvedCommand::dir)
+                .map(Into::into),
             hooks: profile.hooks,
             claude_settings: settings,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),

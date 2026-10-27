@@ -323,6 +323,7 @@ domain_error! {
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",
         ListChanged = "agents.list_changed",
         ProjectTrustRequired { id: String } = "agents.project_trust_required",
+        ToolMissing { command: String } = "agents.tool_missing",
     }
 }
 

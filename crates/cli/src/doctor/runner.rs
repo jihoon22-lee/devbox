@@ -25,6 +25,10 @@ fn runtime() -> Probed<&'static Runtime> {
         .as_ref()
         .map_err(|issue| *issue)
 }
+/// For probes that bound their own commands (agent CLI lookups wait up to 5 s per step).
+pub(super) fn block_on<T>(future: impl Future<Output = Probed<T>>) -> Probed<T> {
+    runtime()?.block_on(future)
+}
 pub(super) fn run<T>(future: impl Future<Output = Probed<T>>) -> Probed<T> {
     runtime()?.block_on(async {
         tokio::time::timeout(DEADLINE, future)

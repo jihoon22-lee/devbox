@@ -1,4 +1,4 @@
-use super::{Probe, Probed};
+use super::{AgentTool, Probe, Probed};
 use devbox_protocol::system::{Check, Status};
 
 pub fn tmux_at_least(v: &str, want: (u32, u32)) -> bool {
@@ -107,7 +107,16 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
         "devbox setup",
     ));
     let path = p.daemon_path();
-    for tool in ["git", "claude", "codex", "gh", "node", "pnpm"] {
+    for tool in [
+        "git", "claude", "codex", "opencode", "pi", "gh", "node", "pnpm",
+    ] {
+        if let Some(agent) = AgentTool::ALL.into_iter().find(|a| a.binary() == tool) {
+            out.push(super::agent_tools::tool_check(
+                agent,
+                p.agent_command(agent, &path),
+            ));
+            continue;
+        }
         out.push(boolean(
             &format!("tool.{tool}"),
             p.which(tool, &path),

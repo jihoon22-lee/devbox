@@ -1,12 +1,13 @@
-mod hooks;
-pub use hooks::hook_present;
+mod agent_tools;
 mod checks;
 mod extended;
 mod probe;
 pub mod wsl;
 
 pub use checks::{checks, tmux_at_least};
-pub use probe::{AgentAuth, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions};
+pub use probe::{
+    AgentAuth, AgentCommand, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions,
+};
 
 #[cfg(test)]
 mod checks_tests;

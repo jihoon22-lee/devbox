@@ -46,6 +46,8 @@ pub fn install_command(check: CheckRef) -> Result<InstallPlan, devbox_protocol::
         "tool.pnpm" => ("pnpm 9 설치", "npm i -g pnpm@9"),
         "tool.claude" => ("Claude Code 설치", "npm i -g @anthropic-ai/claude-code"),
         "tool.codex" => ("Codex CLI 설치", "npm i -g @openai/codex"),
+        "tool.opencode" => ("opencode 설치", "npm i -g opencode-ai"),
+        "tool.pi" => ("pi 설치", "npm i -g @earendil-works/pi-coding-agent"),
         "tool.node" => return Ok(InstallPlan::Manual {
             text:
                 "프로젝트에 맞는 Node.js 버전을 공식 설치 안내(https://nodejs.org/)에서 확인하세요"

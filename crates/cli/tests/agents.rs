@@ -430,3 +430,81 @@ fn claude_settings_file(d: &TestDaemon, id: &str) -> String {
         .0
         .into()
 }
+
+#[tokio::test]
+async fn start_with_a_missing_tool_fails_before_creating_a_worktree() {
+    let mut d = TestDaemon::fixture();
+    d.paths.ensure_dirs().expect("owned dirs");
+    std::fs::write(
+        d.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .expect("tmux config");
+    // Neither the fixture's interactive shell (an empty home) nor the daemon PATH has it.
+    let missing = "devbox-owned-missing-tool";
+    d.write_config(&format!(
+        "[[agents.profiles]]\nid='missing'\nlabel='Missing'\ncommand='{missing} --flag'\nhooks='none'\n\
+         [[agents.profiles]]\nid='shell-syntax'\nlabel='Shell syntax'\ncommand='MODE=1 {missing}'\nhooks='none'\n"
+    ));
+    let repo = d.git_repo("projects/missing");
+    d.launch();
+    let client = d.client().await;
+    let project = d.add_project(&client, &repo).await;
+    d.approve_project(&client, &project).await;
+    let refused = client
+        .raw_call(
+            "agents.create",
+            json!({"projectId":project,"title":"Missing tool","profile":"missing","worktree":true,"prompt":"fix it"}),
+            None,
+        )
+        .await
+        .expect_err("a missing CLI ends the start");
+    let devbox_cli::client::ClientError::Rpc { code, detail, .. } = &refused else {
+        panic!("{refused:?}");
+    };
+    assert_eq!(code, "agents.tool_missing");
+    let detail: Value =
+        serde_json::from_str(detail.as_deref().expect("detail").get()).expect("detail JSON");
+    assert_eq!(detail["command"], missing);
+    // Nothing was reserved or created: no task, no branch, no worktree.
+    let list: Value = serde_json::from_str(
+        &client
+            .raw_call("agents.list", json!({}), None)
+            .await
+            .expect("list"),
+    )
+    .expect("list JSON");
+    assert_eq!(list["items"], json!([]), "{list}");
+    let git = |args: &[&str]| {
+        let output = d
+            .environment("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .output()
+            .expect("fixture git");
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).expect("git output")
+    };
+    assert_eq!(git(&["branch", "--list", "agent/*"]), "");
+    assert_eq!(
+        git(&["worktree", "list", "--porcelain"])
+            .lines()
+            .filter(|line| line.starts_with("worktree "))
+            .count(),
+        1
+    );
+    assert!(!std::path::Path::new(&format!("{repo}-agents")).exists());
+    // Shell syntax before the program: it runs as written, unresolved, as before.
+    let started = client
+        .raw_call(
+            "agents.create",
+            json!({"projectId":project,"title":"Shell syntax","profile":"shell-syntax","worktree":false,"prompt":"fix it"}),
+            None,
+        )
+        .await
+        .expect("an unresolved command still starts");
+    let task: Value = serde_json::from_str(&started).expect("task JSON");
+    assert_eq!(task["profile"], "shell-syntax");
+}

@@ -134,9 +134,13 @@ pub(super) fn checks(p: &dyn Probe) -> Vec<Check> {
             },
             Err(issue) => unknown(&id, issue, fix),
         });
-        out.push(evidence(&format!("hook.{}", agent.binary()), p.agent_hook(agent),
-            "설정에서 devbox hook 연결을 확인했습니다(실행 확인은 아님)", "전역 설정에서 devbox hook 연결을 찾지 못했습니다",
-            "전역 hook 설정을 확인하세요. devbox가 시작한 작업은 실행 인자로 hook을 연결할 수 있습니다"));
+        // Global settings are not read: each task is started with its hooks attached.
+        out.push(check(
+            &format!("hook.{}", agent.binary()),
+            Status::Ok,
+            "devbox가 작업마다 연결합니다",
+            None,
+        ));
     }
     out
 }

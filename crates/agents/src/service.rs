@@ -24,6 +24,8 @@ pub struct AgentRuntime {
     pub devbox_bin: String,
     pub use_scope: bool,
     pub cleanup_after_close: bool,
+    /// Finds agent CLIs the way the user's terminal does.
+    pub shell: Arc<dyn crate::command_path::ShellProbe>,
 }
 pub struct AgentsService {
     pub(crate) db: Db,
@@ -38,6 +40,7 @@ pub struct AgentsService {
     pub(crate) actions: Mutex<()>,
     pub(crate) cleanup_after_close: bool,
     pub(crate) hook_files: Mutex<()>,
+    pub(crate) shell: Arc<dyn crate::command_path::ShellProbe>,
     pub(crate) background: TaskTracker,
     pub(crate) stop: CancellationToken,
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
@@ -75,6 +78,7 @@ impl AgentsService {
             actions: Mutex::new(()),
             cleanup_after_close: runtime.cleanup_after_close,
             hook_files: Mutex::new(()),
+            shell: runtime.shell,
             background: TaskTracker::new(),
             stop: CancellationToken::new(),
             resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),

@@ -288,6 +288,7 @@ async fn review_regression_live_review_agents_are_sampled_until_exit() {
         projects.clone(),
         devbox_core::config::TerminalConfig::default(),
     ));
+    let shell = crate::command_path::fixture_shell(&paths.home);
     let svc = AgentsService::new(
         db,
         hub,
@@ -299,6 +300,7 @@ async fn review_regression_live_review_agents_are_sampled_until_exit() {
             devbox_bin: "/owned/devbox".into(),
             use_scope: true,
             cleanup_after_close: false,
+            shell,
         },
     );
     let (_provider_dir, sampler) = provider(&format!(

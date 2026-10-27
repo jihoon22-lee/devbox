@@ -135,6 +135,7 @@ fn build_services_with_runtime(
             devbox_bin,
             use_scope,
             cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
+            shell: Arc::new(devbox_agents::command_path::InteractiveShell),
         },
     ));
     let windows = Arc::new(windows_broker::WindowsBroker::default());

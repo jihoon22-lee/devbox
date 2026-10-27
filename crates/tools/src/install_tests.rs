@@ -12,6 +12,8 @@ fn install_plans_use_only_the_fixed_allowlist() {
         ("tool.pnpm", "npm i -g pnpm@9"),
         ("tool.claude", "npm i -g @anthropic-ai/claude-code"),
         ("tool.codex", "npm i -g @openai/codex"),
+        ("tool.opencode", "npm i -g opencode-ai"),
+        ("tool.pi", "npm i -g @earendil-works/pi-coding-agent"),
     ] {
         let InstallPlan::Wsl {
             command,

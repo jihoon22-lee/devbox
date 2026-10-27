@@ -245,6 +245,23 @@ impl Tmux {
             Err(error) => Err(error),
         }
     }
+    /// Sets, or with `None` removes, a variable of the server's global environment. Sessions
+    /// created afterwards start with it; panes already running keep what they started with.
+    pub async fn set_global_env(&self, key: &str, value: Option<&str>) -> Result<(), TmuxError> {
+        match value {
+            Some(value) => {
+                // tmux reads an argument ending in `;` as the end of a command unless escaped.
+                let value = match value.strip_suffix(';') {
+                    Some(rest) => format!("{rest}\\;"),
+                    None => value.to_owned(),
+                };
+                self.run(&["set-environment", "-g", "--", key, &value])
+                    .await
+            }
+            None => self.run(&["set-environment", "-gu", "--", key]).await,
+        }
+        .map(|_| ())
+    }
     pub async fn kill_server(&self) {
         let _ = self.run(&["kill-server"]).await;
     }
@@ -370,6 +387,106 @@ impl Tmux {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// An owned server on its own socket; killed and its socket file removed even on failure.
+    struct Owned {
+        tmux: Tmux,
+        home: tempfile::TempDir,
+    }
+    impl Owned {
+        fn new() -> Self {
+            let home = tempfile::tempdir().expect("fixture directory");
+            let conf = home.path().join("tmux.conf");
+            std::fs::write(&conf, crate::TMUX_CONF).expect("fixture config");
+            let socket = format!("devbox-test-{}", uuid::Uuid::new_v4().simple());
+            Self {
+                tmux: Tmux::with(socket, conf),
+                home,
+            }
+        }
+        /// A session whose shell writes what it sees of the variable, now and every 50 ms.
+        async fn session(&self, name: &str) {
+            let file = self.home.path().join(name);
+            let record = format!(
+                "while :; do printf '%s' \"${{DEVBOX_S76_FIXTURE-unset}}\" > {0}.tmp && mv {0}.tmp {0}; sleep 0.05; done",
+                devbox_core::sh_quote(&file.to_string_lossy())
+            );
+            self.tmux
+                .new_session(name, self.home.path(), Some(&record), &[])
+                .await
+                .expect("owned fixture session");
+        }
+        async fn seen(&self, name: &str) -> String {
+            let file = self.home.path().join(name);
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Ok(text) = std::fs::read_to_string(&file) {
+                        return text;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("owned session wrote its environment")
+        }
+    }
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            let socket = std::process::Command::new("tmux")
+                .args([
+                    "-L",
+                    self.tmux.socket(),
+                    "display-message",
+                    "-p",
+                    "#{socket_path}",
+                ])
+                .env_remove("TMUX")
+                .env_remove("TMUX_TMPDIR")
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|path| path.trim().to_owned());
+            let _ = std::process::Command::new("tmux")
+                .args(["-L", self.tmux.socket(), "kill-server"])
+                .env_remove("TMUX")
+                .env_remove("TMUX_TMPDIR")
+                .status();
+            // tmux leaves the socket file behind; this test created it.
+            if let Some(socket) = socket.filter(|path| path.ends_with(self.tmux.socket())) {
+                let _ = std::fs::remove_file(socket);
+            }
+        }
+    }
+    #[tokio::test]
+    async fn set_global_env_reaches_new_sessions_only() {
+        let owned = Owned::new();
+        owned
+            .tmux
+            .start_direct()
+            .await
+            .expect("start owned fixture server");
+        owned.session("before").await;
+        assert_eq!(owned.seen("before").await, "unset");
+        // A trailing `;` would end a tmux command; quotes and spaces are plain text.
+        let value = "/new bin:it's \"quoted\";";
+        owned
+            .tmux
+            .set_global_env("DEVBOX_S76_FIXTURE", Some(value))
+            .await
+            .expect("set owned global variable");
+        owned.session("after").await;
+        assert_eq!(owned.seen("after").await, value);
+        // The pane that was already running keeps the environment it started with.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(owned.seen("before").await, "unset");
+        owned
+            .tmux
+            .set_global_env("DEVBOX_S76_FIXTURE", None)
+            .await
+            .expect("unset owned global variable");
+        owned.session("removed").await;
+        assert_eq!(owned.seen("removed").await, "unset");
+        assert_eq!(owned.seen("after").await, value);
+    }
     #[tokio::test]
     async fn managed_server_readiness_waits_for_the_socket_without_spawning_a_second_server() {
         let home = tempfile::tempdir().expect("fixture directory");

@@ -22,6 +22,10 @@ const names = (d: unknown) => {
   const list = field(d, "names");
   return Array.isArray(list) ? list.filter((n) => typeof n === "string").join(", ") : "";
 };
+const command = (d: unknown) => {
+  const value = field(d, "command");
+  return typeof value === "string" && value ? value : "에이전트 도구";
+};
 const check = "입력란을 확인해 주세요.";
 const configFile = (d: unknown) => {
   const file = field(d, "file");
@@ -247,6 +251,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
   },
+  "agents.tool_missing": (detail) => ({
+    title: `${command(detail)} 명령을 찾을 수 없습니다.`,
+    action: "설정 → 환경 점검에서 설치 방법을 확인하세요.",
+  }),
   "projects.trust_required": {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",

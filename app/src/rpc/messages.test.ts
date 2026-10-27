@@ -14,6 +14,10 @@ test("agent errors use actual generated file details and terminal codes", () => 
   expect(messageFor("agents.conflict", { files: [1, null] }).action).not.toContain("null");
   expect(messageFor("terminal.cwd_invalid").action).toContain("WSL");
   expect(messageFor("terminal.title_too_long", { limit: 256 }).action).toContain("256");
+  expect(messageFor("agents.tool_missing", { command: "pi" })).toEqual({
+    title: "pi 명령을 찾을 수 없습니다.",
+    action: "설정 → 환경 점검에서 설치 방법을 확인하세요.",
+  });
 });
 
 test("redaction failure actions distinguish capacity and rejected server input", () => {

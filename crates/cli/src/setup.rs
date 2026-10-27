@@ -74,6 +74,16 @@ pub(crate) fn env_path(text: &str) -> Option<String> {
         .lines()
         .filter_map(|l| l.strip_prefix("PATH="))
         .next_back()?;
+    let out = unquote(value)?;
+    if !out
+        .split(':')
+        .any(|s| !s.is_empty() && Path::new(s).is_absolute())
+    {
+        return None;
+    }
+    Some(out)
+}
+fn unquote(value: &str) -> Option<String> {
     let quoted = value.strip_prefix('"')?.strip_suffix('"')?;
     let mut out = String::new();
     let mut chars = quoted.chars();
@@ -90,14 +100,31 @@ pub(crate) fn env_path(text: &str) -> Option<String> {
             _ => out.push(c),
         }
     }
-    if out.chars().any(char::is_control)
-        || !out
-            .split(':')
-            .any(|s| !s.is_empty() && Path::new(s).is_absolute())
-    {
-        return None;
+    (!out.chars().any(char::is_control)).then_some(out)
+}
+/// The allowlisted variables of an env file, decoded; the last line for a key wins.
+fn env_entries(text: &str) -> std::collections::BTreeMap<&str, String> {
+    text.lines()
+        .filter_map(|line| line.split_once('='))
+        .filter(|(key, _)| ALLOWED.contains(key) || key.starts_with("LC_"))
+        .filter_map(|(key, value)| Some((key, unquote(value)?)))
+        .collect()
+}
+/// What changed between two env files: a new value to set, or `None` for a removed key.
+pub(crate) fn env_changes(before: &str, after: &str) -> Vec<(String, Option<String>)> {
+    let (before, after) = (env_entries(before), env_entries(after));
+    let mut changes: std::collections::BTreeMap<&str, Option<String>> = after
+        .iter()
+        .filter(|(key, value)| before.get(*key) != Some(*value))
+        .map(|(key, value)| (*key, Some(value.clone())))
+        .collect();
+    for key in before.keys().filter(|key| !after.contains_key(*key)) {
+        changes.insert(*key, None);
     }
-    Some(out)
+    changes
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect()
 }
 pub fn render_units(channel: devbox_protocol::channel::AppChannel) -> Vec<(String, String)> {
     let config = channel.config();
@@ -260,25 +287,33 @@ pub(crate) async fn command(cmd: &str, args: &[&str]) -> Result<std::process::Ou
         .await
         .map_err(|error| error.to_string())
 }
-trait Runner {
+pub(crate) trait Runner {
     async fn run(&self, cmd: &str, args: &[&str]) -> Result<Vec<u8>, String>;
 }
-struct OsRunner;
+pub(crate) struct OsRunner;
 impl Runner for OsRunner {
     async fn run(&self, cmd: &str, args: &[&str]) -> Result<Vec<u8>, String> {
         command(cmd, args).await.map(|out| out.stdout)
     }
 }
-pub(crate) async fn refresh_env(paths: &devbox_core::Paths) -> Result<(), String> {
-    refresh_with(paths, &OsRunner).await
+/// Captures the login shell's environment again and returns what changed in the env file.
+pub(crate) async fn refresh_env_changes(
+    paths: &devbox_core::Paths,
+    runner: &impl Runner,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    // A missing or unreadable old file means every captured key is new.
+    let before = std::fs::read_to_string(paths.instance_config_dir.join("env")).unwrap_or_default();
+    let after = refresh_with(paths, runner).await?;
+    Ok(env_changes(&before, &after))
 }
-async fn refresh_with(paths: &devbox_core::Paths, runner: &impl Runner) -> Result<(), String> {
+async fn refresh_with(paths: &devbox_core::Paths, runner: &impl Runner) -> Result<String, String> {
     let raw = runner.run("bash", &["-lc", "env -0"]).await?;
     let text = capture_env(&raw);
     if env_path(&text).is_none() {
         return Err("captured PATH has no absolute entry".into());
     }
-    publish(&paths.instance_config_dir.join("env"), &text, false).map_err(|e| e.to_string())
+    publish(&paths.instance_config_dir.join("env"), &text, false).map_err(|e| e.to_string())?;
+    Ok(text)
 }
 async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> SetupReport {
     let mut report = SetupReport { steps: vec![] };
@@ -295,7 +330,7 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
     }
     for id in ["env", "units", "reload", "enable", "restart"] {
         let result: Result<(), String> = match id {
-            "env" => refresh_with(paths, runner).await,
+            "env" => refresh_with(paths, runner).await.map(drop),
             "units" => instance_units(paths).and_then(|units| {
                 publish(
                     &paths.instance_config_dir.join("tmux.conf"),

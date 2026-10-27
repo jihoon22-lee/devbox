@@ -11,6 +11,8 @@ pub struct StartPlan {
     pub workdir: String,
     pub setup: Vec<String>,
     pub tool_command: String,
+    /// The folder of the CLI found for `tool_command`, put first on `PATH` before it runs.
+    pub tool_dir: Option<String>,
     pub hooks: Hooks,
     pub claude_settings: Option<String>,
     pub prompt_file: Option<String>,
@@ -52,6 +54,10 @@ pub fn render_start_script(p: &StartPlan) -> String {
             "setup=$?\nif [ \"$setup\" -ne 0 ]; then printf 'setup:%s\\n' \"$setup\" > {phase}; else printf 'tool\\n' > {phase}; fi\n{dv} agent event --from setup --code \"$setup\"\n"
         ));
         s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; hold_terminal; fi\n");
+    }
+    if let Some(dir) = &p.tool_dir {
+        // The CLI found for this task, and the interpreter its `#!/usr/bin/env` line names.
+        s.push_str(&format!("export PATH={}:\"$PATH\"\n", sh_quote(dir)));
     }
     let mut tool = p.tool_command.clone();
     match p.hooks {
@@ -99,6 +105,7 @@ mod tests {
             workdir: "/w/x y".into(),
             setup: vec!["pnpm install".into()],
             tool_command: "claude".into(),
+            tool_dir: None,
             hooks: Hooks::Claude,
             claude_settings: Some("/d/claude.json".into()),
             prompt_file: Some("/d/prompt.md".into()),
@@ -196,6 +203,62 @@ mod tests {
             "agent event --from setup --code 1\n"
         );
         fs::remove_dir_all(root).expect("owned fixture");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn resolved_tool_directory_is_prepended_to_path() {
+        use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+        let root = tempfile::tempdir().expect("owned fixture");
+        // Only the user's interactive shell knows this folder. Its CLI is a `#!/usr/bin/env`
+        // script whose interpreter sits next to it, the way nvm installs Node CLIs.
+        let tools = root.path().join("it's a \"tool\" dir");
+        fs::create_dir(&tools).expect("owned fixture");
+        let devbox = root.path().join("devbox");
+        for (file, body) in [
+            (
+                tools.join("fixture-node"),
+                "#!/bin/sh\nexec /bin/sh \"$@\"\n",
+            ),
+            (
+                tools.join("fixture-agent"),
+                "#!/usr/bin/env fixture-node\nprintf '%s' \"$PATH\" > \"$DEVBOX_PATH_RECEIPT\"\n",
+            ),
+            (devbox.clone(), "#!/bin/sh\nexit 0\n"),
+        ] {
+            fs::write(&file, body).expect("owned fixture");
+            fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).expect("owned fixture");
+        }
+        let tools_text = tools.to_str().expect("fixture UTF-8");
+        let receipt = root.path().join("path-receipt");
+        let mut p = plan();
+        p.devbox = devbox.to_string_lossy().into_owned();
+        p.workdir = root.path().to_string_lossy().into_owned();
+        p.phase_file = root.path().join("phase").to_string_lossy().into_owned();
+        p.setup = vec![];
+        p.hooks = Hooks::None;
+        p.use_scope = false;
+        p.tool_command = "fixture-agent".into();
+        p.tool_dir = Some(tools_text.into());
+        let script = render_start_script(&p);
+        let line = format!("export PATH={}:\"$PATH\"\n", sh_quote(tools_text));
+        let (before, after) = script.split_once(&line).expect("PATH line");
+        assert!(after.starts_with("fixture-agent\n"), "{script}");
+        assert!(before.contains("printf 'tool\\n'"), "after setup: {script}");
+        let file = root.path().join("start.sh");
+        fs::write(&file, &script).expect("owned fixture");
+        let output = Command::new("/bin/bash")
+            .arg(&file)
+            .env("PATH", "/usr/bin:/bin")
+            .env("DEVBOX_PATH_RECEIPT", &receipt)
+            .output()
+            .expect("owned fixture");
+        assert!(output.status.success());
+        assert_eq!(
+            fs::read_to_string(&receipt).expect("the tool and its interpreter ran"),
+            format!("{tools_text}:/usr/bin:/bin")
+        );
+        p.tool_dir = None;
+        assert!(!render_start_script(&p).contains("export PATH="));
     }
     #[test]
     fn resume_and_custom_profiles_have_no_prompt_argument() {

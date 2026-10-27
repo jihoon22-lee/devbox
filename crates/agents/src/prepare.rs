@@ -1,4 +1,5 @@
 use crate::{
+    command_path::ResolvedCommand,
     model::{AgentTask, AgentsError},
     profile::{Hooks, ToolProfile},
     service::{AgentsService, Result, apply_event, changed, now_ms},
@@ -71,10 +72,32 @@ impl From<Fail<AgentsError>> for PreparationFailure {
 }
 type PreparationResult = std::result::Result<(), PreparationFailure>;
 impl AgentsService {
+    /// The profile's CLI, found the way the user's terminal finds it, before anything is created.
+    /// `None` when shell syntax comes before the program: that command runs as written.
+    pub(crate) async fn resolve_tool(
+        &self,
+        profile: &ToolProfile,
+    ) -> Result<Option<ResolvedCommand>> {
+        let Some(program) = crate::command_path::program_of(&profile.command) else {
+            return Ok(None);
+        };
+        // systemd gives the daemon the settings env file's PATH, which new panes start with.
+        let service_path = std::env::var_os("PATH").unwrap_or_default();
+        crate::command_path::resolve(program, &service_path, &self.shell)
+            .await
+            .map(Some)
+            .ok_or_else(|| {
+                AgentsError::ToolMissing {
+                    command: program.to_owned(),
+                }
+                .into()
+            })
+    }
     pub(crate) async fn prepare(
         &self,
         task: &AgentTask,
         profile: &ToolProfile,
+        tool: Option<&ResolvedCommand>,
         project: &devbox_projects::Project,
         config: &devbox_projects::trust::SetupSnapshot,
     ) -> PreparationResult {
@@ -84,7 +107,7 @@ impl AgentsService {
             .await?
             .launch_id
             .ok_or_else(|| internal("agent launch", "missing launch identity"))?;
-        self.prepare_owned(task, profile, project, config, &launch_id)
+        self.prepare_owned(task, profile, tool, project, config, &launch_id)
             .await
             .map_err(|failure| match failure {
                 PreparationFailure::Failed { error, .. } => PreparationFailure::Failed {
@@ -98,6 +121,7 @@ impl AgentsService {
         &self,
         task: &AgentTask,
         profile: &ToolProfile,
+        tool: Option<&ResolvedCommand>,
         project: &devbox_projects::Project,
         config: &devbox_projects::trust::SetupSnapshot,
         launch_id: &str,
@@ -170,6 +194,7 @@ impl AgentsService {
             workdir: task.workdir.clone(),
             setup: config.setup().to_vec(),
             tool_command: profile.command.clone(),
+            tool_dir: tool.and_then(ResolvedCommand::dir).map(Into::into),
             hooks: profile.hooks,
             claude_settings: settings,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),

@@ -63,6 +63,8 @@ impl AgentsService {
                 id: p.profile.clone(),
             }
         })?;
+        // A missing CLI ends the start here, before any task, branch or worktree exists.
+        let tool = self.resolve_tool(&profile).await?;
         if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
             return Err(AgentsError::UnsafeWorktree.into());
         }
@@ -197,8 +199,9 @@ impl AgentsService {
                     let svc = svc.clone();
                     let _entered = handle.enter();
                     background.spawn(async move {
-                        if let Err(error) =
-                            svc.prepare(&task, &profile, &prep_project, &snapshot).await
+                        if let Err(error) = svc
+                            .prepare(&task, &profile, tool.as_ref(), &prep_project, &snapshot)
+                            .await
                         {
                             tracing::error!(?error,agent=%task.id,"agent preparation failed");
                             let _ = svc.preparation_failed(&task.id, &error).await;

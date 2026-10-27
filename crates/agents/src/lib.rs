@@ -1,3 +1,4 @@
+pub mod command_path;
 pub mod hooks;
 pub mod model;
 pub mod plan;

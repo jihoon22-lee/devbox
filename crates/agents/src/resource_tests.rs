@@ -197,6 +197,7 @@ impl Fixture {
             projects.clone(),
             devbox_core::config::TerminalConfig::default(),
         ));
+        let shell = crate::command_path::fixture_shell(&paths.home);
         let svc = Arc::new(AgentsService::new(
             db,
             hub,
@@ -208,6 +209,7 @@ impl Fixture {
                 devbox_bin: "/owned/devbox".into(),
                 use_scope: false,
                 cleanup_after_close: false,
+                shell,
             },
         ));
         let repo = root.path().join("project");
