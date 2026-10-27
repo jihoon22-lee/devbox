@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConnectionGate, GateView } from "./ConnectionGate";
 
@@ -77,6 +77,103 @@ test("distro selection is forwarded and revision remains monotonic after retry",
   expect(mocks.invoke).toHaveBeenCalledWith("gate_retry", { distro: "Ubuntu" });
   act(() => mocks.listen.mock.calls[1]?.[1]({ payload: status("ready", "3") }));
   expect(screen.getByText("native child")).toBeInTheDocument();
+});
+const failed = (state: string, revision: string, detail: string) => ({ ...status(state, revision), detail });
+const tail = "devbox daemon starting\nerror: config.toml line 3: expected `=`\n";
+test("자세히 shows the failed step and the log tail with 복사, and survives the next automatic attempt", async () => {
+  const writeText = vi.fn(async (_text: string) => {});
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  mocks.invoke.mockImplementation(async (cmd) =>
+    cmd === "gate_status"
+      ? failed("bridgeFailed", "1", "bridge exited with status 1")
+      : cmd === "daemon_log_tail"
+        ? tail
+        : undefined,
+  );
+  render(<ConnectionGate>native child</ConnectionGate>);
+  expect(await screen.findByText("WSL 쪽 devbox에 연결하지 못했습니다")).toBeInTheDocument();
+  expect(screen.getByText("[자세히]에서 원인을 확인하고 [다시 시도]하세요.")).toBeInTheDocument();
+  expect(mocks.invoke).not.toHaveBeenCalledWith("daemon_log_tail", expect.anything());
+  await userEvent.click(screen.getByRole("button", { name: "자세히" }));
+  expect(mocks.invoke).toHaveBeenCalledWith("daemon_log_tail", { lines: 200 });
+  const details = await screen.findByRole("region", { name: "연결 실패 자세히" });
+  expect(await within(details).findByText(/expected `=`/)).toBeInTheDocument();
+  expect(within(details).getByText("bridge exited with status 1")).toBeInTheDocument();
+  await userEvent.click(within(details).getByRole("button", { name: "복사" }));
+  expect(writeText).toHaveBeenCalledOnce();
+  expect(writeText.mock.calls[0]?.[0]).toContain("bridge exited with status 1");
+  expect(writeText.mock.calls[0]?.[0]).toContain("error: config.toml line 3");
+  // The supervisor keeps retrying on its own; the open details must not vanish or refetch meanwhile.
+  const publish = mocks.listen.mock.calls[0]?.[1];
+  const panel = () => screen.getByRole("region", { name: "연결 실패 자세히" });
+  act(() => publish({ payload: status("connecting", "2") }));
+  expect(screen.getByText("WSL의 devbox에 연결하고 있습니다")).toBeInTheDocument();
+  expect(panel()).toBe(details);
+  expect(within(panel()).getByText(/expected `=`/)).toBeInTheDocument();
+  act(() => publish({ payload: failed("bridgeFailed", "3", "bridge exited with status 2") }));
+  expect(panel()).toBe(details);
+  expect(within(panel()).getByText("bridge exited with status 2")).toBeInTheDocument();
+  expect(mocks.invoke.mock.calls.filter(([cmd]) => cmd === "daemon_log_tail")).toHaveLength(1);
+  act(() => publish({ payload: status("ready", "4") }));
+  expect(screen.getByText("native child")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "연결 실패 자세히" })).toBeNull();
+});
+test("no pre-connection copy says 데몬, including details and an unreadable log", async () => {
+  const states = [
+    "checking",
+    "connecting",
+    "deploying",
+    "noWsl",
+    "wsl1",
+    "systemdOff",
+    "chooseDistro",
+    "setupFailed",
+    "bridgeFailed",
+  ] as const;
+  for (const compact of [false, true])
+    for (const state of states) {
+      const view = render(
+        <GateView
+          status={{
+            ...status(state),
+            state,
+            instance: "prod",
+            detail: "Ubuntu",
+            distros: [{ name: "Ubuntu", version: 2, default: true }],
+          }}
+          onRetry={() => {}}
+          onDetails={() => {}}
+          compact={compact}
+        />,
+      );
+      expect(view.container.textContent).not.toMatch(/데몬/);
+      for (const labelled of view.container.querySelectorAll("[aria-label]"))
+        expect(labelled.getAttribute("aria-label")).not.toMatch(/데몬/);
+      view.unmount();
+    }
+  render(
+    <GateView
+      status={{ ...status("deploying"), state: "deploying", instance: "prod" }}
+      onRetry={() => {}}
+      onDetails={() => {}}
+    />,
+  );
+  expect(screen.getByText("WSL 쪽 devbox를 준비하고 있습니다")).toBeInTheDocument();
+  expect(screen.getByText("내장 실행 파일을 확인하고 필요한 서비스를 시작합니다.")).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/터미널 세션은 그대로/);
+  cleanup();
+  mocks.invoke.mockImplementation(async (cmd) => {
+    if (cmd === "gate_status") return failed("setupFailed", "1", "서비스 다시 시작 실패: unit unavailable");
+    if (cmd === "daemon_log_tail") return Promise.reject({ message: "journalctl: No journal files were found." });
+  });
+  render(<ConnectionGate>native child</ConnectionGate>);
+  await userEvent.click(await screen.findByRole("button", { name: "자세히" }));
+  const details = await screen.findByRole("region", { name: "연결 실패 자세히" });
+  expect(await within(details).findByText(/로그를 읽지 못했습니다/)).toBeInTheDocument();
+  expect(within(details).getByText("서비스 다시 시작 실패: unit unavailable")).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/데몬/);
+  for (const labelled of document.querySelectorAll("[aria-label]"))
+    expect(labelled.getAttribute("aria-label")).not.toMatch(/데몬/);
 });
 test("post-ready recovery retains user state and permits repeated retry and distro selection", async () => {
   let latest = {

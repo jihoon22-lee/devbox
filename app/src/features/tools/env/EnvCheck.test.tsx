@@ -145,7 +145,9 @@ it("support_bundle_says_when_notes_settings_kept_the_logs_out", async () => {
   });
   setup();
   await userEvent.click(screen.getByRole("button", { name: "지원 번들" }));
-  expect(await screen.findByText("노트 설정을 읽지 못해 로그를 넣지 않았습니다")).toBeInTheDocument();
+  expect(await screen.findByText(/^노트 설정을 읽지 못해 로그를 넣지 않았습니다\./)).toHaveTextContent(
+    "[notes] 항목이나 설정 파일 형식을 고친 뒤 [다시 설정]을 누르고 지원 번들을 다시 만들어 주세요.",
+  );
   expect(screen.queryByText("비밀 저장소가 잠겨 있어 로그를 넣지 않았습니다")).not.toBeInTheDocument();
 });
 it("a double confirmation cannot launch two immediate installations", async () => {

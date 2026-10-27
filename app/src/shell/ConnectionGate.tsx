@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Banner, Button, EmptyState } from "../ui";
+import { GateDetails } from "./GateDetails";
 
 export interface GateStatus {
   instance: "dev" | "prod";
@@ -30,14 +31,19 @@ function CompactGate({ title, body, action }: { title: string; body?: string; ac
     </Banner>
   );
 }
+const FAILED: readonly GateStatus["state"][] = ["setupFailed", "bridgeFailed"];
 export function GateView({
   status,
   onRetry,
+  onDetails,
+  detailsOpen = false,
   compact = false,
   busy = false,
 }: {
   status: GateStatus;
   onRetry: (distro?: string) => void;
+  onDetails?: () => void;
+  detailsOpen?: boolean;
   compact?: boolean;
   busy?: boolean;
 }) {
@@ -47,16 +53,23 @@ export function GateView({
       다시 시도
     </Button>
   );
+  const failed = (
+    <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+      {onDetails && (
+        <Button aria-expanded={detailsOpen} onClick={onDetails}>
+          자세히
+        </Button>
+      )}
+      {retry}
+    </div>
+  );
   switch (status.state) {
     case "checking":
     case "connecting":
       return <View title="WSL의 devbox에 연결하고 있습니다" />;
     case "deploying":
       return (
-        <View
-          title="devbox를 WSL에 설치하고 있습니다"
-          body="연결을 시작할 때마다 WSL 쪽 실행 파일과 설정을 확인하고 데몬만 다시 시작합니다. 에이전트 작업의 터미널 세션은 그대로 유지됩니다."
-        />
+        <View title="WSL 쪽 devbox를 준비하고 있습니다" body="내장 실행 파일을 확인하고 필요한 서비스를 시작합니다." />
       );
     case "noWsl":
       return (
@@ -103,9 +116,15 @@ export function GateView({
         />
       );
     case "setupFailed":
-      return <View title="WSL 쪽 설치에 실패했습니다" body={status.detail ?? ""} action={retry} />;
+      return <View title="WSL 쪽 설치에 실패했습니다" body={status.detail ?? ""} action={failed} />;
     case "bridgeFailed":
-      return <View title="데몬에 연결하지 못했습니다" body={status.detail ?? ""} action={retry} />;
+      return (
+        <View
+          title="WSL 쪽 devbox에 연결하지 못했습니다"
+          body="[자세히]에서 원인을 확인하고 [다시 시도]하세요."
+          action={failed}
+        />
+      );
     case "ready":
       return null;
   }
@@ -125,6 +144,9 @@ export function ConnectionGate({
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  // The supervisor retries a failed bridge on its own, so details outlive `connecting` until ready.
+  const [lastFailure, setLastFailure] = useState<GateStatus | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const lifetime = useRef(0);
   const revision = useRef(-1n);
   // biome-ignore lint/correctness/useExhaustiveDependencies: an explicit retry restarts initialization.
@@ -137,7 +159,10 @@ export function ConnectionGate({
       revision.current = BigInt(value.revision);
       setStatus(value);
       setError(null);
+      if (FAILED.includes(value.state)) setLastFailure(value);
       if (value.state === "ready") {
+        setLastFailure(null);
+        setDetailsOpen(false);
         setInstance(value.instance);
         readyCallback.current?.();
       }
@@ -167,6 +192,7 @@ export function ConnectionGate({
     const generation = lifetime.current;
     setRetrying(true);
     setError(null);
+    setDetailsOpen(false);
     void invoke("gate_retry", { distro: distro ?? null })
       .then(() => {
         if (generation !== lifetime.current) return;
@@ -187,22 +213,33 @@ export function ConnectionGate({
       </Button>
     </div>
   );
+  const details = { onDetails: () => setDetailsOpen((open) => !open), detailsOpen };
+  // One fixed slot keeps the panel (and its single log read) mounted while the state changes.
+  const panel =
+    detailsOpen && lastFailure ? <GateDetails failure={lastFailure} onClose={() => setDetailsOpen(false)} /> : null;
   if (instance)
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
         {failure ??
           (status && !["ready", "connecting", "checking"].includes(status.state) ? (
-            <GateView status={status} onRetry={retry} compact busy={retrying} />
+            <GateView status={status} onRetry={retry} {...details} compact busy={retrying} />
           ) : null)}
+        {panel}
         <div style={{ flex: 1, minHeight: 0 }}>{typeof children === "function" ? children(instance) : children}</div>
       </div>
     );
   if (failure) return failure;
   return (
-    <GateView
-      status={status ?? { state: "checking", instance: "dev", revision: "0" }}
-      onRetry={retry}
-      busy={retrying}
-    />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <GateView
+          status={status ?? { state: "checking", instance: "dev", revision: "0" }}
+          onRetry={retry}
+          {...details}
+          busy={retrying}
+        />
+      </div>
+      {panel}
+    </div>
   );
 }

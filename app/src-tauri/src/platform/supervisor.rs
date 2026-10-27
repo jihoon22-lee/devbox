@@ -1,7 +1,7 @@
 use super::{connection::Connection, deploy, wsl};
 use crate::core::{
     bridge::{self, Event},
-    connection::INSTANCE,
+    connection::{INSTANCE, IpcError},
     process::ShellError,
     secrets::{self, NativeSecrets},
     settings, wsl as selection,
@@ -323,5 +323,67 @@ async fn bridge_once(
                 None=>{bridge_cancel.cancel();let result=drive.await;return (result,ready);}
             }
         }
+    }
+}
+fn log_tail_command(distro: &str, lines: u16) -> tokio::process::Command {
+    let mut command = wsl::command(distro);
+    command.args(crate::core::log_tail::args(INSTANCE, lines));
+    command
+}
+/// [자세히] on the connection screen. The gate is not ready then, so this reads the distro
+/// the supervisor saved before its systemd, deploy and bridge steps.
+#[tauri::command]
+pub async fn daemon_log_tail(
+    app: AppHandle,
+    conn: tauri::State<'_, Connection>,
+    lines: u16,
+) -> Result<String, IpcError> {
+    let saved = settings::load(&super::preferences::settings_path(&app)?)
+        .map_err(|error| IpcError::new(format!("앱 설정을 읽지 못했습니다: {error}")))?;
+    let distro = saved
+        .distro
+        .ok_or_else(|| IpcError::new("로그를 읽을 WSL 배포판을 아직 정하지 않았습니다"))?;
+    let output = crate::core::process::run(
+        log_tail_command(&distro, lines),
+        vec![],
+        std::time::Duration::from_secs(15),
+        conn.operation_cancel(),
+    )
+    .await
+    // A failed run may carry journalctl output too; both results stay within the same bound.
+    .map_err(|error| IpcError::new(crate::core::log_tail::cap(&error.to_string())))?;
+    let text = crate::core::wsl::decode_output(&output.stdout);
+    Ok(crate::core::log_tail::cap(&text).to_owned())
+}
+#[cfg(test)]
+mod tests {
+    use crate::core::{channel::CHANNEL, connection::INSTANCE};
+    #[test]
+    fn log_tail_runs_journalctl_in_the_chosen_distro_without_a_shell() {
+        let command = super::log_tail_command("Ubuntu", u16::MAX);
+        let command = command.as_std();
+        assert_eq!(command.get_program(), "wsl.exe");
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let unit = format!("{}@{INSTANCE}.service", CHANNEL.config().daemon_unit);
+        assert_eq!(
+            args,
+            [
+                "-d",
+                "Ubuntu",
+                "--exec",
+                "journalctl",
+                "--user",
+                "-u",
+                &unit,
+                "-n",
+                "200",
+                "--no-pager",
+                "-o",
+                "cat"
+            ]
+        );
     }
 }

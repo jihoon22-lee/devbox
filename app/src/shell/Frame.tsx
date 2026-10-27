@@ -5,6 +5,7 @@ import { BottomPanel } from "./BottomPanel";
 import { ConnectionBanner } from "./ConnectionBanner";
 import s from "./Frame.module.css";
 import { SectionBoundary } from "./SectionBoundary";
+import { StartupProblems } from "./StartupProblems";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
 import { useAutoCollapse } from "./useAutoCollapse";
@@ -23,6 +24,7 @@ export function Frame({ project, onOpenPalette }: { project: ReactNode; onOpenPa
       </div>
       <main className={s.main}>
         <ConnectionBanner />
+        <StartupProblems />
         <div className={s.content}>
           <SectionBoundary
             resetKey={path}

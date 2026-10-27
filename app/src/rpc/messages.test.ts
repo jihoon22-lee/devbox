@@ -31,6 +31,13 @@ test("response export distinguishes pending history from unavailable provenance 
   expect(messageFor("notes.append_uncertain").action).toContain("같은 작업");
 });
 
+test("no message attaches the wrong particle to 파일", () => {
+  const detail = { file: "/f/config.toml", path: "/p", files: ["a.rs"], names: ["N"], message: "m", index: 0 };
+  for (const code of [...RPC_ERROR_CODES, "connection_lost"] as const)
+    for (const message of [messageFor(code), messageFor(code, detail)])
+      expect(`${code}: ${message.title} ${message.action ?? ""}`).not.toMatch(/파일를|파일가/);
+});
+
 test("settings-file errors name the file and where to recover", () => {
   expect(messageFor("secrets.config_invalid", { file: "/home/me/.config/devbox/config.toml" }).action).toContain(
     "/home/me/.config/devbox/config.toml",

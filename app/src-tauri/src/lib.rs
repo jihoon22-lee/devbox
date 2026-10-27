@@ -57,6 +57,7 @@ pub fn run() {
             connection::rpc_attach,
             connection::rpc_send,
             connection::rpc_detach,
+            platform::supervisor::daemon_log_tail,
             platform::external::open_external,
             platform::install::install_windows_tool,
             platform::deploy::redeploy_wsl,

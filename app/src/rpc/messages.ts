@@ -521,10 +521,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "deps.no_lockfile": { title: "지원하는 의존성 잠금 파일이 없습니다." },
   "deps.unsupported_lock": {
     title: "지원하지 않는 잠금 파일 형식입니다.",
-    action: "지원 버전과 프로젝트 설정 파일를 확인해 주세요.",
+    action: "지원 버전과 프로젝트 설정 파일을 확인해 주세요.",
   },
   "deps.malformed_lock": { title: "잠금 파일의 형식이나 의존 관계를 읽을 수 없습니다." },
-  "deps.missing_manifest": { title: "직접 의존성 확인에 필요한 프로젝트 설정 파일가 없습니다." },
+  "deps.missing_manifest": { title: "직접 의존성 확인에 필요한 프로젝트 설정 파일이 없습니다." },
   "deps.limit_exceeded": { title: "의존성 파일의 크기나 항목 수가 허용 범위를 넘었습니다." },
   "deps.unsafe_path": { title: "등록된 프로젝트 밖의 의존성 파일은 읽을 수 없습니다." },
   "deps.read_failed": { title: "의존성 파일을 읽지 못했습니다.", action: "파일을 확인하고 다시 시도하세요." },
