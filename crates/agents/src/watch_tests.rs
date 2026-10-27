@@ -194,7 +194,11 @@ fn codex_trust_screen_is_waiting() {
     // can identify the prompt.
     let narrow = "  Folder access\n  /tmp/devbox-codex-fixture\n\n  Trust this folder? Codex can read, edit, and run files\n  here, subject to your permission settings. Folder\n  settings can run code automatically, even without a\n  model request. Continue only if you trust these files.\n  Your trust decision will be saved.\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n\n  enter continue · esc back\n";
     let question = Regex::new(r"(?m)^\s*Trust this folder\?").expect("owned fixture");
-    assert!(!matches_waiting(&[question], narrow));
+    assert!(
+        !matches_waiting(&[question], narrow),
+        "holds only while matches_waiting reads 6 non-empty rows: the question is the 8th from the bottom; \
+         if that window grows past 8 this screen no longer shows why the pattern anchors on the choice rows"
+    );
     assert!(matches_waiting(&patterns, narrow));
     // Output below the prompt means it is no longer the current screen.
     assert!(!matches_waiting(

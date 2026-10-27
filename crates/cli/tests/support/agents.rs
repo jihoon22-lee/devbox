@@ -166,4 +166,37 @@ impl TestDaemon {
             .args(["-L", &format!("devbox-{}", self.instance), "kill-server"])
             .status();
     }
+    /// Put a `tmux` wrapper first on this daemon's PATH. It appends a byte to `paste-count` for
+    /// every `paste-buffer` call and, while `fail-tmux` exists, fails the given `operation`.
+    /// Only this fixture daemon sees it; the real owned tmux server remains unchanged.
+    pub fn tmux_failure_wrapper(&mut self, operation: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = self.home.path().join("bin");
+        std::fs::create_dir(&bin).expect("owned wrapper directory");
+        let wrapper = bin.join("tmux");
+        let marker = self.home.path().join("fail-tmux");
+        let count = self.home.path().join("paste-count");
+        std::fs::write(&wrapper, format!(
+            "#!/bin/sh\nfor arg in \"$@\"; do if [ \"$arg\" = paste-buffer ]; then printf x >>{}; fi; done\nif [ -f {} ]; then\n for arg in \"$@\"; do\n  if [ \"$arg\" = '{}' ]; then cat >/dev/null; exit 1; fi\n done\nfi\nexec /usr/bin/tmux \"$@\"\n",
+            devbox_core::sh_quote(count.to_str().expect("counter")), devbox_core::sh_quote(marker.to_str().expect("marker")), operation,
+        )).expect("owned wrapper");
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755))
+            .expect("wrapper permissions");
+        let mut path = vec![bin];
+        path.extend(std::env::split_paths(
+            &std::env::var_os("PATH").expect("PATH"),
+        ));
+        self.extra_env.push((
+            "PATH".into(),
+            std::env::join_paths(path)
+                .expect("fixture PATH")
+                .to_str()
+                .expect("UTF-8 PATH")
+                .into(),
+        ));
+    }
+    /// How many `paste-buffer` calls the wrapper has seen.
+    pub fn paste_count(&self) -> usize {
+        std::fs::read_to_string(self.home.path().join("paste-count")).map_or(0, |bytes| bytes.len())
+    }
 }

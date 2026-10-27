@@ -13,7 +13,10 @@ use devbox_protocol::{Done, Fail, Internal};
 use devbox_terminal::TerminalService;
 #[cfg(test)]
 use std::path::Path;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 use tokio::sync::Mutex;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub(crate) type Result<T> = std::result::Result<T, Fail<AgentsError>>;
@@ -39,6 +42,9 @@ pub struct AgentsService {
     pub(crate) stop: CancellationToken,
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
     pub(crate) approvals: Arc<crate::approvals::Approvals>,
+    /// Compiled waiting patterns by profile id, published once by the output watcher so a send
+    /// reads the pane with the same patterns. Unset while no watcher runs.
+    pub(crate) waiting_patterns: OnceLock<Arc<HashMap<String, Vec<regex::Regex>>>>,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -73,6 +79,7 @@ impl AgentsService {
             stop: CancellationToken::new(),
             resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),
             approvals: Arc::default(),
+            waiting_patterns: OnceLock::new(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {

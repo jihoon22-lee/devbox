@@ -51,6 +51,12 @@ impl AgentsService {
         {
             return Err(AgentsError::SessionMissing.into());
         }
+        // The stored state below only turns to Waiting once the watcher has seen the prompt sit
+        // still. Read the pane now, so Enter cannot answer a prompt that is up but not yet
+        // reported (Codex's trust prompt rests on "Trust and continue"). Nothing is reserved yet.
+        if self.pane_is_waiting(&task, session).await? {
+            return Err(AgentsError::AwaitingInput.into());
+        }
         let reservation = self.reserve_instruction(&p, &task).await?;
         match self
             .terminal

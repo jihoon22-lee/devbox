@@ -471,7 +471,7 @@ PR 리뷰(사용자 결정 2026-10-27):
   - `codex_hooks_review_screen_is_waiting`
   - `codex_working_screen_is_not_waiting`
   - 기존 승인 화면 시험은 그대로 둔다.
-- [ ] 2. `cargo test -p devbox-agents --lib watch_tests`: 새 시험 2개가 실패해야 한다.
+- [ ] 2. `cargo test -p devbox-agents --lib watch::tests`: 새 시험 2개가 실패해야 한다.
 - [ ] 3. 패턴을 추가한다. 화면의 안정적인 문장에 고정하고, 대소문자를 무시하는 여러 줄 정규식으로 쓴다. 근거로 fixture 경로를 주석에 적는다.
 - [ ] 4. 같은 시험이 PASS여야 한다.
 - [ ] 5. 검토 뒤 커밋: `fix(agents): detect Codex folder trust and hook review prompts`.
