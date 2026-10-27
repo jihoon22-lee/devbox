@@ -4,7 +4,7 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 세션을 시작하고 끝낼 때 [CONVENTIONS §11](../../../../CONVENTIONS.md)의 인계 절차(2026-10-27 전에는 [00-roadmap §3.1](00-roadmap.md))대로 이 파일을 읽고 고친다.
 
 **읽는 법**
-- 이 파일은 PR과 함께 main에 들어간다. 작업 중인 브랜치가 있으면 **그 브랜치의 이 파일이 더 최신**이다(§3.1 2단계에서 찾는다).
+- 이 파일은 PR과 함께 main에 들어간다. 작업 중인 브랜치가 있으면 **그 브랜치의 이 파일이 더 최신**이다(CONVENTIONS §11 세션 시작 2에서 찾는다).
 - 상태 값: `대기` · `작업 중` · `PR 열림` · `머지` · `막힘`(사유를 "막힌 것"에 적음).
 - 날짜는 `YYYY-MM-DD`, 시각이 필요하면 KST.
 - **로컬 근거 경로:** 2026-10-21 정리에서는 과거 검증 근거를 Git common-dir의 `devbox-archive/local-verification-20261021.tar.gz`와 인접 `local-verification-20261021.manifest.json`로 보관한 뒤 풀린 검증·임시 산출물을 정리한다. 보관 완료 후 이 문서와 00·05의 `devbox-verification/...` 경로는 압축 파일 안의 같은 상대 경로이며, `s2-task...`처럼 줄인 경로는 그 아래다. 다음 세션은 manifest와 실제 보관 파일을 확인하고 필요한 근거만 읽는다. 보관·정리 완료 여부는 Git 및 정리 결과와 대조한다.
@@ -23,12 +23,12 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
 | 이어받은 미결 | I1(Windows 사본 reader의 고아 자손 notFound, 실제 Windows CONFIRMED·미수정, Devbox 소유 사본만 영향)은 **v1.0.0 공개 전 release-gating**(§8). A6 FAIL·A3/A5 NOT_RUN·SC2 raw 미달·SC7 PR Windows 15분 미달(§8). RC1 Windows 설치·실행 수용 NOT_RUN, RC→1.0.0 수동 설치 미시험, release publisher의 stable 경로 미실행. R1/R2는 v1.0.0 공개 직전 사용자 확인으로 유지한다. |
 | 다음 제품 작업 | **S7-1**(B1 hook 안정) → S7-2·3(B2 기능 저하 시작·화면) → S7-4(B3 보내기 차단) → S7-5–S7-9(Codex 신뢰 화면, CLI 경로·환경 점검 4종, opencode·pi, Shift+Enter) → S7-10(I1) → 승인된 선택 과제 O1–O6 → S7-11·12(문서 P0, MIT·고지) → S7-13·14(브랜치 전체 검토·`1.0.0-rc.2` 버전·Windows accept 수용) → S7-15(PR·리뷰·머지) → S7-16(rc.2 prerelease, **별도 승인**) → S8(`1.0.0`). 공식 `v1.0.0` tag·GitHub Release는 S8-5의 별도 명시 사용자 승인 뒤에만 한다. 이전 S6-6c의 남은 단계는 이 계획이 이어받는다: 버전 되돌림 S8-1, I1 S7-10, RC 수용·13개 확인 S7-14·S7-16·S8-5(그 전까지 main 빌드는 updater가 꺼져 있다, §8 RC M4). scripts+.github 1,982/2,000줄·workflow 2다. |
-| 운영 기록(2026-10-27) | **D2:** GitHub 비공개 취약점 신고(Private vulnerability reporting)는 이미 켜져 있었다(API 응답 `{"enabled":true}`) — 변경 없음. **cache(S7-0 단계 3):** `~/.cache/targets/`의 `devbox-s5`(70 GiB, S5 전용)·`devbox-platform-check`(23 GiB)·`devbox-native-lsp`(470 MiB)를 삭제하고(뒤의 둘은 D1), cargo-sweep 0.8.0을 설치했다. `cargo sweep --time 3`이 63.22 GiB를 정리했으나(271→213 GiB) 150 GiB를 넘어 `debug/incremental/`을 비웠다 → 공유 target `~/.cache/targets/devbox` 67 GiB, 디스크 사용 564G→269G. `scripts/sweep.sh`는 고치지 않았다(정리 유보 no-op). |
+| 운영 기록(2026-10-27) | **D2:** GitHub 비공개 취약점 신고(Private vulnerability reporting)는 이미 켜져 있었다(API 응답 `{"enabled":true}`) — 변경 없음. **cache(S7-0 단계 3):** `~/.cache/targets/`의 `devbox-s5`(70 GiB, S5 전용)·`devbox-platform-check`(23 GiB)·`devbox-native-lsp`(470 MiB)를 삭제하고(뒤의 둘은 D1), cargo-sweep 0.8.0을 설치했다. 공유 target `~/.cache/targets/devbox`의 정리 전 `du -sh`는 합계 271G다: `debug` 269G(그중 `debug/incremental` 148G·`debug/deps` 117G·`debug/build` 4.5G), `tmp` 4.0K, `x86_64-pc-windows-msvc` 998M, `x86_64-unknown-linux-musl` 1.2G. `cargo sweep --time 3`의 자체 보고는 "Cleaned 63.22 GiB"(그 도구의 집계)이고, 정리 뒤 `du -sh`로 다시 재면 213G다(집계 방식이 달라 두 값은 일치하지 않는다). 150 GiB를 넘어 `debug/incremental/`을 비웠고 그 뒤 `du -sh`는 67G다. 디스크(`df -h /`의 Used)는 564G → 269G다. `scripts/sweep.sh`는 고치지 않았다(정리 유보 no-op). |
 | 마지막 갱신 | 2026-10-27 · S7-0 착수 반영: CONVENTIONS에 PR 리뷰 규칙(결정 5)과 00 §3의 유효 규칙을 옮김(§5·8·11)·AGENTS·00 포인터·이 원장(§1·§2·§4)·`.gitignore`(`.pi/tasks/`). 문서만 변경했고 제품 코드·빌드·설치 실행은 없다. 그 전 2026-10-27 · S6 #648 squash 머지(`8b53484b`)·RC #649(`28eb2a91`)·`v1.0.0-rc.1` prerelease·§8 Windows 잔여2건 사용자 결정·로컬 근거 archive(`devbox-archive/cleanup-20261026/`)와 S6/RC 브랜치·worktree 정리를 기록. 문서만 변경했고 제품·빌드·설치 실행은 없다. 그 전 2026-10-26 · S6-6b Windows candidate(19cff21e·run40305797593)·accept 설치 수용 결과와 로컬 최종 검토·전체 검사·수정 기록(§5 S6-6b). |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**S7·S8 순서(2026-10-27 사용자 승인):** 사용자가 [10-s7-s8-release](10-s7-s8-release.md)의 결정 1–6과 §2.2·§2.3 질문에 "네 권장대로 진행해주세요"로 답해 S7(rc.2 보강)·S8(1.0.0)의 실행을 승인했다(아래 표의 2026-10-27 행). 다음은 S7-1이다. rc.2 prerelease(S7-16)와 공식 `v1.0.0` 공개(S8-5)는 각각 그 시점의 별도 명시 승인 뒤에만 하며, 이 승인은 공개·tag 승인이 아니다. 아래 S6-6c 순서는 이 계획으로 대체됐다.
+**S7·S8 순서(2026-10-27 사용자 승인):** 사용자가 [10-s7-s8-release](10-s7-s8-release.md)의 결정 1–6(각각의 원문은 아래 표)으로 rc.2 방향을 승인했고, §2.2·§2.3 질문에는 "네 권장대로 진행해주세요"로 답해 S7(rc.2 보강)·S8(1.0.0)의 실행을 승인했다(아래 표의 2026-10-27 행). 다음은 S7-1이다. rc.2 prerelease(S7-16)와 공식 `v1.0.0` 공개(S8-5)는 각각 그 시점의 별도 명시 승인 뒤에만 하며, 이 승인은 공개·tag 승인이 아니다. 아래 S6-6c 순서는 이 계획으로 대체됐다.
 
 **S6 머지·RC 뒤 순서(2026-10-27 갱신, 같은 날 위 S7·S8 계획으로 대체):** S6 PR #648은 `8b53484b`로 squash 머지됐고, 사용자 결정에 따라 임시 RC `v1.0.0-rc.1`을 main에서 GitHub prerelease로 공개했다(아래 두 문단, §5). 다음은 S6-6c다: 버전 되돌림 PR(`1.0.0-rc.1`→`1.0.0`, 공식 공개 전 필수) → I1 release-gating 처리(§8) → 공개 준비 결과·13개 참고 확인 제시 → **공식 `v1.0.0` tag·GitHub Release는 별도 명시 사용자 승인 뒤에만**. release publisher의 stable 경로는 아직 실제 GitHub에서 실행된 적이 없다(§8 ci-docs M2). 이전 사용자 판단 대기 2건(S1 잔여 key·NSIS 제조사 key)은 아래 결정으로 종결됐다.
 
@@ -148,7 +148,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 ## 4.1 작업 묶음 (브랜치 안의 중간 지점)
 
-묶음은 로컬 구현·좁은 검증·별도 검토의 진행 지점이며 과제별로 커밋한다. 전체 검증과 push·PR은 하위 프로젝트 끝에 한 번 수행한다(00-roadmap §3 운영 보정). 상태는 `대기`·`작업 중`·`완료(로컬)`·`push`·`막힘`이다. **작업 시간**은 구현·검토에 든 대략의 에이전트 작업 시간이며, S0b가 끝나면 일정 추정을 갱신한다.
+묶음은 로컬 구현·좁은 검증·별도 검토의 진행 지점이며 과제별로 커밋한다. 전체 검증과 push·PR은 하위 프로젝트 끝에 한 번 수행한다(CONVENTIONS §5·§8). 상태는 `대기`·`작업 중`·`완료(로컬)`·`push`·`막힘`이다. **작업 시간**은 구현·검토에 든 대략의 에이전트 작업 시간이며, S0b가 끝나면 일정 추정을 갱신한다.
 
 | S | 묶음 | 과제 | 브랜치 | 상태 | 시작 | 끝 | 작업 시간 |
 |---|---|---|---|---|---|---|---|

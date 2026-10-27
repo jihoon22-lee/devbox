@@ -35,7 +35,7 @@ tracing 로그·TanStack 등 v1 설계가 승인한 스택은 해당 단계에�
 Git common-dir의 공유 잠금을 비차단으로 획득하고 경합 시 exit 75로 종료한다. 무거운 검증은 worktree 전체에서 하나만 실행한다. 여러 작업을 동시에 진행할 때의 전체 검사·E2E는 `--wait`(최대 60분)를 쓴다. 기한 초과 exit 75는 검사 대기 초과로 보고하고 재시도한다. 작업별 좁은 검사는 잠금 없이 위 자원 제한을 지킨다.
 
 전역 Rust target-dir(`~/.cache/targets/devbox`)은 worktree마다 incremental 산출물이 따로 쌓여 커진다. 하위 프로젝트가 끝날 때와 `du -sh ~/.cache/targets/devbox`가 150 GiB를 넘을 때 정리하되, 실행 중인 cargo·rustc가 없을 때(`pgrep -a -x cargo; pgrep -a -x rustc`가 비어 있을 때)만 한다.
-다른 Rust 프로젝트도 쓰는 target이므로 다시 만들 수 있는 산출물만 지운다. 먼저 `cargo sweep --time 3`(최근 3일 쓰지 않은 산출물)을 하고, 그래도 150 GiB 아래가 아니면 `debug/incremental/`만 비운다. 의존성 산출물은 남겨 새 worktree의 첫 빌드를 줄인다.
+다른 Rust 프로젝트도 쓰는 target이므로 산출물만 지운다(사용자 결정 2026-10-27 결정 6: §8 공유 cache 보존의 예외, 다시 만들 수 있는 target 산출물에 한함). 먼저 `cargo sweep --time 3`(최근 3일 쓰지 않은 산출물)을 하고, 그래도 150 GiB 아래가 아니면 `debug/incremental/`만 비운다. 의존성 산출물은 남겨 새 worktree의 첫 빌드를 줄인다.
 `cargo sweep`이 없으면 `cargo install cargo-sweep --locked`로 설치한다(사용자 홈의 도구라 묻지 않는다). `scripts/sweep.sh`는 정리를 유보하는 no-op이다.
 동시 진행용으로 따로 둔 target-dir(`devbox-s5` 등)은 그 작업이 머지된 뒤 지운다.
 WSL에서 지워도 Windows 드라이브 공간은 VHDX 압축 전에는 돌아오지 않는다. 압축(`wsl --shutdown` 필요) 시점은 사용자가 정한다.
@@ -77,6 +77,9 @@ PR 리뷰(사용자 결정 2026-10-27):
   - 켜짐 회차를 일부 쓴 뒤 꺼지면, 남은 회차 대신 독립 검토를 한 번 한다.
 - PR 전 브랜치 전체 검토는 이 PR 리뷰와 별개로 한다.
 - 회차·지적 수·판정·이월 항목을 PR 본문과 PROGRESS에 남긴다.
+- 타당하지 않은 지적은 판단 근거를 PR 본문에 남긴다.
+- 켜짐에서 3회째 지적까지 처리하고 그 수정이 별도 검토·필수 CI를 통과하면 4회째 리뷰를 기다리지 않는다.
+- 최종 SHA에 자동 리뷰가 없어도 위 규칙 안에서 끝났다면(꺼짐이면 독립 검토 1회로) 머지할 수 있다.
 - 차단 기준: 일반 사용에서 실제로 사용자 데이터 손실·손상, 비밀 유출, 승인하지 않은 명령 실행이 일어나는 것만(ADR 0016 개인용 범위). 리뷰의 P1/P2 표시가 아니라 별도 검토 하위 에이전트의 재현·판정으로 정한다. 차단 지적의 수정은 별도 검토·직접 영향 검사·필수 CI로 확인하고 자동 리뷰를 다시 기다리지 않는다.
 
 보호 규칙을 약화하거나 우회하지 않는다. CI 이전 성공을 재사용하면 같은 입력·범위와 출처를 기록한다.
@@ -101,12 +104,12 @@ PROGRESS.md가 진행 상태의 유일한 원장이다. 결정·검증·미실�
 1. 원본 체크아웃을 확인한다: `cd /home/jihoon/projects/devbox && git fetch origin && git status --short && git log -1 --oneline`. main이고 깨끗해야 한다. 아니면 고치지 말고 사용자에게 보고한다(다른 세션이 쓰는 중일 수 있다).
 2. 진행 중인 일을 찾는다: `git worktree list`, `gh pr list --state open --json number,headRefName,title,isDraft`, `git ls-remote --heads origin 'v1/*' 'feat/*' 'fix/*' 'chore/*' 'docs/*'`. PROGRESS의 "작업 중"과 대조하고, 이 PC에 worktree가 없는데 원격 브랜치가 있으면 `git worktree add ../devbox-wt/<이름> <브랜치>`로 받는다. PR 없이 백업으로 push한 브랜치가 있을 수 있다(브랜치 push는 CI를 돌리지 않는다). 로컬과 원격이 다르면 더 앞선 쪽을 확인하고, 갈라졌으면 고치지 말고 사용자에게 묻는다.
 3. 진행 중인 브랜치(여럿일 수 있다)의 PROGRESS를 읽고 `git -C <worktree> log --oneline origin/main..HEAD`로 끝난 과제(과제당 커밋 하나)를, `git -C <worktree> status --short`로 하던 과제를 확인한다. 커밋되지 않은 변경이 있으면 그 과제의 "실패 확인" 단계 시험을 다시 돌려 어디까지 됐는지 보고 이어서 한다.
-4. 커밋되지 않은 변경은 버리지 않는다(`git checkout -- .`·`git reset --hard`·`git clean`·`git stash drop` 금지). 이어갈 수 없으면 `git diff > /tmp/<브랜치>-<날짜>.patch`로 보존하고 사용자에게 묻는다.
+4. 커밋되지 않은 변경은 절대 버리지 않는다(`git checkout -- .`·`git reset --hard`·`git clean`·`git stash drop` 금지). 이어갈 수 없으면 `git diff > /tmp/<브랜치>-<날짜>.patch`로 보존하고 사용자에게 묻는다.
 5. 지금 과제의 계획 문서와 Spec 절을 읽고 도구·인증(§1 환경, `gh auth status`)을 확인한다.
 
 세션 끝(또는 컨텍스트가 모자라 요약될 것 같을 때):
 1. 완료한 과제는 검토·직접 영향 검사와 Biome CI 뒤 영어 Conventional Commit으로 남긴다. 미완료 변경은 그대로 보존하고 재개 지점을 기록한다. WIP 커밋·amend·force push를 의무화하지 않는다.
-2. PROGRESS의 현재 위치·묶음 행·세션 기록에 완료/미완료·검증·다음 단계를 적어 커밋한다. 새 보고서는 만들지 않는다.
+2. 해당 브랜치 PROGRESS의 현재 위치·묶음 행·세션 기록에 완료/미완료·검증·다음 단계를 적어 커밋한다. 새 보고서는 만들지 않는다.
 3. push는 §8을 따르고 기존 미푸시 커밋을 보존한다.
 4. 사용자에게 한 일·남긴 상태·다음 단계를 짧게 보고한다.
 
@@ -114,8 +117,10 @@ PROGRESS.md가 진행 상태의 유일한 원장이다. 결정·검증·미실�
 - 01-design의 구조·결정(D1–D16·Q1–Q4)을 바꿔야 함. 범위를 더하거나 빼야 함(01 §2.6 제외 항목 되살리기 포함). SC1–SC10 미달을 계획 안의 수정으로 고칠 수 없음. 계획 순서를 바꾸거나 작업 묶음·PR 경계를 크게 바꿔야 함.
 - 사용자 PC 설정 변경: `.wslconfig`, `/etc`, linger 켜기, `sudo`·`apt`·`winget` 설치, Windows 도구 설치. 사용자의 기존 tmux·systemd unit·Docker·방화벽을 건드려야 함(금지).
 - 커밋되지 않은 작업 버리기, 머지 안 된 브랜치·worktree 강제 삭제(되돌릴 수 없음).
-- 보호 규칙 변경이 권한 오류(403)로 막히거나 관리자 우회 머지가 필요해 보임(우회 금지). 버전·태그·릴리스 공개, v0.9.0 긴급 수정.
+- 보호 규칙 변경이 권한 오류(403)로 막히거나 관리자 우회 머지가 필요해 보임(우회 금지). 태그 push·GitHub Release 공개(계획에 적힌 버전 변경은 제외), v0.9.0 긴급 수정.
+
 멈추는 동안에도 그 결정에 기대지 않는 다른 과제는 계속한다. SC8 규모 예산 초과는 단순화 후보를 PROGRESS §2에 적어 알리되 기다리지 않는다.
+
 혼자 정해도 되는 것: 계획 코드의 컴파일 오류를 같은 의도로 고치기, 시험 이름·파일 분할, 라이브러리 패치 버전, 문구 다듬기, 사용자 홈에 까는 개발 도구(`cargo install`, 저장소의 `pnpm install`), 저장소 범위의 git 설정(`merge.lockfile.driver`·`rerere`). 고친 것은 PROGRESS §5와 PR 본문에 적는다.
 
 과제 검토 기준(별도 검토자는 과제 문서·바뀐 파일·시험 결과를 보고 확인한다. 하나라도 어기면 되돌려 보낸다):
