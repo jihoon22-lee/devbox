@@ -26,6 +26,9 @@ pub struct AgentRuntime {
     pub cleanup_after_close: bool,
     /// Finds agent CLIs the way the user's terminal does.
     pub shell: Arc<dyn crate::command_path::ShellProbe>,
+    /// Where those lookups are kept. The daemon passes the shared cache, which its environment
+    /// check refreshes.
+    pub lookups: Arc<crate::command_path::LookupCache>,
 }
 pub struct AgentsService {
     pub(crate) db: Db,
@@ -41,6 +44,7 @@ pub struct AgentsService {
     pub(crate) cleanup_after_close: bool,
     pub(crate) hook_files: Mutex<()>,
     pub(crate) shell: Arc<dyn crate::command_path::ShellProbe>,
+    pub(crate) lookups: Arc<crate::command_path::LookupCache>,
     pub(crate) background: TaskTracker,
     pub(crate) stop: CancellationToken,
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
@@ -79,6 +83,7 @@ impl AgentsService {
             cleanup_after_close: runtime.cleanup_after_close,
             hook_files: Mutex::new(()),
             shell: runtime.shell,
+            lookups: runtime.lookups,
             background: TaskTracker::new(),
             stop: CancellationToken::new(),
             resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),

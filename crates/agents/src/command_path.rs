@@ -22,8 +22,9 @@ use tokio::{io::AsyncReadExt, process::Command, time::Instant};
 const SHELL_TIMEOUT: Duration = Duration::from_secs(5);
 const OUTPUT_LIMIT: usize = 64 * 1024;
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
-/// How long [`resolve`] reuses a lookup the shell answered, found or not. Each environment check
-/// looks again with [`refresh`], and a lookup the shell did not answer is never kept.
+/// How long [`LookupCache::resolve`] reuses a lookup the shell answered, found or not. Each
+/// environment check looks again with [`LookupCache::refresh`], and a lookup the shell did not
+/// answer is never kept.
 const CACHE_FOR: Duration = Duration::from_secs(5 * 60);
 const MARKER: u8 = 0x1e;
 /// The program name stays `$1`; it is never part of the script.
@@ -210,38 +211,84 @@ pub fn program_of(command: &str) -> Option<&str> {
         .then_some(word)
 }
 
-/// Where `program` is. A path is only checked; a name is asked of the interactive shell first
-/// and looked up in `service_path` after. The result is reused for 5 minutes, unless the shell
-/// gave no answer (it timed out, say): then the service `PATH`'s result serves this call only,
-/// and the next one asks the shell again.
+/// Where `program` is, kept in the process's [shared](LookupCache::shared) cache: see
+/// [`LookupCache::resolve`].
 pub async fn resolve(
     program: &str,
     service_path: &OsStr,
     probe: &impl ShellProbe,
 ) -> Option<ResolvedCommand> {
-    match cached(&(program.to_owned(), service_path.to_owned())) {
-        Some(found) => found,
-        None => refresh(program, service_path, probe).await,
+    LookupCache::shared()
+        .resolve(program, service_path, probe)
+        .await
+}
+
+/// Lookups already made, each reused for 5 minutes. The daemon keeps one for the whole process,
+/// [`LookupCache::shared`]: task starts read it and the environment check refreshes it. A test
+/// makes its own, with its own clock.
+pub struct LookupCache {
+    entries: Mutex<HashMap<Key, Entry>>,
+    clock: Clock,
+}
+
+impl Default for LookupCache {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-/// [`resolve`] without the cache: looks again and, when the shell answered, keeps the result for
-/// the next [`resolve`] with the same `service_path`. The environment check looks this way, so a
-/// CLI installed since the last lookup is used by the next task start. Without an answer the
-/// kept result stays as it was; the service `PATH`'s result is only returned.
-pub async fn refresh(
-    program: &str,
-    service_path: &OsStr,
-    probe: &impl ShellProbe,
-) -> Option<ResolvedCommand> {
-    let lookup = find(program, service_path, probe).await;
-    if lookup.keep {
-        remember(
-            (program.to_owned(), service_path.to_owned()),
-            lookup.found.clone(),
-        );
+impl LookupCache {
+    /// An empty cache on the runtime's clock.
+    pub fn new() -> Self {
+        Self {
+            entries: Mutex::default(),
+            clock: Clock::Runtime,
+        }
     }
-    lookup.found
+
+    /// The process's cache. Task starts and the environment check both use it, so a check's
+    /// fresh look is what the next start finds.
+    pub fn shared() -> Arc<Self> {
+        static SHARED: OnceLock<Arc<LookupCache>> = OnceLock::new();
+        SHARED.get_or_init(|| Arc::new(Self::new())).clone()
+    }
+
+    /// Where `program` is. A path is only checked; a name is asked of the interactive shell
+    /// first and looked up in `service_path` after. The result is reused for 5 minutes, unless
+    /// the shell gave no answer (it timed out, say): then the service `PATH`'s result serves this
+    /// call only, and the next one asks the shell again.
+    pub async fn resolve(
+        &self,
+        program: &str,
+        service_path: &OsStr,
+        probe: &impl ShellProbe,
+    ) -> Option<ResolvedCommand> {
+        match self.cached(&(program.to_owned(), service_path.to_owned())) {
+            Some(found) => found,
+            None => self.refresh(program, service_path, probe).await,
+        }
+    }
+
+    /// [`LookupCache::resolve`] without the cache read: looks again and, when the shell answered,
+    /// keeps the result for the next [`LookupCache::resolve`] with the same `service_path`. The
+    /// environment check looks this way, so a CLI installed since the last lookup is used by the
+    /// next task start. Without an answer the kept result stays as it was; the service `PATH`'s
+    /// result is only returned.
+    pub async fn refresh(
+        &self,
+        program: &str,
+        service_path: &OsStr,
+        probe: &impl ShellProbe,
+    ) -> Option<ResolvedCommand> {
+        let lookup = find(program, service_path, probe).await;
+        if lookup.keep {
+            self.remember(
+                (program.to_owned(), service_path.to_owned()),
+                lookup.found.clone(),
+            );
+        }
+        lookup.found
+    }
 }
 
 /// The first executable `program` in the absolute folders of `path`, as a shell finds it.
@@ -439,32 +486,61 @@ struct Entry {
     found: Option<ResolvedCommand>,
 }
 
-fn cache() -> &'static Mutex<HashMap<Key, Entry>> {
-    static CACHE: OnceLock<Mutex<HashMap<Key, Entry>>> = OnceLock::new();
-    CACHE.get_or_init(Default::default)
+/// Where a [`LookupCache`] reads the time.
+enum Clock {
+    /// The tokio runtime's clock.
+    Runtime,
+    /// A clock that stands still until the test moves it with [`LookupCache::advance`].
+    #[cfg(test)]
+    Stopped(Mutex<Instant>),
 }
 
-fn cached(key: &Key) -> Option<Option<ResolvedCommand>> {
-    let cache = cache().lock().ok()?;
-    let entry = cache.get(key)?;
-    // A file removed since is looked up again instead of being started.
-    let current = entry
-        .found
-        .as_ref()
-        .is_none_or(|found| executable(&found.program));
-    (entry.at.elapsed() < CACHE_FOR && current).then(|| entry.found.clone())
+impl LookupCache {
+    fn now(&self) -> Instant {
+        match &self.clock {
+            Clock::Runtime => Instant::now(),
+            #[cfg(test)]
+            Clock::Stopped(now) => *now.lock().expect("owned test clock"),
+        }
+    }
+
+    fn cached(&self, key: &Key) -> Option<Option<ResolvedCommand>> {
+        let now = self.now();
+        let entries = self.entries.lock().ok()?;
+        let entry = entries.get(key)?;
+        // A file removed since is looked up again instead of being started.
+        let current = entry
+            .found
+            .as_ref()
+            .is_none_or(|found| executable(&found.program));
+        (now.saturating_duration_since(entry.at) < CACHE_FOR && current)
+            .then(|| entry.found.clone())
+    }
+
+    fn remember(&self, key: Key, found: Option<ResolvedCommand>) {
+        let now = self.now();
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.retain(|_, entry| now.saturating_duration_since(entry.at) < CACHE_FOR);
+            entries.insert(key, Entry { at: now, found });
+        }
+    }
 }
 
-fn remember(key: Key, found: Option<ResolvedCommand>) {
-    if let Ok(mut cache) = cache().lock() {
-        cache.retain(|_, entry| entry.at.elapsed() < CACHE_FOR);
-        cache.insert(
-            key,
-            Entry {
-                at: Instant::now(),
-                found,
-            },
-        );
+#[cfg(test)]
+impl LookupCache {
+    /// An empty cache whose clock stands still until [`LookupCache::advance`] moves it.
+    pub(crate) fn stopped() -> Self {
+        Self {
+            entries: Mutex::default(),
+            clock: Clock::Stopped(Mutex::new(Instant::now())),
+        }
+    }
+
+    /// Moves this cache's stopped clock, and no other.
+    pub(crate) fn advance(&self, by: Duration) {
+        if let Clock::Stopped(now) = &self.clock {
+            *now.lock().expect("owned test clock") += by;
+        }
     }
 }
 

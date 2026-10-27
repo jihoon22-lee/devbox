@@ -136,6 +136,8 @@ fn build_services_with_runtime(
             use_scope,
             cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
             shell: Arc::new(devbox_agents::command_path::InteractiveShell),
+            // The environment check refreshes this same cache, so the next start uses its look.
+            lookups: devbox_agents::command_path::LookupCache::shared(),
         },
     ));
     let windows = Arc::new(windows_broker::WindowsBroker::default());

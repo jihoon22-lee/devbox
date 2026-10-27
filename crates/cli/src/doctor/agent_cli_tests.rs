@@ -1,5 +1,5 @@
 use super::*;
-use devbox_agents::command_path::ShellAnswer;
+use devbox_agents::command_path::{LookupCache, ShellAnswer};
 use futures::future::BoxFuture;
 use std::{
     fs,
@@ -36,9 +36,9 @@ fn at(found: &[Option<AgentCommand>], tool: AgentTool) -> Option<&AgentCommand> 
     let index = AgentTool::ALL.iter().position(|known| *known == tool);
     found[index.expect("known tool")].as_ref()
 }
-/// What a task start finds, with the daemon's `PATH` as `path`.
-fn start(program: &str, path: &str, shell: &Shell) -> Option<PathBuf> {
-    runner::block_on(async { Ok(command_path::resolve(program, OsStr::new(path), shell).await) })
+/// What a task start finds in `cache`, with the daemon's `PATH` as `path`.
+fn start(program: &str, path: &str, shell: &Shell, cache: &LookupCache) -> Option<PathBuf> {
+    runner::block_on(async { Ok(cache.resolve(program, OsStr::new(path), shell).await) })
         .expect("doctor runtime")
         .map(|found| found.program)
 }
@@ -50,18 +50,20 @@ fn a_check_finds_a_cli_installed_since_and_the_next_start_uses_it() {
     fs::create_dir(&bin).expect("owned fixture");
     let path = bin.display().to_string();
     let shell = Shell::default();
+    // This test's own lookups, on the runtime's clock: nothing here waits 5 minutes.
+    let cache = LookupCache::new();
     // A start before pi is installed finds nothing, and that answer is kept.
-    assert_eq!(start("pi", &path, &shell), None);
+    assert_eq!(start("pi", &path, &shell, &cache), None);
     let pi = tool(&bin, "pi", "#!/bin/sh\necho 'pi 1.3.0'\n");
-    assert_eq!(start("pi", &path, &shell), None);
+    assert_eq!(start("pi", &path, &shell, &cache), None);
     // The environment check looks again and shows it...
-    let found = look_up(&path, &shell).expect("doctor runtime");
+    let found = look_up(&path, &shell, &cache).expect("doctor runtime");
     let shown = at(&found, AgentTool::Pi).expect("pi found");
     assert_eq!(shown.path, pi.display().to_string());
     assert_eq!(shown.version.as_deref(), Some("1.3.0"));
     // ...and the next start uses that answer without asking the shell.
     let asked = shell.asked.load(Ordering::SeqCst);
-    assert_eq!(start("pi", &path, &shell), Some(pi));
+    assert_eq!(start("pi", &path, &shell, &cache), Some(pi));
     assert_eq!(shell.asked.load(Ordering::SeqCst), asked);
 }
 
@@ -89,7 +91,8 @@ fn each_check_asks_the_clis_for_their_versions_again() {
         ..Shell::default()
     };
     let path = service.display().to_string();
-    let found = look_up(&path, &shell).expect("doctor runtime");
+    let cache = LookupCache::new();
+    let found = look_up(&path, &shell, &cache).expect("doctor runtime");
     assert!(at(&found, AgentTool::Claude).is_none());
     let shown = at(&found, AgentTool::Opencode).expect("opencode found");
     assert!(shown.interactive);
@@ -104,6 +107,6 @@ fn each_check_asks_the_clis_for_their_versions_again() {
     assert_eq!(version(&found).as_deref(), Some("1.2.0"));
     // An upgrade shows on the next check.
     tool(&service, "pi", "#!/bin/sh\necho 'pi 1.3.0'\n");
-    let found = look_up(&path, &shell).expect("doctor runtime");
+    let found = look_up(&path, &shell, &cache).expect("doctor runtime");
     assert_eq!(version(&found).as_deref(), Some("1.3.0"));
 }

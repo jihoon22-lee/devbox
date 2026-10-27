@@ -83,6 +83,7 @@ impl Fixture {
                 use_scope: false,
                 cleanup_after_close: false,
                 shell,
+                lookups: Arc::new(crate::command_path::LookupCache::stopped()),
             },
         ))
     }

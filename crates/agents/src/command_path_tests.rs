@@ -25,7 +25,7 @@ fn invoked(cli: &Path) -> bool {
 fn marked(path: &Path) -> Vec<u8> {
     format!("\x1e{}\x1e", path.display()).into_bytes()
 }
-/// A distinct service `PATH` per lookup: results are cached per program and `PATH`.
+/// A service `PATH` of owned folders.
 fn path_with(dirs: &[PathBuf]) -> OsString {
     std::env::join_paths(dirs).expect("owned fixture PATH")
 }
@@ -82,17 +82,19 @@ impl ShellProbe for Late {
 #[tokio::test]
 async fn prefers_the_interactive_shell_and_reports_both_sources() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let interactive_dir = root.path().join("interactive bin");
     let interactive = cli(&interactive_dir);
     let service = root.path().join("service");
     let login = cli(&service);
     let shell = Shell::answers(Some(&interactive));
-    let resolved = resolve(
-        "fixture-cli",
-        &path_with(std::slice::from_ref(&service)),
-        &shell,
-    )
-    .await;
+    let resolved = cache
+        .resolve(
+            "fixture-cli",
+            &path_with(std::slice::from_ref(&service)),
+            &shell,
+        )
+        .await;
     assert_eq!(
         resolved,
         found(&interactive, CommandSource::InteractiveShell)
@@ -112,6 +114,7 @@ async fn prefers_the_interactive_shell_and_reports_both_sources() {
 #[tokio::test]
 async fn falls_back_to_the_service_path() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let service = root.path().join("service");
     let login = cli(&service);
     let unrunnable = root.path().join("unrunnable/fixture-cli");
@@ -129,7 +132,7 @@ async fn falls_back_to_the_service_path() {
     .enumerate()
     {
         let path = path_with(&[root.path().join(format!("none-{case}")), service.clone()]);
-        let resolved = resolve("fixture-cli", &path, &shell).await;
+        let resolved = cache.resolve("fixture-cli", &path, &shell).await;
         assert_eq!(
             resolved,
             found(&login, CommandSource::ServicePath),
@@ -197,10 +200,14 @@ fn reads_only_the_value_between_markers() {
 #[tokio::test(start_paused = true)]
 async fn a_late_shell_is_abandoned_after_five_seconds() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let shell_cli = cli(&root.path().join("shell"));
     let started = tokio::time::Instant::now();
     let path = path_with(&[root.path().join("late")]);
-    assert_eq!(resolve("fixture-cli", &path, &Late(shell_cli)).await, None);
+    assert_eq!(
+        cache.resolve("fixture-cli", &path, &Late(shell_cli)).await,
+        None
+    );
     assert!(started.elapsed() >= Duration::from_secs(5));
     assert!(
         started.elapsed() < Duration::from_secs(6),
@@ -211,6 +218,7 @@ async fn a_late_shell_is_abandoned_after_five_seconds() {
 #[tokio::test]
 async fn lookup_never_runs_the_program() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let interactive = cli(&root.path().join("interactive"));
     let service = root.path().join("service");
     let login = cli(&service);
@@ -223,25 +231,29 @@ async fn lookup_never_runs_the_program() {
     // Found by the interactive shell, by the service PATH, and as an explicit path.
     let lookups = [
         (
-            resolve(
-                "fixture-cli",
-                &path("interactive"),
-                &Shell::answers(Some(&interactive)),
-            )
-            .await,
+            cache
+                .resolve(
+                    "fixture-cli",
+                    &path("interactive"),
+                    &Shell::answers(Some(&interactive)),
+                )
+                .await,
             found(&interactive, CommandSource::InteractiveShell),
         ),
         (
-            resolve("fixture-cli", &path("service"), &Shell::silent()).await,
+            cache
+                .resolve("fixture-cli", &path("service"), &Shell::silent())
+                .await,
             found(&login, CommandSource::ServicePath),
         ),
         (
-            resolve(
-                launcher.to_str().expect("fixture UTF-8"),
-                &path("explicit"),
-                &Shell::silent(),
-            )
-            .await,
+            cache
+                .resolve(
+                    launcher.to_str().expect("fixture UTF-8"),
+                    &path("explicit"),
+                    &Shell::silent(),
+                )
+                .await,
             found(&launcher, CommandSource::ServicePath),
         ),
     ];
@@ -253,51 +265,75 @@ async fn lookup_never_runs_the_program() {
     }
 }
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn results_are_cached_for_five_minutes() {
+    let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
+    let shell_cli = cli(&root.path().join("shell"));
+    let path = path_with(&[root.path().join("service")]);
+    let shell = Shell::answers(Some(&shell_cli));
+    let first = cache.resolve("fixture-cli", &path, &shell).await;
+    assert!(first.is_some());
+    assert_eq!(cache.resolve("fixture-cli", &path, &shell).await, first);
+    assert_eq!(shell.asked(), 1);
+    cache.advance(Duration::from_secs(5 * 60));
+    assert!(cache.resolve("fixture-cli", &path, &shell).await.is_some());
+    assert_eq!(shell.asked(), 2);
+    // A CLI removed since is looked up again rather than started.
+    std::fs::remove_file(&shell_cli).expect("owned fixture");
+    assert_eq!(cache.resolve("fixture-cli", &path, &shell).await, None);
+    assert_eq!(shell.asked(), 3);
+}
+
+#[tokio::test]
+async fn each_cache_keeps_its_own_clock() {
     let root = tempfile::tempdir().expect("owned fixture");
     let shell_cli = cli(&root.path().join("shell"));
     let path = path_with(&[root.path().join("service")]);
     let shell = Shell::answers(Some(&shell_cli));
-    let first = resolve("fixture-cli", &path, &shell).await;
-    assert!(first.is_some());
-    assert_eq!(resolve("fixture-cli", &path, &shell).await, first);
-    assert_eq!(shell.asked(), 1);
-    tokio::time::advance(Duration::from_secs(5 * 60)).await;
-    assert!(resolve("fixture-cli", &path, &shell).await.is_some());
+    let (moved, still) = (LookupCache::stopped(), LookupCache::stopped());
+    for cache in [&moved, &still] {
+        assert!(cache.resolve("fixture-cli", &path, &shell).await.is_some());
+    }
     assert_eq!(shell.asked(), 2);
-    // A CLI removed since is looked up again rather than started.
-    std::fs::remove_file(&shell_cli).expect("owned fixture");
-    assert_eq!(resolve("fixture-cli", &path, &shell).await, None);
+    // Five minutes pass on one cache's clock: its lookup expires, and keeping the new one
+    // prunes only its own entries...
+    moved.advance(Duration::from_secs(5 * 60));
+    assert!(moved.resolve("fixture-cli", &path, &shell).await.is_some());
+    assert_eq!(shell.asked(), 3);
+    // ...while the other still answers from its own, without asking the shell.
+    assert!(still.resolve("fixture-cli", &path, &shell).await.is_some());
     assert_eq!(shell.asked(), 3);
 }
 
 #[tokio::test]
 async fn a_clean_empty_answer_is_cached_as_not_found() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let path = path_with(&[root.path().join("service")]);
     let nothing = Shell::answers(None);
-    assert_eq!(resolve("fixture-cli", &path, &nothing).await, None);
-    assert_eq!(resolve("fixture-cli", &path, &nothing).await, None);
+    assert_eq!(cache.resolve("fixture-cli", &path, &nothing).await, None);
+    assert_eq!(cache.resolve("fixture-cli", &path, &nothing).await, None);
     assert_eq!(nothing.asked(), 1, "one shell run per 5 minutes");
 }
 
 #[tokio::test]
 async fn a_start_without_an_answer_uses_the_service_path_once() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let interactive = cli(&root.path().join("interactive"));
     let service = root.path().join("service");
     let login = cli(&service);
     let path = path_with(std::slice::from_ref(&service));
     // The shell gave no answer: this start runs the service PATH's CLI...
     assert_eq!(
-        resolve("fixture-cli", &path, &Shell::silent()).await,
+        cache.resolve("fixture-cli", &path, &Shell::silent()).await,
         found(&login, CommandSource::ServicePath)
     );
     // ...and that is not kept: the next start asks the shell again.
     let shell = Shell::answers(Some(&interactive));
     assert_eq!(
-        resolve("fixture-cli", &path, &shell).await,
+        cache.resolve("fixture-cli", &path, &shell).await,
         found(&interactive, CommandSource::InteractiveShell)
     );
     assert_eq!(shell.asked(), 1);
@@ -306,27 +342,31 @@ async fn a_start_without_an_answer_uses_the_service_path_once() {
 #[tokio::test(start_paused = true)]
 async fn a_check_without_an_answer_keeps_the_cached_interactive_path() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let interactive = cli(&root.path().join("interactive"));
     let service = root.path().join("service");
     let login = cli(&service);
     let path = path_with(std::slice::from_ref(&service));
     // Both shells see the CLI; a start keeps the interactive shell's.
     let shell = Shell::answers(Some(&interactive));
-    let kept = resolve("fixture-cli", &path, &shell).await;
+    let kept = cache.resolve("fixture-cli", &path, &shell).await;
     assert_eq!(kept, found(&interactive, CommandSource::InteractiveShell));
     // The check's shell times out: its row shows this run's service PATH lookup...
     assert_eq!(
-        refresh("fixture-cli", &path, &Late(interactive.clone())).await,
+        cache
+            .refresh("fixture-cli", &path, &Late(interactive.clone()))
+            .await,
         found(&login, CommandSource::ServicePath)
     );
     // ...and the next start still runs the interactive shell's CLI, without asking again.
-    assert_eq!(resolve("fixture-cli", &path, &shell).await, kept);
+    assert_eq!(cache.resolve("fixture-cli", &path, &shell).await, kept);
     assert_eq!(shell.asked(), 1);
 }
 
 #[tokio::test]
 async fn a_check_without_an_answer_stores_nothing_new() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let interactive = cli(&root.path().join("interactive"));
     let service = root.path().join("service");
     let login = cli(&service);
@@ -334,13 +374,13 @@ async fn a_check_without_an_answer_stores_nothing_new() {
     // Nothing is kept yet and the check's shell gives no answer: its row shows the service
     // PATH's CLI...
     assert_eq!(
-        refresh("fixture-cli", &path, &Shell::silent()).await,
+        cache.refresh("fixture-cli", &path, &Shell::silent()).await,
         found(&login, CommandSource::ServicePath)
     );
     // ...and the next start asks the shell instead of reusing that row.
     let shell = Shell::answers(Some(&interactive));
     assert_eq!(
-        resolve("fixture-cli", &path, &shell).await,
+        cache.resolve("fixture-cli", &path, &shell).await,
         found(&interactive, CommandSource::InteractiveShell)
     );
     assert_eq!(shell.asked(), 1);
@@ -349,19 +389,20 @@ async fn a_check_without_an_answer_stores_nothing_new() {
 #[tokio::test]
 async fn refresh_replaces_the_cached_lookup() {
     let root = tempfile::tempdir().expect("owned fixture");
+    let cache = LookupCache::stopped();
     let service = root.path().join("service");
     let path = path_with(std::slice::from_ref(&service));
     let shell = Shell::answers(None);
     // A start before the CLI is installed finds nothing, and that answer is kept.
-    assert_eq!(resolve("fixture-cli", &path, &shell).await, None);
+    assert_eq!(cache.resolve("fixture-cli", &path, &shell).await, None);
     let installed = cli(&service);
-    assert_eq!(resolve("fixture-cli", &path, &shell).await, None);
+    assert_eq!(cache.resolve("fixture-cli", &path, &shell).await, None);
     assert_eq!(shell.asked(), 1);
     // A fresh look finds it and replaces the kept answer, so the next start uses it at once.
-    let fresh = refresh("fixture-cli", &path, &shell).await;
+    let fresh = cache.refresh("fixture-cli", &path, &shell).await;
     assert_eq!(fresh, found(&installed, CommandSource::ServicePath));
     assert_eq!(shell.asked(), 2);
-    assert_eq!(resolve("fixture-cli", &path, &shell).await, fresh);
+    assert_eq!(cache.resolve("fixture-cli", &path, &shell).await, fresh);
     assert_eq!(shell.asked(), 2);
 }
 

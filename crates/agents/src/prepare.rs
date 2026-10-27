@@ -83,7 +83,8 @@ impl AgentsService {
         };
         // systemd gives the daemon the settings env file's PATH, which new panes start with.
         let service_path = std::env::var_os("PATH").unwrap_or_default();
-        crate::command_path::resolve(program, &service_path, &self.shell)
+        self.lookups
+            .resolve(program, &service_path, &self.shell)
             .await
             .map(Some)
             .ok_or_else(|| {

@@ -221,6 +221,8 @@ impl Fixture {
                 use_scope: false,
                 cleanup_after_close: false,
                 shell,
+                // Its own lookups: no other test's CLI or clock reaches this fixture.
+                lookups: Arc::new(crate::command_path::LookupCache::stopped()),
             },
         ));
         let repo = root.path().join("project");
