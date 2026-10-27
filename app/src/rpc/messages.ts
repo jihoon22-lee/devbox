@@ -23,6 +23,12 @@ const names = (d: unknown) => {
   return Array.isArray(list) ? list.filter((n) => typeof n === "string").join(", ") : "";
 };
 const check = "입력란을 확인해 주세요.";
+const configFile = (d: unknown) => {
+  const file = field(d, "file");
+  return typeof file === "string" && file ? file : "config.toml";
+};
+/** Settings are read when the daemon starts, so a fixed file applies after a restart. */
+const restart = "설정 → 앱 진단 → [다시 설정]을 눌러 주세요.";
 const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "git.conflict_stale": {
     title: "파일 또는 Git 상태가 바뀌어 적용하지 않았습니다.",
@@ -89,6 +95,10 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "secrets.invalid_input": { title: "비밀 이름이나 입력 형식이 올바르지 않습니다." },
   "secrets.missing": { title: "이 PC에 비밀 값이 없습니다.", action: "설정에서 필요한 비밀 값을 입력해 주세요." },
+  "secrets.config_invalid": (d) => ({
+    title: "설정 파일을 읽지 못해 비밀 값을 저장하지 않았습니다.",
+    action: `${configFile(d)}이 일반 파일인지, TOML 형식이 맞는지 확인해 고친 뒤 다시 시도해 주세요.`,
+  }),
   "secrets.unavailable": {
     title: "비밀 저장소를 사용할 수 없습니다.",
     action: "앱 연결과 저장소 상태를 확인해 주세요.",
@@ -121,7 +131,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   },
   "windows.config_invalid": {
     title: "Windows 설정을 읽지 못해 Windows 사본으로 실행하지 않았습니다.",
-    action: "config.local.toml의 [windows] 항목과 설정 파일 형식을 고친 뒤 [다시 설정]을 눌러 주세요.",
+    action: `config.local.toml의 [windows] 항목이나 설정 파일 형식을 고친 뒤 ${restart}`,
   },
   "runtime.windows_copy_unavailable": {
     title: "Windows 실행 폴더를 안전하게 준비하지 못했습니다.",
@@ -424,7 +434,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "notes.conflict": { title: "노트가 계속 바뀌고 있어 쓰지 못했습니다.", action: "잠시 뒤 다시 시도해 주세요." },
   "notes.disabled": {
     title: "노트 설정을 읽지 못해 노트를 껐습니다.",
-    action: "설정 파일의 [notes] 항목을 고친 뒤 [다시 설정]을 눌러 주세요.",
+    action: `config.toml·config.local.toml의 [notes] 항목이나 설정 파일 형식을 고친 뒤 ${restart}`,
   },
   "search.invalid_regex": { title: "정규식이 올바르지 않습니다.", action: "괄호와 특수 문자를 확인해 주세요." },
   "search.invalid_input": { title: "검색 입력값을 확인해 주세요.", action: "검색어 길이와 결과 개수를 줄여 보세요." },
@@ -436,7 +446,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
   "search.stream_unsupported": { title: "이 연결에서는 통합 검색을 쓸 수 없습니다.", action: "앱에서 검색해 주세요." },
   "search.disabled": {
     title: "검색 설정을 읽지 못해 검색을 껐습니다.",
-    action: "설정 파일의 [search] 항목을 고친 뒤 [다시 설정]을 눌러 주세요.",
+    action: `config.toml·config.local.toml의 [search] 항목이나 설정 파일 형식을 고친 뒤 ${restart}`,
   },
   "activity.invalid_rules": {
     title: "개인정보 규칙에 고칠 항목이 있습니다.",

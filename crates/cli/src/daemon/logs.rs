@@ -48,7 +48,8 @@ pub(super) async fn roots(s: &Arc<Services>) -> R<Vec<PathBuf>> {
         .into_iter()
         .map(|p| PathBuf::from(p.path))
         .collect();
-    roots.extend([s.notes.vault().to_path_buf(), PathBuf::from("/var/log")]);
+    roots.extend(s.notes_vault().map(std::path::Path::to_path_buf));
+    roots.push(PathBuf::from("/var/log"));
     Ok(roots)
 }
 pub(super) async fn open(s: Arc<Services>, ctx: Ctx, p: OpenLogs) -> R<StreamOpened> {

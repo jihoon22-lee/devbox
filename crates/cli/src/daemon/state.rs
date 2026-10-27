@@ -33,3 +33,11 @@ pub struct Services {
     pub api: Arc<devbox_api::ApiService>,
     pub api_collections: Arc<devbox_api::CollectionsService>,
 }
+
+impl Services {
+    /// The notes vault, or `None` while notes are off because `[notes]` did not load: the
+    /// default vault never stands in for it (log roots, support bundles).
+    pub(super) fn notes_vault(&self) -> Option<&std::path::Path> {
+        (!self.startup.disabled.notes).then(|| self.notes.vault())
+    }
+}

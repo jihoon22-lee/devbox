@@ -238,7 +238,9 @@ pub(super) fn activity(
 }
 
 /// `pc` is `config.pc.name`. Without `settings` (`[notes]` did not load) documents get
-/// no vault root, and the notes service, which never starts, holds unused defaults.
+/// no vault root, and the notes service is built on default settings it never acts on:
+/// it does not start, `notes.*` routes answer `notes.disabled`, and log roots and support
+/// bundles take the vault from `Services::notes_vault`, which is `None` then.
 pub(super) fn build(
     paths: &Paths,
     (settings, search, pc): (Option<NotesSettings>, SearchSettings, Option<String>),

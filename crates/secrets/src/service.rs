@@ -367,35 +367,38 @@ impl SecretsService {
         std::fs::create_dir_all(config_dir).internal("create config directory")?;
         let _lock = lock_config(config_dir).map_err(|_| SecretsError::Unavailable)?;
         let path = config_dir.join("config.toml");
+        // The file, not the secret, is what is wrong: name it so it can be fixed.
+        let invalid = || SecretsError::ConfigInvalid {
+            file: path.display().to_string(),
+        };
         if std::fs::symlink_metadata(&path)
             .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
         {
-            return Err(SecretsError::InvalidInput.into());
+            return Err(invalid().into());
         }
         let text = match std::fs::read_to_string(&path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Err(invalid().into()),
             Err(_) => return Err(SecretsError::Unavailable.into()),
         };
         let mut document = text
             .parse::<toml_edit::DocumentMut>()
-            .map_err(|_| SecretsError::InvalidInput)?;
+            .map_err(|_| invalid())?;
         let section = document
             .as_table_mut()
             .entry("secrets")
             .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-        let section = section
-            .as_table_like_mut()
-            .ok_or(SecretsError::InvalidInput)?;
+        let section = section.as_table_like_mut().ok_or_else(invalid)?;
         if !section.contains_key("names") {
             section.insert("names", toml_edit::value(toml_edit::Array::new()));
         }
         let names = section
             .get_mut("names")
             .and_then(toml_edit::Item::as_array_mut)
-            .ok_or(SecretsError::InvalidInput)?;
+            .ok_or_else(invalid)?;
         if names.iter().any(|value| value.as_str().is_none()) {
-            return Err(SecretsError::InvalidInput.into());
+            return Err(invalid().into());
         }
         if names.iter().any(|n| n.as_str() == Some(name)) {
             return Ok(());

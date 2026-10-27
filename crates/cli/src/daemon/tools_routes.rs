@@ -10,7 +10,7 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
             })
         })
         .register::<devbox_tools::ToolsSupportBundle, _, _>(|s, _, _| async move {
-            let notes_vault = super::support_bundle::vault_snapshot(&s.notes).await?;
+            let notes_vault = super::support_bundle::vault_snapshot(&s).await?;
             let probe = crate::doctor::OsProbe {
                 env_file: s.paths.instance_config_dir.join("env"),
                 hook_binary: s.paths.bin_dir.join("devbox"),

@@ -25,10 +25,15 @@ struct Manifest {
     daemon_log_days: u8,
 }
 pub(super) fn build(mut input: BundleInput, values: Option<Values>) -> R<SupportBundle> {
-    let logs_omitted = values.is_none().then_some("secrets_locked");
+    // Logs need both masks: note paths (no vault while notes are off) and secret values.
+    let logs_omitted = match (&input.notes_vault, &values) {
+        (None, _) => Some("notes_disabled"),
+        (_, None) => Some("secrets_locked"),
+        _ => None,
+    };
     let redact = Redactor::new(
         &input.paths.home,
-        &input.notes_vault,
+        input.notes_vault.as_ref(),
         values.unwrap_or_default(),
     )?;
     let mut entries = BTreeMap::<String, String>::new();

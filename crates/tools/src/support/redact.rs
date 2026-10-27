@@ -11,7 +11,11 @@ pub(super) struct Redactor {
     _patterns: Vec<Zeroizing<Vec<u8>>>,
 }
 impl Redactor {
-    pub(super) fn new(home: &Path, vault: &super::VaultSnapshot, values: Values) -> R<Self> {
+    pub(super) fn new(
+        home: &Path,
+        vault: Option<&super::VaultSnapshot>,
+        values: Values,
+    ) -> R<Self> {
         if values.len() > 2048
             || values.values().map(|value| value.len()).sum::<usize>() > 16 * 1024 * 1024
         {

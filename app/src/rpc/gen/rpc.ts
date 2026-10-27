@@ -626,7 +626,7 @@ projectIds: Array<string> | null, regex: boolean, caseSensitive: boolean,
 limit: number, };
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
-export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
+export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" } | { "code": "secrets.config_invalid", "detail": { file: string, } };
 export type SelectResponseNote = { target: ResponseNoteTarget, };
 export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
 export type SendRequest = { sourceRoot?: CollectionRoot, snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
@@ -1357,6 +1357,7 @@ export const RPC_ERROR_CODES = [
   "search.not_found",
   "search.project_not_found",
   "search.stream_unsupported",
+  "secrets.config_invalid",
   "secrets.invalid_input",
   "secrets.key_mismatch",
   "secrets.missing",

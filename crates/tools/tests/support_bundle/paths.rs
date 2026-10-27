@@ -17,7 +17,7 @@ async fn configured_path_forms_and_prefix_boundaries_survive_archive_passes() {
     let json = serde_json::to_string(raw).expect("JSON");
     let debug = format!("{raw:?}");
     let mut data = input(&paths);
-    data.notes_vault = VaultSnapshot::capture(&vault).expect("snapshot");
+    data.notes_vault = Some(VaultSnapshot::capture(&vault).expect("snapshot"));
     data.doctor.checks[0].message = format!("vault={raw}/private.md");
     std::fs::write(
         paths.log_dir.join("daemon.today.log"),
@@ -51,7 +51,7 @@ async fn path_mask_wins_over_secret_components_and_remains_stable() {
             .expect("secret");
     }
     let mut data = input(&paths);
-    data.notes_vault = VaultSnapshot::capture(&vault).expect("snapshot");
+    data.notes_vault = Some(VaultSnapshot::capture(&vault).expect("snapshot"));
     data.doctor.checks[0].message = format!("vault={}/private.md notes", vault.display());
     std::fs::write(
         paths.log_dir.join("daemon.today.log"),
@@ -68,7 +68,7 @@ async fn locked_bundle_masks_configured_doctor_paths_while_omitting_logs() {
     let (_temp, db, paths, _secrets) = fixture().await;
     let outside = tempfile::tempdir().expect("external vault");
     let mut data = input(&paths);
-    data.notes_vault = VaultSnapshot::capture(outside.path()).expect("snapshot");
+    data.notes_vault = Some(VaultSnapshot::capture(outside.path()).expect("snapshot"));
     data.doctor.checks[0].message = format!("vault={}/private.md", outside.path().display());
     std::fs::write(paths.log_dir.join("daemon.today.log"), "private log").expect("log");
     let locked = SecretsService::new(db, paths);
@@ -96,7 +96,7 @@ async fn captured_alias_and_canonical_roots_are_masked_after_alias_retarget() {
     std::fs::create_dir(&second).expect("second vault");
     std::os::unix::fs::symlink(&first, &alias).expect("alias");
     let mut data = input(&paths);
-    data.notes_vault = VaultSnapshot::capture(&alias).expect("snapshot");
+    data.notes_vault = Some(VaultSnapshot::capture(&alias).expect("snapshot"));
     std::fs::remove_file(&alias).expect("owned alias");
     std::os::unix::fs::symlink(&second, &alias).expect("retarget alias");
     std::fs::write(

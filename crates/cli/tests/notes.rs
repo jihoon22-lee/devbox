@@ -145,6 +145,68 @@ async fn invalid_notes_and_search_settings_turn_those_features_off() {
         .collect();
     assert_eq!(sections, ["notes", "search"]);
     assert!(!d.home.path().join("notes").exists());
+    // Nor is the default vault a log root while notes are off.
+    let log = d.home.path().join("notes/x.log");
+    std::fs::create_dir_all(log.parent().expect("fixture folder")).expect("fixture folder");
+    std::fs::write(&log, "outside\n").expect("fixture log");
+    assert_eq!(
+        refused(
+            client
+                .raw_call(
+                    "logs.search",
+                    serde_json::json!({
+                        "sources": [{"kind": "file", "path": log}],
+                        "query": "", "regex": false, "limit": 1
+                    }),
+                    None,
+                )
+                .await
+        ),
+        "observe.file_outside_roots"
+    );
+}
+
+/// A domain section is checked in each file: a valid `config.local.toml` copy does not
+/// rescue an invalid `config.toml` one.
+#[tokio::test]
+async fn a_valid_local_notes_section_does_not_rescue_an_invalid_shared_one() {
+    let mut d = with_config("[notes]\nvault = 'relative'\n");
+    std::fs::write(
+        d.paths.config_dir.join("config.local.toml"),
+        "[notes]\nvault = '~/n'\n",
+    )
+    .expect("write owned local config");
+    d.launch();
+    let client = d.client().await;
+    let empty = serde_json::json!({});
+    match client.raw_call("notes.tags", &empty, None).await {
+        Err(devbox_cli::client::ClientError::Rpc { code, .. }) => {
+            assert_eq!(code, "notes.disabled")
+        }
+        other => panic!("expected notes to be off, got {other:?}"),
+    }
+    let info: serde_json::Value = serde_json::from_str(
+        &client
+            .raw_call("system.info", &empty, None)
+            .await
+            .expect("system.info"),
+    )
+    .expect("system.info JSON");
+    let problems = info["startupProblems"]
+        .as_array()
+        .expect("startup problems");
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    let file = d.paths.config_dir.join("config.toml").display().to_string();
+    assert_eq!(problems[0]["kind"], "configSection");
+    assert_eq!(problems[0]["file"], file.as_str());
+    assert_eq!(problems[0]["section"], "notes");
+    assert!(
+        problems[0]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("vault")),
+        "{problems:?}"
+    );
+    assert!(!d.home.path().join("n").exists());
 }
 
 /// AR-D01 through the real daemon: it stops right after moving the note (test hook,

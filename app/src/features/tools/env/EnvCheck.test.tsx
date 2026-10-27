@@ -137,6 +137,17 @@ it("support_bundle_shows_log_omission_and_opens_its_parent_folder", async () => 
   await userEvent.click(screen.getByRole("button", { name: "폴더 열기" }));
   expect(mock.invoke).toHaveBeenCalledWith("open_external", { kind: "explorer", path: "/fixture/data/support" });
 });
+it("support_bundle_says_when_notes_settings_kept_the_logs_out", async () => {
+  mock.bundle.mockResolvedValueOnce({
+    path: "/fixture/data/support/bundle.zip",
+    sizeBytes: 123,
+    logsOmitted: "notes_disabled",
+  });
+  setup();
+  await userEvent.click(screen.getByRole("button", { name: "지원 번들" }));
+  expect(await screen.findByText("노트 설정을 읽지 못해 로그를 넣지 않았습니다")).toBeInTheDocument();
+  expect(screen.queryByText("비밀 저장소가 잠겨 있어 로그를 넣지 않았습니다")).not.toBeInTheDocument();
+});
 it("a double confirmation cannot launch two immediate installations", async () => {
   let finish!: (value: { id: string }) => void;
   mock.create.mockImplementation(

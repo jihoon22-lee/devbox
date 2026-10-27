@@ -30,3 +30,13 @@ test("response export distinguishes pending history from unavailable provenance 
   expect(messageFor("notes.response_unavailable", { reason: "provenance" }).action).toContain("이전 세션");
   expect(messageFor("notes.append_uncertain").action).toContain("같은 작업");
 });
+
+test("settings-file errors name the file and where to recover", () => {
+  expect(messageFor("secrets.config_invalid", { file: "/home/me/.config/devbox/config.toml" }).action).toContain(
+    "/home/me/.config/devbox/config.toml",
+  );
+  for (const code of ["notes.disabled", "search.disabled", "windows.config_invalid"] as const) {
+    expect(messageFor(code).action).toContain("설정 파일 형식");
+    expect(messageFor(code).action).toContain("설정 → 앱 진단 → [다시 설정]");
+  }
+});

@@ -23,6 +23,8 @@ pub struct ConfigLoad {
     files: Vec<(PathBuf, toml::Table)>,
     /// Sections on their failure policy (all of them after a whole-file failure).
     failed: BTreeSet<String>,
+    /// `config.toml`, named by a problem that no file's copy explains.
+    shared: PathBuf,
 }
 
 /// Top-level sections. Core checks the first seven; the domains check the rest.
@@ -47,6 +49,7 @@ pub fn load_lenient(paths: &Paths) -> ConfigLoad {
         problems: Vec::new(),
         files: Vec::new(),
         failed: BTreeSet::new(),
+        shared: shared.clone(),
     };
     for path in [shared, local.clone()] {
         match read(&path) {
@@ -150,7 +153,7 @@ impl ConfigLoad {
         match read(&merged) {
             Ok(value) => Some(value),
             Err(error) => {
-                let file = last.unwrap_or_else(|| PathBuf::from("config.toml"));
+                let file = last.unwrap_or_else(|| self.shared.clone());
                 self.report(&file, name, error.to_string());
                 self.fail(name);
                 None
@@ -422,6 +425,24 @@ mod tests {
             unreachable!()
         };
         assert_eq!(*path, file(&paths, "config.local.toml"));
+    }
+
+    #[test]
+    fn a_section_failing_without_any_copy_names_the_absolute_shared_file() {
+        let temp = tempfile::tempdir().expect("owned config");
+        let paths = paths_in(temp.path());
+        let mut load = load_lenient(&paths);
+        assert!(
+            load.section("search", |_| Err::<(), _>("defaults rejected"))
+                .is_none()
+        );
+        assert!(load.disabled.search);
+        assert!(
+            matches!(&load.problems[..], [StartupProblem::ConfigSection { file: path, section, .. }]
+                if *path == file(&paths, "config.toml") && section == "search"),
+            "{:?}",
+            load.problems
+        );
     }
 
     #[test]

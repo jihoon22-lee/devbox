@@ -257,8 +257,9 @@ async fn daemon_starts_with_a_broken_config_and_reports_problems() {
 #[tokio::test]
 async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
     use sha2::{Digest, Sha256};
+    const BROKEN: &str = "[secrets]\nnames = ['KEEP']\n[notes\nvault = '~/kept'\n";
     let mut d = TestDaemon::fixture();
-    d.write_config("[secrets]\nnames = ['KEEP']\n[notes\nvault = '~/kept'\n");
+    d.write_config(BROKEN);
     d.launch();
     let app = support::bounded(Client::connect(&d.socket, ClientKind::App, &d.instance))
         .await
@@ -296,7 +297,6 @@ async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
     )
     .await
     .expect("unlock fixture key");
-    let before = Sha256::digest(std::fs::read(&file).expect("broken config"));
     let refused = app
         .call::<devbox_secrets::Set>(&devbox_secrets::SetSecret {
             name: "TOKEN".into(),
@@ -304,10 +304,14 @@ async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
         })
         .await
         .expect_err("a secret name cannot be added to a broken config.toml");
-    assert!(
-        matches!(&refused, ClientError::Rpc { code, .. } if code == "secrets.invalid_input"),
-        "{refused:?}"
-    );
+    let ClientError::Rpc { code, detail, .. } = &refused else {
+        panic!("{refused:?}")
+    };
+    assert_eq!(code, "secrets.config_invalid");
+    let detail: serde_json::Value =
+        serde_json::from_str(detail.as_deref().expect("refusal detail").get())
+            .expect("refusal detail JSON");
+    assert_eq!(detail["file"], file.display().to_string().as_str());
     // The activity rules writer refuses the same file, and titles stay masked.
     let refused = app
         .call::<devbox_activity::ActivitySetRules>(&devbox_activity::SetRules {
@@ -325,9 +329,10 @@ async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
         .await
         .expect("activity rules after the refused write");
     assert!(rules.rules.mask_all_titles);
+    // Compared with the bytes written before launch: startup left the file alone too.
     assert_eq!(
         Sha256::digest(std::fs::read(&file).expect("broken config")),
-        before
+        Sha256::digest(BROKEN.as_bytes())
     );
 }
 
