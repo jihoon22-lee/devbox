@@ -45,7 +45,9 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         return Err(ProjectsError::PathInvalid { path: project.path }.into());
     }
     let config = snapshot.launch().clone();
-    // Preflight the whole configuration before the first terminal or agent is reserved.
+    // Preflight before the first terminal or agent is created: the project folder, every
+    // terminal command and title, every agent profile and prompt, then each agent's CLI, the
+    // agents' base branch and the services.
     if !tokio::fs::metadata(&project.path)
         .await
         .is_ok_and(|m| m.is_dir())
@@ -73,6 +75,12 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         }
         devbox_agents::validate_input(agent.prompt.as_deref().unwrap_or_default())
             .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
+    }
+    // Each agent's CLI, looked up the way its start looks; the start then reuses the answer.
+    for agent in &config.agents {
+        if let Some(command) = s.agents.missing_tool(&agent.tool).await {
+            return Err(ProjectsError::LaunchToolMissing { command }.into());
+        }
     }
     let base = if config.agents.is_empty() {
         None

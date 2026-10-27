@@ -14,6 +14,9 @@ mod resume_review_tests;
 #[path = "action_review_tests.rs"]
 mod action_review_tests;
 
+#[path = "lookup_lock_tests.rs"]
+mod lookup_lock_tests;
+
 #[tokio::test]
 async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
     let fixture = Fixture::new().await;
@@ -165,6 +168,14 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
+        Self::with_shell(|shell| shell).await
+    }
+    /// `wrap` receives the fixture shell, which answers every lookup with an owned CLI.
+    async fn with_shell(
+        wrap: impl FnOnce(
+            Arc<dyn crate::command_path::ShellProbe>,
+        ) -> Arc<dyn crate::command_path::ShellProbe>,
+    ) -> Self {
         let root = tempfile::tempdir().expect("owned fixture");
         let paths = Paths::resolve(
             Instance::parse(&format!(
@@ -197,7 +208,7 @@ impl Fixture {
             projects.clone(),
             devbox_core::config::TerminalConfig::default(),
         ));
-        let shell = crate::command_path::fixture_shell(&paths.home);
+        let shell = wrap(crate::command_path::fixture_shell(&paths.home));
         let svc = Arc::new(AgentsService::new(
             db,
             hub,

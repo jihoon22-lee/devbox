@@ -1,3 +1,4 @@
+mod agent_cli;
 mod os;
 mod runner;
 use devbox_protocol::system::{DoctorReport, Status};
@@ -6,6 +7,20 @@ pub use devbox_tools::doctor::{Probe, checks};
 pub struct OsProbe {
     pub env_file: std::path::PathBuf,
     pub hook_binary: std::path::PathBuf,
+    /// This check's look at the agent CLIs, made once, on first use.
+    agents: std::sync::OnceLock<
+        devbox_tools::doctor::Probed<Vec<Option<devbox_tools::doctor::AgentCommand>>>,
+    >,
+}
+impl OsProbe {
+    /// A probe for one check: each check looks at the agent CLIs afresh.
+    pub fn new(env_file: std::path::PathBuf, hook_binary: std::path::PathBuf) -> Self {
+        Self {
+            env_file,
+            hook_binary,
+            agents: std::sync::OnceLock::new(),
+        }
+    }
 }
 #[allow(unsafe_code)]
 fn executable(path: &std::path::Path) -> bool {
@@ -21,10 +36,10 @@ fn executable(path: &std::path::Path) -> bool {
     unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
 pub async fn run(json: bool) -> anyhow::Result<()> {
-    let probe = OsProbe {
-        env_file: crate::paths()?.instance_config_dir.join("env"),
-        hook_binary: crate::paths()?.bin_dir.join("devbox"),
-    };
+    let probe = OsProbe::new(
+        crate::paths()?.instance_config_dir.join("env"),
+        crate::paths()?.bin_dir.join("devbox"),
+    );
     let report = DoctorReport {
         checks: tokio::task::spawn_blocking(move || checks(&probe)).await?,
     };
@@ -63,10 +78,7 @@ mod probe_tests {
         std::fs::write(&tool, "fixture").expect("write fixture file");
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o600))
             .expect("set fixture permissions");
-        let probe = OsProbe {
-            env_file: temp.path().join("env"),
-            hook_binary: tool.clone(),
-        };
+        let probe = OsProbe::new(temp.path().join("env"), tool.clone());
         assert!(
             !probe
                 .which("fixture-tool", &temp.path().display().to_string())
@@ -107,10 +119,7 @@ mod probe_tests {
     #[test]
     fn env_path_valid_preserves_the_saved_environment_fixtures() {
         let temp = tempfile::tempdir().expect("create fixture directory");
-        let probe = OsProbe {
-            env_file: temp.path().join("env"),
-            hook_binary: temp.path().join("unused-hook"),
-        };
+        let probe = OsProbe::new(temp.path().join("env"), temp.path().join("unused-hook"));
         assert!(!probe.env_path_valid().expect("probe fixture"));
         for text in [
             "LANG=\"C\"",

@@ -49,6 +49,13 @@ impl AgentsService {
     ) -> Result<AgentTask> {
         crate::limits::input(&p.prompt)?;
         let title = crate::plan::checked_title(&p.title)?.to_owned();
+        // The CLI is looked up before the reservation lock, so a slow shell does not hold up
+        // other starts. Its result is checked below, in its usual place.
+        let profile = crate::profile::resolve(&self.profiles, &p.profile);
+        let tool = match &profile {
+            Some(profile) => self.resolve_tool(profile).await,
+            None => Ok(None),
+        };
         let _reservation = self.reservations.lock().await;
         let project = self
             .projects
@@ -58,13 +65,11 @@ impl AgentsService {
             .ok_or_else(|| AgentsError::ProjectNotFound {
                 id: p.project_id.clone(),
             })?;
-        let profile = crate::profile::resolve(&self.profiles, &p.profile).ok_or_else(|| {
-            AgentsError::ProfileNotFound {
-                id: p.profile.clone(),
-            }
+        let profile = profile.ok_or_else(|| AgentsError::ProfileNotFound {
+            id: p.profile.clone(),
         })?;
         // A missing CLI ends the start here, before any task, branch or worktree exists.
-        let tool = self.resolve_tool(&profile).await?;
+        let tool = tool?;
         if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
             return Err(AgentsError::UnsafeWorktree.into());
         }

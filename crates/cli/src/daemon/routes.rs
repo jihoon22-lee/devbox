@@ -27,10 +27,10 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             })
         })
         .register::<devbox_protocol::system::Doctor, _, _>(|s, _, _| async move {
-            let probe = crate::doctor::OsProbe {
-                env_file: s.paths.instance_config_dir.join("env"),
-                hook_binary: s.paths.bin_dir.join("devbox"),
-            };
+            let probe = crate::doctor::OsProbe::new(
+                s.paths.instance_config_dir.join("env"),
+                s.paths.bin_dir.join("devbox"),
+            );
             let checks = tokio::task::spawn_blocking(move || crate::doctor::checks(&probe))
                 .await
                 .map_err(|e| devbox_protocol::Fail::Internal(e.to_string()))?;

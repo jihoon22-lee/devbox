@@ -4,6 +4,9 @@
 //! capture behind the service `PATH` never reads, so the interactive shell is asked first. Its
 //! output is whatever the user's shell prints: only the absolute path between the last pair of
 //! `\x1e` markers is used, and nothing else of it is logged, kept or returned.
+//!
+//! A lookup never starts the program it finds. Only the environment check asks the agent CLIs
+//! it knows for their versions, with [`version`].
 use futures::future::BoxFuture;
 use std::{
     collections::HashMap,
@@ -116,7 +119,8 @@ pub enum CommandSource {
 pub struct ResolvedCommand {
     pub program: PathBuf,
     pub source: CommandSource,
-    /// Only the version token of `--version`, never its other output.
+    /// Always `None` from a lookup, which never starts the program. [`version`] asks a CLI for
+    /// it: only the version token of `--version`, never its other output.
     pub version: Option<String>,
 }
 
@@ -176,12 +180,22 @@ pub async fn resolve(
     service_path: &OsStr,
     probe: &impl ShellProbe,
 ) -> Option<ResolvedCommand> {
-    let key = (program.to_owned(), service_path.to_owned());
-    if let Some(found) = cached(&key) {
-        return found;
+    match cached(&(program.to_owned(), service_path.to_owned())) {
+        Some(found) => found,
+        None => refresh(program, service_path, probe).await,
     }
+}
+
+/// [`resolve`] without the cache: looks again and keeps the answer for the next [`resolve`]
+/// with the same `service_path`. The environment check looks this way, so a CLI installed
+/// since the last lookup is used by the next task start.
+pub async fn refresh(
+    program: &str,
+    service_path: &OsStr,
+    probe: &impl ShellProbe,
+) -> Option<ResolvedCommand> {
     let found = find(program, service_path, probe).await;
-    remember(key, found.clone());
+    remember((program.to_owned(), service_path.to_owned()), found.clone());
     found
 }
 
@@ -204,7 +218,7 @@ async fn find(
     if program.is_empty() || program.chars().any(char::is_control) {
         return None;
     }
-    let (path, source) = if program.contains('/') {
+    let (program, source) = if program.contains('/') {
         (usable(Path::new(program))?, CommandSource::ServicePath)
     } else {
         let stdout = tokio::time::timeout(SHELL_TIMEOUT, probe.command_v(program))
@@ -219,11 +233,10 @@ async fn find(
             ),
         }
     };
-    let version = version(&path, service_path).await;
     Some(ResolvedCommand {
-        program: path,
+        program,
         source,
-        version,
+        version: None,
     })
 }
 
@@ -259,8 +272,10 @@ fn runnable(_: &Path) -> bool {
     true
 }
 
-/// `<program> --version` with the program's folder first on `PATH`, as the start script runs it.
-async fn version(program: &Path, service_path: &OsStr) -> Option<String> {
+/// The version token of `<program> --version`, run now with the program's folder first on
+/// `PATH`, as the start script runs it. Only the environment check calls this, and only for the
+/// agent CLIs it knows: a task start never runs a program to ask.
+pub async fn version(program: &Path, service_path: &OsStr) -> Option<String> {
     let path = program
         .parent()
         .and_then(|dir| {
@@ -420,7 +435,8 @@ pub(crate) fn fixture_shell(home: &Path) -> Arc<dyn ShellProbe> {
     let dir = home.join("fixture-bin");
     std::fs::create_dir_all(&dir).expect("owned fixture folder");
     let tool = dir.join("agent-cli");
-    std::fs::write(&tool, "#!/bin/sh\necho 'agent-cli 1.0.0'\n").expect("owned fixture tool");
+    // A lookup must never start it: running it leaves `agent-cli.invoked` behind.
+    std::fs::write(&tool, "#!/bin/sh\n: > \"$0.invoked\"\n").expect("owned fixture tool");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

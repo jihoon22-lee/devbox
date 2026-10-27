@@ -11,10 +11,10 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         })
         .register::<devbox_tools::ToolsSupportBundle, _, _>(|s, _, _| async move {
             let notes_vault = super::support_bundle::vault_snapshot(&s).await?;
-            let probe = crate::doctor::OsProbe {
-                env_file: s.paths.instance_config_dir.join("env"),
-                hook_binary: s.paths.bin_dir.join("devbox"),
-            };
+            let probe = crate::doctor::OsProbe::new(
+                s.paths.instance_config_dir.join("env"),
+                s.paths.bin_dir.join("devbox"),
+            );
             let checks = tokio::task::spawn_blocking(move || crate::doctor::checks(&probe))
                 .await
                 .map_err(|_| {

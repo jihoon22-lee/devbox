@@ -26,6 +26,10 @@ const command = (d: unknown) => {
   const value = field(d, "command");
   return typeof value === "string" && value ? value : "에이전트 도구";
 };
+const toolMissing = (d: unknown) => ({
+  title: `${command(d)} 명령을 찾을 수 없습니다.`,
+  action: "설정 → 환경 점검에서 설치 방법을 확인하세요.",
+});
 const check = "입력란을 확인해 주세요.";
 const configFile = (d: unknown) => {
   const file = field(d, "file");
@@ -251,10 +255,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
   },
-  "agents.tool_missing": (detail) => ({
-    title: `${command(detail)} 명령을 찾을 수 없습니다.`,
-    action: "설정 → 환경 점검에서 설치 방법을 확인하세요.",
-  }),
+  "agents.tool_missing": toolMissing,
   "projects.trust_required": {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
@@ -489,6 +490,7 @@ const TABLE: Record<RpcErrorCode, Message | ((detail: unknown) => Message)> = {
     title: "시작 구성의 에이전트 도구를 찾을 수 없습니다.",
     action: "프로젝트 시작 구성과 도구 프로필을 확인해 주세요.",
   },
+  "projects.launch_tool_missing": toolMissing,
   "projects.launch_failed": {
     title: "시작 구성을 일부 실행하지 못했습니다.",
     action: "이미 시작한 터미널·에이전트·서비스를 확인한 뒤 다시 시도해 주세요.",

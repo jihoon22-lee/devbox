@@ -93,6 +93,15 @@ impl AgentsService {
                 .into()
             })
     }
+    /// The program of profile `id` when its CLI cannot be found the way a start looks for it.
+    /// A composite launch checks each of its agents this way before it starts anything.
+    pub async fn missing_tool(&self, id: &str) -> Option<String> {
+        let profile = crate::profile::resolve(&self.profiles, id)?;
+        match self.resolve_tool(&profile).await {
+            Err(Fail::Domain(AgentsError::ToolMissing { command })) => Some(command),
+            _ => None,
+        }
+    }
     pub(crate) async fn prepare(
         &self,
         task: &AgentTask,

@@ -19,6 +19,16 @@ impl AgentsService {
         rx.await.internal("resume task completion")?
     }
     async fn resume_owned(&self, id: &str) -> Result<AgentTask> {
+        // A task's profile is fixed when it is created, so its CLI is looked up before the shared
+        // action lock: a slow shell must not hold up other tasks. The result is checked below,
+        // in its usual place, so a task that changed meanwhile fails as it did before.
+        let looked_up = match self.get(id).await {
+            Ok(task) => match crate::profile::resolve(&self.profiles, &task.profile) {
+                Some(profile) => Some(self.resolve_tool(&profile).await),
+                None => None,
+            },
+            Err(_) => None,
+        };
         let _guard = self.actions.lock().await;
         let task = self.get(id).await?;
         crate::actions::open(&task)?;
@@ -81,7 +91,11 @@ impl AgentsService {
                 id: task.profile.clone(),
             },
         )?;
-        let tool = self.resolve_tool(&profile).await?;
+        let tool = match looked_up {
+            Some(tool) => tool?,
+            // The task could not be read before the lock: look now.
+            None => self.resolve_tool(&profile).await?,
+        };
         let session_id = if profile.hooks == crate::profile::Hooks::Codex {
             self.refresh_binding(&task, true).await?.thread_id
         } else {
