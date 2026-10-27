@@ -1,3 +1,4 @@
+use crate::approvals::{Approval, key};
 use crate::plan::sh_quote;
 use crate::state::AgentEvent;
 use serde::{Deserialize, Serialize};
@@ -59,7 +60,12 @@ pub fn parse_codex_candidate(payload: &str) -> Option<CodexCompletionCandidate> 
 pub fn claude_settings(devbox: &str) -> String {
     let command = format!("{} agent event --from claude", sh_quote(devbox));
     let hook = serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": command }] }]);
-    serde_json::json!({ "hooks": { "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook, "PostToolUse": hook, "Notification": hook, "Stop": hook } }).to_string()
+    serde_json::json!({ "hooks": {
+        "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook,
+        "PostToolUse": hook, "PostToolUseFailure": hook, "PermissionDenied": hook,
+        "Notification": hook, "Stop": hook,
+    } })
+    .to_string()
 }
 pub fn codex_notify_arg(devbox: &str) -> String {
     format!(
@@ -109,9 +115,11 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
                         p.tool_name.unwrap_or_else(|| "도구".into())
                     ),
                 }],
-                // A finished tool means any approval is over. `tool_input` and
-                // `tool_response` are never read: they can hold file contents and output.
-                "PostToolUse" => vec![AgentEvent::OutputResumed],
+                // The service applies this only when it ends the wait's last approval
+                // (see `approval`). Tool input, output and errors are never read here.
+                "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
+                    vec![AgentEvent::OutputResumed]
+                }
                 "Notification" => match p.notification_type.as_deref() {
                     Some("idle_prompt") => vec![AgentEvent::TurnComplete { message: None }],
                     Some("permission_prompt" | "agent_needs_input") => {
@@ -127,6 +135,34 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
                 _ => vec![],
             }
         }
+    }
+}
+
+/// Pairs Claude's approval request with the end of that tool call. Only a digest of
+/// (`agent_id`, `tool_name`, `tool_input`) leaves here; `tool_response` is never read.
+pub(crate) fn approval(payload: &str) -> Option<Approval> {
+    #[derive(Deserialize)]
+    struct Call {
+        hook_event_name: String,
+        agent_id: Option<String>,
+        tool_name: Option<String>,
+        #[serde(default)]
+        tool_input: serde_json::Value,
+    }
+    let call: Call = serde_json::from_str(payload).ok()?;
+    let key = || {
+        key(
+            call.agent_id.as_deref().unwrap_or_default(),
+            call.tool_name.as_deref().unwrap_or_default(),
+            &call.tool_input,
+        )
+    };
+    match call.hook_event_name.as_str() {
+        "PermissionRequest" => Some(Approval::Requested(key())),
+        "PostToolUse" | "PostToolUseFailure" | "PermissionDenied" => {
+            Some(Approval::Finished(key()))
+        }
+        _ => None,
     }
 }
 
@@ -239,6 +275,8 @@ mod tests {
             "UserPromptSubmit",
             "PermissionRequest",
             "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionDenied",
             "Notification",
             "Stop",
         ] {
@@ -257,26 +295,39 @@ mod tests {
     fn claude_settings_include_post_tool_use() {
         let settings: serde_json::Value =
             serde_json::from_str(&claude_settings("/b/devbox")).expect("owned fixture");
-        // Every tool, like the other hooks: any finished tool means the approval is over.
-        assert_eq!(
-            settings["hooks"]["PostToolUse"],
-            serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": "'/b/devbox' agent event --from claude" }] }])
-        );
+        // Every way the approved tool call can end, for every tool like the other hooks.
+        for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            assert_eq!(
+                settings["hooks"][event],
+                serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": "'/b/devbox' agent event --from claude" }] }]),
+                "{event}"
+            );
+        }
     }
     #[test]
     fn post_tool_use_maps_to_output_resumed() {
-        // Tool input and output can hold file contents or command output. Only the event
-        // name is read; the payload never reaches the event, and so never the task row.
-        let payload = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "session_id": "sess-1",
-            "tool_name": "Bash",
-            "tool_input": { "command": "cat .env" },
-            "tool_response": { "stdout": "OWNED_SECRET_MARKER=sk-live-0123456789", "stderr": "" },
-        })
-        .to_string();
-        let events = parse(HookSource::Claude, &payload, None);
-        assert_eq!(events, vec![E::OutputResumed]);
-        assert!(!format!("{events:?}").contains("OWNED_SECRET_MARKER"));
+        // Tool input, output and errors can hold file contents or command output. Only a
+        // digest of the call leaves the parser, and the event itself carries nothing.
+        let secret = "OWNED_SECRET_MARKER=sk-live-0123456789";
+        let input = serde_json::json!({ "command": format!("echo {secret}") });
+        let request = serde_json::json!({ "hook_event_name": "PermissionRequest", "agent_id": "s1", "tool_name": "Bash", "tool_input": input, "permission_suggestions": [] });
+        let Some(Approval::Requested(requested)) = approval(&request.to_string()) else {
+            panic!("approval request");
+        };
+        for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            let payload = serde_json::json!({
+                "hook_event_name": event, "session_id": "sess-1", "agent_id": "s1",
+                "tool_name": "Bash", "tool_input": input, "tool_use_id": "toolu_1",
+                "tool_response": { "stdout": secret, "stderr": "" },
+                "error": secret, "reason": secret, "duration_ms": 1,
+            })
+            .to_string();
+            let events = parse(HookSource::Claude, &payload, None);
+            assert_eq!(events, vec![E::OutputResumed], "{event}");
+            let ended = approval(&payload);
+            assert_eq!(ended, Some(Approval::Finished(requested)), "{event}");
+            let shown = format!("{events:?} {ended:?}");
+            assert!(!shown.contains("OWNED_SECRET_MARKER") && !shown.contains("toolu_1"));
+        }
     }
 }

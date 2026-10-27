@@ -86,7 +86,8 @@ async fn hooks_update_task_metadata_and_survive_restart_until_session_is_lost() 
         "SC3 hook-to-query deadline"
     );
     // Sending is refused during the approval; the approved tool's PostToolUse ends it.
-    claude_hook(&d, &client, &id, json!({"hook_event_name":"PostToolUse"})).await;
+    let approved = json!({"hook_event_name":"PostToolUse","tool_name":"Bash"});
+    claude_hook(&d, &client, &id, approved).await;
     d.wait_for(&client, &id, "running", Duration::from_secs(2))
         .await;
     client
@@ -194,11 +195,21 @@ async fn send_is_refused_while_waiting_and_the_pane_receives_nothing() {
         .await;
     let pane = format!("={}:", running["terminalId"].as_str().expect("terminal"));
     let screen = |d: &TestDaemon| d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane]);
-    let hook = json!({"hook_event_name":"PermissionRequest","tool_name":"Bash"});
-    claude_hook(&d, &client, &id, hook).await;
+    let call = |event: &str, tool: &str, input: Value| json!({"hook_event_name":event,"tool_name":tool,"tool_input":input});
+    let make = json!({"command":"make"});
+    claude_hook(
+        &d,
+        &client,
+        &id,
+        call("PermissionRequest", "Bash", make.clone()),
+    )
+    .await;
     let waiting = d
         .wait_for(&client, &id, "waiting", Duration::from_secs(2))
         .await;
+    // A parallel tool finishing does not answer the approval.
+    let other = call("PostToolUse", "Read", json!({"file_path":"/owned/a"}));
+    claude_hook(&d, &client, &id, other).await;
     let text = "owned-s7-4-instruction";
     let refused = client
         .raw_call("agents.send", json!({"id":id,"text":text}), None)
@@ -219,8 +230,7 @@ async fn send_is_refused_while_waiting_and_the_pane_receives_nothing() {
         !d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"])
             .contains(text)
     );
-    let hook = json!({"hook_event_name":"PostToolUse","tool_name":"Bash"});
-    claude_hook(&d, &client, &id, hook).await;
+    claude_hook(&d, &client, &id, call("PostToolUse", "Bash", make)).await;
     d.wait_for(&client, &id, "running", Duration::from_secs(2))
         .await;
     let sent: Value = serde_json::from_str(

@@ -508,6 +508,8 @@ async fn terminal_observation_transaction_rejects_newer_activity_and_launch() {
     );
 }
 
+#[path = "approval_wait_tests.rs"]
+mod approval_wait_tests;
 #[path = "hook_launch_tests.rs"]
 mod hook_launch_tests;
 #[path = "hook_limits_tests.rs"]

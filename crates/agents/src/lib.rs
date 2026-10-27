@@ -86,6 +86,7 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.topic::<AgentsAttentionTopic>();
 }
 
+mod approvals;
 mod artifacts;
 mod create;
 mod events;

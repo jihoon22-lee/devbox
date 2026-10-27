@@ -64,6 +64,7 @@ impl AgentsService {
     ) -> Result<()> {
         let id = id.to_owned();
         let hub = self.hub.clone();
+        let approvals = self.approvals.clone();
         let count = u32::try_from(review.commits.len())
             .map_err(|_| Fail::Internal("closed commit count overflow".into()))?;
         self.db
@@ -88,6 +89,7 @@ impl AgentsService {
                     task.closed_head_oid = Some(cleanup_head);
                     task.pr_url = url;
                     apply_event(&mut task, &AgentEvent::Closed { how }, now_ms());
+                    approvals.forget(&id);
                     store::put_closed_review(tx, &id, &review)?;
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous)))

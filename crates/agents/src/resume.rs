@@ -138,6 +138,7 @@ impl AgentsService {
         let launch = now_ms();
         let initial_session = session_id.clone();
         let hub = self.hub.clone();
+        let approvals = self.approvals.clone();
         let previous_binding = self
             .db
             .write_checked_with_commit(
@@ -159,6 +160,8 @@ impl AgentsService {
                     current.reason = None;
                     current.attention = None;
                     current.updated_ms = launch;
+                    // A new launch starts without the previous launch's approvals.
+                    approvals.forget(&key);
                     crate::store::put_binding(tx, &key, &binding)?;
                     crate::store::put(tx, &current)?;
                     Ok(Ok::<_, std::convert::Infallible>((

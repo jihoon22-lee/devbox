@@ -38,6 +38,7 @@ pub struct AgentsService {
     pub(crate) background: TaskTracker,
     pub(crate) stop: CancellationToken,
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
+    pub(crate) approvals: Arc<crate::approvals::Approvals>,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -71,6 +72,7 @@ impl AgentsService {
             background: TaskTracker::new(),
             stop: CancellationToken::new(),
             resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),
+            approvals: Arc::default(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -109,6 +111,7 @@ impl AgentsService {
     {
         let id = id.to_owned();
         let hub = self.hub.clone();
+        let approvals = self.approvals.clone();
         let result = self
             .db
             .write_checked_with_commit(
@@ -127,6 +130,9 @@ impl AgentsService {
                     let previous_state = task.state;
                     if !f(&mut task) {
                         return Ok(Err(None));
+                    }
+                    if task.state != AgentState::Waiting {
+                        approvals.forget(&task.id);
                     }
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous_state)))
@@ -183,6 +189,9 @@ impl AgentsService {
         } else {
             None
         };
+        let approval = launch
+            .as_ref()
+            .and_then(|_| crate::hooks::approval(&p.payload));
         let events = if p.source == crate::hooks::HookSource::Codex {
             let Some(candidate) = crate::hooks::parse_codex_candidate(&p.payload) else {
                 return Ok(Done {
@@ -211,7 +220,11 @@ impl AgentsService {
                 crate::limits::identity(session_id)?;
             }
         }
-        self.update_bound(&p.agent_id, launch, move |t| {
+        let approvals = self.approvals.clone();
+        self.update_bound(&p.agent_id, launch.clone(), move |t| {
+            if let Some(launch) = &launch {
+                return approvals.apply(t, launch, approval, events);
+            }
             let mut changed = false;
             for event in events {
                 changed |= apply_event(t, &event, now_ms())

@@ -85,7 +85,8 @@ async fn post_tool_use_outside_waiting_state_writes_and_publishes_nothing() {
         code: None,
     };
     let secret = "OWNED_SECRET_MARKER";
-    let tool_used = serde_json::json!({"hook_event_name":"PostToolUse","session_id":"sess-1","tool_name":"Bash","tool_input":{"command":format!("echo {secret}")},"tool_response":{"stdout":format!("{secret}=sk-live-0123456789"),"stderr":""}});
+    let input = serde_json::json!({"command":format!("echo {secret}")});
+    let tool_used = serde_json::json!({"hook_event_name":"PostToolUse","session_id":"sess-1","tool_name":"Bash","tool_input":input,"tool_use_id":"toolu_1","tool_response":{"stdout":format!("{secret}=sk-live-0123456789"),"stderr":""},"error":secret,"reason":secret});
     let set_state = |state: AgentState| {
         f.svc.db.write(move |tx| {
             let mut task = store::get(tx, "a")?.expect("owned task");
@@ -114,37 +115,44 @@ async fn post_tool_use_outside_waiting_state_writes_and_publishes_nothing() {
     // Publication happens before the reply, so an empty queue now stays empty.
     assert!(tokio::time::timeout(quiet, changed.recv()).await.is_err());
     assert!(tokio::time::timeout(quiet, attention.recv()).await.is_err());
-    set_state(AgentState::Running).await.expect("owned fixture");
-    f.svc
-        .event(hook(
-            serde_json::json!({"hook_event_name":"PermissionRequest","tool_name":"Bash"}),
-        ))
-        .await
-        .expect("permission hook");
-    assert_eq!(f.state().await, AgentState::Waiting);
-    changed.recv().await.expect("waiting change");
-    attention.recv().await.expect("waiting attention");
-    let revision = f.svc.db.rev();
-    f.svc.event(hook(tool_used)).await.expect("resumed hook");
-    let task = f.svc.get("a").await.expect("resumed task");
-    assert_eq!(task.state, AgentState::Running);
-    assert_eq!(task.attention, None);
-    assert_eq!(f.svc.db.rev(), revision + 1);
-    let Some(devbox_core::HubMessage::Event { payload, .. }) = changed.recv().await else {
-        panic!("one change for the resumed task");
+    let event = |message: Option<devbox_core::HubMessage>| match message {
+        Some(devbox_core::HubMessage::Event { payload, .. }) => payload,
+        other => panic!("one publication: {other:?}"),
     };
-    assert!(!payload.contains(secret));
-    assert!(tokio::time::timeout(quiet, changed.recv()).await.is_err());
-    assert!(tokio::time::timeout(quiet, attention.recv()).await.is_err());
-    let row: String = f
-        .svc
-        .db
-        .read(|tx| {
-            tx.query_row("SELECT body FROM agents_tasks WHERE id='a'", [], |row| {
-                row.get(0)
-            })
+    let stored = || {
+        f.svc.db.read(|tx| {
+            let body = "SELECT body FROM agents_tasks WHERE id='a'";
+            tx.query_row(body, [], |row| row.get::<_, String>(0))
         })
-        .await
-        .expect("stored task");
-    assert!(!row.contains(secret) && !row.contains("tool_response"));
+    };
+    // Each way the approved call ends resumes the wait; no payload content is kept.
+    for ending in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+        set_state(AgentState::Running).await.expect("owned fixture");
+        let request = serde_json::json!({"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":input,"permission_suggestions":[]});
+        f.svc.event(hook(request)).await.expect("permission hook");
+        assert_eq!(f.state().await, AgentState::Waiting, "{ending}");
+        assert!(!event(changed.recv().await).contains(secret));
+        assert!(!event(attention.recv().await).contains(secret));
+        let row = stored().await.expect("waiting task");
+        assert!(!row.contains(secret), "{ending}");
+        let mut ended = tool_used.clone();
+        ended["hook_event_name"] = ending.into();
+        let revision = f.svc.db.rev();
+        f.svc.event(hook(ended)).await.expect("ending hook");
+        let task = f.svc.get("a").await.expect("resumed task");
+        assert_eq!(
+            (task.state, task.attention),
+            (AgentState::Running, None),
+            "{ending}"
+        );
+        assert_eq!(f.svc.db.rev(), revision + 1, "{ending}");
+        assert!(!event(changed.recv().await).contains(secret));
+        assert!(tokio::time::timeout(quiet, changed.recv()).await.is_err());
+        assert!(tokio::time::timeout(quiet, attention.recv()).await.is_err());
+        let row = stored().await.expect("resumed task");
+        assert!(
+            !row.contains(secret) && !row.contains("toolu_1"),
+            "{ending}"
+        );
+    }
 }

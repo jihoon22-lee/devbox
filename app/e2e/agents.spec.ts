@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "./support";
 
-test("new task → permission waiting → instruct → idle → diff → squash closes", async ({ page, stack }, info) => {
+test("new task → approval in terminal → idle → instruct → diff → squash closes", async ({ page, stack }, info) => {
   await page.goto(`/agents?gateway=${encodeURIComponent(stack.gatewayUrl)}&renderer=dom`);
   await expect(page.getByText("데몬 연결됨")).toBeVisible();
   await page.keyboard.press("Control+Shift+O");
@@ -45,11 +45,29 @@ test("new task → permission waiting → instruct → idle → diff → squash 
   expect(hookToListMs).toBeLessThan(2000);
   await expect(page.getByRole("button", { name: "알림 1개", exact: true })).toBeVisible();
   await taskButton.click();
-  await page.getByLabel("에이전트에게 보낼 지시").fill("yes");
-  await page.keyboard.press("Control+Enter");
-  await expect(
-    page.getByRole("article", { name: "에이전트 작업 상세" }).getByText("다음 지시 대기", { exact: true }),
-  ).toBeVisible({ timeout: 10_000 });
+  const detail = page.getByRole("article", { name: "에이전트 작업 상세" });
+  const compose = detail.getByLabel("에이전트에게 보낼 지시");
+  // Text sent now could answer the approval: compose keeps the draft and points to the terminal.
+  await compose.fill("yes");
+  await compose.press("Control+Enter");
+  await expect(detail.getByText("에이전트가 터미널에서 선택을 기다리는 동안에는 보낼 수 없습니다.")).toBeVisible();
+  await expect(detail.getByRole("button", { name: /^보내기/ })).toBeDisabled();
+  await detail.getByRole("button", { name: "터미널 보기", exact: true }).click();
+  const terminal = detail.getByRole("tabpanel", { name: "터미널" }).locator("[data-keyscope=terminal]");
+  await expect(terminal.locator(".xterm-rows")).toBeVisible();
+  await expect(terminal.getByRole("status")).toHaveCount(0);
+  await terminal.click();
+  await expect(terminal.locator(".xterm-helper-textarea")).toBeFocused();
+  await page.keyboard.type("yes\n");
+  const idle = detail.getByText("다음 지시 대기", { exact: true });
+  await expect(idle).toBeVisible({ timeout: 10_000 });
+  expect((await stack.rpc("agents.get", { id: id as string })).followUps).toEqual([]);
+  // The kept draft goes out once the agent waits for its next instruction.
+  await compose.press("Control+Enter");
+  await expect
+    .poll(async () => (await stack.rpc("agents.get", { id: id as string })).followUps.map((entry) => entry.text))
+    .toEqual(["yes"]);
+  await expect(idle).toBeVisible({ timeout: 10_000 });
   await page.getByRole("tab", { name: "변경", exact: true }).click();
   await expect(page.getByRole("tabpanel", { name: "변경" })).toContainText("agent.txt");
   await page.getByRole("button", { name: "병합", exact: true }).click();
