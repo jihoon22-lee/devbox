@@ -111,6 +111,29 @@ impl Tmux {
             .await
             .map(|_| ())
     }
+    /// Applies the two key options `tmux.conf` sets for Shift+Enter to a server that is already
+    /// running. One that outlived an update was started from the old file and never reads it
+    /// again, and sourcing the whole file twice would append to its list options. Without a
+    /// server this is a no-op and starts none.
+    pub async fn apply_extended_keys(&self) -> Result<(), TmuxError> {
+        let applied = self
+            .run(&[
+                "set",
+                "-s",
+                "extended-keys",
+                "on",
+                ";",
+                "set",
+                "-sq",
+                "extended-keys-format",
+                "csi-u",
+            ])
+            .await;
+        match applied {
+            Err(error) if error.missing() => Ok(()),
+            other => other.map(drop),
+        }
+    }
     async fn wait_ready(&self, deadline: Duration) -> Result<(), TmuxError> {
         tokio::time::timeout(deadline, async {
             loop {

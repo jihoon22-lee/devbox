@@ -1,4 +1,4 @@
-use devbox_terminal::tmux::Tmux;
+use devbox_terminal::tmux::{Tmux, TmuxError};
 use std::time::Duration;
 struct Fixture {
     home: tempfile::TempDir,
@@ -6,23 +6,50 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::with_conf(devbox_terminal::TMUX_CONF)
+    }
+    fn with_conf(config: &str) -> Self {
         let home = tempfile::tempdir().expect("fixture home");
         let conf = home.path().join("tmux.conf");
-        std::fs::write(&conf, include_str!("../assets/tmux.conf")).expect("fixture config");
+        std::fs::write(&conf, config).expect("fixture config");
         let socket = format!("devbox-test-{}", uuid::Uuid::new_v4().simple());
         Self {
             home,
             tmux: Tmux::with(socket, conf),
         }
     }
+    async fn extended_keys(&self) -> String {
+        let shown = self.tmux.run(&["show", "-s", "extended-keys"]).await;
+        shown.expect("show extended-keys").trim().to_owned()
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
+        let socket = std::process::Command::new("tmux")
+            .args([
+                "-L",
+                self.tmux.socket(),
+                "display-message",
+                "-p",
+                "#{socket_path}",
+            ])
+            .env_remove("TMUX_TMPDIR")
+            .env_remove("TMUX")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|path| path.trim().to_owned());
         let _ = std::process::Command::new("tmux")
             .args(["-L", self.tmux.socket(), "kill-server"])
             .env_remove("TMUX_TMPDIR")
             .env_remove("TMUX")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
+        // tmux leaves the socket file of a stopped server behind; this fixture created it.
+        if let Some(socket) = socket.filter(|path| path.ends_with(self.tmux.socket())) {
+            let _ = std::fs::remove_file(socket);
+        }
     }
 }
 #[tokio::test]
@@ -101,4 +128,77 @@ async fn creates_lists_captures_pastes_and_kills_only_owned_sessions() {
     );
     t.kill_session("s10").await.expect("close sibling");
     assert!(t.list().await.expect("empty server").is_empty());
+}
+#[test]
+fn tmux_conf_enables_extended_keys_quietly() {
+    let conf = devbox_terminal::TMUX_CONF;
+    let lines: Vec<&str> = conf
+        .lines()
+        .filter(|l| l.contains("extended-keys"))
+        .collect();
+    // `-q` lets tmux 3.2-3.4, which lack the format option, skip it without an error.
+    assert_eq!(
+        lines,
+        [
+            "set -s extended-keys on",
+            "set -sq extended-keys-format csi-u"
+        ]
+    );
+    // `always` would hand extended keys to programs that never asked for them.
+    assert!(!conf.contains("always"));
+}
+#[tokio::test]
+async fn server_started_from_the_shipped_conf_has_extended_keys_on() {
+    let fixture = Fixture::new();
+    fixture
+        .tmux
+        .start_direct()
+        .await
+        .expect("start fixture tmux");
+    assert_eq!(fixture.extended_keys().await, "extended-keys on");
+}
+#[tokio::test]
+async fn applying_extended_keys_reaches_a_server_started_without_them() {
+    // A server that outlived an update was started from a config without the two lines
+    // and never reads it again.
+    let old: String = (devbox_terminal::TMUX_CONF.lines())
+        .filter(|line| !line.contains("extended-keys"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let fixture = Fixture::with_conf(&old);
+    fixture
+        .tmux
+        .start_direct()
+        .await
+        .expect("start fixture tmux");
+    assert_eq!(fixture.extended_keys().await, "extended-keys off");
+    fixture
+        .tmux
+        .apply_extended_keys()
+        .await
+        .expect("apply to the running server");
+    assert_eq!(fixture.extended_keys().await, "extended-keys on");
+    // Every daemon start applies them again.
+    fixture
+        .tmux
+        .apply_extended_keys()
+        .await
+        .expect("apply again");
+    assert_eq!(fixture.extended_keys().await, "extended-keys on");
+}
+#[tokio::test]
+async fn applying_extended_keys_without_a_server_starts_nothing() {
+    let fixture = Fixture::new();
+    // tmux reports `No such file or directory` only while its socket file does not exist.
+    let socket_missing = || async {
+        let probe = fixture.tmux.run(&["list-sessions"]).await;
+        matches!(probe, Err(TmuxError::Failed { stderr, .. }) if stderr.contains("No such file or directory"))
+    };
+    assert!(socket_missing().await);
+    fixture
+        .tmux
+        .apply_extended_keys()
+        .await
+        .expect("no server is not an error");
+    assert!(socket_missing().await, "no server or socket was created");
 }

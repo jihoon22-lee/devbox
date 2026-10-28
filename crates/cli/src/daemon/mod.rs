@@ -266,6 +266,15 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let runtime = system::Runtime::new(!foreground);
     let shutdown = runtime.shutdown.clone();
     let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
+    // A tmux server that outlived an update never re-reads tmux.conf, so Shift+Enter would stay
+    // Enter in its sessions. Give it the key options once, off the startup path: no server is
+    // fine, and nothing here may delay or fail the start.
+    let tmux = services.terminal.tmux().clone();
+    tokio::spawn(async move {
+        if let Err(error) = tmux.apply_extended_keys().await {
+            tracing::warn!(%error, "tmux extended keys were not applied to the running server");
+        }
+    });
     // Notes first: it creates a missing vault before documents starts watching it. Notes
     // whose settings did not load never start, so no default vault is created.
     let _notes_startup = (!services.startup.disabled.notes).then(|| services.notes.start());

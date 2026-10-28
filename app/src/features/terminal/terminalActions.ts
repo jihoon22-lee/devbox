@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import { useLayout } from "../../shell/layout";
 import { setTerminalFont } from "../settings/preferences";
-import { terminalKey } from "./keys";
+import { isShiftEnter, SHIFT_ENTER, terminalKey } from "./keys";
 
 const DEFAULT_SIZE = 13;
 interface TerminalActions {
@@ -20,6 +20,13 @@ export function attachTerminalActions(
   term.attachCustomKeyEventHandler((event) => {
     if (isDisposed()) return false;
     if (event.type !== "keydown" || event.defaultPrevented) return true;
+    if (!preview && isShiftEnter(event)) {
+      // Cancelling the default action keeps the browser from also sending Enter through keypress.
+      event.preventDefault();
+      event.stopPropagation();
+      term.input(SHIFT_ENTER, true);
+      return false;
+    }
     const action = terminalKey(event, term.hasSelection());
     if (!action) return true;
     event.preventDefault();
