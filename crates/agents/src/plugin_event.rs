@@ -8,6 +8,8 @@ use serde::Deserialize;
 pub(crate) const OPENCODE_PLUGIN: &str = include_str!("../assets/opencode-plugin.ts");
 /// The pi extension a task's session loads with `-e`, next to the user's own extensions.
 pub(crate) const PI_EXTENSION: &str = include_str!("../assets/pi-extension.ts");
+/// What a task shows while pi asks whether to trust the folder's project settings.
+pub(crate) const PI_TRUST_COPY: &str = "pi가 이 폴더의 프로젝트 설정을 신뢰할지 묻고 있습니다.";
 
 /// One report: `{"v":1,"event":…,"kind"?:…,"sessionId"?:…,"message"?:…}`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -31,6 +33,9 @@ pub enum PluginEventKind {
     Idle,
     NeedsInput,
     InputResolved,
+    /// pi has started and reads its input, so its folder-trust question, if it asked one, is
+    /// answered. Only the pi extension sends it, once per launch.
+    Ready,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -82,15 +87,24 @@ pub fn parse_plugin_event(source: HookSource, payload: &str) -> Vec<AgentEvent> 
         },
         // The plugin pairs requests with replies and sends this only when none is open.
         PluginEventKind::InputResolved => AgentEvent::OutputResumed,
+        // A ready report is about the launch, not the task's state: see `is_ready_report`.
+        PluginEventKind::Ready => return vec![],
     });
     events
+}
+
+/// Whether `payload` is the pi extension's report that pi has started and reads its input.
+pub fn is_ready_report(source: HookSource, payload: &str) -> bool {
+    source == HookSource::Pi
+        && serde_json::from_str::<PluginEvent>(payload)
+            .is_ok_and(|report| report.v == 1 && report.event == PluginEventKind::Ready)
 }
 
 /// What waits for the user: a permission by its name, a question, or pi's folder trust. The
 /// trust report is the one without a kind, so a dialog titled the same is still a dialog.
 fn asking(tool: &str, kind: Option<InputKind>, message: &str) -> String {
     if tool == "pi" && kind.is_none() && message == "project_trust" {
-        return "pi가 이 폴더의 프로젝트 설정을 신뢰할지 묻고 있습니다.".into();
+        return PI_TRUST_COPY.into();
     }
     let what = match kind {
         Some(InputKind::Question) => "질문",
@@ -269,6 +283,25 @@ mod tests {
             "가".repeat(199)
         );
         assert!(opencode(&lone).is_empty());
+    }
+    #[test]
+    fn a_ready_report_opens_sends_without_changing_the_task() {
+        let ready = r#"{"v":1,"event":"ready"}"#;
+        assert!(is_ready_report(HookSource::Pi, ready));
+        assert!(parse_plugin_event(HookSource::Pi, ready).is_empty());
+        // Only pi's extension says so, and only in this exact form.
+        for (source, payload) in [
+            (HookSource::Opencode, ready),
+            (HookSource::Claude, ready),
+            (HookSource::Setup, ready),
+            (HookSource::Pi, r#"{"v":1,"event":"working"}"#),
+            (HookSource::Pi, r#"{"v":2,"event":"ready"}"#),
+            (HookSource::Pi, r#"{"v":1,"event":"ready","extra":true}"#),
+            (HookSource::Pi, r#"{"v":1,"event":"Ready"}"#),
+            (HookSource::Pi, "ready"),
+        ] {
+            assert!(!is_ready_report(source, payload), "{source:?} {payload}");
+        }
     }
     #[test]
     fn unknown_version_or_garbage_is_ignored() {

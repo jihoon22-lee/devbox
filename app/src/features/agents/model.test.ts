@@ -66,6 +66,23 @@ test("counts attention and detects missing hooks of every hooked profile after 9
   }
 });
 
+test("a pi launch that has not said it is ready after 90 seconds is missing its extension", () => {
+  const hooked = [...profiles, { id: "pi", label: "pi", command: "pi", hooks: "pi" as const, waitingPatterns: [] }];
+  // pi has its session from the start, and says it is ready once per launch, prompt or not.
+  const starting = { ...task("p", "running", 0), profile: "pi", prompt: "", startingSinceMs: 0 };
+  expect(hookMissing([starting], hooked, 90_000)).toBe(false);
+  expect(hookMissing([starting], hooked, 90_001)).toBe(true);
+  expect(hookMissing([{ ...starting, prompt: "fix it" }], hooked, 90_001)).toBe(true);
+  // It said so.
+  expect(hookMissing([{ ...starting, startingSinceMs: null }], hooked, 91_000)).toBe(false);
+  // pi asks about trust before it is ready: that is a question, not a missing extension.
+  expect(hookMissing([{ ...starting, state: "waiting" }], hooked, 91_000)).toBe(false);
+  // A resumed task is timed from its launch, not from when it was created.
+  const resumed = { ...starting, createdMs: 0, startingSinceMs: 500_000 };
+  expect(hookMissing([resumed], hooked, 590_000)).toBe(false);
+  expect(hookMissing([resumed], hooked, 590_001)).toBe(true);
+});
+
 test("template only substitutes known variables and branch preview follows backend ASCII slug", () => {
   expect(
     fillTemplate("{{title}} {{branch}} {{project}} {{other}}", {

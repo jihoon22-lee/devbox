@@ -157,6 +157,7 @@ mod tests {
             cleanup_error: None,
             tokens_truncated: false,
             activity_seq: 0,
+            starting_since_ms: None,
         }
     }
     #[test]

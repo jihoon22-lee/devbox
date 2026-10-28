@@ -184,6 +184,9 @@ impl AgentsService {
                         cleanup_error: None,
                         tokens_truncated: false,
                         activity_seq: 0,
+                        // The launch below starts now; pi says when it reads its input.
+                        starting_since_ms: (profile.hooks == crate::profile::Hooks::Pi)
+                            .then_some(now),
                     };
                     if let Err(error) = crate::limits::serialized(&task, crate::limits::TASK_BYTES)
                     {

@@ -114,25 +114,51 @@ pub(crate) fn pi_usage(
     usage_in(&dir, session, &task.workdir, Instant::now() + READ_TIMEOUT)
 }
 
-/// Reads `<dir>/<timestamp>_<session>.jsonl`, the one name pi gives the session. No other file is
-/// opened, so another session, or another project's, is never read.
-fn usage_in(dir: &Path, session: &str, cwd: &str, until: Instant) -> AgentUsage {
+/// Whether pi has written the task's session file yet: `Some(false)` only when its folder shows
+/// none, and `None` when the folder cannot be read.
+pub(crate) fn pi_session_written(
+    home: &Path,
+    agent_dir: Option<&OsStr>,
+    session_dir: Option<&OsStr>,
+    task: &AgentTask,
+) -> Option<bool> {
+    let session = task.session_id.as_deref().filter(|id| pi_session_id(id))?;
+    let dir = pi_session_dir(home, agent_dir, session_dir, &task.workdir);
+    match session_file(&dir, session, Instant::now() + READ_TIMEOUT) {
+        SessionFile::Missing => Some(false),
+        SessionFile::Found(_) => Some(true),
+        SessionFile::Unreadable => None,
+    }
+}
+
+/// What the session folder holds for one session.
+enum SessionFile {
+    /// No folder yet, or no file for the session in it.
+    Missing,
+    Found(PathBuf),
+    /// The folder or the file could not be read safely, or two files name the session.
+    Unreadable,
+}
+
+/// Finds `<dir>/<timestamp>_<session>.jsonl`, the one name pi gives the session. No other file is
+/// looked at, so another session, or another project's, is never read.
+fn session_file(dir: &Path, session: &str, until: Instant) -> SessionFile {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return empty(false),
-        Err(_) => return empty(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return SessionFile::Missing,
+        Err(_) => return SessionFile::Unreadable,
     };
     if !safe_file(dir) {
-        return empty(true);
+        return SessionFile::Unreadable;
     }
     let name = format!("{session}.jsonl");
     let mut found = None;
     for (index, entry) in entries.enumerate() {
         if index >= MAX_ENTRIES || Instant::now() >= until {
-            return empty(true);
+            return SessionFile::Unreadable;
         }
         let Ok(entry) = entry else {
-            return empty(true);
+            return SessionFile::Unreadable;
         };
         // pi's timestamp has no `_`, and the id follows the first one.
         let file_name = entry.file_name();
@@ -144,19 +170,28 @@ fn usage_in(dir: &Path, session: &str, cwd: &str, until: Instant) -> AgentUsage 
             continue;
         }
         if found.is_some() {
-            return empty(true);
+            return SessionFile::Unreadable;
         }
         found = Some(entry.path());
     }
     let Some(path) = found else {
-        return empty(false);
+        return SessionFile::Missing;
     };
     if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) || !safe_file(&path) {
-        return empty(true);
+        return SessionFile::Unreadable;
     }
-    match File::open(&path) {
-        Ok(file) => pi_read(BufReader::new(file), session, cwd, until),
-        Err(_) => empty(true),
+    SessionFile::Found(path)
+}
+
+/// The usage in the session's own file in `dir`.
+fn usage_in(dir: &Path, session: &str, cwd: &str, until: Instant) -> AgentUsage {
+    match session_file(dir, session, until) {
+        SessionFile::Missing => empty(false),
+        SessionFile::Unreadable => empty(true),
+        SessionFile::Found(path) => match File::open(&path) {
+            Ok(file) => pi_read(BufReader::new(file), session, cwd, until),
+            Err(_) => empty(true),
+        },
     }
 }
 

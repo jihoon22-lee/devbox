@@ -81,6 +81,10 @@ pub struct AgentTask {
     pub closed_head_oid: Option<String>,
     #[serde(default)]
     pub cleanup_error: Option<String>,
+    /// When the current launch started, until its tool says it reads its input. Only pi says so,
+    /// through devbox's extension, so other tools never have it.
+    #[serde(default)]
+    pub starting_since_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -318,6 +322,7 @@ domain_error! {
         TeardownCommandInvalid = "agents.teardown_command_invalid",
         DeliveryUnknown = "agents.delivery_unknown",
         AwaitingInput = "agents.awaiting_input",
+        ToolStarting = "agents.tool_starting",
         ResumeUnavailable = "agents.resume_unavailable",
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",

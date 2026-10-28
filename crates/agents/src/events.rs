@@ -14,19 +14,23 @@ pub(crate) fn changed(hub: &Hub, task: &AgentTask, rev: u64, entered_attention: 
         },
     );
     if entered_attention && state::is_attention(task.state) {
-        hub.publish::<AgentsAttentionTopic>(
-            rev,
-            &AgentsAttention {
-                id: task.id.clone(),
-                state: task.state,
-                message: task
-                    .attention
-                    .as_ref()
-                    .map(|a| a.message.clone())
-                    .unwrap_or_default(),
-            },
-        );
+        announce(hub, task, rev);
     }
+}
+/// The notice that `task` needs the user, which the app shows and may raise as a notification.
+pub(crate) fn announce(hub: &Hub, task: &AgentTask, rev: u64) {
+    hub.publish::<AgentsAttentionTopic>(
+        rev,
+        &AgentsAttention {
+            id: task.id.clone(),
+            state: task.state,
+            message: task
+                .attention
+                .as_ref()
+                .map(|a| a.message.clone())
+                .unwrap_or_default(),
+        },
+    );
 }
 pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bool {
     if matches!(event, AgentEvent::OutputWaiting) && t.state != AgentState::Running {

@@ -61,14 +61,21 @@ pub fn builtin() -> Vec<ToolProfile> {
             hooks: Hooks::Opencode,
             waiting_patterns: vec![],
         },
-        // Its extension reports the folder trust question and extension dialogs, so its pane
-        // is not matched either.
+        // Its extension reports the folder trust question and extension dialogs. The trust
+        // question is matched on screen as well: a send taken without the extension's ready
+        // report, 30 s after the launch, must not answer it.
         ToolProfile {
             id: "pi".into(),
             label: "pi".into(),
             command: "pi".into(),
             hooks: Hooks::Pi,
-            waiting_patterns: vec![],
+            waiting_patterns: vec![
+                // Folder trust. Evidence: crates/agents/tests/fixtures/pi-1.3.0/trust.txt (real
+                // capture). The question, the folder rows and the explanation can leave the
+                // matched tail, and `→` marks the selected choice, so this anchors on the last two
+                // choice rows, with or without it.
+                r"(?im)^\s*(?:→\s*)?Do not trust\s*\n\s*(?:→\s*)?Do not trust \(this session only\)\s*$".into(),
+            ],
         },
     ]
 }
@@ -305,10 +312,10 @@ mod tests {
                 ("pi", "pi", "pi", Hooks::Pi),
             ]
         );
-        // opencode's plugin and pi's extension report their prompts, so their panes are not
-        // matched.
+        // opencode's plugin reports its prompts, so its pane is not matched. pi's trust question
+        // is matched on screen too (watch_tests: pi_trust_screen_is_waiting).
         assert!(builtin[2].waiting_patterns.is_empty());
-        assert!(builtin[3].waiting_patterns.is_empty());
+        assert!(!builtin[3].waiting_patterns.is_empty());
     }
     #[test]
     fn old_hook_values_still_parse() {

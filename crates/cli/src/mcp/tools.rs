@@ -171,6 +171,9 @@ fn message_for(error: &ClientError) -> &'static str {
             "agents.awaiting_input" => {
                 "에이전트가 선택을 기다리고 있습니다. 터미널에서 승인이나 선택을 마친 뒤 다시 보내세요."
             }
+            "agents.tool_starting" => {
+                "에이전트가 시작하는 중입니다. 터미널에 에이전트 화면이 나타나면 다시 보내세요."
+            }
             "agents.invalid_input" | "invalid_params" => {
                 "에이전트 작업의 입력값이 올바르지 않습니다."
             }
@@ -192,5 +195,21 @@ fn message_for(error: &ClientError) -> &'static str {
         _ => {
             "데몬 연결이 끊겨 실행 결과를 확인하지 못했습니다. 작업 상태를 확인한 뒤 재시도해 주세요."
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn a_send_before_the_agent_reads_its_input_says_when_to_send_again() {
+        let error = ClientError::Rpc {
+            code: "agents.tool_starting".into(),
+            detail: None,
+            diagnostic_id: None,
+        };
+        assert_eq!(
+            message_for(&error),
+            "에이전트가 시작하는 중입니다. 터미널에 에이전트 화면이 나타나면 다시 보내세요."
+        );
     }
 }

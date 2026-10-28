@@ -1,5 +1,6 @@
-//! A send must not answer a Codex prompt the output watcher has not reported yet. The watcher
-//! needs 2 to about 6 s of unchanged output, and Enter on the trust prompt saves trust for good.
+//! A send must not answer a Codex or pi prompt the output watcher has not reported yet. The
+//! watcher needs 2 to about 6 s of unchanged output, and Enter on a trust prompt saves trust for
+//! good.
 mod support;
 use devbox_cli::client::{Client, ClientError};
 use serde_json::{Value, json};
@@ -9,11 +10,21 @@ use support::TestDaemon;
 const TRUST: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/trust.txt");
 const HOOKS: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/hooks-review.txt");
 const WORKING: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/working.txt");
+const PI_TRUST: &str = include_str!("../../agents/tests/fixtures/pi-1.3.0/trust.txt");
 const TEXT: &str = "owned-pane-check-instruction";
 
 /// Leave a start marker, paint the screen once, then record every line that is sent.
 const FAKE_CODEX: &str = r#"#!/usr/bin/env bash
 touch "$HOME/fake-codex-started"
+cat "$HOME/screen.txt"
+while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/received"; done
+"#;
+
+/// The same for pi, which first says it is ready, as devbox's extension does once pi has started
+/// its session. A send is then held back only by what the pane shows.
+const FAKE_PI: &str = r#"#!/usr/bin/env bash
+touch "$HOME/fake-pi-started"
+"$DEVBOX_BIN" agent event --from pi '{"v":1,"event":"ready"}'
 cat "$HOME/screen.txt"
 while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/received"; done
 "#;
@@ -36,6 +47,18 @@ async fn showing(
     fail: &str,
     custom: Option<(&str, &str)>,
 ) -> (TestDaemon, Client, String) {
+    showing_as("codex", FAKE_CODEX, shown, last_row, fail, custom).await
+}
+
+/// `showing` for the builtin profile `tool`, played by `script` as a fake `tool` first on PATH.
+async fn showing_as(
+    tool: &str,
+    script: &str,
+    shown: &str,
+    last_row: &str,
+    fail: &str,
+    custom: Option<(&str, &str)>,
+) -> (TestDaemon, Client, String) {
     let mut d = TestDaemon::fixture();
     d.paths.ensure_dirs().expect("owned dirs");
     std::fs::write(
@@ -44,10 +67,10 @@ async fn showing(
     )
     .expect("tmux config");
     d.tmux_failure_wrapper(fail);
-    let fake = d.home.path().join("bin/codex");
-    std::fs::write(&fake, FAKE_CODEX).expect("owned fake codex");
+    let fake = d.home.path().join("bin").join(tool);
+    std::fs::write(&fake, script).expect("owned fake tool");
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
-        .expect("fake codex permissions");
+        .expect("fake tool permissions");
     std::fs::write(d.home.path().join("screen.txt"), screen(shown)).expect("owned screen");
     let profile = match custom {
         Some((profile, lines)) => {
@@ -61,7 +84,7 @@ async fn showing(
             ));
             profile
         }
-        None => "codex",
+        None => tool,
     };
     let repo = d.git_repo("projects/app");
     d.launch();
@@ -81,8 +104,8 @@ async fn showing(
         }
     })
     .await;
-    // The fake tool ran, never a real Codex.
-    assert!(d.home.path().join("fake-codex-started").exists());
+    // The fake tool ran, never a real Codex or pi.
+    assert!(d.home.path().join(format!("fake-{tool}-started")).exists());
     (d, client, id)
 }
 
@@ -124,6 +147,29 @@ async fn a_send_cannot_answer_the_codex_trust_prompt_before_the_watcher_reports_
 #[tokio::test]
 async fn a_send_cannot_answer_the_codex_hooks_review_prompt_before_the_watcher_reports_it() {
     prompt_refuses_the_send(HOOKS, "hooks won't run", None).await;
+}
+
+#[tokio::test]
+async fn a_send_cannot_answer_the_pi_trust_question_before_the_watcher_reports_it() {
+    // pi said it is ready, so only the pane holds the send back. The selection is still on
+    // "Trust", which Enter would save for good.
+    let (d, client, id) = showing_as(
+        "pi",
+        FAKE_PI,
+        PI_TRUST,
+        "escape/ctrl+c cancel",
+        "load-buffer",
+        None,
+    )
+    .await;
+    let refused = send(&client, &id)
+        .await
+        .expect_err("send onto pi's trust question");
+    assert!(
+        matches!(&refused, ClientError::Rpc { code, .. } if code == "agents.awaiting_input"),
+        "{refused:?}"
+    );
+    assert_nothing_sent(&d, &client, &id).await;
 }
 
 #[tokio::test]

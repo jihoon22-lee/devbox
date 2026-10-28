@@ -14,6 +14,11 @@ test("agent errors use actual generated file details and terminal codes", () => 
   expect(messageFor("agents.conflict", { files: [1, null] }).action).not.toContain("null");
   expect(messageFor("terminal.cwd_invalid").action).toContain("WSL");
   expect(messageFor("terminal.title_too_long", { limit: 256 }).action).toContain("256");
+  // A send that came before the agent reads its input says when to send it again.
+  expect(messageFor("agents.tool_starting")).toEqual({
+    title: "에이전트가 시작하는 중입니다.",
+    action: "터미널에 에이전트 화면이 나타나면 다시 보내세요.",
+  });
   for (const code of ["agents.tool_missing", "projects.launch_tool_missing"] as const) {
     expect(messageFor(code, { command: "pi" })).toEqual({
       title: "pi 명령을 찾을 수 없습니다.",

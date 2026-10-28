@@ -1,0 +1,56 @@
+# 실제 녹화. pi 1.3.0(npm 전역 설치본), 2026-10-28 라이브 확인 L1. 소유 임시 git 저장소(.pi/settings.json = {})에서 새 작업이 처음 띄운 "Trust project folder?" 화면.
+# 신뢰 질문 보고가 devbox에 닿은 2.15초 뒤, 화면이 나타나자마자 찍었다. 아무것도 고르지 않았다(→는 기본값 "Trust").
+# 녹화: S7-8 라이브 확인, 전용 tmux socket(-L devbox-fixture-<난수>), 창 200x50, capture-pane -p(-J 없음). devbox 확장과 녹화용 확장(record.ts)은 -e로, 사용자 확장 대역(user-probe.ts)은 소유 에이전트 폴더의 extensions/에서 읽혔다.
+# 정리: 경로 줄의 임시 폴더 난수를 지웠고(/tmp/devbox-pi-fixture), 세션 id는 자리표시자다. 홈 경로·계정·이메일·토큰은 화면에 없었다. 줄 끝 공백은 capture 그대로다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+Warning: No project session found with id '00000000-0000-4000-8000-000000000011'; creating a new session with that id.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ Trust project folder?
+ /tmp/devbox-pi-fixture/repo
+
+ This allows pi to load .pi settings and resources, install missing project packages, and execute project extensions.
+
+ → Trust
+   Trust parent folder (/tmp/devbox-pi-fixture)
+   Trust (this session only)
+   Do not trust
+   Do not trust (this session only)
+
+ ↑↓ navigate  enter select  escape/ctrl+c cancel
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

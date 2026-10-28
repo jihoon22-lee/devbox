@@ -37,5 +37,6 @@ export function task(
     closedCommits: null,
     closedHeadOid: null,
     cleanupError: null,
+    startingSinceMs: null,
   };
 }

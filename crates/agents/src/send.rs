@@ -36,6 +36,9 @@ impl AgentsService {
             }
             .into());
         }
+        // Until pi reads its input, Enter could answer its folder-trust question, which is not
+        // on screen yet for the pane check below to see.
+        self.check_ready(&task, now_ms()).await?;
         let session = task
             .terminal_id
             .as_deref()

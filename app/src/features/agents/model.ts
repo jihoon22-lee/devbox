@@ -26,7 +26,8 @@ export function nextWaiting(groups: ReturnType<typeof groupByUrgency>, current?:
 export function attentionCount(tasks: AgentTask[]) {
   return tasks.filter((t) => t.state === "waiting" || t.state === "idle" || t.state === "failed").length;
 }
-/** A task of a profile devbox connects to that reported no session in its first 90 seconds. */
+/** A task of a profile devbox connects to that reported no session in its first 90 seconds, or a
+ * pi launch that has not said in its first 90 seconds that it is ready. */
 export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: number) {
   const hooks = new Map(profiles.map((p) => [p.id, p.hooks]));
   // Only Claude reports a session before a prompt; the others report it with the first one.
@@ -34,7 +35,12 @@ export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: 
     const kind = hooks.get(t.profile);
     return kind === "claude" || (kind !== undefined && kind !== "none" && t.prompt.trim() !== "");
   };
-  return tasks.some((t) => t.state === "running" && reports(t) && !t.sessionId && nowMs - t.createdMs > 90_000);
+  // pi has its session from the start, and says on every launch, prompt or not, that it is ready.
+  const silent = (t: AgentTask) =>
+    hooks.get(t.profile) === "pi"
+      ? t.startingSinceMs !== null && nowMs - t.startingSinceMs > 90_000
+      : reports(t) && !t.sessionId && nowMs - t.createdMs > 90_000;
+  return tasks.some((t) => t.state === "running" && silent(t));
 }
 export function fillTemplate(body: string, vars: { title: string; branch: string; project: string }) {
   return body.replace(/\{\{(title|branch|project)\}\}/g, (_, key: keyof typeof vars) => vars[key]);

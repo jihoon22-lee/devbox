@@ -162,21 +162,25 @@ fn session_metadata_keeps_initial_approval_detection_eligible() {
     assert!(observation.observe(started, "approval".into(), now + QUIET * 2));
 }
 
-/// Fixtures in `tests/fixtures/codex-0.164.0/` start with `#` provenance lines and a `---`
-/// line. Only the text after that line is the pane, so the header never reaches the matcher.
+/// Fixtures in `tests/fixtures/codex-0.164.0/` and `tests/fixtures/pi-1.3.0/` start with `#`
+/// provenance lines and a `---` line. Only the text after that line is the pane, so the header
+/// never reaches the matcher.
 fn screen(fixture: &str) -> &str {
     fixture
         .split_once("\n---\n")
         .expect("fixture header ends with a --- line")
         .1
 }
-fn codex_patterns() -> Vec<Regex> {
+fn builtin_patterns(id: &str) -> Vec<Regex> {
     profile::compiled(&crate::AgentProfiles {
         items: profile::builtin(),
     })
     .expect("owned fixture")
-    .remove("codex")
-    .expect("builtin codex profile")
+    .remove(id)
+    .expect("builtin profile")
+}
+fn codex_patterns() -> Vec<Regex> {
+    builtin_patterns("codex")
 }
 
 #[test]
@@ -234,5 +238,58 @@ fn codex_working_screen_is_not_waiting() {
             !matches_waiting(&patterns, &format!("{working}\n{line}")),
             "{line}"
         );
+    }
+}
+
+#[test]
+fn pi_trust_screen_is_waiting() {
+    let patterns = builtin_patterns("pi");
+    let trust = screen(include_str!("../tests/fixtures/pi-1.3.0/trust.txt"));
+    assert!(matches_waiting(&patterns, trust));
+    // Moving the selection onto either row the pattern reads leaves it the same prompt.
+    let unselected = trust.replacen(" → Trust\n", "   Trust\n", 1);
+    assert_ne!(unselected, trust);
+    for row in ["Do not trust\n", "Do not trust (this session only)\n"] {
+        let moved = unselected.replacen(&format!("   {row}"), &format!(" → {row}"), 1);
+        assert_ne!(moved, unselected, "{row}");
+        assert!(matches_waiting(&patterns, &moved), "{row}");
+    }
+    // Output below the prompt means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn pi_screens_after_the_trust_decision_are_not_waiting() {
+    let patterns = builtin_patterns("pi");
+    for (name, fixture) in [
+        (
+            "l1",
+            include_str!("../tests/fixtures/pi-1.3.0/after-trust-l1.txt"),
+        ),
+        (
+            "l2",
+            include_str!("../tests/fixtures/pi-1.3.0/after-trust-l2.txt"),
+        ),
+        (
+            "l3",
+            include_str!("../tests/fixtures/pi-1.3.0/after-trust-l3.txt"),
+        ),
+    ] {
+        let after = screen(fixture);
+        assert!(!matches_waiting(&patterns, after), "{name}");
+        // The question or one choice quoted in pi's output is not the prompt itself.
+        for line in [
+            "Trust project folder?",
+            " → Trust",
+            "Do not trust (this session only)",
+        ] {
+            assert!(
+                !matches_waiting(&patterns, &format!("{after}\n{line}")),
+                "{name}: {line}"
+            );
+        }
     }
 }

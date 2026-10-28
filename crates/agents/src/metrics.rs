@@ -38,7 +38,8 @@ impl AgentsService {
         }
         let home = self.paths.home.clone();
         if hooks == crate::profile::Hooks::Pi {
-            // The daemon's environment is the one the task's panes start with.
+            // Assumed, not checked: the task's panes start with this daemon's `PI_*` variables.
+            // The tmux server is its own unit and no `PI_*` variable is allowlisted.
             let agent_dir = std::env::var_os("PI_CODING_AGENT_DIR");
             let session_dir = std::env::var_os("PI_CODING_AGENT_SESSION_DIR");
             return tokio::task::spawn_blocking(move || {

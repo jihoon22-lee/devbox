@@ -8,7 +8,7 @@ import { spawn } from "node:child_process";
 /** One report: the last argument of `devbox agent event --from pi`. */
 export type DevboxPayload = {
   v: 1;
-  event: "working" | "idle" | "needsInput" | "inputResolved";
+  event: "working" | "idle" | "needsInput" | "inputResolved" | "ready";
   /** What a `needsInput` waits on. The trust question has none. */
   kind?: InputKind;
   sessionId?: string;
@@ -36,6 +36,9 @@ type Fields = Record<string, unknown>;
 
 /** How long one report may take before the next is sent anyway. `devbox` gives up after 3 s. */
 const REPORT_WAIT_MS = 5000;
+/** How long pi is held open for its trust report: past the report's own wait, so the report has
+ * ended, or been given up on, before nothing holds pi any more. */
+const HOLD_MS = REPORT_WAIT_MS + 1000;
 /** How many code points of a dialog's title a report carries. */
 const MESSAGE_CODE_POINTS = 200;
 /** The events the extension reports from. */
@@ -122,6 +125,17 @@ export function toDevboxEvent(event: unknown, context: EventContext, state: Exte
   }
 }
 
+/** The reports one pi event makes, in order. */
+export function toDevboxEvents(event: unknown, context: EventContext, state: ExtensionState): DevboxPayload[] {
+  const payload = toDevboxEvent(event, context, state);
+  const reports = payload ? [payload] : [];
+  // pi reads its input once it has started, after any trust question: devbox holds sends until
+  // then, so pasted text and its Enter cannot answer that question.
+  const fired = fields(event);
+  if (fired?.type === "session_start" && fired.reason === "startup") reports.push({ v: 1, event: "ready" });
+  return reports;
+}
+
 /** What the extension needs from a handler's context. A context pi broke reads as empty. */
 function contextOf(ctx: unknown): EventContext {
   const read: EventContext = { hasUI: fields(ctx)?.hasUI === true };
@@ -177,9 +191,9 @@ export default function devbox(pi: unknown): void {
     // The queue up to and including this event's report, when it makes one.
     const handle = (event: unknown, ctx: unknown): Promise<void> | undefined => {
       try {
-        const payload = toDevboxEvent(event, contextOf(ctx), state);
-        if (!payload) return undefined;
-        queue = queue.then(() => report(payload));
+        const payloads = toDevboxEvents(event, contextOf(ctx), state);
+        if (payloads.length === 0) return undefined;
+        for (const payload of payloads) queue = queue.then(() => report(payload));
         return queue;
       } catch {
         // Reporting is best-effort: pi never sees an error from it.
@@ -196,7 +210,7 @@ export default function devbox(pi: unknown): void {
     listen("project_trust", async (event, ctx) => {
       // pi is not reading the terminal yet, and the report's process does not hold pi open:
       // without this timer pi would exit while it waits.
-      const hold = setTimeout(() => undefined, REPORT_WAIT_MS);
+      const hold = setTimeout(() => undefined, HOLD_MS);
       try {
         await handle(event, ctx);
       } finally {

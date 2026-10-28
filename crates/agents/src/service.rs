@@ -54,6 +54,10 @@ pub struct AgentsService {
     /// Compiled waiting patterns by profile id, published once by the output watcher so a send
     /// reads the pane with the same patterns. Unset while no watcher runs.
     pub(crate) waiting_patterns: OnceLock<Arc<HashMap<String, Vec<regex::Regex>>>>,
+    /// What this daemon has seen of each task's latest pi launch (see `ready`).
+    pub(crate) launches: Arc<crate::ready::Launches>,
+    /// When this daemon started: it may have missed the reports of launches from before.
+    pub(crate) started_ms: i64,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -92,6 +96,8 @@ impl AgentsService {
             approvals: Arc::default(),
             exports: Default::default(),
             waiting_patterns: OnceLock::new(),
+            launches: Arc::default(),
+            started_ms: now_ms(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -122,9 +128,17 @@ impl AgentsService {
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
-        self.update_bound(id, None, f).await
+        self.update_bound(id, None, false, f).await
     }
-    async fn update_bound<F>(&self, id: &str, launch: Option<String>, f: F) -> Result<Done>
+    /// `announce_later` holds back the notice of a wait the update enters (see
+    /// `announce_later`); the task still changes at once.
+    async fn update_bound<F>(
+        &self,
+        id: &str,
+        launch: Option<String>,
+        announce_later: bool,
+        f: F,
+    ) -> Result<Done>
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
@@ -156,14 +170,21 @@ impl AgentsService {
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous_state)))
                 },
-                move |(task, previous), rev| changed(&hub, task, rev, task.state != *previous),
+                move |(task, previous), rev| {
+                    changed(&hub, task, rev, !announce_later && task.state != *previous)
+                },
             )
             .await
             .internal("update agent")?;
         match result {
-            Ok((_, rev)) => Ok(Done {
-                rev: rev.to_string(),
-            }),
+            Ok(((task, previous), rev)) => {
+                if announce_later && task.state != previous && task.state == AgentState::Waiting {
+                    self.announce_later(task);
+                }
+                Ok(Done {
+                    rev: rev.to_string(),
+                })
+            }
             Err(Some(e)) => Err(e.into()),
             Err(None) => Ok(Done {
                 rev: self.db.rev().to_string(),
@@ -181,14 +202,13 @@ impl AgentsService {
             None
         };
         let task = self.get(&p.agent_id).await?;
-        if lifecycle
-            && self
-                .launch_binding(&task.id)
-                .await?
-                .launch_id
-                .as_deref()
-                .is_some_and(|launch| launch != p.payload)
-        {
+        let binding = if lifecycle {
+            Some(self.launch_binding(&task.id).await?)
+        } else {
+            None
+        };
+        let launch_id = binding.as_ref().and_then(|b| b.launch_id.as_deref());
+        if launch_id.is_some_and(|launch| launch != p.payload) {
             return Ok(Done {
                 rev: self.db.rev().to_string(),
             });
@@ -197,6 +217,17 @@ impl AgentsService {
             return Ok(Done {
                 rev: self.db.rev().to_string(),
             });
+        }
+        // The launch's setup is over and its tool starts now.
+        if p.source == crate::hooks::HookSource::Setup
+            && p.code == Some(0)
+            && launch_id == Some(p.payload.as_str())
+            && self.says_ready(&task)
+        {
+            self.launches.tool_started(&task.id, &p.payload, now_ms());
+        }
+        if crate::plugin_event::is_ready_report(p.source, &p.payload) {
+            return self.record_ready(&task.id, p.launch_id).await;
         }
         let launch = if p.source == crate::hooks::HookSource::Claude {
             let Some(launch) = p.launch_id.filter(|id| !id.is_empty()) else {
@@ -270,8 +301,14 @@ impl AgentsService {
                 self.exports.turn_completed(&task.id);
             }
         }
+        // pi asks about trust even in a folder whose trust is decided, and goes on at once.
+        let trust = p.source == crate::hooks::HookSource::Pi
+            && events.iter().any(|event| {
+                matches!(event, AgentEvent::NeedsInput { message }
+                    if message == crate::plugin_event::PI_TRUST_COPY)
+            });
         let approvals = self.approvals.clone();
-        self.update_bound(&p.agent_id, launch.clone(), move |t| {
+        self.update_bound(&p.agent_id, launch.clone(), trust, move |t| {
             if let Some(launch) = &launch {
                 return approvals.apply(t, launch, approval, events);
             }

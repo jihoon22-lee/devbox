@@ -3,7 +3,12 @@ import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import devbox, { type EventContext, newState, toDevboxEvent } from "../../../../../crates/agents/assets/pi-extension";
+import devbox, {
+  type EventContext,
+  newState,
+  toDevboxEvent,
+  toDevboxEvents,
+} from "../../../../../crates/agents/assets/pi-extension";
 
 const spawn = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ spawn, default: { spawn } }));
@@ -37,12 +42,13 @@ function recordedRuns(): Recorded[][] {
   return runs;
 }
 const replay = (lines: Recorded[], state = newState()) =>
-  lines.flatMap(({ event, context }) => toDevboxEvent(event, context, state) ?? []);
+  lines.flatMap(({ event, context }) => toDevboxEvents(event, context, state));
 
 const session = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
 const trust = { v: 1, event: "needsInput", message: "project_trust" };
 const resolved = { v: 1, event: "inputResolved" };
 const idle = { v: 1, event: "idle" };
+const ready = { v: 1, event: "ready" };
 const working = (sessionId: string) => ({ v: 1, event: "working", sessionId });
 const permission = (message: string) => ({ v: 1, event: "needsInput", kind: "permission", message });
 const question = (message: string) => ({ v: 1, event: "needsInput", kind: "question", message });
@@ -61,11 +67,11 @@ const run: EventContext = { sessionId: session(1), hasUI: true };
 
 test("recorded pi events become devbox reports in order", () => {
   expect(recordedRuns().map((events) => replay(events))).toEqual([
-    [trust, resolved, working(session(1)), idle],
-    [trust, resolved, working(session(1)), idle],
-    [trust, resolved, working(session(3)), permission("Allow the fixture command?"), resolved, idle],
-    // After /new a turn names pi's new session.
-    [trust, resolved, working(session(4)), idle, working("00000000-0000-7000-8000-000000000005"), idle],
+    [trust, resolved, ready, working(session(1)), idle],
+    [trust, resolved, ready, working(session(1)), idle],
+    [trust, resolved, ready, working(session(3)), permission("Allow the fixture command?"), resolved, idle],
+    // After /new a turn names pi's new session. pi was ready already.
+    [trust, resolved, ready, working(session(4)), idle, working("00000000-0000-7000-8000-000000000005"), idle],
   ]);
 });
 
@@ -99,7 +105,7 @@ test("agent_start and agent_settled become working and idle", () => {
 
 test("project_trust becomes needsInput", () => {
   expect(toDevboxEvent(asked, { hasUI: true }, newState())).toEqual(trust);
-  // Without a UI pi decides alone (print mode, --help): nobody is asked.
+  // Without a UI pi decides alone (print mode, --help): nobody is asked (실제 실행 L7, 미커밋).
   expect(toDevboxEvent(asked, { hasUI: false }, newState())).toBeUndefined();
   expect(toDevboxEvent(asked, {}, newState())).toBeUndefined();
 });
@@ -116,6 +122,24 @@ test("the trust decision ends the wait", () => {
   expect(toDevboxEvent(started, run, early)).toEqual(working(session(1)));
   expect(toDevboxEvent(startup, run, early)).toBeUndefined();
   expect(toDevboxEvent(settled(), run, early)).toEqual(idle);
+});
+
+test("pi says it is ready once it has started, whether or not it asked about trust", () => {
+  const asking = newState();
+  expect(toDevboxEvents(asked, ui, asking)).toEqual([trust]);
+  expect(toDevboxEvents(startup, ui, asking)).toEqual([resolved, ready]);
+  // The folder's trust was decided before: pi asks nobody and starts.
+  expect(toDevboxEvents(startup, ui, newState())).toEqual([ready]);
+  // A switch to another session or a reload is not a start: pi has been reading its input.
+  for (const reason of ["new", "resume", "fork", "reload"]) {
+    expect(toDevboxEvents({ type: "session_start", reason }, run, newState())).toEqual([]);
+  }
+  // Every other event makes the one report toDevboxEvent makes, if any.
+  const state = newState();
+  expect(toDevboxEvents(started, run, state)).toEqual([working(session(1))]);
+  expect(toDevboxEvents(settled(), run, state)).toEqual([idle]);
+  expect(toDevboxEvents({ type: "turn_start" }, run, state)).toEqual([]);
+  expect(toDevboxEvents(null, run, state)).toEqual([]);
 });
 
 test("a dialog waits with its kind and the first line of its title", () => {
@@ -273,7 +297,7 @@ test("pi shows its trust question only once devbox has the wait", async () => {
   reporting.emit("exit", 0);
   // The user decides in the terminal: the extension never does.
   await expect(decision).resolves.toEqual({ trusted: "undecided" });
-  // Without a UI nobody is asked, and nothing waits.
+  // Without a UI nobody is asked, and nothing waits (실제 실행 L7, 미커밋).
   await expect(Promise.resolve(handlers.get("project_trust")?.(asked, { hasUI: false }))).resolves.toEqual({
     trusted: "undecided",
   });
@@ -297,15 +321,39 @@ test("pi stays running while devbox takes the trust report", async () => {
   expect(holding()).toBe(before);
 });
 
+test("pi is held open until the trust report has ended or been given up on", async () => {
+  vi.useFakeTimers();
+  try {
+    Object.assign(process.env, { DEVBOX_AGENT_ID: "a1", DEVBOX_BIN: "/owned/devbox" });
+    const handlers = load();
+    // A report devbox never answers.
+    spawn.mockReturnValueOnce(child());
+    const decision = Promise.resolve(handlers.get("project_trust")?.(asked, { hasUI: true }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    // The hold, and the report's wait.
+    expect(vi.getTimerCount()).toBe(2);
+    // The report is given up on after 5 s, and pi is still held while that ends the wait.
+    vi.advanceTimersByTime(5000);
+    expect(vi.getTimerCount()).toBe(1);
+    await expect(decision).resolves.toEqual({ trusted: "undecided" });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("spawn_errors_are_swallowed", async () => {
   Object.assign(process.env, { DEVBOX_AGENT_ID: "a1", DEVBOX_BIN: "/owned/missing-devbox" });
   const handlers = load();
   const failing = child();
+  const saying = child();
   spawn
     .mockImplementationOnce(() => {
       throw new Error("spawn EACCES");
     })
     .mockReturnValueOnce(failing)
+    .mockReturnValueOnce(saying)
     .mockReturnValueOnce(child());
   await expect(Promise.resolve(handlers.get("project_trust")?.(asked, { hasUI: true }))).resolves.toEqual({
     trusted: "undecided",
@@ -313,6 +361,10 @@ test("spawn_errors_are_swallowed", async () => {
   await expect(Promise.resolve(handlers.get("session_start")?.(startup, context()))).resolves.toBeUndefined();
   await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
   expect(() => failing.emit("error", new Error("spawn ENOENT"))).not.toThrow();
+  // The report that pi is ready still follows.
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(3));
+  expect(spawn.mock.calls[2]?.[1]?.at(-1)).toBe(JSON.stringify(ready));
+  saying.emit("exit", 0);
   // A context pi broke, or none at all, still reports the run.
   const broken = {
     hasUI: true,
@@ -323,8 +375,8 @@ test("spawn_errors_are_swallowed", async () => {
     },
   };
   await expect(Promise.resolve(handlers.get("agent_start")?.(started, broken))).resolves.toBeUndefined();
-  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(3));
-  expect(spawn.mock.calls[2]?.[1]?.at(-1)).toBe(JSON.stringify({ v: 1, event: "working" }));
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(4));
+  expect(spawn.mock.calls[3]?.[1]?.at(-1)).toBe(JSON.stringify({ v: 1, event: "working" }));
   // No handler throws into pi, whatever it is given.
   for (const [name, handler] of handlers) {
     const outcome = new Promise((done) => done(handler(null, null))).then(() => name);

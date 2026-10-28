@@ -93,6 +93,7 @@ mod artifacts;
 mod create;
 mod events;
 mod prepare;
+mod ready;
 mod tool_lifecycle;
 
 mod lifecycle;
