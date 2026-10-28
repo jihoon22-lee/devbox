@@ -248,3 +248,5 @@ async fn malformed_oversized_or_linked_receipts_keep_the_reader_open() {
     assert_eq!(phase(&o.f.db, &a).await, AttemptPhase::Closed);
     svc.shutdown().await;
 }
+#[path = "windows_copy_lifecycle_holder_tests.rs"]
+mod holder;

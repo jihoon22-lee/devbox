@@ -10,7 +10,7 @@ use tokio::{io::AsyncWriteExt, process::Command};
 use zeroize::Zeroizing;
 #[path = "windows_observation.rs"]
 mod observation;
-pub(crate) use observation::{check_paths, listeners, observe};
+pub(crate) use observation::{check_paths, holder, listeners, observe};
 
 #[cfg(test)]
 #[path = "windows_exec_probe_tests.rs"]
@@ -161,8 +161,10 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         Direct::Unavailable => delegated(&client, &id, &request, cadence).await.ok(),
     };
     if let Some(code) = code {
-        if let Some(error) = bootstrap_error(code) {
-            eprintln!("{error}");
+        let assigned =
+            devbox_runtime::windows::windows_to_wsl(&request.observation.assigned_path).ok();
+        if let Some(error) = bootstrap_error(code, assigned.as_deref()) {
+            eprintln!("{}", observer_unavailable_line(&error));
         }
         devbox_runtime::exit_record::ExitStore::new(&paths.data_dir.join("runs"), &id.run_id)?
             .record_windows_exit(&id.attempt_id, code)?;
@@ -244,11 +246,26 @@ where
     anyhow::bail!("Windows execution result is unknown; no retry was attempted")
 }
 
-/// The bootstrap exits with this status only when its job holder was not ready, before any
-/// command ran. It is reported as the fixed code; no output text is parsed.
-fn bootstrap_error(code: i32) -> Option<devbox_runtime::RuntimeError> {
-    (code == OBSERVER_UNAVAILABLE_EXIT)
-        .then_some(devbox_runtime::RuntimeError::WindowsObserverUnavailable)
+/// The run-log copy for `windows.observer_unavailable`: the screen table's exact text.
+const OBSERVER_UNAVAILABLE_TITLE: &str = "Windows 작업 관찰을 준비하지 못했습니다.";
+const OBSERVER_UNAVAILABLE_ACTION: &str = "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.";
+/// The bootstrap exits 75 for itself only when its job holder was not ready, which is before
+/// the `assigned` receipt is written. So 75 is the fixed code only with proof that no receipt
+/// exists; with a receipt (or no proof either way) it is the user command's own exit code.
+/// No output text is parsed.
+fn bootstrap_error(code: i32, assigned: Option<&Path>) -> Option<devbox_runtime::RuntimeError> {
+    if code != OBSERVER_UNAVAILABLE_EXIT {
+        return None;
+    }
+    match std::fs::symlink_metadata(assigned?) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Some(devbox_runtime::RuntimeError::WindowsObserverUnavailable)
+        }
+        _ => None,
+    }
+}
+fn observer_unavailable_line(error: &devbox_runtime::RuntimeError) -> String {
+    format!("{error}: {OBSERVER_UNAVAILABLE_TITLE} {OBSERVER_UNAVAILABLE_ACTION}")
 }
 fn known_exit(code: i32) -> ExitStatus {
     ExitStatus::from_raw((if code == 0 { 0 } else { (code & 255).max(1) }) << 8)
@@ -334,8 +351,12 @@ mod tests {
         ));
     }
     #[test]
-    fn bootstrap_observer_unavailable_status_maps_to_the_fixed_code() {
-        let error = bootstrap_error(OBSERVER_UNAVAILABLE_EXIT).expect("fixed bootstrap failure");
+    fn exit_75_is_observer_unavailable_only_without_an_assigned_receipt() {
+        let temp = tempfile::tempdir().expect("owned control directory");
+        let receipt = temp.path().join("assigned.json");
+        // No receipt: the bootstrap stopped at the holder wait, before any command ran.
+        let error = bootstrap_error(OBSERVER_UNAVAILABLE_EXIT, Some(&receipt))
+            .expect("fixed bootstrap failure");
         assert_eq!(error.to_string(), "windows.observer_unavailable");
         assert!(matches!(
             error,
@@ -343,8 +364,30 @@ mod tests {
         ));
         // Success, the generic bootstrap failure and ordinary command results stay results.
         for code in [0, 1, 9, 78, 255, -1] {
-            assert!(bootstrap_error(code).is_none(), "{code}");
+            assert!(bootstrap_error(code, Some(&receipt)).is_none(), "{code}");
         }
+        // With the receipt, 75 is the user command's own exit code.
+        std::fs::write(&receipt, "{}").expect("owned receipt");
+        assert!(bootstrap_error(OBSERVER_UNAVAILABLE_EXIT, Some(&receipt)).is_none());
+        // A path that cannot be mapped proves nothing either way.
+        assert!(bootstrap_error(OBSERVER_UNAVAILABLE_EXIT, None).is_none());
+    }
+    #[test]
+    fn the_run_log_line_carries_the_screen_copy_next_to_the_code() {
+        let line =
+            observer_unavailable_line(&devbox_runtime::RuntimeError::WindowsObserverUnavailable);
+        assert_eq!(
+            line,
+            "windows.observer_unavailable: Windows 작업 관찰을 준비하지 못했습니다. 다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요."
+        );
+        // The same strings as the screen's message table, so the two cannot drift.
+        let table = include_str!("../../../app/src/rpc/systemMessages.ts");
+        let start = table
+            .find("\"windows.observer_unavailable\": {")
+            .expect("screen entry");
+        let entry = &table[start..start + table[start..].find("},").expect("entry end")];
+        assert!(entry.contains(&format!("title: \"{OBSERVER_UNAVAILABLE_TITLE}\"")));
+        assert!(entry.contains(&format!("action: \"{OBSERVER_UNAVAILABLE_ACTION}\"")));
     }
     #[test]
     fn windows_unknown_signal_is_distinct_from_known_exit_78() {

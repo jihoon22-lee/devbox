@@ -97,9 +97,10 @@ impl RuntimeService {
             _ if ports.is_empty() => Ok(Candidate::NotReady),
             AttemptPhase::Intent | AttemptPhase::Assigned => Ok(Candidate::NotReady),
             AttemptPhase::Committed => {
+                // An rc.1 row is still observed; only a new command needs a holder control.
                 let assigned = attempt
                     .assigned
-                    .filter(|assigned| attempt.control.accepts(id, assigned))
+                    .filter(|assigned| attempt.control.observes(id, assigned).is_some())
                     .ok_or_else(changed)?;
                 Ok(Candidate::Probe(Box::new(assigned), ports))
             }

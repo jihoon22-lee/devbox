@@ -148,7 +148,7 @@ fn holder_counts_total_processes_so_a_short_command_still_leaves_a_receipt() {
 fn holder_writes_the_receipt_with_create_new() {
     let hold = at(HOLDER, "public static void Hold(");
     let open = after(HOLDER, hold, "OpenJobObject(4,false,name)");
-    let ready = after(HOLDER, hold, "WriteNew(ready,body)");
+    let ready = after(HOLDER, hold, "WriteNew(ready,Identity(nonce))");
     let emptied = after(HOLDER, hold, "account.Total>=1 && account.Active==0");
     let receipt = after(HOLDER, hold, "WriteNew(receipt,body)");
     assert!(open < ready && ready < emptied && emptied < receipt);
@@ -208,7 +208,7 @@ fn windows_control_requires_distinct_holder_paths_in_the_same_private_directory(
     assert!(wire.contains(r#""emptiedPath":"C:\\owned\\control\\emptied.json""#));
 }
 #[test]
-fn a_control_stored_before_the_holder_still_decodes_but_fails_closed() {
+fn an_rc1_control_decodes_as_legacy_and_can_never_launch() {
     let mut legacy = serde_json::to_value(control()).expect("control");
     let fields = legacy.as_object_mut().expect("object");
     fields.remove("holderReadyPath");
@@ -216,13 +216,30 @@ fn a_control_stored_before_the_holder_still_decodes_but_fails_closed() {
     let stored: ObservationControl =
         serde_json::from_value(legacy).expect("an older attempt row stays readable");
     assert!(stored.holder_ready_path.is_empty() && stored.emptied_path.is_empty());
-    assert!(
-        !stored.valid(),
-        "no holder means no receipt can ever prove exit"
-    );
+    assert_eq!(stored.shape(), Some(ControlShape::Legacy));
     let run = RunIdentity {
         run_id: "run".into(),
         attempt_id: "attempt".into(),
     };
-    assert!(!stored.accepts(&run, &assigned()));
+    // Still observed under rc.1's rule, but never valid for a new command or grant.
+    assert_eq!(
+        stored.observes(&run, &assigned()),
+        Some(ControlShape::Legacy)
+    );
+    assert!(!stored.valid() && !stored.accepts(&run, &assigned()));
+    let launch = RunWindows {
+        run_id: "run".into(),
+        attempt_id: "attempt".into(),
+        cwd: "C:\\owned".into(),
+        command: "exit 0".into(),
+        env: Default::default(),
+        ports: vec![],
+        observation: stored,
+    };
+    assert!(
+        !launch.tracked(),
+        "no rc.1-shaped control can start a command"
+    );
 }
+#[path = "holder_liveness_tests.rs"]
+mod liveness;

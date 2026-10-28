@@ -43,6 +43,37 @@ pub(super) fn configure(
     let executable = execution.windows_interop.clone();
     let native = broker.clone();
     let stopping = cancel.clone();
+    execution.windows_holder = Arc::new(move |holder, cross_session| {
+        let executable = executable.clone();
+        let native = native.clone();
+        let cancel = stopping.child_token();
+        Box::pin(async move {
+            let direct =
+                crate::windows_exec::holder(&executable, &holder, cross_session, cancel.clone())
+                    .await;
+            // Only an unavailable direct path is retried in the native session. A mismatch is
+            // the check's own SID or session answer, never a reason to ask another session.
+            if direct != ObservationState::Unavailable || cancel.is_cancelled() {
+                return direct;
+            }
+            match native
+                .probe(
+                    WindowsProbe::Holder {
+                        holder,
+                        cross_session,
+                    },
+                    cancel,
+                )
+                .await
+            {
+                Ok(WindowsProbeResult::Observation { state }) => state,
+                _ => ObservationState::Unavailable,
+            }
+        })
+    });
+    let executable = execution.windows_interop.clone();
+    let native = broker.clone();
+    let stopping = cancel.clone();
     execution.windows_listeners = Arc::new(move |assigned, ports| {
         let executable = executable.clone();
         let native = native.clone();
@@ -89,7 +120,10 @@ pub(super) fn configure(
 
 /// The native answer replaces the direct one. A direct NotFound already describes the job, so
 /// it is replaced only by another answer about the job; it stands when the native side cannot
-/// tell, so the holder's receipt can still release the reader without the Windows app.
+/// tell, so the holder's receipt can still release the reader without the Windows app. A direct
+/// IdentityMismatch (another session after sign-out or a reboot) likewise stands when the native
+/// side cannot tell, so the runtime's holder check can decide; reconcile is the only consumer,
+/// and there an unresolved mismatch keeps the reader exactly as Unavailable does.
 fn retried(direct: ObservationState, native: Option<ObservationState>) -> ObservationState {
     match (direct, native) {
         (
@@ -101,6 +135,9 @@ fn retried(direct: ObservationState, native: Option<ObservationState>) -> Observ
             ),
         ) => state,
         (ObservationState::NotFound, _) => ObservationState::NotFound,
+        (ObservationState::IdentityMismatch, None | Some(ObservationState::Unavailable)) => {
+            ObservationState::IdentityMismatch
+        }
         (_, Some(state)) => state,
         (_, None) => ObservationState::Unavailable,
     }

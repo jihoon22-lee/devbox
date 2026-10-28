@@ -128,6 +128,28 @@ public static class DevboxObservation {
         } catch { return new DevboxJobState("unavailable"); }
         finally { if(job!=IntPtr.Zero) CloseHandle(job); if(process!=IntPtr.Zero) CloseHandle(process); }
     }
+    // Holder liveness from the holder's PID, creation time and SID alone. No job lookup and no
+    // session gate: Local\ job names are per session, but a PID with its creation time names one
+    // process in every session. Mapped onto the existing states: gone (no such PID, a reused PID
+    // or an exit code) is notFound, alive (STILL_ACTIVE, 259) is active with count 1, any other
+    // failure (access denied included) is unavailable, and another SID is identityMismatch. For
+    // a job judged identityMismatch (crossSession), only an observer outside the holder's
+    // session answers, so only a session-caused mismatch is resolved.
+    public static DevboxJobState Holder(uint pid,string creation,string sid,uint session,bool crossSession) {
+        IntPtr process=IntPtr.Zero;
+        try {
+            if(!String.Equals(Sid(),sid,StringComparison.Ordinal)) return new DevboxJobState("identityMismatch");
+            if(crossSession && Session()==session) return new DevboxJobState("identityMismatch");
+            process=OpenProcess(0x1000,false,pid);
+            if(process==IntPtr.Zero)
+                return new DevboxJobState(Marshal.GetLastWin32Error()==87 ? "notFound" : "unavailable");
+            if(!String.Equals(Creation(process),creation,StringComparison.Ordinal)) return new DevboxJobState("notFound");
+            uint code;
+            if(!GetExitCodeProcess(process,out code)) return new DevboxJobState("unavailable");
+            return code==259 ? new DevboxJobState("active",1) : new DevboxJobState("notFound");
+        } catch { return new DevboxJobState("unavailable"); }
+        finally { if(process!=IntPtr.Zero) CloseHandle(process); }
+    }
     public static bool Exists(string path) {
         try { File.GetAttributes(path); return true; }
         catch(FileNotFoundException) { return false; }

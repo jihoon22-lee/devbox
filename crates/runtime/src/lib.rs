@@ -46,6 +46,7 @@ pub use model::*;
 pub use run_model::*;
 pub use schedule_model::*;
 pub use service::RuntimeService;
+pub use windows_observation::WindowsHolder;
 pub use windows_ready::WindowsListeners;
 
 pub const MIGRATIONS: &[Migration] = &[
