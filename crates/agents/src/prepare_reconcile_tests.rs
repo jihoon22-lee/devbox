@@ -102,18 +102,37 @@ async fn reconcile_keeps_resources_partial_unless_all_owned_ones_match() {
     git(&moved_wt, &["switch", "-c", "user-branch"]);
     // Everything is there, but preparation never recorded it as owned.
     let (planned, _) = interrupted(&fixture, "planned", Resources::Planned).await;
+    // The directory and the branch are there, but Git no longer lists the worktree.
+    let (unregistered, unregistered_wt) =
+        interrupted(&fixture, "unregistered", Resources::Owned).await;
+    let path = unregistered_wt.to_str().expect("UTF-8 fixture path");
+    git(&fixture.repo, &["worktree", "remove", "--force", path]);
+    fs::create_dir(&unregistered_wt).expect("owned directory");
+    // Git lists the path on its branch, but the path is a link to the worktree.
+    let (linked, linked_wt) = interrupted(&fixture, "linked", Resources::Owned).await;
+    let real = linked_wt.with_file_name("linked-real");
+    fs::rename(&linked_wt, &real).expect("owned worktree move");
+    std::os::unix::fs::symlink(&real, &linked_wt).expect("owned link");
     fixture.svc.reconcile().await.expect("restart reconcile");
-    for (task, branch_exists) in [(&gone, false), (&moved, true), (&planned, true)] {
-        assert_eq!(
-            resources(&fixture, &task.id).await,
-            Resources::Partial {
-                path_exists: true,
-                branch_exists: Some(branch_exists),
-                worktree_registered: Some(true),
-            },
-            "{}",
-            task.id
-        );
+    let cases = [
+        (&gone, false, true),
+        (&moved, true, true),
+        (&planned, true, true),
+        (&unregistered, true, false),
+        (&linked, true, true),
+    ];
+    let (mut observed, mut expected) = (Vec::new(), Vec::new());
+    for (task, branch_exists, registered) in cases {
+        observed.push((task.id.clone(), resources(&fixture, &task.id).await));
+        let partial = Resources::Partial {
+            path_exists: true,
+            branch_exists: Some(branch_exists),
+            worktree_registered: Some(registered),
+        };
+        expected.push((task.id.clone(), partial));
+    }
+    assert_eq!(observed, expected);
+    for (task, ..) in cases {
         let failed = fixture.svc.get(&task.id).await.expect("task");
         assert_eq!(failed.state, AgentState::Failed);
         assert!(

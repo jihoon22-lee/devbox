@@ -34,6 +34,8 @@ const LIMITS: Limits = Limits {
     depth: 256,
     deadline: Duration::from_secs(120),
 };
+/// Git's path listings are read as bytes, up to this many.
+const MAX_LISTING: usize = 64 * 1024 * 1024;
 struct Budget {
     limits: Limits,
     started: Instant,
@@ -118,15 +120,30 @@ struct Ignored {
     directories: HashSet<PathBuf>,
 }
 impl Ignored {
-    fn parse(listing: &str) -> Self {
+    fn parse(listing: &[u8]) -> Self {
         let mut ignored = Self::default();
-        for path in listing.split_terminator('\0') {
-            match path.strip_suffix('/') {
-                Some(directory) => ignored.directories.insert(directory.into()),
-                None => ignored.files.insert(path.into()),
+        for path in listing
+            .split(|&byte| byte == 0)
+            .filter(|path| !path.is_empty())
+        {
+            match path.strip_suffix(b"/") {
+                Some(directory) => ignored.directories.insert(listed(directory)),
+                None => ignored.files.insert(listed(path)),
             };
         }
         ignored
+    }
+}
+/// A listed name as the walk sees it, byte for byte: names need not be UTF-8.
+fn listed(bytes: &[u8]) -> PathBuf {
+    #[cfg(unix)]
+    {
+        <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes).into()
+    }
+    #[cfg(not(unix))]
+    {
+        // A name that does not match is hashed by content.
+        String::from_utf8_lossy(bytes).into_owned().into()
     }
 }
 /// One walk of a worktree.
@@ -332,7 +349,7 @@ pub(crate) struct DiscardSnapshot {
     dir: PathBuf,
     head: String,
     base: String,
-    index: String,
+    index: Vec<u8>,
     fingerprint: String,
     stamp: String,
 }
@@ -354,15 +371,33 @@ async fn changed(dir: &Path, head: &str, base: &str) -> Fail<AgentsError> {
         Err(error) => git_failure(error),
     }
 }
-async fn index(dir: &Path) -> Result<String> {
-    devbox_git::run::git(dir, &["ls-files", "--stage", "-z"])
-        .await
-        .map_err(git_failure)
+/// A Git listing of paths in `dir`, as bytes. Past [`MAX_LISTING`] the snapshot is unavailable.
+async fn listing(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    let cap = probe::listing_cap(dir).unwrap_or(MAX_LISTING);
+    #[cfg(not(test))]
+    let cap = MAX_LISTING;
+    match devbox_git::run::git_bytes(dir, args, cap).await {
+        Err(devbox_git::GitError::LimitExceeded) => Err(unavailable("listing_bytes")),
+        listed => listed.map_err(git_failure),
+    }
+}
+async fn index(dir: &Path) -> Result<Vec<u8>> {
+    listing(dir, &["ls-files", "--stage", "-z"]).await
+}
+/// Before the lock, a domain refusal (a missing, closed or unowned task) is state that the
+/// locked checks see again: `None`. Git, database and I/O failures are reported as they are.
+fn settled<T>(result: Result<T>) -> Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(Fail::Domain(_)) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 impl AgentsService {
     async fn snapshot(&self, dir: &Path, head: &str, base: &str) -> Result<DiscardSnapshot> {
         let index_before = index(dir).await?;
-        let listing = devbox_git::run::git(
+        let ignored = listing(
             dir,
             &[
                 "ls-files",
@@ -373,13 +408,12 @@ impl AgentsService {
                 "-z",
             ],
         )
-        .await
-        .map_err(git_failure)?;
+        .await?;
         let mut seed = format!("{head}\0{base}\0").into_bytes();
-        seed.extend_from_slice(index_before.as_bytes());
+        seed.extend_from_slice(&index_before);
         let directory = dir.to_owned();
         let walked = tokio::task::spawn_blocking(move || {
-            hash(&directory, &seed, &Ignored::parse(&listing), LIMITS)
+            hash(&directory, &seed, &Ignored::parse(&ignored), LIMITS)
         })
         .await
         .internal("hash discard snapshot")?
@@ -404,26 +438,37 @@ impl AgentsService {
     ) -> Result<String> {
         Ok(self.snapshot(dir, head, base).await?.fingerprint)
     }
-    /// Hashes the worktree a discard would remove, before the lifecycle lock. `None` when the
-    /// request has nothing to hash yet; errors wait for their usual place under the lock.
+    /// Hashes the worktree a discard would remove, before the lifecycle lock. `None` when there
+    /// is nothing to hash: no confirmed fingerprint, or a task the locked checks will refuse or
+    /// find changed. A failure waits for its usual place under the lock, after those checks.
     pub(crate) async fn hash_for_discard(
         &self,
         p: &DiscardAgent,
-    ) -> Option<Result<DiscardSnapshot>> {
-        p.expect.discard_fingerprint.as_ref()?;
-        let task = self.get(&p.id).await.ok()?;
-        crate::actions::open(&task).ok()?;
-        let (project, dir, _) = self.owned_worktree(&task).await.ok()?;
+    ) -> Result<Option<DiscardSnapshot>> {
+        if p.expect.discard_fingerprint.is_none() {
+            return Ok(None);
+        }
+        let Some(task) = settled(self.get(&p.id).await)? else {
+            return Ok(None);
+        };
+        if crate::actions::open(&task).is_err() {
+            return Ok(None);
+        }
+        let Some((project, dir, _)) = settled(self.owned_worktree(&task).await)? else {
+            return Ok(None);
+        };
         let base = devbox_git::run::resolve(Path::new(&project.path), &task.base_branch)
             .await
-            .ok()?;
-        Some(self.snapshot(&dir, &p.expect.head_oid, &base).await)
+            .map_err(git_failure)?;
+        self.snapshot(&dir, &p.expect.head_oid, &base)
+            .await
+            .map(Some)
     }
     /// Under the lifecycle lock, in place of hashing: the hash made before the lock matches
     /// what the user confirmed, and the worktree has not changed since it was made.
     pub(crate) async fn confirm_discard_snapshot(
         &self,
-        hashed: Option<Result<DiscardSnapshot>>,
+        hashed: Result<Option<DiscardSnapshot>>,
         dir: &Path,
         head: &str,
         base: &str,
@@ -433,8 +478,9 @@ impl AgentsService {
             .discard_fingerprint
             .as_ref()
             .ok_or(AgentsError::InvalidInput)?;
-        // No hash: the task changed while the request waited for the lock.
-        let Some(snapshot) = hashed.transpose()? else {
+        // A failed hash is reported as it is. No hash: the task changed while the request
+        // waited for the lock.
+        let Some(snapshot) = hashed? else {
             return Err(changed(dir, head, base).await);
         };
         if &snapshot.fingerprint != expected {
@@ -505,6 +551,29 @@ pub(crate) mod probe {
         fn drop(&mut self) {
             if let Ok(mut watches) = WATCHES.lock() {
                 watches.retain(|(watched, _)| watched != &self.0);
+            }
+        }
+    }
+    /// Listing caps in place of the real one, by worktree.
+    static CAPS: Mutex<Vec<(PathBuf, usize)>> = Mutex::new(Vec::new());
+    /// The cap applies until this is dropped.
+    pub(crate) struct Cap(PathBuf);
+    /// Caps each Git listing of `root` at `bytes`.
+    pub(crate) fn cap_listings(root: &Path, bytes: usize) -> Cap {
+        let mut caps = CAPS.lock().expect("discard probe");
+        caps.push((root.to_owned(), bytes));
+        Cap(root.to_owned())
+    }
+    pub(super) fn listing_cap(root: &Path) -> Option<usize> {
+        let caps = CAPS.lock().expect("discard probe");
+        caps.iter()
+            .find(|(capped, _)| capped == root)
+            .map(|(_, bytes)| *bytes)
+    }
+    impl Drop for Cap {
+        fn drop(&mut self) {
+            if let Ok(mut caps) = CAPS.lock() {
+                caps.retain(|(capped, _)| capped != &self.0);
             }
         }
     }
