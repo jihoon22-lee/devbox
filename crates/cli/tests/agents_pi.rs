@@ -381,3 +381,83 @@ async fn a_pi_send_waits_until_pi_says_it_is_ready() {
     })
     .await;
 }
+
+/// rc.1 ran pi under a custom `pi` profile without pi's hooks, so the task has no session devbox
+/// knows, though pi may have run its prompt already. Once `pi` is the builtin profile, a resume
+/// starts pi fresh and never sends that prompt again.
+#[tokio::test]
+async fn a_pi_resume_without_a_known_session_never_sends_the_prompt_again() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut d = TestDaemon::fixture();
+    d.paths.ensure_dirs().expect("owned dirs");
+    std::fs::write(
+        d.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .expect("tmux config");
+    // The builtin profile runs `pi` from PATH: this fake, never a real pi.
+    let bin = d.home.path().join("bin");
+    std::fs::create_dir(&bin).expect("owned bin");
+    let fake = bin.join("pi");
+    std::fs::write(&fake, FAKE_PI).expect("owned fake pi");
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
+        .expect("fake pi permissions");
+    let mut path = vec![bin];
+    path.extend(std::env::split_paths(
+        &std::env::var_os("PATH").expect("PATH"),
+    ));
+    let path = std::env::join_paths(path).expect("fixture PATH");
+    d.extra_env
+        .push(("PATH".into(), path.to_str().expect("UTF-8 PATH").into()));
+    for key in ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"] {
+        d.extra_env.push((key.into(), String::new()));
+    }
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(fake.to_str().expect("path"))
+    );
+    d.write_config(&format!(
+        "[[agents.profiles]]\nid='pi'\nlabel='pi'\ncommand={}\nhooks='none'\n",
+        serde_json::to_string(&command).expect("TOML quoted string")
+    ));
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let client = d.client().await;
+    let project = d.add_project(&client, &repo).await;
+    let id = d.create_agent(&client, &project, "pi", false).await;
+    let running = d
+        .wait_for(&client, &id, "running", Duration::from_secs(10))
+        .await;
+    assert!(running["sessionId"].is_null(), "{running}");
+    let home = d.home.path().to_owned();
+    pi_args(&home).await;
+    for file in ["pi-args", "pi-launch"] {
+        std::fs::remove_file(home.join(file)).expect("launch files");
+    }
+    client
+        .raw_call("agents.send", json!({"id":id,"text":"exit"}), None)
+        .await
+        .expect("end the fake pi");
+    d.wait_for(&client, &id, "review", Duration::from_secs(10))
+        .await;
+    // The upgrade: the custom profile is gone, and `pi` is the builtin one.
+    drop(client);
+    d.stop();
+    d.write_config("");
+    d.launch();
+    let client = d.client().await;
+    client
+        .raw_call("agents.resume", json!({"id":id}), None)
+        .await
+        .expect("resume the pi task");
+    let args = pi_args(&home).await;
+    assert_eq!(args.len(), 2, "{args:?}");
+    assert_eq!(args[0], "-e");
+    assert!(args[1].ends_with(".ts"), "{args:?}");
+    assert!(
+        !args.iter().any(|arg| arg == "--" || arg.contains("fix it")),
+        "{args:?}"
+    );
+    // No session is made up for it either.
+    assert!(task(&client, &id).await["sessionId"].is_null());
+}

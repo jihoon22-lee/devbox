@@ -137,7 +137,10 @@ impl AgentsService {
                 .map(Into::into),
             hooks: profile.hooks,
             hook_file: settings,
-            prompt_file: Some(prompt.to_string_lossy().into_owned()),
+            // pi gets the task's prompt only on its first launch. A resume names the session
+            // devbox knows, or starts pi fresh without one: pi may have run the prompt already.
+            prompt_file: (profile.hooks != crate::profile::Hooks::Pi)
+                .then(|| prompt.to_string_lossy().into_owned()),
             resume_session: session_id.clone(),
             session_id: None,
             use_scope: self.use_scope,

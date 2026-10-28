@@ -82,8 +82,10 @@ pub(crate) fn may_send(
     }
     let Some(started) = seen.and_then(|seen| seen.tool_started_ms) else {
         // A launch from before this daemon may have said it is ready while no daemon listened.
-        // Otherwise the wait counts from the launch: a resume has no setup, and a new task's
-        // tool start is always seen before the task runs.
+        // Otherwise the wait counts from the launch. A resume has no setup, so its tool starts
+        // as it launches. A new task's start is recorded when its setup event or the poll turns
+        // it Running. Only a report naming a session can do that first, and pi's extension
+        // sends one only after its ready report.
         return binding.launch_ms < daemon_started_ms
             || now_ms.saturating_sub(binding.launch_ms) >= READY_FALLBACK_MS;
     };
