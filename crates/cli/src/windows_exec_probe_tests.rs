@@ -52,7 +52,8 @@ try {
     // descendant listening on the dual-stack wildcard. All are released on stdin EOF.
     let owned = format!(
         r#"{native}
-$job=[DevboxObservation]::AssociateFresh('{job}')
+$job=[DevboxObservation]::CreateFresh('{job}')
+[DevboxObservation]::AssociateFresh($job)
 $v4=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
 $v6=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Loopback,0)
 $v6.Server.DualMode=$false

@@ -27,6 +27,13 @@ test("agent errors use actual generated file details and terminal codes", () => 
   }
 });
 
+test("an unready Windows job holder says to run again and where to look", () => {
+  expect(messageFor("windows.observer_unavailable")).toEqual({
+    title: "Windows 작업 관찰을 준비하지 못했습니다.",
+    action: "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.",
+  });
+});
+
 test("redaction failure actions distinguish capacity and rejected server input", () => {
   expect(messageFor("api.redaction_failed", { reason: "capacity" }).action).toContain("크기");
   expect(messageFor("api.redaction_failed", { reason: "input" }).action).toContain("서버 응답");

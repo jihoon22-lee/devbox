@@ -488,3 +488,5 @@ async fn first_windows_copy_captures_inputs_created_after_graph_preparation_by_w
 
 #[path = "windows_copy_lifecycle_isolation_tests.rs"]
 mod isolation;
+#[path = "windows_copy_lifecycle_receipt_tests.rs"]
+mod receipt;

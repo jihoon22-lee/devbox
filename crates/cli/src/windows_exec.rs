@@ -161,6 +161,9 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         Direct::Unavailable => delegated(&client, &id, &request, cadence).await.ok(),
     };
     if let Some(code) = code {
+        if let Some(error) = bootstrap_error(code) {
+            eprintln!("{error}");
+        }
         devbox_runtime::exit_record::ExitStore::new(&paths.data_dir.join("runs"), &id.run_id)?
             .record_windows_exit(&id.attempt_id, code)?;
         Ok(known_exit(code))
@@ -241,6 +244,12 @@ where
     anyhow::bail!("Windows execution result is unknown; no retry was attempted")
 }
 
+/// The bootstrap exits with this status only when its job holder was not ready, before any
+/// command ran. It is reported as the fixed code; no output text is parsed.
+fn bootstrap_error(code: i32) -> Option<devbox_runtime::RuntimeError> {
+    (code == OBSERVER_UNAVAILABLE_EXIT)
+        .then_some(devbox_runtime::RuntimeError::WindowsObserverUnavailable)
+}
 fn known_exit(code: i32) -> ExitStatus {
     ExitStatus::from_raw((if code == 0 { 0 } else { (code & 255).max(1) }) << 8)
 }
@@ -273,6 +282,8 @@ mod tests {
                 assigned_path: "C:\\owned\\control\\assigned.json".into(),
                 grant_path: "C:\\owned\\control\\grant.json".into(),
                 closed_path: "C:\\owned\\control\\closed.json".into(),
+                holder_ready_path: "C:\\owned\\control\\holder-ready".into(),
+                emptied_path: "C:\\owned\\control\\emptied.json".into(),
             },
         }
     }
@@ -321,6 +332,19 @@ mod tests {
             direct(&request(), &path, started).await,
             Direct::Finished(9) | Direct::Failed
         ));
+    }
+    #[test]
+    fn bootstrap_observer_unavailable_status_maps_to_the_fixed_code() {
+        let error = bootstrap_error(OBSERVER_UNAVAILABLE_EXIT).expect("fixed bootstrap failure");
+        assert_eq!(error.to_string(), "windows.observer_unavailable");
+        assert!(matches!(
+            error,
+            devbox_runtime::RuntimeError::WindowsObserverUnavailable
+        ));
+        // Success, the generic bootstrap failure and ordinary command results stay results.
+        for code in [0, 1, 9, 78, 255, -1] {
+            assert!(bootstrap_error(code).is_none(), "{code}");
+        }
     }
     #[test]
     fn windows_unknown_signal_is_distinct_from_known_exit_78() {

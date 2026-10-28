@@ -62,6 +62,16 @@ async fn retained_job_and_exact_child_identity_control_quiescence() {
             .join("closed.json")
             .to_string_lossy()
             .into_owned(),
+        holder_ready_path: directory
+            .path()
+            .join("holder-ready")
+            .to_string_lossy()
+            .into_owned(),
+        emptied_path: directory
+            .path()
+            .join("emptied.json")
+            .to_string_lossy()
+            .into_owned(),
     };
     assert!(proof.capture_job(&run, &control).unwrap().is_none());
     let mut assigned = ObservationAssigned {

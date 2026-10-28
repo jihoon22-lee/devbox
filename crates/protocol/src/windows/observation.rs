@@ -5,6 +5,13 @@ use serde::{Deserialize, Serialize};
 pub const OBSERVATION_SCHEMA: u32 = 1;
 pub const OBSERVATION_JOB_PREFIX: &str = "Local\\Devbox.Observe.";
 pub const OBSERVATION_GRANT_TIMEOUT_MS: u64 = 15_000;
+/// The bootstrap runs no command unless its job holder is ready within this time.
+pub const OBSERVATION_HOLDER_READY_TIMEOUT_MS: u64 = 15_000;
+pub const OBSERVATION_HOLDER_POLL_MS: u64 = 500;
+/// A holder whose job never had a process leaves without a receipt after this time.
+pub const OBSERVATION_HOLDER_IDLE_MS: u64 = 60_000;
+/// The bootstrap's exit status when the holder was not ready. No command ran.
+pub const OBSERVER_UNAVAILABLE_EXIT: i32 = 75;
 pub const MAX_WINDOWS_PROBE_BYTES: usize = 1024 * 1024;
 pub const MAX_WINDOWS_PROBE_PATHS: usize = 1024;
 pub const MAX_WINDOWS_PROBE_PATH_BYTES: usize = 512 * 1024;
@@ -20,6 +27,13 @@ pub struct ObservationControl {
     pub assigned_path: String,
     pub grant_path: String,
     pub closed_path: String,
+    /// Published by the job holder once its handle keeps the job name. A control stored
+    /// before the holder existed has none, so it decodes but is never valid.
+    #[serde(default)]
+    pub holder_ready_path: String,
+    /// The holder's `{"nonce":…}` receipt: the job emptied after a process was assigned.
+    #[serde(default)]
+    pub emptied_path: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -126,17 +140,25 @@ pub fn valid_windows_path(path: &str) -> bool {
 impl ObservationControl {
     pub fn valid(&self) -> bool {
         let parent = |s: &str| s.rsplit_once('\\').map(|(p, _)| p.to_owned());
+        let paths = [
+            &self.assigned_path,
+            &self.grant_path,
+            &self.closed_path,
+            &self.holder_ready_path,
+            &self.emptied_path,
+        ];
         self.schema == OBSERVATION_SCHEMA
             && valid_windows_identity(&self.launch_id)
             && valid_job(&self.nonce, &self.job_name)
-            && [&self.assigned_path, &self.grant_path, &self.closed_path]
+            && paths.iter().all(|s| valid_windows_path(s))
+            // Distinct files in one private control directory, the holder's two included.
+            && paths
                 .iter()
-                .all(|s| valid_windows_path(s))
-            && self.assigned_path != self.grant_path
-            && self.assigned_path != self.closed_path
-            && self.grant_path != self.closed_path
-            && parent(&self.assigned_path) == parent(&self.grant_path)
-            && parent(&self.assigned_path) == parent(&self.closed_path)
+                .enumerate()
+                .all(|(i, a)| paths[i + 1..].iter().all(|b| a != b))
+            && paths
+                .iter()
+                .all(|s| parent(s) == parent(&self.assigned_path))
     }
     pub fn accepts(&self, run: &RunIdentity, assigned: &ObservationAssigned) -> bool {
         self.valid()

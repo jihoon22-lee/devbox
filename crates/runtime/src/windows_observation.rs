@@ -27,6 +27,7 @@ struct PrivatePaths {
     assigned: PathBuf,
     grant: PathBuf,
     closed: PathBuf,
+    emptied: PathBuf,
 }
 fn paths(copy: &store::CopyRecord, control: &ObservationControl) -> R<PrivatePaths> {
     let dir = copy.identity.control_directory();
@@ -35,6 +36,8 @@ fn paths(copy: &store::CopyRecord, control: &ObservationControl) -> R<PrivatePat
         || control.assigned_path != format!("{dir}\\{nonce}.assigned.json")
         || control.grant_path != format!("{dir}\\{nonce}.grant.json")
         || control.closed_path != format!("{dir}\\{nonce}.closed.json")
+        || control.holder_ready_path != format!("{dir}\\{nonce}.holder-ready")
+        || control.emptied_path != format!("{dir}\\{nonce}.emptied.json")
     {
         return Err(unavailable());
     }
@@ -44,25 +47,49 @@ fn paths(copy: &store::CopyRecord, control: &ObservationControl) -> R<PrivatePat
         assigned: local.join(format!("{nonce}.assigned.json")),
         grant: local.join(format!("{nonce}.grant.json")),
         closed: local.join(format!("{nonce}.closed.json")),
+        emptied: local.join(format!("{nonce}.emptied.json")),
     };
-    for path in [&result.assigned, &result.grant, &result.closed] {
+    let ready = local.join(format!("{nonce}.holder-ready"));
+    for path in [
+        &result.assigned,
+        &result.grant,
+        &result.closed,
+        &result.emptied,
+        &ready,
+    ] {
         crate::windows::reject_links(path).map_err(io_fail)?;
     }
     Ok(result)
 }
-fn read_assigned(path: &Path) -> R<Option<ObservationAssigned>> {
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path, limit: u64) -> R<Option<T>> {
     crate::windows::reject_links(path).map_err(io_fail)?;
     let meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(io_fail(e)),
     };
-    if !meta.is_file() || meta.len() > 16 * 1024 {
+    if !meta.is_file() || meta.len() > limit {
         return Err(unavailable());
     }
     serde_json::from_slice(&fs::read(path).map_err(io_fail)?)
         .map(Some)
         .map_err(io_fail)
+}
+fn read_assigned(path: &Path) -> R<Option<ObservationAssigned>> {
+    read_json(path, 16 * 1024)
+}
+/// The Windows holder's `{"nonce":…}` receipt that the job emptied after a process ran in it.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Emptied {
+    nonce: String,
+}
+/// Only this attempt's own receipt, at the path derived from its stored control, is proof.
+/// Missing, linked, oversized, malformed or another nonce's receipt is no proof.
+fn emptied(copy: &store::CopyRecord, control: &ObservationControl) -> bool {
+    paths(copy, control)
+        .and_then(|private| read_json::<Emptied>(&private.emptied, 1024))
+        .is_ok_and(|receipt| receipt.is_some_and(|r| r.nonce == control.nonce))
 }
 /// Publish immutable complete JSON without replacing another attempt's evidence.
 fn publish_once(path: &Path, value: &impl serde::Serialize) -> R<()> {
@@ -128,6 +155,8 @@ impl RuntimeService {
             assigned_path: format!("{dir}\\{nonce}.assigned.json"),
             grant_path: format!("{dir}\\{nonce}.grant.json"),
             closed_path: format!("{dir}\\{nonce}.closed.json"),
+            holder_ready_path: format!("{dir}\\{nonce}.holder-ready"),
+            emptied_path: format!("{dir}\\{nonce}.emptied.json"),
             nonce,
         };
         paths(&copy, &control)?;
@@ -356,8 +385,14 @@ impl RuntimeService {
                         ) {
                             continue;
                         }
-                        let state = (execution.windows_observation)(assigned.clone()).await;
-                        if matches!(state, ObservationState::Empty | ObservationState::NotFound) {
+                        let ended = match (execution.windows_observation)(assigned.clone()).await {
+                            ObservationState::Empty => true,
+                            // The name vanishes with the last handle even while orphaned
+                            // descendants run (I1). Without the receipt the reader stays held.
+                            ObservationState::NotFound => emptied(&copy, &attempt.control),
+                            _ => false,
+                        };
+                        if ended {
                             let nonce = attempt.control.nonce.clone();
                             let assigned = assigned.clone();
                             self.db

@@ -7,11 +7,22 @@ try {
     foreach($id in @($r.runId,$r.attemptId,$o.launchId)) {
         if([string]$id -cnotmatch '^[a-zA-Z0-9_-]{1,128}$') { throw 'identity' }
     }
-    foreach($path in @($o.assignedPath,$o.grantPath,$o.closedPath)) {
+    foreach($path in @($o.assignedPath,$o.grantPath,$o.closedPath,$o.holderReadyPath,$o.emptiedPath)) {
         if(![DevboxObservation]::SafePath([string]$path)) { throw 'path' }
     }
-    if([DevboxObservation]::Exists($o.closedPath) -or [DevboxObservation]::Exists($o.assignedPath)) { throw 'closed' }
-    $jobHandle=[DevboxObservation]::AssociateFresh([string]$o.jobName)
+    if([DevboxObservation]::Exists($o.closedPath) -or [DevboxObservation]::Exists($o.assignedPath) -or [DevboxObservation]::Exists($o.holderReadyPath) -or [DevboxObservation]::Exists($o.emptiedPath)) { throw 'closed' }
+    $jobHandle=[DevboxObservation]::CreateFresh([string]$o.jobName)
+    # The holder keeps the job name while orphaned descendants outlive this process. It starts
+    # before this process joins the job, and without it no command runs (I1 would return).
+    $holder=[DevboxObservation]::StartHolder($devboxHolder,[string]$o.jobName,[string]$o.nonce,[string]$o.holderReadyPath,[string]$o.emptiedPath)
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    $ready=$false
+    while($holder -and $timer.ElapsedMilliseconds -lt 15000) {
+        if([DevboxObservation]::Exists($o.holderReadyPath)) { $ready=$true; break }
+        Start-Sleep -Milliseconds 50
+    }
+    if(!$ready) { exit 75 }
+    [DevboxObservation]::AssociateFresh($jobHandle)
     $assigned=[ordered]@{
         schema=1; runId=[string]$r.runId; launchId=[string]$o.launchId; attemptId=[string]$r.attemptId
         nonce=[string]$o.nonce; jobName=[string]$o.jobName; pid=[uint32]$PID

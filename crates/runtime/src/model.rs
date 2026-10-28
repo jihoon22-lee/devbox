@@ -98,5 +98,7 @@ domain_error! {
         SecretMissing { names: Vec<String> } = "runtime.secret_missing",
         // `[windows]` did not load: runs that need the Windows copy do not start.
         WindowsConfigInvalid { message: String } = "windows.config_invalid",
+        // The Windows job holder was not ready, so the bootstrap ran no command.
+        WindowsObserverUnavailable = "windows.observer_unavailable",
     }
 }

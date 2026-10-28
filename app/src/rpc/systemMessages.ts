@@ -39,6 +39,10 @@ export const SYSTEM_MESSAGES: Messages<Domain> = {
     title: "Windows 설정을 읽지 못해 Windows 사본으로 실행하지 않았습니다.",
     action: `config.local.toml의 [windows] 항목이나 설정 파일 형식을 고친 뒤 ${restart}`,
   },
+  "windows.observer_unavailable": {
+    title: "Windows 작업 관찰을 준비하지 못했습니다.",
+    action: "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.",
+  },
   "runtime.windows_copy_unavailable": {
     title: "Windows 실행 폴더를 안전하게 준비하지 못했습니다.",
     action: "Windows 앱 연결과 사본 루트 설정, 폴더 권한을 확인한 뒤 다시 시도해 주세요.",

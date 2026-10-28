@@ -1,6 +1,6 @@
 use super::*;
 use devbox_core::{Env, Instance, Paths};
-use std::{os::unix::fs::PermissionsExt, path::PathBuf};
+use std::{os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 struct TestEnv(PathBuf);
 impl Env for TestEnv {
     fn var(&self, key: &str) -> Option<String> {
@@ -79,6 +79,88 @@ async fn native_observer_can_reconcile_its_original_session_when_direct_interop_
         );
         cancel.cancel();
     }
+}
+fn observation_config(
+    temp: &std::path::Path,
+    direct: ObservationState,
+) -> devbox_runtime::ExecutionConfig {
+    let path = temp.join("probe");
+    let reply = serde_json::to_string(&WindowsProbeResult::Observation { state: direct })
+        .expect("typed response");
+    std::fs::write(&path,format!("#!/usr/bin/python3\nimport sys,json\nrequest=json.load(sys.stdin)\nassert request['type']=='observation'\nprint({reply:?})\n")).expect("owned executable");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).expect("mode");
+    let paths = Paths::resolve(
+        Instance::parse("test-probe-missing").expect("instance"),
+        &TestEnv(temp.into()),
+    )
+    .expect("owned paths");
+    let mut execution = devbox_runtime::ExecutionConfig::new(paths);
+    execution.windows_interop = path;
+    execution
+}
+#[tokio::test]
+async fn a_missing_job_is_re_asked_natively_and_stands_when_native_cannot_tell() {
+    // Without the holder's receipt a direct NotFound proves nothing, so the native session is
+    // asked too. Only an answer about the job itself replaces the direct one.
+    for (answer, expected) in [
+        (
+            ObservationState::Active { count: 1 },
+            ObservationState::Active { count: 1 },
+        ),
+        (ObservationState::Empty, ObservationState::Empty),
+        (ObservationState::NotFound, ObservationState::NotFound),
+        (
+            ObservationState::IdentityMismatch,
+            ObservationState::NotFound,
+        ),
+        (ObservationState::Unavailable, ObservationState::NotFound),
+    ] {
+        let temp = tempfile::tempdir().expect("owned helper");
+        let mut execution = observation_config(temp.path(), ObservationState::NotFound);
+        let broker = Arc::new(WindowsBroker::default());
+        let cancel = CancellationToken::new();
+        configure(&mut execution, broker.clone(), cancel.clone());
+        let state = answer.clone();
+        let native = async {
+            let request = broker
+                .probe_next(7, cancel.clone())
+                .await
+                .expect("original native session");
+            assert_eq!(
+                request.probe,
+                WindowsProbe::Observation {
+                    assigned: receipt()
+                }
+            );
+            broker
+                .probe_output(
+                    7,
+                    WindowsProbeReply {
+                        probe_id: request.probe_id,
+                        result: WindowsProbeResult::Observation { state },
+                    },
+                )
+                .expect("exact native result");
+        };
+        let both = async { tokio::join!((execution.windows_observation)(receipt()), native) };
+        let (observed, ()) = tokio::time::timeout(Duration::from_secs(5), both)
+            .await
+            .expect("a missing job is re-asked natively");
+        assert_eq!(observed, expected, "native {answer:?}");
+        cancel.cancel();
+    }
+    // No Windows app: the direct NotFound stands, so a receipt can still release the reader.
+    let temp = tempfile::tempdir().expect("owned helper");
+    let mut execution = observation_config(temp.path(), ObservationState::NotFound);
+    configure(
+        &mut execution,
+        Arc::new(WindowsBroker::default()),
+        CancellationToken::new(),
+    );
+    assert_eq!(
+        (execution.windows_observation)(receipt()).await,
+        ObservationState::NotFound
+    );
 }
 fn listener_config(
     temp: &std::path::Path,

@@ -267,6 +267,12 @@ async fn exact_not_found_releases_only_a_positively_assigned_committed_attempt()
         })
         .await
         .expect("positive assignment");
+    // A vanished name alone is no proof (I1); the holder's receipt for this nonce is.
+    fs::write(
+        emptied_receipt(&o, &a),
+        format!(r#"{{"nonce":"{}"}}"#, a.control.nonce),
+    )
+    .expect("owned holder receipt");
     o.config.windows_observation = Arc::new(|_| Box::pin(async { ObservationState::NotFound }));
     let svc = service(&o);
     svc.reconcile_windows_copies()
