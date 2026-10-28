@@ -8,6 +8,8 @@ mod close_review_tests;
 mod discard_cas_tests;
 #[path = "discard_persistence_tests.rs"]
 mod discard_persistence_tests;
+#[path = "discard_snapshot_tests.rs"]
+mod discard_snapshot_tests;
 #[path = "manual_cleanup_tests.rs"]
 mod manual_cleanup_tests;
 #[path = "merge_retry_tests.rs"]

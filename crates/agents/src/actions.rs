@@ -399,6 +399,8 @@ impl AgentsService {
         self.get(&task.id).await
     }
     pub async fn discard(&self, p: DiscardAgent) -> Result<AgentTask> {
+        // Hash before the lock; under it, the confirmed hash is checked again by metadata only.
+        let hashed = self.hash_for_discard(&p).await;
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;
@@ -480,7 +482,8 @@ impl AgentsService {
         let review = self
             .capture_review(&task, repo, &p.expect.head_oid, &base)
             .await?;
-        self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
+        let hashed = self
+            .confirm_discard_snapshot(hashed, &wt, &p.expect.head_oid, &base, &p.expect)
             .await?;
         let snapshot = self.authorize_teardown(&task, &project).await?;
         self.quiesce(&task).await?;
@@ -493,7 +496,7 @@ impl AgentsService {
         let base = devbox_git::run::resolve(repo, &task.base_branch)
             .await
             .map_err(git_failure)?;
-        self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
+        self.verify_discard_snapshot(&hashed, &wt, &p.expect.head_oid, &base)
             .await?;
         // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
