@@ -37,6 +37,50 @@ async fn an_opencode_permission_wait_ends_when_the_plugin_resolves_it() {
 }
 
 #[tokio::test]
+async fn a_wait_shown_again_after_an_answer_changes_its_copy_without_a_second_notice() {
+    let f = Fixture::new().await;
+    report(&f, r#"{"v":1,"event":"working","sessionId":"ses_root"}"#).await;
+    let mut changed = f.svc.hub.subscribe(crate::AgentsChangedTopic::NAME);
+    let mut attention = f.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+    let quiet = std::time::Duration::from_millis(20);
+    let bash = r#"{"v":1,"event":"needsInput","kind":"permission","message":"bash"}"#;
+    let which = r#"{"v":1,"event":"needsInput","kind":"question","message":"Which option?"}"#;
+    // A permission is asked: the task starts waiting, and that is the one notice.
+    report(&f, bash).await;
+    match attention.recv().await {
+        Some(devbox_core::HubMessage::Event { payload, .. }) => {
+            assert!(payload.contains("opencode 승인 요청: bash"), "{payload}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(changed.recv().await.is_some());
+    // A question is asked, then answered while the permission stays open, so the plugin shows
+    // the permission again. The copy follows each time; nothing notifies again.
+    for (payload, copy) in [
+        (which, "opencode 질문: Which option?"),
+        (bash, "opencode 승인 요청: bash"),
+    ] {
+        report(&f, payload).await;
+        let task = f.svc.get("a").await.expect("waiting task");
+        assert_eq!(task.state, AgentState::Waiting);
+        assert_eq!(task.attention.expect("attention").message, copy);
+        assert!(changed.recv().await.is_some(), "{copy}");
+        assert!(
+            tokio::time::timeout(quiet, attention.recv()).await.is_err(),
+            "{copy}"
+        );
+    }
+    // The wait already shown, sent again, writes nothing.
+    let revision = f.svc.db.rev();
+    report(&f, bash).await;
+    assert_eq!(f.svc.db.rev(), revision);
+    assert!(tokio::time::timeout(quiet, changed.recv()).await.is_err());
+    report(&f, RESOLVED).await;
+    assert_eq!(f.state().await, AgentState::Running);
+    assert!(tokio::time::timeout(quiet, attention.recv()).await.is_err());
+}
+
+#[tokio::test]
 async fn a_plugin_resume_outside_a_wait_neither_writes_nor_publishes() {
     let f = Fixture::new().await;
     let mut changed = f.svc.hub.subscribe(crate::AgentsChangedTopic::NAME);

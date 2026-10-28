@@ -431,3 +431,59 @@ fn only_a_plain_first_word_is_resolved() {
         assert_eq!(program_of(command), program, "{command:?}");
     }
 }
+
+/// The environment check asks a CLI for its version with the `PATH` its start script gives it,
+/// so a check cannot pass where the start would fail.
+#[test]
+fn the_version_check_puts_the_cli_folder_where_the_start_script_does() {
+    use std::os::unix::ffi::OsStrExt;
+    let service = "/owned/service/bin:/owned/other/bin";
+    for (dir, expected) in [
+        // A shared folder goes last; any other goes first.
+        ("/usr/bin", format!("{service}:/usr/bin")),
+        (
+            "/home/u/.nvm/versions/node/v24.1.0/bin",
+            format!("/home/u/.nvm/versions/node/v24.1.0/bin:{service}"),
+        ),
+    ] {
+        let check = version_command(&Path::new(dir).join("claude"), OsStr::new(service));
+        let checked = check
+            .as_std()
+            .get_envs()
+            .find(|(key, _)| *key == OsStr::new("PATH"))
+            .and_then(|(_, value)| value)
+            .expect("the check sets PATH");
+        let script = crate::start::render_start_script(&crate::start::StartPlan {
+            devbox: "/b/devbox".into(),
+            instance: "test".into(),
+            agent_id: "a1".into(),
+            launch_id: "launch-1".into(),
+            phase_file: "/d/phase".into(),
+            port: 5200,
+            workdir: "/w".into(),
+            setup: vec![],
+            tool_command: "claude".into(),
+            tool_dir: Some(dir.into()),
+            hooks: crate::profile::Hooks::None,
+            hook_file: None,
+            prompt_file: None,
+            resume_session: None,
+            use_scope: true,
+        });
+        // The script's own PATH lines, run by a shell that starts with the service PATH.
+        let lines: Vec<&str> = script
+            .lines()
+            .filter(|line| line.starts_with("export PATH="))
+            .collect();
+        let shell = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!("{}\nprintf '%s' \"$PATH\"", lines.join("\n")))
+            .env_clear()
+            .env("PATH", service)
+            .output()
+            .expect("owned shell");
+        assert!(shell.status.success(), "{dir}: {shell:?}");
+        assert_eq!(OsStr::from_bytes(&shell.stdout), checked, "{dir}");
+        assert_eq!(checked, OsStr::new(&expected), "{dir}");
+    }
+}

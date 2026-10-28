@@ -104,7 +104,7 @@ pub(crate) fn opencode_tokens(export: &[u8], session: &str, workdir: &str) -> Ag
     }
 }
 
-/// `<program> export --pure <session>` in `workdir`, with the program's folder first on `PATH`.
+/// `<program> export --pure <session>` in `workdir`, with the `PATH` the start script gives it.
 /// `--pure` keeps the user's plugins from loading for a read; the export is the same.
 pub(crate) async fn opencode_export(
     program: &Path,
@@ -120,7 +120,7 @@ pub(crate) async fn opencode_export(
         .current_dir(workdir)
         .env(
             "PATH",
-            crate::command_path::folder_first(program, service_path),
+            crate::command_path::tool_path(program, service_path),
         )
         .env("NO_COLOR", "1")
         .env("OPENCODE_DISABLE_AUTOUPDATE", "1")

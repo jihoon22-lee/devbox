@@ -17,6 +17,9 @@ export type DevboxPayload = {
 /** A permission prompt or a question dialog: either stops the task until the user answers. */
 type InputKind = "permission" | "question";
 
+/** An open request: the session that asked, and what its wait shows. */
+type Request = { session: string; kind: InputKind; message?: string };
+
 /** What the plugin remembers about the sessions of one opencode process. */
 export type PluginState = {
   /** Sessions without a parent. */
@@ -25,8 +28,8 @@ export type PluginState = {
   children: Set<string>;
   /** Root sessions reported as working. */
   busy: Set<string>;
-  /** Open permission and question requests by kind and id, with the session that asked. */
-  pending: Map<string, string>;
+  /** Open permission and question requests by kind and id, in the order they were asked. */
+  pending: Map<string, Request>;
 };
 
 type Fields = Record<string, unknown>;
@@ -53,20 +56,28 @@ function cut(message: string): string {
   return Array.from(message).slice(0, MESSAGE_CODE_POINTS).join("");
 }
 
+/** The wait a request shows: its kind, and its text when it has any. */
+function waiting({ kind, message }: Request): DevboxPayload {
+  return message ? { v: 1, event: "needsInput", kind, message } : { v: 1, event: "needsInput", kind };
+}
+
 /** A request that waits for the user, from any session: a subagent's stops the task as well. */
 function asked(state: PluginState, kind: InputKind, properties: Fields, message?: string): DevboxPayload | undefined {
   const id = text(properties.id);
   const session = text(properties.sessionID);
   if (!id || !session || state.pending.has(`${kind}:${id}`)) return undefined;
-  state.pending.set(`${kind}:${id}`, session);
-  return message ? { v: 1, event: "needsInput", kind, message: cut(message) } : { v: 1, event: "needsInput", kind };
+  const request: Request = message ? { session, kind, message: cut(message) } : { session, kind };
+  state.pending.set(`${kind}:${id}`, request);
+  return waiting(request);
 }
 
-/** A request answered: the task goes on once none is left open. */
+/** A request answered: the task goes on once none is left open. Until then the wait shows the
+ * latest request still open, so its text is never one already answered. */
 function answered(state: PluginState, kind: InputKind, properties: Fields): DevboxPayload | undefined {
   const id = text(properties.requestID);
   if (!id || !state.pending.delete(`${kind}:${id}`)) return undefined;
-  return state.pending.size === 0 ? { v: 1, event: "inputResolved" } : undefined;
+  const latest = [...state.pending.values()].pop();
+  return latest ? waiting(latest) : { v: 1, event: "inputResolved" };
 }
 
 /** The report one opencode event makes, if any. */
@@ -106,9 +117,9 @@ export function toDevboxEvent(event: unknown, state: PluginState): DevboxPayload
       if (status !== "idle") return undefined;
       // A session that stops drops its open requests without answering them.
       let dropped = false;
-      for (const [request, asker] of state.pending) {
-        if (asker === session) {
-          state.pending.delete(request);
+      for (const [key, request] of state.pending) {
+        if (request.session === session) {
+          state.pending.delete(key);
           dropped = true;
         }
       }

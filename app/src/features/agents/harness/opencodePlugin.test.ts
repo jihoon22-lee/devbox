@@ -133,7 +133,7 @@ test("only the reply that leaves no request open resolves the wait", () => {
       replied("per_root", "ses_root"),
       replied("per_child", "ses_child"),
     ].map((event) => toDevboxEvent(event, state)),
-  ).toEqual([permission("bash"), permission("edit"), undefined, undefined, { v: 1, event: "inputResolved" }]);
+  ).toEqual([permission("bash"), permission("edit"), undefined, permission("edit"), { v: 1, event: "inputResolved" }]);
 });
 
 test("a reply for a request the plugin never saw changes nothing", () => {
@@ -183,6 +183,8 @@ test("a question waits for input with its first question", () => {
 });
 
 test("a question and a permission open together resolve only when both are answered", () => {
+  // question.replied was recorded (run 6). question.rejected is 타입 기반: built from the 1.19.3
+  // types ({sessionID, requestID}), not recorded.
   for (const ending of ["question.replied", "question.rejected"]) {
     const state = newState();
     payloads([status("ses_root", "busy"), created("ses_child", "ses_root")], state);
@@ -196,7 +198,7 @@ test("a question and a permission open together resolve only when both are answe
     ).toEqual([
       permission("bash"),
       { v: 1, event: "needsInput", kind: "question", message: "Which option?" },
-      undefined,
+      { v: 1, event: "needsInput", kind: "question", message: "Which option?" },
       { v: 1, event: "inputResolved" },
     ]);
   }
@@ -207,7 +209,46 @@ test("a question and a permission open together resolve only when both are answe
   expect(toDevboxEvent(replied("same", "ses_root"), state)).toEqual({ v: 1, event: "inputResolved" });
 });
 
+test("an answer that leaves requests open shows the latest one still asked", () => {
+  const state = newState();
+  payloads([status("ses_root", "busy"), created("ses_child", "ses_root")], state);
+  const which = { v: 1, event: "needsInput", kind: "question", message: "Which option?" };
+  expect(
+    [
+      asked("per_1", "ses_root", "bash"),
+      question("que_1", "ses_child", "Which option?"),
+      asked("per_2", "ses_root", "edit"),
+      replied("per_2", "ses_root"),
+      answered("que_1", "ses_child"),
+      replied("per_1", "ses_root"),
+    ].map((event) => toDevboxEvent(event, state)),
+  ).toEqual([
+    permission("bash"),
+    which,
+    permission("edit"),
+    which,
+    permission("bash"),
+    { v: 1, event: "inputResolved" },
+  ]);
+  // The latest asked, whichever was answered: here the one already shown, sent again unchanged.
+  expect(
+    [
+      asked("per_3", "ses_root", "bash"),
+      question("que_2", "ses_root"),
+      replied("per_3", "ses_root"),
+      answered("que_2", "ses_root"),
+    ].map((event) => toDevboxEvent(event, state)),
+  ).toEqual([
+    permission("bash"),
+    { v: 1, event: "needsInput", kind: "question" },
+    { v: 1, event: "needsInput", kind: "question" },
+    { v: 1, event: "inputResolved" },
+  ]);
+});
+
 test("a session that goes idle drops its open questions and permissions", () => {
+  // 타입 기반, not recorded: in 1.19.3 an interrupted question or permission is deleted with no
+  // event, so only its session's idle arrives.
   const state = newState();
   payloads([status("ses_root", "busy"), created("ses_child", "ses_root"), status("ses_child", "busy")], state);
   expect(

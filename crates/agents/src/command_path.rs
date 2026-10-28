@@ -126,13 +126,11 @@ pub struct ResolvedCommand {
 }
 
 impl ResolvedCommand {
-    /// The folder a start script puts first on `PATH`, so that `#!/usr/bin/env node` tools find
-    /// the interpreter installed next to them. `None` when `PATH` cannot hold it.
+    /// The folder a start script puts on `PATH` for this CLI, the way [`version`] does: first, so
+    /// that `#!/usr/bin/env node` tools find the interpreter installed next to them, or last
+    /// for a shared folder such as `/usr/bin`. `None` when `PATH` cannot hold it.
     pub fn dir(&self) -> Option<&str> {
-        self.program
-            .parent()?
-            .to_str()
-            .filter(|dir| !dir.is_empty() && !dir.contains(':'))
+        folder(&self.program)
     }
 }
 
@@ -367,32 +365,73 @@ fn runnable(_: &Path) -> bool {
     true
 }
 
-/// The version token of `<program> --version`, run now with the program's folder first on
-/// `PATH`, as the start script runs it. Only the environment check calls this, and only for the
-/// agent CLIs it knows: a task start never runs a program to ask.
+/// Folders that hold many unrelated programs. One of them first on `PATH` would change which
+/// `systemd-run`, `node` or other program is found next, so a CLI found in one runs by its path
+/// with the folder last on `PATH`, where it shadows nothing.
+const SHARED_FOLDERS: &[&str] = &[
+    "/usr/local/sbin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/sbin",
+    "/bin",
+    "/snap/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+];
+
+/// Whether a CLI found in `dir` runs by its path with `dir` last on `PATH`, instead of by name
+/// with `dir` first. The start script and every other run of a found CLI ([`tool_path`]) follow
+/// it.
+pub(crate) fn shared_folder(dir: &str) -> bool {
+    SHARED_FOLDERS.contains(&dir)
+}
+
+/// The folder of `program`, when `PATH` can hold it.
+fn folder(program: &Path) -> Option<&str> {
+    program
+        .parent()?
+        .to_str()
+        .filter(|dir| !dir.is_empty() && !dir.contains(':'))
+}
+
+/// `service_path` with `program`'s folder where the start script puts it: last in a
+/// [shared folder](shared_folder), first otherwise. Empty entries are left out.
+pub(crate) fn tool_path(program: &Path, service_path: &OsStr) -> OsString {
+    let Some(dir) = folder(program) else {
+        return service_path.to_owned();
+    };
+    let rest = std::env::split_paths(service_path).filter(|p| !p.as_os_str().is_empty());
+    let own = std::iter::once(PathBuf::from(dir));
+    let paths: Vec<PathBuf> = if shared_folder(dir) {
+        rest.chain(own).collect()
+    } else {
+        own.chain(rest).collect()
+    };
+    std::env::join_paths(paths).unwrap_or_else(|_| service_path.to_owned())
+}
+
+/// The version token of `<program> --version`, run now with the `PATH` the start script gives
+/// the program: its folder first, or last for a shared folder such as `/usr/bin`. Only the
+/// environment check calls this, and only for the agent CLIs it knows: a task start never runs
+/// a program to ask.
 pub async fn version(program: &Path, service_path: &OsStr) -> Option<String> {
-    let mut command = Command::new(program);
-    command
-        .arg("--version")
-        .env("PATH", folder_first(program, service_path))
-        .env("NO_COLOR", "1")
-        .env("DISABLE_AUTOUPDATER", "1")
-        .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+    let command = version_command(program, service_path);
     let (success, stdout) = crate::bounded::run(command, VERSION_TIMEOUT, OUTPUT_LIMIT).await?;
     success
         .then(|| version_token(&String::from_utf8_lossy(&stdout)))
         .flatten()
 }
 
-/// `service_path` with `program`'s folder first, the way the start script runs the program.
-pub(crate) fn folder_first(program: &Path, service_path: &OsStr) -> OsString {
-    program
-        .parent()
-        .and_then(|dir| {
-            let rest = std::env::split_paths(service_path).filter(|p| !p.as_os_str().is_empty());
-            std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(rest)).ok()
-        })
-        .unwrap_or_else(|| service_path.to_owned())
+/// `<program> --version` with the start script's `PATH` ([`tool_path`]).
+fn version_command(program: &Path, service_path: &OsStr) -> Command {
+    let mut command = Command::new(program);
+    command
+        .arg("--version")
+        .env("PATH", tool_path(program, service_path))
+        .env("NO_COLOR", "1")
+        .env("DISABLE_AUTOUPDATER", "1")
+        .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+    command
 }
 
 /// The first `1.2.3`-like word, without anything around it.

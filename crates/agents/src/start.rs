@@ -1,3 +1,4 @@
+use crate::command_path::shared_folder;
 use crate::hooks::codex_notify_arg;
 use crate::plan::sh_quote;
 use crate::profile::Hooks;
@@ -11,8 +12,8 @@ pub struct StartPlan {
     pub workdir: String,
     pub setup: Vec<String>,
     pub tool_command: String,
-    /// The folder of the CLI found for `tool_command`, put first on `PATH` before it runs. In a
-    /// [shared folder](SHARED_FOLDERS) the CLI runs by its path instead.
+    /// The folder of the CLI found for `tool_command`, put first on `PATH` before the CLI runs by
+    /// name. A shared folder such as `/usr/bin` goes last instead, and the CLI runs by its path.
     pub tool_dir: Option<String>,
     pub hooks: Hooks,
     pub hook_file: Option<String>,
@@ -21,20 +22,6 @@ pub struct StartPlan {
     pub use_scope: bool,
     pub port: u16,
 }
-
-/// Folders that hold many unrelated programs. Putting one first on `PATH` would change which
-/// `systemd-run`, `node` or other program the script finds next, so a CLI found in one runs by
-/// its absolute path and `PATH` stays as it is.
-const SHARED_FOLDERS: &[&str] = &[
-    "/usr/local/sbin",
-    "/usr/local/bin",
-    "/usr/sbin",
-    "/usr/bin",
-    "/sbin",
-    "/bin",
-    "/snap/bin",
-    "/home/linuxbrew/.linuxbrew/bin",
-];
 
 pub fn render_start_script(p: &StartPlan) -> String {
     let dv = sh_quote(&p.devbox);
@@ -72,8 +59,12 @@ pub fn render_start_script(p: &StartPlan) -> String {
     }
     let mut tool = p.tool_command.clone();
     match p.tool_dir.as_deref() {
-        // Exactly the CLI that was found, whatever comes first on `PATH`.
-        Some(dir) if SHARED_FOLDERS.contains(&dir) => tool = by_path(dir, &p.tool_command),
+        // Exactly the CLI that was found. Its folder goes last, where it shadows nothing and
+        // still has the interpreter a `#!/usr/bin/env` line names when nothing before it does.
+        Some(dir) if shared_folder(dir) => {
+            tool = by_path(dir, &p.tool_command);
+            s.push_str(&format!("export PATH=\"$PATH\":{}\n", sh_quote(dir)));
+        }
         // The CLI found for this task, and the interpreter its `#!/usr/bin/env` line names.
         Some(dir) => s.push_str(&format!("export PATH={}:\"$PATH\"\n", sh_quote(dir))),
         None => {}
@@ -320,9 +311,10 @@ mod tests {
         assert!(!render_start_script(&p).contains("export PATH="));
     }
     #[test]
-    fn a_cli_in_a_shared_folder_runs_by_its_path_and_leaves_path_alone() {
+    fn a_cli_in_a_shared_folder_runs_by_its_path_with_the_folder_last() {
         // Putting one of these first would change which systemd-run, node or other program
-        // the script finds next, so the CLI found there runs by its absolute path instead.
+        // the script finds next. Last, it shadows nothing and still gives an env-shebang CLI
+        // the interpreter next to it; the CLI itself runs by its absolute path.
         for dir in [
             "/usr/local/sbin",
             "/usr/local/bin",
@@ -337,11 +329,15 @@ mod tests {
             p.tool_dir = Some(dir.into());
             p.tool_command = "claude --verbose".into();
             let s = render_start_script(&p);
-            assert!(!s.contains("export PATH="), "{dir}: {s}");
+            let last = format!("\nexport PATH=\"$PATH\":'{dir}'\n");
+            assert!(s.contains(&last), "{dir}: {s}");
+            assert_eq!(s.matches("export PATH=").count(), 1, "{dir}: {s}");
+            assert!(!s.contains(&format!("export PATH='{dir}'")), "{dir}: {s}");
             let tool = format!(
                 " -- '{dir}/claude' --verbose --settings '/d/claude.json' -- \"$(cat '/d/prompt.md')\"\n"
             );
             assert!(s.contains(&tool), "{dir}: {s}");
+            assert!(s.find(&last) < s.find(&tool), "{dir}: {s}");
         }
         // Also when the command names the CLI by its path or starts with blanks.
         let mut p = plan();
@@ -349,6 +345,7 @@ mod tests {
         p.tool_dir = Some("/usr/bin".into());
         p.tool_command = "  /usr/bin/claude".into();
         let s = render_start_script(&p);
+        assert!(s.contains("\nexport PATH=\"$PATH\":'/usr/bin'\n"), "{s}");
         assert!(
             s.contains("\n'/usr/bin/claude' --settings '/d/claude.json'"),
             "{s}"
@@ -363,6 +360,7 @@ mod tests {
                 s.contains(&format!("export PATH='{own}':\"$PATH\"\n")),
                 "{s}"
             );
+            assert_eq!(s.matches("export PATH=").count(), 1, "{s}");
             assert!(
                 s.contains("\nclaude --verbose --settings '/d/claude.json'"),
                 "{s}"
