@@ -81,10 +81,40 @@ fn without_a_report_sends_are_taken_30_seconds_after_the_tool_started() {
 }
 
 #[test]
-fn a_launch_from_before_this_daemon_counts_as_ready() {
+fn a_launch_from_before_this_daemon_counts_as_ready_unless_this_daemon_saw_pi_start() {
+    let before = launch("L1", DAEMON - 1);
     // Its reports may have come while no daemon took them.
-    assert!(may_send(&launch("L1", DAEMON - 1), None, DAEMON, DAEMON));
+    assert!(may_send(&before, None, DAEMON, DAEMON));
+    let other = seen("L0", Some(DAEMON + 5), false);
+    assert!(may_send(&before, Some(&other), DAEMON, DAEMON));
+    // pi started under this daemon, which hears its report: it is held as any launch is.
+    let started = seen("L1", Some(DAEMON + 5), false);
+    assert!(!may_send(&before, Some(&started), DAEMON + 6, DAEMON));
+    assert!(!may_send(
+        &before,
+        Some(&started),
+        DAEMON + 5 + READY_FALLBACK_MS - 1,
+        DAEMON
+    ));
+    assert!(may_send(
+        &before,
+        Some(&started),
+        DAEMON + 5 + READY_FALLBACK_MS,
+        DAEMON
+    ));
+    let ready = seen("L1", Some(DAEMON + 5), true);
+    assert!(may_send(&before, Some(&ready), DAEMON + 6, DAEMON));
+    // A launch from this daemon is never counted as ready unasked.
     assert!(!may_send(&launch("L1", DAEMON), None, DAEMON, DAEMON));
+}
+
+#[test]
+fn the_first_tool_start_seen_for_a_launch_is_kept() {
+    // The poll and the setup event both see pi start; the earlier one is closer to it.
+    let launches = Launches::default();
+    launches.tool_started("a", "L1", 5);
+    launches.tool_started("a", "L1", 9);
+    assert_eq!(launches.get("a"), Some(seen("L1", Some(5), false)));
 }
 
 #[test]

@@ -219,6 +219,20 @@ async fn a_pi_launch_that_never_says_it_is_ready_takes_sends_after_30_seconds() 
     // A launch from before this daemon started counts as ready: its reports may be lost.
     launch(&f, "L0", f.svc.started_ms - 1).await;
     assert!(may_send(&f, f.svc.started_ms).await);
+    // Unless pi starts under this daemon, which then hears it say it is ready.
+    let setup = AgentEventParams {
+        code: Some(0),
+        ..params("a", HookSource::Setup, Some("L0"), "L0")
+    };
+    f.svc.event(setup).await.expect("setup report");
+    let started = f
+        .svc
+        .launches
+        .get("a")
+        .and_then(|seen| seen.tool_started_ms)
+        .expect("tool start");
+    assert!(!may_send(&f, started + 29_999).await);
+    assert!(may_send(&f, started + 30_000).await);
     // Other tools never say they are ready, and are never held for it.
     launch(&f, "L4", launched).await;
     for profile in ["claude", "codex", "opencode"] {

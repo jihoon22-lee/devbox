@@ -15,7 +15,7 @@ use std::{
 
 #[path = "usage_pi.rs"]
 mod pi;
-pub(crate) use pi::{pi_session_written, pi_usage};
+pub(crate) use pi::pi_usage;
 
 /// One opencode export gets this long, and at most this much of its stdout is read.
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);

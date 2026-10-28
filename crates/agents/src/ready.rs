@@ -25,7 +25,8 @@ const TRUST_NOTICE_DELAY: Duration = Duration::from_secs(2);
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LaunchSeen {
     pub launch: String,
-    /// When the launch's setup ended and its tool started.
+    /// When this daemon first saw the launch's tool start: its setup event, or the poll that
+    /// found the launch's phase file saying so first.
     pub tool_started_ms: Option<i64>,
     /// pi said it reads its input.
     pub ready: bool,
@@ -52,7 +53,9 @@ impl Launches {
         f(seen);
     }
     pub(crate) fn tool_started(&self, task: &str, launch: &str, at_ms: i64) {
-        self.update(task, launch, |seen| seen.tool_started_ms = Some(at_ms));
+        self.update(task, launch, |seen| {
+            seen.tool_started_ms.get_or_insert(at_ms);
+        });
     }
     pub(crate) fn ready(&self, task: &str, launch: &str) {
         self.update(task, launch, |seen| seen.ready = true);
@@ -74,15 +77,18 @@ pub(crate) fn may_send(
     daemon_started_ms: i64,
 ) -> bool {
     let seen = seen.filter(|seen| binding.launch_id.as_deref() == Some(seen.launch.as_str()));
-    // This daemon may have missed the reports of a launch from before it started.
-    if seen.is_some_and(|seen| seen.ready) || binding.launch_ms < daemon_started_ms {
+    if seen.is_some_and(|seen| seen.ready) {
         return true;
     }
+    let Some(started) = seen.and_then(|seen| seen.tool_started_ms) else {
+        // A launch from before this daemon may have said it is ready while no daemon listened.
+        // Otherwise the wait counts from the launch: a resume has no setup, and a new task's
+        // tool start is always seen before the task runs.
+        return binding.launch_ms < daemon_started_ms
+            || now_ms.saturating_sub(binding.launch_ms) >= READY_FALLBACK_MS;
+    };
     // Preparation and setup can take long, so the wait counts from when the tool started.
-    let since = seen
-        .and_then(|seen| seen.tool_started_ms)
-        .map_or(binding.launch_ms, |started| started.max(binding.launch_ms));
-    now_ms.saturating_sub(since) >= READY_FALLBACK_MS
+    now_ms.saturating_sub(started.max(binding.launch_ms)) >= READY_FALLBACK_MS
 }
 
 impl AgentsService {

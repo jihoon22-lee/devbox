@@ -101,21 +101,6 @@ impl AgentsService {
         } else {
             task.session_id.clone()
         };
-        // pi writes the session devbox named only once it has started it. Until then there is
-        // nothing to resume: the launch starts that session again, with the task's prompt.
-        let unwritten = profile.hooks == crate::profile::Hooks::Pi && {
-            let (home, looked_up) = (self.paths.home.clone(), task.clone());
-            // pi in the pane reads these from the daemon's environment, as `metrics` assumes.
-            let agent_dir = std::env::var_os("PI_CODING_AGENT_DIR");
-            let session_dir = std::env::var_os("PI_CODING_AGENT_SESSION_DIR");
-            tokio::task::spawn_blocking(move || {
-                let (agent_dir, session_dir) = (agent_dir.as_deref(), session_dir.as_deref());
-                crate::usage_plugins::pi_session_written(&home, agent_dir, session_dir, &looked_up)
-                    == Some(false)
-            })
-            .await
-            .internal("look for the pi session")?
-        };
         let data = self.paths.data_dir.join("agents").join(&task.id);
         crate::prepare::private_dir(&data).internal("resume data directory")?;
         let generation = uuid::Uuid::new_v4().simple().to_string();
@@ -153,8 +138,8 @@ impl AgentsService {
             hooks: profile.hooks,
             hook_file: settings,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
-            resume_session: session_id.clone().filter(|_| !unwritten),
-            session_id: session_id.clone().filter(|_| unwritten),
+            resume_session: session_id.clone(),
+            session_id: None,
             use_scope: self.use_scope,
             port: task.port,
         };

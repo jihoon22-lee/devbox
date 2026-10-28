@@ -160,7 +160,8 @@ async fn pi_session_id_is_assigned_before_the_first_launch() {
     let launch = pi_launch(&home);
     report(&d, id, Some(&launch), READY);
     assert!(task(&client, id).await["startingSinceMs"].is_null());
-    // pi ended before it wrote that session: the resume starts it again, with the prompt.
+    // pi ended before it wrote that session. The resume still only names it: the prompt is
+    // never sent again.
     end_pi(&d, &client, id, &launch).await;
     let resumed: Value = serde_json::from_str(
         &client
@@ -177,10 +178,7 @@ async fn pi_session_id_is_assigned_before_the_first_launch() {
     );
     let again = pi_args(&home).await;
     assert_eq!(again[..2], args[..2]);
-    assert_eq!(
-        again[2..],
-        ["--session-id", session, "--", " @notes.md fix it"]
-    );
+    assert_eq!(again[2..], ["--session-id", session]);
     let launch = pi_launch(&home);
     // Usage is read from that session's own file, in pi's folder for the task's folder.
     let workdir = running["workdir"].as_str().expect("workdir");
@@ -217,7 +215,7 @@ async fn pi_session_id_is_assigned_before_the_first_launch() {
         (1870, 17, 430, 0)
     );
     assert!(!usage.truncated);
-    // Once pi wrote that session, a resume goes back to it, without the prompt.
+    // Once pi wrote that session, a resume goes back to it the same way.
     end_pi(&d, &client, id, &launch).await;
     client
         .raw_call("agents.resume", json!({"id":id}), None)
