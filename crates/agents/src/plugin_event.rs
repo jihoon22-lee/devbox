@@ -7,12 +7,15 @@ use serde::Deserialize;
 /// The opencode plugin a task's session loads through `OPENCODE_CONFIG_CONTENT`.
 pub(crate) const OPENCODE_PLUGIN: &str = include_str!("../assets/opencode-plugin.ts");
 
-/// One report: `{"v":1,"event":…,"sessionId"?:…,"message"?:…}`.
+/// One report: `{"v":1,"event":…,"kind"?:…,"sessionId"?:…,"message"?:…}`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginEvent {
     pub v: u32,
     pub event: PluginEventKind,
+    /// What a `needsInput` waits on. Plugins from before the field never send it.
+    #[serde(default)]
+    pub kind: Option<InputKind>,
     #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
@@ -26,6 +29,15 @@ pub enum PluginEventKind {
     Idle,
     NeedsInput,
     InputResolved,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InputKind {
+    /// A tool call waiting for approval; the message is the permission's name.
+    Permission,
+    /// A question to the user; the message is the question.
+    Question,
 }
 
 /// How much of a request's own text an attention message shows.
@@ -60,7 +72,11 @@ pub fn parse_plugin_event(source: HookSource, payload: &str) -> Vec<AgentEvent> 
             message: report.message,
         },
         PluginEventKind::NeedsInput => AgentEvent::NeedsInput {
-            message: asking(tool, report.message.as_deref().unwrap_or_default()),
+            message: asking(
+                tool,
+                report.kind,
+                report.message.as_deref().unwrap_or_default(),
+            ),
         },
         // The plugin pairs requests with replies and sends this only when none is open.
         PluginEventKind::InputResolved => AgentEvent::OutputResumed,
@@ -68,16 +84,20 @@ pub fn parse_plugin_event(source: HookSource, payload: &str) -> Vec<AgentEvent> 
     events
 }
 
-/// What waits for the user: an opencode permission by its name, or pi's folder trust question.
-fn asking(tool: &str, message: &str) -> String {
+/// What waits for the user: a permission by its name, a question, or pi's folder trust.
+fn asking(tool: &str, kind: Option<InputKind>, message: &str) -> String {
     if tool == "pi" && message == "project_trust" {
         return "pi가 이 폴더의 프로젝트 설정을 신뢰할지 묻고 있습니다.".into();
     }
+    let what = match kind {
+        Some(InputKind::Question) => "질문",
+        Some(InputKind::Permission) | None => "승인 요청",
+    };
     let message: String = message.chars().take(MESSAGE_CHARS).collect();
     if message.is_empty() {
-        format!("{tool} 승인 요청")
+        format!("{tool} {what}")
     } else {
-        format!("{tool} 승인 요청: {message}")
+        format!("{tool} {what}: {message}")
     }
 }
 
@@ -170,6 +190,67 @@ mod tests {
         assert!(crate::events::apply_event(&mut task, started, 2));
         assert_eq!(task.session_id.as_deref(), Some("ses_root"));
         assert!(!crate::events::apply_event(&mut task, started, 3));
+    }
+    #[test]
+    fn a_question_waits_with_its_own_copy() {
+        let asking = |source, payload| match &parse_plugin_event(source, payload)[..] {
+            [E::NeedsInput { message }] => message.clone(),
+            other => panic!("{payload}: {other:?}"),
+        };
+        let opencode = |payload| asking(HookSource::Opencode, payload);
+        assert_eq!(
+            opencode(r#"{"v":1,"event":"needsInput","kind":"question","message":"Which option?"}"#),
+            "opencode 질문: Which option?"
+        );
+        assert_eq!(
+            opencode(r#"{"v":1,"event":"needsInput","kind":"permission","message":"bash"}"#),
+            "opencode 승인 요청: bash"
+        );
+        assert_eq!(
+            opencode(r#"{"v":1,"event":"needsInput","kind":"question"}"#),
+            "opencode 질문"
+        );
+        // A plugin from before the field keeps today's copy.
+        assert_eq!(
+            opencode(r#"{"v":1,"event":"needsInput","message":"bash"}"#),
+            "opencode 승인 요청: bash"
+        );
+        // pi reuses the field.
+        assert_eq!(
+            asking(
+                HookSource::Pi,
+                r#"{"v":1,"event":"needsInput","kind":"question","message":"Proceed?"}"#
+            ),
+            "pi 질문: Proceed?"
+        );
+        // A kind this version does not know is malformed, like an unknown field.
+        assert!(
+            parse_plugin_event(
+                HookSource::Opencode,
+                r#"{"v":1,"event":"needsInput","kind":"other","message":"x"}"#
+            )
+            .is_empty()
+        );
+    }
+    #[test]
+    fn a_message_cut_at_an_emoji_still_parses() {
+        // What the plugin sends for a question whose 200th code point is an emoji;
+        // opencodePlugin.test.ts checks that it sends exactly this file.
+        let report = include_str!("../tests/fixtures/plugin-report-emoji-cut.json");
+        let message = format!("{}\u{1F600}", "가".repeat(199));
+        assert_eq!(
+            opencode(report.trim_end()),
+            [E::NeedsInput {
+                message: format!("opencode 질문: {message}")
+            }]
+        );
+        // A cut through the emoji's UTF-16 pair leaves a lone surrogate, which JSON can only
+        // write as an escape that a report cannot hold: the wait would be lost.
+        let lone = format!(
+            r#"{{"v":1,"event":"needsInput","kind":"question","message":"{}\ud83d"}}"#,
+            "가".repeat(199)
+        );
+        assert!(opencode(&lone).is_empty());
     }
     #[test]
     fn unknown_version_or_garbage_is_ignored() {

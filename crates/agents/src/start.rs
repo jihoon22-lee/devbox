@@ -11,7 +11,8 @@ pub struct StartPlan {
     pub workdir: String,
     pub setup: Vec<String>,
     pub tool_command: String,
-    /// The folder of the CLI found for `tool_command`, put first on `PATH` before it runs.
+    /// The folder of the CLI found for `tool_command`, put first on `PATH` before it runs. In a
+    /// [shared folder](SHARED_FOLDERS) the CLI runs by its path instead.
     pub tool_dir: Option<String>,
     pub hooks: Hooks,
     pub hook_file: Option<String>,
@@ -20,6 +21,20 @@ pub struct StartPlan {
     pub use_scope: bool,
     pub port: u16,
 }
+
+/// Folders that hold many unrelated programs. Putting one first on `PATH` would change which
+/// `systemd-run`, `node` or other program the script finds next, so a CLI found in one runs by
+/// its absolute path and `PATH` stays as it is.
+const SHARED_FOLDERS: &[&str] = &[
+    "/usr/local/sbin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/usr/bin",
+    "/sbin",
+    "/bin",
+    "/snap/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+];
 
 pub fn render_start_script(p: &StartPlan) -> String {
     let dv = sh_quote(&p.devbox);
@@ -55,9 +70,13 @@ pub fn render_start_script(p: &StartPlan) -> String {
         ));
         s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; hold_terminal; fi\n");
     }
-    if let Some(dir) = &p.tool_dir {
+    let mut tool = p.tool_command.clone();
+    match p.tool_dir.as_deref() {
+        // Exactly the CLI that was found, whatever comes first on `PATH`.
+        Some(dir) if SHARED_FOLDERS.contains(&dir) => tool = by_path(dir, &p.tool_command),
         // The CLI found for this task, and the interpreter its `#!/usr/bin/env` line names.
-        s.push_str(&format!("export PATH={}:\"$PATH\"\n", sh_quote(dir)));
+        Some(dir) => s.push_str(&format!("export PATH={}:\"$PATH\"\n", sh_quote(dir))),
+        None => {}
     }
     if let (Hooks::Opencode, Some(plugin)) = (p.hooks, &p.hook_file) {
         // opencode merges this into the user's own config, so their plugins still load.
@@ -67,7 +86,6 @@ pub fn render_start_script(p: &StartPlan) -> String {
             sh_quote(&config.to_string())
         ));
     }
-    let mut tool = p.tool_command.clone();
     match p.hooks {
         Hooks::Claude => {
             if let Some(f) = &p.hook_file {
@@ -105,6 +123,18 @@ pub fn render_start_script(p: &StartPlan) -> String {
     }
     s.push_str(&format!("code=$?\nprintf 'exit:%s\\n' \"$code\" > {phase}\n{dv} agent event --from exit --code \"$code\"\necho \"[devbox] 에이전트가 끝났습니다(종료 코드 $code).\"\nhold_terminal\n"));
     s
+}
+
+/// `command` with its first word, the program the lookup found in `dir`, replaced by that
+/// program's path. The rest of the command is kept as written.
+fn by_path(dir: &str, command: &str) -> String {
+    let command = command.trim_start_matches(|c: char| c.is_ascii_whitespace());
+    let end = command
+        .find(|c: char| c.is_ascii_whitespace())
+        .unwrap_or(command.len());
+    let (program, rest) = command.split_at(end);
+    let name = program.rsplit('/').next().unwrap_or(program);
+    format!("{}{rest}", sh_quote(&format!("{dir}/{name}")))
 }
 
 /// The `file://` URL of an absolute path. Every byte other than `A-Z a-z 0-9 - . _ ~ /` is
@@ -288,6 +318,56 @@ mod tests {
         );
         p.tool_dir = None;
         assert!(!render_start_script(&p).contains("export PATH="));
+    }
+    #[test]
+    fn a_cli_in_a_shared_folder_runs_by_its_path_and_leaves_path_alone() {
+        // Putting one of these first would change which systemd-run, node or other program
+        // the script finds next, so the CLI found there runs by its absolute path instead.
+        for dir in [
+            "/usr/local/sbin",
+            "/usr/local/bin",
+            "/usr/sbin",
+            "/usr/bin",
+            "/sbin",
+            "/bin",
+            "/snap/bin",
+            "/home/linuxbrew/.linuxbrew/bin",
+        ] {
+            let mut p = plan();
+            p.tool_dir = Some(dir.into());
+            p.tool_command = "claude --verbose".into();
+            let s = render_start_script(&p);
+            assert!(!s.contains("export PATH="), "{dir}: {s}");
+            let tool = format!(
+                " -- '{dir}/claude' --verbose --settings '/d/claude.json' -- \"$(cat '/d/prompt.md')\"\n"
+            );
+            assert!(s.contains(&tool), "{dir}: {s}");
+        }
+        // Also when the command names the CLI by its path or starts with blanks.
+        let mut p = plan();
+        p.use_scope = false;
+        p.tool_dir = Some("/usr/bin".into());
+        p.tool_command = "  /usr/bin/claude".into();
+        let s = render_start_script(&p);
+        assert!(
+            s.contains("\n'/usr/bin/claude' --settings '/d/claude.json'"),
+            "{s}"
+        );
+        // Any other folder, a version manager's for one, still goes first and the CLI runs
+        // by name, as before.
+        for own in ["/home/u/.nvm/versions/node/v24.1.0/bin", "/usr/bin-extra"] {
+            p.tool_dir = Some(own.into());
+            p.tool_command = "claude --verbose".into();
+            let s = render_start_script(&p);
+            assert!(
+                s.contains(&format!("export PATH='{own}':\"$PATH\"\n")),
+                "{s}"
+            );
+            assert!(
+                s.contains("\nclaude --verbose --settings '/d/claude.json'"),
+                "{s}"
+            );
+        }
     }
     fn opencode_plan() -> StartPlan {
         let mut p = plan();

@@ -9,6 +9,9 @@ const spawn = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ spawn, default: { spawn } }));
 
 const RECORDING = "../../../../../crates/agents/tests/fixtures/opencode-1.19.3/events.jsonl";
+/** The report `parse_plugin_event` is tested with, in Rust, for a cut at an emoji. */
+const EMOJI_CUT = "../../../../../crates/agents/tests/fixtures/plugin-report-emoji-cut.json";
+const fixture = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 const ENV = ["DEVBOX_AGENT_ID", "DEVBOX_BIN"] as const;
 let saved: Record<string, string | undefined> = {};
 beforeEach(() => {
@@ -24,7 +27,7 @@ afterEach(() => {
 
 /** Each `# run N:` line of the recording starts the events one opencode process received. */
 function recordedRuns(): unknown[][] {
-  const text = readFileSync(fileURLToPath(new URL(RECORDING, import.meta.url)), "utf8");
+  const text = fixture(RECORDING);
   const runs: unknown[][] = [];
   for (const line of text.split("\n")) {
     if (/^# run \d+:/.test(line)) runs.push([]);
@@ -49,6 +52,19 @@ const replied = (requestID: string, sessionID: string) => ({
   type: "permission.replied",
   properties: { sessionID, requestID, reply: "once" },
 });
+const question = (id: string, sessionID: string, text?: string) => ({
+  type: "question.asked",
+  properties: {
+    id,
+    sessionID,
+    questions: text === undefined ? [] : [{ question: text, header: "Fixture", options: [] }],
+  },
+});
+const answered = (requestID: string, sessionID: string, type = "question.replied") => ({
+  type,
+  properties: { sessionID, requestID, answers: [["Alpha"]] },
+});
+const permission = (message: string) => ({ v: 1, event: "needsInput", kind: "permission", message });
 
 test("recorded opencode events become devbox reports in order", () => {
   expect(recordedRuns().map((run) => payloads(run))).toEqual([
@@ -66,7 +82,13 @@ test("recorded opencode events become devbox reports in order", () => {
     ],
     [
       { v: 1, event: "working", sessionId: "ses_bashroot" },
-      { v: 1, event: "needsInput", message: "bash" },
+      permission("bash"),
+      { v: 1, event: "inputResolved" },
+      { v: 1, event: "idle" },
+    ],
+    [
+      { v: 1, event: "working", sessionId: "ses_questionroot" },
+      { v: 1, event: "needsInput", kind: "question", message: "Which option should the fixture use?" },
       { v: 1, event: "inputResolved" },
       { v: 1, event: "idle" },
     ],
@@ -97,11 +119,7 @@ test("child_session_events_are_ignored", () => {
 test("a permission asked in a child session waits for input", () => {
   const state = newState();
   payloads([status("ses_root", "busy"), created("ses_child", "ses_root")], state);
-  expect(toDevboxEvent(asked("per_child", "ses_child", "edit"), state)).toEqual({
-    v: 1,
-    event: "needsInput",
-    message: "edit",
-  });
+  expect(toDevboxEvent(asked("per_child", "ses_child", "edit"), state)).toEqual(permission("edit"));
 });
 
 test("only the reply that leaves no request open resolves the wait", () => {
@@ -115,13 +133,7 @@ test("only the reply that leaves no request open resolves the wait", () => {
       replied("per_root", "ses_root"),
       replied("per_child", "ses_child"),
     ].map((event) => toDevboxEvent(event, state)),
-  ).toEqual([
-    { v: 1, event: "needsInput", message: "bash" },
-    { v: 1, event: "needsInput", message: "edit" },
-    undefined,
-    undefined,
-    { v: 1, event: "inputResolved" },
-  ]);
+  ).toEqual([permission("bash"), permission("edit"), undefined, undefined, { v: 1, event: "inputResolved" }]);
 });
 
 test("a reply for a request the plugin never saw changes nothing", () => {
@@ -147,13 +159,122 @@ test("requests a session drops when it goes idle no longer hold the wait", () =>
       replied("per_next", "ses_root"),
     ].map((event) => toDevboxEvent(event, state)),
   ).toEqual([
-    { v: 1, event: "needsInput", message: "edit" },
+    permission("edit"),
     { v: 1, event: "inputResolved" },
-    { v: 1, event: "needsInput", message: "bash" },
+    permission("bash"),
     { v: 1, event: "idle" },
     { v: 1, event: "working", sessionId: "ses_root" },
-    { v: 1, event: "needsInput", message: "bash" },
+    permission("bash"),
     { v: 1, event: "inputResolved" },
+  ]);
+});
+
+test("a question waits for input with its first question", () => {
+  const state = newState();
+  payloads([status("ses_root", "busy")], state);
+  expect(toDevboxEvent(question("que_1", "ses_root", "Which option?"), state)).toEqual({
+    v: 1,
+    event: "needsInput",
+    kind: "question",
+    message: "Which option?",
+  });
+  expect(toDevboxEvent(question("que_2", "ses_root"), state)).toEqual({ v: 1, event: "needsInput", kind: "question" });
+  expect(toDevboxEvent(question("que_1", "ses_root", "Which option?"), state)).toBeUndefined();
+});
+
+test("a question and a permission open together resolve only when both are answered", () => {
+  for (const ending of ["question.replied", "question.rejected"]) {
+    const state = newState();
+    payloads([status("ses_root", "busy"), created("ses_child", "ses_root")], state);
+    expect(
+      [
+        asked("per_1", "ses_root", "bash"),
+        question("que_1", "ses_child", "Which option?"),
+        replied("per_1", "ses_root"),
+        answered("que_1", "ses_child", ending),
+      ].map((event) => toDevboxEvent(event, state)),
+    ).toEqual([
+      permission("bash"),
+      { v: 1, event: "needsInput", kind: "question", message: "Which option?" },
+      undefined,
+      { v: 1, event: "inputResolved" },
+    ]);
+  }
+  // A question's id never answers a permission, or the other way round.
+  const state = newState();
+  toDevboxEvent(asked("same", "ses_root", "bash"), state);
+  expect(toDevboxEvent(answered("same", "ses_root"), state)).toBeUndefined();
+  expect(toDevboxEvent(replied("same", "ses_root"), state)).toEqual({ v: 1, event: "inputResolved" });
+});
+
+test("a session that goes idle drops its open questions and permissions", () => {
+  const state = newState();
+  payloads([status("ses_root", "busy"), created("ses_child", "ses_root"), status("ses_child", "busy")], state);
+  expect(
+    [
+      question("que_1", "ses_child", "Which option?"),
+      asked("per_1", "ses_child", "edit"),
+      status("ses_child", "idle"),
+      question("que_2", "ses_root", "Proceed?"),
+      status("ses_root", "idle"),
+    ].map((event) => toDevboxEvent(event, state)),
+  ).toEqual([
+    { v: 1, event: "needsInput", kind: "question", message: "Which option?" },
+    permission("edit"),
+    { v: 1, event: "inputResolved" },
+    { v: 1, event: "needsInput", kind: "question", message: "Proceed?" },
+    { v: 1, event: "idle" },
+  ]);
+  expect(toDevboxEvent(answered("que_2", "ses_root"), state)).toBeUndefined();
+});
+
+test("messages are cut at 200 code points, never inside an emoji", () => {
+  const text = `${"가".repeat(199)}\u{1F600} and more`;
+  const report = toDevboxEvent(question("que_1", "ses_root", text), newState());
+  // A cut through the emoji's UTF-16 pair would send a lone surrogate the daemon rejects.
+  expect(JSON.stringify(report)).toBe(fixture(EMOJI_CUT).trimEnd());
+  const long = toDevboxEvent(asked("per_1", "ses_root", "x".repeat(250)), newState());
+  expect(long).toEqual(permission("x".repeat(200)));
+});
+
+test("a session learned to be a child after it turned busy never ends the turn", () => {
+  // Its parent arrives late: until then it looked like a root of its own.
+  expect(
+    payloads([
+      status("ses_child", "busy"),
+      created("ses_child", "ses_root"),
+      status("ses_root", "busy"),
+      status("ses_child", "idle"),
+      status("ses_root", "idle"),
+    ]),
+  ).toEqual([
+    { v: 1, event: "working", sessionId: "ses_child" },
+    { v: 1, event: "working", sessionId: "ses_root" },
+    { v: 1, event: "idle" },
+  ]);
+});
+
+test("an unknown session that turns busy while the root works is a child", () => {
+  // Its session.created comes after its first status, or not at all.
+  expect(
+    payloads([
+      created("ses_root"),
+      status("ses_root", "busy"),
+      status("ses_child", "busy"),
+      status("ses_child", "idle"),
+      created("ses_child", "ses_root"),
+      status("ses_child", "busy"),
+      status("ses_child", "idle"),
+      status("ses_root", "idle"),
+    ]),
+  ).toEqual([
+    { v: 1, event: "working", sessionId: "ses_root" },
+    { v: 1, event: "idle" },
+  ]);
+  // A root the plugin already knows is still the task's, even while another one works.
+  expect(payloads([created("ses_a"), created("ses_b"), status("ses_a", "busy"), status("ses_b", "busy")])).toEqual([
+    { v: 1, event: "working", sessionId: "ses_a" },
+    { v: 1, event: "working", sessionId: "ses_b" },
   ]);
 });
 
@@ -215,7 +336,7 @@ test("reports go to devbox one at a time, in order", async () => {
     "event",
     "--from",
     "opencode",
-    JSON.stringify({ v: 1, event: "needsInput", message: "bash" }),
+    JSON.stringify(permission("bash")),
   ]);
 });
 

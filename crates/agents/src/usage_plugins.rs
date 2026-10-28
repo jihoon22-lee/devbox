@@ -10,12 +10,14 @@ use std::{
     ffi::OsStr,
     path::Path,
     sync::{Mutex, MutexGuard, PoisonError},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// One opencode export gets this long, and at most this much of its stdout is read.
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 const EXPORT_LIMIT: usize = 64 * 1024 * 1024;
+/// How long a failed export stands for the usage before it is tried again.
+const FAILURE_KEPT: Duration = Duration::from_secs(30);
 
 /// What usage reads of `opencode export` output; everything else in it is ignored.
 #[derive(Deserialize)]
@@ -136,7 +138,8 @@ fn exportable(session: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-/// Usage read from exports, per task, kept until the task finishes another turn.
+/// Usage read from exports, per task, kept until the task finishes another turn. A failed
+/// read is kept for 30 seconds only.
 #[derive(Default)]
 pub(crate) struct ExportCache {
     tasks: Mutex<HashMap<String, TaskExport>>,
@@ -148,8 +151,21 @@ pub(crate) struct ExportCache {
 struct TaskExport {
     /// Turns the task finished since its usage was first read.
     turns: u64,
-    /// The session read, the turn count it was read at, and its usage.
-    read: Option<(String, u64, AgentUsage)>,
+    read: Option<Read>,
+}
+
+struct Read {
+    session: String,
+    /// The turn count it was read at.
+    turns: u64,
+    usage: AgentUsage,
+    /// When the read failed, the time to try again.
+    retry_at: Option<Instant>,
+}
+
+/// An export that could not be read at all, as opposed to one that was read.
+fn failed(usage: &AgentUsage) -> bool {
+    usage.tokens.is_none() && usage.truncated
 }
 
 impl ExportCache {
@@ -164,12 +180,19 @@ impl ExportCache {
         }
     }
 
-    /// The usage last read for `session`, when the task has finished no turn since.
-    fn get(&self, task: &str, session: &str) -> Option<AgentUsage> {
+    /// The usage last read for `session`, when the task has finished no turn since. A failed
+    /// read counts until it is 30 seconds old, and not at all when `retry_failure` is set.
+    fn get(&self, task: &str, session: &str, retry_failure: bool) -> Option<AgentUsage> {
         let tasks = self.tasks();
         let entry = tasks.get(task)?;
-        let (read, turns, usage) = entry.read.as_ref()?;
-        (read == session && *turns == entry.turns).then(|| usage.clone())
+        let read = entry.read.as_ref().filter(|read| {
+            read.session == session
+                && read.turns == entry.turns
+                && read
+                    .retry_at
+                    .is_none_or(|at| !retry_failure && Instant::now() < at)
+        })?;
+        Some(read.usage.clone())
     }
 
     /// The turns the task has finished; from now on each one is counted.
@@ -177,20 +200,35 @@ impl ExportCache {
         self.tasks().entry(task.to_owned()).or_default().turns
     }
 
+    /// Ages the task's failed read past its 30 seconds.
+    #[cfg(test)]
+    pub(crate) fn expire_failures(&self, task: &str) {
+        if let Some(read) = self.tasks().get_mut(task).and_then(|e| e.read.as_mut()) {
+            read.retry_at = read.retry_at.map(|_| Instant::now());
+        }
+    }
+
     fn store(&self, task: &str, session: &str, turns: u64, usage: &AgentUsage) {
         if let Some(entry) = self.tasks().get_mut(task) {
-            entry.read = Some((session.to_owned(), turns, usage.clone()));
+            entry.read = Some(Read {
+                session: session.to_owned(),
+                turns,
+                usage: usage.clone(),
+                retry_at: failed(usage).then(|| Instant::now() + FAILURE_KEPT),
+            });
         }
     }
 }
 
 impl AgentsService {
     /// The task's opencode session usage, exported with the CLI the task runs, once per
-    /// session and finished turn.
+    /// session and finished turn. `closing` tries a failed read once more, since a closed task
+    /// keeps what is read now.
     pub(crate) async fn opencode_usage(
         &self,
         task: &AgentTask,
         profile: &ToolProfile,
+        closing: bool,
     ) -> AgentUsage {
         let Some(session) = task.session_id.as_deref().filter(|id| exportable(id)) else {
             return AgentUsage::default();
@@ -202,11 +240,11 @@ impl AgentsService {
         if !runs_opencode {
             return AgentUsage::default();
         }
-        if let Some(usage) = self.exports.get(&task.id, session) {
+        if let Some(usage) = self.exports.get(&task.id, session, closing) {
             return usage;
         }
         let _one_export = self.exports.running.lock().await;
-        if let Some(usage) = self.exports.get(&task.id, session) {
+        if let Some(usage) = self.exports.get(&task.id, session, closing) {
             return usage;
         }
         // Counted before the export starts, so a turn that ends meanwhile reads again.

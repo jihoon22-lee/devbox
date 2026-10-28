@@ -8,6 +8,10 @@ use devbox_protocol::{Fail, Internal};
 use futures::{StreamExt, stream};
 impl AgentsService {
     pub async fn usage(&self, id: &str) -> Result<AgentUsage> {
+        self.read_usage(id, false).await
+    }
+    /// `closing` reads for a task about to close, which keeps that usage for good.
+    async fn read_usage(&self, id: &str, closing: bool) -> Result<AgentUsage> {
         let key = id.to_owned();
         let (task, binding) = self
             .db
@@ -30,7 +34,7 @@ impl AgentsService {
         };
         let hooks = profile.hooks;
         if hooks == crate::profile::Hooks::Opencode {
-            return Ok(self.opencode_usage(&task, &profile).await);
+            return Ok(self.opencode_usage(&task, &profile, closing).await);
         }
         let home = self.paths.home.clone();
         tokio::task::spawn_blocking(move || {
@@ -41,7 +45,7 @@ impl AgentsService {
     }
     // Optional telemetry must not undo a completed Git operation's logical close.
     pub(crate) async fn closure_usage(&self, id: &str) -> AgentUsage {
-        match self.usage(id).await {
+        match self.read_usage(id, true).await {
             Ok(usage) => usage,
             Err(error) => {
                 tracing::warn!(

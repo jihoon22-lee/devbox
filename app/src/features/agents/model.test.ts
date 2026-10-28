@@ -43,7 +43,7 @@ test("counts attention and detects missing hooks of every hooked profile after 9
   expect(
     attentionCount([task("w", "waiting", 1), task("i", "idle", 1), task("f", "failed", 1), task("r", "running", 1)]),
   ).toBe(3);
-  const missing = { ...task("r", "running", 0), sessionId: null };
+  const missing = { ...task("r", "running", 0), sessionId: null, prompt: "fix it" };
   expect(hookMissing([missing], profiles, 90_000)).toBe(false);
   expect(hookMissing([missing], profiles, 90_001)).toBe(true);
   const hooked = [
@@ -57,6 +57,13 @@ test("counts attention and detects missing hooks of every hooked profile after 9
   // A profile without hooks never reports a session, and a reported session is enough.
   expect(hookMissing([{ ...missing, profile: "plain" }], hooked, 91_000)).toBe(false);
   expect(hookMissing([{ ...missing, profile: "opencode", sessionId: "ses_1" }], hooked, 91_000)).toBe(false);
+  // Only Claude reports a session before a prompt: the others wait for the first one.
+  for (const prompt of ["", " \n"]) {
+    for (const profile of ["codex", "opencode"]) {
+      expect(hookMissing([{ ...missing, profile, prompt }], hooked, 91_000)).toBe(false);
+    }
+    expect(hookMissing([{ ...missing, prompt }], hooked, 91_000)).toBe(true);
+  }
 });
 
 test("template only substitutes known variables and branch preview follows backend ASCII slug", () => {

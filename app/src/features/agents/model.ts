@@ -28,10 +28,13 @@ export function attentionCount(tasks: AgentTask[]) {
 }
 /** A task of a profile devbox connects to that reported no session in its first 90 seconds. */
 export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: number) {
-  const hooked = new Set(profiles.filter((p) => p.hooks !== "none").map((p) => p.id));
-  return tasks.some(
-    (t) => t.state === "running" && hooked.has(t.profile) && !t.sessionId && nowMs - t.createdMs > 90_000,
-  );
+  const hooks = new Map(profiles.map((p) => [p.id, p.hooks]));
+  // Only Claude reports a session before a prompt; the others report it with the first one.
+  const reports = (t: AgentTask) => {
+    const kind = hooks.get(t.profile);
+    return kind === "claude" || (kind !== undefined && kind !== "none" && t.prompt.trim() !== "");
+  };
+  return tasks.some((t) => t.state === "running" && reports(t) && !t.sessionId && nowMs - t.createdMs > 90_000);
 }
 export function fillTemplate(body: string, vars: { title: string; branch: string; project: string }) {
   return body.replace(/\{\{(title|branch|project)\}\}/g, (_, key: keyof typeof vars) => vars[key]);
