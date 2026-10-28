@@ -49,6 +49,8 @@ pub struct AgentsService {
     pub(crate) stop: CancellationToken,
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
     pub(crate) approvals: Arc<crate::approvals::Approvals>,
+    /// opencode usage already exported, per task.
+    pub(crate) exports: crate::usage_plugins::ExportCache,
     /// Compiled waiting patterns by profile id, published once by the output watcher so a send
     /// reads the pane with the same patterns. Unset while no watcher runs.
     pub(crate) waiting_patterns: OnceLock<Arc<HashMap<String, Vec<regex::Regex>>>>,
@@ -88,6 +90,7 @@ impl AgentsService {
             stop: CancellationToken::new(),
             resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),
             approvals: Arc::default(),
+            exports: Default::default(),
             waiting_patterns: OnceLock::new(),
         }
     }
@@ -245,6 +248,26 @@ impl AgentsService {
         for event in &events {
             if let AgentEvent::SessionStarted { session_id } = event {
                 crate::limits::identity(session_id)?;
+            }
+        }
+        if matches!(
+            p.source,
+            crate::hooks::HookSource::Opencode | crate::hooks::HookSource::Pi
+        ) {
+            // The plugin reports a resolved request even when nothing waits for it. Such a
+            // report, or one that means nothing, changes nothing, so no write is opened.
+            if events.is_empty()
+                || (events == [AgentEvent::OutputResumed] && task.state != AgentState::Waiting)
+            {
+                return Ok(Done {
+                    rev: self.db.rev().to_string(),
+                });
+            }
+            if events
+                .iter()
+                .any(|event| matches!(event, AgentEvent::TurnComplete { .. }))
+            {
+                self.exports.turn_completed(&task.id);
             }
         }
         let approvals = self.approvals.clone();

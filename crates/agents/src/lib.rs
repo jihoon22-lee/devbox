@@ -2,6 +2,7 @@ pub mod command_path;
 pub mod hooks;
 pub mod model;
 pub mod plan;
+pub mod plugin_event;
 pub mod profile;
 pub mod service;
 pub mod start;
@@ -103,6 +104,9 @@ mod queries;
 mod resume;
 
 mod usage;
+mod usage_plugins;
+
+mod bounded;
 
 mod closed_review;
 mod discard_snapshot;

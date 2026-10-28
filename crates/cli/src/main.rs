@@ -115,7 +115,7 @@ enum SecretsCmd {
 #[derive(Subcommand)]
 enum AgentCmd {
     Event {
-        #[arg(long, value_parser = ["claude", "codex", "setup", "exit"])]
+        #[arg(long, value_parser = ["claude", "codex", "opencode", "pi", "setup", "exit"])]
         from: String,
         #[arg(long, conflicts_with_all = ["ok", "failed"])]
         code: Option<i32>,
@@ -183,6 +183,8 @@ fn main() -> anyhow::Result<()> {
                 let source = match from.as_str() {
                     "claude" => HookSource::Claude,
                     "codex" => HookSource::Codex,
+                    "opencode" => HookSource::Opencode,
+                    "pi" => HookSource::Pi,
                     "setup" => HookSource::Setup,
                     _ => HookSource::Exit,
                 };

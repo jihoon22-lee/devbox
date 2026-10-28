@@ -119,7 +119,7 @@ impl AgentsService {
             .internal("resume hooks")?;
             Some(path.to_string_lossy().into_owned())
         } else {
-            None
+            self.hook_file(profile.hooks).await?
         };
         let plan = crate::start::StartPlan {
             devbox: self.devbox_bin.clone(),
@@ -135,7 +135,7 @@ impl AgentsService {
                 .and_then(crate::command_path::ResolvedCommand::dir)
                 .map(Into::into),
             hooks: profile.hooks,
-            claude_settings: settings,
+            hook_file: settings,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
             resume_session: session_id.clone(),
             use_scope: self.use_scope,

@@ -94,6 +94,31 @@ impl AgentsService {
                 .into()
             })
     }
+    /// The file a session loads devbox's connection from: the Claude settings or the opencode
+    /// plugin, content-addressed under `agent-hooks/`. Codex takes an argument instead.
+    pub(crate) async fn hook_file(&self, hooks: Hooks) -> Result<Option<String>> {
+        let (stem, ext, body) = match hooks {
+            // A changed devbox path gets a new file; running sessions keep their old one,
+            // including the pre-content-addressed `claude.json`.
+            Hooks::Claude => (
+                "claude",
+                "json",
+                crate::hooks::claude_settings(&self.devbox_bin),
+            ),
+            Hooks::Opencode => (
+                "opencode-plugin",
+                "ts",
+                crate::plugin_event::OPENCODE_PLUGIN.to_owned(),
+            ),
+            Hooks::Codex | Hooks::Pi | Hooks::None => return Ok(None),
+        };
+        let _hook_files = self.hook_files.lock().await;
+        let dir = self.paths.data_dir.join("agent-hooks");
+        private_dir(&dir).map_err(|e| internal("agent hooks directory", e))?;
+        let path = crate::artifacts::write_artifact(&dir, stem, ext, &body)
+            .map_err(|e| internal("agent hooks", e))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    }
     /// The program of profile `id` when its CLI cannot be found the way a start looks for it.
     /// A composite launch checks each of its agents this way before it starts anything.
     pub async fn missing_tool(&self, id: &str) -> Option<String> {
@@ -181,19 +206,7 @@ impl AgentsService {
         private_file(&prompt, &task.prompt, false).map_err(|e| internal("agent prompt", e))?;
         let phase = self.phase_path(task, launch_id);
         private_file(&phase, "starting\n", false).map_err(|e| internal("agent phase", e))?;
-        let settings = if profile.hooks == Hooks::Claude {
-            let _hook_files = self.hook_files.lock().await;
-            let hooks = self.paths.data_dir.join("agent-hooks");
-            private_dir(&hooks).map_err(|e| internal("agent hooks directory", e))?;
-            // A changed devbox path gets a new file; running sessions keep their old one,
-            // including the pre-content-addressed `claude.json`.
-            let body = crate::hooks::claude_settings(&self.devbox_bin);
-            let path = crate::artifacts::write_artifact(&hooks, "claude", "json", &body)
-                .map_err(|e| internal("agent hooks", e))?;
-            Some(path.to_string_lossy().into_owned())
-        } else {
-            None
-        };
+        let hook_file = self.hook_file(profile.hooks).await?;
         let plan = crate::start::StartPlan {
             devbox: self.devbox_bin.clone(),
             instance: self.paths.instance.as_str().into(),
@@ -206,7 +219,7 @@ impl AgentsService {
             tool_command: profile.command.clone(),
             tool_dir: tool.and_then(ResolvedCommand::dir).map(Into::into),
             hooks: profile.hooks,
-            claude_settings: settings,
+            hook_file,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
             resume_session: None,
             use_scope: self.use_scope,

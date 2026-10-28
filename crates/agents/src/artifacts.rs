@@ -114,6 +114,22 @@ mod tests {
     }
 
     #[test]
+    fn write_artifact_rejects_a_symlinked_directory() {
+        let root = tempfile::tempdir().expect("owned artifact directory");
+        let target = root.path().join("elsewhere");
+        fs::create_dir(&target).expect("owned link target");
+        let link = root.path().join("agent-hooks");
+        symlink(&target, &link).expect("owned symlink");
+        assert!(write_artifact(&link, "opencode-plugin", "ts", "body").is_err());
+        // Below a symlinked ancestor too.
+        let nested = target.join("nested");
+        fs::create_dir(&nested).expect("owned nested directory");
+        assert!(write_artifact(&link.join("nested"), "claude", "json", "body").is_err());
+        assert_eq!(fs::read_dir(&target).expect("link target").count(), 1);
+        assert_eq!(fs::read_dir(&nested).expect("nested target").count(), 0);
+    }
+
+    #[test]
     fn concurrent_writers_of_the_same_body_all_succeed() {
         let dir = tempfile::tempdir().expect("owned artifact directory");
         let body = "devbox hook artifact body\n".repeat(1 << 16);

@@ -26,10 +26,11 @@ export function nextWaiting(groups: ReturnType<typeof groupByUrgency>, current?:
 export function attentionCount(tasks: AgentTask[]) {
   return tasks.filter((t) => t.state === "waiting" || t.state === "idle" || t.state === "failed").length;
 }
+/** A task of a profile devbox connects to that reported no session in its first 90 seconds. */
 export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: number) {
-  const claude = new Set(profiles.filter((p) => p.hooks === "claude").map((p) => p.id));
+  const hooked = new Set(profiles.filter((p) => p.hooks !== "none").map((p) => p.id));
   return tasks.some(
-    (t) => t.state === "running" && claude.has(t.profile) && !t.sessionId && nowMs - t.createdMs > 90_000,
+    (t) => t.state === "running" && hooked.has(t.profile) && !t.sessionId && nowMs - t.createdMs > 90_000,
   );
 }
 export function fillTemplate(body: string, vars: { title: string; branch: string; project: string }) {

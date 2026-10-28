@@ -285,8 +285,8 @@ export type HistoryPage = { items: Array<HistorySummary>, next: string | null, }
 export type HistoryQuery = { before: string | null, limit: number, origin: RequestOrigin | null, };
 export type HistoryResponse = { status: number, reason: string, httpVersion: string, headers: Array<Pair>, redirects: Array<Redirect>, elapsedMs: number, sizeBytes: number, binary: boolean, };
 export type HistorySummary = { id: string, sentAtMs: number, method: string, url: string, status: number | null, elapsedMs: number, sizeBytes: number, outcome: HistoryOutcome, runId: string | null, origin: RequestOrigin | null, };
-export type HookSource = "claude" | "codex" | "setup" | "exit";
-export type Hooks = "claude" | "codex" | "none";
+export type HookSource = "claude" | "codex" | "setup" | "exit" | "opencode" | "pi";
+export type Hooks = "claude" | "codex" | "opencode" | "pi" | "none";
 export type HourMs = { 
 /**
  * Local hour `0..=23`.

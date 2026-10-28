@@ -8,6 +8,8 @@ use ts_rs::TS;
 pub enum Hooks {
     Claude,
     Codex,
+    Opencode,
+    Pi,
     None,
 }
 
@@ -50,6 +52,14 @@ pub fn builtin() -> Vec<ToolProfile> {
                 // marks the prompt; "N hooks need review before they can run." is only a notice.
                 r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust all and continue|Continue without trusting \(hooks won['’]t run\))".into(),
             ],
+        },
+        // Its plugin reports permission prompts, so its pane is not matched.
+        ToolProfile {
+            id: "opencode".into(),
+            label: "opencode".into(),
+            command: "opencode".into(),
+            hooks: Hooks::Opencode,
+            waiting_patterns: vec![],
         },
     ]
 }
@@ -269,6 +279,47 @@ mod tests {
         assert!(profiles.is_empty());
         let problems = reported(&problems);
         assert_eq!(problems[1].1, "entry 2 (id \"custom\"): duplicate id");
+    }
+    #[test]
+    fn builtin_profiles_are_claude_codex_opencode_pi_in_order() {
+        let builtin = builtin();
+        let order: Vec<_> = builtin
+            .iter()
+            .map(|p| (p.id.as_str(), p.label.as_str(), p.command.as_str(), p.hooks))
+            .collect();
+        // pi is the fourth once its support lands.
+        assert_eq!(
+            order[..3],
+            [
+                ("claude", "Claude Code", "claude", Hooks::Claude),
+                ("codex", "Codex", "codex", Hooks::Codex),
+                ("opencode", "opencode", "opencode", Hooks::Opencode),
+            ]
+        );
+        // opencode reports its prompts through the plugin, so its pane is not matched.
+        assert!(builtin[2].waiting_patterns.is_empty());
+    }
+    #[test]
+    fn old_hook_values_still_parse() {
+        for (value, hooks) in [
+            ("claude", Hooks::Claude),
+            ("codex", Hooks::Codex),
+            ("none", Hooks::None),
+            ("opencode", Hooks::Opencode),
+            ("pi", Hooks::Pi),
+        ] {
+            let config = config(&format!(
+                "[[agents.profiles]]\nid='x'\nlabel='X'\ncommand='x'\nhooks='{value}'\n"
+            ));
+            let (profiles, problems) = configured_lenient(&config);
+            assert!(problems.is_empty(), "{value}: {problems:?}");
+            assert_eq!(profiles[0].hooks, hooks, "{value}");
+            assert_eq!(configured(&config).expect("strict")[0].hooks, hooks);
+            assert_eq!(
+                serde_json::to_string(&hooks).expect("wire name"),
+                format!("\"{value}\"")
+            );
+        }
     }
     #[test]
     fn custom_profiles_override_defaults_and_parse_strictly() {

@@ -29,6 +29,9 @@ impl AgentsService {
             });
         };
         let hooks = profile.hooks;
+        if hooks == crate::profile::Hooks::Opencode {
+            return Ok(self.opencode_usage(&task, &profile).await);
+        }
         let home = self.paths.home.clone();
         tokio::task::spawn_blocking(move || {
             crate::usage::tokens_for(&home, &task, hooks, binding.as_ref())

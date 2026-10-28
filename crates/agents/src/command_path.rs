@@ -12,11 +12,10 @@ use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
-    process::Stdio,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
-use tokio::{io::AsyncReadExt, process::Command, time::Instant};
+use tokio::{process::Command, time::Instant};
 
 /// The interactive shell gets this long, and at most this much of its output is read.
 const SHELL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -172,7 +171,11 @@ impl ShellProbe for InteractiveShell {
         command.args(["-ic", SCRIPT, "devbox-probe", program]);
         Box::pin(async move {
             // The exit status says nothing here: the markers are the answer.
-            answer(run(command, SHELL_TIMEOUT).await.map(|(_, stdout)| stdout))
+            answer(
+                crate::bounded::run(command, SHELL_TIMEOUT, OUTPUT_LIMIT)
+                    .await
+                    .map(|(_, stdout)| stdout),
+            )
         })
     }
 }
@@ -368,24 +371,28 @@ fn runnable(_: &Path) -> bool {
 /// `PATH`, as the start script runs it. Only the environment check calls this, and only for the
 /// agent CLIs it knows: a task start never runs a program to ask.
 pub async fn version(program: &Path, service_path: &OsStr) -> Option<String> {
-    let path = program
+    let mut command = Command::new(program);
+    command
+        .arg("--version")
+        .env("PATH", folder_first(program, service_path))
+        .env("NO_COLOR", "1")
+        .env("DISABLE_AUTOUPDATER", "1")
+        .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+    let (success, stdout) = crate::bounded::run(command, VERSION_TIMEOUT, OUTPUT_LIMIT).await?;
+    success
+        .then(|| version_token(&String::from_utf8_lossy(&stdout)))
+        .flatten()
+}
+
+/// `service_path` with `program`'s folder first, the way the start script runs the program.
+pub(crate) fn folder_first(program: &Path, service_path: &OsStr) -> OsString {
+    program
         .parent()
         .and_then(|dir| {
             let rest = std::env::split_paths(service_path).filter(|p| !p.as_os_str().is_empty());
             std::env::join_paths(std::iter::once(dir.to_path_buf()).chain(rest)).ok()
         })
-        .unwrap_or_else(|| service_path.to_owned());
-    let mut command = Command::new(program);
-    command
-        .arg("--version")
-        .env("PATH", path)
-        .env("NO_COLOR", "1")
-        .env("DISABLE_AUTOUPDATER", "1")
-        .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
-    let (success, stdout) = run(command, VERSION_TIMEOUT).await?;
-    success
-        .then(|| version_token(&String::from_utf8_lossy(&stdout)))
-        .flatten()
+        .unwrap_or_else(|| service_path.to_owned())
 }
 
 /// The first `1.2.3`-like word, without anything around it.
@@ -402,82 +409,6 @@ fn version_token(text: &str) -> Option<String> {
             .then(|| number.to_owned())
     })
 }
-
-/// Runs `command` in a new session with no terminal, no stdin and no stderr, reading at most
-/// 64 KiB of stdout within `timeout`. Whatever it started is killed when it ends or is dropped.
-async fn run(mut command: Command, timeout: Duration) -> Option<(bool, Vec<u8>)> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    detach(&mut command);
-    let mut child = command.spawn().ok()?;
-    let group = Group(child.id());
-    let mut stdout = child.stdout.take()?;
-    let read = async {
-        let mut bytes = Vec::new();
-        (&mut stdout)
-            .take(OUTPUT_LIMIT as u64 + 1)
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(drop)?;
-        if bytes.len() > OUTPUT_LIMIT {
-            return Err(());
-        }
-        Ok(bytes)
-    };
-    let wait = async {
-        let status = child.wait().await.map_err(drop)?;
-        // Background jobs it left could hold the pipe open; its own output is complete.
-        group.kill();
-        Ok(status)
-    };
-    let (stdout, status) = tokio::time::timeout(timeout, async { tokio::try_join!(read, wait) })
-        .await
-        .ok()?
-        .ok()?;
-    Some((status.success(), stdout))
-}
-
-/// The process group of a child started by [`detach`] (its id is the child's).
-struct Group(Option<u32>);
-
-impl Group {
-    fn kill(&self) {
-        #[cfg(unix)]
-        if let Some(id) = self.0.and_then(|id| i32::try_from(id).ok()) {
-            let _ = nix::sys::signal::killpg(
-                nix::unistd::Pid::from_raw(id),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-        }
-    }
-}
-
-impl Drop for Group {
-    fn drop(&mut self) {
-        self.kill();
-    }
-}
-
-#[cfg(unix)]
-#[allow(unsafe_code)]
-fn detach(command: &mut Command) {
-    // SAFETY: setsid is async-signal-safe and touches no memory of this process. Without a
-    // controlling terminal an interactive bash cannot stop itself on SIGTTIN or take over the
-    // daemon's terminal, and everything it starts stays in a group that can be killed.
-    unsafe {
-        command.pre_exec(|| {
-            nix::unistd::setsid()
-                .map(drop)
-                .map_err(std::io::Error::from)
-        });
-    }
-}
-
-#[cfg(not(unix))]
-fn detach(_: &mut Command) {}
 
 type Key = (String, OsString);
 

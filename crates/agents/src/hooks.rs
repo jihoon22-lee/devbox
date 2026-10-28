@@ -11,6 +11,8 @@ pub enum HookSource {
     Codex,
     Setup,
     Exit,
+    Opencode,
+    Pi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -22,6 +24,8 @@ impl std::str::FromStr for HookSource {
         match s {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
+            "opencode" => Ok(Self::Opencode),
+            "pi" => Ok(Self::Pi),
             "setup" => Ok(Self::Setup),
             "exit" => Ok(Self::Exit),
             _ => Err(InvalidHookSource),
@@ -88,6 +92,9 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
             code: code.unwrap_or(-1),
         }],
         HookSource::Codex => vec![],
+        HookSource::Opencode | HookSource::Pi => {
+            crate::plugin_event::parse_plugin_event(source, payload)
+        }
         HookSource::Claude => {
             #[derive(Deserialize)]
             struct Payload {
@@ -326,6 +333,25 @@ mod tests {
             serde_json::from_str(notify.strip_prefix("notify=").expect("owned fixture"))
                 .expect("owned fixture");
         assert_eq!(args[0], "/b/\"quoted\\path");
+    }
+    #[test]
+    fn opencode_and_pi_sources_parse_from_cli_names() {
+        for (name, source) in [("opencode", HookSource::Opencode), ("pi", HookSource::Pi)] {
+            assert_eq!(name.parse::<HookSource>(), Ok(source));
+            let wire: HookSource =
+                serde_json::from_str(&format!("\"{name}\"")).expect("RPC source name");
+            assert_eq!(wire, source);
+        }
+        for name in ["claude", "codex", "setup", "exit"] {
+            assert!(name.parse::<HookSource>().is_ok(), "{name}");
+        }
+        assert_eq!("Opencode".parse::<HookSource>(), Err(InvalidHookSource));
+        // A plugin's report goes to the plugin parser, never Claude's.
+        let working = r#"{"v":1,"event":"working"}"#;
+        for source in [HookSource::Opencode, HookSource::Pi] {
+            assert_eq!(parse(source, working, None), vec![E::PromptSubmitted]);
+        }
+        assert!(parse(HookSource::Claude, working, None).is_empty());
     }
     #[test]
     fn claude_settings_include_post_tool_use() {

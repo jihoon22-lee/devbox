@@ -39,14 +39,24 @@ test("urgency sorts waiting oldest first, others newest and excludes closed afte
   expect(nextWaiting(groupByUrgency([task("r", "running", 1)], now))).toBeUndefined();
 });
 
-test("counts attention and detects only Claude missing hooks after 90 seconds", () => {
+test("counts attention and detects missing hooks of every hooked profile after 90 seconds", () => {
   expect(
     attentionCount([task("w", "waiting", 1), task("i", "idle", 1), task("f", "failed", 1), task("r", "running", 1)]),
   ).toBe(3);
   const missing = { ...task("r", "running", 0), sessionId: null };
   expect(hookMissing([missing], profiles, 90_000)).toBe(false);
   expect(hookMissing([missing], profiles, 90_001)).toBe(true);
-  expect(hookMissing([{ ...missing, profile: "codex" }], profiles, 91_000)).toBe(false);
+  const hooked = [
+    ...profiles,
+    { id: "opencode", label: "opencode", command: "opencode", hooks: "opencode" as const, waitingPatterns: [] },
+    { id: "plain", label: "Plain", command: "plain", hooks: "none" as const, waitingPatterns: [] },
+  ];
+  for (const profile of ["codex", "opencode"]) {
+    expect(hookMissing([{ ...missing, profile }], hooked, 91_000)).toBe(true);
+  }
+  // A profile without hooks never reports a session, and a reported session is enough.
+  expect(hookMissing([{ ...missing, profile: "plain" }], hooked, 91_000)).toBe(false);
+  expect(hookMissing([{ ...missing, profile: "opencode", sessionId: "ses_1" }], hooked, 91_000)).toBe(false);
 });
 
 test("template only substitutes known variables and branch preview follows backend ASCII slug", () => {
