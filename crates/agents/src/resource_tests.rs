@@ -527,5 +527,8 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
 #[path = "prepare_binding_tests.rs"]
 mod prepare_binding_tests;
 
+#[path = "prepare_reconcile_tests.rs"]
+mod prepare_reconcile_tests;
+
 #[path = "run_worktree_tests.rs"]
 mod run_worktree_tests;

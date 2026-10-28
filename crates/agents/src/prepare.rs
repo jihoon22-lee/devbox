@@ -379,31 +379,46 @@ impl AgentsService {
             .await
             .ok()
             .map(|refs| refs.iter().any(|r| r == branch));
-        let registered = devbox_git::run::output(
+        let records = devbox_git::run::output(
             Path::new(&project.path),
             &["worktree", "list", "--porcelain", "-z"],
         )
         .await
         .ok()
-        .and_then(|(code, out, _)| {
-            if code == 0 {
-                Some(
-                    out.split_terminator('\0')
-                        .any(|field| field == format!("worktree {path}")),
-                )
-            } else {
-                None
-            }
+        .and_then(|(code, out, _)| (code == 0).then_some(out));
+        let registered = records.as_ref().map(|out| {
+            out.split_terminator('\0')
+                .any(|field| field == format!("worktree {path}"))
         });
-        self.record_resources(
-            &task.id,
-            crate::tracker::Resources::Partial {
-                path_exists,
-                branch_exists,
-                worktree_registered: registered,
-            },
-        )
-        .await?;
+        // Owned stays owned only while its directory, its branch and that directory's
+        // registration on that branch are all exactly there, so cleanup can remove them.
+        let exact = std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+            && branch_exists == Some(true)
+            && records.as_ref().is_some_and(|out| {
+                out.split("\0\0").any(|record| {
+                    let fields: Vec<_> = record.split('\0').collect();
+                    fields.first() == Some(&format!("worktree {path}").as_str())
+                        && fields.contains(&format!("branch refs/heads/{branch}").as_str())
+                })
+            });
+        let observed = crate::tracker::Resources::Partial {
+            path_exists,
+            branch_exists,
+            worktree_registered: registered,
+        };
+        let id = task.id.clone();
+        self.db
+            .write(move |tx| {
+                let mut binding =
+                    crate::store::binding(tx, &id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+                if exact && binding.resources == crate::tracker::Resources::Owned {
+                    return Ok(());
+                }
+                binding.resources = observed;
+                crate::store::put_binding(tx, &id, &binding)
+            })
+            .await
+            .map_err(|e| internal("record agent resources", e))?;
         if !path_exists && branch_exists == Some(false) && registered == Some(false) {
             self.update(&task.id, move |t| {
                 t.branch = None;
