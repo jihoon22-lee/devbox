@@ -94,6 +94,9 @@ impl AgentsService {
             .collect();
         let now = now_ms();
         let id = format!("a{}", uuid::Uuid::new_v4().simple());
+        // pi starts the session devbox names, so the task has it before anything is launched.
+        let session_id = (profile.hooks == crate::profile::Hooks::Pi)
+            .then(|| uuid::Uuid::new_v4().hyphenated().to_string());
         let repo = std::path::PathBuf::from(&project.path);
         let svc = self.clone();
         let hub = self.hub.clone();
@@ -161,7 +164,7 @@ impl AgentsService {
                         branch,
                         worktree_path: worktree.clone(),
                         workdir: worktree.unwrap_or(project.path),
-                        session_id: None,
+                        session_id,
                         terminal_id: None,
                         tool_exited: false,
                         state: AgentState::Preparing,

@@ -61,6 +61,15 @@ pub fn builtin() -> Vec<ToolProfile> {
             hooks: Hooks::Opencode,
             waiting_patterns: vec![],
         },
+        // Its extension reports the folder trust question and extension dialogs, so its pane
+        // is not matched either.
+        ToolProfile {
+            id: "pi".into(),
+            label: "pi".into(),
+            command: "pi".into(),
+            hooks: Hooks::Pi,
+            waiting_patterns: vec![],
+        },
     ]
 }
 
@@ -287,17 +296,19 @@ mod tests {
             .iter()
             .map(|p| (p.id.as_str(), p.label.as_str(), p.command.as_str(), p.hooks))
             .collect();
-        // pi is the fourth once its support lands.
         assert_eq!(
-            order[..3],
+            order,
             [
                 ("claude", "Claude Code", "claude", Hooks::Claude),
                 ("codex", "Codex", "codex", Hooks::Codex),
                 ("opencode", "opencode", "opencode", Hooks::Opencode),
+                ("pi", "pi", "pi", Hooks::Pi),
             ]
         );
-        // opencode reports its prompts through the plugin, so its pane is not matched.
+        // opencode's plugin and pi's extension report their prompts, so their panes are not
+        // matched.
         assert!(builtin[2].waiting_patterns.is_empty());
+        assert!(builtin[3].waiting_patterns.is_empty());
     }
     #[test]
     fn old_hook_values_still_parse() {

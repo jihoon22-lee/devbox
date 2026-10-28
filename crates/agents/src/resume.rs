@@ -108,7 +108,8 @@ impl AgentsService {
         crate::prepare::private_file(&phase, "starting\n", false).internal("resume phase")?;
         let script = data.join(format!("resume-{generation}.sh"));
         let prompt = data.join(format!("resume-{generation}.md"));
-        crate::prepare::private_file(&prompt, &task.prompt, false).internal("resume prompt")?;
+        let text = crate::prepare::prompt_text(profile.hooks, &task.prompt);
+        crate::prepare::private_file(&prompt, &text, false).internal("resume prompt")?;
         let settings = if profile.hooks == crate::profile::Hooks::Claude {
             let path = data.join(format!("claude-{generation}.json"));
             crate::prepare::private_file(
@@ -138,6 +139,7 @@ impl AgentsService {
             hook_file: settings,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
             resume_session: session_id.clone(),
+            session_id: None,
             use_scope: self.use_scope,
             port: task.port,
         };

@@ -45,6 +45,15 @@ pub(crate) fn private_file(path: &Path, body: &str, executable: bool) -> std::io
     file.write_all(body.as_bytes())?;
     file.sync_all()
 }
+/// The prompt as the tool reads it from `prompt.md`. pi attaches an argument that starts with
+/// `@` as a file, even after `--`; one space before it keeps it the message.
+pub(crate) fn prompt_text(hooks: Hooks, prompt: &str) -> std::borrow::Cow<'_, str> {
+    if hooks == Hooks::Pi && prompt.starts_with('@') {
+        std::borrow::Cow::Owned(format!(" {prompt}"))
+    } else {
+        std::borrow::Cow::Borrowed(prompt)
+    }
+}
 fn internal(context: &str, error: impl std::fmt::Display) -> Fail<AgentsError> {
     Fail::Internal(format!("{context}: {error}"))
 }
@@ -94,8 +103,9 @@ impl AgentsService {
                 .into()
             })
     }
-    /// The file a session loads devbox's connection from: the Claude settings or the opencode
-    /// plugin, content-addressed under `agent-hooks/`. Codex takes an argument instead.
+    /// The file a session loads devbox's connection from: the Claude settings, the opencode
+    /// plugin or the pi extension, content-addressed under `agent-hooks/`. Codex takes an
+    /// argument instead.
     pub(crate) async fn hook_file(&self, hooks: Hooks) -> Result<Option<String>> {
         let (stem, ext, body) = match hooks {
             // A changed devbox path gets a new file; running sessions keep their old one,
@@ -110,7 +120,12 @@ impl AgentsService {
                 "ts",
                 crate::plugin_event::OPENCODE_PLUGIN.to_owned(),
             ),
-            Hooks::Codex | Hooks::Pi | Hooks::None => return Ok(None),
+            Hooks::Pi => (
+                "pi-extension",
+                "ts",
+                crate::plugin_event::PI_EXTENSION.to_owned(),
+            ),
+            Hooks::Codex | Hooks::None => return Ok(None),
         };
         let _hook_files = self.hook_files.lock().await;
         let dir = self.paths.data_dir.join("agent-hooks");
@@ -203,7 +218,8 @@ impl AgentsService {
         private_dir(&data).map_err(|e| internal("agent data permissions", e))?;
         let prompt = data.join("prompt.md");
         let script = data.join("start.sh");
-        private_file(&prompt, &task.prompt, false).map_err(|e| internal("agent prompt", e))?;
+        private_file(&prompt, &prompt_text(profile.hooks, &task.prompt), false)
+            .map_err(|e| internal("agent prompt", e))?;
         let phase = self.phase_path(task, launch_id);
         private_file(&phase, "starting\n", false).map_err(|e| internal("agent phase", e))?;
         let hook_file = self.hook_file(profile.hooks).await?;
@@ -222,6 +238,7 @@ impl AgentsService {
             hook_file,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
             resume_session: None,
+            session_id: task.session_id.clone(),
             use_scope: self.use_scope,
         };
         private_file(&script, &crate::start::render_start_script(&plan), true)
@@ -497,5 +514,39 @@ impl AgentsService {
             .await
             .map_err(|e| internal("record preparation failure", e))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn prompt_starting_with_at_sign_is_prefixed_for_pi_only() {
+        let prompts = [
+            "@notes.md fix it",
+            "@",
+            "-x",
+            "--",
+            "--model=unrequested",
+            "quotes '\" $HOME $(touch injected) `touch ticked` \\ end",
+            "한국어 --option\n두 번째 줄",
+            "",
+            " @spaced",
+            "see @notes.md",
+        ];
+        // Claude, Codex and opencode get the prompt byte for byte.
+        for hooks in [Hooks::Claude, Hooks::Codex, Hooks::Opencode, Hooks::None] {
+            for prompt in prompts {
+                assert_eq!(prompt_text(hooks, prompt), prompt, "{hooks:?} {prompt:?}");
+            }
+        }
+        // pi would attach `@…` as a file: one leading space keeps it the message.
+        for prompt in prompts {
+            let expected = match prompt.strip_prefix('@') {
+                Some(_) => format!(" {prompt}"),
+                None => prompt.to_owned(),
+            };
+            assert_eq!(prompt_text(Hooks::Pi, prompt), expected, "{prompt:?}");
+        }
     }
 }

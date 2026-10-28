@@ -78,7 +78,7 @@ struct Event {
 struct Info {
     total_token_usage: Option<Counts>,
 }
-fn empty(truncated: bool) -> AgentUsage {
+pub(crate) fn empty(truncated: bool) -> AgentUsage {
     AgentUsage {
         tokens: None,
         truncated,
@@ -86,7 +86,7 @@ fn empty(truncated: bool) -> AgentUsage {
 }
 // fill_buf bounds allocation even for a huge unterminated record. Malformed records
 // and incomplete tails are reported, never silently advertised as complete usage.
-fn records(mut reader: impl BufRead, mut visit: impl FnMut(&[u8]) -> bool) -> bool {
+pub(crate) fn records(mut reader: impl BufRead, mut visit: impl FnMut(&[u8]) -> bool) -> bool {
     let mut budget = MAX_BYTES;
     let mut line = Vec::new();
     let mut truncated = false;
@@ -239,7 +239,7 @@ fn codex_read(reader: impl BufRead, session: &str, cwd: &str) -> AgentUsage {
         }
     }
 }
-fn safe_file(path: &Path) -> bool {
+pub(crate) fn safe_file(path: &Path) -> bool {
     path.ancestors()
         .all(|p| std::fs::symlink_metadata(p).is_ok_and(|m| !m.file_type().is_symlink()))
 }

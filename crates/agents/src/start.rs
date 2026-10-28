@@ -19,6 +19,8 @@ pub struct StartPlan {
     pub hook_file: Option<String>,
     pub prompt_file: Option<String>,
     pub resume_session: Option<String>,
+    /// The session a new launch starts in when devbox chose it: pi creates it with this id.
+    pub session_id: Option<String>,
     pub use_scope: bool,
     pub port: u16,
 }
@@ -84,12 +86,19 @@ pub fn render_start_script(p: &StartPlan) -> String {
             }
         }
         Hooks::Codex => tool.push_str(&format!(" -c {}", sh_quote(&codex_notify_arg(&p.devbox)))),
-        Hooks::Opencode | Hooks::Pi | Hooks::None => {}
+        // pi loads it in addition to the user's own extensions.
+        Hooks::Pi => {
+            if let Some(f) = &p.hook_file {
+                tool.push_str(&format!(" -e {}", sh_quote(f)));
+            }
+        }
+        Hooks::Opencode | Hooks::None => {}
     }
     match (&p.resume_session, p.hooks) {
         (Some(id), Hooks::Claude) => tool.push_str(&format!(" --resume {}", sh_quote(id))),
         (Some(id), Hooks::Codex) => tool.push_str(&format!(" resume {}", sh_quote(id))),
         (Some(id), Hooks::Opencode) => tool.push_str(&format!(" -s {}", sh_quote(id))),
+        (Some(id), Hooks::Pi) => tool.push_str(&format!(" --session-id {}", sh_quote(id))),
         (None, Hooks::Claude | Hooks::Codex) => {
             if let Some(f) = &p.prompt_file {
                 tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
@@ -99,6 +108,16 @@ pub fn render_start_script(p: &StartPlan) -> String {
         (None, Hooks::Opencode) => {
             if let Some(f) = &p.prompt_file {
                 tool.push_str(&format!(" --prompt=\"$(cat {})\"", sh_quote(f)));
+            }
+        }
+        // pi creates the session devbox chose. After `--` the prompt is a message, but one that
+        // starts with `@` would still be a file, so `prompt.md` has a space before it.
+        (None, Hooks::Pi) => {
+            if let Some(id) = &p.session_id {
+                tool.push_str(&format!(" --session-id {}", sh_quote(id)));
+            }
+            if let Some(f) = &p.prompt_file {
+                tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
             }
         }
         _ => {}
@@ -160,6 +179,7 @@ mod tests {
             hook_file: Some("/d/claude.json".into()),
             prompt_file: Some("/d/prompt.md".into()),
             resume_session: None,
+            session_id: None,
             use_scope: true,
             port: 5200,
         }
@@ -426,6 +446,9 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+#[path = "start_pi_tests.rs"]
+mod pi_tests;
 #[cfg(all(test, unix))]
 #[path = "start_prompt_tests.rs"]
 mod prompt_tests;

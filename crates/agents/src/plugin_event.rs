@@ -6,6 +6,8 @@ use serde::Deserialize;
 
 /// The opencode plugin a task's session loads through `OPENCODE_CONFIG_CONTENT`.
 pub(crate) const OPENCODE_PLUGIN: &str = include_str!("../assets/opencode-plugin.ts");
+/// The pi extension a task's session loads with `-e`, next to the user's own extensions.
+pub(crate) const PI_EXTENSION: &str = include_str!("../assets/pi-extension.ts");
 
 /// One report: `{"v":1,"event":…,"kind"?:…,"sessionId"?:…,"message"?:…}`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -84,9 +86,10 @@ pub fn parse_plugin_event(source: HookSource, payload: &str) -> Vec<AgentEvent> 
     events
 }
 
-/// What waits for the user: a permission by its name, a question, or pi's folder trust.
+/// What waits for the user: a permission by its name, a question, or pi's folder trust. The
+/// trust report is the one without a kind, so a dialog titled the same is still a dialog.
 fn asking(tool: &str, kind: Option<InputKind>, message: &str) -> String {
-    if tool == "pi" && message == "project_trust" {
+    if tool == "pi" && kind.is_none() && message == "project_trust" {
         return "pi가 이 폴더의 프로젝트 설정을 신뢰할지 묻고 있습니다.".into();
     }
     let what = match kind {
@@ -215,13 +218,28 @@ mod tests {
             opencode(r#"{"v":1,"event":"needsInput","message":"bash"}"#),
             "opencode 승인 요청: bash"
         );
-        // pi reuses the field.
+        // pi reuses the field: its extension sends a confirm dialog as a permission and any
+        // other dialog as a question.
+        let pi = |payload| asking(HookSource::Pi, payload);
         assert_eq!(
-            asking(
-                HookSource::Pi,
-                r#"{"v":1,"event":"needsInput","kind":"question","message":"Proceed?"}"#
-            ),
+            pi(r#"{"v":1,"event":"needsInput","kind":"question","message":"Proceed?"}"#),
             "pi 질문: Proceed?"
+        );
+        assert_eq!(
+            pi(
+                r#"{"v":1,"event":"needsInput","kind":"permission","message":"Allow the fixture command?"}"#
+            ),
+            "pi 승인 요청: Allow the fixture command?"
+        );
+        // Only the trust report, which has no kind, gets the trust copy: a dialog with the
+        // same title is still that dialog.
+        assert_eq!(
+            pi(r#"{"v":1,"event":"needsInput","kind":"question","message":"project_trust"}"#),
+            "pi 질문: project_trust"
+        );
+        assert_eq!(
+            pi(r#"{"v":1,"event":"needsInput","message":"project_trust"}"#),
+            "pi가 이 폴더의 프로젝트 설정을 신뢰할지 묻고 있습니다."
         );
         // A kind this version does not know is malformed, like an unknown field.
         assert!(

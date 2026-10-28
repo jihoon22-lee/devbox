@@ -37,6 +37,17 @@ impl AgentsService {
             return Ok(self.opencode_usage(&task, &profile, closing).await);
         }
         let home = self.paths.home.clone();
+        if hooks == crate::profile::Hooks::Pi {
+            // The daemon's environment is the one the task's panes start with.
+            let agent_dir = std::env::var_os("PI_CODING_AGENT_DIR");
+            let session_dir = std::env::var_os("PI_CODING_AGENT_SESSION_DIR");
+            return tokio::task::spawn_blocking(move || {
+                let (agent_dir, session_dir) = (agent_dir.as_deref(), session_dir.as_deref());
+                crate::usage_plugins::pi_usage(&home, agent_dir, session_dir, &task)
+            })
+            .await
+            .internal("read bounded pi tokens");
+        }
         tokio::task::spawn_blocking(move || {
             crate::usage::tokens_for(&home, &task, hooks, binding.as_ref())
         })

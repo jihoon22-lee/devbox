@@ -517,6 +517,8 @@ mod approval_wait_tests;
 mod hook_launch_tests;
 #[path = "hook_limits_tests.rs"]
 mod hook_limits_tests;
+#[path = "pi_service_tests.rs"]
+mod pi_service_tests;
 #[path = "plugin_service_tests.rs"]
 mod plugin_service_tests;
 

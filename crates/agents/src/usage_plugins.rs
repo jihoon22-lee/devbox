@@ -13,6 +13,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "usage_pi.rs"]
+mod pi;
+pub(crate) use pi::pi_usage;
+
 /// One opencode export gets this long, and at most this much of its stdout is read.
 const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 const EXPORT_LIMIT: usize = 64 * 1024 * 1024;
