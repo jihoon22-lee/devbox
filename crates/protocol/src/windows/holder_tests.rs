@@ -57,6 +57,12 @@ fn holder_starts_without_inherited_handles_or_a_window() {
         "CreateProcess(shell,command,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,Environment.SystemDirectory,ref startup,out started)"
     ));
     assert!(!start.contains("STARTF_USESTDHANDLES") && !start.contains("0x100,"));
+    // STARTUPINFO stays zeroed apart from its size: no flags and no standard handles.
+    assert_eq!(start.matches("startup.").count(), 1);
+    assert!(start.contains("startup.Size=Marshal.SizeOf(typeof(StartupInfo));"));
+    for field in ["Flags", "Input", "Output", "Error", "Show"] {
+        assert!(!start.contains(&format!("startup.{field}")), "{field}");
+    }
     assert!(start.contains("\"\\\" -NoProfile -NonInteractive -EncodedCommand \""));
     // Values are base64 literals, so no path character can change the holder script.
     assert!(start.contains("Convert.ToBase64String(new UTF8Encoding(false).GetBytes(values[i]))"));
@@ -194,10 +200,10 @@ fn windows_control_requires_distinct_holder_paths_in_the_same_private_directory(
         "C:\\owned\\control\\assigned.json",
     ] {
         let mut ready = control();
-        ready.holder_ready_path = bad.into();
+        ready.holder_ready_path = Some(bad.into());
         assert!(!ready.valid(), "ready {bad:?}");
         let mut emptied = control();
-        emptied.emptied_path = bad.into();
+        emptied.emptied_path = Some(bad.into());
         assert!(!emptied.valid(), "emptied {bad:?}");
     }
     let mut same = control();
@@ -215,7 +221,7 @@ fn an_rc1_control_decodes_as_legacy_and_can_never_launch() {
     fields.remove("emptiedPath");
     let stored: ObservationControl =
         serde_json::from_value(legacy).expect("an older attempt row stays readable");
-    assert!(stored.holder_ready_path.is_empty() && stored.emptied_path.is_empty());
+    assert!(stored.holder_ready_path.is_none() && stored.emptied_path.is_none());
     assert_eq!(stored.shape(), Some(ControlShape::Legacy));
     let run = RunIdentity {
         run_id: "run".into(),

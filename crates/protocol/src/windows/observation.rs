@@ -28,12 +28,13 @@ pub struct ObservationControl {
     pub grant_path: String,
     pub closed_path: String,
     /// The job holder's ready marker: its [`HolderIdentity`], published once its handle keeps
-    /// the job name. An rc.1 control has neither holder field (see [`ControlShape`]).
-    #[serde(default)]
-    pub holder_ready_path: String,
+    /// the job name. An rc.1 control has neither holder field (absent, decoded as `None`); a
+    /// present but empty or malformed one is invalid (see [`ControlShape`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder_ready_path: Option<String>,
     /// The holder's `{"nonce":…}` receipt: the job emptied after a process was assigned.
-    #[serde(default)]
-    pub emptied_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emptied_path: Option<String>,
 }
 /// How a stored control is judged. Only a `Holder` control can start a command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,28 +190,23 @@ impl ObservationControl {
             assigned_path: path("assigned.json"),
             grant_path: path("grant.json"),
             closed_path: path("closed.json"),
-            holder_ready_path: path("holder-ready"),
-            emptied_path: path("emptied.json"),
+            holder_ready_path: Some(path("holder-ready")),
+            emptied_path: Some(path("emptied.json")),
             nonce,
         }
     }
-    /// `Holder` with both holder paths, `Legacy` with neither (an rc.1 row, where serde fills
-    /// the missing fields with empty strings; rc.2 never stores an empty one). Anything else,
-    /// including a partial or malformed holder field, is `None`: it fails closed.
+    /// `Holder` with both holder paths, `Legacy` only when both are absent (an rc.1 row).
+    /// Anything else, including one absent field or a present but empty or malformed one, is
+    /// `None`: it fails closed and is never observed.
     pub fn shape(&self) -> Option<ControlShape> {
-        let shape = match (
-            self.holder_ready_path.is_empty(),
-            self.emptied_path.is_empty(),
-        ) {
-            (false, false) => ControlShape::Holder,
-            (true, true) => ControlShape::Legacy,
+        let (shape, holder) = match (&self.holder_ready_path, &self.emptied_path) {
+            (Some(ready), Some(emptied)) => (ControlShape::Holder, vec![ready, emptied]),
+            (None, None) => (ControlShape::Legacy, Vec::new()),
             _ => return None,
         };
         let parent = |s: &str| s.rsplit_once('\\').map(|(p, _)| p.to_owned());
         let mut paths = vec![&self.assigned_path, &self.grant_path, &self.closed_path];
-        if shape == ControlShape::Holder {
-            paths.extend([&self.holder_ready_path, &self.emptied_path]);
-        }
+        paths.extend(holder);
         (self.schema == OBSERVATION_SCHEMA
             && valid_windows_identity(&self.launch_id)
             && valid_job(&self.nonce, &self.job_name)

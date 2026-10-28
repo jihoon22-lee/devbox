@@ -169,8 +169,8 @@ mod tests {
                 assigned_path: "C:\\owned\\control\\assigned.json".into(),
                 grant_path: "C:\\owned\\control\\grant.json".into(),
                 closed_path: "C:\\owned\\control\\closed.json".into(),
-                holder_ready_path: "C:\\owned\\control\\holder-ready".into(),
-                emptied_path: "C:\\owned\\control\\emptied.json".into(),
+                holder_ready_path: Some("C:\\owned\\control\\holder-ready".into()),
+                emptied_path: Some("C:\\owned\\control\\emptied.json".into()),
             },
         }
     }

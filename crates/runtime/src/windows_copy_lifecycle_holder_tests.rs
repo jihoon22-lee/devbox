@@ -20,6 +20,17 @@ fn identity(a: &Attempt) -> HolderIdentity {
         session_id: receipt.session_id,
     }
 }
+/// The bootstrap's own process, as its validated assigned receipt records it.
+fn bootstrap(a: &Attempt) -> HolderIdentity {
+    let receipt = assigned(a);
+    HolderIdentity {
+        nonce: receipt.nonce,
+        pid: receipt.pid,
+        creation_time: receipt.creation_time,
+        sid: receipt.sid,
+        session_id: receipt.session_id,
+    }
+}
 fn write_marker(o: &Owned, a: &Attempt, body: &str) {
     let path = o
         .copy
@@ -43,19 +54,26 @@ fn observed(o: &mut Owned, state: ObservationState) -> Arc<AtomicUsize> {
     });
     calls
 }
-/// Every holder liveness check answers `state` and records what it was asked.
-fn holder_check(o: &mut Owned, state: ObservationState) -> Asked {
+/// Every liveness check answers `answer(process)` and records what it was asked.
+fn liveness(
+    o: &mut Owned,
+    answer: impl Fn(&HolderIdentity) -> ObservationState + Send + Sync + 'static,
+) -> Asked {
     let asked: Asked = Arc::default();
     let record = asked.clone();
-    o.config.windows_holder = Arc::new(move |holder, cross_session| {
+    o.config.windows_holder = Arc::new(move |process, cross_session| {
+        let state = answer(&process);
         record
             .lock()
             .expect("holder checks")
-            .push((holder, cross_session));
-        let state = state.clone();
+            .push((process, cross_session));
         Box::pin(async move { state })
     });
     asked
+}
+/// Every liveness check answers `state`.
+fn holder_check(o: &mut Owned, state: ObservationState) -> Asked {
+    liveness(o, move |_| state.clone())
 }
 fn asked(checks: &Asked) -> Vec<(HolderIdentity, bool)> {
     checks.lock().expect("holder checks").clone()
@@ -176,6 +194,19 @@ async fn a_matching_receipt_closes_without_any_probe() {
 }
 /// Rewrite a committed row as rc.1 stored it: the control without these holder keys.
 async fn stored_without(o: &Owned, a: &Attempt, keys: &'static [&'static str]) {
+    rewritten(o, a, move |control| {
+        for key in keys {
+            control.remove(*key).expect("stored holder field");
+        }
+    })
+    .await;
+}
+/// Rewrite the stored control JSON of a committed row.
+async fn rewritten(
+    o: &Owned,
+    a: &Attempt,
+    edit: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>) + Send + 'static,
+) {
     let nonce = a.control.nonce.clone();
     o.f.db
         .write(move |tx| {
@@ -185,10 +216,7 @@ async fn stored_without(o: &Owned, a: &Attempt, keys: &'static [&'static str]) {
                 |row| row.get(0),
             )?;
             let mut row: serde_json::Value = serde_json::from_str(&body).expect("attempt row");
-            let control = row["control"].as_object_mut().expect("stored control");
-            for key in keys {
-                control.remove(*key).expect("stored holder field");
-            }
+            edit(row["control"].as_object_mut().expect("stored control"));
             tx.execute(
                 "UPDATE runtime_windows_attempts SET body=?1 WHERE nonce=?2",
                 [row.to_string(), nonce.clone()],
@@ -236,8 +264,83 @@ async fn same_user_in_another_session_closes_once_the_holder_is_gone() {
     observed(&mut o, ObservationState::IdentityMismatch);
     let checks = holder_check(&mut o, ObservationState::NotFound);
     reconcile(&o).await;
-    assert_eq!(asked(&checks), vec![(identity(&a), true)]);
+    // Another session's Observe never opened the bootstrap PID, so it is checked too.
+    assert_eq!(
+        asked(&checks),
+        vec![(identity(&a), true), (bootstrap(&a), true)]
+    );
     assert_eq!(phase(&o.f.db, &a).await, AttemptPhase::Closed);
+}
+#[tokio::test]
+async fn a_cross_session_release_also_needs_the_bootstrap_gone() {
+    for state in [
+        ObservationState::Active { count: 1 },
+        ObservationState::Unavailable,
+        ObservationState::IdentityMismatch,
+    ] {
+        let mut o = owned().await;
+        let a = one(&o).await;
+        write_holder(&o, &a, &identity(&a));
+        observed(&mut o, ObservationState::IdentityMismatch);
+        // The holder alone died; the bootstrap and its command may still run elsewhere.
+        let holder_pid = identity(&a).pid;
+        let answer = state.clone();
+        let checks = liveness(&mut o, move |process| {
+            if process.pid == holder_pid {
+                ObservationState::NotFound
+            } else {
+                answer.clone()
+            }
+        });
+        reconcile(&o).await;
+        assert_eq!(
+            asked(&checks),
+            vec![(identity(&a), true), (bootstrap(&a), true)],
+            "{state:?}"
+        );
+        assert_eq!(
+            phase(&o.f.db, &a).await,
+            AttemptPhase::Committed,
+            "{state:?}"
+        );
+    }
+}
+#[tokio::test]
+async fn the_holder_is_asked_only_for_a_vanished_or_session_hidden_job() {
+    for (job, closes) in [
+        (ObservationState::Unavailable, false),
+        (ObservationState::Active { count: 1 }, false),
+        (ObservationState::Empty, true),
+    ] {
+        let mut o = owned().await;
+        let a = one(&o).await;
+        write_holder(&o, &a, &identity(&a));
+        observed(&mut o, job.clone());
+        let checks = holder_check(&mut o, ObservationState::NotFound);
+        reconcile(&o).await;
+        assert!(asked(&checks).is_empty(), "{job:?}: holder never asked");
+        let expected = if closes {
+            AttemptPhase::Closed
+        } else {
+            AttemptPhase::Committed
+        };
+        assert_eq!(phase(&o.f.db, &a).await, expected, "{job:?}");
+    }
+}
+#[tokio::test]
+async fn explicitly_empty_holder_fields_are_never_observed() {
+    let mut o = owned().await;
+    let a = one(&o).await;
+    // Present but empty is not rc.1's absence: never the rc.1 rule.
+    rewritten(&o, &a, |control| {
+        control.insert("holderReadyPath".into(), "".into());
+        control.insert("emptiedPath".into(), "".into());
+    })
+    .await;
+    let observations = observed(&mut o, ObservationState::NotFound);
+    reconcile(&o).await;
+    assert_eq!(observations.load(Ordering::SeqCst), 0);
+    assert_eq!(phase(&o.f.db, &a).await, AttemptPhase::Committed);
 }
 #[tokio::test]
 async fn same_user_in_another_session_keeps_a_live_holder_open() {

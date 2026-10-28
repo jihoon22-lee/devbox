@@ -239,8 +239,8 @@ fn a_new_control_always_carries_the_holder_paths() {
     assert_eq!(created.assigned_path, path("assigned.json"));
     assert_eq!(created.grant_path, path("grant.json"));
     assert_eq!(created.closed_path, path("closed.json"));
-    assert_eq!(created.holder_ready_path, path("holder-ready"));
-    assert_eq!(created.emptied_path, path("emptied.json"));
+    assert_eq!(created.holder_ready_path, Some(path("holder-ready")));
+    assert_eq!(created.emptied_path, Some(path("emptied.json")));
     assert_eq!(created.shape(), Some(ControlShape::Holder));
     assert!(created.valid());
 }
@@ -256,13 +256,13 @@ fn partial_or_malformed_holder_fields_are_invalid_not_rc1() {
         Some(ControlShape::Holder)
     );
     let mut ready_only = control();
-    ready_only.emptied_path.clear();
+    ready_only.emptied_path = None;
     let mut emptied_only = control();
-    emptied_only.holder_ready_path.clear();
+    emptied_only.holder_ready_path = None;
     let mut elsewhere = control();
-    elsewhere.emptied_path = "C:\\other\\emptied.json".into();
+    elsewhere.emptied_path = Some("C:\\other\\emptied.json".into());
     let mut duplicate = control();
-    duplicate.holder_ready_path = duplicate.closed_path.clone();
+    duplicate.holder_ready_path = Some(duplicate.closed_path.clone());
     for broken in [ready_only, emptied_only, elsewhere, duplicate] {
         assert_eq!(broken.shape(), None, "{broken:?}");
         assert_eq!(broken.observes(&run, &assigned()), None);
@@ -276,14 +276,42 @@ fn partial_or_malformed_holder_fields_are_invalid_not_rc1() {
     assert_eq!(control().observes(&other, &assigned()), None);
 }
 #[test]
+fn explicitly_empty_holder_fields_are_invalid_not_rc1() {
+    let run = RunIdentity {
+        run_id: "run".into(),
+        attempt_id: "attempt".into(),
+    };
+    for (ready, emptied) in [(Some(""), Some("")), (Some(""), None), (None, Some(""))] {
+        let mut wire = serde_json::to_value(control()).expect("control");
+        let fields = wire.as_object_mut().expect("object");
+        for (key, value) in [("holderReadyPath", ready), ("emptiedPath", emptied)] {
+            match value {
+                Some(text) => fields.insert(key.into(), text.into()),
+                None => fields.remove(key),
+            };
+        }
+        let stored: ObservationControl = serde_json::from_value(wire).expect("decodes");
+        // Only the absence of both fields is rc.1; present-but-empty is invalid.
+        assert_eq!(stored.shape(), None, "{ready:?} {emptied:?}");
+        assert_eq!(stored.observes(&run, &assigned()), None);
+        assert!(!stored.valid());
+    }
+}
+#[test]
 fn csharp_blocks_avoid_csharp6_syntax() {
     // Windows PowerShell 5.1 compiles Add-Type with the .NET Framework compiler: C# 5 only.
-    let listeners = at(PROBE, "public static class DevboxListeners");
+    let block = |script: &'static str, open: &str, close: &str| -> &'static str {
+        let start = at(script, open) + open.len();
+        &script[start..after(script, start, close)]
+    };
     let blocks = [
-        &NATIVE[at(NATIVE, "Add-Type -TypeDefinition @'")..],
-        &HOLDER[at(HOLDER, "Add-Type -TypeDefinition '")..],
-        &PROBE[listeners..after(PROBE, listeners, "\n'@\n")],
+        block(NATIVE, "Add-Type -TypeDefinition @'\n", "\n'@"),
+        block(HOLDER, "Add-Type -TypeDefinition '\n", "\n'\n"),
+        block(PROBE, "Add-Type -TypeDefinition @'\n", "\n'@"),
     ];
+    assert!(blocks[0].contains("public static class DevboxObservation"));
+    assert!(blocks[1].contains("public static class DevboxHolder"));
+    assert!(blocks[2].contains("public static class DevboxListeners"));
     for block in blocks {
         for token in [
             "$\"",
@@ -299,6 +327,11 @@ fn csharp_blocks_avoid_csharp6_syntax() {
             "using static",
             ") when (",
             "?? throw",
+            // Getter-only auto-properties and index initializers.
+            "{ get; }",
+            "{get;}",
+            "{ [",
+            "{[",
         ] {
             assert!(!block.contains(token), "{token}");
         }

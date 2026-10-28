@@ -62,8 +62,8 @@ fn paths(copy: &store::CopyRecord, control: &ObservationControl) -> R<PrivatePat
         || control.grant_path != format!("{dir}\\{nonce}.grant.json")
         || control.closed_path != format!("{dir}\\{nonce}.closed.json")
         || (holder
-            && (control.holder_ready_path != format!("{dir}\\{nonce}.holder-ready")
-                || control.emptied_path != format!("{dir}\\{nonce}.emptied.json")))
+            && (control.holder_ready_path != Some(format!("{dir}\\{nonce}.holder-ready"))
+                || control.emptied_path != Some(format!("{dir}\\{nonce}.emptied.json"))))
     {
         return Err(unavailable());
     }
@@ -132,9 +132,20 @@ fn holder_identity(
         .flatten()
         .filter(|identity| identity.belongs_to(assigned))
 }
-/// I1 under Rulings 34/35 for a holder control. The receipt alone closes, before any probe.
+/// The bootstrap's own process from its assigned receipt, which `observes` validated.
+fn bootstrap_identity(assigned: &ObservationAssigned) -> HolderIdentity {
+    HolderIdentity {
+        nonce: assigned.nonce.clone(),
+        pid: assigned.pid,
+        creation_time: assigned.creation_time.clone(),
+        sid: assigned.sid.clone(),
+        session_id: assigned.session_id,
+    }
+}
+/// I1 under Rulings 34-36 for a holder control. The receipt alone closes, before any probe.
 /// Otherwise `Empty` closes; a vanished job (`NotFound`) or one hidden by another session
-/// (`IdentityMismatch`) closes only once this attempt's own holder is provably gone.
+/// (`IdentityMismatch`) closes only once this attempt's own holder is provably gone, and for
+/// another session the bootstrap too.
 async fn holder_attempt_ended(
     execution: &crate::ExecutionConfig,
     copy: &store::CopyRecord,
@@ -154,7 +165,15 @@ async fn holder_attempt_ended(
     let Some(holder) = holder_identity(copy, control, assigned) else {
         return false;
     };
-    (execution.windows_holder)(holder, cross_session).await == ObservationState::NotFound
+    if (execution.windows_holder)(holder, cross_session).await != ObservationState::NotFound {
+        return false;
+    }
+    // In the same session Observe's NotFound already proved the bootstrap gone. Another
+    // session's Observe stopped at its session gate, so the bootstrap is proven gone the same
+    // way: its command may still run there if the holder alone died.
+    !cross_session
+        || (execution.windows_holder)(bootstrap_identity(assigned), true).await
+            == ObservationState::NotFound
 }
 /// Publish immutable complete JSON without replacing another attempt's evidence.
 fn publish_once(path: &Path, value: &impl serde::Serialize) -> R<()> {

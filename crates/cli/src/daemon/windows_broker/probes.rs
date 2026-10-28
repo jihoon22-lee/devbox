@@ -279,8 +279,8 @@ mod tests {
                     assigned_path: format!("C:\\owned\\{n}.assigned"),
                     grant_path: format!("C:\\owned\\{n}.grant"),
                     closed_path: format!("C:\\owned\\{n}.closed"),
-                    holder_ready_path: format!("C:\\owned\\{n}.holder-ready"),
-                    emptied_path: format!("C:\\owned\\{n}.emptied"),
+                    holder_ready_path: Some(format!("C:\\owned\\{n}.holder-ready")),
+                    emptied_path: Some(format!("C:\\owned\\{n}.emptied")),
                 },
             };
             readers.push(
