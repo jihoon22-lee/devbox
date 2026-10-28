@@ -1,10 +1,14 @@
 //! Bounded metadata-only correlation of Codex's primary CLI thread and current turn.
 use serde::{Deserialize, Serialize};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 const MAX_FILES: usize = 2048;
-const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
+/// `session_meta`, the first line, carries Codex's instructions, so it has its own limit.
+const MAX_FIRST_LINE_BYTES: u64 = 1024 * 1024;
+/// Turn records are read from this much of a rollout's end: a long session is never read whole.
+const TAIL_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 32 * 1024 * 1024;
+/// Longer lines (large tool output, for example) are skipped and counted, never parsed.
 const MAX_LINE_BYTES: usize = 128 * 1024;
 #[path = "tracker_poll.rs"]
 mod poll;
@@ -212,23 +216,77 @@ fn files(
     }
     Ok(())
 }
+/// The primary binding in the rollout at `path`: `session_meta` from its first line, the
+/// current turn from its last [`TAIL_BYTES`]. `skipped` counts lines over [`MAX_LINE_BYTES`].
 fn read(
     path: &Path,
     workdir: &str,
     binding: &Binding,
     budget: &mut u64,
+    skipped: &mut usize,
 ) -> Result<Option<Binding>, Diagnostic> {
     safe_path(path)?;
-    let file = std::fs::File::open(path).map_err(|_| Diagnostic::Unavailable)?;
+    let mut file = std::fs::File::open(path).map_err(|_| Diagnostic::Unavailable)?;
     let size = file.metadata().map_err(|_| Diagnostic::Unavailable)?.len();
-
-    let mut reader = BufReader::new(file.take(MAX_FILE_BYTES + 1));
     let mut line = Vec::new();
-    let mut result = None;
+    let first = BufReader::new((&mut file).take(MAX_FIRST_LINE_BYTES + 1))
+        .read_until(b'\n', &mut line)
+        .map_err(|_| Diagnostic::Unavailable)? as u64;
+    if first == 0 {
+        return Ok(None);
+    }
+    if first > MAX_FIRST_LINE_BYTES {
+        return Err(Diagnostic::LimitExceeded);
+    }
+    if line.last() != Some(&b'\n') {
+        return Err(Diagnostic::Invalid);
+    }
+    let record: Record = serde_json::from_slice(&line).map_err(|_| Diagnostic::Invalid)?;
+    if record.kind != "session_meta" {
+        return Ok(None);
+    }
+    let provenance: Provenance =
+        serde_json::from_str(record.payload.get()).map_err(|_| Diagnostic::Invalid)?;
+    if !provenance.primary() {
+        return Ok(None);
+    }
+    let meta: Session =
+        serde_json::from_str(record.payload.get()).map_err(|_| Diagnostic::Invalid)?;
+    let created = utc_ms(&meta.timestamp).ok_or(Diagnostic::Invalid)?;
+    if meta.source != "cli" || meta.thread_source.as_deref() != Some("user") || meta.cwd != workdir
+    {
+        return Ok(None);
+    }
+    if let Some(known) = &binding.thread_id {
+        if &meta.id != known {
+            return Ok(None);
+        }
+    } else if created < binding.launch_ms {
+        return Ok(None);
+    }
+    identity(&meta.id)?;
+    // The window starts after the first line at the earliest. Reading from the byte before it
+    // drops the line the window cuts and keeps one that starts exactly at the window.
+    let start = first.max(size.saturating_sub(TAIL_BYTES));
+    let window = size.saturating_sub(start);
+    if first + window > *budget {
+        return Err(Diagnostic::LimitExceeded);
+    }
+    *budget -= first + window;
+    file.seek(SeekFrom::Start(start - 1))
+        .map_err(|_| Diagnostic::Unavailable)?;
+    let mut tail = BufReader::new(file.take(window + 1));
+    tail.skip_until(b'\n')
+        .map_err(|_| Diagnostic::Unavailable)?;
+    let mut current = binding.clone();
+    current.thread_id = Some(meta.id);
+    current.rollout = Some(path.into());
+    current.turn_id = None;
+    current.turn_started_ms = None;
     let mut context = None;
     loop {
         line.clear();
-        let bytes = reader
+        let bytes = tail
             .by_ref()
             .take((MAX_LINE_BYTES + 1) as u64)
             .read_until(b'\n', &mut line)
@@ -237,48 +295,20 @@ fn read(
             break;
         }
         if bytes > MAX_LINE_BYTES {
-            return Err(Diagnostic::LimitExceeded);
+            // Skip the rest without holding it, also while Codex is still writing the line.
+            if line.last() != Some(&b'\n') {
+                tail.skip_until(b'\n')
+                    .map_err(|_| Diagnostic::Unavailable)?;
+            }
+            *skipped += 1;
+            continue;
         }
         if line.last() != Some(&b'\n') {
             return Err(Diagnostic::Invalid);
         }
         let record: Record = serde_json::from_slice(&line).map_err(|_| Diagnostic::Invalid)?;
         if record.kind == "session_meta" {
-            if result.is_some() {
-                return Err(Diagnostic::Invalid);
-            }
-            let provenance: Provenance =
-                serde_json::from_str(record.payload.get()).map_err(|_| Diagnostic::Invalid)?;
-            if !provenance.primary() {
-                return Ok(None);
-            }
-            let meta: Session =
-                serde_json::from_str(record.payload.get()).map_err(|_| Diagnostic::Invalid)?;
-            let created = utc_ms(&meta.timestamp).ok_or(Diagnostic::Invalid)?;
-            if meta.source != "cli"
-                || meta.thread_source.as_deref() != Some("user")
-                || meta.cwd != workdir
-            {
-                return Ok(None);
-            }
-            if let Some(known) = &binding.thread_id {
-                if &meta.id != known {
-                    return Ok(None);
-                }
-            } else if created < binding.launch_ms {
-                return Ok(None);
-            }
-            identity(&meta.id)?;
-            if size > MAX_FILE_BYTES || size > *budget {
-                return Err(Diagnostic::LimitExceeded);
-            }
-            *budget -= size;
-            let mut bound = binding.clone();
-            bound.thread_id = Some(meta.id);
-            bound.rollout = Some(path.into());
-            bound.turn_id = None;
-            bound.turn_started_ms = None;
-            result = Some(bound);
+            return Err(Diagnostic::Invalid);
         } else if record.kind == "event_msg" {
             let event: Lifecycle =
                 serde_json::from_str(record.payload.get()).map_err(|_| Diagnostic::Invalid)?;
@@ -288,9 +318,7 @@ fn read(
                     .as_deref()
                     .and_then(utc_ms)
                     .ok_or(Diagnostic::Invalid)?;
-                if at >= binding.launch_ms
-                    && let Some(current) = result.as_mut()
-                {
+                if at >= binding.launch_ms {
                     let turn = event
                         .turn_id
                         .filter(|s| !s.is_empty())
@@ -306,18 +334,31 @@ fn read(
             context = Some(parsed);
         }
     }
-    if let (Some(current), Some(context)) = (&result, context)
+    if let Some(context) = context
         && current.turn_id.as_deref() == Some(context.turn_id.as_str())
         && context.cwd != workdir
     {
         return Err(Diagnostic::Invalid);
     }
-    Ok(result.filter(|b| b.turn_id.is_some()))
+    Ok(current.turn_id.is_some().then_some(current))
 }
 pub(crate) fn refresh(
     root: &Path,
     workdir: &str,
     binding: &Binding,
+) -> Result<Binding, Diagnostic> {
+    let mut skipped = 0;
+    let found = find(root, workdir, binding, &mut skipped);
+    if skipped > 0 {
+        tracing::debug!(skipped, "skipped Codex rollout lines over the line limit");
+    }
+    found
+}
+fn find(
+    root: &Path,
+    workdir: &str,
+    binding: &Binding,
+    skipped: &mut usize,
 ) -> Result<Binding, Diagnostic> {
     safe_path(root)?;
     if let Some(path) = &binding.rollout {
@@ -325,7 +366,7 @@ pub(crate) fn refresh(
             return Err(Diagnostic::UnsafePath);
         }
         let mut budget = MAX_TOTAL_BYTES;
-        return read(path, workdir, binding, &mut budget)?.ok_or(Diagnostic::Missing);
+        return read(path, workdir, binding, &mut budget, skipped)?.ok_or(Diagnostic::Missing);
     }
     let mut candidates = Vec::new();
     files(
@@ -340,7 +381,7 @@ pub(crate) fn refresh(
     let mut budget = MAX_TOTAL_BYTES;
     let mut matches = Vec::new();
     for path in candidates {
-        if let Some(bound) = read(&path, workdir, binding, &mut budget)? {
+        if let Some(bound) = read(&path, workdir, binding, &mut budget, skipped)? {
             matches.push(bound)
         }
     }

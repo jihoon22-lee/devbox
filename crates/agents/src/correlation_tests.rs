@@ -323,12 +323,12 @@ async fn truncated_and_overlarge_matching_rollouts_fail_closed() {
         "one",
         "2026-10-13T00:00:02Z",
     );
-    fs::OpenOptions::new()
-        .write(true)
-        .open(&path)
-        .expect("owned fixture")
-        .set_len(8 * 1024 * 1024 + 1)
-        .expect("owned fixture");
+    // Rollouts over 8 MiB are read by their tail; a session_meta line over 1 MiB still fails.
+    let text = fs::read_to_string(&path).expect("owned fixture");
+    let (meta, events) = text.split_once('\n').expect("owned fixture");
+    let mut meta: serde_json::Value = serde_json::from_str(meta).expect("owned fixture");
+    meta["payload"]["base_instructions"] = "x".repeat(1024 * 1024).into();
+    fs::write(&path, format!("{meta}\n{events}")).expect("owned fixture");
     f.expect_diagnostic(Diagnostic::LimitExceeded).await;
 }
 
