@@ -1,4 +1,5 @@
 //! Runs inside the existing exec wrapper. Only failure to spawn permits native delegation.
+use crate::client::{Client, ClientError};
 use devbox_protocol::{message::ClientKind, windows::*};
 use std::{
     os::unix::process::ExitStatusExt,
@@ -106,12 +107,57 @@ where
         tokio::select! {_=tokio::time::sleep(next)=>{},_=hint.notified()=>{}}
     }
 }
-async fn accepted(client: &crate::client::Client, id: &RunIdentity) -> bool {
-    let reply = client.raw_call("windows.ready", id, None).await;
-    matches!(
-        reply.ok().map(|text| serde_json::from_str(&text)),
-        Some(Ok(WindowsReadiness::Ready))
-    )
+/// One readiness question. `Ok(false)` is a not-ready reply, a refusal by the daemon included;
+/// `Err` means the connection itself failed.
+async fn accepted(client: &Client, id: &RunIdentity) -> Result<bool, ClientError> {
+    match client.raw_call("windows.ready", id, None).await {
+        Ok(reply) => Ok(serde_json::from_str::<WindowsReadiness>(&reply)
+            .is_ok_and(|ready| ready == WindowsReadiness::Ready)),
+        Err(ClientError::Rpc { .. } | ClientError::Decode(_)) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+/// The run's daemon connection for readiness questions. A daemon restart closes it; the next
+/// question then reconnects with a new Hello, 250 ms after the loss and doubling up to 5 s
+/// between tries, and asks again. Only `windows.ready` is ever asked again: the gate answers it
+/// idempotently, and nothing that was in flight is re-sent. The ready poll owns this loop, so
+/// it ends with the run.
+struct Gate<C> {
+    client: tokio::sync::Mutex<Option<Client>>,
+    connect: C,
+}
+impl<C, F> Gate<C>
+where
+    C: Fn() -> F,
+    F: std::future::Future<Output = Result<Client, ClientError>>,
+{
+    fn new(client: Option<Client>, connect: C) -> Self {
+        Self {
+            client: tokio::sync::Mutex::new(client),
+            connect,
+        }
+    }
+    async fn ask(&self, id: &RunIdentity) -> bool {
+        let mut client = self.client.lock().await;
+        let mut delay = None;
+        loop {
+            if let Some(connected) = client.as_ref() {
+                match accepted(connected, id).await {
+                    Ok(ready) => return ready,
+                    Err(_) => *client = None,
+                }
+            }
+            let next = delay.map_or(Duration::from_millis(250), |previous: Duration| {
+                (previous * 2).min(Duration::from_secs(5))
+            });
+            delay = Some(next);
+            tokio::time::sleep(next).await;
+            *client = (self.connect)().await.ok();
+        }
+    }
+    fn into_client(self) -> Option<Client> {
+        self.client.into_inner()
+    }
 }
 /// Never completes; the wrapper never asks the gate for a no-port service.
 async fn readiness<F, P>(ports: &[u16], accept: F, hint: &tokio::sync::Notify, cadence: Cadence)
@@ -129,9 +175,8 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         .map_err(|_| anyhow::anyhow!("Windows attempt is unavailable"))?;
     let id = RunIdentity { run_id, attempt_id };
     let paths = crate::paths()?;
-    let client =
-        crate::client::Client::connect(&paths.socket, ClientKind::Cli, paths.instance.as_str())
-            .await?;
+    let connect = || Client::connect(&paths.socket, ClientKind::Cli, paths.instance.as_str());
+    let client = connect().await?;
     let input = client.raw_call("windows.prepare", &id, None).await?;
     let mut prepared: PreparedWindows = serde_json::from_str(&input)?;
     for key in &prepared.injected {
@@ -146,9 +191,10 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     let direct = direct(&request, &interop, started);
     tokio::pin!(direct);
     let hint = tokio::sync::Notify::new();
+    let gate = Gate::new(Some(client), connect);
     let ready = async {
         if began.await.is_ok() {
-            let accept = || accepted(&client, &id);
+            let accept = || gate.ask(&id);
             readiness(&request.ports, accept, &hint, cadence).await;
         }
         std::future::pending::<()>().await;
@@ -157,8 +203,12 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     let code = match result {
         Direct::Finished(code) => Some(code),
         Direct::Failed => None,
-        // Unknown completion must not trigger systemd service auto-restart.
-        Direct::Unavailable => delegated(&client, &id, &request, cadence).await.ok(),
+        // Unknown completion must not trigger systemd service auto-restart. A spawn failure
+        // never started the ready poll, so this is still the first connection.
+        Direct::Unavailable => match gate.into_client() {
+            Some(client) => delegated(&client, &id, &request, cadence).await.ok(),
+            None => None,
+        },
     };
     if let Some(code) = code {
         let assigned =
@@ -174,7 +224,7 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     }
 }
 async fn delegated(
-    client: &crate::client::Client,
+    client: &Client,
     id: &RunIdentity,
     request: &RunWindows,
     cadence: Cadence,
@@ -189,7 +239,8 @@ async fn delegated(
     .await
     .map_err(|_| anyhow::anyhow!("Windows execution result is unknown"))??;
     let read = || async { stream.read_chunk().await.map_err(anyhow::Error::from) };
-    let accept = || accepted(client, id);
+    // The stream dies with this connection, so a lost one only ends the run as unknown.
+    let accept = || async { accepted(client, id).await.unwrap_or(false) };
     relay(read, id, &request.ports, accept, cadence).await
 }
 /// Reads native events while polling the daemon gate concurrently. A not-ready reply never
