@@ -152,7 +152,7 @@ export const AGENT_MESSAGES: Messages<Domain> = {
   },
   "agents.branch_exists": {
     title: "같은 이름의 브랜치가 이미 있습니다.",
-    action: "다른 제목으로 에이전트 작업을 만들어 주세요.",
+    action: "브랜치 이름을 바꿔 다시 시작해 주세요.",
   },
   "agents.worktree_add_partial": {
     title: "작업 폴더 준비가 일부만 완료되었습니다.",

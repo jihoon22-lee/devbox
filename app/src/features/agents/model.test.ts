@@ -1,11 +1,13 @@
 import {
   attentionCount,
+  branchNameProblem,
   failureLabel,
   fillTemplate,
   groupByUrgency,
   hookMissing,
   nextWaiting,
   previewBranch,
+  titleSlug,
 } from "./model";
 import { profiles, task } from "./test-fixtures";
 
@@ -94,6 +96,24 @@ test("template only substitutes known variables and branch preview follows backe
   expect(previewBranch("Fix login bug!", 0)).toBe("agent/fix-login-bug");
   expect(previewBranch("한글만", 1700000000000)).toBe("agent/task-1700000000");
   expect(previewBranch("x".repeat(100), 0)).toHaveLength(46);
+});
+
+test("the title slug and the branch name rule are the daemon's plan::slug and checked_slug", () => {
+  expect(titleSlug("Fix login bug!")).toBe("fix-login-bug");
+  expect(titleSlug("  --Fix__login  ")).toBe("fix-login");
+  expect(titleSlug("한글만")).toBe("");
+  expect(titleSlug("한글 and 영어")).toBe("and");
+  expect(titleSlug("x".repeat(100))).toHaveLength(40);
+  // A cut that lands on a hyphen drops it.
+  expect(titleSlug(`${"x".repeat(39)} y`)).toBe("x".repeat(39));
+  for (const ok of ["fix", "fix-login", "v2", "0", "a-b-c", "x".repeat(40)]) expect(branchNameProblem(ok)).toBeNull();
+  for (const bad of ["", "Fix", "fix login", "fix--login", "-fix", "fix-", "fix_login", "fix/login", "agent/fix"])
+    expect(branchNameProblem(bad), bad).toContain("영문 소문자");
+  for (const bad of ["fix.lock", "../escape", "가나다", "fix\n"]) expect(branchNameProblem(bad), bad).not.toBeNull();
+  expect(branchNameProblem("x".repeat(41))).toContain("40자");
+  // What the dialog fills in from a title always passes the rule the daemon applies again.
+  for (const title of ["Fix login", "A  B", "a-b", "--x--", "αβγ x", `${"x".repeat(60)} y`, "Ünïcode Fix", "1"])
+    expect(branchNameProblem(titleSlug(title)), title).toBeNull();
 });
 
 test("failure reasons display session loss, external kill, exit and setup", () => {

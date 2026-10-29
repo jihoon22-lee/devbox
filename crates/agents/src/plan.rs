@@ -49,6 +49,45 @@ fn checked_slug(base: &str) -> Result<&str, AgentsError> {
     Ok(base)
 }
 
+/// The name a client gave for a task's branch: the part after `agent/`. It has to be a slug
+/// already, because the daemon never rewrites a name it was given. The slug rule is a strict
+/// subset of `git check-ref-format`, so a name that passes is always a valid ref component.
+pub fn explicit_slug(name: &str) -> Result<&str, AgentsError> {
+    checked_slug(name).map_err(|_| AgentsError::InvalidInput)
+}
+
+/// The slug and work folder of a new task. A name a client gave is used exactly or refused with
+/// `BranchExists` (a branch, an earlier task or a folder already has it); only a name made from
+/// the title is numbered. `taken` is left alone for a given name.
+pub fn choose(
+    repo: &Path,
+    title: &str,
+    now_ms: u64,
+    explicit: Option<&str>,
+    taken: &mut HashSet<String>,
+) -> Result<(String, PathBuf), AgentsError> {
+    if let Some(name) = explicit {
+        let slug = explicit_slug(name)?;
+        let dir = worktree_dir(repo, slug)?;
+        if taken.contains(slug) || std::fs::symlink_metadata(&dir).is_ok() {
+            return Err(AgentsError::BranchExists {
+                branch: branch_for(slug)?,
+            });
+        }
+        return Ok((slug.to_owned(), dir));
+    }
+    let base = slug(title, now_ms);
+    loop {
+        let candidate = unique_slug(&base, taken)?;
+        let dir = worktree_dir(repo, &candidate)?;
+        if std::fs::symlink_metadata(&dir).is_ok() {
+            taken.insert(candidate);
+            continue;
+        }
+        return Ok((candidate, dir));
+    }
+}
+
 pub fn unique_slug(base: &str, taken: &HashSet<String>) -> Result<String, AgentsError> {
     let base = checked_slug(base)?;
     for n in 1..=99 {
@@ -119,6 +158,98 @@ mod tests {
         assert_eq!(sh_quote("a b"), "'a b'");
         assert_eq!(sh_quote("it's"), "'it'\\''s'");
         assert_eq!(sh_quote("x\ny"), "'x\ny'");
+    }
+
+    #[test]
+    fn invalid_branch_name_is_rejected_by_the_daemon() {
+        let too_long = "x".repeat(MAX_SLUG_BYTES + 1);
+        for invalid in [
+            "",
+            "Fix",
+            "fix login",
+            "fix--login",
+            "-fix",
+            "fix-",
+            "fix_login",
+            "fix/login",
+            "agent/fix",
+            ".hidden",
+            "fix.lock",
+            "../escape",
+            "가나다",
+            "fix\n",
+            too_long.as_str(),
+        ] {
+            assert_eq!(
+                explicit_slug(invalid),
+                Err(AgentsError::InvalidInput),
+                "{invalid:?}"
+            );
+        }
+        let longest = "x".repeat(MAX_SLUG_BYTES);
+        for valid in ["fix", "fix-login", "v2", "0", "a-b-c", longest.as_str()] {
+            assert_eq!(explicit_slug(valid), Ok(valid), "{valid:?}");
+        }
+    }
+
+    #[test]
+    fn a_typed_name_is_used_as_it_is_or_refused_never_numbered() {
+        let root = tempfile::tempdir().expect("owned fixture");
+        let repo = root.path().join("project");
+        let taken: HashSet<String> = ["fix".into()].into();
+        // Free: used as given, though the title would have given another name.
+        let mut seen = taken.clone();
+        let chosen = choose(&repo, "Some title", 0, Some("custom"), &mut seen).expect("free name");
+        assert_eq!(
+            chosen,
+            ("custom".into(), root.path().join("project-agents/custom"))
+        );
+        // Taken by a branch or an earlier task: refused, and nothing is recorded as taken.
+        let mut seen = taken.clone();
+        assert_eq!(
+            choose(&repo, "Some title", 0, Some("fix"), &mut seen),
+            Err(AgentsError::BranchExists {
+                branch: "agent/fix".into()
+            })
+        );
+        assert_eq!(seen, taken);
+        // A folder already at its place takes the name too.
+        std::fs::create_dir_all(root.path().join("project-agents/occupied")).expect("owned folder");
+        assert_eq!(
+            choose(&repo, "t", 0, Some("occupied"), &mut seen),
+            Err(AgentsError::BranchExists {
+                branch: "agent/occupied".into()
+            })
+        );
+        // An invalid name is refused as input, before the filesystem or the set matter.
+        assert_eq!(
+            choose(&repo, "t", 0, Some("Bad Name"), &mut seen),
+            Err(AgentsError::InvalidInput)
+        );
+        assert_eq!(seen, taken);
+    }
+
+    #[test]
+    fn a_name_made_from_the_title_is_still_numbered_when_taken() {
+        let root = tempfile::tempdir().expect("owned fixture");
+        let repo = root.path().join("project");
+        // `fix-login` has a folder in the way and `fix-login-2` is taken.
+        std::fs::create_dir_all(root.path().join("project-agents/fix-login"))
+            .expect("owned folder");
+        let mut taken: HashSet<String> = ["fix-login-2".into()].into();
+        let (slug, dir) = choose(&repo, "Fix login", 0, None, &mut taken).expect("numbered");
+        assert_eq!(slug, "fix-login-3");
+        assert_eq!(dir, root.path().join("project-agents/fix-login-3"));
+        // A title without ASCII keeps the timestamp name when no name is given.
+        let (slug, _) = choose(
+            &repo,
+            "한글만",
+            1_700_000_000_000,
+            None,
+            &mut HashSet::new(),
+        )
+        .expect("fallback");
+        assert_eq!(slug, "task-1700000000");
     }
 
     #[test]

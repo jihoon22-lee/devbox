@@ -96,6 +96,12 @@ pub struct CreateAgentTask {
     pub base_branch: Option<String>,
     pub worktree: bool,
     pub prompt: String,
+    /// The name of the new branch without its `agent/` prefix. Left out, the name comes from the
+    /// title and gets a number when it is taken. Given, it is used exactly or refused with
+    /// `agents.branch_exists`; only a task with a work folder has a branch to name.
+    #[serde(default)]
+    #[ts(optional)]
+    pub branch: Option<String>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

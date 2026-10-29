@@ -146,6 +146,7 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
                     base_branch: base.clone(),
                     worktree: agent.worktree,
                     prompt: agent.prompt.unwrap_or_default(),
+                    branch: None,
                 },
                 snapshot.preparation().clone(),
             )

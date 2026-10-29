@@ -9,7 +9,9 @@ import { useCurrentProject } from "../projects/store";
 import { useProjectTrust } from "../projects/useProjectTrust";
 import { AGENT_KEYS } from "./AgentData";
 import s from "./Agents.module.css";
-import { fillTemplate, previewBranch } from "./model";
+import { BranchNameField, useBranchName } from "./BranchName";
+import { rememberedProfile, rememberProfile } from "./lastProfile";
+import { BRANCH_PREFIX, fillTemplate, previewBranch } from "./model";
 import { useAgentsUi } from "./ui";
 
 interface Props {
@@ -24,13 +26,6 @@ export function NewTaskDialog(props: Props) {
     </ProjectDataBoundary>
   ) : null;
 }
-function lastProfile() {
-  try {
-    return localStorage.getItem("devbox.lastProfile") ?? "";
-  } catch {
-    return "";
-  }
-}
 function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const uid = useId();
   const session = useRpcSession();
@@ -38,14 +33,17 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const profiles = useRpcQuery("agents.profiles", {});
   const current = useCurrentProject((state) => state.id);
   const [projectId, setProjectId] = useState(current ?? "");
-  const [chosenProfile, setProfile] = useState(lastProfile);
+  // The tool picked in this dialog; until then the project's last tool is the default.
+  const [picked, setPicked] = useState<string | null>(null);
   const [title, setTitle] = useState(""),
     [baseBranch, setBaseBranch] = useState("");
   const [worktree, setWorktree] = useState(true),
     [prompt, setPrompt] = useState(() => useAgentsUi.getState().draft?.prompt ?? "");
   const project = projects.data?.items.find((p) => p.id === projectId);
   const options = profiles.data?.items ?? [];
-  const profile = options.find((p) => p.id === chosenProfile) ?? options[0];
+  // A remembered tool that was removed since is ignored.
+  const profile =
+    options.find((p) => p.id === picked) ?? options.find((p) => p.id === rememberedProfile(project?.id)) ?? options[0];
   const prompts = useRpcQuery("projects.prompts", { id: project?.id ?? "" }, { enabled: !!project });
   const create = useRpcMutation("agents.create");
   const trust = useProjectTrust(project?.id ?? "");
@@ -61,8 +59,15 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const qc = useQueryClient();
   const inFlight = useRef(false);
   const validTitle = title.trim().length > 0 && [...title.trim()].length <= 120 && !/[\x00-\x1f\x7f]/.test(title);
+  const branch = useBranchName(title, worktree);
   const ready =
-    session.state === "ready" && !!project && !!profile && validTitle && !projects.isError && !profiles.isError;
+    session.state === "ready" &&
+    !!project &&
+    !!profile &&
+    validTitle &&
+    !branch.problem &&
+    !projects.isError &&
+    !profiles.isError;
   const submit = async () => {
     if (inFlight.current || !ready || !project || !profile) return;
     inFlight.current = true;
@@ -73,6 +78,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
       baseBranch: baseBranch.trim() || null,
       worktree,
       prompt,
+      ...(branch.send === undefined ? {} : { branch: branch.send }),
     };
     try {
       if (
@@ -87,11 +93,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
         return;
       if (!mounted.current || target.current !== params.projectId || !isRegisteredProject(qc, params.projectId)) return;
       const result = await create.mutateAsync(params);
-      try {
-        localStorage.setItem("devbox.lastProfile", params.profile);
-      } catch {
-        /* Preference storage is optional. */
-      }
+      rememberProfile(params.projectId, params.profile);
       // A mutation result has no list revision. Cache only its own detail, then
       // refresh the authoritative list without treating refresh failure as create failure.
       qc.setQueryData(["agents.get", { id: result.id }], result);
@@ -181,7 +183,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
           <Select
             label="도구"
             value={profile?.id ?? ""}
-            onChange={setProfile}
+            onChange={setPicked}
             disabled={create.isPending}
             options={options.map((p) => ({ value: p.id, label: p.label }))}
           />
@@ -197,7 +199,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             <input type="checkbox" checked={worktree} onChange={(event) => setWorktree(event.target.checked)} />
             작업 폴더 만들기
           </label>
-          {!worktree && <p>현재 체크아웃에서 실행</p>}
+          {worktree ? <BranchNameField branch={branch} /> : <p>현재 체크아웃에서 실행</p>}
           <div className={s.templates}>
             {(prompts.data?.items ?? []).map((template) => (
               <Button
@@ -208,7 +210,9 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
                   setPrompt(
                     fillTemplate(template.body, {
                       title: title.trim(),
-                      branch: baseBranch.trim() || previewBranch(title.trim(), Date.now()),
+                      branch:
+                        baseBranch.trim() ||
+                        (branch.send ? `${BRANCH_PREFIX}${branch.send}` : previewBranch(title.trim(), Date.now())),
                       project: project?.name ?? "",
                     }),
                   )
@@ -228,7 +232,9 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             onChange={(event) => setPrompt(event.target.value)}
             maxRows={10}
           />
-          <p className={s.muted}>템플릿의 예상 브랜치는 이름이 겹치면 바뀔 수 있습니다. Ctrl+Enter로 시작합니다.</p>
+          <p className={s.muted}>
+            브랜치 이름을 비우면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다. Ctrl+Enter로 시작합니다.
+          </p>
           {(!projects.data || !profiles.data) && !queryError && <p role="status">프로젝트와 도구를 불러오는 중…</p>}
           {trust.notice && <p role="alert">{trust.notice}</p>}
           {message && (

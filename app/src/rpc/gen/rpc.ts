@@ -121,7 +121,13 @@ export type ContainersResult = { available: boolean, reason?: ContainerUnavailab
 export type CookieInfo = { name: string, value: string, domain: string, path: string, secure: boolean, httpOnly: boolean, expiresMs: number | null, };
 export type CookieJarRef = { jar: string, };
 export type CookieList = { cookies: Array<CookieInfo>, };
-export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
+export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, 
+/**
+ * The name of the new branch without its `agent/` prefix. Left out, the name comes from the
+ * title and gets a number when it is taken. Given, it is used exactly or refused with
+ * `agents.branch_exists`; only a task with a work folder has a branch to name.
+ */
+branch?: string, };
 export type CreateNote = { 
 /**
  * Vault-relative folder, `""` for the vault root.

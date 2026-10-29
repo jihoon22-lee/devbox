@@ -508,3 +508,84 @@ async fn start_with_a_missing_tool_fails_before_creating_a_worktree() {
     let task: Value = serde_json::from_str(&started).expect("task JSON");
     assert_eq!(task["profile"], "shell-syntax");
 }
+
+async fn create_named(
+    client: &devbox_cli::client::Client,
+    project: &str,
+    title: &str,
+    branch: Option<&str>,
+) -> Result<Value, devbox_cli::client::ClientError> {
+    let mut params = json!({"projectId":project,"title":title,"profile":"fake","worktree":true,"prompt":"fix it"});
+    if let Some(branch) = branch {
+        params["branch"] = json!(branch);
+    }
+    let body = client.raw_call("agents.create", params, None).await?;
+    Ok(serde_json::from_str(&body).expect("task JSON"))
+}
+
+fn refused_with(error: &devbox_cli::client::ClientError) -> &str {
+    let devbox_cli::client::ClientError::Rpc { code, .. } = error else {
+        panic!("{error:?}");
+    };
+    code
+}
+
+#[tokio::test]
+async fn a_typed_branch_name_is_used_exactly_and_refused_when_taken_or_invalid() {
+    let mut d = fixture();
+    let repo = d.git_repo("projects/named");
+    d.launch();
+    let client = d.client().await;
+    let project = d.add_project(&client, &repo).await;
+    d.approve_project(&client, &project).await;
+    // The typed name decides the branch and the work folder, whatever the title says.
+    let first = create_named(&client, &project, "Fix login", Some("login-fix"))
+        .await
+        .expect("typed name");
+    assert_eq!(first["branch"], "agent/login-fix");
+    assert!(
+        first["worktreePath"]
+            .as_str()
+            .expect("worktree")
+            .ends_with("named-agents/login-fix")
+    );
+    d.wait_for(
+        &client,
+        first["id"].as_str().expect("id"),
+        "running",
+        Duration::from_secs(10),
+    )
+    .await;
+    // Taken by the branch it made: refused with the existing code, never numbered.
+    let taken = create_named(&client, &project, "Another", Some("login-fix"))
+        .await
+        .expect_err("a taken name");
+    assert_eq!(refused_with(&taken), "agents.branch_exists");
+    // Not a slug: refused as input, nothing is rewritten.
+    for bad in ["Login Fix", "login--fix", "agent/login", ""] {
+        let refused = create_named(&client, &project, "Another", Some(bad))
+            .await
+            .expect_err("an invalid name");
+        assert_eq!(refused_with(&refused), "agents.invalid_input", "{bad:?}");
+    }
+    // Without a name the title decides and a taken one is numbered, as before.
+    let numbered = create_named(&client, &project, "Login fix", None)
+        .await
+        .expect("numbered name");
+    assert_eq!(numbered["branch"], "agent/login-fix-2");
+    d.wait_for(
+        &client,
+        numbered["id"].as_str().expect("id"),
+        "running",
+        Duration::from_secs(10),
+    )
+    .await;
+    let list: Value = serde_json::from_str(
+        &client
+            .raw_call("agents.list", json!({}), None)
+            .await
+            .expect("list"),
+    )
+    .expect("list JSON");
+    assert_eq!(list["items"].as_array().expect("items").len(), 2, "{list}");
+}

@@ -49,6 +49,13 @@ impl AgentsService {
     ) -> Result<AgentTask> {
         crate::limits::input(&p.prompt)?;
         let title = crate::plan::checked_title(&p.title)?.to_owned();
+        // A branch name the client gave is checked like the title, before anything is looked up or
+        // reserved. It names the branch of a work folder, so a task without one has nothing to name.
+        let given = match p.branch.as_deref() {
+            Some(_) if !p.worktree => return Err(AgentsError::InvalidInput.into()),
+            Some(name) => Some(crate::plan::explicit_slug(name)?.to_owned()),
+            None => None,
+        };
         // The CLI is looked up before the reservation lock, so a slow shell does not hold up
         // other starts. Its result is checked below, in its usual place.
         let profile = crate::profile::resolve(&self.profiles, &p.profile);
@@ -125,28 +132,22 @@ impl AgentsService {
                         }
                     }
                     let (branch, worktree) = if p.worktree {
-                        let base_slug = crate::plan::slug(&title, now as u64);
-                        let selected = loop {
-                            let slug = match crate::plan::unique_slug(&base_slug, &taken) {
-                                Ok(v) => v,
-                                Err(e) => return Ok(Err(e)),
-                            };
-                            let path = match crate::plan::worktree_dir(&repo, &slug) {
-                                Ok(v) => v,
-                                Err(e) => return Ok(Err(e)),
-                            };
-                            if std::fs::symlink_metadata(&path).is_ok() {
-                                taken.insert(slug);
-                                continue;
-                            }
-                            break (slug, path);
+                        let (slug, path) = match crate::plan::choose(
+                            &repo,
+                            &title,
+                            now as u64,
+                            given.as_deref(),
+                            &mut taken,
+                        ) {
+                            Ok(chosen) => chosen,
+                            Err(e) => return Ok(Err(e)),
                         };
                         (
                             Some(
-                                crate::plan::branch_for(&selected.0)
+                                crate::plan::branch_for(&slug)
                                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                             ),
-                            Some(selected.1.to_string_lossy().into_owned()),
+                            Some(path.to_string_lossy().into_owned()),
                         )
                     } else {
                         (None, None)

@@ -75,6 +75,9 @@ async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
 #[path = "base_ref_tests.rs"]
 mod base_ref_tests;
 
+#[path = "branch_name_tests.rs"]
+mod branch_name_tests;
+
 struct TestEnv(PathBuf);
 #[tokio::test]
 async fn output_watcher_observes_waiting_and_resumed_tasks_beyond_the_first_rpc_page() {
@@ -268,6 +271,7 @@ impl Fixture {
             base_branch: Some("main".into()),
             worktree: true,
             prompt: String::new(),
+            branch: None,
         }
     }
     async fn drain(&self) {
