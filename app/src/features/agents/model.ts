@@ -69,7 +69,7 @@ export function previewBranch(title: string, nowMs: number) {
  */
 export function branchNameProblem(name: string) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))
-    return "브랜치 이름에는 영문 소문자, 숫자, 하이픈(-)만 쓸 수 있고 하이픈은 처음·끝에 두거나 이어 쓸 수 없습니다. 이름을 고쳐 주세요.";
+    return "브랜치 이름에는 영문 소문자, 숫자, 하이픈(-)만 쓸 수 있습니다. 하이픈은 처음이나 끝에 쓸 수 없고 연달아 쓸 수도 없습니다. 이름을 고쳐 주세요.";
   if (name.length > MAX_BRANCH_NAME) return "브랜치 이름이 40자를 넘었습니다. 40자 이내로 줄여 주세요.";
   return null;
 }

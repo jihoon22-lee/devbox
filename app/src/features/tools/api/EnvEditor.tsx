@@ -49,6 +49,17 @@ const snapshot = (name: string, rows: Row[]) => JSON.stringify([name, rows.map((
 const isDirtyEnv = (editing: Editing | undefined) =>
   !!editing && snapshot(editing.name, editing.rows) !== editing.baseline;
 const pairs = (rows: Row[]) => rows.filter((r) => r.enabled && r.name).map((r) => ({ name: r.name, value: r.value }));
+/**
+ * What a finished save says. When the editor no longer shows the environment that was written, the
+ * notice names it, so it is not read as being about the draft in front of the user.
+ */
+function savedNotice(cleared: string[], other?: string) {
+  if (!cleared.length) return `${other ? `${other} ` : ""}환경을 저장했습니다.`;
+  const left = `${cleared.length}개는 파일에 저장하지 않았습니다: ${cleared.join(", ")}`;
+  return other
+    ? `${other} 환경의 비밀 값 ${left}. 그 환경을 열어 {{secret:이름}} 참조로 바꿔 주세요.`
+    : `비밀 값 ${left}. {{secret:이름}} 참조로 바꿔 주세요.`;
+}
 const errorText = (error: unknown, fallback: string) =>
   error instanceof SendFailure ? (messageFor(error.code as never, error.detail)?.title ?? fallback) : fallback;
 
@@ -171,7 +182,8 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       // 저장은 사용자가 본 내용을 쓴 것이고 프로젝트 루트는 그 digest로 검토를 기록했다.
       // The write belongs to the draft it started from. Edits made meanwhile are the same draft and
       // take the new digest (they stay dirty); another file read or a new environment is not.
-      if (latest && latest.draft === target.draft)
+      const current = !!latest && latest.draft === target.draft;
+      if (current)
         apply({
           ...latest,
           path,
@@ -179,11 +191,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
           baseline: snapshot(target.name, target.rows),
           unreviewed: false,
         });
-      patch({
-        notice: cleared.length
-          ? `비밀 값 ${cleared.length}개는 파일에 저장하지 않았습니다: ${cleared.join(", ")}. {{secret:이름}} 참조로 바꿔 주세요.`
-          : "환경을 저장했습니다.",
-      });
+      patch({ notice: savedNotice(cleared, current ? undefined : target.name) });
       bumpCollections();
     } catch (error) {
       patch({ notice: errorText(error, "환경 형식이 올바르지 않습니다.") });

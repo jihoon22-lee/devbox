@@ -233,7 +233,8 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             maxRows={10}
           />
           <p className={s.muted}>
-            브랜치 이름을 비우면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다. Ctrl+Enter로 시작합니다.
+            브랜치 이름을 직접 고치지 않으면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다. Ctrl+Enter로
+            시작합니다.
           </p>
           {(!projects.data || !profiles.data) && !queryError && <p role="status">프로젝트와 도구를 불러오는 중…</p>}
           {trust.notice && <p role="alert">{trust.notice}</p>}

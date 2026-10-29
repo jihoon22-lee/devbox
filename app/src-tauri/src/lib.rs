@@ -70,6 +70,7 @@ pub fn run() {
             platform::notify::acknowledge_navigation,
             platform::preferences::app_preferences,
             platform::preferences::set_autostart,
+            platform::preferences::mark_autostart_asked,
             platform::shortcuts::shortcut_status,
             platform::shortcuts::configure_shortcuts,
             platform::intents::app_intents_ready,

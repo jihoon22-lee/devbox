@@ -48,7 +48,7 @@ function header(cleanupError: string) {
   );
 }
 
-test("cleanup_error_shows_cause_and_next_action", () => {
+test("cleanup_error_shows_cause_and_next_action", async () => {
   const raw = JSON.stringify({ code: "agents.worktree_dirty", detail: { files: ["retained.txt"] } });
   header(raw);
   const alert = screen.getByRole("alert");
@@ -56,17 +56,28 @@ test("cleanup_error_shows_cause_and_next_action", () => {
   // The fixed message of the code: what stopped it, and what to do.
   expect(alert).toHaveTextContent("작업 폴더에 커밋하지 않은 변경이 있습니다.");
   expect(alert).toHaveTextContent("변경을 확인하고 커밋한 뒤 다시 시도해 주세요.");
-  // A code has its message. The stored text is not shown anywhere, not even behind [자세히].
-  expect(screen.queryByRole("button", { name: "자세히" })).not.toBeInTheDocument();
+  // The stored text, with the files it names, is only the details behind [자세히].
+  expect(screen.queryByText(raw)).not.toBeInTheDocument();
   expect(document.body).not.toHaveTextContent("agents.worktree_dirty");
   expect(document.body).not.toHaveTextContent("retained.txt");
+  const details = screen.getByRole("button", { name: "자세히" });
+  expect(details).toHaveAttribute("aria-expanded", "false");
+  await userEvent.click(details);
+  expect(details).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText(raw)).toBeInTheDocument();
+  expect(screen.getByText(raw)).toHaveTextContent("retained.txt");
+  await userEvent.click(details);
+  expect(screen.queryByText(raw)).not.toBeInTheDocument();
 });
 
-test("a cleanup error's detail reaches the message of its code", () => {
-  header(JSON.stringify({ code: "agents.base_dirty", detail: { files: ["a.txt", "b.txt"] } }));
+test("a cleanup error's detail reaches the message of its code, and the stored text is still under [자세히]", async () => {
+  const raw = JSON.stringify({ code: "agents.base_dirty", detail: { files: ["a.txt", "b.txt"] } });
+  header(raw);
   expect(screen.getByRole("alert")).toHaveTextContent("기준 체크아웃에 커밋하지 않은 변경이 있어 병합하지 않았습니다.");
   expect(screen.getByRole("alert")).toHaveTextContent("변경 파일: a.txt, b.txt");
-  expect(screen.queryByRole("button", { name: "자세히" })).not.toBeInTheDocument();
+  expect(screen.queryByText(raw)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "자세히" }));
+  expect(screen.getByText(raw)).toBeInTheDocument();
 });
 
 test.each([

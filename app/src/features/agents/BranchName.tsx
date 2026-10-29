@@ -3,14 +3,15 @@ import s from "./Agents.module.css";
 import { BRANCH_PREFIX, branchNameProblem, titleSlug } from "./model";
 
 const NEEDS_NAME = "제목에 영문이나 숫자가 없어 이름을 만들 수 없습니다. 브랜치 이름을 입력해 주세요.";
-const NOTE = `${BRANCH_PREFIX} 뒤에 붙는 이름입니다. 이 이름 그대로 만들고, 이미 있으면 만들지 않습니다. 비우면 제목에서 정하고 겹치면 번호를 붙입니다.`;
+const FROM_TITLE = `${BRANCH_PREFIX} 뒤에 붙는 이름입니다. 직접 고치지 않으면 제목에서 만들고, 겹치면 번호를 붙입니다.`;
+const AS_EDITED = `${BRANCH_PREFIX} 뒤에 붙는 이름입니다. 고친 이름 그대로 만들고, 이미 있으면 만들지 않습니다.`;
 
 /**
  * The name of a new task's branch, which the dialog shows after the fixed `agent/`. It follows
- * the title until it is edited, and whatever it holds is the name the daemon is asked for: used
- * as it is, or refused when taken. Only an empty field sends nothing, so the daemon makes the
- * name from the title and numbers it when taken. A title without an ASCII letter or digit has no
- * name to follow, so the dialog asks for one.
+ * the title until it is edited. Only a name that was edited and is not empty is sent: the daemon
+ * uses it exactly or refuses it when taken. A name nobody edited is only the title's own, so it is
+ * not sent, and the daemon makes it from the title as ever and numbers it when taken. A title
+ * without an ASCII letter or digit has no name to follow, so the dialog asks for one.
  */
 export function useBranchName(title: string, enabled: boolean) {
   const [edited, setEdited] = useState<string | null>(null);
@@ -24,7 +25,8 @@ export function useBranchName(title: string, enabled: boolean) {
       : title.trim() !== "" && suggested === ""
         ? NEEDS_NAME
         : null;
-  return { value, problem, send: enabled && name !== "" ? name : undefined, edit: setEdited };
+  const typed = edited !== null && name !== "";
+  return { value, typed, problem, send: enabled && typed ? name : undefined, edit: setEdited };
 }
 
 export function BranchNameField({ branch }: { branch: ReturnType<typeof useBranchName> }) {
@@ -45,7 +47,7 @@ export function BranchNameField({ branch }: { branch: ReturnType<typeof useBranc
         />
       </div>
       <p id={`${id}-branch-note`} className={branch.problem ? s.problem : s.muted}>
-        {branch.problem ?? NOTE}
+        {branch.problem ?? (branch.typed ? AS_EDITED : FROM_TITLE)}
       </p>
     </>
   );

@@ -93,11 +93,17 @@ impl AgentsService {
                 devbox_git::GitError::Failed { .. } => AgentsError::InvalidInput.into(),
                 other => git_failure(other),
             })?;
+        // A branch `agent/a/b` takes `a` as well: Git cannot make `agent/a` while `agent/a/…` exists.
         let mut taken: HashSet<String> = devbox_git::branches(Path::new(&project.path))
             .await
             .map_err(git_failure)?
             .into_iter()
-            .filter_map(|b| b.strip_prefix("agent/").map(str::to_owned))
+            .filter_map(|b| {
+                b.strip_prefix("agent/")?
+                    .split('/')
+                    .next()
+                    .map(str::to_owned)
+            })
             .collect();
         let now = now_ms();
         let id = format!("a{}", uuid::Uuid::new_v4().simple());

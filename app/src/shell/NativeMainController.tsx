@@ -2,16 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { appPreferences, isNative, setAutostart } from "../features/settings/nativePreferences";
+import { appPreferences, isNative, markAutostartAsked, setAutostart } from "../features/settings/nativePreferences";
 import { Button, ConfirmDialog } from "../ui";
 import { FirstRun } from "./FirstRun";
 import { useNativeRuntime } from "./nativeRuntime";
-
-/**
- * [나중에]: remember that the question was asked and change nothing else. `set_autostart` takes the
- * state to keep, so the current one is read first and passed back; autostart is never turned on here.
- */
-const rememberAsked = async () => setAutostart((await appPreferences()).autostart, true);
 
 /** Mount outside ConnectionGate so tray quit is always available, including startup failures. */
 export function NativeMainController({ ready }: { ready: boolean }) {
@@ -132,7 +126,7 @@ export function NativeMainController({ ready }: { ready: boolean }) {
         <FirstRun
           onCancel={() => {
             setFirstRun(false);
-            void rememberAsked().catch(() => {
+            void markAutostartAsked().catch(() => {
               // Nothing was saved, so [다시 시도] reads the settings again and asks again.
               firstRunChecked.current = false;
               setError("첫 실행 선택을 저장하지 못했습니다. [다시 시도]를 누르면 선택 창을 다시 엽니다.");

@@ -130,3 +130,38 @@ async fn a_typed_branch_name_names_the_branch_and_its_work_folder() {
     assert!(branches.contains(&"agent/fix-login".into()), "{branches:?}");
     assert!(!branches.contains(&"agent/owned".into()), "{branches:?}");
 }
+
+#[tokio::test]
+async fn a_nested_branch_takes_the_name_it_lives_under() {
+    if checkout_fixture::run_child(
+        "service::resource_tests::branch_name_tests::a_nested_branch_takes_the_name_it_lives_under",
+    ) {
+        return;
+    }
+    let f = Fixture::new().await;
+    // Git cannot make `agent/login` while `agent/login/v2` exists, so `login` is taken.
+    git(&f.repo, &["branch", "agent/login/v2"]);
+    let refused = f.svc.create(named(&f, "login")).await;
+    assert!(
+        matches!(&refused, Err(Fail::Domain(AgentsError::BranchExists { branch }))
+            if branch == "agent/login"),
+        "{refused:?}"
+    );
+    assert_eq!(
+        rows(&f).await,
+        vec![0, 0, 0],
+        "nothing reserved to fail later"
+    );
+    assert!(!f.root.path().join("project-agents").exists());
+    // A name made from the title skips it like any taken name.
+    let derived = CreateAgentTask {
+        title: "login".into(),
+        ..f.request()
+    };
+    let task = f.svc.create(derived).await.expect("numbered name");
+    assert_eq!(task.branch.as_deref(), Some("agent/login-2"));
+    f.drain().await;
+    let branches = devbox_git::branches(&f.repo).await.expect("branches");
+    assert!(branches.contains(&"agent/login-2".into()), "{branches:?}");
+    assert!(branches.contains(&"agent/login/v2".into()), "{branches:?}");
+}

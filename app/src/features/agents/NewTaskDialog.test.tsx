@@ -310,6 +310,28 @@ test("remembers_the_last_tool_per_project", async () => {
   expect(localStorage.getItem("devbox.lastProfile")).toBeNull();
 });
 
+test("a project without a memory of its own starts from the old global key, which is never written", async () => {
+  localStorage.setItem("devbox.lastProfile", "codex");
+  const { wire } = await dialog(projects, null);
+  expect(tool()).toHaveTextContent("Codex");
+  // Starting with another tool remembers it for this project and leaves the old key as it was.
+  await pick("도구", "{Home}");
+  expect(tool()).toHaveTextContent("Claude Code");
+  await userEvent.type(screen.getByLabelText("제목"), "Old key");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ projectId: "a", profile: "claude" });
+  await act(async () => wire.reply("agents.create", task("new", "preparing")));
+  await waitFor(() => expect(localStorage.getItem(profileKey("a"))).toBe("claude"));
+  expect(localStorage.getItem("devbox.lastProfile")).toBe("codex");
+});
+
+test("a project's own memory of a removed tool does not fall back to the old global key", async () => {
+  localStorage.setItem("devbox.lastProfile", "codex");
+  await dialog(projects, "removed");
+  expect(tool()).toHaveTextContent("Claude Code");
+});
+
 test("a tool picked in the dialog wins over the remembered one when the project changes", async () => {
   localStorage.setItem(profileKey("b"), "codex");
   await dialog(projects, "codex");
@@ -322,16 +344,22 @@ test("a tool picked in the dialog wins over the remembered one when the project 
   expect(tool()).toHaveTextContent("Claude Code");
 });
 
-test("the branch name starts from the title, shows the fixed agent/ prefix and is sent as the name", async () => {
+test("the branch name starts from the title, shows the fixed agent/ prefix and is not sent while unedited", async () => {
   const { wire } = await dialog();
   expect(branchField()).toHaveValue("");
   await userEvent.type(screen.getByLabelText("제목"), "Fix Login  bug!");
   expect(screen.getByText("agent/")).toBeVisible();
   expect(branchField()).toHaveValue("fix-login-bug");
+  // The note under the form and the template's {{branch}} are about a name nobody edited: it may be numbered.
+  expect(
+    screen.getByText(/브랜치 이름을 직접 고치지 않으면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다/),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "템플릿: bugfix" }));
+  expect(screen.getByLabelText("지시문")).toHaveValue("버그: Fix Login  bug!\nagent/fix-login-bug devbox {{other}}");
   await userEvent.click(screen.getByRole("button", { name: "시작" }));
   await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
-  // What the field shows is the name the daemon is asked for, edited or not.
-  expect(wire.request("agents.create").params).toMatchObject({ branch: "fix-login-bug" });
+  // It is only the title's own name, so the daemon still makes it and numbers it when it is taken.
+  expect(wire.request("agents.create").params).not.toHaveProperty("branch");
 });
 
 test("a typed name stops following the title and is sent as typed", async () => {
@@ -403,29 +431,30 @@ test.each([
   expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
 });
 
-test("a taken name is explained with the fixed code message and the name stays editable", async () => {
+test("a taken name is explained with the fixed code message and the typed name stays editable", async () => {
   const { wire } = await dialog();
   await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.type(branchField(), "-taken");
   await userEvent.click(screen.getByRole("button", { name: "시작" }));
   await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
   const first = wire.request("agents.create");
-  // The title's own name is asked for as it is, so a taken one is refused instead of numbered.
-  expect(first.params).toMatchObject({ branch: "fix" });
+  // An edited name is asked for exactly, so a taken one is refused instead of numbered.
+  expect(first.params).toMatchObject({ branch: "fix-taken" });
   await act(async () =>
     wire.deliver({
       type: "response",
       id: first.id,
-      error: { code: "agents.branch_exists", detail: { branch: "agent/fix" } },
+      error: { code: "agents.branch_exists", detail: { branch: "agent/fix-taken" } },
     }),
   );
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("같은 이름의 브랜치가 이미 있습니다.");
   expect(alert).toHaveTextContent("브랜치 이름을 바꿔");
-  expect(branchField()).toHaveValue("fix");
+  expect(branchField()).toHaveValue("fix-taken");
   await userEvent.type(branchField(), "-2");
   await userEvent.click(screen.getByRole("button", { name: "시작" }));
   await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(2));
-  expect(wire.request("agents.create", 1).params).toMatchObject({ branch: "fix-2" });
+  expect(wire.request("agents.create", 1).params).toMatchObject({ branch: "fix-taken-2" });
   expect(wire.request("agents.create", 1).clientRequestId).not.toBe(first.clientRequestId);
 });
 

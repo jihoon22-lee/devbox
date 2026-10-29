@@ -111,6 +111,9 @@ test("the title slug and the branch name rule are the daemon's plan::slug and ch
     expect(branchNameProblem(bad), bad).toContain("영문 소문자");
   for (const bad of ["fix.lock", "../escape", "가나다", "fix\n"]) expect(branchNameProblem(bad), bad).not.toBeNull();
   expect(branchNameProblem("x".repeat(41))).toContain("40자");
+  // The hyphen rule is said in full: not at either end, and not twice in a row.
+  for (const bad of ["-fix", "fix-", "fix--login"])
+    expect(branchNameProblem(bad), bad).toContain("하이픈은 처음이나 끝에 쓸 수 없고 연달아 쓸 수도 없습니다.");
   // What the dialog fills in from a title always passes the rule the daemon applies again.
   for (const title of ["Fix login", "A  B", "a-b", "--x--", "αβγ x", `${"x".repeat(60)} y`, "Ünïcode Fix", "1"])
     expect(branchNameProblem(titleSlug(title)), title).toBeNull();
