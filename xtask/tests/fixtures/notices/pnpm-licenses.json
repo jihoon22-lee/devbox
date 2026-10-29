@@ -16,6 +16,19 @@
       "description": "the complete solution for node.js command-line programs"
     },
     {
+      "name": "qrcode-generator",
+      "versions": [
+        "2.0.4"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/qrcode-generator@2.0.4/node_modules/qrcode-generator"
+      ],
+      "license": "MIT",
+      "author": "Kazuhiko Arase",
+      "homepage": "https://github.com/kazuhikoarase/qrcode-generator#readme",
+      "description": "QR Code Generator implementation in JavaScript."
+    },
+    {
       "name": "react",
       "versions": [
         "19.3.0"

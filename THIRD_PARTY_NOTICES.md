@@ -2087,35 +2087,6 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### License text 26235c41e314
-
-Packages (1):
-
-- `wry@0.57.0` (Rust, Apache-2.0 OR MIT)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: wry
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2020-2023, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Wry is the official, rust-based webview
-windowing service for Tauri.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2020-05-20T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/wry
-PackageDownloadLocation: git+https://github.com/tauri-apps/wry.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/wry.git
-Creator: Person: Daniel Thompson-Yvetot
-```
-
 ### License text 26d1e12fda78
 
 Packages (1):
@@ -2278,33 +2249,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-```
-
-### License text 28694f36acab
-
-Packages (1):
-
-- `tao@0.37.1` (Rust, Apache-2.0)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: tao
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageCopyrightText: 2021-2023, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Tao is the official, rust-based window manager for Wry.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2020-05-20T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/tao
-PackageDownloadLocation: git+https://github.com/tauri-apps/tao.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/tao.git
-Creator: Person: Daniel Thompson-Yvetot
 ```
 
 ### License text 28ebbb31ea7b
@@ -3958,34 +3902,6 @@ The files under third-party/chromium are licensed as described in
 third-party/chromium/LICENSE.
 ```
 
-### License text 3b3a242fa170
-
-Packages (1):
-
-- `global-hotkey@0.8.0` (Rust, Apache-2.0 OR MIT)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: global-hotkey
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2020-2022, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Menu Utilities for Desktop Applications.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2022-12-05T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/global-hotkey
-PackageDownloadLocation: git+https://github.com/tauri-apps/global-hotkey.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/global-hotkey.git
-Creator: Person: Daniel Thompson-Yvetot
-```
-
 ### License text 3b8142f3c48c
 
 Packages (1):
@@ -4014,6 +3930,109 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+```
+
+### License text 3b8ac478fa32
+
+Packages (1):
+
+- `pretendard@1.3.9` (npm, OFL-1.1)
+
+```text
+Copyright (c) 2021, Kil Hyung-jin (https://github.com/orioncactus/pretendard),
+with Reserved Font Name Pretendard.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
 ### License text 3b9a96c5f747
@@ -8610,34 +8629,6 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### License text 6c1e5d0ccf5e
-
-Packages (1):
-
-- `tray-icon@0.25.1` (Rust, MIT OR Apache-2.0)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: tray-icon
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2020-2022, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Create tray icons for desktop applications.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2022-12-05T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/tray-icon
-PackageDownloadLocation: git+https://github.com/tauri-apps/tray-icon.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/tray-icon.git
-Creator: Person: Daniel Thompson-Yvetot
-```
-
 ### License text 6c91ec82929f
 
 Packages (3):
@@ -10957,35 +10948,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-```
-
-### License text 7c667b0cf986
-
-Packages (1):
-
-- `@tauri-apps/api@2.12.3` (npm, Apache-2.0 OR MIT)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: tauri
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2019-2025, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Tauri is a rust project that enables developers to make secure
-and small desktop applications using a web frontend.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2019-05-20T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/tauri
-PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
-Creator: Person: Daniel Thompson-Yvetot
 ```
 
 ### License text 7cfd98aeed13
@@ -16461,34 +16423,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### License text b99f9d43803f
-
-Packages (1):
-
-- `muda@0.20.0` (Rust, Apache-2.0 OR MIT)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: muda
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2020-2022, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Menu Utilities for Desktop Applications.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2022-12-05T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/muda
-PackageDownloadLocation: git+https://github.com/tauri-apps/muda.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/muda.git
-Creator: Person: Daniel Thompson-Yvetot
-```
-
 ### License text b9b039b5058c
 
 Packages (2):
@@ -16548,34 +16482,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-```
-
-### License text bb8278137f73
-
-Packages (1):
-
-- `window-vibrancy@0.8.1` (Rust, Apache-2.0 OR MIT)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: window-vibrancy
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2020-2022, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Make your windows vibrant.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2020-05-20T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/window-vibrancy
-PackageDownloadLocation: git+https://github.com/tauri-apps/window-vibrancy.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/window-vibrancy.git
-Creator: Person: Daniel Thompson-Yvetot
 ```
 
 ### License text bccaa8b6c09f
@@ -19664,47 +19570,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### License text d4317f690ad0
-
-Packages (1):
-
-- `cytoscape@3.34.4` (npm, MIT)
-
-```text
-import fs from 'fs';
-import path from 'path';
-
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const year = (new Date()).getFullYear();
-
-const license = `Copyright (c) 2016-${year}, The Cytoscape Consortium.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the “Software”), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`;
-
-fs.writeFileSync(path.join(__dirname, 'LICENSE'), license);
-```
-
 ### License text d71ca6db0f8b
 
 Packages (2):
@@ -21068,40 +20933,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### License text eb8a6c846304
-
-Packages (6):
-
-- `@tauri-apps/plugin-opener@2.7.1` (npm, MIT OR Apache-2.0)
-- `tauri-plugin-autostart@2.6.0` (Rust, Apache-2.0 OR MIT)
-- `tauri-plugin-deep-link@2.6.0` (Rust, Apache-2.0 OR MIT)
-- `tauri-plugin-global-shortcut@2.4.0` (Rust, Apache-2.0 OR MIT)
-- `tauri-plugin-opener@2.7.0` (Rust, Apache-2.0 OR MIT)
-- `tauri-plugin-single-instance@2.4.3` (Rust, Apache-2.0 OR MIT)
-
-```text
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: tauri
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2019-2022, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Tauri is a rust project that enables developers to make secure
-and small desktop applications using a web frontend.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2019-05-20T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/tauri
-PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
-Creator: Person: Daniel Thompson-Yvetot
-```
-
 ### License text ec5d7c323662
 
 Packages (8):
@@ -21713,7 +21544,7 @@ THE SOFTWARE.
 
 ## Packages without a license file
 
-These packages publish no `LICENSE`, `LICENCE`, `COPYING` or `NOTICE` file at their top level. The license they declare is listed instead.
+These packages publish no license file (`LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) at their top level or in a folder directly below it. The license they declare is listed instead.
 
 ### BSD-3-Clause
 
@@ -21733,6 +21564,7 @@ These packages publish no `LICENSE`, `LICENCE`, `COPYING` or `NOTICE` file at th
 
 ### MIT OR Apache-2.0
 
+- `@tauri-apps/plugin-opener@2.7.1` (npm)
 - `defmt-parser@1.0.0` (Rust)
 - `jni-macros@0.22.4` (Rust)
 - `jni-sys-macros@0.4.1` (Rust)
@@ -21752,7 +21584,3 @@ These packages publish no `LICENSE`, `LICENCE`, `COPYING` or `NOTICE` file at th
 ### MPL-2.0
 
 - `selectors@0.38.0` (Rust)
-
-### OFL-1.1
-
-- `pretendard@1.3.9` (npm)

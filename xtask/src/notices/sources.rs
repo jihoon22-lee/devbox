@@ -3,14 +3,11 @@
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Shown when a package does not declare a license at all.
 const UNDECLARED: &str = "not declared";
-const LICENSE_FILE_PREFIXES: [&str; 4] = ["license", "licence", "copying", "notice"];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Ecosystem {
     Cargo,
@@ -279,51 +276,9 @@ fn declared(license: Option<&str>) -> String {
     }
 }
 
-/// Normalized text of the `LICENSE*`, `LICENCE*`, `COPYING*` and `NOTICE*` files in `dir` (top level only).
-///
-/// The files are matched case-insensitively and read in file-name order. Blank files and repeats of
-/// a text the package already has are dropped.
-pub fn read_license_texts(dir: &Path) -> Result<Vec<String>> {
-    let mut files = Vec::new();
-    let entries = fs::read_dir(dir)
-        .with_context(|| format!("패키지 폴더를 읽지 못했습니다: {}", dir.display()))?;
-    for entry in entries {
-        let entry =
-            entry.with_context(|| format!("패키지 폴더를 읽지 못했습니다: {}", dir.display()))?;
-        let name = entry.file_name().to_string_lossy().to_lowercase();
-        let path = entry.path();
-        if LICENSE_FILE_PREFIXES
-            .iter()
-            .any(|prefix| name.starts_with(prefix))
-            && path.is_file()
-        {
-            files.push((name, path));
-        }
-    }
-    files.sort();
-    let mut texts: Vec<String> = Vec::new();
-    for (_, path) in files {
-        let bytes = fs::read(&path)
-            .with_context(|| format!("라이선스 파일을 읽지 못했습니다: {}", path.display()))?;
-        let text = normalize_text(&String::from_utf8_lossy(&bytes));
-        if !text.is_empty() && !texts.contains(&text) {
-            texts.push(text);
-        }
-    }
-    Ok(texts)
-}
-
-/// CRLF to LF, trailing whitespace trimmed, so the same license compares equal whatever its checkout.
-pub fn normalize_text(raw: &str) -> String {
-    let raw = raw.strip_prefix('\u{feff}').unwrap_or(raw);
-    let lines: Vec<&str> = raw.lines().map(str::trim_end).collect();
-    lines.join("\n").trim_matches('\n').to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     const CARGO_FIXTURE: &str = include_str!("../../tests/fixtures/notices/cargo-metadata.json");
     const NPM_FIXTURE: &str = include_str!("../../tests/fixtures/notices/pnpm-licenses.json");
@@ -411,6 +366,7 @@ mod tests {
                 "commander@7.2.0",
                 "khroma@2.1.0",
                 "pretendard@1.3.9",
+                "qrcode-generator@2.0.4",
                 "react-dom@19.3.0",
                 "react@19.3.0",
             ]
@@ -435,59 +391,6 @@ mod tests {
     }
 
     #[test]
-    fn license_files_are_matched_case_insensitively_at_the_top_level() {
-        let dir = tempfile::tempdir().expect("create package folder");
-        for (name, text) in [
-            ("LICENSE", "plain"),
-            ("license-mit", "dashed lower case"),
-            ("Licence.txt", "british spelling"),
-            ("COPYING.LESSER", "copying"),
-            ("NOTICE", "notice"),
-            ("README.md", "not a license file"),
-            ("UNLICENSE", "does not start with a license prefix"),
-            ("licensing.md", "neither does this"),
-        ] {
-            fs::write(dir.path().join(name), text).expect("write license fixture");
-        }
-        // A folder is not a file, and nothing below the top level counts.
-        fs::create_dir_all(dir.path().join("LICENSES")).expect("create folder");
-        fs::write(dir.path().join("LICENSES/MIT.txt"), "inside a folder").expect("write nested");
-        fs::create_dir_all(dir.path().join("docs")).expect("create folder");
-        fs::write(dir.path().join("docs/LICENSE"), "nested").expect("write nested");
-
-        // Ordered by lower-cased file name.
-        assert_eq!(
-            read_license_texts(dir.path()).expect("scan"),
-            [
-                "copying",
-                "british spelling",
-                "plain",
-                "dashed lower case",
-                "notice"
-            ]
-        );
-    }
-
-    #[test]
-    fn identical_and_blank_license_files_are_kept_once() {
-        let dir = tempfile::tempdir().expect("create package folder");
-        fs::write(dir.path().join("LICENSE"), "same text\r\n").expect("write");
-        fs::write(dir.path().join("LICENSE.md"), "same text   \n\n").expect("write");
-        fs::write(dir.path().join("COPYING"), "  \n\n").expect("write");
-        assert_eq!(read_license_texts(dir.path()).expect("scan"), ["same text"]);
-    }
-
-    #[test]
-    fn license_text_that_is_not_utf8_is_kept_lossily() {
-        let dir = tempfile::tempdir().expect("create package folder");
-        fs::write(dir.path().join("LICENSE"), b"\xA9 2026 Someone\n").expect("write latin-1");
-        assert_eq!(
-            read_license_texts(dir.path()).expect("scan"),
-            ["\u{fffd} 2026 Someone"]
-        );
-    }
-
-    #[test]
     fn failed_metadata_tells_how_to_get_the_sources() {
         let message = metadata_failure(
             "app/src-tauri/Cargo.toml",
@@ -496,19 +399,5 @@ mod tests {
         .to_string();
         assert!(message.contains("failed to download `webpki-root-certs v1.0.11`"));
         assert!(message.contains("cargo fetch --locked --manifest-path app/src-tauri/Cargo.toml"));
-    }
-
-    #[test]
-    fn a_missing_package_folder_is_an_error() {
-        let dir = tempfile::tempdir().expect("create folder");
-        assert!(read_license_texts(&dir.path().join("absent")).is_err());
-    }
-
-    #[test]
-    fn text_is_normalized_before_it_is_compared() {
-        assert_eq!(
-            normalize_text("\u{feff}\r\n MIT  \r\n\r\nline two\t\r\n\r\n"),
-            " MIT\n\nline two"
-        );
     }
 }

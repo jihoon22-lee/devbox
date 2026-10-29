@@ -9,20 +9,20 @@
 mod fingerprint;
 #[cfg(test)]
 mod fixture;
+mod license_files;
 mod sources;
 
 use anyhow::{Context, Result};
 use fingerprint::{ensure_current, header_line, lock_fingerprint};
+use license_files::read_license_texts;
 use sha2::{Digest, Sha256};
-use sources::{
-    Component, cargo_components, cargo_metadata, npm_components, pnpm_licenses, read_license_texts,
-};
+use sources::{Component, cargo_components, cargo_metadata, npm_components, pnpm_licenses};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 const NOTICES_FILE: &str = "THIRD_PARTY_NOTICES.md";
-/// The Windows app ships for this target only.
+/// The Windows app ships for this target only (`windows.yml` builds it on a Windows x64 runner).
 const APP_TARGET: &str = "x86_64-pc-windows-msvc";
 
 /// A shipped package and the text of its license files (empty when it has none).
@@ -52,8 +52,10 @@ pub fn run() -> Result<()> {
         .context("저장소 루트를 찾지 못했습니다.")?;
     // The `devbox` command is resolved for every platform: an extra crate is harmless, a missing one is not.
     let cli = cargo_metadata(&repo, "Cargo.toml", None)?;
-    // The app ships on Windows only, so it is resolved for Windows only. Without a platform cargo also
-    // needs the sources of packages that only wasm32, android or apple builds use and that never ship.
+    // The app ships on Windows only, so its crates are resolved for the Windows target: exactly the set
+    // that can be linked into Devbox.exe, which makes the list more accurate. (Resolving for every
+    // platform would also need the sources of crates that only wasm32, android or apple builds use,
+    // for example webpki-root-certs, and list them although they never ship.)
     let app = cargo_metadata(&repo, "app/src-tauri/Cargo.toml", Some(APP_TARGET))?;
     let command_crates = cargo_components(&cli, &["devbox-cli"], &repo)?;
     let app_crates = cargo_components(&app, &["devbox-app"], &repo)?;
@@ -203,9 +205,9 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
     }
     if !groups.unlicensed.is_empty() {
         out.push_str(
-            "## Packages without a license file\n\nThese packages publish no `LICENSE`, `LICENCE`, \
-             `COPYING` or `NOTICE` file at their top level. The license they declare is listed \
-             instead.\n\n",
+            "## Packages without a license file\n\nThese packages publish no license file (`LICENSE*`, \
+             `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) at their top level or in a folder directly \
+             below it. The license they declare is listed instead.\n\n",
         );
         for (license, packages) in &groups.unlicensed {
             out.push_str(&format!("### {license}\n\n"));
@@ -226,7 +228,7 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
 }
 
 #[cfg(test)]
-use fixture::{APACHE, FINGERPRINT, Fixture, group_of, labels, mit};
+use fixture::{APACHE, FINGERPRINT, Fixture, OFL, group_of, labels, mit};
 
 #[test]
 fn groups_packages_by_identical_license_text() {
@@ -262,13 +264,15 @@ fn groups_packages_by_identical_license_text() {
         labels(&group_of(&groups, &mit("Tokio Contributors")).packages),
         ["khroma@2.1.0", "tokio@1.53.2"]
     );
-    // A package with several license files is listed under each of its texts.
+    // A package with several license files is listed under each of its texts. The SPDX document
+    // next to them is metadata, not a license text.
     let tauri_groups = groups
         .texts
         .iter()
         .filter(|g| g.packages.iter().any(|p| p.name == "@tauri-apps/api"))
         .count();
-    assert_eq!(tauri_groups, 3);
+    assert_eq!(tauri_groups, 2);
+    assert!(groups.texts.iter().all(|g| !g.text.contains("SPDXVersion")));
     // One group per distinct text; texts of packages that do not ship never appear.
     assert_eq!(groups.texts.len(), 12);
     assert!(
@@ -286,7 +290,8 @@ fn groups_packages_by_identical_license_text() {
 fn missing_license_file_falls_back_to_spdx() {
     let fixture = Fixture::new();
     let groups = fixture.groups();
-    // libmimalloc-sys has a license only in a subfolder, pretendard has none.
+    // libmimalloc-sys has a license only three levels down, qrcode-generator only inside its own
+    // node_modules: neither counts, so both are listed by their declared license.
     let fallback: Vec<(&str, Vec<String>)> = groups
         .unlicensed
         .iter()
@@ -294,22 +299,57 @@ fn missing_license_file_falls_back_to_spdx() {
         .collect();
     assert_eq!(
         fallback,
-        [
-            ("MIT", vec!["libmimalloc-sys@0.1.49".to_string()]),
-            ("OFL-1.1", vec!["pretendard@1.3.9".to_string()]),
-        ]
+        [(
+            "MIT",
+            vec![
+                "libmimalloc-sys@0.1.49".to_string(),
+                "qrcode-generator@2.0.4".to_string()
+            ]
+        )]
     );
+    for name in ["libmimalloc-sys", "qrcode-generator"] {
+        assert!(
+            groups
+                .texts
+                .iter()
+                .all(|g| g.packages.iter().all(|p| p.name != name))
+        );
+    }
     assert!(
         groups
             .texts
             .iter()
-            .all(|g| g.packages.iter().all(|p| p.name != "pretendard"))
+            .all(|g| !g.text.contains("belongs to a dependency") && !g.text.contains("never used"))
     );
 
     let notices = generate(&fixture.sources(false), FINGERPRINT).expect("generate");
     assert!(notices.contains("## Packages without a license file\n"));
-    assert!(notices.contains("### MIT\n\n- `libmimalloc-sys@0.1.49` (Rust)\n"));
-    assert!(notices.contains("### OFL-1.1\n\n- `pretendard@1.3.9` (npm)\n"));
+    assert!(notices.contains(
+        "### MIT\n\n- `libmimalloc-sys@0.1.49` (Rust)\n- `qrcode-generator@2.0.4` (npm)\n"
+    ));
+}
+
+#[test]
+fn nested_license_file_is_used_when_the_top_level_has_none() {
+    let fixture = Fixture::new();
+    let groups = fixture.groups();
+    // pretendard ships its OFL text in dist/LICENSE.txt, one folder below the package root.
+    assert_eq!(
+        labels(&group_of(&groups, OFL).packages),
+        ["pretendard@1.3.9"]
+    );
+    assert!(
+        groups
+            .unlicensed
+            .iter()
+            .all(|(_, packages)| packages.iter().all(|p| p.name != "pretendard"))
+    );
+
+    // So the notices print the text of the font license, and no SPDX-only entry for the font.
+    let notices = generate(&fixture.sources(false), FINGERPRINT).expect("generate");
+    assert!(notices.contains("SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007\n```\n"));
+    assert!(notices.contains("- `pretendard@1.3.9` (npm, OFL-1.1)\n"));
+    assert!(!notices.contains("### OFL-1.1"));
 }
 
 #[test]
@@ -348,7 +388,7 @@ fn notices_start_with_the_fingerprint_and_fence_every_text() {
     );
     // Counts per source are stated up front.
     assert!(notices.contains("- Rust crates: 8\n"));
-    assert!(notices.contains("- npm packages: 7\n"));
+    assert!(notices.contains("- npm packages: 8\n"));
 }
 
 #[test]

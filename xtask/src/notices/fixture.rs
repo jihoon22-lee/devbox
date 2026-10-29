@@ -1,6 +1,7 @@
 //! Test support: the captured cargo and pnpm output, with license files laid out like a registry.
 
-use super::sources::{CargoMetadata, normalize_text};
+use super::license_files::normalize_text;
+use super::sources::CargoMetadata;
 use super::*;
 
 pub(super) const CARGO_FIXTURE: &str =
@@ -12,6 +13,7 @@ pub(super) const APACHE: &str = "Apache License\nVersion 2.0, January 2004\n";
 pub(super) const UNLICENSE: &str =
     "This is free and unencumbered software released into the public domain.\n";
 pub(super) const SPDX: &str = "SPDXVersion: SPDX-2.1\nDataLicense: CC0-1.0\n";
+pub(super) const OFL: &str = "Copyright (c) 2021, Kil Hyung-jin, with Reserved Font Name Pretendard.\n\nSIL OPEN FONT LICENSE Version 1.1 - 26 February 2007\n";
 
 pub(super) fn mit(holder: &str) -> String {
     format!(
@@ -61,7 +63,7 @@ impl Fixture {
                 mit("Microsoft Corporation"),
             ),
             ("mimalloc-0.1.52/LICENSE", mit("Octavian Oncescu")),
-            // Only below the top level: not a license file of the package.
+            // Three levels below the root: too deep to be taken as the package's license.
             (
                 "libmimalloc-sys-0.1.49/c_src/mimalloc/LICENSE",
                 mit("Octavian Oncescu"),
@@ -106,7 +108,7 @@ impl Fixture {
                 format!("{pnpm}/commander@15.0.0/node_modules/commander/LICENSE"),
                 mit("TJ Holowaychuk"),
             ),
-            // One package, three license-like files.
+            // One package, three license-like files; the SPDX document is metadata, not a license text.
             (format!("{tauri}/LICENSE-APACHE-2.0"), APACHE.to_string()),
             (format!("{tauri}/LICENSE-MIT"), mit("Tauri Programme")),
             (format!("{tauri}/LICENSE.spdx"), SPDX.to_string()),
@@ -115,10 +117,21 @@ impl Fixture {
                 format!("{pnpm}/khroma@2.1.0/node_modules/khroma/LICENSE"),
                 mit("Tokio Contributors"),
             ),
-            // No license file at all.
+            // The only license is one folder below the root, like pretendard's dist/LICENSE.txt.
             (
                 format!("{pnpm}/pretendard@1.3.9/node_modules/pretendard/package.json"),
                 "{}".into(),
+            ),
+            (
+                format!("{pnpm}/pretendard@1.3.9/node_modules/pretendard/dist/LICENSE.txt"),
+                OFL.to_string(),
+            ),
+            // A license only inside the package's own node_modules belongs to a dependency.
+            (
+                format!(
+                    "{pnpm}/qrcode-generator@2.0.4/node_modules/qrcode-generator/node_modules/LICENSE"
+                ),
+                "never used: belongs to a dependency".into(),
             ),
         ];
         for (path, text) in npm {
