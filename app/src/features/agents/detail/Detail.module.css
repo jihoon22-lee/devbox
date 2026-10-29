@@ -25,6 +25,22 @@
 .actions {
   padding: 8px 12px;
 }
+.cleanup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cleanup p {
+  margin: 0;
+}
+.cleanupRaw {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .content {
   flex: 1;
   min-height: 0;

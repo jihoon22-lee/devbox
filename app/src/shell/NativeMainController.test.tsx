@@ -105,3 +105,70 @@ test("native palette events carry only a numeric trace ID into the intent queue"
     { kind: "palette" },
   ]);
 });
+
+type Saved = { autostartAsked: boolean; autostart: boolean; trayNoticeShown: boolean };
+/** A native store that keeps what `set_autostart` saved, as settings.json does across app restarts. */
+function nativeStore(initial: Partial<Saved> = {}, failSave = false) {
+  const saved: Saved = { autostartAsked: false, autostart: false, trayNoticeShown: false, ...initial };
+  mocks.invoke.mockReset().mockImplementation(async (name, args) => {
+    if (name === "app_preferences") return { ...saved };
+    if (name === "set_autostart") {
+      if (failSave) throw new Error("owned fixture failure");
+      saved.autostart = args.enabled;
+      saved.autostartAsked ||= args.firstRun;
+      return { ...saved };
+    }
+    return undefined;
+  });
+  return saved;
+}
+const reads = () => mocks.invoke.mock.calls.filter(([name]) => name === "app_preferences").length;
+const firstRun = () => screen.queryByRole("dialog", { name: "devbox 시작하기" });
+
+test("later_is_remembered_across_restarts", async () => {
+  const saved = nativeStore();
+  const first = render(<NativeMainController ready />);
+  await userEvent.click(await screen.findByRole("button", { name: "나중에" }));
+  expect(firstRun()).not.toBeInTheDocument();
+  await waitFor(() => expect(saved.autostartAsked).toBe(true));
+  // Asking later never turns autostart on.
+  expect(saved.autostart).toBe(false);
+  expect(mocks.invoke.mock.calls.filter(([name]) => name === "set_autostart")).toEqual([
+    ["set_autostart", { enabled: false, firstRun: true }],
+  ]);
+  first.unmount();
+  // The app starts again and reads the same native settings: nothing is asked.
+  const before = reads();
+  render(<NativeMainController ready />);
+  await waitFor(() => expect(reads()).toBeGreaterThan(before));
+  await act(async () => {});
+  expect(firstRun()).not.toBeInTheDocument();
+});
+
+test("Escape closes the first-run dialog as 나중에 does", async () => {
+  const saved = nativeStore();
+  render(<NativeMainController ready />);
+  await screen.findByRole("dialog", { name: "devbox 시작하기" });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(saved.autostartAsked).toBe(true));
+  expect(saved.autostart).toBe(false);
+});
+
+test("나중에 leaves an autostart that is already on exactly as it is", async () => {
+  const saved = nativeStore({ autostart: true });
+  render(<NativeMainController ready />);
+  await userEvent.click(await screen.findByRole("button", { name: "나중에" }));
+  await waitFor(() => expect(saved.autostartAsked).toBe(true));
+  expect(saved.autostart).toBe(true);
+});
+
+test("a failed save of 나중에 closes the dialog, says so, and 다시 시도 asks again", async () => {
+  const saved = nativeStore({}, true);
+  render(<NativeMainController ready />);
+  await userEvent.click(await screen.findByRole("button", { name: "나중에" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("첫 실행 선택을 저장하지 못했습니다");
+  expect(firstRun()).not.toBeInTheDocument();
+  expect(saved.autostartAsked).toBe(false);
+  await userEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+  expect(await screen.findByRole("dialog", { name: "devbox 시작하기" })).toBeInTheDocument();
+});

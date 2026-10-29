@@ -1,6 +1,11 @@
-import { cloneMessage, files, type Messages, path, toolMissing } from "./messageDetail";
+import { cloneMessage, files, type Message, type Messages, path, toolMissing } from "./messageDetail";
 
 type Domain = "agents" | "projects" | "terminal";
+/** For a closed task's cleanup error that carries no code this table knows. */
+export const CLEANUP_UNKNOWN: Message = {
+  title: "원인을 확인하지 못했습니다.",
+  action: "작업 폴더와 브랜치가 남아 있는지 확인해 주세요.",
+};
 /** Messages for agent tasks, projects and terminals. */
 export const AGENT_MESSAGES: Messages<Domain> = {
   "terminal.command_too_long": {

@@ -7,6 +7,12 @@ import { Button, ConfirmDialog } from "../ui";
 import { FirstRun } from "./FirstRun";
 import { useNativeRuntime } from "./nativeRuntime";
 
+/**
+ * [나중에]: remember that the question was asked and change nothing else. `set_autostart` takes the
+ * state to keep, so the current one is read first and passed back; autostart is never turned on here.
+ */
+const rememberAsked = async () => setAutostart((await appPreferences()).autostart, true);
+
 /** Mount outside ConnectionGate so tray quit is always available, including startup failures. */
 export function NativeMainController({ ready }: { ready: boolean }) {
   const [main] = useState(() => isNative() && getCurrentWindow().label === "main");
@@ -124,7 +130,14 @@ export function NativeMainController({ ready }: { ready: boolean }) {
       )}
       {firstRun && quit === undefined && (
         <FirstRun
-          onCancel={() => setFirstRun(false)}
+          onCancel={() => {
+            setFirstRun(false);
+            void rememberAsked().catch(() => {
+              // Nothing was saved, so [다시 시도] reads the settings again and asks again.
+              firstRunChecked.current = false;
+              setError("첫 실행 선택을 저장하지 못했습니다. [다시 시도]를 누르면 선택 창을 다시 엽니다.");
+            });
+          }}
           onDone={async ({ autostart }) => {
             await setAutostart(autostart, true);
             setFirstRun(false);
