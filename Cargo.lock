@@ -4543,6 +4543,8 @@ dependencies = [
  "devbox-tools",
  "devbox-webhooks",
  "serde",
+ "serde_json",
+ "sha2",
  "tempfile",
  "ts-rs",
 ]

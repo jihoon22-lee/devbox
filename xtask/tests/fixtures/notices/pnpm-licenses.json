@@ -1,0 +1,85 @@
+{
+  "MIT": [
+    {
+      "name": "commander",
+      "versions": [
+        "7.2.0",
+        "15.0.0"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/commander@7.2.0/node_modules/commander",
+        "@ROOT@/node_modules/.pnpm/commander@15.0.0/node_modules/commander"
+      ],
+      "license": "MIT",
+      "author": "TJ Holowaychuk",
+      "homepage": "https://github.com/tj/commander.js#readme",
+      "description": "the complete solution for node.js command-line programs"
+    },
+    {
+      "name": "react",
+      "versions": [
+        "19.3.0"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/react@19.3.0/node_modules/react"
+      ],
+      "license": "MIT",
+      "homepage": "https://react.dev/",
+      "description": "React is a JavaScript library for building user interfaces."
+    },
+    {
+      "name": "react-dom",
+      "versions": [
+        "19.3.0"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/react-dom@19.3.0_react@19.3.0/node_modules/react-dom"
+      ],
+      "license": "MIT",
+      "homepage": "https://react.dev/",
+      "description": "React package for working with the DOM."
+    }
+  ],
+  "Apache-2.0 OR MIT": [
+    {
+      "name": "@tauri-apps/api",
+      "versions": [
+        "2.12.3"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/@tauri-apps+api@2.12.3/node_modules/@tauri-apps/api"
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "homepage": "https://github.com/tauri-apps/tauri#readme",
+      "description": "Tauri API definitions"
+    }
+  ],
+  "Unknown": [
+    {
+      "name": "khroma",
+      "versions": [
+        "2.1.0"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/khroma@2.1.0/node_modules/khroma"
+      ],
+      "license": "Unknown",
+      "homepage": "https://github.com/fabiospampinato/khroma#readme",
+      "description": "A collection of functions for manipulating CSS colors, inspired by SASS."
+    }
+  ],
+  "OFL-1.1": [
+    {
+      "name": "pretendard",
+      "versions": [
+        "1.3.9"
+      ],
+      "paths": [
+        "@ROOT@/node_modules/.pnpm/pretendard@1.3.9/node_modules/pretendard"
+      ],
+      "license": "OFL-1.1",
+      "author": "Kil Hyung-jin",
+      "homepage": "https://cactus.tistory.com/306"
+    }
+  ]
+}
