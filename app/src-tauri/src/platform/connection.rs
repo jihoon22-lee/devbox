@@ -129,7 +129,7 @@ async fn supervise(app: AppHandle, conn: Connection) {
     crate::core::supervision::run(
         conn.0.retry.subscribe(),
         conn.0.stop.clone(),
-        move |generation, forced, cancel| {
+        move |generation, forced, retried, cancel| {
             let app = app.clone();
             let conn = conn.clone();
             async move {
@@ -137,7 +137,7 @@ async fn supervise(app: AppHandle, conn: Connection) {
                     return;
                 };
                 conn.state().generation = generation;
-                super::supervisor::run(&app, &conn, generation, forced, cancel).await;
+                super::supervisor::run(&app, &conn, generation, forced, retried, cancel).await;
             }
         },
     )

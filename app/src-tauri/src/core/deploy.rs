@@ -34,6 +34,11 @@ mod tests {
         )
         .await
     }
+    #[test]
+    fn setup_forces_the_daemon_restart_only_for_user_runs() {
+        assert_eq!(setup_args(false), ["setup", "--json"]);
+        assert_eq!(setup_args(true), ["setup", "--json", "--restart"]);
+    }
     #[tokio::test]
     async fn redeploy_uses_the_first_launch_deploy_plan() {
         let steps = std::sync::Mutex::new(Vec::new());
@@ -327,6 +332,16 @@ pub fn install_script() -> String {
 }
 pub fn exec_script() -> String {
     exec_script_for(CHANNEL)
+}
+/// `devbox setup` arguments. The automatic start restarts the daemon only when its install
+/// changed; a user's [다시 설정] or [다시 시도] (`restart`) always restarts it, so a hung but
+/// active daemon can still be recovered.
+pub fn setup_args(restart: bool) -> &'static [&'static str] {
+    if restart {
+        &["setup", "--json", "--restart"]
+    } else {
+        &["setup", "--json"]
+    }
 }
 fn install_script_for(channel: AppChannel) -> String {
     let paths = PATHS_SCRIPT.replace("@STORAGE@", channel.config().storage_name);

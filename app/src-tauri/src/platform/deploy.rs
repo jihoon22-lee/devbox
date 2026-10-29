@@ -1,5 +1,5 @@
 use crate::core::{
-    deploy::{digest, exec_script, install_script},
+    deploy::{digest, exec_script, install_script, setup_args},
     diagnostics::{ReportKind, describe},
     process::{self, ShellError},
 };
@@ -20,6 +20,7 @@ pub async fn install(
 pub async fn setup(
     distro: &str,
     instance: &str,
+    restart: bool,
     cancel: CancellationToken,
 ) -> Result<(), ShellError> {
     let mut cmd = crate::platform::wsl::command(distro);
@@ -31,9 +32,8 @@ pub async fn setup(
         "-c",
         &exec_script(),
         "sh",
-        "setup",
-        "--json",
-    ]);
+    ])
+    .args(setup_args(restart));
     process::run(cmd, vec![], Duration::from_secs(90), cancel.clone())
         .await
         .map_err(|e| describe(e, ReportKind::Setup))?;
@@ -83,16 +83,18 @@ pub fn bundled_binary(app: &tauri::AppHandle) -> Result<Vec<u8>, ShellError> {
     }
     Ok(bytes)
 }
+/// `restart` is set only for a user's [다시 설정] or [다시 시도]; see `setup_args`.
 pub async fn apply(
     distro: &str,
     instance: &str,
     bytes: Vec<u8>,
+    restart: bool,
     cancel: CancellationToken,
 ) -> Result<(), ShellError> {
     let install_cancel = cancel.clone();
     crate::core::deploy::apply_deployment(
         || install(distro, bytes, install_cancel),
-        || setup(distro, instance, cancel),
+        || setup(distro, instance, restart, cancel),
     )
     .await
 }
@@ -106,7 +108,7 @@ pub async fn redeploy_wsl(
     let distro = conn.state().ready_distro()?.to_owned();
     let bytes = bundled_binary(&app)
         .map_err(|_| IpcError::new("내장 WSL 실행 파일을 확인하지 못했습니다"))?;
-    apply(&distro, INSTANCE, bytes, conn.operation_cancel())
+    apply(&distro, INSTANCE, bytes, true, conn.operation_cancel())
         .await
         .map_err(|_| IpcError::new("WSL 다시 설정을 완료하지 못했습니다"))
 }

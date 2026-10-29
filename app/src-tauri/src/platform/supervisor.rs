@@ -27,6 +27,7 @@ pub async fn run(
     conn: &Connection,
     generation: u64,
     forced: Option<String>,
+    retried: bool,
     cancel: CancellationToken,
 ) {
     conn.gate(app, generation, "checking", None, None);
@@ -122,7 +123,7 @@ pub async fn run(
     let setup = async {
         let _guard = deploy::maintenance_wait(cancel.clone()).await?;
         let bytes = deploy::bundled_binary(app)?;
-        deploy::apply(&distro, INSTANCE, bytes, cancel.clone()).await
+        deploy::apply(&distro, INSTANCE, bytes, retried, cancel.clone()).await
     }
     .await;
     if let Err(e) = setup {

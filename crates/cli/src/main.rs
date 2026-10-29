@@ -36,6 +36,9 @@ enum Cmd {
     Setup {
         #[arg(long)]
         json: bool,
+        /// 바뀐 것이 없어도 데몬 서비스를 다시 시작한다.
+        #[arg(long)]
+        restart: bool,
     },
     /// 이 앱 채널의 서비스·실행 파일만 정리하고 데이터·설정은 보존한다.
     Uninstall {
@@ -166,7 +169,7 @@ fn main() -> anyhow::Result<()> {
                 origin,
                 token,
             } => devbox_cli::gateway::run(port, origin, token).await,
-            Cmd::Setup { json } => devbox_cli::setup::run(json).await,
+            Cmd::Setup { json, restart } => devbox_cli::setup::run(json, restart).await,
             Cmd::Uninstall { json } => devbox_cli::setup::uninstall::run(json).await,
             Cmd::Doctor { json } => devbox_cli::doctor::run(json).await,
             Cmd::Agent {
