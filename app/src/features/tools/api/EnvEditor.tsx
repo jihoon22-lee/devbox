@@ -20,6 +20,12 @@ import { rootKey, useApiTabs } from "./store";
 import { bumpCollections, useCollections } from "./useCollections";
 
 interface Editing {
+  /**
+   * Which draft this is. Edits, saves and review acknowledgements copy it forward; reading a file
+   * or starting a new environment gives a new one. `path` cannot tell drafts apart: two new
+   * environments both have none, and a file read again has the same path as the draft before it.
+   */
+  draft: number;
   path: string | null;
   digest: string | null;
   name: string;
@@ -34,6 +40,8 @@ interface RootDraft {
   notice?: string;
 }
 
+let drafts = 0;
+const newDraft = () => ++drafts;
 const useEnvDrafts = create<{ byRoot: Record<string, RootDraft> }>(() => ({ byRoot: {} }));
 export const resetEnvDrafts = () => useEnvDrafts.setState({ byRoot: {} });
 
@@ -106,7 +114,15 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       const file = parseEnvFile(read.text);
       const rows = file.variables.map((v) => row(v.name, v.value));
       const unreviewed = root.kind === "project" && !read.reviewed;
-      apply({ path, digest: read.digest, name: file.name, rows, baseline: snapshot(file.name, rows), unreviewed });
+      apply({
+        draft: newDraft(),
+        path,
+        digest: read.digest,
+        name: file.name,
+        rows,
+        baseline: snapshot(file.name, rows),
+        unreviewed,
+      });
     } catch (error) {
       if (ownsRead()) patch({ notice: errorText(error, "환경 파일을 읽지 못했습니다.") });
     }
@@ -125,7 +141,14 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       apply({ ...latest, unreviewed: false });
   };
   const createEnv = () =>
-    apply({ path: null, digest: null, name: "새 환경", rows: [], baseline: snapshot("새 환경", []) });
+    apply({
+      draft: newDraft(),
+      path: null,
+      digest: null,
+      name: "새 환경",
+      rows: [],
+      baseline: snapshot("새 환경", []),
+    });
 
   const save = async () => {
     if (!editing || writing.current) return;
@@ -146,7 +169,9 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       if (root.kind === "project") await backend.review(root, path, written.digest);
       const latest = useEnvDrafts.getState().byRoot[key]?.editing;
       // 저장은 사용자가 본 내용을 쓴 것이고 프로젝트 루트는 그 digest로 검토를 기록했다.
-      if (latest && latest.path === target.path)
+      // The write belongs to the draft it started from. Edits made meanwhile are the same draft and
+      // take the new digest (they stay dirty); another file read or a new environment is not.
+      if (latest && latest.draft === target.draft)
         apply({
           ...latest,
           path,

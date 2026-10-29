@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import type { CollectionRoot } from "../../../rpc/gen/rpc";
@@ -218,4 +218,92 @@ it("changing roots dismisses an old dirty-discard action without discarding that
   expect(input()).toHaveValue("https://a.invalid/dirty");
   expect(screen.getByLabelText("저장하지 않은 변경")).toBeInTheDocument();
   expect(active()?.name).toBe("a");
+});
+
+/** Holds the next write until the returned gate finishes, so a test can act while a save is in flight. */
+function holdWrite(backend: FakeBackend) {
+  const held = gate();
+  const original = backend.write.getMockImplementation()!;
+  backend.write.mockImplementationOnce(async (...args) => {
+    await held.wait;
+    return original(...args);
+  });
+  return held;
+}
+const discardAndCreate = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole("button", { name: "새 환경" }));
+  const ask = await screen.findByRole("dialog", { name: "환경 변경을 버릴까요?" });
+  await user.click(within(ask).getByRole("button", { name: "변경 버리기" }));
+};
+const rename = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+  await user.clear(screen.getByLabelText("환경 이름"));
+  await user.type(screen.getByLabelText("환경 이름"), name);
+};
+
+it("late_save_of_a_does_not_overwrite_new_env_b_draft", async () => {
+  const { backend, user } = setup();
+  await user.click(screen.getByRole("button", { name: "새 환경" }));
+  await rename(user, "alpha");
+  const pending = holdWrite(backend);
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  // A is still being written when the user drops it and starts another new environment.
+  await discardAndCreate(user);
+  await rename(user, "beta");
+  await pending.finish();
+  await screen.findByText("환경을 저장했습니다.");
+  expect(backend.text(personal, "env/alpha.json")).toContain('"name": "alpha"');
+  // B is still a new, unsaved draft: A's file, digest and baseline did not land on it.
+  expect(screen.getByLabelText("환경 이름")).toHaveValue("beta");
+  expect(selection()).toHaveValue("");
+  expect(screen.getByLabelText("저장하지 않은 변경")).toBeInTheDocument();
+  expect(active()?.name).toBe("beta");
+  // Saving B creates its own file instead of replacing A's.
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.text(personal, "env/beta.json")).toContain('"name": "beta"'));
+  expect(backend.text(personal, "env/alpha.json")).toContain('"name": "alpha"');
+  expect(backend.write).toHaveBeenCalledTimes(2);
+  expect(backend.write.mock.calls[1]![1]).toBe("env/beta.json");
+  expect(backend.write.mock.calls[1]![3]).toEqual({ kind: "absent" });
+});
+
+it("a late save does not touch a draft that was read again from the same file", async () => {
+  const { backend, user } = setup();
+  await loaded("a");
+  await user.type(input(), "/saved");
+  const pending = holdWrite(backend);
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  // Another environment, then the same file again: the new draft is a fresh read of env/a.json.
+  await choose("b");
+  await user.click(
+    within(await screen.findByRole("dialog", { name: "환경 변경을 버릴까요?" })).getByRole("button", {
+      name: "변경 버리기",
+    }),
+  );
+  await waitFor(() => expect(input()).toHaveValue("https://b.invalid"));
+  await loaded("a");
+  expect(input()).toHaveValue("https://a.invalid");
+  await pending.finish();
+  await screen.findByText("환경을 저장했습니다.");
+  // The reread draft keeps what it read; the save's text is not claimed as its baseline.
+  expect(input()).toHaveValue("https://a.invalid");
+  expect(screen.queryByLabelText("저장하지 않은 변경")).not.toBeInTheDocument();
+  expect(backend.text(personal, "env/a.json")).toContain("https://a.invalid/saved");
+});
+
+it("an edit made while a save is in flight still receives the saved digest for the next save", async () => {
+  const { backend, user } = setup();
+  await loaded("a");
+  await user.type(input(), "/first");
+  const pending = holdWrite(backend);
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await user.type(input(), "/second");
+  await pending.finish();
+  await screen.findByText("환경을 저장했습니다.");
+  expect(input()).toHaveValue("https://a.invalid/first/second");
+  expect(screen.getByLabelText("저장하지 않은 변경")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(screen.queryByLabelText("저장하지 않은 변경")).not.toBeInTheDocument());
+  expect(backend.text(personal, "env/a.json")).toContain("https://a.invalid/first/second");
+  expect(backend.write).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("환경 형식이 올바르지 않습니다.")).not.toBeInTheDocument();
 });
