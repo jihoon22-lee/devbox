@@ -14,7 +14,7 @@ v1 설치 파일은 공개 릴리스의 `devbox-<버전>-setup.exe` 하나다(�
 
 1. systemd가 켜진 WSL2 배포판이 필요하다. WSL이 없거나 WSL1이거나 systemd가 꺼져 있으면 첫 화면이 실행할 명령을 안내하고 [다시 시도]를 보여 준다.
 2. 배포판이 여러 개면 "devbox가 쓸 WSL 배포판을 고르세요"에서 하나를 고른다.
-3. 앱은 시작할 때마다 내장 Linux 실행 파일을 `~/.local/share/devbox/bin/devbox`에 배치하고 `devbox setup`으로 user unit `devbox@prod.socket`·`devbox@prod.service`·`devbox-tmux@prod.service`를 켠다. 데몬 서비스(`devbox@prod.service`)는 unit이나 환경 파일이 바뀌었거나, 실행 중이 아니거나, 지금 배치한 실행 파일로 실행 중이 아닐 때만 다시 시작한다. 연결 화면의 [다시 시도]와 설정 → 앱 진단의 [다시 설정]은 바뀐 것이 없어도 데몬 서비스를 다시 시작한다.
+3. 앱은 시작할 때마다 내장 Linux 실행 파일을 `~/.local/share/devbox/bin/devbox`에 배치하고 `devbox setup`으로 user unit `devbox@prod.socket`·`devbox@prod.service`·`devbox-tmux@prod.service`를 켠다. 데몬 서비스(`devbox@prod.service`)는 unit·환경 파일·`tmux.conf`가 바뀌었거나, 실행 중이 아니거나, 지금 배치한 실행 파일로 실행 중이 아닐 때만 다시 시작한다. 연결 화면의 [다시 시도]와 설정 → 앱 진단의 [다시 설정]은 바뀐 것이 없어도 데몬 서비스를 다시 시작한다.
 4. "devbox 시작하기"에서 Windows 시작 시 실행 여부를 고른다. 트레이에 있는 동안 WSL 연결을 유지한다.
 
 prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 `~/.config/devbox`, 로그는 `~/.local/state/devbox/prod/logs`에 있다. Windows 앱 데이터는 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox`다.

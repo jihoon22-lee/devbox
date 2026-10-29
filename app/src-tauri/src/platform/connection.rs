@@ -11,6 +11,7 @@ pub type FrameChannel = Channel<InvokeResponseBody>;
 struct Shared {
     state: Mutex<State<FrameChannel>>,
     attempt: crate::core::maintenance::AttemptControl,
+    /// Only user actions (`gate_retry`) send here: the next supervisor run forces a daemon restart.
     retry: watch::Sender<Option<String>>,
     stop: CancellationToken,
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
