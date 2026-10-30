@@ -184,7 +184,8 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
     out.push_str(&format!(
         "\n{total} distinct packages in total: a package that two sources share counts once. \
          Packages that ship the same license text are listed together under one copy of it, and a \
-         package with several license files is listed under each.\n\n## License texts\n\n"
+         package with several license files, for example the license of code it vendors, is listed \
+         under each.\n\n## License texts\n\n"
     ));
     for group in &groups.texts {
         out.push_str(&format!(
@@ -206,8 +207,8 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
     if !groups.unlicensed.is_empty() {
         out.push_str(
             "## Packages without a license file\n\nThese packages publish no license file (`LICENSE*`, \
-             `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) at their top level or in a folder directly \
-             below it. The license they declare is listed instead.\n\n",
+             `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) anywhere in the package. The license they \
+             declare is listed instead.\n\n",
         );
         for (license, packages) in &groups.unlicensed {
             out.push_str(&format!("### {license}\n\n"));
@@ -274,7 +275,7 @@ fn groups_packages_by_identical_license_text() {
     assert_eq!(tauri_groups, 2);
     assert!(groups.texts.iter().all(|g| !g.text.contains("SPDXVersion")));
     // One group per distinct text; texts of packages that do not ship never appear.
-    assert_eq!(groups.texts.len(), 12);
+    assert_eq!(groups.texts.len(), 11);
     assert!(
         groups
             .texts
@@ -290,8 +291,9 @@ fn groups_packages_by_identical_license_text() {
 fn missing_license_file_falls_back_to_spdx() {
     let fixture = Fixture::new();
     let groups = fixture.groups();
-    // libmimalloc-sys has a license only three levels down, qrcode-generator only inside its own
-    // node_modules: neither counts, so both are listed by their declared license.
+    // memchr has only source and markup files named like a license, qrcode-generator only a license
+    // inside its own node_modules: neither has a license text, so both are listed by their declared
+    // license, sorted by that expression.
     let fallback: Vec<(&str, Vec<String>)> = groups
         .unlicensed
         .iter()
@@ -299,15 +301,12 @@ fn missing_license_file_falls_back_to_spdx() {
         .collect();
     assert_eq!(
         fallback,
-        [(
-            "MIT",
-            vec![
-                "libmimalloc-sys@0.1.49".to_string(),
-                "qrcode-generator@2.0.4".to_string()
-            ]
-        )]
+        [
+            ("MIT", vec!["qrcode-generator@2.0.4".to_string()]),
+            ("Unlicense OR MIT", vec!["memchr@2.8.3".to_string()]),
+        ]
     );
-    for name in ["libmimalloc-sys", "qrcode-generator"] {
+    for name in ["memchr", "qrcode-generator"] {
         assert!(
             groups
                 .texts
@@ -315,18 +314,39 @@ fn missing_license_file_falls_back_to_spdx() {
                 .all(|g| g.packages.iter().all(|p| p.name != name))
         );
     }
-    assert!(
-        groups
-            .texts
-            .iter()
-            .all(|g| !g.text.contains("belongs to a dependency") && !g.text.contains("never used"))
-    );
+    for marker in ["never read", "never used", "never shipped"] {
+        assert!(groups.texts.iter().all(|g| !g.text.contains(marker)));
+    }
 
     let notices = generate(&fixture.sources(false), FINGERPRINT).expect("generate");
     assert!(notices.contains("## Packages without a license file\n"));
     assert!(notices.contains(
-        "### MIT\n\n- `libmimalloc-sys@0.1.49` (Rust)\n- `qrcode-generator@2.0.4` (npm)\n"
+        "### MIT\n\n- `qrcode-generator@2.0.4` (npm)\n\n### Unlicense OR MIT\n\n- `memchr@2.8.3` (Rust)\n"
     ));
+}
+
+#[test]
+fn vendored_code_license_is_listed_next_to_the_top_level_license() {
+    let fixture = Fixture::new();
+    let groups = fixture.groups();
+    // libmimalloc-sys has its own license at the top level, shared with the wrapper crate mimalloc...
+    assert_eq!(
+        labels(&group_of(&groups, &mit("Octavian Oncescu")).packages),
+        ["libmimalloc-sys@0.1.49", "mimalloc@0.1.52"]
+    );
+    // ...and, four levels down, the license of the C library it vendors (v2 and v3: one text).
+    assert_eq!(
+        labels(&group_of(&groups, &mit("Microsoft Corporation, Daan Leijen")).packages),
+        ["libmimalloc-sys@0.1.49"]
+    );
+    assert!(
+        groups
+            .unlicensed
+            .iter()
+            .all(|(_, packages)| packages.iter().all(|p| p.name != "libmimalloc-sys"))
+    );
+    let notices = generate(&fixture.sources(false), FINGERPRINT).expect("generate");
+    assert!(notices.contains("Copyright (c) Microsoft Corporation, Daan Leijen\n"));
 }
 
 #[test]

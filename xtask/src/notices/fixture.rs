@@ -10,8 +10,6 @@ pub(super) const NPM_FIXTURE: &str =
     include_str!("../../tests/fixtures/notices/pnpm-licenses.json");
 pub(super) const FINGERPRINT: &str = "Cargo.lock=aa app/src-tauri/Cargo.lock=bb pnpm-lock.yaml=cc";
 pub(super) const APACHE: &str = "Apache License\nVersion 2.0, January 2004\n";
-pub(super) const UNLICENSE: &str =
-    "This is free and unencumbered software released into the public domain.\n";
 pub(super) const SPDX: &str = "SPDXVersion: SPDX-2.1\nDataLicense: CC0-1.0\n";
 pub(super) const OFL: &str = "Copyright (c) 2021, Kil Hyung-jin, with Reserved Font Name Pretendard.\n\nSIL OPEN FONT LICENSE Version 1.1 - 26 February 2007\n";
 
@@ -48,11 +46,19 @@ impl Fixture {
             // The same texts with CRLF and trailing blanks: they must land in the same groups.
             ("itoa-1.0.18/LICENSE-MIT", tolnay.replace('\n', " \r\n")),
             ("itoa-1.0.18/LICENSE-APACHE", APACHE.replace('\n', "\r\n")),
-            ("memchr-2.8.3/COPYING", UNLICENSE.to_string()),
-            ("memchr-2.8.3/LICENSE-MIT", mit("Andrew Gallant")),
+            // No license text anywhere: UNLICENSE does not start like a license file, and source code
+            // or markup named after a license is not license text.
             (
                 "memchr-2.8.3/UNLICENSE",
-                "no license prefix, never read".into(),
+                "never read: no license prefix".into(),
+            ),
+            (
+                "memchr-2.8.3/src/license.rs",
+                "never read: source code".into(),
+            ),
+            (
+                "memchr-2.8.3/docs/license.html",
+                "never read: markup".into(),
             ),
             ("tokio-1.53.2/LICENSE", mit("Tokio Contributors")),
             ("socket2-0.6.5/LICENSE-APACHE", APACHE.to_string()),
@@ -63,10 +69,19 @@ impl Fixture {
                 mit("Microsoft Corporation"),
             ),
             ("mimalloc-0.1.52/LICENSE", mit("Octavian Oncescu")),
-            // Three levels below the root: too deep to be taken as the package's license.
+            // The real crate has both: its own license at the top level and, four levels down, the
+            // license of the C library it vendors (v2 and v3 carry the same text). Each must be listed.
             (
-                "libmimalloc-sys-0.1.49/c_src/mimalloc/LICENSE",
+                "libmimalloc-sys-0.1.49/LICENSE.txt",
                 mit("Octavian Oncescu"),
+            ),
+            (
+                "libmimalloc-sys-0.1.49/c_src/mimalloc/v2/LICENSE",
+                mit("Microsoft Corporation, Daan Leijen"),
+            ),
+            (
+                "libmimalloc-sys-0.1.49/c_src/mimalloc/v3/LICENSE",
+                mit("Microsoft Corporation, Daan Leijen"),
             ),
             // Never shipped: a build dependency, dev dependencies and a crate only xtask uses.
             (

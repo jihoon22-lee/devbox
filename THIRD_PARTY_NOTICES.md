@@ -9,7 +9,7 @@ Packages by source:
 - Rust crates of the Windows app (`app/src-tauri/Cargo.lock`, `x86_64-pc-windows-msvc`): 292
 - npm packages of the app UI (`pnpm-lock.yaml`, production): 255
 
-767 distinct packages in total: a package that two sources share counts once. Packages that ship the same license text are listed together under one copy of it, and a package with several license files is listed under each.
+767 distinct packages in total: a package that two sources share counts once. Packages that ship the same license text are listed together under one copy of it, and a package with several license files, for example the license of code it vendors, is listed under each.
 
 ## License texts
 
@@ -4432,6 +4432,39 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
+### License text 40fa3316ba32
+
+Packages (1):
+
+- `libsqlite3-sys@0.30.1` (Rust, MIT)
+
+```text
+Copyright (c) 2008-2020 Zetetic LLC
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the ZETETIC LLC nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY ZETETIC LLC ''AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL ZETETIC LLC BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 ### License text 42d8a095dbff
 
 Packages (2):
@@ -8569,8 +8602,9 @@ SOFTWARE.
 
 ### License text 6ac8711fb340
 
-Packages (1):
+Packages (2):
 
+- `tracing-core@0.1.36` (Rust, MIT)
 - `zip@8.6.0` (Rust, MIT)
 
 ```text
@@ -9846,6 +9880,38 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
+### License text 740a360e4d9c
+
+Packages (1):
+
+- `ring@0.17.14` (Rust, Apache-2.0 AND ISC)
+
+```text
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHOR OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
 ### License text 74144f6a3a6c
 
 Packages (31):
@@ -10154,7 +10220,7 @@ Packages (2):
 
 ### License text 769f80b5bcb4
 
-Packages (116):
+Packages (117):
 
 - `ahash@0.8.12` (Rust, MIT OR Apache-2.0)
 - `atomic-waker@1.1.2` (Rust, Apache-2.0 OR MIT)
@@ -10230,6 +10296,7 @@ Packages (116):
 - `regex-automata@0.4.18` (Rust, MIT OR Apache-2.0)
 - `regex-syntax@0.8.11` (Rust, MIT OR Apache-2.0)
 - `regex@1.13.1` (Rust, MIT OR Apache-2.0)
+- `ring@0.17.14` (Rust, Apache-2.0 AND ISC)
 - `rustix@1.1.5` (Rust, Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 - `rustls-native-certs@0.8.5` (Rust, Apache-2.0 OR ISC OR MIT)
 - `rustls@0.23.46` (Rust, Apache-2.0 OR ISC OR MIT)
@@ -12754,6 +12821,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+### License text 8cd07c535061
+
+Packages (1):
+
+- `dompurify@3.4.17` (npm, (MPL-2.0 OR Apache-2.0))
+
+```text
+/*! @license DOMPurify VERSION | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/VERSION/LICENSE */
+```
+
 ### License text 8d1456802c2f
 
 Packages (2):
@@ -13494,6 +13571,20 @@ version(s), and exceptions or additional permissions here}.”
 > look for such a notice.
 >
 > You may add additional accurate notices of copyright ownership.
+```
+
+### License text 9393adf7bfad
+
+Packages (1):
+
+- `chrono-tz@0.10.4` (Rust, MIT OR Apache-2.0)
+
+```text
+Unless specified below, all files in the tz code and data (including
+this LICENSE file) are in the public domain.
+
+If the files date.c, newstrftime.3, and strftime.c are present, they
+contain material derived from BSD and use the BSD 3-clause license.
 ```
 
 ### License text 94228ab8fc0b
@@ -20881,6 +20972,72 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
+### License text ea8df489e83b
+
+Packages (1):
+
+- `regex-syntax@0.8.11` (Rust, MIT OR Apache-2.0)
+
+```text
+UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
+
+Unicode Data Files include all data files under the directories
+http://www.unicode.org/Public/, http://www.unicode.org/reports/,
+http://www.unicode.org/cldr/data/, http://source.icu-project.org/repos/icu/, and
+http://www.unicode.org/utility/trac/browser/.
+
+Unicode Data Files do not include PDF online code charts under the
+directory http://www.unicode.org/Public/.
+
+Software includes any source code published in the Unicode Standard
+or under the directories
+http://www.unicode.org/Public/, http://www.unicode.org/reports/,
+http://www.unicode.org/cldr/data/, http://source.icu-project.org/repos/icu/, and
+http://www.unicode.org/utility/trac/browser/.
+
+NOTICE TO USER: Carefully read the following legal agreement.
+BY DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING UNICODE INC.'S
+DATA FILES ("DATA FILES"), AND/OR SOFTWARE ("SOFTWARE"),
+YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT.
+IF YOU DO NOT AGREE, DO NOT DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE
+THE DATA FILES OR SOFTWARE.
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2018 Unicode, Inc. All rights reserved.
+Distributed under the Terms of Use in http://www.unicode.org/copyright.html.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Unicode data files and any associated documentation
+(the "Data Files") or Unicode software and any associated documentation
+(the "Software") to deal in the Data Files or Software
+without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, and/or sell copies of
+the Data Files or Software, and to permit persons to whom the Data Files
+or Software are furnished to do so, provided that either
+(a) this copyright and permission notice appear with all copies
+of the Data Files or Software, or
+(b) this copyright and permission notice appear in associated
+Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT OF THIRD PARTY RIGHTS.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
+NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
+DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder
+shall not be used in advertising or otherwise to promote the sale,
+use or other dealings in these Data Files or Software without prior
+written authorization of the copyright holder.
+```
+
 ### License text eac3911cc3d4
 
 Packages (2):
@@ -21051,6 +21208,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+### License text f1954d2b51ee
+
+Packages (1):
+
+- `ring@0.17.14` (Rust, Apache-2.0 AND ISC)
+
+```text
+The Apache License, Version 2.0 (Apache-2.0)
+
+Copyright 2015-2020 the fiat-crypto authors (see the AUTHORS file)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
 ### License text f2459c4b106b
 
 Packages (1):
@@ -21090,6 +21271,36 @@ Packages (2):
 
 ```text
 Copyright (c) 2018-2019 dirs-rs contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### License text f29afc734a99
+
+Packages (1):
+
+- `libmimalloc-sys@0.1.49` (Rust, MIT)
+
+```text
+MIT License
+
+Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -21544,7 +21755,7 @@ THE SOFTWARE.
 
 ## Packages without a license file
 
-These packages publish no license file (`LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) at their top level or in a folder directly below it. The license they declare is listed instead.
+These packages publish no license file (`LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) anywhere in the package. The license they declare is listed instead.
 
 ### BSD-3-Clause
 
