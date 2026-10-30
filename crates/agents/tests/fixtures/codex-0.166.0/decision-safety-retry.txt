@@ -1,0 +1,17 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/chatwidget/safety_buffering.rs가 그리는 응답이 늦어질 때 저절로 여는 빠른 모델로 다시 하기 선택 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__safety_buffering_retry_prompt.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 소스 파일은 다른 곳이 바뀌었지만 이 화면의 제목·선택지 문구는 세 태그에서 같다(grep). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+  Giving this request a little extra thought
+  If you'd rather not wait, retry with a faster model. It may be less capable
+  of handling complex requests.
+
+
+› 1. Retry with a faster model
+  2. Dismiss and keep waiting
+  3. Learn more
+
+  No action is required. Codex will keep waiting, and this menu will close when
+  the response is ready.

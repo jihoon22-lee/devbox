@@ -25,8 +25,9 @@ pub struct ToolProfile {
     pub waiting_patterns: Vec<String>,
 }
 
-/// 기본 프로필. Codex 승인 화면은 0.162.1 S0a 관찰, 폴더 신뢰 화면은 0.164.0 실제 녹화, hook 검토 화면은
-/// 0.164.0 실행 파일 문자열(실제 화면 아님)이다. 다른 UI 유형·버전은 실제 fixture로 보강한다.
+/// 기본 프로필. Codex 승인·결정 화면은 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면
+/// 아님), 폴더 신뢰 화면은 0.164.0 실제 녹화, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면 아님)이다.
+/// 다른 UI 유형·버전은 실제 fixture로 보강한다.
 pub fn builtin() -> Vec<ToolProfile> {
     vec![
         ToolProfile {
@@ -42,7 +43,34 @@ pub fn builtin() -> Vec<ToolProfile> {
             command: "codex".into(),
             hooks: Hooks::Codex,
             waiting_patterns: vec![
-                r"(?im)^\s*3\. No, and tell Codex what to do differently \(esc\)\s*\n\s*Press enter to confirm or esc to cancel\s*$".into(),
+                // Prompts that stop Codex until the user decides. Evidence:
+                // crates/agents/tests/fixtures/codex-0.166.0/ (소스 기반: drawn by the TUI source of
+                // rust-v0.164.0 to rust-v0.166.0, the same in all three; not real captures). The
+                // question and long choices can leave the matched tail, so each pattern reads rows
+                // only such a prompt draws, whatever their number, order or cursor, and none
+                // needs the footer. Matching too much only holds sends back while it shows.
+                // 1. The footer of a choice list Enter would answer: the approvals of commands,
+                //    network hosts, permissions, edits and terminal input, MCP requests and user
+                //    verification, whatever their choices are called.
+                r"(?m)^\s*Press \S+ to confirm\b".into(),
+                // 2. Their choices.
+                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)".into(),
+                // 3. MCP forms and the model's questions: tool-call choices, and the footers.
+                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Allow|Allow for this session|Always allow|Deny|Cancel)\s+(?:Run the tool and|Allow this request and|Decline this request and continue|Cancel this (?:tool call|request))".into(),
+                r"(?m)\bto submit(?: all| answer)? \| |\bto submit answer\b".into(),
+                // 4. An MCP URL request: "tab / ↑ ↓ move · enter select · esc close".
+                r"(?m)\bmove · \S+ select\b".into(),
+                // 5. Choices at start: an update (Enter runs the installer), a new model, the
+                //    folder to resume in, an archived conversation, a background server that does
+                //    not fit.
+                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Update now \(runs |Skip until next version|Try new model|Use existing model|(?:Use|Always use) (?:session|current) directory|Unarchive and |Run without daemon this time|Restart with these settings)".into(),
+                // 6. Lists Codex opens on its own when a turn ends or stalls: implement the plan
+                //    (Enter starts coding), switch model near a rate limit, turn on Daybreak after a
+                //    refusal, a chat paused as a precaution, retry with a faster model.
+                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, implement this plan|Yes, clear context and implement|No, stay in Plan mode|Keep current model|Enable Daybreak|Acknowledge findings|Resume another chat|Retry with a faster model|Dismiss and keep waiting|Stop and retry)".into(),
+                // 7. The footer of any other list ("enter select · esc back"): Enter answers the
+                //    list, whoever opened it.
+                r"(?m)^\s*\S+ (?:select|choose|confirm|open) · \S+ back\s*$".into(),
                 // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
                 // capture). Codex wraps the question to the terminal width, which can push it out of
                 // the matched tail, so this anchors on the first choice row, always among the last rows.

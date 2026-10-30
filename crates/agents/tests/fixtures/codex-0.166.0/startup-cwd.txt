@@ -1,0 +1,17 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/cwd_prompt.rs가 그리는 이어서 열 때 작업 폴더 선택 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/snapshots/codex_tui__cwd_prompt__tests__cwd_prompt_modal.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 두 파일 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Working directory · resume
+  Session = latest cwd recorded in the resumed session
+  Current = your current working directory
+
+› 1. Use session directory (/Users/example/session)
+  2. Use current directory (/Users/example/current)
+  3. Always use session directory
+  4. Always use current directory
+
+  enter continue · esc use session · ⌃c quit

@@ -9,7 +9,7 @@ fn snapshot() -> Snapshot {
     }
 }
 #[test]
-fn observed_codex_wrapped_choices_match_only_current_ordered_footer() {
+fn observed_codex_0_162_1_approval_with_wrapped_choices_is_waiting() {
     let builtin = profile::builtin();
     let patterns =
         profile::compiled(&crate::AgentProfiles { items: builtin }).expect("owned fixture");
@@ -26,7 +26,10 @@ fn observed_codex_wrapped_choices_match_only_current_ordered_footer() {
         patterns,
         &format!("{tail}\nworking\n1\n2\n3\n4\n5\n6")
     ));
-    assert!(!matches_waiting(
+    // Since S7-13 no row order or footer is required: a choice row marks the prompt on its
+    // own, wherever the footer is (Codex 0.164 forms have 2 to 5 choices, see
+    // watch_prompt_tests.rs). This swapped pair used to be refused for its order.
+    assert!(matches_waiting(
         patterns,
         "Press enter to confirm or esc to cancel\n3. No, and tell Codex what to do differently (esc)"
     ));
@@ -293,3 +296,6 @@ fn pi_screens_after_the_trust_decision_are_not_waiting() {
         }
     }
 }
+
+#[path = "watch_prompt_tests.rs"]
+mod prompts;

@@ -1,0 +1,18 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/user_verification.rs가 그리는 사용자 확인 후 승인 요청(openai/userVerification) 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/snapshots/codex_tui__bottom_pane__user_verification__tests__user_verification_prompt.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 두 파일 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Production deployment needs your approval.
+
+  Server: deployments
+
+  Approve deploying the reviewed release?
+
+
+› 1. Verify and approve (y)
+  2. Cancel this request (c)
+
+  Press enter to confirm or esc to cancel

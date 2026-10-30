@@ -10,6 +10,8 @@ use support::TestDaemon;
 const TRUST: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/trust.txt");
 const HOOKS: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/hooks-review.txt");
 const WORKING: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/working.txt");
+const NETWORK: &str =
+    include_str!("../../agents/tests/fixtures/codex-0.166.0/approval-network.txt");
 const PI_TRUST: &str = include_str!("../../agents/tests/fixtures/pi-1.3.0/trust.txt");
 const TEXT: &str = "owned-pane-check-instruction";
 
@@ -147,6 +149,12 @@ async fn a_send_cannot_answer_the_codex_trust_prompt_before_the_watcher_reports_
 #[tokio::test]
 async fn a_send_cannot_answer_the_codex_hooks_review_prompt_before_the_watcher_reports_it() {
     prompt_refuses_the_send(HOOKS, "hooks won't run", None).await;
+}
+
+#[tokio::test]
+async fn a_send_cannot_answer_a_codex_network_approval_before_the_watcher_reports_it() {
+    // Enter would pick "Yes, just this once" and let the command reach the host.
+    prompt_refuses_the_send(NETWORK, "esc to cancel", None).await;
 }
 
 #[tokio::test]

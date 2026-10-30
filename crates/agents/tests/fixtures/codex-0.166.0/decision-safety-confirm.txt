@@ -1,0 +1,17 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/chatwidget/safety_buffering.rs가 그리는 지금 시도를 멈추고 다시 할지 묻는 확인 창(대화 위에 겹쳐 그려 왼쪽에 아래 글자가 비친다) 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__safety_buffering_retry_confirmation.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 소스 파일은 다른 곳이 바뀌었지만 이 화면의 제목·선택지 문구는 세 태그에서 같다(grep). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+• Wo  Stop this attempt and retry?
+  └                                                                         ry
+      This will stop the current attempt and retry in a new thread. Any     .
+      file changes or other actions already taken will remain.
+
+› As  Your message will be sent again using Faster Model, which may be
+      less capable on complex tasks.
+  gp
+
+    › 1. Keep waiting
+      2. Stop and retry
