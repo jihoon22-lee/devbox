@@ -199,6 +199,31 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 ## 5. 계획과 달라진 점
 
+### S7 rc.2 보강의 계획 대비 편차 (2026-10-29 · S7-0–S7-O 반영 · S7-11 문서 정리)
+
+- **S7-1 hook 산출물 게시:** 계획은 "0600 create_new"였다. 실제로는 같은 폴더의 0600 임시 파일에 쓰고 `sync_all`한 뒤 `persist_noclobber`로 원자적으로 게시한다(`crates/agents/src/artifacts.rs`, `4b3f31e9`, Ruling 8). 예전 `bin/devbox-<sha>`는 지우지 않는다. rc.1 hook이 해시 경로를 가리키기 때문이다(`app/src-tauri/src/core/deploy.rs`의 설치 스크립트는 새 파일을 더하고 `devbox` 링크만 바꾼다).
+- **S7-3에서 바뀐 것**(`app/src-tauri/src/core/log_tail.rs`):
+  - `AppError`가 없어 `IpcError`를 쓴다.
+  - wsl.exe는 `--exec`로 셸 해석 없이 journalctl을 부른다.
+  - 시험은 `core::log_tail`에 있다.
+  - 200줄을 넘는 요청은 200줄로 줄인다.
+  - 64 KiB를 넘으면 최신 쪽을 남긴다.
+- **S7-6 시험 이름:** `timeout_or_relative_result_returns_none`이 `a_late_shell_is_abandoned_after_five_seconds`가 됐다. 상대 경로 경우는 `reads_only_the_value_between_markers`의 `answer()` 시험으로 옮겼다. 계획 529행을 정정했다.
+- **S7-6 셸 조회 cache(Ruling 21·22):** 셸이 답한 결과만 5분 동안 cache한다. 환경 점검은 매번 셸을 다시 실행한다. 셸이 답하지 않으면 그 작업은 서비스 PATH 결과로 시작하고 다음 작업 시작 때 셸에 다시 묻는다(`crates/agents/src/command_path.rs`). 계획 502·877행의 "5분에 한 번"을 정정했다.
+- **S7-7 PATH 규칙(Ruling 23·26):** 계획 488행은 해석한 폴더를 PATH 앞에 둔다고 했다. 실제로는 공유 폴더(`/usr/local/sbin`·`/usr/local/bin`·`/usr/sbin`·`/usr/bin`·`/sbin`·`/bin`·`/snap/bin`·`/home/linuxbrew/.linuxbrew/bin`)를 PATH 끝에 붙이고 절대 경로로 실행한다(`crates/agents/src/start.rs`, `572a0051`). 계획 488·511·530행을 정정했다.
+- **S7-8 pi 재개(Ruling 30):** pi를 재개할 때 지시문을 다시 보내지 않는다. pi 세션 id가 없으면 지시 없이 새 pi 세션을 연다(`crates/agents/src/resume.rs`, `52239b8b`). 다른 도구는 S1부터 원래 지시로 새로 시작한다.
+- **S7-9 tmux 확장 키:** 이미 떠 있는 소유 tmux 서버에도 데몬 시작 때 적용한다(`Tmux::apply_extended_keys`, `43a860b5`). 계획 858행의 "pi의 Shift+Enter에는 3.5 이상"은 pi 1.3.0 `docs/tmux.md`에 맞춰 정정했다(3.2–3.4는 `modifyOtherKeys`).
+- **S7-10 I1(Ruling 31·34–36):** 영구 보류 대신 holder가 사라진 것이 확실할 때 reader를 닫는다(`681a7b82`·`64d14394`·`68bb9e82`). 남는 위험이 하나 있다. 같은 Windows 로그온 세션에서 holder만 강제 종료되고 bootstrap도 끝났는데 고아 프로세스가 도는 경우 reader가 일찍 닫힌다(rc.1의 I1 결과). 실제 동작은 S7-14 W1 전까지 미검증이며, W1을 실행하지 않으면 1.0.0을 막는 NOT_RUN이다.
+- **O1a 빠른 길(Ruling 40·41):** 자동 시작은 설치가 바뀌었거나 데몬이 그 실행 파일로 돌고 있지 않을 때만 다시 시작한다. [다시 설정]과 [다시 시도]는 항상 다시 시작한다(`2074c4dd`, `app/src-tauri/src/core/deploy.rs` `setup_args`).
+- **O6a 브랜치 이름(Ruling 42):** `checked_slug` 규칙만 받는다. 소문자·숫자·하이픈, 40바이트까지이며 `git check-ref-format`보다 좁은 부분집합이다(`crates/agents/src/plan.rs`, `9b41181c`).
+- **O3:** `load()`의 객체 동일성 대신 draft 번호로 비교한다. 저장하는 동안 고친 내용의 digest를 지키기 위해서다(`c56ecbeb`).
+- **S7-11 문서에서 brief·기록과 달리 쓴 것**(코드가 사실):
+  - accept 채널 MCP 등록에 `--instance accept`를 더했다. 인자도 `DEVBOX_INSTANCE`도 없으면 accept 실행 파일도 prod 인스턴스에 연결한다(`crates/core/src/paths.rs` `Instance::from_env`, `crates/cli/src/main.rs`의 전역 `--instance`).
+  - 활동 기록 규칙 저장 거절 코드는 Ruling 11에 적은 `activity.config_invalid`가 아니라 기존 `activity.config_unavailable`이다(`crates/activity/src/dto.rs`). 비밀은 `secrets.config_invalid`다.
+  - Codex 상태는 hook이 아니라 `notify`(턴 완료 후보)와 rollout 기록, 그리고 화면 패턴으로 안다(`crates/agents/src/start.rs`·`tracker.rs`·`profile.rs`). README 표는 코드대로 적었다.
+  - 경로 찾기 안내는 brief의 "5분에 한 번"이 아니라 위 S7-6 동작으로 적었다. pi의 Shift+Enter 요구 버전도 위 S7-9대로 적었다.
+  - 컨트롤러 추가 사실 두 가지를 README에 넣었다: rc.1에서 시작한 Claude 작업은 rc.1 hook 설정(PostToolUse·PostToolUseFailure·PermissionDenied 없음)을 계속 써서 승인 뒤에도 그 턴이 끝날 때까지 보내기가 막히고 재개하면 새 설정을 쓴다(`git show b6e5eba8:crates/agents/src/hooks.rs`, `crates/agents/src/hooks.rs`·`approvals.rs`·`send.rs`·`resume.rs`). 에이전트 작업은 로그인 셸 환경의 허용 목록만 받는다(`crates/cli/src/setup.rs` `ALLOWED`).
+
 ### S6 머지·RC1 prerelease·정리 인계 (2026-10-27 · #648·#649 squash 머지·`v1.0.0-rc.1` prerelease 공개·RC Windows 수용 NOT_RUN·정리 완료)
 
 - **S6 PR #648:** 최종 head `9849c8b2`. 자동 리뷰는 NOT_RUN(비활성화, 2026-10-26 사용자 결정 “독립 검토로 대체”)이고 하네스 독립 검토가 1/3회째에 APPROVE(Critical·Important 0, Minor4는 PR 본문 표현 → 본문 수정; 보고 `devbox-verification/s6-6b/pr648-review-r1.md`)했다. 필수 PR CI 모두 SUCCESS, SC7용 raw: Frontend (pnpm) 5m30s·Rust (Cargo workspace) 11m52s·e2e 10m08s·linux-bin 12m45s·**Rust (Windows) 27m24s**(PR CI≤15분 목표 미달, PASS 아님). 사용자 squash 승인(2026-10-26 세션, “Rust 통과하면 자체 검토 후 … 알아서 squash merge”) 뒤 2026-10-26T13:39:21Z `8b53484b`로 squash 머지했고 tree는 9849c8b2와 같다. main CI·Windows@8b53484b SUCCESS. 수용 결과(A6 FAIL·A3/A5 NOT_RUN 등)는 아래 S6-6b 항목 그대로이며 머지로 PASS가 되지 않는다.
@@ -1679,3 +1704,62 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 - S3 Windows 파일명 충돌 수정 최종 독립 검토 APPROVE: `s3-task12/windows-case-collision/review.txt`. helper 바이트 동일·호출부 import만 변경, 관련 시험6·typecheck·완료 Biome451 PASS. 실패 run40070649576은 보존하며 새 SHA 산출물로 수용한다.
 
 - S3 Windows cfg Clippy 수정 최종 독립 검토 APPROVE: `s3-task12/windows-cfg-clippy/review.txt`. 두 let-chain의 단락 평가 보존, MSVC all-target strict Clippy·Biome451 PASS. run40071793138 실패 보존, 이후 검증부터 child-only XDG/DBus 환경으로 memory_enforced=true 확인(호스트 서비스 변경 없음).
+
+### S7 rc.2 후속 목록 (2026-10-29 · S7-11 정리 · 1.0 이후)
+
+S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]** 표시가 없는 항목은 1.0.0을 막지 않는다. 줄 수는 2026-10-29 `wc -l` 값이다.
+
+- **에이전트·하네스**
+  - Claude
+    - 보내기 경로에서 tmux 실패나 pane 캡처 실패가 다음 행동 없는 internal 오류로 끝난다(S7-5).
+    - Idle 상태 Codex pane의 마지막 6줄에 패턴과 같은 목록 줄이 있으면 후속 보내기가 거절된다(낮은 확률).
+  - opencode(S7-7)
+    - cost를 합산하지 않는다.
+    - subagent 토큰이 빠진다.
+    - 사용자 `OPENCODE_CONFIG_CONTENT`를 데몬 환경 값으로 대체한다.
+    - idle로 요청을 버릴 때 남은 요청의 문구가 갱신되지 않는다.
+    - 루트가 idle이 된 뒤에도 자식 요청이 남는다.
+    - 빈 PATH 항목을 다루는 방식이 다르다.
+  - pi(S7-8)
+    - `hooks='pi'` 사용자 정의 프로필에는 기본 pane 패턴이 없다.
+    - 사용자 `sessionDir`의 사용량을 집계하지 않는다.
+    - Codex 시작 창 경합이 있다.
+    - `~/.pi/agent` lock은 pi 자체 동작이다.
+    - "확장 없음" 배너가 잘못 뜨는 경우가 두 가지다: ready 보고 유실, setup 90초 초과.
+    - pane 패턴은 pi 1.3.0 문구를 기준으로 한다.
+  - 재개
+    - session id가 없는 Claude·Codex·opencode 작업은 원래 지시로 새로 시작한다(S1부터의 동작). 최종 검토에서 다시 본다.
+  - 브랜치
+    - 이름이 정확히 `agent`인 브랜치가 있으면 모든 `agent/…` 이름이 막힌다. 준비 단계에서 실패하고 데이터 손실은 없다.
+    - 기본값과 같은 문자를 입력하면 '고침'으로 보는데, 이를 고정하는 시험이 없다.
+    - 칸을 비웠을 때의 설명 문구가 없다.
+- **폐기·정리(O5)**
+  - `discard_check`의 `git status`는 UTF-8과 8 MiB로 제한된다.
+  - 시험 probe와 Cap 레지스트리가 프로세스 전역이다.
+  - `discard_snapshot.rs`가 583/600줄이라 probe를 분리해야 한다.
+  - 64 MiB 목록을 읽을 때 일시 메모리가 커진다.
+  - walk 사유가 `DiscardSnapshotUnavailable`로만 보인다.
+- **Windows(S7-10, O1b)**
+  - holder·bootstrap 신원 doc 주석을 보강한다.
+  - `bootstrap_identity` probe 검증을 고정하는 단언이 필요하다.
+  - JSON `null` holder 필드는 Legacy로 처리된다(도달 불가).
+  - 늦은 저장 실패 알림에 이름이 없다(O3).
+- **앱·설정**
+  - setup이 파일을 기록한 뒤 재시작 전에 끊기면 다음 자동 시작에서 재시작을 생략한다. [다시 설정]으로 복구한다.
+  - `api.redaction_failed`(matcher)의 다음 행동이 약하다.
+  - 새 설치에서 [나중에]를 누르면 `settings.json`에 기본값 `autostart:true`가 기록된다(지금은 무해).
+  - `redactKnownTokenPatterns`의 `sk_`·`sk-` 접두에 왼쪽 경계가 없어 과하게 가린다. 데몬 쪽과 함께 고친다.
+  - 노트가 꺼진 동안 search.notes 색인이 낡는다(S7-2).
+  - `SupportBundle`의 `notes_disabled` 줄에 다음 행동이 없다.
+- **시험·크기**
+  - 시험이 `/tmp/tmux-<uid>`에 socket 파일을 남긴다.
+  - 거의 꽉 찬 파일: `crates/agents/src/command_path.rs` 542/600, `app/src/features/terminal/TerminalView.test.tsx` 588/600, `crates/cli/tests/agents.rs` 591/600, `crates/agents/src/discard_snapshot.rs` 583/600.
+  - tmux.conf와 `apply_extended_keys`에 옵션이 중복되고, format 줄을 묶는 시험이 없다.
+- **1.0.0 공개 전 실기(S7-14) — 실행하지 않으면 NOT_RUN이며 PASS가 아니다**
+  - **I1 W1 [차단]:** holder 실기, AMSI/ASR, 로그아웃·재부팅 뒤 해제. 실행하지 않으면 1.0.0을 막는다.
+  - K1: pi에서 Shift+Enter, WebView2, tmux 3.4 호스트.
+  - H3: 실제 pi·opencode.
+  - P1: 실제 Claude 승인 상관.
+  - O1a·O1b: Windows 실제 재시작, 연결 유지.
+  - O6b: `mark_autostart_asked` 실행.
+  - S7-11 문서의 "S7-14에서 확인" 자리: 서명 없는 설치 파일의 Windows 경고 문구, Windows 앱 제거 뒤 남는 항목, MCP 등록 명령의 설치본 재확인.

@@ -485,7 +485,7 @@ PR 리뷰(사용자 결정 2026-10-27):
 **파일**
 - 만들기 `crates/agents/src/command_path.rs`
 - 수정 `crates/agents/src/prepare.rs`: 자원을 만들기 전에 해석한다.
-- 수정 `crates/agents/src/start.rs`: 해석한 폴더를 PATH 앞에 둔다.
+- 수정 `crates/agents/src/start.rs`: 해석한 폴더를 PATH에 넣는다. 공유 폴더(`/usr/bin` 등)면 PATH 끝에 붙이고 절대 경로로 실행하며, 그 밖의 폴더는 앞에 둔다(S7-11 정정, Ruling 23·26).
 - 수정 `crates/tools/src/doctor/probe.rs:41-49`: `AgentTool { Claude, Codex, Opencode, Pi }`.
 - 수정 `crates/tools/src/doctor/checks.rs:110`: 목록에 `opencode`, `pi`를 추가한다.
 - 수정 `crates/tools/src/doctor/extended.rs:29-35, :114-139`: 전역 hook 경고를 지운다.
@@ -499,7 +499,7 @@ PR 리뷰(사용자 결정 2026-10-27):
 - `pub async fn resolve(program: &str, service_path: &OsStr, probe: &impl ShellProbe) -> Option<ResolvedCommand>`
   - `program`에 `/`가 있으면 그 파일만 확인한다.
   - 그 밖에는 대화형 셸을 먼저 찾고, 없으면 서비스 PATH(설정 env 파일)를 찾는다. 사용자가 터미널에서 쓰는 것과 같은 실행 파일을 쓰기 위해서다(지금 이 PC에서 Codex는 로그인 0.146.0, 대화형 0.164.0).
-  - 결과는 5분 동안 cache한다.
+  - 셸이 답한 결과만 5분 동안 cache한다. 셸이 답하지 않으면 그 호출에만 서비스 PATH 결과를 쓰고 다음 호출에서 셸에 다시 묻는다. 환경 점검은 cache를 읽지 않고 매번 셸을 실행한다(S7-11 정정, Ruling 21·22).
 - `pub trait ShellProbe`. 실제 구현은 아래 명령 하나를 실행한다.
   - 명령: `bash -ic 'printf "\036%s\036" "$(command -v -- "$1")"' devbox-probe <program>`
   - stdin은 `/dev/null`, stderr는 버린다. 5초 timeout, stdout 64 KiB cap.
@@ -508,7 +508,7 @@ PR 리뷰(사용자 결정 2026-10-27):
 - `Tmux::set_global_env(&self, key: &str, value: Option<&str>) -> Result<(), TerminalError>`
 
 **동작**
-- 시작 스크립트는 해석한 실행 파일의 폴더를 `export PATH=<폴더>:"$PATH"`로 앞에 둔다. `node` 같은 shebang 도구도 같은 폴더에서 찾게 하기 위해서다.
+- 시작 스크립트는 해석한 실행 파일의 폴더를 `export PATH=<폴더>:"$PATH"`로 앞에 둔다. `node` 같은 shebang 도구도 같은 폴더에서 찾게 하기 위해서다. 공유 폴더면 `export PATH="$PATH":<폴더>`로 끝에 붙이고 절대 경로로 실행한다(S7-11 정정).
 - 해석하지 못하면 worktree·branch를 만들기 전에 `agents.tool_missing { command }`로 끝난다.
   - 제목: "{command} 명령을 찾을 수 없습니다."
   - 다음 행동: "설정 → 환경 점검에서 설치 방법을 확인하세요."
@@ -526,8 +526,8 @@ PR 리뷰(사용자 결정 2026-10-27):
   - `command_path::prefers_the_interactive_shell_and_reports_both_sources`
   - `command_path::falls_back_to_the_service_path`
   - `command_path::reads_only_the_value_between_markers`: 앞뒤 잡음 출력 포함.
-  - `command_path::timeout_or_relative_result_returns_none`
-  - `start::resolved_tool_directory_is_prepended_to_path`
+  - `command_path::a_late_shell_is_abandoned_after_five_seconds`(계획 이름 `timeout_or_relative_result_returns_none`에서 바뀜. 상대 경로 경우는 `reads_only_the_value_between_markers`의 `answer()` 시험으로 옮김, S7-11 정정)
+  - `start::resolved_tool_directory_is_prepended_to_path`, 공유 폴더는 `start::a_cli_in_a_shared_folder_runs_by_its_path_with_the_folder_last`
   - `agents::start_with_a_missing_tool_fails_before_creating_a_worktree`: 오류 코드를 확인하고, branch와 worktree가 없어야 한다.
   - `checks_tests::reports_all_four_agent_tools_with_versions`
   - `checks_tests::low_opencode_or_pi_version_warns`
@@ -855,7 +855,7 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 - **상태:** 정식 1.0.0 준비 중이며 릴리스 후보는 `v1.0.0-rc.2`(prerelease)다. RC는 앱 업데이트가 꺼져 있어 다음 버전은 설치 파일로 직접 설치한다.
 - **요구 사항:**
   - Windows 11, systemd가 켜진 WSL2.
-  - tmux 3.2 이상. pi의 Shift+Enter에는 3.5 이상이 필요하다.
+  - tmux 3.2 이상. pi의 Shift+Enter는 3.5 이상에서 CSI-u로, 3.2–3.4에서 xterm `modifyOtherKeys`로 전달된다(pi 1.3.0 `docs/tmux.md`, S7-11 정정).
   - git. PR 기능은 gh 로그인이 필요하다.
   - 쓸 에이전트 CLI(claude·codex·opencode·pi)를 설치하고 로그인한다.
 - **설치:**
@@ -874,7 +874,7 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
   - vault는 Git으로 관리한다. devbox.db와 활동 기록은 PC별이다.
 - **제거:** Windows 앱 제거, [WSL 쪽 정리], 그 뒤 남는 경로.
 - **알려진 제한:** SC2 cold, SC7, NOT_RUN 요약. 자세한 내용은 PROGRESS를 가리킨다.
-- **경로 찾기 안내:** devbox는 도구 경로를 찾으려고 대화형 셸을 5분에 한 번까지 실행한다.
+- **경로 찾기 안내:** 셸이 답한 결과만 5분 동안 다시 쓰고, 환경 점검은 매번 셸을 실행한다. 셸이 답하지 않으면 그 작업은 서비스 PATH 결과로 시작하고 다음 작업 시작 때 셸에 다시 묻는다(S7-11 정정).
 
 `docs/config.md` 만들기
 - 대상: config.toml, config.local.toml, devbox.toml의 키, 병합 규칙.

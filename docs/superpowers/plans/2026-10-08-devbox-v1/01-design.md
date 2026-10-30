@@ -1,6 +1,6 @@
 # Devbox v1 설계 (설계 원장)
 
-- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](08-review-record.md)) · S0b 및 후속 #639 완료, S1 선행 정합화
+- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](08-review-record.md)) · S0b–S6 머지, `v1.0.0-rc.1` prerelease 공개 · S7(rc.2 보강) 진행 중이며 구현과 달라진 설명은 S7-11(2026-10-29)에서 정정 · 진행 상태의 원장은 [PROGRESS](PROGRESS.md)
 - 작성: 2026-10-07 · 기준 원격 `main@72ff50c7`(v0.9.0 공개본). 이 PC의 로컬 main은 그 위에 원격에 없는 커밋 2개(끝난 계획 정리·의존성 보안 업데이트)가 더 있다
 - 입력:
   - 본질 기준 전면 리뷰(2026-10-07). 결론은 이 문서 §0·§2·§3에 흡수했고, 원본 보고서(`~/projects/devbox-review-2026-10-07/`)는 2026-10-08에 지웠다.
@@ -96,12 +96,12 @@
 | 에이전트 | 작업 생성: 제목·도구 프로필·기준 브랜치 선택 → worktree(또는 "worktree 없이 현재 체크아웃에서") → 준비(`[agent] copy`·`setup`) → tmux 세션 → 도구 실행 + 초기 지시문 | 유지·강화 | `agent_hub` |
 | 에이전트 | 목록: 긴급순(입력 대기 → 실패 → 검토 대기 → 실행 중 → 준비 중 → 닫힘). 행마다 hook 메시지 한 줄, 경과 시간, CPU·메모리, 토큰 합계, 변경 파일 수, 기준 대비 뒤처짐 | 강화 | `agent_resources`, `agent_usage` |
 | 에이전트 | 격자 보기: 여러 에이전트 터미널을 읽기 전용으로 동시에(분리 창 가능) | 신규 | |
-| 에이전트 | 상태 감지: Claude Code hooks(`--settings`로 실행마다 주입, 사용자 설정은 건드리지 않음)·Codex `notify`(`-c`로 주입, 턴 완료만) → `devbox agent event` → 데몬. Codex의 입력 대기와 hook이 없는 도구는 tmux 출력 감지가 기본. `DEVBOX_AGENT_ID`가 없으면 hook은 아무것도 하지 않음 | 신규 | 화면 긁기 대신 공식 hook(PL-5) |
-| 에이전트 | 세션 ID 기록과 재개(`claude --resume <id>`, `codex resume <id>`). 지시문·이어서 지시 이력·토큰 합계·커밋 목록을 종료 시 DB에 고정 | 신규 | Claude transcript는 30일 뒤 삭제됨 |
+| 에이전트 | 상태 감지: 기본 도구 4종(Claude Code·Codex·opencode·pi). 연결은 작업 실행마다 주입하고 사용자 설정은 건드리지 않음. Claude Code hooks(`--settings`)·Codex `notify`(`-c`, 턴 완료 후보)와 rollout 기록·opencode 플러그인(`OPENCODE_CONFIG_CONTENT`, 권한 요청·질문)·pi 확장(`-e`, 준비 알림·폴더 신뢰 질문) → `devbox agent event` → 데몬. 승인·입력 대기 화면은 프로필의 `waitingPatterns`로 tmux 화면에서 알아봄. `DEVBOX_AGENT_ID`가 없으면 hook·플러그인·확장은 아무것도 하지 않음 | 신규 | 화면 긁기 대신 공식 hook(PL-5). 4종 연결은 S7-5·S7-7·S7-8 |
+| 에이전트 | 세션 ID 기록과 재개(`claude --resume <id>`, `codex resume <id>`, `opencode -s <id>`, `pi --session-id <id>`). id를 모르면 pi는 지시문 없이 새 세션을 열고 나머지는 처음 지시문으로 새로 시작. 지시문·이어서 지시 이력·토큰 합계·커밋 목록을 종료 시 DB에 고정 | 신규 | Claude transcript는 30일 뒤 삭제됨 |
 | 에이전트 | 검토: 변경(파일별 '봤음', 줄 인용으로 지시) · 커밋 · 실행(테스트) 탭 → 병합(merge·squash·rebase) · PR(gh) · 폐기 · 이어서 지시 | 강화 | Source 검토 흐름 |
 | 에이전트 | 기준 반영(rebase)과 뒤처짐 표시. 충돌 시 충돌 화면 또는 에이전트에게 해결 지시 | 신규 | |
 | 에이전트 | 정리: 병합·폐기 뒤 tmux 세션·worktree·로컬 브랜치 정리(기본 켬, teardown 명령 실행), 연결 없는 worktree·병합된 브랜치 정리 목록 | 유지 | `CleanupPanel` |
-| 에이전트 | 도구 프로필(이름 + 명령줄, 예: `claude --permission-mode plan`), 지시문 템플릿(`.devbox/prompts/*.md` + 변수 치환), 작업별 포트(`DEVBOX_PORT`부터 10개) | 신규 | |
+| 에이전트 | 도구 프로필(`[[agents.profiles]]`의 `id`·`label`·`command`·`hooks`·`waitingPatterns`, 예: 명령 `claude --permission-mode plan`, [설정 파일 안내](../../../config.md)), 지시문 템플릿(`.devbox/prompts/*.md` + 변수 치환), 작업별 포트(`DEVBOX_PORT`부터 10개) | 신규 | |
 | 에이전트 | Windows 알림: 입력 대기·턴 종료·실패. 작업 표시줄 오버레이 배지·창 깜빡임, 같은 작업 알림은 교체 | 신규 | |
 | 에이전트 | MCP 서버: 프로젝트·실행·로그·문제·노트 조회, 작업 실행·노트 추가(쓰기는 설정에서 켬) | 유지 | `apps/devbox-agent/src/mcp` |
 | 에이전트 | 넣지 않음: 달러 비용·한도 대시보드(llm-usage와 겹침), 동시 실행 상한·대기열(wsl-resource-guard와 겹침), transcript 전체 뷰어(스크롤백·재개로 충분) | — | FS-17 |
@@ -156,7 +156,7 @@
 | API 응답을 노트에 붙이기 | 단순화 | 초안 보관함·전달 기록은 폐기 |
 | 웹훅·모의 서버: 리스너(포트·LAN 허용), 실시간 수신 기록, 응답 규칙(경로·메서드·순서 응답), fixture 저장·재전송, chunked·100-continue·바이너리 | 유지 | `webhook-core` |
 | 변환 도구 21종(JSON 4, 인코딩 7, 시간 1, 텍스트 3, 보안 3, 정규식 1, 차이 1, JWT 1) + 자동 감지·도구 제안 + 최근 사용 도구. 명령 팔레트에서 클립보드 값으로 실행, 편집기·로그·터미널 선택을 변환 도구로 보내기 | 유지 | `api-studio-tools.json`, transforms, `selection_send` |
-| 개발 환경 점검: WSL·systemd·linger(권장)·WSL 유휴 종료 설정(`instanceIdleTimeout`·`vmIdleTimeout`)·tmux 버전·inotify 한도·잡아 둔 사용자 환경(PATH)·git·node·rust·docker·gh·claude·codex 버전과 인증 상태·hook 연결 상태. 관련 도구 설치(Windows: winget, WSL: 터미널 세션에서 명령 실행) | 유지 | `installation-tools` |
+| 개발 환경 점검: WSL·systemd·linger(권장)·WSL 유휴 종료 설정(`instanceIdleTimeout`·`vmIdleTimeout`)·tmux 버전·inotify 한도·잡아 둔 사용자 환경(PATH)·git·node·rust·docker·gh 버전과 gh 인증 상태·에이전트 CLI 4종(claude·codex·opencode·pi)의 경로·출처(대화형 셸·로그인 셸)·버전(devbox가 확인한 가장 낮은 버전보다 낮으면 경고)·claude·codex 인증 파일 존재·hook은 작업마다 연결함(전역 설정은 읽지 않음). 관련 도구 설치(Windows: winget, WSL: 터미널 세션에서 명령 실행) | 유지 | `installation-tools` |
 
 ### 2.5 공통
 
@@ -369,12 +369,13 @@ set -g allow-passthrough on
   - 데몬 송신기는 채널별 큐를 라운드로빈으로 돌리고, JSON 응답을 스트림보다 먼저 보낸다.
   - 입력 FIN은 입력만 닫고 남은 출력을 받을 수 있다. 클라이언트가 스트림을 폐기할 때는 `StreamClose{stream}`으로 해당 채널 소유 스트림만 취소·해제한다. 신용 대기 중인 생산자도 끝내되 다른 스트림과 RPC는 유지한다(S1 Task 1 누수 회귀 보정).
 - **메시지(JSON):**
-  - `Hello{version, client, instance}` → `Welcome{version, daemonId}`
+  - `Hello{version, protocol, client, instance}` → `Welcome{version, protocol, daemonId}`
   - `Request{id, method, params, clientRequestId?}` → `Response{id, result}` 또는 `Response{id, error, diagnosticId?}`
   - `Cancel{id}`
   - `Subscribe{id, topic, params}` → 응답 `{subId, rev}`, 이후 `Event{subId, rev, payload}` / `Resync{subId}` / `Unsubscribe{subId}`
   - 스트림은 `kind: stream` 메서드의 응답으로 `{streamId}`를 받아 연다. 데이터는 종류 1 프레임, 끝은 FIN으로 표시한다.
 - **버전:** 앱·데몬·CLI는 같은 빌드에서 나온다. `Hello` 버전이 다르면 앱이 데몬을 다시 배치한다. 호환 협상은 하지 않는다.
+  - 업데이트 전에 시작한 에이전트 도구 세션의 hook과 MCP 서버는 예전 실행 파일을 계속 쓴다. 그래서 `client`가 `cli`·`mcp`인 연결은 `protocol`만 같으면 버전이 달라도 받아들이고, `Welcome.version`에 클라이언트 버전을 그대로 돌려준다(rc.1의 `Client::connect`도 자기 버전이 돌아와야 연결한다). 앱·dev·test 연결은 지금처럼 같은 버전이어야 한다. 앱은 데몬 버전을 `system.info`로 읽는다(S7-1).
 
 ### 5.2 타입 계약과 생성
 
@@ -526,13 +527,14 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 | `~/.local/share/devbox/<i>/devbox.db`, `index.db` | §4.4 | PC별 |
 | `~/.local/share/devbox/<i>/runs/`, `api-history/`, `webhooks/`, `backups/`, `keys/` | 실행 로그, 본문, 백업, 봉인 키 | PC별 |
 | `~/.local/state/devbox/<i>/logs/` | 데몬 로그 | PC별 |
-| `~/.config/devbox/config.toml` | 공유할 설정: 단축키, 터미널·에이전트 도구 프로필, 비밀 이름 목록, 개인정보 규칙 | dotfiles로 공유 |
-| `~/.config/devbox/config.local.toml` | PC별 설정: 배포판, Windows 사본 폴더, PC 이름 | PC별 |
+| `~/.config/devbox/config.toml` | 공유할 설정: 프로젝트 폴더, 터미널·에이전트 도구 프로필, MCP 쓰기, 비밀 이름 목록, 노트·검색, 활동 기록 개인정보 규칙([설정 파일 안내](../../../config.md)) | dotfiles로 공유 |
+| `~/.config/devbox/config.local.toml` | PC별 설정: Windows 사본 폴더(`[windows]`는 이 파일에만), PC 이름 등 `config.toml` 값을 이 PC에서만 바꾸는 키 | PC별 |
 | `~/.config/devbox/api/` | 개인 API 컬렉션·환경(비밀은 참조만) | dotfiles로 공유 |
 | `<프로젝트>/.devbox/devbox.toml` | 작업·서비스·예약·시작 구성·에이전트 준비 | Git |
 | `<프로젝트>/.devbox/api/`, `.devbox/prompts/` | 프로젝트 API 컬렉션, 지시문 템플릿 | Git |
 | `~/notes`(설정 가능) | 노트 vault | Git |
 | `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\` | 창 상태, 앱 로그(7일) | PC별 |
+| `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\settings.json` | Windows 앱 설정: 배포판, 전역 단축키, 자동 시작, 활동 기록 동의·일시중지 | PC별 |
 
 - 설정은 파일이 원장이다. 화면에서 바꾸면 해당 파일에 쓴다. DB에는 화면 상태처럼 파일로 둘 필요가 없는 것만 둔다.
 - 앱에서 작업을 만들면 "프로젝트 파일에 저장"(기본)과 "이 PC에만 저장" 중 고른다. 같은 ID가 둘 다에 있으면 프로젝트 파일이 우선하고, 화면에 출처를 표시한다.
@@ -555,6 +557,7 @@ command = "pnpm dev --port $DEVBOX_PORT"
 restart = "on-failure"
 
 [[schedule]]
+id = "weekday-test"                 # 필수(S7-11 정정)
 task = "test"
 cron = "0 9 * * 1-5"
 missed = "skip"                   # 또는 "run-once"
@@ -929,12 +932,12 @@ agents = [{ tool = "claude", worktree = false }]
   4. 모든 창이 종료(열린 문서 저장 준비)를 승인하고 이전 앱 process 종료가 확인된 뒤 `/S`로 setup이 실행되고 앱이 다시 열린다. 실패·상태 불명은 다음 실행에서 표시하며 상태 불명은 자동 재시도하지 않는다.
   5. 새 앱이 데몬을 다시 배치한다(§4.6).
   - 서명 기반 Tauri updater는 쓰지 않는다(ADR 0016).
-  - 개발 빌드(`1.0.0-dev`)와 dev·accept 채널은 업데이트 확인을 끈다.
+  - 개발 빌드(`1.0.0-dev`)·릴리스 후보(`1.0.0-rc.N`)처럼 pre-release가 붙은 버전과 dev·accept 채널은 업데이트 확인을 끈다.
 - **자산 이름:** `devbox-<v>-setup.exe`. v0.9.0 업데이터가 찾는 `Devbox_{v}_x64-setup.exe`·`release-manifest.json`과 겹치지 않는다. v1.0.0 릴리스 노트에 "새 앱 수동 설치 → v0.9.0 수동 제거"를 적는다.
 - **제거:** NSIS 제거 프로그램이 Windows 쪽을 지운다. WSL 쪽 데이터는 남긴다. 앱 진단의 "WSL 쪽 정리" 버튼이 unit과 바이너리를 지운다.
 - **self-check:** `Devbox.exe --self-check`는 실행 여부와 내장 Linux 바이너리 버전 일치만 확인한다.
 - **릴리스:**
-  1. `v*` 태그를 push한다.
+  1. 주석 태그 `vX.Y.Z` 또는 `vX.Y.Z-rc.N`을 push한다. 워크플로는 `v*` 태그에서 시작하고 `scripts/release.py`가 다른 형식과 주석 없는 태그를 거절한다. `-rc.N`은 GitHub prerelease로 공개한다.
   2. 워크플로가 Linux 테스트·빌드 → Windows 빌드 → self-check → GitHub Release(setup 하나) 순으로 진행한다.
   - 문제가 있으면 다음 패치 버전을 낸다.
 - **개발:**
@@ -959,7 +962,7 @@ agents = [{ tool = "claude", worktree = false }]
 - **flaky 테스트:** 발견한 PR에서 고치거나 지운다. 재시도 래퍼·격리 목록은 만들지 않는다.
 - **PR 규칙:**
   - 하위 프로젝트 하나가 브랜치 하나·PR 하나다. 그 안의 작업 묶음은 로컬 기록·인계 지점이며 묶음별 push는 하지 않는다(00-roadmap §3).
-  - PR 전 하위 프로젝트 브랜치 전체를 별도 검토하고 PROGRESS에 결과를 남긴다. 최종 SHA의 `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 필수 CI와 자동 코드·보안 리뷰 완료를 확인한 뒤 squash 머지한다(00-roadmap §3).
+  - PR 전 하위 프로젝트 브랜치 전체를 별도 검토하고 PROGRESS에 결과를 남긴다. 최종 SHA의 `Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)` 필수 CI와 PR 리뷰 규칙(자동 리뷰 3회 상한, 꺼지면 독립 검토 1회)을 마친 뒤 squash 머지한다([CONVENTIONS §8](../../../../CONVENTIONS.md)).
   - 진행 상태의 유일한 원장은 PROGRESS.md다. PR과 각 계획 문서 머리의 "상태" 줄은 이에 맞춘다. 체크박스는 작업 보조일 뿐이다.
 - **에이전트 작업 규칙(새 AGENTS.md, S0b 첫 과제):**
   - 한 장 이내로 쓴다.
@@ -1019,7 +1022,7 @@ agents = [{ tool = "claude", worktree = false }]
 | R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | socket activation은 S0a 완료, shutdown 복귀·걸린 시간은 S6 공개 직전 사용자 확인(그전 미실행) |
 | R3 | `wsl.exe` stdio 브리지의 지연·처리량·바이너리 안전성 | `cat` echo 실측은 목표의 수십 배(p50 0.16ms, 77–93 MiB/s, 바이너리 일치). S0a에서는 실제 bridge + 데몬 경로로 한 번만 확인. 미달이면 WSL localhost TCP + 토큰으로 전환 | S0a |
 | R4 | Tauri Windows 빌드가 Windows에서만 가능 | 화면은 브라우저 + dev-gateway로 개발. 껍데기 변경은 드묾 | S0b |
-| R5 | Claude Code·Codex의 hook·인자·로그 형식 변경 | `agents/adapters/{claude,codex}`로 격리, hook이 없으면 tmux 출력 활동으로 대체 감지 | S0a·S1 |
+| R5 | 에이전트 CLI(Claude Code·Codex·opencode·pi)의 hook·인자·로그 형식 변경 | 도구별 연결을 `crates/agents/src/hooks.rs`(Claude 설정·Codex notify)·`plugin_event.rs`와 `crates/agents/assets/`(opencode 플러그인·pi 확장)·`profile.rs`의 `waitingPatterns`(화면 감지)에 모은다. 계약은 실제 녹화 fixture(`crates/agents/tests/fixtures/`)로 시험하고, 환경 점검이 devbox가 확인한 가장 낮은 버전보다 낮은 CLI를 경고한다 | S0a·S1·S7 |
 | R6 | 재구축이 기능 동등에 이르기 전에 멈춤 | 사용 빈도 순서. 각 S 끝의 빌드가 단독으로 쓸 만해야 함. **전환점:** S2 뒤 에이전트·실행·터미널의 선택적 조기 사용을 안내하되 기다리지 않음. 기능 완성 뒤 실사용이 기본 | 매 S |
 | R7 | WSL 안 LSP 메모리 | 지연 시작, 세션 0개부터 15분 유휴 종료, 메모리 표시 | S4 |
 | R8 | 다시 비대해짐 | SC8 예산 점검, "구조 먼저" 규칙 | 매 S |

@@ -2,15 +2,24 @@
 
 Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·돌리고·지켜보고·기록하는 개인 개발 허브.
 
-- 상태: v1.0.0 출시 준비 중. S0b–S6(마무리·출시: 설치·업데이트·릴리스 워크플로, 성공 기준 계측 도구, 사용 문서)이 main에 머지됐고, 릴리스 후보 [`v1.0.0-rc.1`](https://github.com/jihoon22-lee/devbox/releases/tag/v1.0.0-rc.1)을 prerelease로 공개했다(앱 안 자동 업데이트 없음, 정식 1.0.0은 수동 재설치). 정식 `v1.0.0` 릴리스와 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
+- 상태: 정식 1.0.0 준비 중이다. 릴리스 후보는 `v1.0.0-rc.2`이고 GitHub Release에 prerelease로 올린다. 릴리스 후보에서는 앱 업데이트가 꺼져 있으므로 다음 버전은 설치 파일을 받아 직접 설치한다. 정식 `v1.0.0` 릴리스와 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
 - 이전 소스: [v0.9.0 태그](https://github.com/jihoon22-lee/devbox/tree/v0.9.0). 공개 상태는 GitHub Release에서 확인한다.
 - 설계: [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md)
 - 진행 원장: [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)
 - 공통 규약: [CONVENTIONS](CONVENTIONS.md)
+- 설정 파일: [docs/config.md](docs/config.md) · 보안: [SECURITY.md](SECURITY.md)
+- 라이선스: MIT([LICENSE](LICENSE)). 함께 배포하는 서드파티 소프트웨어의 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다. 두 파일은 설치 폴더에도 들어간다.
+
+## 요구 사항
+
+- Windows 11과 systemd가 켜진 WSL2 배포판.
+- WSL의 tmux 3.2 이상. 더 낮으면 환경 점검이 실패로 표시한다. pi 1.3.0 문서 기준으로 pi의 Shift+Enter는 tmux 3.5 이상에서 CSI-u로, 3.2–3.4에서 xterm `modifyOtherKeys` 형식으로 전달된다. devbox는 자기 tmux 서버(`tmux -L devbox-prod`)에만 확장 키 옵션을 켜고, 사용자의 다른 tmux는 건드리지 않는다. 이 옵션은 WSL 쪽 devbox가 시작할 때 적용하므로, 그 전에 확장 키를 요청한 프로그램은 다시 시작할 때까지 Shift+Enter를 Enter로 받는다.
+- WSL의 git. PR 만들기에는 WSL의 GitHub CLI(`gh`) 로그인이 필요하다.
+- 쓸 에이전트 CLI(`claude`·`codex`·`opencode`·`pi`)를 WSL에 설치하고 각 CLI에서 로그인한다. 환경 점검은 devbox가 연결을 확인한 가장 낮은 버전보다 낮으면 경고한다: Claude Code 2.1.300, opencode 1.19.3, pi 1.3.0. Codex는 기준 버전이 없다.
 
 ## 설치와 첫 실행
 
-v1 설치 파일은 공개 릴리스의 `devbox-<버전>-setup.exe` 하나다(아직 공개 전). 사용자 단위 NSIS 설치라 관리자 권한이 필요 없다.
+설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)의 `devbox-<버전>-setup.exe` 하나다. 사용자 단위 NSIS 설치라 관리자 권한이 필요 없다. 받은 파일은 PowerShell `Get-FileHash`로 SHA-256 값을 구해 Release 자산의 SHA-256 digest와 같은지 확인한다. 설치 파일에는 코드 서명이 없다([ADR 0016](docs/adr/0016-personal-security-scope.md)). Windows가 실행 전에 보이는 경고와 그 문구는 S7-14에서 확인한다.
 
 1. systemd가 켜진 WSL2 배포판이 필요하다. WSL이 없거나 WSL1이거나 systemd가 꺼져 있으면 첫 화면이 실행할 명령을 안내하고 [다시 시도]를 보여 준다.
 2. 배포판이 여러 개면 "devbox가 쓸 WSL 배포판을 고르세요"에서 하나를 고른다.
@@ -19,18 +28,66 @@ v1 설치 파일은 공개 릴리스의 `devbox-<버전>-setup.exe` 하나다(�
 
 prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 `~/.config/devbox`, 로그는 `~/.local/state/devbox/prod/logs`에 있다. Windows 앱 데이터는 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox`다.
 
-## v0.9.0에서 옮기기
+## 에이전트 도구
 
-v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동 설치 → 정상 동작 확인 → v0.9.0 수동 제거**다.
+기본으로 쓸 수 있는 도구는 4종이다. devbox는 에이전트 작업을 시작할 때마다 hook·플러그인·확장을 명령 인자나 환경 변수로 붙인다. 사용자가 이미 쓰는 opencode 플러그인과 pi 확장도 그대로 읽힌다. 붙인 hook·플러그인·확장은 devbox 에이전트 작업 밖에서는 아무것도 하지 않는다. 다른 도구를 더하거나 명령을 바꾸려면 [설정 파일 안내](docs/config.md)의 `[[agents.profiles]]`를 쓴다.
 
-- v1(`io.github.jihoon22lee.devbox`)과 v0.9.0(`com.devbox.v08.*`, 설치 위치 `%LOCALAPPDATA%\DevboxSuite`)은 식별자가 달라 함께 설치될 수 있다. Windows 설정의 설치된 앱에서 버전 0.9.0 항목만 직접 제거하고 1.0.0 항목은 남긴다.
-- v0.9.0의 업데이트 기능은 v1 설치 파일 이름을 찾지 않으므로 v0.9.0이 v1로 저절로 바뀌지 않는다.
-- v0.9.0 제거가 그 데이터를 어떻게 처리하는지는 v1이 정하지 않는다. 남겨 둘 자료는 제거 전에 직접 백업한다.
-- v0.9.0 Knowledge의 활동 기록을 쓰고 있었다면 활동 기록 동의 화면 안내대로 한쪽만 켠다.
+| 도구 | 상태를 아는 방법 | 재개 | 토큰 합계 |
+|---|---|---|---|
+| Claude Code | 작업마다 붙이는 hook(`--settings`). 승인 대기는 도구 이름과 입력으로 짝지어, 같은 호출의 완료·실패·거절이 와야 끝난다 | `claude --resume <Claude 세션 id>` | `~/.claude/projects`의 그 세션 기록 |
+| Codex | 작업마다 붙이는 `notify`(`-c`, 턴 완료 후보)와 `~/.codex/sessions`의 rollout 기록. 승인·폴더 신뢰·hook 검토 화면은 터미널 화면으로 알아본다 | `codex resume <Codex 세션 id>` | rollout 기록 |
+| opencode | 작업마다 붙이는 devbox 플러그인(`OPENCODE_CONFIG_CONTENT`). 권한 요청과 질문도 알린다 | `opencode -s <opencode 세션 id>` | `opencode export`. 하위 에이전트 토큰은 빠진다 |
+| pi | 작업마다 붙이는 devbox 확장(`-e`). 확장이 준비됐다고 알릴 때까지 보내기를 미루고, 알림이 없으면 도구 시작 30초 뒤부터 보낸다. 폴더 신뢰 질문도 알아본다 | `pi --session-id <pi 세션 id>` | pi 세션 파일(기본 `~/.pi/agent/sessions` 아래). pi 설정의 `sessionDir`은 읽지 않는다 |
+
+- 토큰 합계는 입력·출력·캐시 읽기·캐시 쓰기 토큰이다. 비용은 어느 도구도 더하지 않는다.
+- 재개할 때 도구의 세션 id를 모르면 pi는 지시문 없이 새 pi 세션을 연다. Claude Code·Codex·opencode는 처음 지시문으로 새로 시작한다.
+- 에이전트 작업은 로그인 셸 환경 가운데 허용 목록(`PATH`·`LANG`·`LC_*`·`NVM_DIR`·`CARGO_HOME`·`PNPM_HOME`·`TZ` 등)만 받는다. 셸에서 설정한 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`·`OPENCODE_CONFIG_DIR`·`PI_CODING_AGENT_DIR`·`XDG_CONFIG_HOME` 같은 설정 위치 변수는 전달되지 않으므로 도구는 기본 설정 위치를 쓴다.
+- rc.1에서 시작한 Claude Code 작업은 rc.2를 설치한 뒤에도 rc.1의 hook 설정을 쓴다. 이 설정에는 PostToolUse·PostToolUseFailure·PermissionDenied hook이 없어, 터미널에서 승인한 뒤에도 그 턴이 끝날 때까지 보내기가 "에이전트가 선택을 기다리고 있습니다."로 막힌다. 작업을 재개하면 새 hook 설정으로 다시 시작한다.
+
+### 도구 경로 찾기
+
+- 에이전트 작업을 시작할 때 도구 명령의 첫 단어를 대화형 셸(`bash -ic`)에 먼저 묻고, 셸이 찾지 못하면 로그인 셸 PATH(설정 때 기록한 환경 파일)에서 찾는다. 대화형 셸의 출력은 경로 한 줄만 쓰고 기록하지 않는다.
+- 둘 다 찾지 못하면 작업 폴더를 만들기 전에 "<명령> 명령을 찾을 수 없습니다."로 끝난다. 설치했다면 설정 → 앱 진단의 [셸 환경 다시 읽기]를 누른다.
+- 셸이 답한 결과만 5분 동안 다시 쓴다. 셸이 5초 안에 답하지 않으면 그 작업은 로그인 셸 PATH에서 찾은 도구로 시작하고, 다음 작업을 시작할 때 셸에 다시 묻는다.
+- 설정 → 앱 진단의 환경 점검은 매번 셸에 다시 묻고, 셸이 답한 결과를 다음 작업 시작에 쓴다. 셸이 답하지 않으면 그 줄에는 로그인 셸 PATH에서 찾은 도구가 보인다.
+- 도구가 공유 폴더(`/usr/local/sbin`·`/usr/local/bin`·`/usr/sbin`·`/usr/bin`·`/sbin`·`/bin`·`/snap/bin`·`/home/linuxbrew/.linuxbrew/bin`)에 있으면 절대 경로로 실행하고 그 폴더를 PATH 끝에 붙인다. 다른 폴더에 있으면 그 폴더를 PATH 앞에 두고 이름으로 실행한다. 환경 점검의 버전 확인도 같은 규칙을 따른다.
+
+## MCP
+
+`devbox mcp`는 에이전트 도구가 프로젝트·에이전트 작업·실행·로그·문제·노트를 조회하는 MCP stdio 서버다. 쓰기 도구(`devbox_agent_send`·`devbox_run_task`·`devbox_note_add`)는 `config.toml`의 `[mcp] write = true`일 때만 켜진다. `devbox mcp`는 시작할 때 설정을 한 번 읽으므로, 바꾼 뒤에는 MCP를 쓰는 도구를 다시 시작한다.
+
+아래 등록 명령은 각 도구의 사용자 설정을 고친다. 괄호 안은 이 문서가 문법을 확인한 도구 버전이다. S7-14 전에 설치본에서 다시 확인한다.
+
+- Claude Code(2.1.308, `claude mcp add --help`): `claude mcp add -s user devbox -- ~/.local/share/devbox/bin/devbox mcp`
+- Codex(0.164.0·0.165.0, `codex mcp add --help`): `codex mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`
+- opencode(1.19.3): `opencode mcp add`에는 로컬 명령을 넘기는 옵션이 없다. `~/.config/opencode/opencode.json`에 `mcp` 키를 더한다. `<사용자>`는 WSL 사용자 이름이다.
+
+  ```json
+  {
+    "mcp": {
+      "devbox": {
+        "type": "local",
+        "command": ["/home/<사용자>/.local/share/devbox/bin/devbox", "mcp"],
+        "enabled": true
+      }
+    }
+  }
+  ```
+
+- pi(1.3.0, `docs/mcp.md`): `pi mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`. 사용자 수준(`~/.pi/agent/mcp.json`)에 등록된다. 이미 열린 pi에서는 `/reload`를 실행한다. `pi mcp list`로 연결을 확인할 수 있다.
+
+accept 채널의 실행 파일은 `~/.local/share/devbox-accept/bin/devbox`이고 채널 인자가 필요하다: `~/.local/share/devbox-accept/bin/devbox --instance accept mcp`. 인자도 `DEVBOX_INSTANCE`도 없으면 prod 채널에 연결한다.
+
+## 백업과 다른 PC로 옮기기
+
+- 비밀: 설정 → 비밀의 [복구 문자열 보기]로 복구 문자열을 안전한 곳에 보관한다. 비밀 값은 이 PC의 `devbox.db`에 암호화해 두고, 그 키는 Windows DPAPI(현재 사용자)로 봉인한다. 키를 풀 수 없으면 [복구 문자열 입력]으로 되살리거나 비밀 값을 다시 입력한다.
+- 설정: `~/.config/devbox/config.toml`은 dotfiles로 관리할 수 있다. 같은 폴더의 `config.local.toml`은 PC별 설정이라 넣지 않는다. 빈 파일 `.config.toml.lock`은 `config.toml` 동시 쓰기 잠금이므로 지우지 말고, 그 폴더를 Git으로 관리하면 ignore에 넣는다.
+- 노트: vault(기본 `~/notes`)는 Git으로 관리한다.
+- `~/.local/share/devbox/prod/devbox.db`(비밀 값·활동 기록 등)는 PC별 데이터다.
 
 ## 앱 업데이트
 
-설정 → 정보 → 앱 업데이트에서 한다. 공개 업데이트는 prod 채널의 정식 버전(`x.y.z`)에서만 켜진다. dev·accept 채널과 개발 버전(예: `1.0.0-dev`)에서는 꺼져 있다.
+설정 → 정보 → 앱 업데이트에서 한다. 공개 업데이트는 prod 채널의 정식 버전(`x.y.z`)에서만 켜진다. dev·accept 채널, 개발 버전(예: `1.0.0-dev`)과 릴리스 후보(예: `1.0.0-rc.2`)에서는 꺼져 있다.
 
 - 확인: 앱이 24시간에 최대 한 번 자동으로 확인하며 [새 버전 확인]으로 직접 확인할 수도 있다. 이 저장소의 최신 정식 Release와 그 안의 `devbox-<버전>-setup.exe` 하나만 받아들인다.
 - 다운로드: [업데이트 다운로드]를 눌러야 시작하고 [다운로드 취소]로 멈춘다. 파일은 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\updates` 아래에 받고, 크기와 SHA-256 확인을 마친 뒤에만 "업데이트 파일 준비 완료"로 표시한다. 내려받기만으로는 설치하지 않는다.
@@ -41,9 +98,37 @@ v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동
 - 실패: 설치나 재실행에 실패하면 다음 실행 때 앱 업데이트에 원인을 표시한다. [새 버전 확인]으로 다시 확인한다. 새 앱이 다시 열리지 않으면 시작 메뉴에서 Devbox를 연다. "업데이트 설치 상태를 확인할 수 없습니다"가 보이면 앱은 자동으로 다시 시도하거나 파일을 지우지 않는다. 설치 프로그램이 끝났는지 확인한 뒤 앱을 다시 시작한다.
 - 예전 Windows 사본: `~/.config/devbox/config.local.toml`의 `[windows] root` 아래 예전 `<root>\<프로젝트 이름>` 사본은 다시 쓰지도, 옮기거나 지우지도 않는다. 현재 사본은 `<root>\.devbox-v1\` 아래에 따로 만든다. 예전 사본이 필요 없으면 직접 정리한다.
 
+## v0.9.0에서 옮기기
+
+v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동 설치 → 정상 동작 확인 → v0.9.0 수동 제거**다.
+
+- v1(`io.github.jihoon22lee.devbox`)과 v0.9.0(`com.devbox.v08.*`, 설치 위치 `%LOCALAPPDATA%\DevboxSuite`)은 식별자가 달라 함께 설치될 수 있다. Windows 설정의 설치된 앱에서 버전 0.9.0 항목만 직접 제거하고 1.0.0 항목은 남긴다.
+- v0.9.0의 업데이트 기능은 v1 설치 파일 이름을 찾지 않으므로 v0.9.0이 v1로 저절로 바뀌지 않는다.
+- v0.9.0 제거가 그 데이터를 어떻게 처리하는지는 v1이 정하지 않는다. 남겨 둘 자료는 제거 전에 직접 백업한다.
+- v0.9.0 Knowledge의 활동 기록을 쓰고 있었다면 활동 기록 동의 화면 안내대로 한쪽만 켠다.
+
+## 제거
+
+1. 앱의 설정 → 앱 진단에서 [WSL 쪽 정리]를 누른다. 이 채널의 터미널 세션을 끝내고 WSL 서비스와 실행 파일을 지운다. 데이터·설정과 다른 채널은 남는다.
+2. Windows 설정의 설치된 앱에서 Devbox를 제거한다. S6 수용에서는 accept 채널을 조용히 제거한 뒤 레지스트리 값 `HKCU\Software\github\Devbox Accept`(설치 폴더 기억)가 남는 것을 봤다. 그 밖에 Windows에 남는 항목은 S7-14에서 확인한다.
+3. WSL에는 설정(`~/.config/devbox`), 데이터(`~/.local/share/devbox/prod`), 로그(`~/.local/state/devbox/prod/logs`), 노트 vault(기본 `~/notes`)가 남는다. 필요 없으면 직접 지운다.
+
+## 알려진 제한
+
+원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §5·§8에 있다. 실행하지 않은 실기 확인은 PASS로 적지 않는다.
+
+- SC2: 설치 직후 첫 시작(WSL 실행 중)에서 첫 데이터 표시까지 9036ms·6093ms(S6 accept 설치본 raw)로 목표 3초를 넘었다. 반복·warm 측정은 아직 없다. 전역 단축키 → 명령 팔레트 300ms 쪽(A3)은 실행하지 않았다(NOT_RUN).
+- SC7: 필수 PR CI의 Rust (Windows) job이 27m24s(#648)·17m47s(#649)로 목표 15분을 넘었다.
+- Windows 사본 보호(I1): Windows 작업은 프로젝트의 Windows 사본에서 실행되고, 그 실행이 남긴 프로세스가 도는 동안 사본을 바꾸지 않도록 지킨다. rc.2는 이 보호를 숨은 powershell.exe 감시 프로세스(holder)로 늘렸다. holder가 "비었다"고 알리거나 holder가 사라진 것이 확실할 때(재부팅·로그아웃) 보호를 푼다. 실행을 시작한 프로세스가 끝난 뒤 holder만 강제로 끝나고 남은 프로세스가 계속 돌면 보호가 일찍 풀린다(rc.1과 같은 결과). 업그레이드 때 이미 돌던 rc.1 실행은 rc.1 규칙을 따른다. Windows 실행마다 holder가 하나 더 뜨며 그 시작 비용은 아직 재지 않았다. 원본 저장소는 바뀌지 않는다. 실제 동작은 S7-14 W1에서 확인하며, W1을 실행하지 않으면 1.0.0을 막는다.
+- 지난 수용에서 남은 결과: A6(accept 조용한 제거 직후의 제거 등록 확인)은 FAIL을 그대로 둔다. A5(설치본의 지원 번들 가림과 accept 업데이트 화면)와 RC1 Windows 설치·실행 수용은 NOT_RUN이다. RC → 1.0.0 수동 설치와 릴리스 게시의 정식 버전 경로는 아직 실행하지 않았다. R1·R2(WSL 유휴 유지, `wsl --shutdown` 뒤 복귀)는 공개 직전 사용자 확인으로 남아 있다.
+- 실기 확인 전(NOT_RUN): pi의 Shift+Enter와 tmux 3.4 호스트(K1), 실제 pi·opencode 연결(H3), 실제 Claude 승인 짝짓기(P1), Windows의 실제 재시작과 연결 유지(O1a·O1b), 설치 경고 문구와 제거 뒤 남는 항목. 모두 S7-14에서 확인한다.
+- 앱 자동 시작 때 설정이 파일을 쓴 뒤 다시 시작하기 전에 끊기면 다음 자동 시작도 다시 시작하지 않는다. [다시 설정]으로 복구한다.
+- Codex는 rollout 기록의 끝 8 MiB만 읽는다. 한 턴의 기록이 8 MiB를 넘으면 그 턴의 시작이 읽는 범위 밖에 있어 다음 턴까지 추적하지 못한다.
+
 ## 문제 해결
 
 - 연결 화면의 안내(WSL 없음·WSL1·systemd 꺼짐·WSL 쪽 설치 실패·데몬 연결 실패)를 따른 뒤 [다시 시도]한다.
+- 설정 파일에 오류가 있으면 앱의 경고 배너가 파일과 영역을 알려 준다. 고친 뒤 [다시 설정]을 누른다([설정 파일 안내](docs/config.md)).
 - 설정 → 앱 진단에서 데몬 상태·로그 위치·점검 결과를 본다. [다시 설정]은 내장 WSL 실행 파일을 다시 배치하고 이 채널의 데몬을 다시 시작한다. [WSL 쪽 정리]는 이 채널의 터미널 세션을 끝내고 WSL 서비스와 실행 파일을 지우며 데이터·설정과 다른 채널은 남긴다.
 - "Devbox를 시작하지 않았습니다" 안내 후 앱이 열리지 않으면, 이전 업데이트 설치가 끝났는지 확인하지 못한 상태다. 업데이트 설치 프로그램이 실행 중이면 끝날 때까지 기다린다. 실행 중이 아닌데도 계속 이 안내가 나오면 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\updates`의 `install-`로 시작하는 폴더만 지우고 다시 시작한다(accept 채널은 `io.github.jihoon22lee.devbox.accept`). 같은 위치의 다른 파일은 지우지 않는다.
 - 진단 ID: 예상하지 못한 오류 화면의 [진단 복사]로 `devbox 진단 ID: …`를 복사한다. 같은 ID가 데몬 로그에 남는다.
@@ -68,8 +153,5 @@ WSL 바이너리를 빌드하고 소유한 Windows 작업 폴더에서 Tauri를 
 push한 브랜치의 Windows CI 설치 파일을 `bash scripts/dogfood.sh [브랜치] [--channel accept]`로 받는다. 정확한 원격 커밋·실행·채널·파일 해시를 확인하고
 Windows Downloads 아래 새 폴더에 저장하며, 설치는 자동 실행하지 않는다.
 성공 기준 SC2·SC6·SC10 측정 절차는 [수용 계측 안내](app/acceptance/README.md)를 따른다.
-
-Claude Code MCP 등록 예시(prod 채널): `claude mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`.
-설정 폴더(`~/.config/devbox`, accept는 `~/.config/devbox-accept`)의 빈 파일 `.config.toml.lock`은 `config.toml` 동시 쓰기 잠금이므로 지우지 말고, 그 폴더를 dotfiles로 Git 관리하면 ignore에 넣는다.
 
 필수 도구·상세 명령·검증 범위는 [앱 개발 안내](app/README.md)를 따른다.
