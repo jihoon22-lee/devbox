@@ -19,7 +19,7 @@ Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·
 
 ## 설치와 첫 실행
 
-설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)의 `devbox-<버전>-setup.exe` 하나다. 사용자 단위 NSIS 설치라 관리자 권한이 필요 없다. 받은 파일은 PowerShell `Get-FileHash`로 SHA-256 값을 구해 Release 자산의 SHA-256 digest와 같은지 확인한다. 설치 파일에는 코드 서명이 없다([ADR 0016](docs/adr/0016-personal-security-scope.md)). Windows가 실행 전에 보이는 경고와 그 문구는 S7-14에서 확인한다.
+설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)의 `devbox-<버전>-setup.exe` 하나다. 사용자 단위 NSIS 설치라 관리자 권한이 필요 없다. 받은 폴더의 PowerShell에서 `Get-FileHash .\devbox-<버전>-setup.exe`(기본 SHA256)를 실행해 나온 `Hash`를 Release 자산의 digest(`sha256:` 뒤 값)와 비교한다. `Get-FileHash`는 대문자로, Release는 소문자로 보이므로 대소문자는 무시한다. 설치 파일에는 코드 서명이 없어([ADR 0016](docs/adr/0016-personal-security-scope.md)) 실행할 때 Windows SmartScreen 경고가 날 수 있다. 실제로 어떤 경고와 문구가 보이는지는 아직 확인하지 않았다.
 
 1. systemd가 켜진 WSL2 배포판이 필요하다. WSL이 없거나 WSL1이거나 systemd가 꺼져 있으면 첫 화면이 실행할 명령을 안내하고 [다시 시도]를 보여 준다.
 2. 배포판이 여러 개면 "devbox가 쓸 WSL 배포판을 고르세요"에서 하나를 고른다.
@@ -30,7 +30,7 @@ prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 
 
 ## 에이전트 도구
 
-기본으로 쓸 수 있는 도구는 4종이다. devbox는 에이전트 작업을 시작할 때마다 hook·플러그인·확장을 명령 인자나 환경 변수로 붙인다. 사용자가 이미 쓰는 opencode 플러그인과 pi 확장도 그대로 읽힌다. 붙인 hook·플러그인·확장은 devbox 에이전트 작업 밖에서는 아무것도 하지 않는다. 다른 도구를 더하거나 명령을 바꾸려면 [설정 파일 안내](docs/config.md)의 `[[agents.profiles]]`를 쓴다.
+기본으로 쓸 수 있는 도구는 4종이다. devbox는 에이전트 작업을 시작할 때마다 hook·플러그인·확장을 명령 인자나 환경 변수로 붙인다. opencode 플러그인과 pi 확장은 사용자가 이미 쓰는 것을 대신하지 않고 함께 읽히도록 붙인다. 실제 도구에서 함께 동작하는지는 아직 확인하지 않았다. 붙인 hook·플러그인·확장은 devbox 에이전트 작업 밖에서는 아무것도 하지 않는다. 다른 도구를 더하거나 명령을 바꾸려면 [설정 파일 안내](docs/config.md)의 `[[agents.profiles]]`를 쓴다.
 
 | 도구 | 상태를 아는 방법 | 재개 | 토큰 합계 |
 |---|---|---|---|
@@ -41,7 +41,7 @@ prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 
 
 - 토큰 합계는 입력·출력·캐시 읽기·캐시 쓰기 토큰이다. 비용은 어느 도구도 더하지 않는다.
 - 재개할 때 도구의 세션 id를 모르면 pi는 지시문 없이 새 pi 세션을 연다. Claude Code·Codex·opencode는 처음 지시문으로 새로 시작한다.
-- 에이전트 작업은 로그인 셸 환경 가운데 허용 목록(`PATH`·`LANG`·`LC_*`·`NVM_DIR`·`CARGO_HOME`·`PNPM_HOME`·`TZ` 등)만 받는다. 셸에서 설정한 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`·`OPENCODE_CONFIG_DIR`·`PI_CODING_AGENT_DIR`·`XDG_CONFIG_HOME` 같은 설정 위치 변수는 전달되지 않으므로 도구는 기본 설정 위치를 쓴다.
+- 에이전트 작업은 로그인 셸 환경 가운데 허용 목록(`PATH`·`LANG`·`LC_*`·`NVM_DIR`·`CARGO_HOME`·`PNPM_HOME`·`TZ` 등)만 받는다. 셸에서 설정한 `ANTHROPIC_API_KEY`·`OPENAI_API_KEY` 같은 API 키와 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`·`OPENCODE_CONFIG_DIR`·`PI_CODING_AGENT_DIR` 같은 설정 위치 변수는 넘기지 않으므로, 도구는 각 CLI의 로그인과 기본 설정 위치를 쓴다. `HOME`과 `XDG_CONFIG_HOME` 같은 XDG 폴더 변수는 devbox 서비스 설정이 정한 값이다. 앱이 WSL 쪽을 설정할 때는 셸 설정 파일을 읽지 않으므로 보통 기본 위치(`~/.config` 등)다.
 - rc.1에서 시작한 Claude Code 작업은 rc.2를 설치한 뒤에도 rc.1의 hook 설정을 쓴다. 이 설정에는 PostToolUse·PostToolUseFailure·PermissionDenied hook이 없어, 터미널에서 승인한 뒤에도 그 턴이 끝날 때까지 보내기가 "에이전트가 선택을 기다리고 있습니다."로 막힌다. 작업을 재개하면 새 hook 설정으로 다시 시작한다.
 
 ### 도구 경로 찾기
@@ -56,7 +56,7 @@ prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 
 
 `devbox mcp`는 에이전트 도구가 프로젝트·에이전트 작업·실행·로그·문제·노트를 조회하는 MCP stdio 서버다. 쓰기 도구(`devbox_agent_send`·`devbox_run_task`·`devbox_note_add`)는 `config.toml`의 `[mcp] write = true`일 때만 켜진다. `devbox mcp`는 시작할 때 설정을 한 번 읽으므로, 바꾼 뒤에는 MCP를 쓰는 도구를 다시 시작한다.
 
-아래 등록 명령은 각 도구의 사용자 설정을 고친다. 괄호 안은 이 문서가 문법을 확인한 도구 버전이다. S7-14 전에 설치본에서 다시 확인한다.
+아래 등록 명령은 각 도구의 사용자 설정을 고친다. 괄호 안은 이 문서가 문법을 확인한 도구 버전이다. 설치본으로는 아직 확인하지 않았다.
 
 - Claude Code(2.1.308, `claude mcp add --help`): `claude mcp add -s user devbox -- ~/.local/share/devbox/bin/devbox mcp`
 - Codex(0.164.0·0.165.0, `codex mcp add --help`): `codex mcp add devbox -- ~/.local/share/devbox/bin/devbox mcp`
@@ -80,8 +80,8 @@ accept 채널의 실행 파일은 `~/.local/share/devbox-accept/bin/devbox`이�
 
 ## 백업과 다른 PC로 옮기기
 
-- 비밀: 설정 → 비밀의 [복구 문자열 보기]로 복구 문자열을 안전한 곳에 보관한다. 비밀 값은 이 PC의 `devbox.db`에 암호화해 두고, 그 키는 Windows DPAPI(현재 사용자)로 봉인한다. 키를 풀 수 없으면 [복구 문자열 입력]으로 되살리거나 비밀 값을 다시 입력한다.
-- 설정: `~/.config/devbox/config.toml`은 dotfiles로 관리할 수 있다. 같은 폴더의 `config.local.toml`은 PC별 설정이라 넣지 않는다. 빈 파일 `.config.toml.lock`은 `config.toml` 동시 쓰기 잠금이므로 지우지 말고, 그 폴더를 Git으로 관리하면 ignore에 넣는다.
+- 비밀: 설정 → 비밀의 [복구 문자열 보기]로 복구 문자열을 안전한 곳에 보관한다. 비밀 값은 이 PC의 `devbox.db`에 암호화해 두고, 그 키는 Windows DPAPI(현재 사용자)로 봉인한다. 키를 풀 수 없으면 [복구 문자열 입력]으로 되살리거나 비밀 값을 다시 입력한다. 복구 문자열은 그 키를 쓰는 `devbox.db`에서만 받아들이고(키 id 비교) 다른 `devbox.db`에서는 거절한다. 그래서 새 PC에서는 비밀 이름이 `config.toml`로 따라와도 값은 다시 입력한다.
+- 설정: `config.toml`을 여러 PC에서 함께 쓰려면 파일을 복사하거나 `~/.config/devbox` 폴더를 Git으로 관리한다. 심볼릭 링크는 쓰지 않는다. `config.toml`이 링크면 앱에서 비밀 값과 활동 기록 규칙을 저장하지 못하고, `~/.config/devbox`나 그 위 폴더가 링크면 WSL 쪽 설정이 실패한다([설정 파일 안내](docs/config.md)). 폴더를 Git으로 관리하면 PC별 설정 `config.local.toml`, 동시 쓰기 잠금 `.config.toml.lock`(지우지 않는다), devbox가 만드는 `prod/` 같은 하위 폴더를 ignore에 넣는다.
 - 노트: vault(기본 `~/notes`)는 Git으로 관리한다.
 - `~/.local/share/devbox/prod/devbox.db`(비밀 값·활동 기록 등)는 PC별 데이터다.
 
@@ -110,20 +110,17 @@ v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동
 ## 제거
 
 1. 앱의 설정 → 앱 진단에서 [WSL 쪽 정리]를 누른다. 이 채널의 터미널 세션을 끝내고 WSL 서비스와 실행 파일을 지운다. 데이터·설정과 다른 채널은 남는다.
-2. Windows 설정의 설치된 앱에서 Devbox를 제거한다. S6 수용에서는 accept 채널을 조용히 제거한 뒤 레지스트리 값 `HKCU\Software\github\Devbox Accept`(설치 폴더 기억)가 남는 것을 봤다. 그 밖에 Windows에 남는 항목은 S7-14에서 확인한다.
-3. WSL에는 설정(`~/.config/devbox`), 데이터(`~/.local/share/devbox/prod`), 로그(`~/.local/state/devbox/prod/logs`), 노트 vault(기본 `~/notes`)가 남는다. 필요 없으면 직접 지운다.
+2. Windows 설정의 설치된 앱에서 Devbox를 제거한다. accept 채널을 조용히 제거한 수용 시험에서는 레지스트리 값 `HKCU\Software\github\Devbox Accept`(설치 폴더 기억)가 남았다. 그 밖에 Windows에 남는 항목은 아직 확인하지 않았다.
+3. WSL에는 devbox가 쓰는 설정(`~/.config/devbox`), 데이터(`~/.local/share/devbox/prod`), 로그(`~/.local/state/devbox/prod/logs`) 폴더가 남는다. 필요 없으면 직접 지운다. 노트 vault(기본 `~/notes`)는 devbox 폴더가 아니라 사용자의 노트 파일이므로 제거와 상관없이 그대로 남는다.
 
 ## 알려진 제한
 
-원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §5·§8에 있다. 실행하지 않은 실기 확인은 PASS로 적지 않는다.
-
-- SC2: 설치 직후 첫 시작(WSL 실행 중)에서 첫 데이터 표시까지 9036ms·6093ms(S6 accept 설치본 raw)로 목표 3초를 넘었다. 반복·warm 측정은 아직 없다. 전역 단축키 → 명령 팔레트 300ms 쪽(A3)은 실행하지 않았다(NOT_RUN).
-- SC7: 필수 PR CI의 Rust (Windows) job이 27m24s(#648)·17m47s(#649)로 목표 15분을 넘었다.
-- Windows 사본 보호(I1): Windows 작업은 프로젝트의 Windows 사본에서 실행되고, 그 실행이 남긴 프로세스가 도는 동안 사본을 바꾸지 않도록 지킨다. rc.2는 이 보호를 숨은 powershell.exe 감시 프로세스(holder)로 늘렸다. holder가 "비었다"고 알리거나 holder가 사라진 것이 확실할 때(재부팅·로그아웃) 보호를 푼다. 실행을 시작한 프로세스가 끝난 뒤 holder만 강제로 끝나고 남은 프로세스가 계속 돌면 보호가 일찍 풀린다(rc.1과 같은 결과). 업그레이드 때 이미 돌던 rc.1 실행은 rc.1 규칙을 따른다. Windows 실행마다 holder가 하나 더 뜨며 그 시작 비용은 아직 재지 않았다. 원본 저장소는 바뀌지 않는다. 실제 동작은 S7-14 W1에서 확인하며, W1을 실행하지 않으면 1.0.0을 막는다.
-- 지난 수용에서 남은 결과: A6(accept 조용한 제거 직후의 제거 등록 확인)은 FAIL을 그대로 둔다. A5(설치본의 지원 번들 가림과 accept 업데이트 화면)와 RC1 Windows 설치·실행 수용은 NOT_RUN이다. RC → 1.0.0 수동 설치와 릴리스 게시의 정식 버전 경로는 아직 실행하지 않았다. R1·R2(WSL 유휴 유지, `wsl --shutdown` 뒤 복귀)는 공개 직전 사용자 확인으로 남아 있다.
-- 실기 확인 전(NOT_RUN): pi의 Shift+Enter와 tmux 3.4 호스트(K1), 실제 pi·opencode 연결(H3), 실제 Claude 승인 짝짓기(P1), Windows의 실제 재시작과 연결 유지(O1a·O1b), 설치 경고 문구와 제거 뒤 남는 항목. 모두 S7-14에서 확인한다.
+- 첫 시작이 느리다. 설치 직후 첫 시작(WSL 실행 중)에서 첫 데이터가 보이기까지 9036ms·6093ms(accept 설치본 측정) 걸려 목표 3초를 넘었다. 반복 실행은 아직 재지 않았다.
+- 필수 PR CI의 Rust (Windows) job이 27m24s(#648)·17m47s(#649) 걸려 목표 15분을 넘었다.
+- Windows 작업은 프로젝트의 Windows 사본에서 실행된다. 그 실행이 남긴 프로세스가 도는 동안 사본을 바꾸지 않도록 Windows 실행마다 숨은 powershell.exe 감시 프로세스가 하나 더 뜬다. 실행을 시작한 프로세스가 끝난 뒤 감시 프로세스만 강제로 끝나고 남은 프로세스가 계속 돌면 보호가 일찍 풀린다. 원본 저장소는 바뀌지 않는다. 실제 Windows에서는 아직 확인하지 않았으며, 확인하지 않으면 1.0.0을 내지 않는다.
 - 앱 자동 시작 때 설정이 파일을 쓴 뒤 다시 시작하기 전에 끊기면 다음 자동 시작도 다시 시작하지 않는다. [다시 설정]으로 복구한다.
 - Codex는 rollout 기록의 끝 8 MiB만 읽는다. 한 턴의 기록이 8 MiB를 넘으면 그 턴의 시작이 읽는 범위 밖에 있어 다음 턴까지 추적하지 못한다.
+- 확인 상태: 실행하지 않은 확인은 PASS로 적지 않으며, 원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §5·§8에 있다. 성공 기준 SC2·SC7은 위 첫 두 항목대로 미달이다. 아직 실행하지 않은 것(NOT_RUN)은 1.0.0 공개 전 실기 확인(S7-14)인 I1 W1(위 Windows 사본 보호, 실행하지 않으면 1.0.0을 막는다)·K1(pi의 Shift+Enter와 tmux 3.4 호스트)·H3(실제 pi·opencode 연결)·P1(실제 Claude 승인 짝짓기)·O1a·O1b(Windows의 실제 재시작과 연결 유지)·설치 경고 문구·제거 뒤 남는 항목·MCP 등록 명령의 설치본 확인, 지난 수용의 A3(SC2의 전역 단축키 → 명령 팔레트 300ms)·A5(설치본 지원 번들 가림은 시도했으나 판정하지 못함, accept 업데이트 화면)·RC1 Windows 설치·실행 수용, 그리고 RC → 1.0.0 수동 설치와 정식 버전 릴리스 게시다. A6(accept 조용한 제거 직후의 제거 등록 확인)은 FAIL이다. R1·R2(WSL 유휴 유지, `wsl --shutdown` 뒤 복귀)는 공개 직전 사용자 확인으로 남아 있다.
 
 ## 문제 해결
 

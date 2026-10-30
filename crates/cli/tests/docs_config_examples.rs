@@ -1,11 +1,14 @@
-//! Every ```toml block in docs/config.md loads with the readers devbox itself uses, so the
+//! Every TOML block in docs/config.md loads with the readers devbox itself uses, so the
 //! documented examples cannot drift from the code. A block's first line names its file:
 //! `# config.toml` and `# config.local.toml` go through the daemon's start-up reads
-//! (`crates/cli/src/daemon/mod.rs`), `# .devbox/devbox.toml` through the project loader and the
-//! run-definition checks.
+//! (`crates/cli/src/daemon/mod.rs`) and the `[windows] root` check a Windows run makes;
+//! `# .devbox/devbox.toml` goes through the project loader, the run-definition checks and the
+//! `[launch]` terminal and agent preflight (`crates/cli/src/daemon/launch.rs`). `[launch]`
+//! service ids are checked only inside `RuntimeService::prepare_launch_snapshot`, which needs a
+//! running service, so this test does not check them.
 use devbox_core::config::{Disabled, load_lenient};
 use devbox_core::{Env, Instance, Paths};
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::path::{Path, PathBuf};
 
 const MARKERS: [&str; 3] = [
@@ -30,29 +33,38 @@ fn text(error: impl Display) -> String {
     error.to_string()
 }
 
-/// Each ```toml block: the line its fence opens on, and its body.
+fn debug(error: impl Debug) -> String {
+    format!("{error:?}")
+}
+
+/// Each TOML block: the line its fence opens on, and its body. Backtick and tilde fences of any
+/// length count, and the info string's first word is compared without case, so ```` ```TOML ````
+/// and `~~~toml` blocks are checked too.
 fn toml_blocks(doc: &str) -> Result<Vec<(usize, String)>, String> {
-    let (mut blocks, mut open, mut other) = (Vec::new(), None::<(usize, String)>, false);
+    // The open fence: its character, its length, and the TOML block it holds, if it is one.
+    let (mut blocks, mut open) = (Vec::new(), None::<(char, usize, Option<(usize, String)>)>);
     for (index, line) in doc.lines().enumerate() {
-        let fence = line.trim_start().starts_with("```");
-        if let Some((_, body)) = open.as_mut() {
-            if fence {
-                blocks.extend(open.take());
-            } else {
+        let trimmed = line.trim_start();
+        let mark = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'));
+        let run = mark.map_or(0, |mark| trimmed.chars().take_while(|c| *c == mark).count());
+        let rest = &trimmed[run..];
+        if let Some((fence, length, block)) = open.as_mut() {
+            if mark == Some(*fence) && run >= *length && rest.trim().is_empty() {
+                blocks.extend(block.take());
+                open = None;
+            } else if let Some((_, body)) = block {
                 body.push_str(line);
                 body.push('\n');
             }
-        } else if fence && other {
-            other = false;
-        } else if fence && line.trim_start().trim_start_matches('`').trim() == "toml" {
-            open = Some((index + 1, String::new()));
-        } else if fence {
-            other = true;
+        } else if let Some(mark) = mark.filter(|_| run >= 3) {
+            let info = rest.split_whitespace().next().unwrap_or_default();
+            let toml = info.eq_ignore_ascii_case("toml");
+            open = Some((mark, run, toml.then(|| (index + 1, String::new()))));
         }
     }
-    match (open, other) {
-        (None, false) => Ok(blocks),
-        _ => Err("a code fence is not closed".into()),
+    match open {
+        None => Ok(blocks),
+        Some(_) => Err("a code fence is not closed".into()),
     }
 }
 
@@ -91,17 +103,35 @@ fn daemon_config(file: &str, body: &str) -> Result<(), String> {
     if profiles.len() != load.config.agents.profiles.len() {
         return Err("an [[agents.profiles]] entry was skipped".into());
     }
+    // Checked only when a Windows run starts, so a bad root does not show at load.
+    if let Some(root) = &load.config.windows.root {
+        devbox_runtime::windows::windows_to_wsl(root)
+            .map_err(|error| format!("[windows] root {root:?}: {error}"))?;
+    }
     Ok(())
 }
 
-/// A project's file as the daemon loads it, then the checks every run definition gets.
+/// A project's file as the daemon loads it, then the checks every run definition gets and the
+/// launch preflight's terminal and agent checks.
 fn project_config(body: &str) -> Result<(), String> {
     let project = tempfile::tempdir().map_err(text)?;
     std::fs::create_dir(project.path().join(".devbox")).map_err(text)?;
     std::fs::write(project.path().join(".devbox/devbox.toml"), body).map_err(text)?;
     let config = devbox_projects::config::load(project.path()).map_err(text)?;
-    devbox_runtime::merge(config.run_config().definitions(), Vec::new())
-        .map_err(|error| format!("{error:?}"))?;
+    devbox_runtime::merge(config.run_config().definitions(), Vec::new()).map_err(debug)?;
+    for terminal in &config.launch.terminals {
+        devbox_terminal::validate_command(terminal.command.as_deref().unwrap_or("bash -l"))
+            .map_err(debug)?;
+        devbox_terminal::validate_title(&terminal.name).map_err(debug)?;
+    }
+    // The profile lookup agent creation makes (`crates/agents/src/create.rs`). An example names
+    // a built-in tool, which works without `[[agents.profiles]]`.
+    for agent in &config.launch.agents {
+        devbox_agents::profile::resolve(&[], &agent.tool)
+            .ok_or_else(|| format!("[launch] tool {:?} is not a built-in profile", agent.tool))?;
+        devbox_agents::validate_input(agent.prompt.as_deref().unwrap_or_default())
+            .map_err(debug)?;
+    }
     Ok(())
 }
 

@@ -20,14 +20,19 @@ GitHub 비공개 취약점 신고(Private vulnerability reporting)를 쓴다. �
 | 웹훅 LAN 수신 | 꺼짐(127.0.0.1에서만 받음) | 웹훅 리스너의 "LAN에서 받기" | `app/src/features/tools/webhooks/ListenerForm.tsx`(체크 기본 해제), `crates/webhooks/src/address.rs`(`bind_address`: LAN이 아니면 127.0.0.1) |
 
 - MCP 쓰기 도구는 `devbox_agent_send`·`devbox_run_task`·`devbox_note_add`다. `devbox mcp`는 시작할 때 설정을 한 번 읽는다.
+- 쓰기 도구를 켜면 `devbox mcp`에 연결한 MCP 클라이언트는 어느 것이든 아래 일을 할 수 있다. devbox는 어느 에이전트가 불렀는지 확인하지 않는다.
+  - `devbox_agent_send`: 부른 에이전트 자신의 작업이 아니어도 어느 에이전트 작업에든 지시를 보낸다.
+  - `devbox_run_task`: 프로젝트의 작업이나 서비스를 시작한다. `.devbox/devbox.toml`의 정의는 승인한 내용으로만 실행하고, 앱에서 "이 PC에만" 저장한 정의는 승인 없이 실행한다.
+  - `devbox_note_add`: 받은 노트함(`inbox`)이나 오늘의 일일 기록에 글을 덧붙인다.
 - "LAN에서 받기"를 켜면 0.0.0.0에서 받는다. Windows나 다른 PC에서 받는 데 필요한 `netsh interface portproxy` 명령은 화면에 안내만 하고 실행하지 않는다.
 
 ## 활동 기록
 
 - 동의하기 전에는 수집하지 않는다. 일시중지하면 진행 중인 기록을 그 시각에 끝내고, 다시 켤 때까지 들어오는 관찰을 버린다. 동의를 거두면 아직 보내지 않은 앱 이름·제목을 지운다.
-- 모으는 것은 Windows 앞 창의 앱 이름과 창 제목, 그리고 그 시간이다. 제목은 [개인정보 규칙](docs/config.md)을 적용한 뒤에만 앱 밖으로 나간다. 규칙을 읽거나 컴파일하지 못하면 제목을 남기지 않는다.
+- 모으는 것은 Windows 앞 창의 앱 이름과 창 제목, 그리고 그 시간이다. 제목은 [개인정보 규칙](docs/config.md)을 적용한 뒤에만 앱 밖으로 나간다. 규칙을 읽거나 컴파일하지 못하면 제목을 남기지 않는다. 이때는 제외할 앱 목록(`excluded_processes`)도 쓰지 않으므로 그 앱들의 이름과 시간은 기록된다.
 - 저장 위치는 WSL의 `~/.local/share/devbox/prod/devbox.db`다. 활동 기록을 처리하는 코드는 앱 이름·제목을 로그에 쓰지 않는다.
 - 활동 기록을 외부로 보내는 기능은 없다. Windows 앱은 WSL 쪽 devbox에만 보낸다.
+- 설정 → 활동의 "활동 기록 내보내기"는 고른 기간의 기록(시작·끝·앱 이름·제목·프로젝트)을 `~/.local/share/devbox/prod/exports/activity-<시작일>-<끝일>.csv`(또는 `.json`)에 암호화하지 않고 쓴다. 파일 권한은 사용자 전용(0600)이고, 같은 기간을 다시 내보내면 그 파일을 바꾼다. devbox는 이 파일을 지우지 않으므로 필요 없으면 직접 지운다.
 
 ## 비밀
 
@@ -39,7 +44,7 @@ GitHub 비공개 취약점 신고(Private vulnerability reporting)를 쓴다. �
 ## 지원 번들
 
 - 설정 → 앱 진단의 [지원 번들]은 이 PC에 ZIP 파일(`~/.local/share/devbox/prod/support/`)을 만들 뿐 어디에도 보내지 않는다.
-- 저장된 비밀 값(원문·JSON 이스케이프·디버그 표기)과 홈·노트 경로를 가린다. 설치본에서의 가림 확인(S6 수용 A5)은 아직 실행하지 않았다(NOT_RUN).
+- 저장된 비밀 값(원문·JSON 이스케이프·디버그 표기)과 홈·노트 경로를 가린다. 설치본에서의 가림 확인(S6 수용 A5)은 한 번 시도했지만 노트 경로가 번들 입력에 들어가지 않아 판정하지 못했다(INCONCLUSIVE). 그래서 NOT_RUN으로 남아 있다.
 - 비밀 저장소가 잠겨 있으면 가릴 값을 알 수 없으므로 로그와 crash 기록을 넣지 않는다(`logs_omitted: "secrets_locked"`). 노트가 꺼져 있으면 노트 경로를 알 수 없으므로 역시 넣지 않는다(`logs_omitted: "notes_disabled"`).
 
 ## 설치 파일과 업데이트

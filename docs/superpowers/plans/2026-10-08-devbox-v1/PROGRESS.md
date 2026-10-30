@@ -213,7 +213,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - **S7-7 PATH 규칙(Ruling 23·26):** 계획 488행은 해석한 폴더를 PATH 앞에 둔다고 했다. 실제로는 공유 폴더(`/usr/local/sbin`·`/usr/local/bin`·`/usr/sbin`·`/usr/bin`·`/sbin`·`/bin`·`/snap/bin`·`/home/linuxbrew/.linuxbrew/bin`)를 PATH 끝에 붙이고 절대 경로로 실행한다(`crates/agents/src/start.rs`, `572a0051`). 계획 488·511·530행을 정정했다.
 - **S7-8 pi 재개(Ruling 30):** pi를 재개할 때 지시문을 다시 보내지 않는다. pi 세션 id가 없으면 지시 없이 새 pi 세션을 연다(`crates/agents/src/resume.rs`, `52239b8b`). 다른 도구는 S1부터 원래 지시로 새로 시작한다.
 - **S7-9 tmux 확장 키:** 이미 떠 있는 소유 tmux 서버에도 데몬 시작 때 적용한다(`Tmux::apply_extended_keys`, `43a860b5`). 계획 858행의 "pi의 Shift+Enter에는 3.5 이상"은 pi 1.3.0 `docs/tmux.md`에 맞춰 정정했다(3.2–3.4는 `modifyOtherKeys`).
-- **S7-10 I1(Ruling 31·34–36):** 영구 보류 대신 holder가 사라진 것이 확실할 때 reader를 닫는다(`681a7b82`·`64d14394`·`68bb9e82`). 남는 위험이 하나 있다. 같은 Windows 로그온 세션에서 holder만 강제 종료되고 bootstrap도 끝났는데 고아 프로세스가 도는 경우 reader가 일찍 닫힌다(rc.1의 I1 결과). 실제 동작은 S7-14 W1 전까지 미검증이며, W1을 실행하지 않으면 1.0.0을 막는 NOT_RUN이다.
+- **S7-10 I1(Ruling 31·34–36):** 영구 보류 대신 holder가 사라진 것이 확실할 때 reader를 닫는다(`681a7b82`·`64d14394`·`68bb9e82`). 남는 위험이 하나 있다. 같은 Windows 로그온 세션에서 holder만 강제 종료되고 bootstrap도 끝났는데 고아 프로세스가 도는 경우 reader가 일찍 닫힌다(rc.1의 I1 결과). 실제 동작은 S7-14 W1 전까지 미검증이며, W1을 실행하지 않으면 1.0.0을 막는 NOT_RUN이다. README에서 줄인 세부: holder는 Windows 실행마다 하나 더 뜨는 숨은 powershell.exe다(`crates/protocol/src/windows/native.ps1` `StartHolder`의 `CREATE_NO_WINDOW`). 그 시작 비용은 W1 전까지 재지 않았다. holder 필드 없이 rc.1이 저장한 실행은 rc.1 규칙(`Empty`·`NotFound`면 닫음)을 따른다(`crates/protocol/src/windows/observation.rs` `ControlShape::Legacy`, `crates/runtime/src/windows_observation.rs`).
 - **O1a 빠른 길(Ruling 40·41):** 자동 시작은 설치가 바뀌었거나 데몬이 그 실행 파일로 돌고 있지 않을 때만 다시 시작한다. [다시 설정]과 [다시 시도]는 항상 다시 시작한다(`2074c4dd`, `app/src-tauri/src/core/deploy.rs` `setup_args`).
 - **O6a 브랜치 이름(Ruling 42):** `checked_slug` 규칙만 받는다. 소문자·숫자·하이픈, 40바이트까지이며 `git check-ref-format`보다 좁은 부분집합이다(`crates/agents/src/plan.rs`, `9b41181c`).
 - **O3:** `load()`의 객체 동일성 대신 draft 번호로 비교한다. 저장하는 동안 고친 내용의 digest를 지키기 위해서다(`c56ecbeb`).
@@ -223,6 +223,14 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
   - Codex 상태는 hook이 아니라 `notify`(턴 완료 후보)와 rollout 기록, 그리고 화면 패턴으로 안다(`crates/agents/src/start.rs`·`tracker.rs`·`profile.rs`). README 표는 코드대로 적었다.
   - 경로 찾기 안내는 brief의 "5분에 한 번"이 아니라 위 S7-6 동작으로 적었다. pi의 Shift+Enter 요구 버전도 위 S7-9대로 적었다.
   - 컨트롤러 추가 사실 두 가지를 README에 넣었다: rc.1에서 시작한 Claude 작업은 rc.1 hook 설정(PostToolUse·PostToolUseFailure·PermissionDenied 없음)을 계속 써서 승인 뒤에도 그 턴이 끝날 때까지 보내기가 막히고 재개하면 새 설정을 쓴다(`git show b6e5eba8:crates/agents/src/hooks.rs`, `crates/agents/src/hooks.rs`·`approvals.rs`·`send.rs`·`resume.rs`). 에이전트 작업은 로그인 셸 환경의 허용 목록만 받는다(`crates/cli/src/setup.rs` `ALLOWED`).
+- **S7-11 수정 1회차(Ruling 50, task-S7-11-review-1)에서 코드대로 고친 것:**
+  - `[agent] copy`: 1차 문서의 "이미 있는 파일은 바꾸지 않는다"는 틀렸다. 작업 폴더에 이미 있으면 `DestinationExists`로 준비가 실패한다(`crates/projects/src/config/copy.rs`, `crates/agents/src/prepare.rs`의 `internal("agent copy")`). Git이 추적하지 않는 파일용이라고 고쳤다.
+  - 읽는 때: `[secrets] names`는 `Secrets::list`가 불릴 때마다 다시 읽는다(`crates/secrets/src/service.rs`). 앱에서 바꾼 활동 기록 규칙은 바로 적용된다(`crates/activity/src/service.rs` `set_rules`).
+  - 심볼릭 링크: 검토자 주장대로 `devbox setup`의 `safe_dir`가 인스턴스 설정 폴더의 모든 상위 폴더에서 링크를 거절한다(`crates/cli/src/setup.rs` `safe_dir`·`publish`). `config.toml` 쓰기는 파일 자체만 확인한다(`crates/secrets/src/service.rs` `save_name`, `crates/activity/src/rules.rs` `write`). `Secrets::set`은 값을 저장하기 전에 `save_name`을 부르므로 링크된 `config.toml`에서는 이미 등록된 이름의 비밀 값도 저장하지 못한다.
+  - `XDG_CONFIG_HOME`: 검토자 주장대로 서비스 drop-in이 넣는다. 값은 `devbox setup`이 정한 값이고, 앱은 셸 설정 파일을 읽지 않는 `wsl.exe --exec sh -c`로 설정하므로 보통 `~/.config`다(`crates/cli/src/setup.rs` `instance_units`, `app/src-tauri/src/platform/deploy.rs`). 항상 `~/.config`인 것은 아니어서 README에 "보통"으로 적었다.
+  - 파일별 확인(영역 2 검토 M1): rc.1은 두 파일을 합친 표만 확인했다(`git show b6e5eba8:crates/cli/src/daemon/mod.rs`의 `Config::load` 뒤 `from_table`). 그때는 잘못된 `[notes]`·`[search]`가 데몬 시작을 막았으므로, 문서는 rc.1이 더 너그러웠다고 쓰지 않고 덮어쓰기 경우만 적었다.
+  - 문서 예시 시험: `[windows] root`는 `devbox_runtime::windows::windows_to_wsl`, `[launch]` 터미널·에이전트는 데몬 preflight와 같은 함수(`devbox_terminal::validate_command`·`validate_title`, `devbox_agents::validate_input`, `devbox_agents::profile::resolve`)로 확인한다. `[launch]` 서비스 id는 `RuntimeService::prepare_launch_snapshot` 안에서만 확인하고 따로 부를 함수가 없어 확인하지 않는다.
+  - 기본 도구 id를 쓰는 프로필의 입력 대기 패턴 동작은 설계 검토 중이라 문서에 적지 않았다(컨트롤러 지시).
 
 ### S6 머지·RC1 prerelease·정리 인계 (2026-10-27 · #648·#649 squash 머지·`v1.0.0-rc.1` prerelease 공개·RC Windows 수용 NOT_RUN·정리 완료)
 
@@ -1710,7 +1718,7 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]** 표시가 없는 항목은 1.0.0을 막지 않는다. 줄 수는 2026-10-29 `wc -l` 값이다.
 
 - **에이전트·하네스**
-  - Claude
+  - Codex 화면 감지·보내기(S7-5)
     - 보내기 경로에서 tmux 실패나 pane 캡처 실패가 다음 행동 없는 internal 오류로 끝난다(S7-5).
     - Idle 상태 Codex pane의 마지막 6줄에 패턴과 같은 목록 줄이 있으면 후속 보내기가 거절된다(낮은 확률).
   - opencode(S7-7)
@@ -1751,6 +1759,7 @@ S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]
   - `redactKnownTokenPatterns`의 `sk_`·`sk-` 접두에 왼쪽 경계가 없어 과하게 가린다. 데몬 쪽과 함께 고친다.
   - 노트가 꺼진 동안 search.notes 색인이 낡는다(S7-2).
   - `SupportBundle`의 `notes_disabled` 줄에 다음 행동이 없다.
+  - 활동 기록 규칙을 읽거나 컴파일하지 못하면 제목만 막고 `excluded_processes`도 비우므로, 제외하려던 앱의 이름과 시간이 기록된다(`crates/activity/src/model/privacy.rs` `CompiledRules::fail_closed`, `crates/activity/src/rules.rs` `ActivitySettings::unreadable`, 앱 `app/src-tauri/src/core/activity.rs`의 규칙 없음 분기). 문서는 이 동작대로 적었다(S7-11 수정 1회차).
 - **시험·크기**
   - 시험이 `/tmp/tmux-<uid>`에 socket 파일을 남긴다.
   - 거의 꽉 찬 파일: `crates/agents/src/command_path.rs` 542/600, `app/src/features/terminal/TerminalView.test.tsx` 588/600, `crates/cli/tests/agents.rs` 591/600, `crates/agents/src/discard_snapshot.rs` 583/600.
@@ -1762,4 +1771,4 @@ S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]
   - P1: 실제 Claude 승인 상관.
   - O1a·O1b: Windows 실제 재시작, 연결 유지.
   - O6b: `mark_autostart_asked` 실행.
-  - S7-11 문서의 "S7-14에서 확인" 자리: 서명 없는 설치 파일의 Windows 경고 문구, Windows 앱 제거 뒤 남는 항목, MCP 등록 명령의 설치본 재확인.
+  - S7-11 문서의 확인 대기 자리: 서명 없는 설치 파일의 Windows 경고 문구, Windows 앱 제거 뒤 남는 항목, MCP 등록 명령의 설치본 재확인. README 본문은 "아직 확인하지 않았다"로 적고 S7-14 항목은 README 알려진 제한의 "확인 상태" 줄에 모았다. SECURITY.md는 "S7-14에서 확인"으로 둔다.
