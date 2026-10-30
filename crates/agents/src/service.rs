@@ -230,7 +230,7 @@ impl AgentsService {
             return self.record_ready(&task.id, p.launch_id).await;
         }
         let launch = if p.source == crate::hooks::HookSource::Claude {
-            let Some(launch) = p.launch_id.filter(|id| !id.is_empty()) else {
+            let Some(launch) = p.launch_id.clone().filter(|id| !id.is_empty()) else {
                 return Ok(Done {
                     rev: self.db.rev().to_string(),
                 });
@@ -307,8 +307,18 @@ impl AgentsService {
                 matches!(event, AgentEvent::NeedsInput { message }
                     if message == crate::plugin_event::PI_TRUST_COPY)
             });
+        // A report changes the task only while the launch it names is current: a plugin's
+        // report can arrive after a resume. Only Claude's go through `approvals`; the plugins
+        // pair their own requests and replies. A plugin report naming no launch applies as
+        // before, so a wait is never lost for it.
+        let bound = match p.source {
+            crate::hooks::HookSource::Opencode | crate::hooks::HookSource::Pi => {
+                p.launch_id.filter(|id| !id.is_empty())
+            }
+            _ => launch.clone(),
+        };
         let approvals = self.approvals.clone();
-        self.update_bound(&p.agent_id, launch.clone(), trust, move |t| {
+        self.update_bound(&p.agent_id, bound, trust, move |t| {
             if let Some(launch) = &launch {
                 return approvals.apply(t, launch, approval, events);
             }

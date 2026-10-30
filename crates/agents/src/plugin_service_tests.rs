@@ -2,11 +2,12 @@
 use super::*;
 use devbox_protocol::Topic;
 
-/// One plugin report, the way `devbox agent event --from opencode <payload>` delivers it.
+/// One plugin report, the way `devbox agent event --from opencode <payload>` delivers it from
+/// the task's current launch.
 async fn report(f: &Fixture, payload: &str) -> Done {
     let params = AgentEventParams {
         agent_id: "a".into(),
-        launch_id: Some("any-launch".into()),
+        launch_id: f.current_launch("a").await,
         source: HookSource::Opencode,
         payload: payload.into(),
         code: None,

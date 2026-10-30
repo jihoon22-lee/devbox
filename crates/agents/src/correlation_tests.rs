@@ -152,6 +152,16 @@ impl Fixture {
     async fn state(&self) -> AgentState {
         self.svc.get("a").await.expect("owned fixture").state
     }
+    /// The launch task `id` is bound to, which a report from its pane names.
+    async fn current_launch(&self, id: &str) -> Option<String> {
+        let id = id.to_owned();
+        self.svc
+            .db
+            .read(move |tx| store::binding(tx, &id))
+            .await
+            .expect("owned fixture")
+            .and_then(|binding| binding.launch_id)
+    }
     async fn expect_diagnostic(&self, expected: Diagnostic) {
         let before = self.svc.get("a").await.expect("owned fixture");
         let rev = self.svc.db.rev();
@@ -520,6 +530,8 @@ mod hook_launch_tests;
 mod hook_limits_tests;
 #[path = "pi_service_tests.rs"]
 mod pi_service_tests;
+#[path = "plugin_launch_tests.rs"]
+mod plugin_launch_tests;
 #[path = "plugin_service_tests.rs"]
 mod plugin_service_tests;
 

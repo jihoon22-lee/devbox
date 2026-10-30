@@ -22,11 +22,12 @@ fn params(id: &str, source: HookSource, launch: Option<&str>, payload: &str) -> 
     }
 }
 
-/// One extension report to task `id`. The CLI forwards the launch it runs in; only Claude
-/// reports are matched against it.
+/// One extension report to task `id` from its current launch. The CLI forwards the launch it runs
+/// in, and a report from another launch changes nothing.
 async fn report_to(f: &Fixture, id: &str, payload: &str) -> Done {
+    let launch = f.current_launch(id).await;
     f.svc
-        .event(params(id, HookSource::Pi, Some("any-launch"), payload))
+        .event(params(id, HookSource::Pi, launch.as_deref(), payload))
         .await
         .expect("owned extension report")
 }
