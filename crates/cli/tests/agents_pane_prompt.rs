@@ -13,6 +13,8 @@ const WORKING: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/wo
 const NETWORK: &str =
     include_str!("../../agents/tests/fixtures/codex-0.166.0/approval-network.txt");
 const PI_TRUST: &str = include_str!("../../agents/tests/fixtures/pi-1.3.0/trust.txt");
+const CLAUDE_TRUST: &str = include_str!("../../agents/tests/fixtures/claude-2.1.308/trust.txt");
+const CLAUDE_WORKING: &str = include_str!("../../agents/tests/fixtures/claude-2.1.308/working.txt");
 const TEXT: &str = "owned-pane-check-instruction";
 
 /// Leave a start marker, paint the screen once, then record every line that is sent.
@@ -28,6 +30,17 @@ const FAKE_PI: &str = r#"#!/usr/bin/env bash
 touch "$HOME/fake-pi-started"
 "$DEVBOX_BIN" agent event --from pi '{"v":1,"event":"ready"}'
 cat "$HOME/screen.txt"
+while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/received"; done
+"#;
+
+/// Claude, which first shows its folder-trust dialog. Once `$HOME/decided` exists the user has
+/// answered it: the screen is cleared and `$HOME/after.txt` painted, and input is recorded.
+const FAKE_CLAUDE: &str = r#"#!/usr/bin/env bash
+touch "$HOME/fake-claude-started"
+cat "$HOME/screen.txt"
+while [ ! -e "$HOME/decided" ]; do sleep 0.05; done
+printf '\033[2J\033[H'
+cat "$HOME/after.txt"
 while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/received"; done
 "#;
 
@@ -224,4 +237,90 @@ async fn a_custom_codex_profile_without_patterns_replaces_the_builtin_check() {
     let (d, client, id) = showing(TRUST, "esc back", "load-buffer", Some(("codex", ""))).await;
     send(&client, &id).await.expect("send under the override");
     assert_eq!(d.paste_count(), 1);
+}
+
+async fn task(client: &Client, id: &str) -> Value {
+    let body = client
+        .raw_call("agents.get", json!({"id":id}), None)
+        .await
+        .expect("task");
+    serde_json::from_str(&body).expect("task JSON")
+}
+
+/// One Claude hook of the task's current launch, as `devbox agent event --from claude` sends it.
+async fn claude_hook(d: &TestDaemon, client: &Client, id: &str, payload: Value) {
+    let launch = d.agent_launch(id).await;
+    let params =
+        json!({"agentId":id,"launchId":launch,"source":"claude","payload":payload.to_string()});
+    client
+        .raw_call("agents.event", params, None)
+        .await
+        .expect("Claude hook");
+}
+
+#[tokio::test]
+async fn a_send_cannot_answer_the_claude_folder_trust_dialog() {
+    // No Claude hook reports this dialog: only the pane shows the wait.
+    let (d, client, id) = showing_as(
+        "claude",
+        FAKE_CLAUDE,
+        CLAUDE_TRUST,
+        "Esc to cancel",
+        "load-buffer",
+        None,
+    )
+    .await;
+    let refused = send(&client, &id)
+        .await
+        .expect_err("send onto Claude's trust dialog");
+    assert!(
+        matches!(&refused, ClientError::Rpc { code, .. } if code == "agents.awaiting_input"),
+        "{refused:?}"
+    );
+    assert_nothing_sent(&d, &client, &id).await;
+}
+
+#[tokio::test]
+async fn claude_waits_on_its_trust_dialog_and_follows_its_hooks_once_the_dialog_is_gone() {
+    let (d, client, id) = showing_as(
+        "claude",
+        FAKE_CLAUDE,
+        CLAUDE_TRUST,
+        "Esc to cancel",
+        "load-buffer",
+        None,
+    )
+    .await;
+    std::fs::write(d.home.path().join("after.txt"), screen(CLAUDE_WORKING)).expect("owned screen");
+    // The watcher reports the dialog as a wait of its own.
+    let waiting = d
+        .wait_for(&client, &id, "waiting", Duration::from_secs(12))
+        .await;
+    assert_eq!(waiting["attention"]["kind"], "output");
+    send(&client, &id)
+        .await
+        .expect_err("send while Claude asks");
+    assert_eq!(d.paste_count(), 0);
+    // The user answers in the terminal: the dialog leaves the screen, and the wait ends.
+    std::fs::write(d.home.path().join("decided"), "owned answer").expect("owned answer");
+    d.wait_for(&client, &id, "running", Duration::from_secs(12))
+        .await;
+    send(&client, &id)
+        .await
+        .expect("send once the dialog is gone");
+    assert_eq!(d.paste_count(), 1);
+    // The hooks decide again: a permission request waits for input, which the watcher leaves
+    // alone over two of its polls of the unchanged screen, and the turn's end makes it idle.
+    let request = json!({"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls"}});
+    claude_hook(&d, &client, &id, request).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let asked = task(&client, &id).await;
+    assert_eq!(asked["state"], "waiting");
+    assert_eq!(asked["attention"]["kind"], "input");
+    let stop = json!({"hook_event_name":"Stop","last_assistant_message":"done"});
+    claude_hook(&d, &client, &id, stop).await;
+    let idle = d
+        .wait_for(&client, &id, "idle", Duration::from_secs(5))
+        .await;
+    assert_eq!(idle["attention"]["kind"], "idle");
 }

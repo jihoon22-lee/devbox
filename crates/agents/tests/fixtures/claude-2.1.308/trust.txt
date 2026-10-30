@@ -1,0 +1,25 @@
+# 문자열 기반(실제 화면 아님). 설치본 Claude Code 2.1.308(~/.local/share/claude/versions/2.1.308, `claude --version`)의 폴더 신뢰 대화(TrustDialog)를 실행 파일에 든 코드에서 읽어 짰다.
+# 그 코드: 제목 "Accessing workspace:", 문장 "Quick safety check: …", "Claude Code'll be able to read, edit, and execute files here.", "Security guide",
+# 선택지 confirmLabel "Yes, I trust this folder", cancelLabel "No, exit"(거절해도 세션을 이어 가는 경우에는 "No, continue without these permissions"), cancelFirst·focus:"cancel"·hideIndexes.
+# 그래서 취소가 먼저 오고 커서(❯)를 가지며 번호가 없다. 틀은 위 테두리만 있는 상자(paddingX 1)이고 항목 사이는 한 줄씩 띄운다(gap 1).
+# 경로는 지어낸 값이고, 긴 문장의 줄바꿈 위치와 footer 문구는 가정이다. Claude를 실행하지 않았다(신뢰 화면을 넘기면 사용자 설정이 기록된다). 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /tmp/devbox-claude-fixture
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a
+ well-known open source project, or work from your team). If not, take a moment to review what's in
+ this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel

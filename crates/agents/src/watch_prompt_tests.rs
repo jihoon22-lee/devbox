@@ -351,3 +351,57 @@ fn codex_output_that_mentions_a_prompt_is_not_waiting() {
         );
     }
 }
+
+/// Claude's folder-trust dialog. No Claude hook reports it, so the pane is the only sign of
+/// this wait.
+const CLAUDE_TRUST: &str = include_str!("../tests/fixtures/claude-2.1.308/trust.txt");
+
+#[test]
+fn claude_folder_trust_dialog_is_waiting() {
+    let patterns = builtin_patterns("claude");
+    let trust = screen(CLAUDE_TRUST);
+    // The cursor starts on the first choice, which declines; the variant that goes on without
+    // the folder's settings names that choice otherwise.
+    let go_on = trust.replacen("❯ No, exit", "❯ No, continue without these permissions", 1);
+    let moved = trust.replacen("❯ No, exit", "  No, exit", 1).replacen(
+        "  Yes, I trust",
+        "❯ Yes, I trust",
+        1,
+    );
+    // Claude's accessible layout prints the choices as "y. …" and "n. …".
+    let accessible = " Accessing workspace:\n\n /tmp/devbox-claude-fixture\n\n y. Yes, I trust this folder\n n. No, exit\n";
+    for (name, screen) in [("go on", go_on.as_str()), ("moved", moved.as_str())] {
+        assert_ne!(screen, trust, "{name}");
+    }
+    for (name, screen) in [
+        ("as drawn", trust),
+        ("go on", go_on.as_str()),
+        ("moved", moved.as_str()),
+        ("accessible", accessible),
+    ] {
+        assert!(matches_waiting(&patterns, screen), "{name}");
+    }
+    // Output below the dialog means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn a_normal_claude_screen_is_not_waiting() {
+    let patterns = builtin_patterns("claude");
+    let working = screen(include_str!("../tests/fixtures/claude-2.1.308/working.txt"));
+    assert!(!matches_waiting(&patterns, working));
+    // The dialog's words in Claude's output are not the dialog.
+    for line in [
+        "● Pick \"Yes, I trust this folder\" when Claude asks.",
+        " Quick safety check: Is this a project you created or one you trust?",
+        " Accessing workspace:",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{working}\n{line}")),
+            "{line}"
+        );
+    }
+}

@@ -27,15 +27,24 @@ pub struct ToolProfile {
 
 /// 기본 프로필. Codex 승인·결정 화면은 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면
 /// 아님), 폴더 신뢰 화면은 0.164.0 실제 녹화, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면 아님)이다.
-/// 다른 UI 유형·버전은 실제 fixture로 보강한다.
+/// Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은 실제 fixture로
+/// 보강한다.
 pub fn builtin() -> Vec<ToolProfile> {
     vec![
+        // Its hooks report its waits, but none reports its folder-trust dialog, which is
+        // matched on screen.
         ToolProfile {
             id: "claude".into(),
             label: "Claude Code".into(),
             command: "claude".into(),
             hooks: Hooks::Claude,
-            waiting_patterns: vec![],
+            waiting_patterns: vec![
+                // Folder trust. Evidence: crates/agents/tests/fixtures/claude-2.1.308/trust.txt
+                // (문자열 기반: the dialog's code in the installed 2.1.308, not a real capture).
+                // The declining choice comes first and holds the cursor, the choices have no
+                // number, and the accessible layout prints them as "y. …" and "n. …".
+                r"(?m)^\s*(?:[❯›>]\s*)?(?:(?:\d+|[yn])[.)]\s+)?(?:Yes, I trust this folder|No, continue without these permissions)".into(),
+            ],
         },
         ToolProfile {
             id: "codex".into(),
@@ -341,7 +350,9 @@ mod tests {
             ]
         );
         // opencode's plugin reports its prompts, so its pane is not matched. pi's trust question
-        // is matched on screen too (watch_tests: pi_trust_screen_is_waiting).
+        // is matched on screen too (watch_tests: pi_trust_screen_is_waiting), and so is Claude's,
+        // which comes before any of its hooks (claude_folder_trust_dialog_is_waiting).
+        assert!(!builtin[0].waiting_patterns.is_empty());
         assert!(builtin[2].waiting_patterns.is_empty());
         assert!(!builtin[3].waiting_patterns.is_empty());
     }
