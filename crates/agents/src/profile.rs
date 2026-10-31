@@ -1,4 +1,5 @@
 // crates/agents/src/profile.rs
+use crate::{family_patterns::family_patterns, watch::WaitingPatterns};
 use devbox_protocol::system::StartupProblem;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -66,7 +67,9 @@ pub fn builtin() -> Vec<ToolProfile> {
                 r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)".into(),
                 // 3. MCP forms and the model's questions: tool-call choices, and the footers.
                 r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Allow|Allow for this session|Always allow|Deny|Cancel)\s+(?:Run the tool and|Allow this request and|Decline this request and continue|Cancel this (?:tool call|request))".into(),
-                r"(?m)\bto submit(?: all| answer)? \| |\bto submit answer\b".into(),
+                // The tips share a row with " | " between them; a footer that wraps can end a row
+                // with one.
+                r"(?m)\bto submit(?: all| answer)?(?: \||[ \t]*$)".into(),
                 // 4. An MCP URL request: "tab / ↑ ↓ move · enter select · esc close".
                 r"(?m)\bmove · \S+ select\b".into(),
                 // 5. Choices at start: an update (Enter runs the installer), a new model, the
@@ -81,9 +84,12 @@ pub fn builtin() -> Vec<ToolProfile> {
                 //    list, whoever opened it.
                 r"(?m)^\s*\S+ (?:select|choose|confirm|open) · \S+ back\s*$".into(),
                 // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
-                // capture). Codex wraps the question to the terminal width, which can push it out of
-                // the matched tail, so this anchors on the first choice row, always among the last rows.
-                r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?Trust and continue\s*$".into(),
+                // capture), and for a folder saved as untrusted or a task started while it was
+                // trusted, codex-0.166.0/trust-restricted.txt and trust-existing-task.txt (소스 기반:
+                // onboarding/trust_directory.rs of rust-v0.164.0 to rust-v0.166.0). Codex wraps the
+                // explanation to the terminal width, which can push it out of the matched tail, so
+                // this anchors on the first choice row, always among the last rows.
+                r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust and continue|Open restricted|Open existing task)\s*$".into(),
                 // Hooks review. Evidence: crates/agents/tests/fixtures/codex-0.164.0/hooks-review.txt
                 // (문자열 기반: sentences from the 0.164.0 binary, not a real capture). Either choice row
                 // marks the prompt; "N hooks need review before they can run." is only a notice.
@@ -409,9 +415,11 @@ pub enum ProfileError {
         source: regex::Error,
     },
 }
+/// The waiting patterns of each profile, by id: the profile's `waiting_patterns`, read over the
+/// last rows, and the dialogs its tool family draws anywhere on the screen.
 pub(crate) fn compiled(
     profiles: &crate::model::AgentProfiles,
-) -> Result<std::collections::HashMap<String, Vec<regex::Regex>>, ProfileError> {
+) -> Result<std::collections::HashMap<String, WaitingPatterns>, ProfileError> {
     let mut ids = std::collections::HashSet::new();
     for profile in &profiles.items {
         if !ids.insert(&profile.id) {
@@ -424,16 +432,21 @@ pub(crate) fn compiled(
         .items
         .iter()
         .map(|p| {
-            let patterns = p
-                .waiting_patterns
-                .iter()
-                .map(|text| {
-                    regex::Regex::new(text).map_err(|source| ProfileError::WaitingPattern {
-                        profile: p.id.clone(),
-                        source,
-                    })
+            let regex = |text: &String| {
+                regex::Regex::new(text).map_err(|source| ProfileError::WaitingPattern {
+                    profile: p.id.clone(),
+                    source,
                 })
-                .collect::<Result<_, _>>()?;
+            };
+            let family = family_patterns(p.hooks);
+            let patterns = WaitingPatterns {
+                tail: p
+                    .waiting_patterns
+                    .iter()
+                    .map(regex)
+                    .collect::<Result<_, _>>()?,
+                screen: family.screen.iter().map(regex).collect::<Result<_, _>>()?,
+            };
             Ok((p.id.clone(), patterns))
         })
         .collect()

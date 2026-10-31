@@ -50,10 +50,10 @@ pub struct AgentsService {
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
     pub(crate) approvals: Arc<crate::approvals::Approvals>,
     /// opencode usage already exported, per task.
-    pub(crate) exports: crate::usage_plugins::ExportCache,
+    pub(crate) exports: Arc<crate::usage_plugins::ExportCache>,
     /// Compiled waiting patterns by profile id, published once by the output watcher so a send
     /// reads the pane with the same patterns. Unset while no watcher runs.
-    pub(crate) waiting_patterns: OnceLock<Arc<HashMap<String, Vec<regex::Regex>>>>,
+    pub(crate) waiting_patterns: OnceLock<Arc<HashMap<String, crate::watch::WaitingPatterns>>>,
     /// What this daemon has seen of each task's latest pi launch (see `ready`).
     pub(crate) launches: Arc<crate::ready::Launches>,
     /// When this daemon started: it may have missed the reports of launches from before.
@@ -294,13 +294,17 @@ impl AgentsService {
                     rev: self.db.rev().to_string(),
                 });
             }
-            if events
-                .iter()
-                .any(|event| matches!(event, AgentEvent::TurnComplete { .. }))
-            {
-                self.exports.turn_completed(&task.id);
-            }
         }
+        // A finished turn may have added tokens, so the usage read from its export is dropped,
+        // but only for a report of the current launch (see below): a late one from the launch
+        // before a resume says nothing about this one.
+        let turn_done = matches!(
+            p.source,
+            crate::hooks::HookSource::Opencode | crate::hooks::HookSource::Pi
+        ) && events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::TurnComplete { .. }));
+        let exports = turn_done.then(|| self.exports.clone());
         // pi asks about trust even in a folder whose trust is decided, and goes on at once.
         let trust = p.source == crate::hooks::HookSource::Pi
             && events.iter().any(|event| {
@@ -319,6 +323,9 @@ impl AgentsService {
         };
         let approvals = self.approvals.clone();
         self.update_bound(&p.agent_id, bound, trust, move |t| {
+            if let Some(exports) = exports {
+                exports.turn_completed(&t.id);
+            }
             if let Some(launch) = &launch {
                 return approvals.apply(t, launch, approval, events);
             }

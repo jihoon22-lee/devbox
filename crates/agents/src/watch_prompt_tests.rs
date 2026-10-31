@@ -2,10 +2,11 @@
 //! cannot answer it; the same screen with newer output below it must not.
 use super::*;
 
-/// Every Codex prompt that waits for a decision. The fixtures are drawn by the Codex TUI source,
-/// which is the same at rust-v0.164.0, rust-v0.165.0 and rust-v0.166.0 (see their headers). The
-/// `decision-` ones are lists Codex opens on its own when a turn ends or stalls.
-const CODEX_PROMPTS: [(&str, &str); 28] = [
+/// Every Codex prompt that waits for a decision at the bottom of the screen. The fixtures are drawn
+/// by the Codex TUI source, which is the same at rust-v0.164.0, rust-v0.165.0 and rust-v0.166.0
+/// (see their headers). The `decision-` ones are lists Codex opens on its own when a turn ends or
+/// stalls.
+const CODEX_PROMPTS: [(&str, &str); 26] = [
     (
         "approval-exec",
         include_str!("../tests/fixtures/codex-0.166.0/approval-exec.txt"),
@@ -87,16 +88,8 @@ const CODEX_PROMPTS: [(&str, &str); 28] = [
         include_str!("../tests/fixtures/codex-0.166.0/decision-misalignment.txt"),
     ),
     (
-        "decision-misalignment-review",
-        include_str!("../tests/fixtures/codex-0.166.0/decision-misalignment-review.txt"),
-    ),
-    (
         "decision-safety-retry",
         include_str!("../tests/fixtures/codex-0.166.0/decision-safety-retry.txt"),
-    ),
-    (
-        "decision-safety-confirm",
-        include_str!("../tests/fixtures/codex-0.166.0/decision-safety-confirm.txt"),
     ),
     (
         "startup-update",
@@ -117,6 +110,20 @@ const CODEX_PROMPTS: [(&str, &str); 28] = [
     (
         "startup-daemon",
         include_str!("../tests/fixtures/codex-0.166.0/startup-daemon.txt"),
+    ),
+];
+
+/// Dialogs Codex opens on its own, drawn over a list or the history as Codex's own tests draw
+/// them. They are read over the whole screen, so output below them does not end them; they end
+/// when they close (see watch_dialog_tests.rs).
+const CODEX_DIALOG_PROMPTS: [(&str, &str); 2] = [
+    (
+        "decision-misalignment-review",
+        include_str!("../tests/fixtures/codex-0.166.0/decision-misalignment-review.txt"),
+    ),
+    (
+        "decision-safety-confirm",
+        include_str!("../tests/fixtures/codex-0.166.0/decision-safety-confirm.txt"),
     ),
 ];
 
@@ -188,6 +195,7 @@ fn every_codex_prompt_that_waits_for_a_decision_is_waiting() {
     let patterns = codex_patterns();
     let missed: Vec<&str> = CODEX_PROMPTS
         .iter()
+        .chain(&CODEX_DIALOG_PROMPTS)
         .filter(|(_, fixture)| !matches_waiting(&patterns, screen(fixture)))
         .map(|(name, _)| *name)
         .collect();
@@ -291,18 +299,41 @@ fn a_codex_approval_with_choices_this_version_does_not_name_is_waiting_by_its_fo
 fn any_codex_list_picker_is_waiting_by_its_footer_whatever_it_offers() {
     let patterns = codex_patterns();
     // codex-rs/tui/src/app/tests.rs (rust-v0.164.0 to rust-v0.166.0): the "Enable subagents?"
-    // list drawn over the agent picker. None of its choices is a known one, but Enter would pick
-    // "Yes, enable", as it would the first choice of any other list.
+    // list drawn over the agent picker, renamed to a list Codex does not draw, so none of its
+    // rows is a known one. Enter would pick its first choice, as it would in any other list.
     let enable = "      Enable subagents?\n› As  Subagents are disabled in this TUI session.\n\n  gp\n    › 1. Yes, enable  Save on the server for new threads without changing\n                      this thread\n      2. Not now      Keep subagents disabled\n\n      enter select · esc back\n";
-    assert!(matches_waiting(&patterns, enable));
+    let mut list = enable.to_owned();
+    for (old, new) in [
+        ("Enable subagents?", "Pick a theme"),
+        ("Yes, enable", "Dark"),
+        ("Not now", "Light"),
+    ] {
+        assert!(list.contains(old), "{old}");
+        list = list.replacen(old, new, 1);
+    }
+    assert!(matches_waiting(&patterns, &list));
     // The other verbs the lists of `chatwidget/usage.rs` show.
     for verb in ["choose", "confirm", "open"] {
-        let footer = enable.replacen("enter select", &format!("enter {verb}"), 1);
+        let footer = list.replacen("enter select", &format!("enter {verb}"), 1);
         assert!(matches_waiting(&patterns, &footer), "{verb}");
     }
     // Without the footer nothing marks this list.
-    let without = enable.replacen("      enter select · esc back\n", "", 1);
+    let without = list.replacen("      enter select · esc back\n", "", 1);
     assert!(!matches_waiting(&patterns, &without));
+    // The list as Codex draws it is one of its dialogs, which its title and choices mark.
+    let dialog = enable.replacen("      enter select · esc back\n", "", 1);
+    assert!(matches_waiting(&patterns, &dialog));
+}
+
+#[test]
+fn a_codex_question_footer_that_wraps_after_its_submit_tip_is_waiting() {
+    let patterns = codex_patterns();
+    // `request_user_input` puts " | " only between tips on one row, so a footer that wraps can
+    // end a row with "enter to submit all".
+    let wrapped = "  Question 2/2 (2 unanswered)\n  Which file should I change?\n\n› 1. app/tests/login.rs\n  2. app/src/session.rs\n\n  tab to add notes | enter to submit all\n  ←/→ to navigate questions | esc to interrupt\n";
+    assert!(matches_waiting(&patterns, wrapped));
+    let single = "  Field 1/1\n  Allow the docs server to read the page?\n\n› 1. Yes\n  2. No\n\n  enter to submit\n  esc to cancel\n";
+    assert!(matches_waiting(&patterns, single));
 }
 
 #[test]

@@ -12,6 +12,8 @@ const HOOKS: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/hook
 const WORKING: &str = include_str!("../../agents/tests/fixtures/codex-0.164.0/working.txt");
 const NETWORK: &str =
     include_str!("../../agents/tests/fixtures/codex-0.166.0/approval-network.txt");
+const RESUME_GOAL: &str =
+    include_str!("../../agents/tests/fixtures/codex-0.166.0/dialog-resume-goal-200x50.txt");
 const PI_TRUST: &str = include_str!("../../agents/tests/fixtures/pi-1.3.0/trust.txt");
 const CLAUDE_TRUST: &str = include_str!("../../agents/tests/fixtures/claude-2.1.308/trust.txt");
 const CLAUDE_WORKING: &str = include_str!("../../agents/tests/fixtures/claude-2.1.308/working.txt");
@@ -168,6 +170,13 @@ async fn a_send_cannot_answer_the_codex_hooks_review_prompt_before_the_watcher_r
 async fn a_send_cannot_answer_a_codex_network_approval_before_the_watcher_reports_it() {
     // Enter would pick "Yes, just this once" and let the command reach the host.
     prompt_refuses_the_send(NETWORK, "esc to cancel", None).await;
+}
+
+#[tokio::test]
+async fn a_send_cannot_answer_a_codex_dialog_drawn_in_the_middle_of_the_screen() {
+    // Codex opens it by itself after `codex resume <id>`: the paste is dropped and Enter would
+    // resume the paused goal. The pane's last rows show only the composer and the history.
+    prompt_refuses_the_send(RESUME_GOAL, "? for shortcuts", None).await;
 }
 
 #[tokio::test]

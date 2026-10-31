@@ -85,3 +85,29 @@ async fn a_late_report_of_the_launch_before_a_resume_changes_nothing() {
         }
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_late_idle_of_the_launch_before_a_resume_leaves_the_usage_read() {
+    let f = Fixture::new().await;
+    super::plugin_service_tests::fake_opencode(&f);
+    super::plugin_service_tests::opencode_session(&f, "ses_taskroot").await;
+    let calls = || {
+        fs::read_to_string(f.root.path().join("calls"))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    };
+    bind(&f, "old").await;
+    bind(&f, "new").await;
+    f.svc.usage("a").await.expect("usage");
+    assert_eq!(calls(), 1);
+    // The old launch's late idle ends no turn of the new launch, so the usage read stands.
+    report(&f, HookSource::Opencode, Some("old"), IDLE).await;
+    f.svc.usage("a").await.expect("usage");
+    assert_eq!(calls(), 1);
+    // The new launch's idle may have added tokens: the next read exports again.
+    report(&f, HookSource::Opencode, Some("new"), IDLE).await;
+    f.svc.usage("a").await.expect("usage");
+    assert_eq!(calls(), 2);
+}

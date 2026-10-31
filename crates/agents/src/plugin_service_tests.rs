@@ -114,7 +114,7 @@ async fn a_plugin_resume_outside_a_wait_neither_writes_nor_publishes() {
 /// Makes every lookup's `fixture-bin/agent-cli` play opencode: it notes each exported session
 /// in `calls` and prints the recorded export, or fails while a `fail` file exists.
 #[cfg(unix)]
-fn fake_opencode(f: &Fixture) {
+pub(super) fn fake_opencode(f: &Fixture) {
     use std::os::unix::fs::PermissionsExt;
     fs::create_dir_all(&f.workdir).expect("owned workdir");
     let home = f.root.path();
@@ -135,7 +135,7 @@ fn fake_opencode(f: &Fixture) {
 
 /// Makes task `a` an opencode task of `session`.
 #[cfg(unix)]
-async fn opencode_session(f: &Fixture, session: &'static str) {
+pub(super) async fn opencode_session(f: &Fixture, session: &'static str) {
     f.svc
         .update("a", move |t| {
             t.profile = "opencode".into();

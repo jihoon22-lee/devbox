@@ -1,0 +1,57 @@
+# 소스 기반 모의 화면(source-derived simulation, not a real capture). fullscreen-history.txt 위에 dialog-resume-goal.txt 본문을 Codex의 dialog_area 계산
+# (codex-rs/tui/src/bottom_pane/view_stack.rs: 폭 min(200-4, 72) = 72, x = (200-72)/2 = 64, y = (50-높이)/2 = 20)대로 얹고 상자 영역만 지운(Clear) 200×50 화면이다.
+# `codex resume <id>`로 지시문 없이 연 task의 goal이 멈춰 있으면 Codex가 스스로 이 상자를 연다(app/thread_goal_actions.rs maybe_prompt_resume_paused_goal_after_resume,
+# app/thread_routing.rs should_prompt_for_paused_goal_after_startup_resume). 첫 선택지 Resume goal이 골라져 있어, 붙여 넣은 글은 버려지고 Enter가 goal을 다시 켠다.
+# 입력란은 아래에 그대로 남아, pane 마지막 6줄에는 상자가 없다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+› Fix the flaky login test in app/tests/login.rs and keep the other app tests green.
+
+• I'll read the failing test and the session helper it uses first.
+
+• Explored
+  └ Read login.rs, session.rs
+    Search wait_for_cookie in app
+
+• Ran cargo test -p app login -- --nocapture
+  └ running 12 tests
+    test login::rejects_bad_password ... ok
+    test login::rejects_unknown_user ... ok
+    test login::sets_the_session_cookie ... ok
+    test login::keeps_session_after_refresh ... FAILED
+    thread 'login::keeps_session_after_refresh' panicked at app/tests/login.rs:88:5: assertion failed: session.cookie().is_some(); the cookie was read before the refresh response set it, so the as
+    sertion saw an empty jar
+    test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+• The test sleeps for 200 ms and then reads the session cookie, so it races the refresh request that sets it. On a busy machine the refresh takes longer than the sleep and the jar is still empty when
+  the assertion runs. The session helper already has wait_for_cookie, which polls the jar until the cookie is there or a timeout passes, so the test can wait for the cookie itself instead of a fixed
+  time. I'll switch the test to it and keep the 5 second timeout                                                                        kly instead of hanging the whole suite on a missing cookie.
+                                                                  Resume paused goal?
+• Edited app/tests/login.rs (+3 -2)                               Goal: Keep improving the bare goal command until it feels calm and
+    84       let session = Session::login(&app, "alice", "secret  useful.
+    85       session.refresh().await?;
+    86 -     sleep(Duration::from_millis(200)).await;
+    87 -     assert!(session.cookie().is_some());               › 1. Resume goal   Mark it active and continue when idle
+    86 +     let cookie = session.wait_for_cookie(Duration::from  2. Leave paused  Keep it paused; use /goal resume later
+    87 +     assert!(cookie.is_some(), "the refresh must keep th
+    88 +     assert_eq!(session.user().await?.name, "alice");     enter select · esc back
+
+• Ran cargo test -p app
+  └ running 58 tests
+    test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.02s
+
+• Ran cargo clippy -p app --all-targets -- -D warnings
+  └ Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.87s
+
+• The login test now waits for the session cookie with the helper the other session tests use, instead of sleeping for a fixed 200 ms, so it no longer depends on how fast the refresh request is.
+  All 58 app tests pass and clippy is clean. The change is limited to app/tests/login.rs; the session code itself was already correct.
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  gpt-5.5 high · ~/projects/app
+  ? for shortcuts

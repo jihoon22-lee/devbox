@@ -174,7 +174,7 @@ fn screen(fixture: &str) -> &str {
         .expect("fixture header ends with a --- line")
         .1
 }
-fn builtin_patterns(id: &str) -> Vec<Regex> {
+fn builtin_patterns(id: &str) -> WaitingPatterns {
     profile::compiled(&crate::AgentProfiles {
         items: profile::builtin(),
     })
@@ -182,7 +182,7 @@ fn builtin_patterns(id: &str) -> Vec<Regex> {
     .remove(id)
     .expect("builtin profile")
 }
-fn codex_patterns() -> Vec<Regex> {
+fn codex_patterns() -> WaitingPatterns {
     builtin_patterns("codex")
 }
 
@@ -200,9 +200,12 @@ fn codex_trust_screen_is_waiting() {
     // row from the bottom, outside the 6 rows `matches_waiting` reads, so only the choice rows
     // can identify the prompt.
     let narrow = "  Folder access\n  /tmp/devbox-codex-fixture\n\n  Trust this folder? Codex can read, edit, and run files\n  here, subject to your permission settings. Folder\n  settings can run code automatically, even without a\n  model request. Continue only if you trust these files.\n  Your trust decision will be saved.\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n\n  enter continue · esc back\n";
-    let question = Regex::new(r"(?m)^\s*Trust this folder\?").expect("owned fixture");
+    let question = WaitingPatterns {
+        tail: vec![Regex::new(r"(?m)^\s*Trust this folder\?").expect("owned fixture")],
+        screen: Vec::new(),
+    };
     assert!(
-        !matches_waiting(&[question], narrow),
+        !matches_waiting(&question, narrow),
         "holds only while matches_waiting reads 6 non-empty rows: the question is the 8th from the bottom; \
          if that window grows past 8 this screen no longer shows why the pattern anchors on the choice rows"
     );
@@ -297,5 +300,36 @@ fn pi_screens_after_the_trust_decision_are_not_waiting() {
     }
 }
 
+#[test]
+fn codex_trust_screens_for_untrusted_folders_are_waiting() {
+    let patterns = codex_patterns();
+    // A folder whose saved trust is "untrusted" opens restricted, and a task that was started
+    // while it was trusted opens as it is; Enter picks either.
+    for (name, fixture) in [
+        (
+            "restricted",
+            include_str!("../tests/fixtures/codex-0.166.0/trust-restricted.txt"),
+        ),
+        (
+            "existing task",
+            include_str!("../tests/fixtures/codex-0.166.0/trust-existing-task.txt"),
+        ),
+    ] {
+        let trust = screen(fixture);
+        assert!(matches_waiting(&patterns, trust), "{name}");
+        // Without the "Agent Command Center", the other choice quits.
+        let quit = trust.replacen("2. Back to Agent Command Center", "2. Quit", 1);
+        assert_ne!(quit, trust, "{name}");
+        assert!(matches_waiting(&patterns, &quit), "{name}");
+        // Output below the prompt means it is no longer the current screen.
+        assert!(
+            !matches_waiting(&patterns, &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")),
+            "{name}"
+        );
+    }
+}
+
+#[path = "watch_dialog_tests.rs"]
+mod dialogs;
 #[path = "watch_prompt_tests.rs"]
 mod prompts;

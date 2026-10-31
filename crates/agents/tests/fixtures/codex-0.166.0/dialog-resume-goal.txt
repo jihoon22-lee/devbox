@@ -1,0 +1,17 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/chatwidget/goal_menu.rs가 SelectionViewParams::confirmation()으로 그리는 멈춘 goal을 이어 갈지 묻는(`codex resume` 뒤 Codex가 스스로 여는) 확인 상자의 본문이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__resume_paused_goal_prompt.snap에서 상자 영역(왼쪽 14열부터 72열)만 잘라 옮겼고, 맨 위 빈 줄은 상자의 위 여백이다.
+# 소스와 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같거나(cmp), 소스가 다른 곳만 바뀌어 이 상자의 문구는 세 태그에서 같다(grep).
+# 기본 화면(대체 화면 Auto, fullscreen_transcript)에서는 이 상자를 화면 한가운데 그린다(bottom_pane/view_stack.rs dialog_area: 폭 min(w-4,72), 가운데).
+# 시험은 이 본문을 fullscreen-history.txt 위 200×50 화면 한가운데 얹어 맞춰 본다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 상자 본문이다.
+---
+
+  Resume paused goal?
+  Goal: Keep improving the bare goal command until it feels calm and
+  useful.
+
+
+› 1. Resume goal   Mark it active and continue when idle
+  2. Leave paused  Keep it paused; use /goal resume later
+
+  enter select · esc back

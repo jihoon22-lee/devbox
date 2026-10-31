@@ -111,6 +111,7 @@ mod bounded;
 
 mod closed_review;
 mod discard_snapshot;
+mod family_patterns;
 mod limits;
 mod listing;
 mod metrics;

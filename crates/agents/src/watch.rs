@@ -15,20 +15,41 @@ use std::{
     time::{Duration, Instant},
 };
 const QUIET: Duration = Duration::from_secs(2);
-/// Rows of pane history captured per read, by the watcher and by a send alike.
+/// Rows of pane history captured per read, by the watcher and by a send alike. The capture also
+/// holds every visible row: `capture_tail` reads from that far above the screen to its bottom.
 const TAIL_ROWS: u32 = 15;
 
-pub fn matches_waiting(patterns: &[Regex], tail: &str) -> bool {
-    let mut last = tail
+/// The compiled waiting patterns of one profile.
+#[derive(Debug, Clone, Default)]
+pub struct WaitingPatterns {
+    /// Read over the last 6 non-empty rows, where a tool draws its prompts.
+    pub(crate) tail: Vec<Regex>,
+    /// Read over the whole capture: dialogs a tool draws in the middle of the screen, above the
+    /// rows `tail` reads.
+    pub(crate) screen: Vec<Regex>,
+}
+impl WaitingPatterns {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.tail.is_empty() && self.screen.is_empty()
+    }
+}
+
+/// Whether `capture`, the pane as `capture_tail` reads it (the screen and up to 15 rows above
+/// it), shows a prompt.
+pub fn matches_waiting(patterns: &WaitingPatterns, capture: &str) -> bool {
+    let mut last = capture
         .lines()
         .rev()
         .filter(|line| !line.trim().is_empty())
         .take(6)
         .collect::<Vec<_>>();
     last.reverse();
-    patterns
-        .iter()
-        .any(|pattern| pattern.is_match(&last.join("\n")))
+    let last = last.join("\n");
+    patterns.tail.iter().any(|pattern| pattern.is_match(&last))
+        || patterns
+            .screen
+            .iter()
+            .any(|pattern| pattern.is_match(capture))
 }
 impl AgentsService {
     /// Whether the pane of `session` shows, right now, a prompt the watcher would report as

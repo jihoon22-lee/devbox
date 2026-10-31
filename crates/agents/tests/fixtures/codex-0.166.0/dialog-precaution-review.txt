@@ -1,0 +1,13 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/chatwidget/misalignment_policy.rs가 SelectionViewParams::confirmation()으로 그리는 예방 조치로 멈춘 대화를 이어 갈지 묻는 확인 상자의 본문이다.
+# 72열 스냅샷이 없어 38열 스냅샷 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__misalignment_review_narrow.snap의 줄 배치(제목, 빈 줄 둘, 선택지 둘, 안내 줄 없음: allow_cancel false)를 72열로 옮겨 짰다. 맨 위 빈 줄은 상자의 위 여백이다.
+# 소스는 rust-v0.164.0·rust-v0.165.0에서 다른 곳만 바뀌어 이 상자의 문구는 세 태그에서 같고(grep), 스냅샷은 바이트 단위로 같다(cmp).
+# 기본 화면(대체 화면 Auto, fullscreen_transcript)에서는 이 상자를 화면 한가운데 그린다(bottom_pane/view_stack.rs dialog_area: 폭 min(w-4,72), 가운데).
+# 시험은 이 본문을 fullscreen-history.txt 위 200×50 화면 한가운데 얹어 맞춰 본다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 상자 본문이다.
+---
+
+  Chat paused as a precaution
+
+
+› 1. Acknowledge findings and continue
+  2. Back

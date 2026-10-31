@@ -1,0 +1,56 @@
+# 소스 기반 모의 화면(source-derived simulation, not a real capture). Codex 0.166 기본 화면(대체 화면 Auto, tui.fullscreen_transcript = true)의 200×50 pane이다:
+# 위 46줄은 대화 기록, 아래 넷은 입력란·빈 줄·모델 줄·단축키 줄이다. 아래쪽 줄 배치는 codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__tests__recap_tail_spacing.snap을
+# 따랐고(rust-v0.164.0~0.166.0에서 같다), 기록 내용은 지어낸 것이다. 가운데 줄 몇은 200열 가까이 이어져, 그 위에 그린 대화 상자 왼쪽·오른쪽에 기록 글자가 남는다.
+# 실제 화면 확인은 S7-14에서 한다(멈춘 Codex goal이 있는 task를 이어서 연 뒤 보내기, 200×50 화면 녹화).
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+› Fix the flaky login test in app/tests/login.rs and keep the other app tests green.
+
+• I'll read the failing test and the session helper it uses first.
+
+• Explored
+  └ Read login.rs, session.rs
+    Search wait_for_cookie in app
+
+• Ran cargo test -p app login -- --nocapture
+  └ running 12 tests
+    test login::rejects_bad_password ... ok
+    test login::rejects_unknown_user ... ok
+    test login::sets_the_session_cookie ... ok
+    test login::keeps_session_after_refresh ... FAILED
+    thread 'login::keeps_session_after_refresh' panicked at app/tests/login.rs:88:5: assertion failed: session.cookie().is_some(); the cookie was read before the refresh response set it, so the as
+    sertion saw an empty jar
+    test result: FAILED. 11 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+• The test sleeps for 200 ms and then reads the session cookie, so it races the refresh request that sets it. On a busy machine the refresh takes longer than the sleep and the jar is still empty when
+  the assertion runs. The session helper already has wait_for_cookie, which polls the jar until the cookie is there or a timeout passes, so the test can wait for the cookie itself instead of a fixed
+  time. I'll switch the test to it and keep the 5 second timeout the other session tests use, so a real failure still ends the test quickly instead of hanging the whole suite on a missing cookie.
+
+• Edited app/tests/login.rs (+3 -2)
+    84       let session = Session::login(&app, "alice", "secret").await?;
+    85       session.refresh().await?;
+    86 -     sleep(Duration::from_millis(200)).await;
+    87 -     assert!(session.cookie().is_some());
+    86 +     let cookie = session.wait_for_cookie(Duration::from_secs(5)).await;
+    87 +     assert!(cookie.is_some(), "the refresh must keep the session cookie");
+    88 +     assert_eq!(session.user().await?.name, "alice");
+
+• Ran cargo test -p app
+  └ running 58 tests
+    test result: ok. 58 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.02s
+
+• Ran cargo clippy -p app --all-targets -- -D warnings
+  └ Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.87s
+
+• The login test now waits for the session cookie with the helper the other session tests use, instead of sleeping for a fixed 200 ms, so it no longer depends on how fast the refresh request is.
+  All 58 app tests pass and clippy is clean. The change is limited to app/tests/login.rs; the session code itself was already correct.
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  gpt-5.5 high · ~/projects/app
+  ? for shortcuts
