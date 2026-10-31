@@ -1,25 +1,106 @@
-//! Waiting patterns that come with a tool family, the `hooks` of a profile: every profile of
-//! the family gets them (see `profile::compiled`).
+//! Waiting patterns that come with a tool family, the `hooks` of a profile. They mark the
+//! prompts that stop the tool until the user decides, so every profile of the family gets them,
+//! whatever its id, and a profile's own `waitingPatterns` add to them (see `profile::compiled`).
+//!
+//! Codex 승인·결정 화면과 확인 상자는 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면 아님),
+//! 폴더 신뢰 화면은 0.164.0 실제 녹화와 0.166.0 소스, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면
+//! 아님)이다. Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은
+//! 실제 fixture로 보강한다.
 use crate::profile::Hooks;
 
 /// The waiting patterns of one family, before they are compiled.
 #[derive(Debug, Default)]
 pub(crate) struct FamilyPatterns {
-    /// Read over the whole capture (see `watch::matches_waiting`).
+    /// Read over the last 6 non-empty rows (see `watch::matches_waiting`).
+    pub tail: &'static [&'static str],
+    /// Read over the whole capture.
     pub screen: Vec<String>,
 }
 
 pub(crate) fn family_patterns(hooks: Hooks) -> FamilyPatterns {
     match hooks {
+        Hooks::Claude => FamilyPatterns {
+            tail: CLAUDE,
+            screen: Vec::new(),
+        },
         Hooks::Codex => FamilyPatterns {
+            tail: CODEX,
             screen: CODEX_DIALOGS
                 .iter()
                 .map(|(title, choices)| dialog(title, choices))
                 .collect(),
         },
-        Hooks::Claude | Hooks::Opencode | Hooks::Pi | Hooks::None => FamilyPatterns::default(),
+        Hooks::Pi => FamilyPatterns {
+            tail: PI,
+            screen: Vec::new(),
+        },
+        // opencode's plugin reports its permission prompts, so its pane is not matched.
+        Hooks::Opencode | Hooks::None => FamilyPatterns::default(),
     }
 }
+
+/// Claude Code. Its hooks report its waits, but none reports its folder-trust dialog, which
+/// comes before any of them.
+const CLAUDE: &[&str] = &[
+    // Folder trust. Evidence: crates/agents/tests/fixtures/claude-2.1.308/trust.txt (문자열 기반:
+    // the dialog's code in the installed 2.1.308, not a real capture). The declining choice comes
+    // first and holds the cursor, the choices have no number, and the accessible layout prints
+    // them as "y. …" and "n. …".
+    r"(?m)^\s*(?:[❯›>]\s*)?(?:(?:\d+|[yn])[.)]\s+)?(?:Yes, I trust this folder|No, continue without these permissions)",
+];
+
+/// Codex. Its `notify` reports only finished turns, so every prompt is matched on screen.
+const CODEX: &[&str] = &[
+    // Prompts that stop Codex until the user decides. Evidence:
+    // crates/agents/tests/fixtures/codex-0.166.0/ (소스 기반: drawn by the TUI source of
+    // rust-v0.164.0 to rust-v0.166.0, the same in all three; not real captures). The question and
+    // long choices can leave the matched tail, so each pattern reads rows only such a prompt
+    // draws, whatever their number, order or cursor, and none needs the footer. Matching too
+    // much only holds sends back while it shows.
+    // 1. The footer of a choice list Enter would answer: the approvals of commands, network
+    //    hosts, permissions, edits and terminal input, MCP requests and user verification,
+    //    whatever their choices are called.
+    r"(?m)^\s*Press \S+ to confirm\b",
+    // 2. Their choices.
+    r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)",
+    // 3. MCP forms and the model's questions: tool-call choices, and the footers. The tips share
+    //    a row with " | " between them; a footer that wraps can end a row with one.
+    r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Allow|Allow for this session|Always allow|Deny|Cancel)\s+(?:Run the tool and|Allow this request and|Decline this request and continue|Cancel this (?:tool call|request))",
+    r"(?m)\bto submit(?: all| answer)?(?: \||[ \t]*$)",
+    // 4. An MCP URL request: "tab / ↑ ↓ move · enter select · esc close".
+    r"(?m)\bmove · \S+ select\b",
+    // 5. Choices at start: an update (Enter runs the installer), a new model, the folder to
+    //    resume in, an archived conversation, a background server that does not fit.
+    r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Update now \(runs |Skip until next version|Try new model|Use existing model|(?:Use|Always use) (?:session|current) directory|Unarchive and |Run without daemon this time|Restart with these settings)",
+    // 6. Lists Codex opens on its own when a turn ends or stalls: implement the plan (Enter
+    //    starts coding), switch model near a rate limit, turn on Daybreak after a refusal, a chat
+    //    paused as a precaution, retry with a faster model.
+    r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, implement this plan|Yes, clear context and implement|No, stay in Plan mode|Keep current model|Enable Daybreak|Acknowledge findings|Resume another chat|Retry with a faster model|Dismiss and keep waiting|Stop and retry)",
+    // 7. The footer of any other list ("enter select · esc back"): Enter answers the list,
+    //    whoever opened it.
+    r"(?m)^\s*\S+ (?:select|choose|confirm|open) · \S+ back\s*$",
+    // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
+    // capture), and for a folder saved as untrusted or a task started while it was trusted,
+    // codex-0.166.0/trust-restricted.txt and trust-existing-task.txt (소스 기반:
+    // onboarding/trust_directory.rs of rust-v0.164.0 to rust-v0.166.0). Codex wraps the
+    // explanation to the terminal width, which can push it out of the matched tail, so this
+    // anchors on the first choice row, always among the last rows.
+    r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust and continue|Open restricted|Open existing task)\s*$",
+    // Hooks review. Evidence: crates/agents/tests/fixtures/codex-0.164.0/hooks-review.txt
+    // (문자열 기반: sentences from the 0.164.0 binary, not a real capture). Either choice row marks
+    // the prompt; "N hooks need review before they can run." is only a notice.
+    r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust all and continue|Continue without trusting \(hooks won['’]t run\))",
+];
+
+/// pi. Its extension reports the folder trust question and extension dialogs. The trust
+/// question is matched on screen as well: a send taken without the extension's ready report,
+/// 30 s after the launch, must not answer it.
+const PI: &[&str] = &[
+    // Folder trust. Evidence: crates/agents/tests/fixtures/pi-1.3.0/trust.txt (real capture).
+    // The question, the folder rows and the explanation can leave the matched tail, and `→` marks
+    // the selected choice, so this anchors on the last two choice rows, with or without it.
+    r"(?im)^\s*(?:→\s*)?Do not trust\s*\n\s*(?:→\s*)?Do not trust \(this session only\)\s*$",
+];
 
 /// The dialogs Codex opens with `SelectionViewParams::confirmation()`, by title and choices.
 /// Evidence: crates/agents/tests/fixtures/codex-0.166.0/dialog-*.txt (소스 기반: drawn by the TUI

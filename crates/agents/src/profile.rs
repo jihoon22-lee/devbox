@@ -26,100 +26,20 @@ pub struct ToolProfile {
     pub waiting_patterns: Vec<String>,
 }
 
-/// 기본 프로필. Codex 승인·결정 화면은 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면
-/// 아님), 폴더 신뢰 화면은 0.164.0 실제 녹화, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면 아님)이다.
-/// Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은 실제 fixture로
-/// 보강한다.
+/// 기본 프로필. 입력 대기 화면 패턴은 프로필이 아니라 `hooks`를 따라 붙는다(`family_patterns`).
 pub fn builtin() -> Vec<ToolProfile> {
+    let profile = |id: &str, label: &str, hooks| ToolProfile {
+        id: id.into(),
+        label: label.into(),
+        command: id.into(),
+        hooks,
+        waiting_patterns: Vec::new(),
+    };
     vec![
-        // Its hooks report its waits, but none reports its folder-trust dialog, which is
-        // matched on screen.
-        ToolProfile {
-            id: "claude".into(),
-            label: "Claude Code".into(),
-            command: "claude".into(),
-            hooks: Hooks::Claude,
-            waiting_patterns: vec![
-                // Folder trust. Evidence: crates/agents/tests/fixtures/claude-2.1.308/trust.txt
-                // (문자열 기반: the dialog's code in the installed 2.1.308, not a real capture).
-                // The declining choice comes first and holds the cursor, the choices have no
-                // number, and the accessible layout prints them as "y. …" and "n. …".
-                r"(?m)^\s*(?:[❯›>]\s*)?(?:(?:\d+|[yn])[.)]\s+)?(?:Yes, I trust this folder|No, continue without these permissions)".into(),
-            ],
-        },
-        ToolProfile {
-            id: "codex".into(),
-            label: "Codex".into(),
-            command: "codex".into(),
-            hooks: Hooks::Codex,
-            waiting_patterns: vec![
-                // Prompts that stop Codex until the user decides. Evidence:
-                // crates/agents/tests/fixtures/codex-0.166.0/ (소스 기반: drawn by the TUI source of
-                // rust-v0.164.0 to rust-v0.166.0, the same in all three; not real captures). The
-                // question and long choices can leave the matched tail, so each pattern reads rows
-                // only such a prompt draws, whatever their number, order or cursor, and none
-                // needs the footer. Matching too much only holds sends back while it shows.
-                // 1. The footer of a choice list Enter would answer: the approvals of commands,
-                //    network hosts, permissions, edits and terminal input, MCP requests and user
-                //    verification, whatever their choices are called.
-                r"(?m)^\s*Press \S+ to confirm\b".into(),
-                // 2. Their choices.
-                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)".into(),
-                // 3. MCP forms and the model's questions: tool-call choices, and the footers.
-                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Allow|Allow for this session|Always allow|Deny|Cancel)\s+(?:Run the tool and|Allow this request and|Decline this request and continue|Cancel this (?:tool call|request))".into(),
-                // The tips share a row with " | " between them; a footer that wraps can end a row
-                // with one.
-                r"(?m)\bto submit(?: all| answer)?(?: \||[ \t]*$)".into(),
-                // 4. An MCP URL request: "tab / ↑ ↓ move · enter select · esc close".
-                r"(?m)\bmove · \S+ select\b".into(),
-                // 5. Choices at start: an update (Enter runs the installer), a new model, the
-                //    folder to resume in, an archived conversation, a background server that does
-                //    not fit.
-                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Update now \(runs |Skip until next version|Try new model|Use existing model|(?:Use|Always use) (?:session|current) directory|Unarchive and |Run without daemon this time|Restart with these settings)".into(),
-                // 6. Lists Codex opens on its own when a turn ends or stalls: implement the plan
-                //    (Enter starts coding), switch model near a rate limit, turn on Daybreak after a
-                //    refusal, a chat paused as a precaution, retry with a faster model.
-                r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, implement this plan|Yes, clear context and implement|No, stay in Plan mode|Keep current model|Enable Daybreak|Acknowledge findings|Resume another chat|Retry with a faster model|Dismiss and keep waiting|Stop and retry)".into(),
-                // 7. The footer of any other list ("enter select · esc back"): Enter answers the
-                //    list, whoever opened it.
-                r"(?m)^\s*\S+ (?:select|choose|confirm|open) · \S+ back\s*$".into(),
-                // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
-                // capture), and for a folder saved as untrusted or a task started while it was
-                // trusted, codex-0.166.0/trust-restricted.txt and trust-existing-task.txt (소스 기반:
-                // onboarding/trust_directory.rs of rust-v0.164.0 to rust-v0.166.0). Codex wraps the
-                // explanation to the terminal width, which can push it out of the matched tail, so
-                // this anchors on the first choice row, always among the last rows.
-                r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust and continue|Open restricted|Open existing task)\s*$".into(),
-                // Hooks review. Evidence: crates/agents/tests/fixtures/codex-0.164.0/hooks-review.txt
-                // (문자열 기반: sentences from the 0.164.0 binary, not a real capture). Either choice row
-                // marks the prompt; "N hooks need review before they can run." is only a notice.
-                r"(?im)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Trust all and continue|Continue without trusting \(hooks won['’]t run\))".into(),
-            ],
-        },
-        // Its plugin reports permission prompts, so its pane is not matched.
-        ToolProfile {
-            id: "opencode".into(),
-            label: "opencode".into(),
-            command: "opencode".into(),
-            hooks: Hooks::Opencode,
-            waiting_patterns: vec![],
-        },
-        // Its extension reports the folder trust question and extension dialogs. The trust
-        // question is matched on screen as well: a send taken without the extension's ready
-        // report, 30 s after the launch, must not answer it.
-        ToolProfile {
-            id: "pi".into(),
-            label: "pi".into(),
-            command: "pi".into(),
-            hooks: Hooks::Pi,
-            waiting_patterns: vec![
-                // Folder trust. Evidence: crates/agents/tests/fixtures/pi-1.3.0/trust.txt (real
-                // capture). The question, the folder rows and the explanation can leave the
-                // matched tail, and `→` marks the selected choice, so this anchors on the last two
-                // choice rows, with or without it.
-                r"(?im)^\s*(?:→\s*)?Do not trust\s*\n\s*(?:→\s*)?Do not trust \(this session only\)\s*$".into(),
-            ],
-        },
+        profile("claude", "Claude Code", Hooks::Claude),
+        profile("codex", "Codex", Hooks::Codex),
+        profile("opencode", "opencode", Hooks::Opencode),
+        profile("pi", "pi", Hooks::Pi),
     ]
 }
 
@@ -355,12 +275,20 @@ mod tests {
                 ("pi", "pi", "pi", Hooks::Pi),
             ]
         );
+        // Their waiting patterns come with their family, the same for any profile of it.
+        assert!(builtin.iter().all(|p| p.waiting_patterns.is_empty()));
         // opencode's plugin reports its prompts, so its pane is not matched. pi's trust question
         // is matched on screen too (watch_tests: pi_trust_screen_is_waiting), and so is Claude's,
         // which comes before any of its hooks (claude_folder_trust_dialog_is_waiting).
-        assert!(!builtin[0].waiting_patterns.is_empty());
-        assert!(builtin[2].waiting_patterns.is_empty());
-        assert!(!builtin[3].waiting_patterns.is_empty());
+        let family = crate::family_patterns::family_patterns;
+        assert!(!family(Hooks::Claude).tail.is_empty());
+        assert!(!family(Hooks::Codex).tail.is_empty());
+        assert!(!family(Hooks::Codex).screen.is_empty());
+        assert!(!family(Hooks::Pi).tail.is_empty());
+        for hooks in [Hooks::Opencode, Hooks::None] {
+            let none = family(hooks);
+            assert!(none.tail.is_empty() && none.screen.is_empty(), "{hooks:?}");
+        }
     }
     #[test]
     fn old_hook_values_still_parse() {
@@ -415,8 +343,8 @@ pub enum ProfileError {
         source: regex::Error,
     },
 }
-/// The waiting patterns of each profile, by id: the profile's `waiting_patterns`, read over the
-/// last rows, and the dialogs its tool family draws anywhere on the screen.
+/// The waiting patterns of each profile, by id: those of its tool family, then its own
+/// `waiting_patterns`. A profile's own patterns add to its family's and never replace them.
 pub(crate) fn compiled(
     profiles: &crate::model::AgentProfiles,
 ) -> Result<std::collections::HashMap<String, WaitingPatterns>, ProfileError> {
@@ -432,20 +360,27 @@ pub(crate) fn compiled(
         .items
         .iter()
         .map(|p| {
-            let regex = |text: &String| {
+            let regex = |text: &str| {
                 regex::Regex::new(text).map_err(|source| ProfileError::WaitingPattern {
                     profile: p.id.clone(),
                     source,
                 })
             };
             let family = family_patterns(p.hooks);
+            let own = p.waiting_patterns.iter().map(String::as_str);
             let patterns = WaitingPatterns {
-                tail: p
-                    .waiting_patterns
+                tail: family
+                    .tail
                     .iter()
+                    .copied()
+                    .chain(own)
                     .map(regex)
                     .collect::<Result<_, _>>()?,
-                screen: family.screen.iter().map(regex).collect::<Result<_, _>>()?,
+                screen: family
+                    .screen
+                    .iter()
+                    .map(|text| regex(text))
+                    .collect::<Result<_, _>>()?,
             };
             Ok((p.id.clone(), patterns))
         })

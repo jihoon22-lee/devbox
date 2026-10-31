@@ -56,8 +56,9 @@ fn screen(fixture: &str) -> &str {
 
 /// A running task whose tool paints `shown` and records what it is sent; returns once `last_row`
 /// is in the pane. By default the profile is the builtin `codex`, run as a fake `codex` first on
-/// PATH. `custom` is a config entry `(id, extra profile lines)` that runs the same fake by path.
-/// `tmux` is wrapped to count pastes and, when `fail-tmux` exists, to fail `fail`.
+/// PATH. `custom` is a config entry `(id, extra profile lines)` that runs the same fake by path;
+/// the lines give its `hooks`. `tmux` is wrapped to count pastes and, when `fail-tmux` exists, to
+/// fail `fail`.
 async fn showing(
     shown: &str,
     last_row: &str,
@@ -96,7 +97,7 @@ async fn showing_as(
                 devbox_core::sh_quote(fake.to_str().expect("fake path"))
             );
             d.write_config(&format!(
-                "[[agents.profiles]]\nid='{profile}'\nlabel='Custom'\ncommand={}\nhooks='none'\n{lines}\n",
+                "[[agents.profiles]]\nid='{profile}'\nlabel='Custom'\ncommand={}\n{lines}\n",
                 serde_json::to_string(&command).expect("TOML quoted string")
             ));
             profile
@@ -236,16 +237,25 @@ async fn a_pane_that_cannot_be_read_refuses_the_send_instead_of_skipping_the_che
 #[tokio::test]
 async fn a_custom_profile_is_checked_with_its_own_patterns() {
     // The send reads the patterns the watcher compiled from the configured profiles.
-    let patterns = r"waitingPatterns=['(?m)^\s*2\. Back to Agent Command Center\s*$']";
+    let patterns = concat!(
+        "hooks='none'\n",
+        r"waitingPatterns=['(?m)^\s*2\. Back to Agent Command Center\s*$']"
+    );
     prompt_refuses_the_send(TRUST, "esc back", Some(("mine", patterns))).await;
 }
 
 #[tokio::test]
-async fn a_custom_codex_profile_without_patterns_replaces_the_builtin_check() {
-    // A configured `codex` replaces the builtin profile, patterns included, as for the watcher.
-    let (d, client, id) = showing(TRUST, "esc back", "load-buffer", Some(("codex", ""))).await;
-    send(&client, &id).await.expect("send under the override");
-    assert_eq!(d.paste_count(), 1);
+async fn a_custom_codex_profile_without_patterns_keeps_the_builtin_check() {
+    // A configured `codex` replaces the builtin label, command and hooks. The patterns of the
+    // Codex family stay, for the watcher and the send alike.
+    prompt_refuses_the_send(TRUST, "esc back", Some(("codex", "hooks='codex'"))).await;
+}
+
+#[tokio::test]
+async fn another_profile_of_the_codex_family_cannot_answer_a_codex_approval() {
+    // Enter would pick "Yes, just this once" under this profile as well.
+    let fast = Some(("codex-fast", "hooks='codex'"));
+    prompt_refuses_the_send(NETWORK, "esc to cancel", fast).await;
 }
 
 async fn task(client: &Client, id: &str) -> Value {

@@ -34,8 +34,8 @@ prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 
 
 | 도구 | 상태를 아는 방법 | 재개 | 토큰 합계 |
 |---|---|---|---|
-| Claude Code | 작업마다 붙이는 hook(`--settings`). 승인 대기는 도구 이름과 입력으로 짝지어, 같은 호출의 완료·실패·거절이 와야 끝난다 | `claude --resume <Claude 세션 id>` | `~/.claude/projects`의 그 세션 기록 |
-| Codex | 작업마다 붙이는 `notify`(`-c`, 턴 완료 후보)와 `~/.codex/sessions`의 rollout 기록. 승인·폴더 신뢰·hook 검토 화면은 터미널 화면으로 알아본다 | `codex resume <Codex 세션 id>` | rollout 기록 |
+| Claude Code | 작업마다 붙이는 hook(`--settings`). 승인 대기는 도구 이름과 입력으로 짝지어, 같은 호출의 완료·실패·거절이 와야 끝난다. hook이 알리지 않는 폴더 신뢰 대화는 터미널 화면으로 알아본다 | `claude --resume <Claude 세션 id>` | `~/.claude/projects`의 그 세션 기록 |
+| Codex | 작업마다 붙이는 `notify`(`-c`, 턴 완료 후보)와 `~/.codex/sessions`의 rollout 기록. 승인·질문 화면, Codex가 스스로 여는 선택 목록, 폴더 신뢰·hook 검토 화면은 터미널 마지막 줄로, 화면 가운데에 띄우는 확인 상자는 화면 전체로 알아본다 | `codex resume <Codex 세션 id>` | rollout 기록 |
 | opencode | 작업마다 붙이는 devbox 플러그인(`OPENCODE_CONFIG_CONTENT`). 권한 요청과 질문도 알린다 | `opencode -s <opencode 세션 id>` | `opencode export`. 하위 에이전트 토큰은 빠진다 |
 | pi | 작업마다 붙이는 devbox 확장(`-e`). 확장이 준비됐다고 알릴 때까지 보내기를 미루고, 알림이 없으면 도구 시작 30초 뒤부터 보낸다. 폴더 신뢰 질문도 알아본다 | `pi --session-id <pi 세션 id>` | pi 세션 파일(기본 `~/.pi/agent/sessions` 아래). pi 설정의 `sessionDir`은 읽지 않는다 |
 

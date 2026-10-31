@@ -95,7 +95,7 @@ exclude = ["**/dist/**", "**/node_modules/**"]
 | `label` | 예 | 화면에 보이는 이름 |
 | `command` | 예 | 실행할 명령. 첫 단어가 이름이면 도구 경로 찾기로 찾고, 절대 경로면 그 파일만 확인한다. 나머지는 적힌 대로 붙인다. 첫 단어가 상대 경로이거나 셸 문법(`VAR=값`·따옴표·`$`·셸 내장 명령 등)이면 찾지 않고 적힌 대로 실행한다 |
 | `hooks` | 예 | devbox가 작업 실행마다 붙이는 연결. 아래 표 |
-| `waitingPatterns` | 아니요 | 입력 대기 화면을 알아볼 Rust 정규식 목록. `waiting_patterns`로 써도 된다 |
+| `waitingPatterns` | 아니요 | 입력 대기 화면을 알아볼 Rust 정규식 목록. `hooks`를 따라 붙는 기본 패턴에 더해진다. `waiting_patterns`로 써도 된다 |
 
 | `hooks` | 실행할 때 붙이는 것 | 지시문 | 재개 |
 |---|---|---|---|
@@ -107,8 +107,10 @@ exclude = ["**/dist/**", "**/node_modules/**"]
 
 - 실행 환경에는 `DEVBOX_PROMPT_FILE`(지시문 파일 경로)·`DEVBOX_AGENT_ID`·`DEVBOX_INSTANCE` 등이 들어간다. `hooks = "none"`인 도구는 지시문을 이 파일에서 읽을 수 있다.
 - `waitingPatterns`는 터미널 마지막 15줄 가운데 비어 있지 않은 마지막 6줄을 줄바꿈으로 이어 맞춰 본다. 맞은 화면이 2초 넘게 그대로면 "입력 대기"로 표시한다. 화면이나 MCP에서 보내기를 할 때도 먼저 확인하고, 맞으면 보내지 않는다.
-- 기본 도구와 같은 `id`를 쓰면 그 도구의 `label`·`command`·`hooks`는 이 프로필 값을 쓴다.
-- `id`가 `pi`가 아니고 `hooks = "pi"`인 프로필도 pi 확장이 준비됐다고 알릴 때까지 보내기를 미룬다(도구 시작 뒤 최대 30초). 기본 pi 프로필의 폴더 신뢰 화면 패턴은 따라오지 않는다.
+- `hooks`가 `claude`·`codex`·`pi`인 프로필에는 `id`와 상관없이 그 도구의 기본 대기 화면 패턴(폴더 신뢰 화면, Codex 승인·선택 화면 등)이 늘 붙고, `waitingPatterns`는 거기에 더해진다. 기본 패턴을 끄는 설정은 없다. Codex가 화면 가운데에 띄우는 확인 상자(멈춘 goal을 이어 갈지 묻는 상자 등)는 마지막 6줄이 아니라 화면 전체에서 찾는다.
+- Codex 화면의 마지막 6줄 안에 있는 기록 줄이 Codex 선택지 이름(`Yes, proceed` 등)이나 `Press … to confirm`으로 시작해도 입력 대기로 보고, 화면이 바뀔 때까지 보내지 않는다. 잘못 알아볼 때는 보내지 않는 쪽으로 틀린다.
+- 기본 도구와 같은 `id`를 쓰면 그 도구의 `label`·`command`·`hooks`는 이 프로필 값을 쓴다. 기본 대기 화면 패턴은 `id`가 아니라 이 프로필의 `hooks`를 따른다.
+- `id`가 `pi`가 아니고 `hooks = "pi"`인 프로필도 pi 확장이 준비됐다고 알릴 때까지 보내기를 미룬다(도구 시작 뒤 최대 30초). pi 폴더 신뢰 화면 패턴도 함께 붙는다.
 
 아래 예시는 여러 경우를 한데 모은 것이다. 필요한 프로필만 옮겨 적는다.
 
@@ -144,8 +146,7 @@ id = "pi-alt"
 label = "pi"
 command = "pi"
 hooks = "pi"
-# 기본 pi 프로필의 폴더 신뢰 화면 패턴을 그대로 옮긴 것
-waiting_patterns = ['(?im)^\s*(?:→\s*)?Do not trust\s*\n\s*(?:→\s*)?Do not trust \(this session only\)\s*$']
+# pi 폴더 신뢰 화면 패턴은 hooks = "pi"를 따라 붙으므로 옮겨 적지 않는다
 ```
 
 ### MCP
