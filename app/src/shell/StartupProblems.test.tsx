@@ -143,3 +143,14 @@ test("경로 복사 copies the file of that problem", async () => {
   expect(writeText).toHaveBeenCalledWith("/fixture/devbox/config.local.toml");
   expect(await screen.findByText("설정 파일 경로를 복사했습니다")).toBeInTheDocument();
 });
+test("a failed [다시 설정] shows the failed step under its notice", async () => {
+  const step = "로그인 환경 읽기 실패: captured PATH has no absolute entry";
+  native.invoke.mockRejectedValueOnce({ message: "WSL 다시 설정을 완료하지 못했습니다", detail: step });
+  await show([configFile]);
+  await userEvent.click(screen.getByRole("button", { name: "다시 설정" }));
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "실행" }));
+  expect(
+    await screen.findByText("작업을 완료하지 못했습니다. 연결 상태와 설치 환경을 확인해 주세요."),
+  ).toBeInTheDocument();
+  expect(screen.getByText(step)).toBeInTheDocument();
+});

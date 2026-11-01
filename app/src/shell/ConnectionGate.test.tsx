@@ -131,6 +131,27 @@ test("a failed setup has a fixed body, and the raw text of what failed stays in 
   const details = await screen.findByRole("region", { name: "연결 실패 자세히" });
   expect(within(details).getByText(raw)).toBeInTheDocument();
 });
+test("an unreadable settings file names the file and the way back to defaults; its parser text is in 자세히", async () => {
+  const file = "C:\\Users\\u\\AppData\\Local\\io.github.jihoon22lee.devbox\\settings.json";
+  const parser = "expected `,` or `}` at line 1 column 9";
+  mocks.invoke.mockImplementation(async (cmd) =>
+    cmd === "gate_status" ? { ...failed("settingsInvalid", "1", parser), file } : undefined,
+  );
+  render(<ConnectionGate>native child</ConnectionGate>);
+  expect(await screen.findByText("앱 설정 파일을 읽지 못했습니다")).toBeInTheDocument();
+  expect(
+    screen.getByText(`${file} 파일을 지우거나 이름을 바꾸면 기본 설정으로 시작합니다. 그다음 [다시 시도]하세요.`),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(parser)).toBeNull();
+  expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "자세히" }));
+  const details = screen.getByRole("region", { name: "연결 실패 자세히" });
+  expect(details).toHaveTextContent("실패한 단계 앱 설정 읽기");
+  expect(within(details).getByText(parser)).toBeInTheDocument();
+  // The WSL log cannot explain the app's own file, and finding the distro to read it needs that file.
+  expect(details).not.toHaveTextContent("최근 로그");
+  expect(mocks.invoke).not.toHaveBeenCalledWith("daemon_log_tail", expect.anything());
+});
 test("no pre-connection copy says 데몬, including details and an unreadable log", async () => {
   const states = [
     "checking",
@@ -141,6 +162,7 @@ test("no pre-connection copy says 데몬, including details and an unreadable lo
     "systemdOff",
     "chooseDistro",
     "setupFailed",
+    "settingsInvalid",
     "bridgeFailed",
   ] as const;
   for (const compact of [false, true])

@@ -1,5 +1,5 @@
 use crate::core::{
-    deploy::{SetupTrigger, digest, exec_script, install_script, setup_args},
+    deploy::{SetupTrigger, digest, exec_script, install_script, redeploy_failed, setup_args},
     diagnostics::{ReportKind, describe},
     process::{self, ShellError},
 };
@@ -116,5 +116,5 @@ pub async fn redeploy_wsl(
         conn.operation_cancel(),
     )
     .await
-    .map_err(|_| IpcError::new("WSL 다시 설정을 완료하지 못했습니다"))
+    .map_err(redeploy_failed)
 }

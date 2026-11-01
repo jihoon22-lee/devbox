@@ -91,6 +91,7 @@ export function StartupProblems() {
         ))}
       </ul>
       {maintenance.notice && <p style={{ margin: 0 }}>{maintenance.notice}</p>}
+      {maintenance.detail}
       {copied && <p style={{ margin: 0 }}>{copied}</p>}
       {maintenance.dialog}
     </Banner>

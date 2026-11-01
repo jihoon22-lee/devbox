@@ -62,6 +62,30 @@ impl Connection {
         detail: Option<String>,
         distros: Option<Vec<crate::core::wsl::Distro>>,
     ) {
+        self.publish(app, generation, state, detail, distros, None);
+    }
+    /// `settingsInvalid`: the app's settings file did not load. The screen names the file and
+    /// how to get back to defaults; the error's own text is the detail, for [자세히].
+    pub(super) fn settings_invalid(
+        &self,
+        app: &AppHandle,
+        generation: u64,
+        file: &std::path::Path,
+        error: &std::io::Error,
+    ) {
+        let file = Some(file.display().to_string());
+        let detail = Some(error.to_string());
+        self.publish(app, generation, "settingsInvalid", detail, None, file);
+    }
+    fn publish(
+        &self,
+        app: &AppHandle,
+        generation: u64,
+        state: &'static str,
+        detail: Option<String>,
+        distros: Option<Vec<crate::core::wsl::Distro>>,
+        file: Option<String>,
+    ) {
         let gate = {
             let mut s = self.state();
             if s.generation != generation {
@@ -75,6 +99,7 @@ impl Connection {
                 state,
                 detail,
                 distros,
+                file,
                 instance: INSTANCE,
                 revision: s.revision.to_string(),
             };

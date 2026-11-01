@@ -72,6 +72,18 @@ mod tests {
             assert!(!source.contains("SetupTrigger::"));
         }
     }
+    #[test]
+    fn a_failed_redeploy_keeps_the_fixed_message_and_the_failed_step() {
+        let step = "서비스 다시 시작 실패: command failed: systemctl";
+        let error = redeploy_failed(ShellError::Invalid(step.into()));
+        assert_eq!(error.message, "WSL 다시 설정을 완료하지 못했습니다");
+        assert_eq!(error.detail.as_deref(), Some(step));
+        // redeploy_wsl is Windows-only code: the MSVC check compiles it, and this pins it.
+        let deploy = include_str!("../platform/deploy.rs")
+            .split_whitespace()
+            .collect::<String>();
+        assert!(deploy.contains(".await.map_err(redeploy_failed)"));
+    }
     #[tokio::test]
     async fn redeploy_uses_the_first_launch_deploy_plan() {
         let steps = std::sync::Mutex::new(Vec::new());
@@ -438,6 +450,12 @@ ln -s "devbox-$1" "$t/link"
 mv -Tf "$t/link" "$d/devbox"
 "#;
 
+/// [다시 설정]'s failure: the fixed message, with the described failed step as its detail. That
+/// is the text the connection screen's [자세히] shows when the same setup fails at launch.
+pub fn redeploy_failed(error: super::process::ShellError) -> super::connection::IpcError {
+    super::connection::IpcError::new("WSL 다시 설정을 완료하지 못했습니다")
+        .with_detail(error.to_string())
+}
 /// Both first launch and explicit redeployment use the same install/setup steps.
 pub async fn apply_deployment<I, S, IFut, SFut, E>(install: I, setup: S) -> Result<(), E>
 where

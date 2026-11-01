@@ -56,13 +56,7 @@ pub async fn run(
     let saved = match settings::load(&path) {
         Ok(s) => s,
         Err(e) => {
-            conn.gate(
-                app,
-                generation,
-                "setupFailed",
-                Some(format!("설정을 읽지 못했습니다: {e}")),
-                None,
-            );
+            conn.settings_invalid(app, generation, &path, &e);
             return;
         }
     };
@@ -340,8 +334,9 @@ pub async fn daemon_log_tail(
     conn: tauri::State<'_, Connection>,
     lines: u16,
 ) -> Result<String, IpcError> {
-    let saved = settings::load(&super::preferences::settings_path(&app)?)
-        .map_err(|error| IpcError::new(format!("앱 설정을 읽지 못했습니다: {error}")))?;
+    let path = super::preferences::settings_path(&app)?;
+    let saved = settings::load(&path)
+        .map_err(|error| IpcError::new(settings::unreadable(&path, &error)))?;
     let distro = saved
         .distro
         .ok_or_else(|| IpcError::new("로그를 읽을 WSL 배포판을 아직 정하지 않았습니다"))?;

@@ -157,6 +157,26 @@ it("redeploy_is_offered_while_the_daemon_does_not_answer", async () => {
     view.unmount();
   }
 });
+it("a_failed_redeploy_shows_the_failed_step_under_the_fixed_notice", async () => {
+  const step = "서비스 다시 시작 실패: command failed: systemctl";
+  mock.invoke.mockRejectedValueOnce({ message: "WSL 다시 설정을 완료하지 못했습니다", detail: step });
+  setup();
+  const redeploy = async () => {
+    await userEvent.click(screen.getByRole("button", { name: "다시 설정" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "실행" }));
+  };
+  await redeploy();
+  expect(
+    await screen.findByText("작업을 완료하지 못했습니다. 연결 상태와 설치 환경을 확인해 주세요."),
+  ).toBeInTheDocument();
+  expect(screen.getByText(step)).toBeInTheDocument();
+  // The next run's result replaces it.
+  await redeploy();
+  expect(
+    await screen.findByText("WSL 다시 설정을 완료했습니다. 다시 연결되면 상태를 새로 읽습니다."),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(step)).not.toBeInTheDocument();
+});
 it("support_bundle_shows_log_omission_and_opens_its_parent_folder", async () => {
   setup();
   await userEvent.click(screen.getByRole("button", { name: "지원 번들" }));

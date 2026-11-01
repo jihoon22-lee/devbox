@@ -86,6 +86,27 @@ mod tests {
         assert_eq!(splitter.push(&renderer).unwrap().len(), 1);
     }
     #[test]
+    fn errors_and_gates_carry_a_detail_or_a_file_only_when_they_have_one() {
+        let plain = IpcError::new("WSL 다시 설정을 완료하지 못했습니다");
+        assert_eq!(
+            serde_json::to_string(&plain).unwrap(),
+            r#"{"message":"WSL 다시 설정을 완료하지 못했습니다"}"#
+        );
+        let detailed = plain.with_detail("서비스 다시 시작 실패: command failed: systemctl");
+        assert_eq!(
+            serde_json::to_string(&detailed).unwrap(),
+            r#"{"message":"WSL 다시 설정을 완료하지 못했습니다","detail":"서비스 다시 시작 실패: command failed: systemctl"}"#
+        );
+        let mut gate = State::<()>::default().gate;
+        assert!(!serde_json::to_string(&gate).unwrap().contains("file"));
+        gate.file = Some(r"C:\fixture\settings.json".into());
+        assert!(
+            serde_json::to_string(&gate)
+                .unwrap()
+                .contains(r#""file":"C:\\fixture\\settings.json""#)
+        );
+    }
+    #[test]
     fn send_rejects_multiple_or_incomplete_frames() {
         let mut c = State::<()>::default();
         c.attach("main".into(), "lease".into(), ()).unwrap();
@@ -115,6 +136,9 @@ pub struct GateStatus {
     pub state: &'static str,
     pub detail: Option<String>,
     pub distros: Option<Vec<super::wsl::Distro>>,
+    /// `settingsInvalid`: the app's settings file, which the screen names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
     pub instance: &'static str,
     pub revision: String,
 }
@@ -129,12 +153,20 @@ pub struct Notice {
 #[error("{message}")]
 pub struct IpcError {
     pub message: String,
+    /// What failed, shown under the fixed `message` (a failed setup step, say).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 impl IpcError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            detail: None,
         }
+    }
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 }
 pub struct Lease<C> {
@@ -160,6 +192,7 @@ impl<C> Default for State<C> {
                 state: "checking",
                 detail: None,
                 distros: None,
+                file: None,
                 instance: INSTANCE,
                 revision: "0".into(),
             },

@@ -16,11 +16,14 @@ export interface GateStatus {
     | "systemdOff"
     | "deploying"
     | "setupFailed"
+    | "settingsInvalid"
     | "connecting"
     | "ready"
     | "bridgeFailed";
   detail?: string | null;
   distros?: { name: string; version: number; default: boolean }[] | null;
+  /** `settingsInvalid`: the app's own settings file, which did not load. */
+  file?: string | null;
 }
 
 function CompactGate({ title, body, action }: { title: string; body?: string; action?: ReactNode }) {
@@ -31,7 +34,7 @@ function CompactGate({ title, body, action }: { title: string; body?: string; ac
     </Banner>
   );
 }
-const FAILED: readonly GateStatus["state"][] = ["setupFailed", "bridgeFailed"];
+const FAILED: readonly GateStatus["state"][] = ["setupFailed", "settingsInvalid", "bridgeFailed"];
 export function GateView({
   status,
   onRetry,
@@ -121,6 +124,15 @@ export function GateView({
         <View
           title="WSL 쪽 설치에 실패했습니다"
           body="[자세히]에서 원인을 확인하고 [다시 시도]하세요."
+          action={failed}
+        />
+      );
+    case "settingsInvalid":
+      // Only the user moves or deletes the file. Its error text is under [자세히].
+      return (
+        <View
+          title="앱 설정 파일을 읽지 못했습니다"
+          body={`${status.file ?? "settings.json"} 파일을 지우거나 이름을 바꾸면 기본 설정으로 시작합니다. 그다음 [다시 시도]하세요.`}
           action={failed}
         />
       );
