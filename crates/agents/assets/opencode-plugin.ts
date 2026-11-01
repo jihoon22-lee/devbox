@@ -1,7 +1,8 @@
 // devbox opencode plugin. devbox writes this file and loads it only in its own tasks, through
 // OPENCODE_CONFIG_CONTENT, next to the user's own plugins. It reports the task's session to
 // devbox with `devbox agent event --from opencode <report>`, imports nothing but
-// node:child_process, and never throws into opencode.
+// node:child_process, and never throws into opencode. It takes the task out of opencode's
+// environment, so nothing opencode starts, a nested opencode included, reports as the task.
 import { spawn } from "node:child_process";
 
 /** One report: the last argument of `devbox agent event --from opencode`. */
@@ -145,20 +146,45 @@ export function toDevboxEvent(event: unknown, state: PluginState): DevboxPayload
 
 type DevboxHooks = { event?: (input: { event: unknown }) => Promise<void> };
 
+/** The task an opencode process reports for, and the launch its reports are bound to. */
+type Task = { bin: string; id: string; launch?: string };
+
+/** The task taken from this process's environment. opencode calls `server()` again in the same
+ * process for each folder it opens and after a reload, when the environment no longer has it. */
+let taken: Task | undefined;
+
+/** The task to report for. Its id and launch leave the environment before any tool can run, so a
+ * nested `opencode run` loads this plugin with no task and stays inert instead of reporting its
+ * sessions as the task's. The reports carry them instead. */
+function take(env: typeof process.env): Task | undefined {
+  const { DEVBOX_BIN: bin, DEVBOX_AGENT_ID: id, DEVBOX_AGENT_LAUNCH: launch } = env;
+  delete env.DEVBOX_AGENT_ID;
+  delete env.DEVBOX_AGENT_LAUNCH;
+  if (bin && id) taken = launch === undefined ? { bin, id } : { bin, id, launch };
+  return taken;
+}
+
+/** One report's environment: opencode's own, with the task `devbox agent event` reports for. */
+function reportEnv({ id, launch }: Task): typeof process.env {
+  const env = { ...process.env, DEVBOX_AGENT_ID: id };
+  return launch === undefined ? env : { ...env, DEVBOX_AGENT_LAUNCH: launch };
+}
+
 export default {
   id: "devbox",
   async server(): Promise<DevboxHooks> {
-    const bin = process.env.DEVBOX_BIN;
+    const task = take(process.env);
     // Outside a devbox task there is nothing to report to.
-    if (!bin || !process.env.DEVBOX_AGENT_ID) return {};
+    if (!task) return {};
     const state = newState();
     // Reports go one at a time, so devbox receives them in opencode's order.
     let queue = Promise.resolve();
     const report = (payload: DevboxPayload) =>
       new Promise<void>((done) => {
         try {
-          const child = spawn(bin, ["agent", "event", "--from", "opencode", JSON.stringify(payload)], {
+          const child = spawn(task.bin, ["agent", "event", "--from", "opencode", JSON.stringify(payload)], {
             stdio: "ignore",
+            env: reportEnv(task),
           });
           const guard = setTimeout(done, REPORT_WAIT_MS);
           if (typeof guard === "object") guard.unref();

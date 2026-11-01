@@ -8,11 +8,17 @@ import plugin, { newState, toDevboxEvent } from "../../../../../crates/agents/as
 const spawn = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ spawn, default: { spawn } }));
 
+/** The plugin as an opencode process loads it, with nothing kept from an earlier process. */
+async function load(): Promise<typeof plugin> {
+  vi.resetModules();
+  return (await import("../../../../../crates/agents/assets/opencode-plugin")).default;
+}
+
 const RECORDING = "../../../../../crates/agents/tests/fixtures/opencode-1.19.3/events.jsonl";
 /** The report `parse_plugin_event` is tested with, in Rust, for a cut at an emoji. */
 const EMOJI_CUT = "../../../../../crates/agents/tests/fixtures/plugin-report-emoji-cut.json";
 const fixture = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
-const ENV = ["DEVBOX_AGENT_ID", "DEVBOX_BIN"] as const;
+const ENV = ["DEVBOX_AGENT_ID", "DEVBOX_AGENT_LAUNCH", "DEVBOX_BIN", "DEVBOX_INSTANCE"] as const;
 let saved: Record<string, string | undefined> = {};
 beforeEach(() => {
   saved = Object.fromEntries(ENV.map((key) => [key, process.env[key]]));
@@ -344,7 +350,7 @@ test("plugin_is_inert_without_devbox_agent_id", async () => {
   for (const env of [{ DEVBOX_BIN: "/owned/devbox" }, { DEVBOX_BIN: "/owned/devbox", DEVBOX_AGENT_ID: "" }, {}]) {
     for (const key of ENV) delete process.env[key];
     Object.assign(process.env, env);
-    const hooks = await plugin.server();
+    const hooks = await (await load()).server();
     expect(hooks).toEqual({});
   }
   expect(spawn).not.toHaveBeenCalled();
@@ -355,20 +361,64 @@ function child() {
   return Object.assign(new EventEmitter(), { unref: vi.fn() });
 }
 
+const TASK = { DEVBOX_BIN: "/owned/devbox", DEVBOX_AGENT_ID: "a1", DEVBOX_AGENT_LAUNCH: "launch-1" };
+
+test("the task's id and launch leave opencode's environment and go only to devbox", async () => {
+  Object.assign(process.env, TASK, { DEVBOX_INSTANCE: "test-owned" });
+  spawn.mockReturnValue(child());
+  const hooks = await (await load()).server();
+  // Gone before any tool runs: nothing opencode starts inherits the task to report as.
+  expect(process.env.DEVBOX_AGENT_ID).toBeUndefined();
+  expect(process.env.DEVBOX_AGENT_LAUNCH).toBeUndefined();
+  expect(process.env.DEVBOX_BIN).toBe("/owned/devbox");
+  expect(process.env.DEVBOX_INSTANCE).toBe("test-owned");
+  await hooks.event?.({ event: status("ses_root", "busy") });
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  // `devbox agent event` reports for the id and binds the report to the launch.
+  expect(spawn).toHaveBeenCalledWith(
+    "/owned/devbox",
+    ["agent", "event", "--from", "opencode", JSON.stringify({ v: 1, event: "working", sessionId: "ses_root" })],
+    { stdio: "ignore", env: { ...process.env, DEVBOX_AGENT_ID: "a1", DEVBOX_AGENT_LAUNCH: "launch-1" } },
+  );
+});
+
+test("another folder or a reload in the same opencode still reports for the task", async () => {
+  Object.assign(process.env, TASK);
+  spawn.mockReturnValue(child());
+  const loaded = await load();
+  await loaded.server();
+  // opencode calls server() again, in the same process, for each folder and after a reload.
+  const again = await loaded.server();
+  await again.event?.({ event: status("ses_root", "busy") });
+  await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  expect(spawn.mock.calls[0]?.[2]?.env).toMatchObject({ DEVBOX_AGENT_ID: "a1", DEVBOX_AGENT_LAUNCH: "launch-1" });
+});
+
+test("a nested opencode run inherits no task and stays inert", async () => {
+  Object.assign(process.env, TASK);
+  await (await load()).server();
+  // A tool's `opencode run` gets this environment and loads the plugin in a process of its own.
+  const nested = await (await load()).server();
+  expect(nested).toEqual({});
+  expect(spawn).not.toHaveBeenCalled();
+});
+
 test("reports go to devbox one at a time, in order", async () => {
   Object.assign(process.env, { DEVBOX_AGENT_ID: "a1", DEVBOX_BIN: "/owned/devbox" });
   const first = child();
   const second = child();
   spawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
-  const hooks = await plugin.server();
+  const hooks = await (await load()).server();
   await hooks.event?.({ event: status("ses_root", "busy") });
   await hooks.event?.({ event: asked("per_1", "ses_root", "bash") });
   await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+  // Without a launch to bind to, the report goes as before and devbox applies it unbound.
   expect(spawn).toHaveBeenCalledWith(
     "/owned/devbox",
     ["agent", "event", "--from", "opencode", JSON.stringify({ v: 1, event: "working", sessionId: "ses_root" })],
-    { stdio: "ignore" },
+    { stdio: "ignore", env: { ...process.env, DEVBOX_AGENT_ID: "a1" } },
   );
+  expect(spawn.mock.calls[0]?.[2]?.env).not.toHaveProperty("DEVBOX_AGENT_LAUNCH");
   expect(first.unref).toHaveBeenCalled();
   first.emit("exit", 0);
   await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
@@ -390,7 +440,7 @@ test("spawn_errors_are_swallowed", async () => {
     })
     .mockReturnValueOnce(failing)
     .mockReturnValueOnce(child());
-  const hooks = await plugin.server();
+  const hooks = await (await load()).server();
   await expect(hooks.event?.({ event: status("ses_root", "busy") })).resolves.toBeUndefined();
   await expect(hooks.event?.({ event: asked("per_1", "ses_root", "bash") })).resolves.toBeUndefined();
   await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
