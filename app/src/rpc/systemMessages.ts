@@ -35,7 +35,7 @@ export const SYSTEM_MESSAGES: Messages<Domain> = {
   "runtime.windows_copy_busy": {
     title: "Windows 사본을 쓰는 실행이나 그 실행이 남긴 프로세스(빌드 서버 등)가 아직 끝나지 않았습니다.",
     action:
-      "끝날 때까지 기다린 뒤 다시 실행하세요. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)는 한동안 쓰이지 않아야 스스로 끝나므로, 바로 끝내려면 dotnet build-server shutdown이나 gradle --stop을 실행하거나 작업 관리자에서 끝내세요. 모두 끝났는데도 계속되면 Windows 앱 연결을 확인해 주세요.",
+      "끝날 때까지 기다린 뒤 다시 실행하세요. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)는 한동안 쓰이지 않아야 스스로 끝나므로, 바로 끝내려면 Windows 터미널에서 dotnet build-server shutdown이나 gradle --stop(Gradle Wrapper 프로젝트는 gradlew --stop)을 실행하거나 작업 관리자에서 끝내세요. 모두 끝났는데도 1분 넘게 계속되면 Windows 앱 연결을 확인해 주세요.",
   },
   "windows.config_invalid": {
     title: "Windows 설정을 읽지 못해 Windows 사본으로 실행하지 않았습니다.",
