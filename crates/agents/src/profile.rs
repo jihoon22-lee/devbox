@@ -280,7 +280,8 @@ mod tests {
         // opencode's plugin reports its prompts, so its pane is matched only for a draft in shell
         // mode (watch_tests: an_opencode_draft_in_shell_mode_is_waiting). pi's trust question is
         // matched on screen too (pi_trust_screen_is_waiting), and so is Claude's, which comes
-        // before any of its hooks (claude_folder_trust_dialog_is_waiting).
+        // before any of its hooks (claude_folder_trust_dialog_is_waiting), and a Claude draft in
+        // shell mode (a_claude_draft_in_shell_mode_is_waiting).
         let family = crate::family_patterns::family_patterns;
         assert!(!family(Hooks::Claude).tail.is_empty());
         assert!(!family(Hooks::Codex).tail.is_empty());

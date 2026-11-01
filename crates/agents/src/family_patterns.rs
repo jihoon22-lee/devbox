@@ -5,8 +5,8 @@
 //! Codex 승인·결정 화면, 확인 상자, 입력 상자·목록·설정의 힌트 줄, 입력창의 셸 모드·하위 에이전트·/side
 //! 표시와 화면을 덮는 보기는 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면 아님),
 //! 폴더 신뢰 화면은 0.164.0 실제 녹화와 0.166.0 소스, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면
-//! 아님)이다. Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서, opencode 셸 모드 힌트는 설치본 1.19.3의
-//! 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은 실제 fixture로 보강한다.
+//! 아님)이다. Claude 폴더 신뢰 대화와 셸 모드 footer는 설치본 2.1.308의 코드에서, opencode 셸 모드 힌트는
+//! 설치본 1.19.3의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은 실제 fixture로 보강한다.
 use crate::profile::Hooks;
 
 /// The waiting patterns of one family, before they are compiled.
@@ -45,13 +45,16 @@ pub(crate) fn family_patterns(hooks: Hooks) -> FamilyPatterns {
 }
 
 /// Claude Code. Its hooks report its waits, but none reports its folder-trust dialog, which
-/// comes before any of them.
+/// comes before any of them, or a draft the user left in shell mode, where Enter would run the
+/// draft and a send pasted after it as a shell command.
 const CLAUDE: &[&str] = &[
     // Folder trust. Evidence: crates/agents/tests/fixtures/claude-2.1.308/trust.txt (문자열 기반:
     // the dialog's code in the installed 2.1.308, not a real capture). The declining choice comes
     // first and holds the cursor, the choices have no number, and the accessible layout prints
     // them as "y. …" and "n. …".
     r"(?m)^\s*(?:[❯›>]\s*)?(?:(?:\d+|[yn])[.)]\s+)?(?:Yes, I trust this folder|No, continue without these permissions)",
+    // Shell mode: Claude Code 2.1.308's bash-mode footer, also drawn in the `?` help.
+    r"(?m)! for shell mode",
 ];
 
 /// Codex. Its `notify` reports only finished turns, so every prompt is matched on screen.

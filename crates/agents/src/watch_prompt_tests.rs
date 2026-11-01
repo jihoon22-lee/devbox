@@ -476,3 +476,38 @@ fn a_normal_claude_screen_is_not_waiting() {
         );
     }
 }
+
+/// Claude's prompt box with a `!` draft, which puts it in shell mode: Enter runs the draft, and a
+/// send pasted after it, as a shell command. No Claude hook reports it, so the pane is the only
+/// sign of this state.
+const CLAUDE_SHELL_MODE: &str = include_str!("../tests/fixtures/claude-2.1.308/shell-mode.txt");
+
+#[test]
+fn a_claude_draft_in_shell_mode_is_waiting() {
+    let patterns = builtin_patterns("claude");
+    let shell = screen(CLAUDE_SHELL_MODE);
+    assert!(matches_waiting(&patterns, shell));
+    // Output below it means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{shell}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+    // The same prompt box out of shell mode is not the mode: the footer is what marks it.
+    let normal = shell.replacen("! git st", "> git st", 1);
+    let normal = normal.replacen("! for shell mode", "? for shortcuts", 1);
+    assert_ne!(normal, shell);
+    assert!(!normal.contains("! for shell mode"));
+    assert!(!matches_waiting(&patterns, &normal));
+    // A normal idle screen, and words about the mode that are not its footer, are not the mode.
+    let working = screen(include_str!("../tests/fixtures/claude-2.1.308/working.txt"));
+    assert!(!matches_waiting(&patterns, working));
+    for line in [
+        "● Typing ! first switches the prompt to shell mode.",
+        "  for shell mode",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{working}\n{line}")),
+            "{line}"
+        );
+    }
+}
