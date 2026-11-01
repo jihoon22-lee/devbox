@@ -1,4 +1,4 @@
-import { CLEANUP_ACTION } from "./agentMessages";
+import { CLEANUP_ACTION, CLEANUP_LIST, teardownFailed } from "./agentMessages";
 import type { ErrorCode } from "./client";
 import { files, type Message } from "./messageDetail";
 import { messageFor } from "./messages";
@@ -6,29 +6,34 @@ import { messageFor } from "./messages";
 /**
  * `agents.worktree_dirty` where a closed task's cleanup stopped. Cleanup first undoes what changed
  * during it in a work folder that was clean before, so what stops it are changes it does not
- * delete: the user's own, from before cleanup started, or what the undo leaves alone (a nested
- * repository). A commit would move the folder off the head the task closed with, which takes it out
- * of the cleanup list for good, so the copy says not to. The table keeps the copy for a merge or PR.
+ * delete: the user's own, from before cleanup started, or what the undo leaves alone, such as a
+ * nested repository the teardown made, which it makes again on every retry. A commit would move the
+ * folder off the head the task closed with, which takes it out of the cleanup list for good, so the
+ * copy says not to. The table keeps the copy for a merge or PR. The action ends where the next
+ * step goes, which depends on where it is shown.
  */
-export const CLEANUP_DIRTY: Message = {
+const CLEANUP_DIRTY: Message = {
   title: "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다.",
-  action: "남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 정리 후보에서 다시 정리하세요.",
+  action:
+    "정리 명령이 만든 것이면 그 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고)",
 };
 
 /**
  * What a closed task's cleanup that stopped says, in the task's notice or in the cleanup list's own
- * line. In the notice the stored text, with any files it names, is one [자세히] away, and the next
- * action points to the cleanup list: the table's action belongs to the operation that failed, except
- * a failed teardown's, which is written for cleanup. The list's line keeps the code's own message
- * and names the files the error lists.
+ * line. The notice is outside settings, so its next step names the whole way to the list; the
+ * list's line says only to clean up again. In the notice the stored text, with any files it names,
+ * is one [자세히] away, and the table's action, written for the operation that failed, gives way
+ * to the list's. The list's line keeps the code's own message and names the files the error lists.
  */
 export function cleanupMessage(code: ErrorCode, detail: unknown, where: "notice" | "list"): Message {
+  const again = where === "notice" ? `${CLEANUP_LIST}에서 다시 정리하세요.` : "다시 정리하세요.";
   if (code === "agents.worktree_dirty") {
     const names = where === "list" ? files(detail) : "";
-    return names ? { ...CLEANUP_DIRTY, action: `${CLEANUP_DIRTY.action} 변경 파일: ${names}` } : CLEANUP_DIRTY;
+    return { ...CLEANUP_DIRTY, action: `${CLEANUP_DIRTY.action} ${again}${names ? ` 변경 파일: ${names}` : ""}` };
   }
+  if (code === "agents.teardown_failed") return teardownFailed(detail, again);
   const message = messageFor(code, detail);
-  if (where === "list" || code === "agents.teardown_failed") return message;
+  if (where === "list") return message;
   // A folder devbox does not remove: the notice keeps how to remove it, then points to the list.
   if (code === "agents.worktree_has_submodules") return { ...message, action: `${message.action} ${CLEANUP_ACTION}` };
   return { title: message.title, action: CLEANUP_ACTION };

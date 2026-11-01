@@ -34,23 +34,25 @@ test("agent errors use actual generated file details and terminal codes", () => 
   }
 });
 
-test("a failed teardown names which command of [agent] teardown to run and fix, and its exit code", () => {
+test("a failed teardown names which command of [agent] teardown to run in the work folder, and how it ended", () => {
   // The index is 1-based, as the daemon sends it. The command's text is not in the error.
   expect(messageFor("agents.teardown_failed", { index: 2, exit_code: 3 })).toEqual({
     title: "정리 명령이 실패했습니다(종료 코드 3).",
     action:
-      ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+      ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
   });
-  // Killed or timed out: there is no exit code to name.
+  // No exit code: devbox stopped it at its 60-second limit, or it was killed.
   expect(messageFor("agents.teardown_failed", { index: 1, exit_code: null })).toEqual({
+    title: "정리 명령이 60초 제한 시간을 넘겨 중단됐거나 강제로 종료됐습니다.",
+    action:
+      ".devbox/devbox.toml의 [agent] teardown 1번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
+  });
+  // Without a usable detail the sentences say neither the number nor how it ended.
+  expect(messageFor("agents.teardown_failed")).toEqual({
     title: "정리 명령이 실패했습니다.",
     action:
-      ".devbox/devbox.toml의 [agent] teardown 1번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+      ".devbox/devbox.toml의 [agent] teardown 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
   });
-  // Without a usable detail the sentence stands without the number.
-  expect(messageFor("agents.teardown_failed").action).toBe(
-    ".devbox/devbox.toml의 [agent] teardown 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
-  );
 });
 
 test("a work folder with submodules says devbox keeps it and gives the command that removes it, the folder quoted", () => {

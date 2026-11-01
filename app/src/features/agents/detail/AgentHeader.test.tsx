@@ -57,7 +57,7 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   // delete. The closed task has nothing to retry, and a commit would move HEAD off the closed one,
   // which takes the work folder out of the cleanup list for good.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 정리 후보에서 다시 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 정리 명령이 만든 것이면 그 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
   );
   expect(alert).not.toHaveTextContent("커밋한 뒤");
   expect(alert).not.toHaveTextContent("다시 시도");
@@ -75,17 +75,24 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   expect(screen.queryByText(raw)).not.toBeInTheDocument();
 });
 
-test("a failed teardown's notice names the command to fix and the cleanup list, with its exit code", async () => {
+test("a failed teardown's notice names the command to run in the work folder and the full way to the cleanup list", async () => {
   const raw = JSON.stringify({ code: "agents.teardown_failed", detail: { index: 2, exit_code: 3 } });
   header(raw);
   const alert = screen.getByRole("alert");
   expect(alert).toHaveTextContent("정리하지 못한 항목이 있습니다. 정리 명령이 실패했습니다(종료 코드 3).");
-  // Its own next action is written for cleanup, so the notice keeps it.
+  // The notice is outside settings, so it names the whole way to the list.
   expect(alert).toHaveTextContent(
-    ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+    ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
   );
   expect(alert).not.toHaveTextContent("원인을 확인하지 못했습니다.");
   expect(alert).not.toHaveTextContent("남은 항목을 확인하세요");
+});
+
+test("a teardown stopped without an exit code says it hit the time limit or was killed", () => {
+  header(JSON.stringify({ code: "agents.teardown_failed", detail: { index: 1, exit_code: null } }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "정리하지 못한 항목이 있습니다. 정리 명령이 60초 제한 시간을 넘겨 중단됐거나 강제로 종료됐습니다.",
+  );
 });
 
 test("a work folder kept for its submodules: the notice gives the command that removes it, then points to the cleanup list", () => {

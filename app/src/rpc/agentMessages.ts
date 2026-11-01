@@ -17,10 +17,30 @@ type Domain = "agents" | "projects" | "terminal";
  * clean and still at the head the task closed with, so a commit would take it out of the list for
  * good.
  */
-const CLEANUP_LIST = "설정 → 에이전트 → 정리 후보";
+export const CLEANUP_LIST = "설정 → 에이전트 → 정리 후보";
 export const CLEANUP_ACTION = `${CLEANUP_LIST}에서 남은 항목을 확인하세요.`;
 /** For a closed task's cleanup error that carries no code this table knows. */
 export const CLEANUP_UNKNOWN: Message = { title: "원인을 확인하지 못했습니다.", action: CLEANUP_ACTION };
+/**
+ * `agents.teardown_failed`: the daemon names the command by its 1-based place in the list, never by
+ * its text, and ran it in the work folder, so a command with relative paths acts the same there.
+ * Without an exit code it was killed, or stopped at the daemon's limit (`COMMAND_TIMEOUT` in
+ * crates/agents/src/action_cleanup.rs, pinned to this copy by a test there). `next` is what to do
+ * once the command is fixed, which depends on what failed: a closed task's cleanup or a discard.
+ */
+export function teardownFailed(detail: unknown, next: string): Message {
+  const index = field(detail, "index");
+  const code = field(detail, "exit_code");
+  return {
+    title:
+      typeof code === "number"
+        ? `정리 명령이 실패했습니다(종료 코드 ${code}).`
+        : code === null
+          ? "정리 명령이 60초 제한 시간을 넘겨 중단됐거나 강제로 종료됐습니다."
+          : "정리 명령이 실패했습니다.",
+    action: `.devbox/devbox.toml의 [agent] teardown ${typeof index === "number" ? `${index}번째 ` : ""}명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 ${next}`,
+  };
+}
 /** Messages for agent tasks, projects and terminals. */
 export const AGENT_MESSAGES: Messages<Domain> = {
   "terminal.command_too_long": {
@@ -69,15 +89,8 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     title: "정리 명령에 사용할 수 없는 문자가 있습니다.",
     action: "널 문자를 제거해 주세요.",
   },
-  // The daemon names the command by its 1-based place in the list, never by its text.
-  "agents.teardown_failed": (d) => {
-    const index = field(d, "index");
-    const code = field(d, "exit_code");
-    return {
-      title: typeof code === "number" ? `정리 명령이 실패했습니다(종료 코드 ${code}).` : "정리 명령이 실패했습니다.",
-      action: `.devbox/devbox.toml의 [agent] teardown ${typeof index === "number" ? `${index}번째 ` : ""}명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.`,
-    };
-  },
+  // A closed task's cleanup, by default; the cleanup list and a discard say their own next step.
+  "agents.teardown_failed": (d) => teardownFailed(d, `${CLEANUP_LIST}에서 다시 정리하세요.`),
   // Git removes such a folder only with force, which devbox never uses. The command names the folder
   // from the detail. Deleting the folder by hand instead would leave it registered, and its branch
   // would never be listed again.

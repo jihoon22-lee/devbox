@@ -303,6 +303,12 @@ async fn bounded_command_for(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    #[test]
+    fn the_teardown_limit_is_the_one_the_app_names() {
+        // `teardownFailed` in app/src/rpc/agentMessages.ts says a teardown without an exit code was
+        // stopped at this limit or killed: change both together.
+        assert_eq!(COMMAND_TIMEOUT, Duration::from_secs(60));
+    }
     #[tokio::test]
     async fn teardown_timeout_kills_owned_descendants_and_reaps_the_shell() {
         let root = tempfile::tempdir().expect("owned fixture");

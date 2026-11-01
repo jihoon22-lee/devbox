@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { teardownFailed } from "../../../rpc/agentMessages";
 import { RpcError } from "../../../rpc/client";
 import type { MergeKind, Methods } from "../../../rpc/gen/rpc";
 import { messageFor } from "../../../rpc/messages";
@@ -46,8 +47,13 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       version.current++;
     };
   }, [task.id, task.projectId, task.state === "closed"]);
-  const errorText = (error: RpcError) => {
-    const message = messageFor(error.code, error.detail);
+  const errorText = (error: RpcError, kind?: Intent["kind"]) => {
+    // A discard's teardown failed while the task is still open, so it is not in the cleanup list:
+    // once the command is fixed, the discard is what to try again.
+    const message =
+      kind === "discard" && error.code === "agents.teardown_failed"
+        ? teardownFailed(error.detail, "다시 버리세요.")
+        : messageFor(error.code, error.detail);
     return `${message.title} ${message.action ?? ""}${error.diagnosticId ? ` · 진단 ${error.diagnosticId}` : ""}`;
   };
   const refresh = async (intent: Intent, stamp: number) => {
@@ -176,7 +182,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
     } catch (error) {
       if (stamp !== version.current) return;
       const failure = error instanceof RpcError ? error : new RpcError("internal");
-      setNotice(errorText(failure));
+      setNotice(errorText(failure, intent.kind));
       if (isProjectTrustError(failure)) {
         // The old Git snapshot cannot survive a changed command definition.
         // Only an explicit recheck may obtain approval and a fresh Git snapshot.

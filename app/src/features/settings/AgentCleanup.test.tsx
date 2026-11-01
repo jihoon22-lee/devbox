@@ -47,18 +47,23 @@ test("a cleanup stopped by changes it will not delete says to clear them, not co
   const alert = await refuse({ code: "agents.worktree_dirty", detail: { files: ["notes.txt", "build/out.bin"] } });
   // After its own undo, what stops cleanup are changes devbox does not delete. A commit would move
   // the folder off the head the task closed with and take it out of this list for good.
+  // The undo leaves what a teardown makes that it does not take, such as a nested repository,
+  // and the teardown makes it again on every retry.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 정리 후보에서 다시 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 정리 명령이 만든 것이면 그 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요.",
   );
   expect(alert).toHaveTextContent("변경 파일: notes.txt, build/out.bin");
   expect(alert).not.toHaveTextContent("커밋한 뒤");
+  // This line is in the list already.
+  expect(alert).not.toHaveTextContent("정리 후보에서");
 });
 
-test("a cleanup stopped by a failed teardown names which command to run and fix, and its exit code", async () => {
+test("a cleanup stopped by a failed teardown names which command to run in the work folder, and its exit code", async () => {
   const alert = await refuse({ code: "agents.teardown_failed", detail: { index: 2, exit_code: 3 } }, "diag-7");
   expect(alert).toHaveTextContent(
-    "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요. · 진단 diag-7",
+    "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 다시 정리하세요. · 진단 diag-7",
   );
+  expect(alert).not.toHaveTextContent("정리 후보에서");
 });
 
 const SUBMODULES = `하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force '${WORKTREE}'로 직접 지우세요.`;
