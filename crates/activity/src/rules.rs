@@ -1,7 +1,7 @@
 //! `config.toml [activity]`: privacy rules and the idle threshold. Core keeps the
-//! table opaque; it is read here. Anything unreadable fails closed (no titles)
-//! instead of stopping the daemon. Writes take the shared config lock (also taken
-//! by `devbox_secrets` `save_name`) and keep comments and other sections.
+//! table opaque; it is read here. Anything unreadable fails closed (nothing is
+//! recorded) instead of stopping the daemon. Writes take the shared config lock
+//! (also taken by `devbox_secrets` `save_name`) and keep comments and other sections.
 use crate::model::idle::{DEFAULT_IDLE_THRESHOLD_MS, MAX_IDLE_THRESHOLD_MS, MIN_IDLE_THRESHOLD_MS};
 use crate::model::privacy::{CompiledRules, PrivacyRules};
 use serde::Deserialize;
@@ -16,7 +16,8 @@ pub const LOCK_FILE: &str = ".config.toml.lock";
 pub struct ActivitySettings {
     pub rules: PrivacyRules,
     pub idle_threshold_ms: i64,
-    /// `false`: the table did not parse; `rules` then masks every title.
+    /// `false`: the table did not parse, so nothing is recorded; `rules`, which the
+    /// app is shown, then masks every title.
     pub readable: bool,
 }
 
@@ -46,7 +47,7 @@ pub fn valid_idle(ms: i64) -> bool {
 }
 
 impl ActivitySettings {
-    /// Never fails: a table that does not parse becomes "mask all titles".
+    /// Never fails: a table that does not parse becomes [`Self::unreadable`].
     pub fn from_table(table: &toml::Table) -> Self {
         Self::try_from_table(table).unwrap_or_else(|_| Self::unreadable())
     }
@@ -70,7 +71,7 @@ impl ActivitySettings {
         })
     }
 
-    /// `[activity]` did not load: store no titles.
+    /// `[activity]` did not load: record nothing until it does or new rules are saved.
     pub fn unreadable() -> Self {
         Self {
             rules: PrivacyRules {
@@ -82,7 +83,7 @@ impl ActivitySettings {
         }
     }
 
-    /// The rules the daemon applies; anything not compilable stores no titles.
+    /// The rules the daemon applies; anything not compilable records nothing.
     pub fn compiled(&self) -> CompiledRules {
         if !self.readable {
             return CompiledRules::fail_closed();

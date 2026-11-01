@@ -68,6 +68,8 @@ pub struct CompiledRules {
     excluded_titles: RegexSet,
     redactions: Vec<Regex>,
     mask_all_titles: bool,
+    /// [`CompiledRules::fail_closed`]: every session is dropped.
+    closed: bool,
 }
 
 fn check_list(field: RuleField, values: &[String], problems: &mut Vec<InvalidRule>) {
@@ -183,22 +185,27 @@ impl CompiledRules {
             excluded_titles,
             redactions,
             mask_all_titles: rules.mask_all_titles,
+            closed: false,
         })
     }
 
-    /// Used when stored rules cannot be read or compiled: the session keeps
-    /// its process and duration but no title is ever stored.
+    /// Used when stored rules cannot be read or compiled: nothing is stored. The apps the
+    /// user excluded are part of those rules, so any session kept could be one of them.
     pub fn fail_closed() -> Self {
         Self {
             excluded_processes: Vec::new(),
             excluded_titles: RegexSet::empty(),
             redactions: Vec::new(),
             mask_all_titles: true,
+            closed: true,
         }
     }
 
     /// `None` drops the whole session. `Some((app, title))` is what may be stored.
     pub fn apply(&self, app: &str, title: &str) -> Option<(String, String)> {
+        if self.closed {
+            return None;
+        }
         let app_lower = app.to_lowercase();
         if self.excluded_processes.contains(&app_lower) {
             return None;
@@ -355,12 +362,16 @@ mod tests {
     }
 
     #[test]
-    fn fail_closed_never_keeps_a_title() {
+    fn fail_closed_stores_nothing() {
         let compiled = CompiledRules::fail_closed();
-        assert_eq!(
-            compiled.apply("a.exe", "private"),
-            Some(("a.exe".into(), String::new()))
-        );
+        for (app, title) in [
+            ("a.exe", "private"),
+            ("KeePassXC.exe", ""),
+            ("code.exe", "devbox — main.rs"),
+            ("", ""),
+        ] {
+            assert_eq!(compiled.apply(app, title), None, "{app:?} {title:?}");
+        }
     }
 
     #[test]

@@ -1759,7 +1759,6 @@ S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]
   - `redactKnownTokenPatterns`의 `sk_`·`sk-` 접두에 왼쪽 경계가 없어 과하게 가린다. 데몬 쪽과 함께 고친다.
   - 노트가 꺼진 동안 search.notes 색인이 낡는다(S7-2).
   - `SupportBundle`의 `notes_disabled` 줄에 다음 행동이 없다.
-  - 활동 기록 규칙을 읽거나 컴파일하지 못하면 제목만 막고 `excluded_processes`도 비우므로, 제외하려던 앱의 이름과 시간이 기록된다(`crates/activity/src/model/privacy.rs` `CompiledRules::fail_closed`, `crates/activity/src/rules.rs` `ActivitySettings::unreadable`, 앱 `app/src-tauri/src/core/activity.rs`의 규칙 없음 분기). 문서는 이 동작대로 적었다(S7-11 수정 1회차).
 - **시험·크기**
   - 시험이 `/tmp/tmux-<uid>`에 socket 파일을 남긴다.
   - 거의 꽉 찬 파일: `crates/agents/src/command_path.rs` 542/600, `app/src/features/terminal/TerminalView.test.tsx` 588/600, `crates/cli/tests/agents.rs` 591/600, `crates/agents/src/discard_snapshot.rs` 583/600.

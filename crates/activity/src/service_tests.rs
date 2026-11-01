@@ -81,29 +81,26 @@ async fn ingest_reapplies_rules_server_side() -> T {
 }
 
 #[tokio::test]
-async fn broken_rules_store_no_titles() -> T {
+async fn broken_rules_store_nothing_until_rules_that_compile_are_saved() -> T {
     for broken in [
         "excluded_title_patterns = ['(unclosed']",
         "redact_title_patterns = 'not a list'",
         "unknown_key = 1",
     ] {
-        let a = fixture_with(broken);
-        *a.projects.lock().expect("projects") = vec![ProjectMatch {
-            project_id: "p1".into(),
-            basenames: vec!["devbox".into()],
-        }];
-        a.ingest(a.fg("code.exe", "devbox — private.md", 1_000, 1_000))
+        // The app the user excluded is in the rules that cannot be applied.
+        let a = fixture_with(&format!("excluded_processes = ['KeePassXC.exe']\n{broken}"));
+        a.ingest(a.fg("KeePassXC.exe", "vault", 1_000, 1_000))
             .await
             .map_err(fail)?;
-        a.ingest(a.pause(2_000)).await.map_err(fail)?;
+        a.ingest(a.fg("code.exe", "devbox — private.md", 2_000, 2_000))
+            .await
+            .map_err(fail)?;
+        a.ingest(a.pause(3_000)).await.map_err(fail)?;
         a.flush().await;
-        let rows = a.sessions().await;
-        assert_eq!(rows.len(), 1, "{broken}");
-        assert_eq!(rows[0].app, "code.exe");
-        assert_eq!(rows[0].title, "", "{broken}: fail-closed stores no title");
         assert_eq!(
-            rows[0].project_id, None,
-            "no title, so nothing to attribute"
+            a.sessions().await,
+            [],
+            "{broken}: fail-closed stores nothing"
         );
         // The app receives rules that compile to "no titles" or do not compile.
         let view = a.svc.rules(NoParams {}).await.map_err(fail)?;
@@ -111,6 +108,19 @@ async fn broken_rules_store_no_titles() -> T {
         assert!(
             compiled.is_err() || view.rules.mask_all_titles,
             "{broken}: {view:?}"
+        );
+        // Saving rules that compile, as 설정 → 활동 does, records again at once.
+        a.svc.set_rules(rules(&[])).await.map_err(fail)?;
+        a.ingest(a.fg("code.exe", "after", 4_000, 4_000))
+            .await
+            .map_err(fail)?;
+        a.ingest(a.pause(5_000)).await.map_err(fail)?;
+        a.flush().await;
+        let rows = a.sessions().await;
+        assert_eq!(rows.len(), 1, "{broken}: {rows:?}");
+        assert_eq!(
+            (rows[0].app.as_str(), rows[0].title.as_str()),
+            ("code.exe", "after")
         );
     }
     Ok(())

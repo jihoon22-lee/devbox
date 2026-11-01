@@ -275,7 +275,8 @@ async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
     );
     // A syntax error turns notes off; the daemon must not fall back to a default vault.
     assert!(!d.home.path().join("notes").exists());
-    // Nor can activity read its privacy rules, so it stores no window titles.
+    // Nor can activity read its privacy rules, so it records nothing; the app is shown
+    // rules that mask every title.
     let rules = app
         .call::<devbox_activity::ActivityRules>(&devbox_activity::NoParams {})
         .await
@@ -314,7 +315,7 @@ async fn broken_config_bytes_are_unchanged_after_a_settings_write_attempt() {
         serde_json::from_str(detail.as_deref().expect("refusal detail").get())
             .expect("refusal detail JSON");
     assert_eq!(detail["file"], file.display().to_string().as_str());
-    // The activity rules writer refuses the same file, and titles stay masked.
+    // The activity rules writer refuses the same file, so the rules shown still mask titles.
     let refused = app
         .call::<devbox_activity::ActivitySetRules>(&devbox_activity::SetRules {
             rules: Default::default(),

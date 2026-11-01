@@ -213,7 +213,7 @@ fn project_names(projects: Arc<ProjectsService>) -> devbox_activity::ProjectName
     })
 }
 
-/// Activity from `config.toml [activity]` (unreadable rules store no titles),
+/// Activity from `config.toml [activity]` (unreadable rules record nothing),
 /// stored in `devbox.db`, exported to `<data>/exports`.
 pub(super) fn activity(
     paths: &Paths,
@@ -223,7 +223,7 @@ pub(super) fn activity(
     projects: &Arc<ProjectsService>,
 ) -> Arc<devbox_activity::ActivityService> {
     if !settings.readable {
-        tracing::warn!("[activity] settings are unreadable; titles are not stored");
+        tracing::warn!("[activity] settings are unreadable; activity is not recorded");
     }
     Arc::new(devbox_activity::ActivityService::new(
         devbox_activity::ActivityConfig::new(

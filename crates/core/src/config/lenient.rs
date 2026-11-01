@@ -346,7 +346,7 @@ mod tests {
             "{:?}",
             load.problems
         );
-        // Domain-owned sections fail too (activity then stores no titles), without a second report.
+        // Domain-owned sections fail too (activity then records nothing), without a second report.
         assert!(load.section("activity", |_| Ok::<_, String>(())).is_none());
         assert_eq!(load.problems.len(), 1);
     }
