@@ -90,7 +90,8 @@ function walkAnsi(text: string, unit: (character: string, code: number) => void,
     } else if (escaped) {
       i++;
       while (i < text.length && text.charCodeAt(i) >= 32 && text.charCodeAt(i) <= 47) i++;
-      i++;
+      // The final character, whole: one outside the BMP is two UTF-16 units.
+      i += (text.codePointAt(i) ?? 0) > 0xffff ? 2 : 1;
     } else {
       unit(text[i]!, code);
       i++;

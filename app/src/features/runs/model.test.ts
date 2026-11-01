@@ -22,6 +22,12 @@ test("plain text drops the same sequences whole and marks every control code but
   expect(ansiToText("\x1b[1mok\x1b[0m\ta\nb\rc\x7f\x85\x9c")).toBe("ok\ta\nb�c���");
 });
 
+test("an escape before a character outside the BMP takes the whole character, never half of it", () => {
+  // A lone surrogate would make the failure-log send invalid JSON for the daemon.
+  expect(ansiToText("\x1b😀ok\x1b(😀")).toBe("ok");
+  expect(ansiToSpans("\x1b😀ok").map((span) => span.text)).toEqual(["ok"]);
+});
+
 test("follow pauses on upward scrolling and new lines never override an explicit pause", () => {
   expect(followState(true, { type: "userScrolled", atBottom: false })).toBe(false);
   expect(followState(false, { type: "newLines" })).toBe(false);
