@@ -15,6 +15,7 @@ use crate::{
     state::{AgentState, CloseHow},
 };
 use devbox_projects::trust::AuthorizedConfig;
+use devbox_protocol::Fail;
 use std::path::Path;
 
 /// Why cleanup may delete a closed task's branch.
@@ -145,6 +146,44 @@ impl AgentsService {
             unmerged,
         }
         .into())
+    }
+
+    /// The teardown of an [`Self::undoable`] folder failed. What it wrote is undone as before a
+    /// removal, after the same checks (ownership, pins, state, branch, operation), so the folder is
+    /// clean at the closed head again and the task stays in the cleanup list until the command is
+    /// fixed. When a check does not hold, a pin moved for one, the folder stays as the command left
+    /// it. The caller reports the teardown's failure either way.
+    pub(crate) async fn undo_failed_teardown(
+        &self,
+        task: &AgentTask,
+        repo: &Path,
+        wt: &Path,
+        branch: &str,
+    ) {
+        let undone: Result<()> = async {
+            self.owned_worktree(task).await?;
+            self.pins_held(task, repo, wt, branch).await?;
+            if self.get(&task.id).await?.state != AgentState::Closed {
+                return Err(AgentsError::UnsafeWorktree.into());
+            }
+            if devbox_git::current_branch(wt)
+                .await
+                .map_err(git_failure)?
+                .as_deref()
+                != Some(branch)
+            {
+                return Err(AgentsError::UnsafeWorktree.into());
+            }
+            self.undo_teardown(task, wt).await
+        }
+        .await;
+        if let Err(error) = undone {
+            let code = match &error {
+                Fail::Domain(error) => error.to_string(),
+                Fail::Internal(_) => "internal".into(),
+            };
+            tracing::warn!(agent = %task.id, %code, "kept what the failed teardown left");
+        }
     }
 
     /// The last step before an [`Self::undoable`] folder's removal, after every other check passed:

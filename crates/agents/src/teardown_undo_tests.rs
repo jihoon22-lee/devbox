@@ -45,6 +45,19 @@ fn a_failing_teardown_names_its_command_and_keeps_the_folder() {
     );
 }
 
+/// A teardown that writes into a folder that was clean at the closed head and then fails: what it
+/// wrote is undone after the same checks as before a removal, so the folder stays in the cleanup
+/// list and a fixed teardown cleans it up. The failure is still `agents.teardown_failed` and the
+/// folder stays. A teardown that also moved HEAD keeps what it left.
+#[test]
+fn a_failed_teardown_leaves_the_folder_as_it_was_and_listed() {
+    cases(
+        "teardown_undo_tests::a_failed_teardown_leaves_the_folder_as_it_was_and_listed",
+        &["failed-auto", "failed-manual", "failed-head-moved"],
+        case,
+    );
+}
+
 /// `git status` does not show an edit to a file marked assume-unchanged or skip-worktree, so the
 /// folder looks clean while it holds one, maybe the user's. Then nothing is undone: the removal
 /// refuses what the teardown left, as it did before the undo existed.
@@ -334,6 +347,57 @@ async fn case(mode: String) {
             );
             assert!(wt.join("teardown.log").exists(), "nothing was undone");
             assert!(receipt("clean").is_empty());
+            assert!(has_branch(&f).await);
+        }
+        "failed-auto" | "failed-manual" => {
+            let failing = "printf x > t.log; exit 3";
+            let note = serde_json::json!({"code":"agents.teardown_failed","detail":{"index":2,"exit_code":3}});
+            if mode == "failed-auto" {
+                approve_teardown(&f, &task, &wt, &[failing]).await;
+                let closed = close(&f, &task, MergeKind::Squash).await;
+                assert_eq!(note_of(&closed), note);
+            } else {
+                set_cleanup(&mut f, false);
+                close(&f, &task, MergeKind::Merge).await;
+                approve_teardown(&f, &task, &wt, &[failing]).await;
+                let result = f.svc.cleanup(offered(&f, &listed(&f).await)).await;
+                let Err(Fail::Domain(error)) = &result else {
+                    panic!("a domain error: {result:?}");
+                };
+                assert_eq!(serde_json::to_value(error).expect("error JSON"), note);
+            }
+            // The failed command's file is undone: the folder is clean at the closed head again.
+            assert!(!wt.join("t.log").exists());
+            assert!(devbox_git::status(&wt).await.expect("status").clean);
+            let options = listed(&f).await;
+            assert_eq!(options.worktrees, [wt.to_string_lossy().into_owned()]);
+            assert_eq!(options.branches, ["agent/review"]);
+            // Fixed, the teardown runs again and the folder and branch go.
+            let ran = approve_teardown(&f, &task, &wt, &["printf x > t.log"]).await;
+            fs::remove_file(&ran).expect("marker of the failed run");
+            f.svc
+                .cleanup(offered(&f, &options))
+                .await
+                .expect("cleanup with the fixed teardown");
+            assert!(ran.exists(), "the fixed teardown ran");
+            assert!(!wt.exists());
+            assert!(!has_branch(&f).await);
+            assert_eq!(f.svc.get(&task.id).await.expect("task").cleanup_error, None);
+        }
+        "failed-head-moved" => {
+            approve_teardown(
+                &f,
+                &task,
+                &wt,
+                &["git commit --allow-empty -qm teardown && printf x > t.log; exit 3"],
+            )
+            .await;
+            let closed = close(&f, &task, MergeKind::Squash).await;
+            assert_eq!(note_of(&closed)["code"], "agents.teardown_failed");
+            // A pin moved: nothing is undone, and the folder is no longer offered.
+            assert!(wt.join("t.log").exists());
+            assert!(receipt("clean").is_empty());
+            assert!(listed(&f).await.worktrees.is_empty());
             assert!(has_branch(&f).await);
         }
         other => panic!("unknown mode {other}"),

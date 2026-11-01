@@ -348,7 +348,13 @@ impl AgentsService {
             let (project, path, branch) = self.owned_worktree(&task).await?;
             self.quiesce(&task).await?;
             let undo = self.undoable(&task, &path, &snapshot).await;
-            self.teardown_commands(&task, &snapshot).await?;
+            if let Err(failure) = self.teardown_commands(&task, &snapshot).await {
+                if undo {
+                    self.undo_failed_teardown(&task, Path::new(&project.path), &path, &branch)
+                        .await;
+                }
+                return Err(failure);
+            }
             self.owned_worktree(&task).await?;
             if undo {
                 self.pins_held(&task, Path::new(&project.path), &path, &branch)

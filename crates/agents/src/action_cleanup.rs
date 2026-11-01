@@ -128,7 +128,12 @@ impl AgentsService {
         }
         // Do not stop a second time; only optional teardown and Git removal remain.
         let undo = self.undoable(&task, &wt, snapshot).await;
-        self.teardown_commands(&task, snapshot).await?;
+        if let Err(failure) = self.teardown_commands(&task, snapshot).await {
+            if undo {
+                self.undo_failed_teardown(&task, repo, &wt, &branch).await;
+            }
+            return Err(failure);
+        }
         self.owned_worktree(&task).await?;
         if undo {
             self.pins_held(&task, repo, &wt, &branch).await?;
