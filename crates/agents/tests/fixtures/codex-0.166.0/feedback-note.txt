@@ -1,0 +1,14 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/feedback_note_view.rs가 그리는 피드백 메모 화면이다. /feedback에서 종류와 기록 올리기(Upload logs?)를 고르면 입력란 자리에 열린다.
+# 붙여 넣은 글은 메모 칸에 들어가고, Enter는 그 글을 사유로 피드백을 보낸다(submit → AppEvent::SubmitFeedback). footer는 bottom_pane/popup_consts.rs의 accept_cancel_hint_line이 만든다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/snapshots/codex_tui__bottom_pane__feedback_note_view__tests__feedback_view_bug.snap(60열)에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 두 소스 파일 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 배치와 footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+▌ Tell us more (bug)
+▌
+▌ Your feedback can be used to improve ChatGPT. Learn more.
+▌
+▌ (optional) Write a short description to help us further
+
+Press enter to submit or esc to cancel

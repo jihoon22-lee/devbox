@@ -59,8 +59,9 @@ const CODEX: &[&str] = &[
     // much only holds sends back while it shows.
     // 1. The footer of a choice list Enter would answer: the approvals of commands, network
     //    hosts, permissions, edits and terminal input, MCP requests and user verification,
-    //    whatever their choices are called.
-    r"(?m)^\s*Press \S+ to confirm\b",
+    //    whatever their choices are called. "to submit" is the feedback note's, where Enter
+    //    uploads the feedback with what the note holds, a pasted send included.
+    r"(?m)^\s*Press \S+ to (?:confirm|submit)\b",
     // 2. Their choices.
     r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)",
     // 3. MCP forms and the model's questions: tool-call choices, and the footers. The tips share

@@ -6,7 +6,7 @@ use super::*;
 /// by the Codex TUI source, which is the same at rust-v0.164.0, rust-v0.165.0 and rust-v0.166.0
 /// (see their headers). The `decision-` ones are lists Codex opens on its own when a turn ends or
 /// stalls.
-const CODEX_PROMPTS: [(&str, &str); 26] = [
+const CODEX_PROMPTS: [(&str, &str); 27] = [
     (
         "approval-exec",
         include_str!("../tests/fixtures/codex-0.166.0/approval-exec.txt"),
@@ -70,6 +70,10 @@ const CODEX_PROMPTS: [(&str, &str); 26] = [
     (
         "approval-url",
         include_str!("../tests/fixtures/codex-0.166.0/approval-url.txt"),
+    ),
+    (
+        "feedback-note",
+        include_str!("../tests/fixtures/codex-0.166.0/feedback-note.txt"),
     ),
     (
         "decision-plan",
@@ -334,6 +338,42 @@ fn a_codex_question_footer_that_wraps_after_its_submit_tip_is_waiting() {
     assert!(matches_waiting(&patterns, wrapped));
     let single = "  Field 1/1\n  Allow the docs server to read the page?\n\n› 1. Yes\n  2. No\n\n  enter to submit\n  esc to cancel\n";
     assert!(matches_waiting(&patterns, single));
+}
+
+#[test]
+fn a_codex_feedback_note_is_waiting_whatever_it_holds() {
+    let patterns = codex_patterns();
+    // bottom_pane/feedback_note_view.rs: Enter sends what the note holds, a pasted send
+    // included, as the reason of a feedback upload.
+    let note = screen(include_str!(
+        "../tests/fixtures/codex-0.166.0/feedback-note.txt"
+    ));
+    let pasted = note.replacen(
+        "▌ (optional) Write a short description to help us further",
+        "▌ owned-pane-check-instruction\n▌ second line",
+        1,
+    );
+    assert_ne!(pasted, note);
+    // A 4-row pane keeps only the disclosure and the note (feedback_disclosure_four_rows.snap).
+    let short = "▌ Your data may be used to improve our models and products\n▌\n▌ A visible note.\nPress enter to submit or esc to cancel\n";
+    for (name, shown) in [
+        ("as drawn", note),
+        ("pasted", pasted.as_str()),
+        ("four rows", short),
+    ] {
+        assert!(matches_waiting(&patterns, shown), "{name}");
+    }
+    // The same words in the history are not the view.
+    let working = screen(include_str!("../tests/fixtures/codex-0.164.0/working.txt"));
+    for line in [
+        "• Press enter to submit the form, then check the log.",
+        "  Pressing enter to submit the form sends it.",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{working}\n{line}")),
+            "{line}"
+        );
+    }
 }
 
 #[test]
