@@ -188,6 +188,101 @@ fn holder_script_is_embedded_verbatim_in_the_bootstrap_only() {
     // The whole bootstrap is one CreateProcess command-line argument (32,767 characters).
     assert!(POWERSHELL_BOOTSTRAP.len() < 24 * 1024);
 }
+/// Padded standard base64, as .NET's `Convert.ToBase64String` writes it.
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut text = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n =
+            (chunk.iter().enumerate()).fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            let sextet = (n >> (18 - 6 * i) & 63) as usize;
+            text.push(if i <= chunk.len() {
+                char::from(TABLE[sextet])
+            } else {
+                '='
+            });
+        }
+    }
+    text
+}
+/// The command line `StartHolder` gives CreateProcess, built as it builds it: the four values
+/// as UTF-8 base64 literals before the holder script, all of it UTF-16LE base64.
+fn holder_command_line(shell: &str, values: [&str; 4]) -> String {
+    let literals: Vec<String> = values
+        .iter()
+        .map(|v| format!("'{}'", base64(v.as_bytes())))
+        .collect();
+    let text = format!("$devboxInput={}\n{HOLDER}", literals.join(","));
+    let utf16: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    format!(
+        "\"{shell}\" -NoProfile -NonInteractive -EncodedCommand {}",
+        base64(&utf16)
+    )
+}
+#[test]
+fn the_holder_command_line_fits_create_process_with_a_quarter_to_spare() {
+    let start = member(
+        NATIVE,
+        "public static bool StartHolder(string script,string job,string nonce,string ready,string receipt) {",
+    );
+    for expression in [
+        r#"string[] values={job,nonce,ready,receipt};"#,
+        r#"values[i]="'"+Convert.ToBase64String(new UTF8Encoding(false).GetBytes(values[i]))+"'";"#,
+        r#"string text="$devboxInput="+String.Join(",",values)+"\n"+script;"#,
+        r#"string shell=Path.Combine(Environment.SystemDirectory,"WindowsPowerShell\\v1.0\\powershell.exe");"#,
+        r#"new StringBuilder("\""+shell+"\" -NoProfile -NonInteractive -EncodedCommand "+Convert.ToBase64String(Encoding.Unicode.GetBytes(text)));"#,
+    ] {
+        assert!(
+            start.contains(expression),
+            "StartHolder changed: {expression}"
+        );
+    }
+    // `script` is $devboxHolder, whose here-string value is HOLDER exactly.
+    assert!(POWERSHELL_BOOTSTRAP.contains(&format!("$devboxHolder=@'\n{HOLDER}\n'@\n")));
+    assert_eq!(
+        [base64(b"M"), base64(b"Ma"), base64(b"Man")],
+        ["TQ==", "TWE=", "TWFu"]
+    );
+    // MAX_PATH (260 with its NUL) bounds every path Windows PowerShell 5.1 opens without long
+    // paths. The holder's two paths get all 259 characters, the copy root (`[windows] root`,
+    // nothing else bounds it) filled with Korean: 3 UTF-8 bytes each, the most a BMP character
+    // costs. The real limit is lower, as the bootstrap's temporary files add 37 characters.
+    let path_max = 259;
+    let hex = "0123456789abcdef".repeat(2);
+    let control_directory =
+        |root: &str| format!("{root}\\.devbox-v1\\{hex}\\{hex}\\worktree-{hex}\\control");
+    let fixed = control_directory(r"C:\Users\").len() + format!("\\{hex}.holder-ready").len();
+    let root = format!(r"C:\Users\{}", "가".repeat(path_max - fixed));
+    let control = ObservationControl::new("launch".into(), hex.clone(), &control_directory(&root));
+    assert!(control.valid());
+    let ready = control
+        .holder_ready_path
+        .expect("the holder's ready marker");
+    let receipt = control.emptied_path.expect("the holder's receipt");
+    assert_eq!(ready.encode_utf16().count(), path_max);
+    assert_eq!(receipt.encode_utf16().count(), path_max);
+    // Environment.SystemDirectory is C:\WINDOWS\system32; the shell path gets MAX_PATH too.
+    let shell = format!(
+        r"C:\{}\WindowsPowerShell\v1.0\powershell.exe",
+        "w".repeat(path_max - 41)
+    );
+    assert_eq!(shell.len(), path_max);
+    let command = holder_command_line(
+        &shell,
+        [&control.job_name, &control.nonce, &ready, &receipt],
+    );
+    // CreateProcess takes 32,767 characters, NUL included. The guard keeps a quarter (8,191)
+    // free: about 380 more Korean root characters on a machine with long paths enabled, which
+    // the MAX_PATH case does not model, or about 3 KB of holder.ps1 (8/3 characters a byte). It
+    // trips while CreateProcess still succeeds, not when every run ends `observer_unavailable`.
+    let limit = 32_767;
+    let length = command.encode_utf16().count() + 1;
+    assert!(
+        length <= limit - limit / 4,
+        "{length} of {limit} characters"
+    );
+}
 #[test]
 fn windows_control_requires_distinct_holder_paths_in_the_same_private_directory() {
     assert!(control().valid());
