@@ -282,6 +282,18 @@ async fn exact_not_found_releases_only_a_positively_assigned_committed_attempt()
     svc.shutdown().await;
 }
 
+#[test]
+fn the_assignment_deadline_leaves_the_bootstrap_its_start_after_the_holder_wait() {
+    // The bootstrap assigns itself only once its holder is ready, which can take the whole
+    // holder wait. Its own start still needs the 20 s it had before the holder existed, or a
+    // slow but working start is revoked and the run fails without the fixed code (M-1).
+    let holder_wait =
+        Duration::from_millis(devbox_protocol::windows::OBSERVATION_HOLDER_READY_TIMEOUT_MS);
+    assert!(
+        ASSIGNMENT_DEADLINE >= holder_wait + Duration::from_secs(20),
+        "{ASSIGNMENT_DEADLINE:?} leaves under 20 s after a {holder_wait:?} holder wait"
+    );
+}
 #[tokio::test]
 async fn commit_deadline_is_checked_when_the_db_writer_runs_not_only_before_await() {
     let o = owned().await;
