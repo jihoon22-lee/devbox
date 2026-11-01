@@ -57,7 +57,7 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   // delete. The closed task has nothing to retry, and a commit would move HEAD off the closed one,
   // which takes the work folder out of the cleanup list for good.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요.",
   );
   expect(alert).not.toHaveTextContent("커밋한 뒤");
   expect(alert).not.toHaveTextContent("다시 시도");
@@ -106,7 +106,7 @@ test("a work folder kept for an unfinished merge or rebase: the notice says to a
   header(JSON.stringify({ code: "agents.operation_in_progress" }));
   const alert = screen.getByRole("alert");
   expect(alert).toHaveTextContent(
-    "정리하지 못한 항목이 있습니다. 작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다. 작업 폴더에서 그 작업을 마치지 말고 중단한 뒤(예: git merge --abort, git rebase --abort) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요. 마치면 커밋이 생겨 이 작업 폴더는 다시 정리 후보에 나오지 않습니다.",
+    "정리하지 못한 항목이 있습니다. 작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다. 작업 폴더에서 그 작업을 마치지 말고 중단한 뒤(예: git merge --abort, git cherry-pick --abort) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요. 마치면 커밋이 생겨 이 작업 폴더는 다시 정리 후보에 나오지 않습니다.",
   );
   // The table's copy, for a rebase or merge, says to finish the operation, which would commit.
   expect(alert).not.toHaveTextContent("다른 Git 작업");

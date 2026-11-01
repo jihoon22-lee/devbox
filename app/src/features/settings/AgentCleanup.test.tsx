@@ -50,7 +50,7 @@ test("a cleanup stopped by changes it will not delete says to clear them, not co
   // Only what comes back on a retry is the teardown's to fix: the undo leaves what it does not
   // take, such as a nested repository, and the teardown makes it again on every retry.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요.",
   );
   expect(alert).toHaveTextContent("변경 파일: notes.txt, build/out.bin");
   expect(alert).not.toHaveTextContent("커밋한 뒤");
@@ -62,7 +62,7 @@ test("a cleanup refused for an unfinished merge or rebase says to abort it in th
   const alert = await refuse({ code: "agents.operation_in_progress" });
   // Finishing it commits, which moves the folder off the head the task closed with.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다. 작업 폴더에서 그 작업을 마치지 말고 중단한 뒤(예: git merge --abort, git rebase --abort) 다시 정리하세요. 마치면 커밋이 생겨 이 작업 폴더는 다시 정리 후보에 나오지 않습니다.",
+    "작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다. 작업 폴더에서 그 작업을 마치지 말고 중단한 뒤(예: git merge --abort, git cherry-pick --abort) 다시 정리하세요. 마치면 커밋이 생겨 이 작업 폴더는 다시 정리 후보에 나오지 않습니다.",
   );
   expect(alert).not.toHaveTextContent("다른 Git 작업");
   expect(alert).not.toHaveTextContent("정리 후보에서");
