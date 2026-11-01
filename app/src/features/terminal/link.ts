@@ -19,6 +19,8 @@ interface Attachment {
   stream?: ClientStream;
   cols: number;
   rows: number;
+  /** The attach result: this daemon's tmux carries Shift+Enter as an extended key. */
+  extendedKeys?: boolean;
 }
 
 /** Owns one terminal attachment; rendering completion returns that attachment's credit. */
@@ -62,6 +64,10 @@ export class TerminalLink {
       return;
     }
     await this.attach(this.attached);
+  }
+  /** Whether Shift+Enter may go out as an extended key: the live attachment's tmux is 3.5+. */
+  get extendedKeys(): boolean {
+    return this.state === "live" && this.attachment?.extendedKeys === true;
   }
   /** Uint8Array preserves xterm onBinary input; strings use UTF-8. */
   input(text: string | Uint8Array): void {
@@ -168,8 +174,10 @@ export class TerminalLink {
           readOnly: this.options.readOnly,
         },
         {
-          onOpened: ({ cols, rows }) => {
-            if (!this.current(a) || !this.options.readOnly) return;
+          onOpened: ({ cols, rows, extendedKeys }) => {
+            if (!this.current(a)) return;
+            a.extendedKeys = extendedKeys;
+            if (!this.options.readOnly) return;
             if (
               !Number.isInteger(cols) ||
               !Number.isInteger(rows) ||

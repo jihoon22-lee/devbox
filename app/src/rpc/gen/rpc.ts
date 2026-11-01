@@ -715,7 +715,13 @@ export type TaskDef = { id: string, command: string, cwd: string | null, env: { 
 export type TemplateItem = { name: string, path: string, };
 export type TemplateProblem = "not_found" | "unknown_placeholder" | "invalid_content" | "invalid_target" | "invalid_title" | "invalid_date" | "invalid_time" | "output_too_large";
 export type Templates = { items: Array<TemplateItem>, };
-export type TerminalAttached = { streamId: number, cols: number, rows: number, };
+export type TerminalAttached = { streamId: number, cols: number, rows: number, 
+/**
+ * The instance's tmux is 3.5 or newer, so the app may send Shift+Enter as an extended key:
+ * a program that did not ask for extended keys still gets Enter. Older tmux drops it there,
+ * so the app then leaves Shift+Enter as plain Enter.
+ */
+extendedKeys: boolean, };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.command_too_long", "detail": { limit_bytes: number, } } | { "code": "terminal.command_invalid" } | { "code": "terminal.invalid_cursor" } | { "code": "terminal.list_changed" } | { "code": "terminal.title_too_long", "detail": { limit: number, } } | { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
 export type TerminalProfile = { name: string, command: string, };

@@ -100,6 +100,17 @@ async fn zero_credit_history_does_not_starve_input_or_attachment_cleanup() {
         .await
         .expect("attach");
     assert_eq!((attached.cols, attached.rows), (100, 30));
+    // The app sends Shift+Enter as an extended key only when the tmux running here is 3.5+.
+    let version = std::process::Command::new("tmux")
+        .arg("-V")
+        .output()
+        .expect("tmux -V");
+    let version = String::from_utf8_lossy(&version.stdout);
+    assert_eq!(
+        attached.extended_keys,
+        tmux::supports_extended_keys(&version),
+        "{version}"
+    );
     until(async || {
         let clients = h
             .terminal

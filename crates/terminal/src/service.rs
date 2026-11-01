@@ -22,6 +22,8 @@ pub struct TerminalService {
     config: TerminalConfig,
     mutations: Mutex<()>,
     attachments: crate::attach::Attachments,
+    /// [`Tmux::extended_keys`], asked once on the first attach.
+    extended_keys: tokio::sync::OnceCell<bool>,
 }
 fn changed(hub: &Hub, rev: u64) {
     hub.publish::<TerminalChangedTopic>(
@@ -88,6 +90,7 @@ impl TerminalService {
             config,
             mutations: Mutex::new(()),
             attachments: Default::default(),
+            extended_keys: tokio::sync::OnceCell::new(),
         }
     }
     pub async fn attach(
@@ -113,6 +116,10 @@ impl TerminalService {
         {
             return Err(TerminalError::NotFound { id: p.id }.into());
         }
+        let extended_keys = *self
+            .extended_keys
+            .get_or_init(|| self.tmux.extended_keys())
+            .await;
         if ctx.cancel.is_cancelled() {
             return Err(TerminalError::StreamUnavailable {}.into());
         }
@@ -132,6 +139,7 @@ impl TerminalService {
             stream_id,
             cols: dimensions.cols,
             rows: dimensions.rows,
+            extended_keys,
         })
     }
     pub async fn resize(&self, ctx: devbox_protocol::Ctx, p: ResizeStream) -> Result<Done> {

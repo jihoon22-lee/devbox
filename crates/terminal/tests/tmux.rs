@@ -1,4 +1,4 @@
-use devbox_terminal::tmux::{Tmux, TmuxError};
+use devbox_terminal::tmux::{Tmux, TmuxError, supports_extended_keys};
 use std::time::Duration;
 struct Fixture {
     home: tempfile::TempDir,
@@ -201,4 +201,86 @@ async fn applying_extended_keys_without_a_server_starts_nothing() {
         .await
         .expect("no server is not an error");
     assert!(socket_missing().await, "no server or socket was created");
+}
+#[test]
+fn only_tmux_3_5_or_newer_carries_extended_keys() {
+    // `tmux -V` ends its line with a newline.
+    for version in [
+        "tmux 3.5",
+        "tmux 3.5a",
+        "tmux 3.6",
+        "tmux 3.6\n",
+        "tmux next-3.6",
+        "tmux 4.0",
+        "tmux 10.1",
+    ] {
+        assert!(supports_extended_keys(version), "{version:?}");
+    }
+    // Unknown counts as older: Shift+Enter then stays a plain Enter.
+    for version in [
+        "tmux 3.4",
+        "tmux 3.4\n",
+        "tmux 3.3a",
+        "tmux 3.2",
+        "tmux next-3.4",
+        "tmux master",
+        "tmux 3.5-rc",
+        "tmux openbsd-7.6",
+        "garbage 9.9",
+        "",
+    ] {
+        assert!(!supports_extended_keys(version), "{version:?}");
+    }
+}
+/// The one place tmux decides what Shift+Enter becomes for a program that never asked for
+/// extended keys. From 3.5, which is when the app sends Shift+Enter as an extended key, that
+/// program gets Enter. Older tmux may drop the key, so there the app keeps it a plain Enter.
+#[tokio::test]
+async fn shift_enter_reaches_a_program_that_did_not_ask_for_extended_keys_as_enter() {
+    let fixture = Fixture::new();
+    let t = &fixture.tmux;
+    t.start_direct().await.expect("start fixture tmux");
+    // One hex line per byte the program reads, without line editing or echo.
+    let dump = "sh -c 'stty -icanon -icrnl -echo min 1 time 0; echo ready; while :; do dd bs=1 count=1 2>/dev/null | od -An -tx1; done'";
+    t.new_session("keys", fixture.home.path(), Some(dump), &[])
+        .await
+        .expect("byte dump session");
+    let read = || async {
+        let screen = t.capture_tail("keys", 50).await.expect("capture");
+        let (_, after) = screen.split_once("ready")?;
+        Some(
+            after
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+        )
+    };
+    let until = async |done: &dyn Fn(&[String]) -> bool| {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match read().await {
+                    Some(bytes) if done(&bytes) => return bytes,
+                    _ => tokio::time::sleep(Duration::from_millis(20)).await,
+                }
+            }
+        })
+        .await
+        .expect("byte dump deadline")
+    };
+    until(&|_| true).await;
+    let sent = t.run(&["send-keys", "-t", "=keys:", "S-Enter"]).await;
+    // `x` marks the end of whatever tmux wrote for Shift+Enter.
+    t.run(&["send-keys", "-t", "=keys:", "-l", "x"])
+        .await
+        .expect("send marker");
+    let bytes = until(&|bytes| bytes.iter().any(|byte| byte == "78")).await;
+    let version = t.run(&["-V"]).await.expect("tmux -V");
+    if t.extended_keys().await {
+        assert_eq!(bytes, ["0d", "78"], "{version} {sent:?}");
+    } else {
+        assert!(
+            bytes == ["78"] || bytes == ["0d", "78"],
+            "{version} {sent:?}: {bytes:?}"
+        );
+    }
 }

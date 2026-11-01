@@ -47,6 +47,7 @@ vi.mock("./useSessions", () => {
 vi.mock("./link", () => ({
   TerminalLink: class {
     open = vi.fn(async () => this.options.onState("live"));
+    extendedKeys = true;
     input = vi.fn();
     resize = vi.fn();
     dispose = vi.fn();
@@ -381,6 +382,9 @@ test("shift_enter_sends_csi_u_and_other_enters_are_unchanged", async () => {
   ])
     expect(press(term, init)).toEqual({ handled: false, prevented: false, stopped: false });
   expect(press(term, { shiftKey: true }, "keyup")).toEqual({ handled: false, prevented: false, stopped: false });
+  // The link's attach result says tmux is older than 3.5: Shift+Enter stays xterm's Enter.
+  link.extendedKeys = false;
+  expect(press(term, { shiftKey: true })).toEqual({ handled: false, prevented: false, stopped: false });
   expect(term.input).toHaveBeenCalledOnce();
   expect(link.input).toHaveBeenCalledOnce();
   // A preview never sends input.

@@ -132,6 +132,7 @@ export function TerminalView({
     attachTerminalActions(term, {
       isDisposed: () => disposed,
       preview,
+      extendedKeys: () => link.extendedKeys,
       warn,
       fitView,
       search: () => setSearching(true),

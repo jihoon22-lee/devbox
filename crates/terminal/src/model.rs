@@ -86,6 +86,10 @@ pub struct TerminalAttached {
     pub stream_id: u32,
     pub cols: u16,
     pub rows: u16,
+    /// The instance's tmux is 3.5 or newer, so the app may send Shift+Enter as an extended key:
+    /// a program that did not ask for extended keys still gets Enter. Older tmux drops it there,
+    /// so the app then leaves Shift+Enter as plain Enter.
+    pub extended_keys: bool,
 }
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -107,5 +111,25 @@ domain_error! {
         ProjectNotFound { id: String } = "terminal.project_not_found",
         CwdInvalid { path: String } = "terminal.cwd_invalid",
         AgentOwned = "terminal.agent_owned",
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::TerminalAttached;
+    use ts_rs::TS;
+    #[test]
+    fn attach_result_names_extended_keys_the_way_the_app_reads_it() {
+        let attached = TerminalAttached {
+            stream_id: 3,
+            cols: 80,
+            rows: 24,
+            extended_keys: true,
+        };
+        assert_eq!(
+            serde_json::to_value(&attached).expect("attach JSON"),
+            serde_json::json!({"streamId": 3, "cols": 80, "rows": 24, "extendedKeys": true})
+        );
+        let decl = TerminalAttached::decl(&ts_rs::Config::new());
+        assert!(decl.contains("extendedKeys: boolean"), "{decl}");
     }
 }

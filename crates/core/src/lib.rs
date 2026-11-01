@@ -58,6 +58,28 @@ pub fn sh_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+/// Whether `tmux -V` output (`tmux 3.4`, `tmux 3.5a`, `tmux next-3.6`) names `want` or newer.
+/// Anything else, such as `tmux master`, does not. Shared by the environment check and the
+/// terminal, so both read a version the same way.
+pub fn tmux_at_least(v: &str, want: (u32, u32)) -> bool {
+    let Some(v) = v.strip_prefix("tmux ") else {
+        return false;
+    };
+    let v = v.strip_prefix("next-").unwrap_or(v);
+    let Some((major, rest)) = v.split_once('.') else {
+        return false;
+    };
+    let len = rest.bytes().take_while(u8::is_ascii_digit).count();
+    let (minor, suffix) = rest.split_at(len);
+    if !suffix.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    match (major.parse::<u32>(), minor.parse::<u32>()) {
+        (Ok(a), Ok(b)) => (a, b) >= want,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod shell_tests {
     #[test]

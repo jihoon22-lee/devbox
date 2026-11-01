@@ -26,6 +26,12 @@ pub struct PasteFailure {
     pub error: TmuxError,
     pub delivery: PasteDelivery,
 }
+/// Whether `tmux -V` output names tmux 3.5 or newer. From 3.5, Shift+Enter sent as an extended
+/// key (CSI u) reaches a program that never asked for extended keys as Enter; 3.2–3.4 drop it.
+/// An unknown version counts as older, so Shift+Enter stays a plain Enter.
+pub fn supports_extended_keys(version: &str) -> bool {
+    devbox_core::tmux_at_least(version.trim(), (3, 5))
+}
 impl TmuxError {
     fn missing(&self) -> bool {
         matches!(self, Self::Failed { stderr, .. } if stderr.contains("no server running") || stderr.contains("no sessions") || stderr.contains("can't find session") || (stderr.contains("error connecting to") && stderr.contains("No such file or directory")))
@@ -133,6 +139,13 @@ impl Tmux {
             Err(error) if error.missing() => Ok(()),
             other => other.map(drop),
         }
+    }
+    /// Whether this tmux carries Shift+Enter as an extended key, by [`supports_extended_keys`].
+    /// `tmux -V` only prints the version: it reads no server and starts none.
+    pub async fn extended_keys(&self) -> bool {
+        self.run(&["-V"])
+            .await
+            .is_ok_and(|version| supports_extended_keys(&version))
     }
     async fn wait_ready(&self, deadline: Duration) -> Result<(), TmuxError> {
         tokio::time::timeout(deadline, async {
