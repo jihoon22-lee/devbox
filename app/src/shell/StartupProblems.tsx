@@ -18,8 +18,8 @@ function Guidance({ problem }: { problem: StartupProblem }) {
     case "configFile":
       return (
         <p style={{ margin: 0 }}>
-          <code>{problem.file}</code>에 문법 오류가 있어 기본값으로 실행 중입니다. 노트·검색·Windows 사본과 사용자 정의
-          도구 프로필이 꺼져 있습니다. 파일을 고친 뒤 [다시 설정]을 누르세요.
+          <code>{problem.file}</code>에 문법 오류가 있어 기본값으로 실행 중입니다. 노트·검색·활동 기록·Windows 사본·MCP
+          쓰기 도구와 사용자 정의 도구 프로필이 꺼져 있습니다. 파일을 고친 뒤 [다시 설정]을 누르세요.
         </p>
       );
     case "configSection":
