@@ -36,6 +36,8 @@ function notify(cb: () => void): void {
 }
 export class RpcClient {
   state: ClientState = "connecting";
+  /** Connection attempts that timed out or closed before their Welcome, since the last Welcome. */
+  failedAttempts = 0;
   daemonId?: string;
   daemonVersion?: string;
   private streams = new ClientStreams((frame) => this.sendRaw(frame));
@@ -45,6 +47,7 @@ export class RpcClient {
   private subs = new Map<number, Sub>();
   private bySubId = new Map<number, number>();
   private stateCbs = new Set<(s: ClientState) => void>();
+  private attemptCbs = new Set<(failed: number) => void>();
   private resetCbs = new Set<() => void>();
   private offs: (() => void)[] = [];
   private retryTimer?: ReturnType<typeof setTimeout>;
@@ -109,6 +112,12 @@ export class RpcClient {
     this.stateCbs.add(cb);
     return () => {
       this.stateCbs.delete(cb);
+    };
+  }
+  onFailedAttempts(cb: (failed: number) => void): () => void {
+    this.attemptCbs.add(cb);
+    return () => {
+      this.attemptCbs.delete(cb);
     };
   }
   onReset(cb: () => void): () => void {
@@ -233,6 +242,11 @@ export class RpcClient {
       return false;
     }
   }
+  private setFailedAttempts(failed: number): void {
+    if (this.failedAttempts === failed) return;
+    this.failedAttempts = failed;
+    for (const cb of this.attemptCbs) notify(() => cb(failed));
+  }
   private setState(s: ClientState): void {
     if (this.state === s) return;
     this.state = s;
@@ -245,6 +259,8 @@ export class RpcClient {
     return p;
   }
   private onClosed(): void {
+    // Only an open attempt can fail; a stop, and the close a failure itself causes, are not attempts.
+    if (this.running && this.live && !this.welcomed) this.setFailedAttempts(this.failedAttempts + 1);
     this.connectionEpoch++;
     this.clearWelcomeTimer();
     this.live = false;
@@ -321,6 +337,7 @@ export class RpcClient {
           this.stop();
           return;
         }
+        this.setFailedAttempts(0);
         const changed = this.daemonId !== undefined && this.daemonId !== msg.daemonId;
         this.daemonId = msg.daemonId;
         this.welcomed = true;

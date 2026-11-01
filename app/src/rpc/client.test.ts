@@ -361,6 +361,35 @@ describe("Welcome deadline", () => {
     c.stop();
   });
 
+  test("attempts that time out or close before Welcome are counted until the next Welcome", () => {
+    const { t, c } = setup(false);
+    const seen: number[] = [];
+    c.onFailedAttempts((count) => seen.push(count));
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      vi.advanceTimersByTime(5000);
+      expect(c.failedAttempts).toBe(attempt);
+      t.emit("open");
+    }
+    // The bridge dropping an open attempt counts too; the transport's own close after it does not.
+    t.emit("closed");
+    t.emit("closed");
+    expect(c.failedAttempts).toBe(6);
+    t.emit("open");
+    t.welcome();
+    expect(c.failedAttempts).toBe(0);
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6, 0]);
+    c.stop();
+  });
+
+  test("a connection lost after Welcome and a stop are not failed attempts", () => {
+    const { t, c } = setup();
+    t.emit("closed");
+    expect(c.state).toBe("reconnecting");
+    t.emit("open");
+    c.stop();
+    expect(c.failedAttempts).toBe(0);
+  });
+
   test("synchronous Welcome during Hello send leaves no timer", () => {
     const t = new FakeTransport();
     const send = t.send.bind(t);

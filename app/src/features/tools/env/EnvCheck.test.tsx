@@ -16,40 +16,52 @@ const mock = vi.hoisted(() => ({
     command: "sudo apt install tmux",
     shellCommand: "bash -lc 'sudo apt install tmux; exec bash -l'",
   } as Record<string, string>,
+  /** A query that fails (`error`) or never answers (`pending`), as while the daemon hangs. */
+  unanswered: null as null | { method: string; state: "error" | "pending" },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("../../terminal/popout", () => ({ openPopout: mock.popout }));
 vi.mock("../../../rpc/query", () => ({
-  useRpcQuery: (method: string) => ({
-    isPending: false,
-    error: null,
-    refetch: vi.fn(),
-    data:
-      method === "system.doctor"
-        ? {
-            checks: [
-              {
-                id: mock.plan.kind === "windows" ? "tool.docker" : "tool.tmux",
-                status: "warn",
-                message: "도구 설치 필요",
-                fix: null,
-              },
-            ],
-          }
-        : method === "system.info"
+  useRpcQuery: (method: string) => {
+    const unanswered = mock.unanswered?.method === method ? mock.unanswered.state : null;
+    if (unanswered)
+      return {
+        isPending: unanswered === "pending",
+        error: unanswered === "error" ? { code: "internal", diagnosticId: "fixture" } : null,
+        refetch: vi.fn(),
+        data: undefined,
+      };
+    return {
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+      data:
+        method === "system.doctor"
           ? {
-              version: "fixture",
-              instance: "accept",
-              pid: 123,
-              dataDir: "/fixture/data",
-              configPath: "/fixture/config.toml",
+              checks: [
+                {
+                  id: mock.plan.kind === "windows" ? "tool.docker" : "tool.tmux",
+                  status: "warn",
+                  message: "도구 설치 필요",
+                  fix: null,
+                },
+              ],
             }
-          : method === "tools.diagnostics"
-            ? { logDir: "/fixture/logs" }
-            : method === "tools.install_command"
-              ? mock.plan
-              : undefined,
-  }),
+          : method === "system.info"
+            ? {
+                version: "fixture",
+                instance: "accept",
+                pid: 123,
+                dataDir: "/fixture/data",
+                configPath: "/fixture/config.toml",
+              }
+            : method === "tools.diagnostics"
+              ? { logDir: "/fixture/logs" }
+              : method === "tools.install_command"
+                ? mock.plan
+                : undefined,
+    };
+  },
   useRpcMutation: (method: string) => ({
     isPending: false,
     mutateAsync:
@@ -64,6 +76,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ path: "/fixture/data/support/bundle.zip", sizeBytes: 123, logsOmitted: "secrets_locked" });
   mock.refresh.mockReset().mockResolvedValue({ restarting: false });
+  mock.unanswered = null;
   mock.plan = {
     kind: "wsl",
     title: "tmux 설치",
@@ -127,6 +140,21 @@ it("native_redeploy_and_cleanup_always_require_separate_confirmation", async () 
     await userEvent.click(screen.getByRole("button", { name: label }));
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "실행" }));
     await waitFor(() => expect(mock.invoke).toHaveBeenCalledWith(command));
+  }
+});
+it("redeploy_is_offered_while_the_daemon_does_not_answer", async () => {
+  // [다시 설정] needs only the native gate, so a failed or unanswered environment check keeps it.
+  for (const state of ["error", "pending"] as const) {
+    mock.unanswered = { method: "system.doctor", state };
+    const view = setup();
+    expect(
+      screen.getByText(state === "error" ? "진단 정보를 불러오지 못했습니다" : "연결 후 진단 정보를 불러옵니다"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "다시 설정" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "실행" }));
+    await waitFor(() => expect(mock.invoke).toHaveBeenCalledWith("redeploy_wsl"));
+    mock.invoke.mockClear();
+    view.unmount();
   }
 });
 it("support_bundle_shows_log_omission_and_opens_its_parent_folder", async () => {
