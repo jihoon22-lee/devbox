@@ -1,0 +1,12 @@
+# 문자열 기반(실제 화면 아님). 설치본 opencode 1.19.3(~/.opencode/bin/opencode, `opencode --version`)의 실행 파일에 든 TUI 코드에서 읽어 짠, 입력창이 셸 모드인 화면이다. opencode를 실행하지 않았다.
+# 그 코드: 입력창 맨 앞에서 `!`를 누르면 입력창의 mode가 "shell"이 된다. 그동안 입력창 아래 힌트 줄은 "esc " 뒤에 "exit shell mode"를 그리고(평소에는 "agents"·"commands" 힌트), 에이전트 이름 자리에는 "Shell"을 그린다. Enter는 입력창 글을 session.shell의 명령으로 실행한다.
+# 소문자 "exit shell mode"는 실행 파일에 이 힌트 하나뿐이다. 대문자 "Exit shell mode"는 셸 모드에서만 켜지는 esc·backspace 단축키의 설명이다.
+# 입력창 틀(┃·╹·▀, 테마에 따라 다르다), 줄 배치와 힌트 줄의 가로 위치는 가정이다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+┃
+┃  git status
+┃
+┃  Shell
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+                                                                             esc exit shell mode

@@ -1,12 +1,14 @@
 //! Codex views where a send would not reach the prompt: the text prompts, forms, pickers,
 //! settings and lists whose hint rows offer Enter for the view itself, and the views that cover
 //! the screen. A send is pasted into the view, or dropped, and its Enter then acts on the view,
-//! so each must read as waiting; the rows where a send still reaches the prompt must not.
+//! so each must read as waiting; the rows where a send still reaches the prompt must not. So must
+//! the prompt box's own states where a send does not reach the task's agent as a prompt: a draft
+//! in shell mode, a sub-agent's thread and a /side conversation.
 use super::*;
 
 /// Views read over the last rows, by their hint rows, as the Codex TUI source of rust-v0.164.0
 /// to rust-v0.166.0 draws them (see the fixtures' headers).
-const CODEX_FORMS: [(&str, &str); 22] = [
+const CODEX_FORMS: [(&str, &str); 26] = [
     (
         "form-custom-prompt",
         include_str!("../tests/fixtures/codex-0.166.0/form-custom-prompt.txt"),
@@ -94,6 +96,22 @@ const CODEX_FORMS: [(&str, &str); 22] = [
     (
         "signin-gov-cloud",
         include_str!("../tests/fixtures/codex-0.166.0/signin-gov-cloud.txt"),
+    ),
+    (
+        "form-shell-mode",
+        include_str!("../tests/fixtures/codex-0.166.0/form-shell-mode.txt"),
+    ),
+    (
+        "form-subagent-thread",
+        include_str!("../tests/fixtures/codex-0.166.0/form-subagent-thread.txt"),
+    ),
+    (
+        "form-side-thread",
+        include_str!("../tests/fixtures/codex-0.166.0/form-side-thread.txt"),
+    ),
+    (
+        "form-side-thread-status-line",
+        include_str!("../tests/fixtures/codex-0.166.0/form-side-thread-status-line.txt"),
     ),
 ];
 
@@ -316,11 +334,16 @@ fn a_codex_screen_where_a_send_still_reaches_the_prompt_is_not_waiting() {
         "  ↑ Loading earlier messages… · New activity · esc latest",
         // A working turn's status row.
         "• Working (0s • esc to interrupt) · 1 background terminal running · /ps to view · /stop to close",
+        // A hidden /side conversation: its label only offers to switch to it, and a paste goes to
+        // the main thread (side_context_label_shows_hidden_side.snap).
+        "  GPT-5.6-Sol                                                  ctrl+/ for side",
         // The words in the history.
         "• Press enter to continue once the build finishes.",
         "• Use ↑/↓ to move, enter to select, as the picker says.",
         "  then enter submit to send the form",
         "• Press the new key now. Esc cancels. is what the remap view says.",
+        "• Typing ! first switches the prompt to Shell mode",
+        "  Shell mode runs the command in your shell.",
     ] {
         assert!(
             !matches_waiting(&patterns, &format!("{working}\n{row}")),

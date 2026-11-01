@@ -2,11 +2,11 @@
 //! prompts that stop the tool until the user decides, so every profile of the family gets them,
 //! whatever its id, and a profile's own `waitingPatterns` add to them (see `profile::compiled`).
 //!
-//! Codex 승인·결정 화면, 확인 상자, 입력 상자·목록·설정의 힌트 줄과 화면을 덮는 보기는 0.164.0~0.166.0 공개
-//! 소스가 그리는 화면(소스 기반, 실제 화면 아님),
+//! Codex 승인·결정 화면, 확인 상자, 입력 상자·목록·설정의 힌트 줄, 입력창의 셸 모드·하위 에이전트·/side
+//! 표시와 화면을 덮는 보기는 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면 아님),
 //! 폴더 신뢰 화면은 0.164.0 실제 녹화와 0.166.0 소스, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면
-//! 아님)이다. Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은
-//! 실제 fixture로 보강한다.
+//! 아님)이다. Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서, opencode 셸 모드 힌트는 설치본 1.19.3의
+//! 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은 실제 fixture로 보강한다.
 use crate::profile::Hooks;
 
 /// The waiting patterns of one family, before they are compiled.
@@ -36,8 +36,11 @@ pub(crate) fn family_patterns(hooks: Hooks) -> FamilyPatterns {
             tail: PI,
             screen: Vec::new(),
         },
-        // opencode's plugin reports its permission prompts, so its pane is not matched.
-        Hooks::Opencode | Hooks::None => FamilyPatterns::default(),
+        Hooks::Opencode => FamilyPatterns {
+            tail: OPENCODE,
+            screen: Vec::new(),
+        },
+        Hooks::None => FamilyPatterns::default(),
     }
 }
 
@@ -109,6 +112,19 @@ const CODEX: &[&str] = &[
     r"(?m)^\s*Use \S+ to move, \S+ to (?:select|toggle)\b",
     r"(?m)(?:^|[ \t])k keep & next\b|\bdismiss & close\b",
     r"(?m)\btab(?:/\S+)? report · z \S",
+    // 11. States of the prompt box itself, where Enter would not hand a send to the task's agent
+    //     as a prompt (lines of rust-v0.166.0). A draft that starts with "!" is in shell mode:
+    //     the send is pasted after it, and Enter runs both as a local shell command
+    //     (chatwidget/input_submission.rs:256-266). The footer then ends with "Shell mode"
+    //     (bottom_pane/chat_composer.rs:3639-3647). In a sub-agent's thread the empty prompt box
+    //     reads "Viewing sub-agent — direct input is disabled", and Enter keeps the send unsent
+    //     (chat_composer.rs:1713-1716, 3344-3361). A /side conversation's footer reads "Side
+    //     from main thread" or "Side from parent thread (…)", alone or at the right end after the
+    //     left hints: the send goes to a side thread that is told not to go on with the task and
+    //     is discarded when closed (app/side.rs).
+    r"(?m)[ \t]{2}Shell mode[ \t]*$",
+    r"(?m)Viewing sub-agent — direct input is disabled",
+    r"(?m)(?:^[ \t]*|[ \t]{2})Side from (?:main thread|parent thread \()",
     // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
     // capture), and for a folder saved as untrusted or a task started while it was trusted,
     // codex-0.166.0/trust-restricted.txt and trust-existing-task.txt (소스 기반:
@@ -130,6 +146,17 @@ const PI: &[&str] = &[
     // The question, the folder rows and the explanation can leave the matched tail, and `→` marks
     // the selected choice, so this anchors on the last two choice rows, with or without it.
     r"(?im)^\s*(?:→\s*)?Do not trust\s*\n\s*(?:→\s*)?Do not trust \(this session only\)\s*$",
+];
+
+/// opencode. Its plugin reports its permission prompts and questions, but not a draft the user
+/// left in shell mode, where Enter would run the draft and a send pasted after it as a shell
+/// command.
+const OPENCODE: &[&str] = &[
+    // Shell mode. Evidence: crates/agents/tests/fixtures/opencode-1.19.3/shell-mode.txt (문자열
+    // 기반: the TUI code in the installed 1.19.3, not a real capture). While the prompt box is in
+    // shell mode its hint row reads "esc exit shell mode", which the TUI draws nowhere else. Where
+    // that row sits is not known, so only the words are matched.
+    r"\besc exit shell mode\b",
 ];
 
 /// The dialogs Codex opens with `SelectionViewParams::confirmation()`, by title and choices.

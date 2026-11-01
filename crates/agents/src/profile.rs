@@ -277,18 +277,18 @@ mod tests {
         );
         // Their waiting patterns come with their family, the same for any profile of it.
         assert!(builtin.iter().all(|p| p.waiting_patterns.is_empty()));
-        // opencode's plugin reports its prompts, so its pane is not matched. pi's trust question
-        // is matched on screen too (watch_tests: pi_trust_screen_is_waiting), and so is Claude's,
-        // which comes before any of its hooks (claude_folder_trust_dialog_is_waiting).
+        // opencode's plugin reports its prompts, so its pane is matched only for a draft in shell
+        // mode (watch_tests: an_opencode_draft_in_shell_mode_is_waiting). pi's trust question is
+        // matched on screen too (pi_trust_screen_is_waiting), and so is Claude's, which comes
+        // before any of its hooks (claude_folder_trust_dialog_is_waiting).
         let family = crate::family_patterns::family_patterns;
         assert!(!family(Hooks::Claude).tail.is_empty());
         assert!(!family(Hooks::Codex).tail.is_empty());
         assert!(!family(Hooks::Codex).screen.is_empty());
         assert!(!family(Hooks::Pi).tail.is_empty());
-        for hooks in [Hooks::Opencode, Hooks::None] {
-            let none = family(hooks);
-            assert!(none.tail.is_empty() && none.screen.is_empty(), "{hooks:?}");
-        }
+        assert!(!family(Hooks::Opencode).tail.is_empty());
+        let none = family(Hooks::None);
+        assert!(none.tail.is_empty() && none.screen.is_empty());
     }
     #[test]
     fn old_hook_values_still_parse() {

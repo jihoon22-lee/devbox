@@ -301,6 +301,38 @@ fn pi_screens_after_the_trust_decision_are_not_waiting() {
 }
 
 #[test]
+fn an_opencode_draft_in_shell_mode_is_waiting() {
+    let patterns = builtin_patterns("opencode");
+    // Enter would run the draft, and a send pasted after it, as a shell command.
+    let shell = screen(include_str!(
+        "../tests/fixtures/opencode-1.19.3/shell-mode.txt"
+    ));
+    assert!(matches_waiting(&patterns, shell));
+    // Output below it means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{shell}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+    // The prompt box out of shell mode, and the words in a sentence, are not the mode.
+    let normal = shell.replacen("┃  Shell", "┃  Build", 1).replacen(
+        "esc exit shell mode",
+        "tab agents  ctrl+p commands",
+        1,
+    );
+    assert_ne!(normal, shell);
+    assert!(!matches_waiting(&patterns, &normal));
+    for line in [
+        "• Press esc to exit shell mode, then send the prompt.",
+        "  Exit shell mode",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{normal}\n{line}")),
+            "{line}"
+        );
+    }
+}
+
+#[test]
 fn codex_trust_screens_for_untrusted_folders_are_waiting() {
     let patterns = codex_patterns();
     // A folder whose saved trust is "untrusted" opens restricted, and a task that was started
@@ -358,18 +390,25 @@ fn every_profile_of_a_tool_family_keeps_its_patterns_and_adds_its_own() {
     ));
     let claude = screen(include_str!("../tests/fixtures/claude-2.1.308/trust.txt"));
     let pi = screen(include_str!("../tests/fixtures/pi-1.3.0/trust.txt"));
+    let opencode = screen(include_str!(
+        "../tests/fixtures/opencode-1.19.3/shell-mode.txt"
+    ));
     let waits = |id: &str, shown: &str| matches_waiting(&compiled[id], shown);
     for id in ["codex", "codex-fast"] {
         assert!(waits(id, network), "{id}");
         assert!(waits(id, dialog), "{id}");
+        assert!(!waits(id, opencode), "{id}");
     }
     assert!(waits("claude-work", claude));
     assert!(waits("pi-alt", pi));
+    assert!(waits("opencode-alt", opencode));
     // A profile's own patterns add to its family's.
     assert!(waits("codex-fast", "ready\n"));
     assert!(!waits("codex", "ready\n"));
     assert!(waits("mine", "ready\n"));
-    // opencode's plugin reports its prompts, and `none` has only its own patterns.
+    assert!(!waits("mine", opencode));
+    // opencode's plugin reports its prompts, so only its shell mode is read from the screen, and
+    // `none` has only its own patterns.
     for id in ["opencode-alt", "mine"] {
         for shown in [network, dialog, claude, pi] {
             assert!(!waits(id, shown), "{id}");
