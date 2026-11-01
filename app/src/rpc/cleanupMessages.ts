@@ -11,13 +11,12 @@ import { messageFor } from "./messages";
  * folder off the head the task closed with, which takes it out of the cleanup list for good, so the
  * copy says not to. The teardown is to blame only for what comes back: from a folder cleared as the
  * copy says, the retry undoes the files the teardown writes. The table keeps the copy for a merge
- * or PR. The next step, which depends on where the copy is shown, goes between `action` and
- * `retry`.
+ * or PR. The action ends where the next step goes, which depends on where it is shown.
  */
-const CLEANUP_DIRTY = {
+const CLEANUP_DIRTY: Message = {
   title: "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다.",
-  action: "남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고)",
-  retry: "다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요.",
+  action:
+    "다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고)",
 };
 
 /**
@@ -26,7 +25,7 @@ const CLEANUP_DIRTY = {
  * would take with it. Finishing it commits, which moves the folder off the head the task closed
  * with and takes it out of the cleanup list for good, so the copy says to abort it instead. It is
  * the folder's own operation, not another one, as the table's copy for a rebase or merge says. The
- * next step goes between `action` and `finished`, as for `CLEANUP_DIRTY`.
+ * next step goes between `action` and `finished`.
  */
 const CLEANUP_OPERATION = {
   title: "작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다.",
@@ -45,8 +44,7 @@ export function cleanupMessage(code: ErrorCode, detail: unknown, where: "notice"
   const again = where === "notice" ? `${CLEANUP_LIST}에서 다시 정리하세요.` : "다시 정리하세요.";
   if (code === "agents.worktree_dirty") {
     const names = where === "list" ? files(detail) : "";
-    const { title, action, retry } = CLEANUP_DIRTY;
-    return { title, action: `${action} ${again} ${retry}${names ? ` 변경 파일: ${names}` : ""}` };
+    return { ...CLEANUP_DIRTY, action: `${CLEANUP_DIRTY.action} ${again}${names ? ` 변경 파일: ${names}` : ""}` };
   }
   if (code === "agents.operation_in_progress") {
     const { title, action, finished } = CLEANUP_OPERATION;

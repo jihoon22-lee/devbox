@@ -50,7 +50,7 @@ test("a cleanup stopped by changes it will not delete says to clear them, not co
   // Only what comes back on a retry is the teardown's to fix: the undo leaves what it does not
   // take, such as a nested repository, and the teardown makes it again on every retry.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요.",
   );
   expect(alert).toHaveTextContent("변경 파일: notes.txt, build/out.bin");
   expect(alert).not.toHaveTextContent("커밋한 뒤");
