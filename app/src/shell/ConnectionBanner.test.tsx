@@ -51,7 +51,7 @@ function connect() {
       <ConnectionBanner />
     </RpcProvider>,
   );
-  return bridge;
+  return { bridge, client };
 }
 /** One attempt without a Welcome: the client gives up after 5 s, then the bridge opens again. */
 function silent(bridge: Bridge, attempts = 1) {
@@ -63,7 +63,7 @@ function silent(bridge: Bridge, attempts = 1) {
 const retry = () => screen.queryByRole("button", { name: "다시 시도" });
 
 test("a first connection that never gets a Welcome offers [다시 시도] after 5 failed attempts", async () => {
-  const bridge = connect();
+  const { bridge } = connect();
   silent(bridge, 4);
   expect(retry()).not.toBeInTheDocument();
   silent(bridge);
@@ -91,7 +91,7 @@ test("a first connection that never gets a Welcome offers [다시 시도] after 
 });
 
 test("a Welcome resets the count, and the reconnecting copy never says 데몬", () => {
-  const bridge = connect();
+  const { bridge } = connect();
   silent(bridge, 5);
   expect(retry()).toBeInTheDocument();
   act(() => bridge.welcome());
@@ -108,8 +108,27 @@ test("a Welcome resets the count, and the reconnecting copy never says 데몬", 
   expect(document.body).not.toHaveTextContent("데몬");
 });
 
+test("a Welcome that never reaches ready still resets the count, so the offer returns after 5 new failures", async () => {
+  const { bridge, client } = connect();
+  // The daemon never acknowledges this subscription, so its Welcome leaves the client short of ready.
+  client.subscribe("projects.changed", vi.fn(), vi.fn());
+  silent(bridge, 5);
+  mocks.invoke.mockResolvedValue(undefined);
+  await act(async () => fireEvent.click(retry()!));
+  expect(retry()).not.toBeInTheDocument();
+  act(() => bridge.welcome());
+  expect(client.failedAttempts).toBe(0);
+  expect(client.state).toBe("connecting");
+  // Lost after its Welcome: not a failed attempt, and the banner stays mounted.
+  act(() => bridge.emit("closed"));
+  act(() => bridge.emit("open"));
+  silent(bridge, 4);
+  expect(retry()).not.toBeInTheDocument();
+  silent(bridge);
+  expect(retry()).toBeEnabled();
+});
 test("a refused retry says so and can be tried again", async () => {
-  const bridge = connect();
+  const { bridge } = connect();
   silent(bridge, 5);
   mocks.invoke.mockRejectedValueOnce({ message: "다른 설치·정리 작업이 진행 중입니다" });
   await act(async () => fireEvent.click(retry()!));
@@ -119,7 +138,7 @@ test("a refused retry says so and can be tried again", async () => {
 
 test("outside the Windows app there is no native retry to offer", () => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
-  const bridge = connect();
+  const { bridge } = connect();
   act(() => bridge.welcome());
   act(() => bridge.emit("closed"));
   act(() => bridge.emit("open"));

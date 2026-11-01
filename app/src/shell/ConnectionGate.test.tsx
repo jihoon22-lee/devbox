@@ -290,7 +290,12 @@ test("post-ready recovery retains user state and permits repeated retry and dist
   publish("chooseDistro", "4");
   await userEvent.click(screen.getByRole("button", { name: "Ubuntu 사용" }));
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("gate_retry", { distro: "Ubuntu" }));
-  expect(mocks.invoke.mock.calls.filter((c) => c[0] === "gate_retry")).toHaveLength(3);
+  // A distro is what turns a retry into a distro choice, which does not force the daemon restart.
+  expect(mocks.invoke.mock.calls.filter((c) => c[0] === "gate_retry")).toEqual([
+    ["gate_retry", { distro: null }],
+    ["gate_retry", { distro: null }],
+    ["gate_retry", { distro: "Ubuntu" }],
+  ]);
   expect(screen.getByLabelText("retained state")).toBe(input);
   expect(input).toHaveValue("initial user edit");
 });

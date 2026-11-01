@@ -13,7 +13,8 @@ export function ConnectionBanner() {
   if (state === "versionMismatch")
     return <Banner tone="danger">앱과 WSL 쪽 devbox의 버전이 다릅니다. 두 버전을 맞춘 뒤 앱을 다시 시작하세요.</Banner>;
   if (state === "ready") return null;
-  // Mounted only until the next Welcome, so a retry made before it is forgotten with it.
+  // Mounted until the client is ready again, which is after a Welcome, once every subscription
+  // is restored. The Welcome itself resets the count, and `Reconnecting` forgets its retry then.
   return <Reconnecting first={state === "connecting"} failed={failedAttempts} lastReadyMs={lastReadyMs} />;
 }
 
@@ -24,11 +25,15 @@ export function ConnectionBanner() {
 function Reconnecting({ first, failed, lastReadyMs }: { first: boolean; failed: number; lastReadyMs?: number }) {
   // The restart's own attempts count from the retry, so the offer returns only if they fail too.
   const [retriedAt, setRetriedAt] = useState(0);
+  // Only a Welcome lowers the count. When that Welcome does not reach ready, this stays mounted,
+  // so the retry is forgotten here and the next failures count from zero.
+  const baseline = failed < retriedAt ? 0 : retriedAt;
+  if (baseline !== retriedAt) setRetriedAt(baseline);
   const [pending, setPending] = useState(false);
   const [refused, setRefused] = useState(false);
   const running = useRef(false);
   const updated = first ? "" : ` · 마지막 갱신 ${hhmm(lastReadyMs)}`;
-  const counted = failed >= retriedAt ? failed - retriedAt : failed;
+  const counted = failed - baseline;
   if (!("__TAURI_INTERNALS__" in window) || counted < ATTEMPTS)
     return first ? null : <Banner tone="warn">WSL 쪽 devbox에 다시 연결하고 있습니다{updated}</Banner>;
   const retry = () => {
