@@ -75,7 +75,20 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   expect(screen.queryByText(raw)).not.toBeInTheDocument();
 });
 
-test("a code's own next action never reaches the notice: other codes point to the cleanup list, and the stored text stays under [자세히]", async () => {
+test("a failed teardown's notice names the command to fix and the cleanup list, with its exit code", async () => {
+  const raw = JSON.stringify({ code: "agents.teardown_failed", detail: { index: 2, exit_code: 3 } });
+  header(raw);
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("정리하지 못한 항목이 있습니다. 정리 명령이 실패했습니다(종료 코드 3).");
+  // Its own next action is written for cleanup, so the notice keeps it.
+  expect(alert).toHaveTextContent(
+    ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+  );
+  expect(alert).not.toHaveTextContent("원인을 확인하지 못했습니다.");
+  expect(alert).not.toHaveTextContent("남은 항목을 확인하세요");
+});
+
+test("a merge's own next action never reaches the notice: other codes point to the cleanup list, and the stored text stays under [자세히]", async () => {
   const raw = JSON.stringify({ code: "agents.base_dirty", detail: { files: ["a.txt", "b.txt"] } });
   header(raw);
   const alert = screen.getByRole("alert");

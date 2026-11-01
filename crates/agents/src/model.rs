@@ -327,6 +327,9 @@ domain_error! {
         SquashMessageTooLong { limit_bytes: u32 } = "agents.squash_message_too_long",
         TeardownCommandTooLong { limit_bytes: u32 } = "agents.teardown_command_too_long",
         TeardownCommandInvalid = "agents.teardown_command_invalid",
+        // Which `[agent] teardown` command failed (1-based) and its exit code, `None` when it was
+        // killed or timed out. Its text stays out; the user reads it in the file.
+        TeardownFailed { index: u32, exit_code: Option<i32> } = "agents.teardown_failed",
         DeliveryUnknown = "agents.delivery_unknown",
         AwaitingInput = "agents.awaiting_input",
         ToolStarting = "agents.tool_starting",

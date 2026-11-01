@@ -33,6 +33,17 @@ fn cleanup_keeps_a_folder_whose_changes_it_cannot_account_for() {
     );
 }
 
+/// A teardown command that fails stops cleanup with `agents.teardown_failed`: which command of
+/// `[agent] teardown` (1-based) and its exit code, none when it was killed. The command's text
+/// stays out; the user reads it in the file. The folder and branch stay.
+#[test]
+fn a_failing_teardown_names_its_command_and_keeps_the_folder() {
+    undo_cases(
+        "a_failing_teardown_names_its_command_and_keeps_the_folder",
+        &["fails-auto", "fails-killed", "fails-manual"],
+    );
+}
+
 /// Each mode runs alone in a child process. Its PATH starts with owned wrappers: `bash` without
 /// profile files (the teardown runs `bash -lc`, which would read the user's), and a transparent
 /// `git` that notes the arguments of each `git clean` and, when a removal starts, whether the
@@ -424,6 +435,51 @@ async fn case(mode: &str) {
             assert!(has_branch(&f).await);
             assert!(receipt("clean").is_empty(), "nothing was undone");
             assert_eq!(reservation(&f, &task).await, Resources::Owned);
+        }
+        "fails-auto" | "fails-killed" => {
+            // The marker command is the first; the failing one is the second.
+            let (command, note) = if mode == "fails-auto" {
+                (
+                    "printf x > teardown.log; exit 3",
+                    r#"{"code":"agents.teardown_failed","detail":{"index":2,"exit_code":3}}"#,
+                )
+            } else {
+                (
+                    "kill -KILL $$",
+                    r#"{"code":"agents.teardown_failed","detail":{"index":2,"exit_code":null}}"#,
+                )
+            };
+            let ran = approve_teardown(&f, &task, &wt, &[command]).await;
+            let closed = close(&f, &task, MergeKind::Squash).await;
+            assert!(ran.exists(), "the first command ran");
+            // Stored as the task's note, like every other code, so its notice can name it.
+            assert_eq!(closed.cleanup_error.as_deref(), Some(note));
+            assert!(!note.contains(command), "the command's text stays out");
+            assert!(wt.exists());
+            assert!(has_branch(&f).await);
+            assert_eq!(reservation(&f, &task).await, Resources::Owned);
+        }
+        "fails-manual" => {
+            set_cleanup(&mut f, false);
+            close(&f, &task, MergeKind::Merge).await;
+            approve_teardown(&f, &task, &wt, &["exit 3"]).await;
+            let result = f
+                .svc
+                .cleanup(CleanupAgents {
+                    project_id: f.project.clone(),
+                    worktrees: vec![wt.to_string_lossy().into_owned()],
+                    branches: vec!["agent/review".into()],
+                })
+                .await;
+            let Err(Fail::Domain(error)) = &result else {
+                panic!("a domain error: {result:?}");
+            };
+            assert_eq!(
+                serde_json::to_value(error).expect("error JSON"),
+                serde_json::json!({"code":"agents.teardown_failed","detail":{"index":2,"exit_code":3}})
+            );
+            assert!(wt.exists());
+            assert!(has_branch(&f).await);
         }
         other => panic!("unknown mode {other}"),
     }

@@ -47,3 +47,10 @@ test("a cleanup stopped by changes it will not delete says to clear them, not co
   expect(alert).toHaveTextContent("변경 파일: notes.txt, build/out.bin");
   expect(alert).not.toHaveTextContent("커밋한 뒤");
 });
+
+test("a cleanup stopped by a failed teardown names which command to run and fix, and its exit code", async () => {
+  const alert = await refuse({ code: "agents.teardown_failed", detail: { index: 2, exit_code: 3 } }, "diag-7");
+  expect(alert).toHaveTextContent(
+    "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요. · 진단 diag-7",
+  );
+});

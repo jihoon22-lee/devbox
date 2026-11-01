@@ -230,7 +230,11 @@ async fn pr_keeps_pre_git_teardown_and_preserves_success_when_cleanup_fails() {
     .await;
     assert_eq!(closed["closedHow"], "pullRequest");
     assert_eq!(closed["prUrl"], "https://github.com/fixture/trust/pull/1");
-    assert!(closed["cleanupError"].as_str().is_some());
+    // The second command failed: its place and exit code, never its text.
+    assert_eq!(
+        closed["cleanupError"],
+        r#"{"code":"agents.teardown_failed","detail":{"index":2,"exit_code":7}}"#
+    );
     assert!(marker.exists());
     assert!(!switched.exists());
     assert!(Path::new(task["worktreePath"].as_str().expect("worktree")).exists());

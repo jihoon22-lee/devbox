@@ -18,8 +18,9 @@ export const CLEANUP_DIRTY: Message = {
 /**
  * What a closed task's cleanup that stopped says, in the task's notice or in the cleanup list's own
  * line. In the notice the stored text, with any files it names, is one [자세히] away, and the next
- * action points to the cleanup list: the table's action belongs to the operation that failed. The
- * list's line keeps the code's own message and names the files the error lists.
+ * action points to the cleanup list: the table's action belongs to the operation that failed, except
+ * a failed teardown's, which is written for cleanup. The list's line keeps the code's own message
+ * and names the files the error lists.
  */
 export function cleanupMessage(code: ErrorCode, detail: unknown, where: "notice" | "list"): Message {
   if (code === "agents.worktree_dirty") {
@@ -27,5 +28,6 @@ export function cleanupMessage(code: ErrorCode, detail: unknown, where: "notice"
     return names ? { ...CLEANUP_DIRTY, action: `${CLEANUP_DIRTY.action} 변경 파일: ${names}` } : CLEANUP_DIRTY;
   }
   const message = messageFor(code, detail);
-  return where === "list" ? message : { title: message.title, action: CLEANUP_ACTION };
+  if (where === "list" || code === "agents.teardown_failed") return message;
+  return { title: message.title, action: CLEANUP_ACTION };
 }

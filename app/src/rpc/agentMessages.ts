@@ -60,6 +60,15 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     title: "정리 명령에 사용할 수 없는 문자가 있습니다.",
     action: "널 문자를 제거해 주세요.",
   },
+  // The daemon names the command by its 1-based place in the list, never by its text.
+  "agents.teardown_failed": (d) => {
+    const index = field(d, "index");
+    const code = field(d, "exit_code");
+    return {
+      title: typeof code === "number" ? `정리 명령이 실패했습니다(종료 코드 ${code}).` : "정리 명령이 실패했습니다.",
+      action: `.devbox/devbox.toml의 [agent] teardown ${typeof index === "number" ? `${index}번째 ` : ""}명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.`,
+    };
+  },
   "agents.delivery_unknown": {
     title: "지시 전달 결과를 확인할 수 없습니다.",
     action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",

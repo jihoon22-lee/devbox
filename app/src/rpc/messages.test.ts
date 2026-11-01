@@ -34,6 +34,25 @@ test("agent errors use actual generated file details and terminal codes", () => 
   }
 });
 
+test("a failed teardown names which command of [agent] teardown to run and fix, and its exit code", () => {
+  // The index is 1-based, as the daemon sends it. The command's text is not in the error.
+  expect(messageFor("agents.teardown_failed", { index: 2, exit_code: 3 })).toEqual({
+    title: "정리 명령이 실패했습니다(종료 코드 3).",
+    action:
+      ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+  });
+  // Killed or timed out: there is no exit code to name.
+  expect(messageFor("agents.teardown_failed", { index: 1, exit_code: null })).toEqual({
+    title: "정리 명령이 실패했습니다.",
+    action:
+      ".devbox/devbox.toml의 [agent] teardown 1번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+  });
+  // Without a usable detail the sentence stands without the number.
+  expect(messageFor("agents.teardown_failed").action).toBe(
+    ".devbox/devbox.toml의 [agent] teardown 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.",
+  );
+});
+
 test("an unready Windows job holder says to run again and where to look", () => {
   // The bootstrap refuses before it writes its assignment receipt, which comes before any
   // command, so "run again" is safe and the copy says the command did not run.
