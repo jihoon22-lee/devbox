@@ -511,9 +511,9 @@ PR 리뷰(사용자 결정 2026-10-27):
 - 시작 스크립트는 해석한 실행 파일의 폴더를 `export PATH=<폴더>:"$PATH"`로 앞에 둔다. `node` 같은 shebang 도구도 같은 폴더에서 찾게 하기 위해서다. 공유 폴더면 `export PATH="$PATH":<폴더>`로 끝에 붙이고 절대 경로로 실행한다(S7-11 정정).
 - 해석하지 못하면 worktree·branch를 만들기 전에 `agents.tool_missing { command }`로 끝난다.
   - 제목: "{command} 명령을 찾을 수 없습니다."
-  - 다음 행동: "설정 → 환경 점검에서 설치 방법을 확인하세요."
+  - 다음 행동: "설정 → 앱 진단 → 환경 점검에서 설치 방법을 확인하세요."
 - 환경 점검은 도구마다 경로·출처·버전을 보인다.
-  - 출처가 서로 다르면 Ok와 함께 안내한다: "로그인 셸과 대화형 셸이 다른 {tool}을 가리킵니다. devbox는 대화형 셸의 {path}({version})를 씁니다."
+  - 출처가 서로 다르면 Ok와 함께 안내한다: "로그인 셸과 대화형 셸이 다른 {tool} 실행 파일을 가리킵니다. devbox는 대화형 셸의 {path}({version})를 씁니다."
   - opencode < 1.19.3, pi < 1.3.0이면 경고한다.
   - 전역 hook 경고는 Ok "devbox가 작업마다 연결합니다"로 바꾼다.
 - 설치 안내
@@ -731,7 +731,7 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 - **시작:** bootstrap.ps1은 job을 만든 뒤, 자기 자신을 job에 넣기 **전에** 별도 PowerShell holder를 job 밖에서 띄운다. 인자는 job 이름 `Local\Devbox.Observe.<nonce>`와 영수증 경로다.
 - **준비 확인:** holder는 job handle을 쥔 뒤 `<nonce>.holder-ready`를 CreateNew로 쓴다. bootstrap은 이 표시를 본 뒤에만 job에 자기를 넣고, 명령을 실행하고, 자기 handle을 닫는다. holder 기동(PowerShell과 `Add-Type`)이 0.7–0.9초 걸리므로(PROGRESS §8 I2 실측), 기다리지 않으면 짧은 실행에서 holder가 job을 열기 전에 이름이 사라진다.
 - **준비 실패:** 15초 안에 표시가 없으면 bootstrap은 명령을 실행하지 않고 정해진 오류 `windows.observer_unavailable`로 끝난다. holder 없이 진행하면 I1이 되살아나기 때문이다.
-  - 제목: "Windows 작업 관찰을 준비하지 못했습니다."
+  - 제목: "Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다)."
   - 다음 행동: "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요."
 - **holder 동작:**
   1. `OpenJobObject(JOB_OBJECT_QUERY)`로 handle을 쥔다. 이것으로 이름이 유지된다.
@@ -855,7 +855,7 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 - **상태:** 정식 1.0.0 준비 중이며 릴리스 후보는 `v1.0.0-rc.2`(prerelease)다. RC는 앱 업데이트가 꺼져 있어 다음 버전은 설치 파일로 직접 설치한다.
 - **요구 사항:**
   - Windows 11, systemd가 켜진 WSL2.
-  - tmux 3.2 이상. pi의 Shift+Enter는 3.5 이상에서 CSI-u로, 3.2–3.4에서 xterm `modifyOtherKeys`로 전달된다(pi 1.3.0 `docs/tmux.md`, S7-11 정정).
+  - tmux 3.2 이상. Shift+Enter는 실행 중인 tmux 서버가 3.5 이상일 때만 CSI-u로 보내고, 3.2–3.4에서는 Enter로 동작한다(pi 1.3.0 `docs/tmux.md`로 정했던 "3.2–3.4는 xterm `modifyOtherKeys`"는 S7-13 Fix F가 정정했다. 3.2–3.4가 확장 키를 요청하지 않은 프로그램에 CSI-u를 전하지 않는다는 것은 tmux 3.4 소스를 읽어 확인했고 실기는 S7-14 K1이 한다).
   - git. PR 기능은 gh 로그인이 필요하다.
   - 쓸 에이전트 CLI(claude·codex·opencode·pi)를 설치하고 로그인한다.
 - **설치:**
@@ -990,15 +990,63 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 | ID | 확인 | 연결 |
 |---|---|---|
 | U1 | accept rc.1을 설치하고 claude·codex 작업을 짧은 프롬프트로 시작한다. rc.2 설치 파일을 덮어 실행한다. 확인할 것: 두 세션 유지, 기존 claude 세션의 다음 턴이 Idle로 반영됨, 새 claude 작업이 `differs` 없이 시작됨. 이전 세션에서 이미 떠 있던 `devbox mcp`(rc.1 실행 파일)가 업그레이드 뒤 어떻게 답하는지도 기록만 한다. 응답에 새 값 `opencode`·`pi`가 섞일 수 있다. 고치지는 않는다 | B1, SC4 |
+| U1 추가 | rc.1 Claude 작업(rc.1 hook 설정)이 rc.2 설치 뒤 승인이 필요한 명령을 만난다. 터미널에서 승인한 뒤에도 그 턴이 끝날 때까지 보내기가 "에이전트가 선택을 기다리고 있습니다."로 막히는지, 턴이 끝나면 풀리는지, 작업을 재개하면 새 hook 설정으로 회복하는지 기록한다(README에 적은 동작과 같아야 한다) | 영역 1 M2 |
 | H1–H4 | claude·codex·opencode·pi로 새 worktree 작업을 하나씩 만든다. 프롬프트는 "Reply with OK and stop."이다. 확인할 것: 실행 중 → 턴 종료가 2초 안에 목록과 Windows 알림에 반영(실측), 재개 1회, 토큰 합계, 환경 점검 4종 Ok | SC3, B4 |
+| H1 추가(신뢰 대화) | claude로 새 worktree 작업을 만들어 폴더 신뢰 대화가 나타나는지 기록한다. 나타나면 대기로 잡히고 화면·MCP 보내기가 막히는지 확인한다(`trust.txt` fixture는 문자열 기반이다) | 영역 1 M3 |
+| H1 추가(셸 모드) | claude 입력창에 `!`로 시작하는 해 없는 초안(예: `! echo ok`)을 두고 Enter는 누르지 않는다. footer가 마지막 줄들에 `! for shell mode`를 보이고 화면·MCP 보내기가 거절된다. 실제 화면의 줄 배치를 `shell-mode.txt`(문자열 기반)와 대조한다 | Fix A 5회차 |
+| H1 추가(? 도움말) | claude의 `?` 도움말 화면을 캡처해 `! for shell mode`가 마지막 6줄 안에 드는지, 도움말이 열려 있는 동안 보내기가 거절되는지 기록한다(문서는 "막힐 수 있다"로만 적었다) | Fix A 5회차 |
 | H2 추가 | codex 새 worktree의 신뢰 화면이 대기로 잡힌다 | S7-5 |
+| H2 추가(재개) | 목표(goal)가 멈춘 codex 작업을 재개한 뒤 보낸다. 실제 200×50 화면을 캡처하고, 가운데 확인 상자가 대기로 잡혀 보내기가 거절되는지 기록한다 | Fix A 1회차 |
+| H2 추가(재개 직후) | `codex resume` 직후 1초 안에 보내고 어떻게 되는지 기록한다(시작 창 경쟁, S7-8 유보와 같은 부류) | Fix A 2회차 |
+| H2 추가(/feedback) | 실제 `/feedback` 화면에서 보내기가 거절되는지 확인한다. 피드백은 제출하지 않는다 | Fix A 2회차 |
+| H2 추가(실화면) | 실제 codex 작업에서 다음 화면을 하나씩 열어 대기로 읽히는지, 보내기가 거절되는지 확인한다. 아무것도 제출하거나 저장하지 않는다: 텍스트 입력 상자(`/rename` 또는 목표 편집), `/statusline` 또는 `/experimental`, `/keymap`과 편집, 모델의 비동기 질문, 재개 선택 목록, 인라인 기록 보기(Ctrl+T 뒤 Esc로 탐색). 전체 화면 기록의 프롬프트 탐색은 보내기를 막지 않는지도 확인한다 | Fix A 3회차 |
+| H2 추가(외부 편집기) | codex에서 Ctrl+G로 GUI 외부 편집기를 연다. 편집기가 떠 있는 동안 붙여 넣은 글이 어디로 가는지, footer의 `Save and close external editor to continue.`가 보이는지 기록한다(devbox는 이 상태를 알아보지 않는다) | Fix A 4회차 |
+| H2 추가(셸 모드 표시) | codex 입력창에 `!` 초안을 둔 채 터미널 폭을 줄이거나 /side 대화를 열거나 단축키 도움말을 연다. `Shell mode` 표시가 그려지지 않는 경우와 그때의 보내기 반응을 기록한다 | Fix A 4회차 |
 | H3 추가 | `opencode debug config`에 사용자 플러그인과 devbox 플러그인이 함께 보인다 | 검토 초점 5 |
+| H3 추가(환경) | 실제 opencode TUI 작업에서 bash 도구로 `env \| grep DEVBOX_`를 실행한다. `DEVBOX_AGENT_ID`와 `DEVBOX_AGENT_LAUNCH`는 없고 `DEVBOX_BIN`과 `DEVBOX_INSTANCE`는 있다. `!env`로도 같은지 확인하고, 그 밖에 env 옵션 없이 띄우는 프로세스(외부 편집기 등)가 `DEVBOX_AGENT_ID`를 보는지 기록한다 | Fix B |
+| H3 추가(보고) | 같은 작업의 보고(실행 중·대기·Idle)가 그 작업의 시작(launch)에 묶여 도착해 목록의 상태가 갱신된다 | Fix A 1회차, Fix B |
+| H3 추가(중첩 실행) | 작업의 bash 도구에서 `opencode run "Reply with OK."`를 실행한 뒤 그 작업의 sessionId와 상태가 그대로인지 확인한다 | Fix B |
+| H3 추가(셸 모드) | opencode 입력창에서 `!`로 셸 모드를 켠다. 힌트 줄이 `esc exit shell mode`를 보이고 화면·MCP 보내기가 거절된다. 세션이 `retry` 상태일 때 힌트 줄이 사라지는지, 붙여 넣은 `!`가 셸 모드를 켜는지 기록한다(패턴은 설치본 문자열 기반이다) | Fix A 4회차 |
+| H3 추가(exit) | opencode 작업에 정확히 `exit`, `quit`, `:q`를 하나씩 보내 어떻게 되는지 기록한다(종료 여부, `-s <id>`로 재개되는지). 거절할지는 이 결과를 보고 정한다 | Fix A 4회차 |
 | P1 | claude에 승인이 필요한 명령을 요청한다. 확인할 것: 대기 표시, 화면 보내기 비활성, MCP 보내기 거절, pane 입력 0. 터미널에서 승인 → 실행 중 → 턴 종료. 붙여넣기+Enter의 실제 반응도 기록한다 | B3 |
+| P1 추가(Codex 승인) | codex에 승인이 필요한 명령을 요청한다(exec 승인 overlay). 확인할 것: 대기 표시, 화면 보내기 비활성, MCP 보내기 거절, pane 입력 0 | Fix A 1회차 |
+| SN1 | Changes 탭에서 form feed(^L) 같은 제어 문자가 든 줄을 인용해 에이전트에 보내거나, 색 코드가 든 터미널 출력을 입력창에 붙여 보낸다. 보내기가 거절되고 초안이 남으며 메시지가 지울 것을 말한다 | Fix A 4회차 |
+| SN2 | 보이지 않는 글자(U+200B, U+2060)를 앞에 붙인 `!echo devbox-ok`를 각 도구 작업에 앱과 MCP로 보내, 도구가 셸 명령으로 실행하는지 기록한다(거절도 trim도 되지 않는다. 기록만 하고 고치지 않는다) | Fix A 4회차 |
 | C1 | accept 설정 `~/.config/devbox-accept/config.toml`을 소유 사본으로 백업하고 문법을 깨뜨린 뒤 앱을 다시 연다. 확인할 것: 기능 저하 안내, 파일 바이트 불변. 원복 뒤 정상 | B2 |
-| K1 | pi에서 Shift+Enter는 줄바꿈, Enter는 보내기. 일반 터미널에서 Shift+Enter가 무해하다 | S7-9 |
+| K1 | tmux 3.5 이상 호스트에서 pi의 Shift+Enter는 줄바꿈, Enter는 보내기. 일반 터미널에서 Shift+Enter가 무해하다. 3.4 이하는 아래 K1 추가(3.4)에서 본다 | S7-9, Fix F |
+| K1 추가(3.4) | tmux 3.4 호스트(Ubuntu 24.04 기본)에서 bash·claude·codex·opencode·pi 작업을 연다. Shift+Enter가 Enter처럼 동작하고(줄이 실행되거나 입력창이 제출되며, 삼켜지거나 이상한 문자가 남지 않는다) pi는 줄바꿈 대신 제출한다. 터미널 attach 결과의 `extendedKeys`는 `false`다. 호스트가 없으면 NOT_RUN이다. CI(ubuntu-24.04의 tmux 3.4)는 `false`까지만 보여 준다 | Fix F |
+| K1 추가(3.5 이상) | tmux 3.5 이상 호스트에서 pi는 Shift+Enter로 줄바꿈하고 Enter로 제출한다. claude·codex·opencode의 반응을 기록하고, 일반 셸은 Shift+Enter로 줄을 실행한다 | Fix F |
+| K1 추가(3.5 경계) | tmux 3.5 또는 3.5a 호스트가 있으면 같은 확인을 한다(지금까지 3.6에서만 돌렸다) | Fix F |
+| K1 추가(WebView2) | tmux 3.5 이상에서 취소된 keydown 뒤 `keypress`가 막히는지, Shift+NumpadEnter도 같은 길로 가는지 확인한다 | Fix F |
+| K1 추가(보내기 경로) | pi가 확장 키를 켠 뒤에도 devbox의 보내기(`paste-buffer -p` 뒤 `send-keys Enter`)가 pi에서 제출되는지 확인한다 | Fix F |
+| K1 추가(tmux 업그레이드) | devbox tmux 서버가 떠 있는 채로 호스트 tmux를 3.4에서 3.5 이상으로 올린다. 새로 연 터미널에서도 그 서버가 다시 시작될 때까지 Shift+Enter는 Enter로 동작하고(`extendedKeys`가 `false`), 다시 시작한 뒤에는 CSI-u로 간다. 호스트 tmux를 바꾸는 것은 사용자 PC 설정 변경이므로 먼저 묻고, 못 바꾸면 NOT_RUN이다 | Fix F 1회차 |
 | W1 | Windows 실행 두 가지. (가) `cmd /c start "" /b powershell -NoProfile -Command "Start-Sleep 20"`(부모 즉시 종료): 고아가 도는 동안 reader 유지, 끝난 뒤 영수증과 닫힘. (나) `cmd /c exit 0`(아주 짧은 실행): 정상으로 닫힌다. holder가 실행마다 더하는 시작 지연을 raw로 기록한다 | I1 |
+| W1 (다) | Windows 실행으로 빌드 서버를 남기는 빌드를 한다(`dotnet build`, 없으면 `pnpm tauri build`). 파일을 바꿔 다시 실행하면 실행 화면이 바뀐 제목과 다음 행동("끝날 때까지 기다린 뒤 …")을 모두 보이는지 확인하고, 서버별 붙잡는 시간과 오류를 기록한다. `dotnet build-server shutdown`·`gradle --stop`(또는 작업 관리자) 뒤에는 다음 실행이 시작된다 | Fix C |
+| W1 (라) | `#[ignore]` 실제 Windows 시험 `the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap`를 그 doc comment의 두 단계로 돌린다(빌드는 기본 잠금, 실행은 `windows-acceptance` 잠금과 `DEVBOX_TEST_WINDOWS_POWERSHELL`·`DEVBOX_TEST_WINDOWS_DIR`). PASS는 이 실행으로만 적는다 | Fix C |
+| W1 (마) | Windows 작업을 정지하고 수정한 뒤 다시 시작한다. busy 거절이 없어야 한다 | Fix C 1회차 |
+| W1 (바) | Windows 실행과 붙잡힌 reader의 probe 모두 콘솔 창을 열지 않는다. 출력·종료 코드·정지·job 배정·UTF-8 출력은 그대로 동작한다 | Fix C, Fix E 7b |
+| W1 (사) | Windows 실행의 `windows.prepare`부터 `assigned`까지 cold 시간을 잰다. 35초 안이어야 한다 | Fix C |
+| W1 (아) | 붙잡힌 reader의 probe가 대략 분당 한 번인지, holder를 작업 관리자에서 끝낸 뒤 약 70초 안에 풀리는지 확인한다 | Fix C |
+| W1 (자) | 느리지만 성공하는 holder 시작에서도 그 실행의 활동이 공유 시작 한도(35초) 안에 알려지고, 그 뒤 앱 안 업데이트 설치가 `nativeUnknown`으로 막히지 않는지 확인한다 | Fix C 1회차 |
+| CS1 | `systemctl --user kill -s STOP devbox-accept@accept.service` 뒤 앱을 끝내고 다시 실행한다. 앱 안에서 어느 길이 회복하는지 기록한다: 약 30초 뒤 연결 배너의 [다시 시도](5회 실패 뒤), 설정 → 앱 진단의 [다시 설정]. 배너가 나오기까지 걸린 시간을 적고, 앱이 이미 연결된 상태에서 STOP을 보낸 경우도 본다. 마지막에 `kill -s CONT` | Fix E 1–2, 영역 5 확인 1 |
+| CS2 | [다시 설정]과 [다시 시도](연결 화면과 연결 배너)가 각각 MainPID를 바꾼다. 배포판 선택은 MainPID를 바꾸지 않는다(선택 화면에 닿을 수 있을 때만: 사용자 배포판이 둘 이상이고 accept 앱의 `settings.json`에 배포판이 없을 때) | Fix E 3, 영역 5 확인 2 |
+| CS3 | 바뀐 것이 없는 일반 재실행은 MainPID를 유지하고 setup의 재시작 단계 메모가 "건너뜀(변경 없음)"이다 | O1a, 영역 5 확인 3 |
+| CS4 | 시작 doctor(`devbox doctor --json --startup`)는 시작 중에 `bash -ic`나 에이전트 `--version`을 실행하지 않는다(읽기 전용 `pgrep -af 'bash -ic'` 반복으로 보거나 ready까지 시간을 rc.1과 비교한다). 환경 점검과 설정 → 에이전트는 `tool.claude`·`tool.codex`·`tool.opencode`·`tool.pi`를 계속 보인다 | Fix E 7 |
+| CS5 | rc.1 → rc.2 제자리 업그레이드: 첫 실행 뒤 `/proc/<MainPID>/exe`가 rc.2의 `devbox-<sha>`이고, rc.1 세션의 hook이 여전히 데몬에 닿는다(U1) | 영역 5 확인 4 |
+| CS6 | [나중에](버튼·Esc·바깥 클릭): accept 앱의 HKCU `…\CurrentVersion\Run` 값이 그대로이고 `settings.json`에 `autostart_asked: true`가 있으며 다시 열어도 대화상자가 없다 | O6b, 영역 5 확인 5 |
+| CS7 | 실패한 연결 화면의 [자세히]가 journal 줄을 보인다. 비었거나 읽을 수 없는 사용자 journal이 무엇을 보이는지 기록한다 | 영역 5 확인 6 |
+| CS8 | Windows CI의 `cargo test --lib`가 `platform::supervisor::tests`와 `platform/native_activity/native_tests.rs`를 포함해 돈다(CI 로그로 확인한다) | 영역 5 확인 8 |
+| CS9 | 느리지만 정상인 데몬 시작(setup과 첫 Welcome): 연결 배너의 [다시 시도](실패 5회, 약 29초 뒤)가 Welcome보다 먼저 나타나는지 기록한다. 누른 뒤에는 4회 만에 다시 나올 수 있다 | Fix E |
+| CS10 | accept 앱의 `settings.json` 사본을 따로 두고 `{`를 써 넣은 뒤 다시 연다. 연결 화면이 "앱 설정 파일을 읽지 못했습니다"와 전체 경로를 보이고, [자세히]가 "실패한 단계 앱 설정 읽기"와 파서 문구를 최근 로그 없이 보인다. 파일은 그대로이고(해시 전후 비교) 옮겨지지 않는다. 사본을 되돌린 뒤 [다시 시도]하면 정상으로 시작한다 | Fix E 6 |
+| CS11 | accept 인스턴스만으로 [다시 설정] 실패를 만들 수 있으면, 실패한 단계의 문구가 앱 진단의 "작업을 완료하지 못했습니다…" 아래와 시작 문제 배너에 나온다 | Fix E 5 |
+| CL1 | 정리 명령이 폴더에 파일을 쓰는 실제 프로젝트(`[agent] teardown`)로 자동 정리, 설정 → 에이전트의 수동 정리, 버리기를 각각 한다. 정리 전에 깨끗했던 폴더는 정리 명령이 만든 변경이 되돌려진 뒤 폴더와 브랜치가 지워지고, 정리 명령이 파일을 쓰고 실패해도 작업이 정리 후보에 남는다. 버리기는 그 파일 때문에 `agents.state_changed`로 거절되지 않는다 | Fix D 1–3차 |
+| CL2 | 스쿼시 병합(또는 PR)으로 닫고 정리 명령이 실패한 실제 작업이 정리 후보에 "스쿼시·PR로 닫힘 — 브랜치의 개별 커밋은 기준 브랜치에 없습니다"로 나오고, 원인을 고친 뒤 정리하면 브랜치와 폴더가 지워진다. 작업의 정리 알림은 "설정 → 에이전트 → 정리 후보" 길을 안내한다 | Fix D 1차 |
+| CL3 | 초기화된 하위 모듈이 있는 프로젝트의 작업 폴더: 정리는 `agents.worktree_has_submodules` 문구로 거절하고, 그 문구의 `git worktree remove --force '<폴더>'`가 프로젝트 폴더의 터미널에서 실제로 되는지 확인한다. 버리기 확인 창은 "하위 모듈이 있습니다…" 줄을 보인다 | Fix D 2·3차 |
+| CL4 | S7-14 중 만난 오류 화면이 제목만 보이고 다음 행동이 빠졌는지 기록한다(알려진 곳: 이미지 붙이기, 노트 읽기 전용 줄, 활동 하루·주간, 파일 작업 대화상자, 파일 트리, 소스 페이지, 빠른 열기, 에이전트 실행 탭의 `cancelled`·`not_found` 줄). 고치지는 않는다 | Fix D |
+| CL5 | 새 작업 창의 브랜치 이름 칸에 대문자를 입력하면 소문자로 바뀌어도 커서 위치가 그대로다(WebView2. 지금은 jsdom 시험뿐이다) | Fix D |
+| CL6 | 에이전트 상세의 [터미널 보기]와 재개가 터미널에 포커스를 준다. 손으로 고른 터미널 탭은 포커스를 가져가지 않는다 | Fix D |
 | S6 묶음 | G1·G2·A1–A6을 같은 harness로 다시 돈다. A3·A5는 검토된 helper가 없으면 NOT_RUN이다. A6은 uninstall 등록 key를 30초까지 polling하도록 harness만 고친다 | B7 |
-| N1 | 설치 폴더에 `LICENSE`와 `THIRD_PARTY_NOTICES.md`가 있다 | S7-12 |
+| N1 | prod와 accept 설치본 모두에서 설치 폴더에 `LICENSE`와 `THIRD_PARTY_NOTICES.md`가 있다. 두 채널의 `win-package.ps1` 빌드가 넓힌 빌드 결과 파일 검사(LICENSE·고지)를 통과한다 | S7-12, Fix E 8 |
 | SV1 | accept 인스턴스에서 프로젝트 `[[service]]`를 시작하고, 로그가 보이는지 확인하고, 멈춘다. 데몬 RPC로 확인한다 | 13개 중 3 |
 | NT1 | `devbox note add`로 accept 인스턴스에 노트를 쓰고 검색으로 찾는다 | 13개 중 4 |
 | DS1 | `wsl.exe -l -q`로 배포판 수를 센다. 내부 배포판이 아닌 것이 2개 이상이면 선택 화면을 확인하고, 하나뿐이면 해당 없음 | 13개 중 13 |

@@ -46,14 +46,14 @@ GitHub 비공개 취약점 신고(Private vulnerability reporting)를 쓴다. �
 ## 지원 번들
 
 - 설정 → 앱 진단의 [지원 번들]은 이 PC에 ZIP 파일(`~/.local/share/devbox/prod/support/`)을 만들 뿐 어디에도 보내지 않는다.
-- 저장된 비밀 값(원문·JSON 이스케이프·디버그 표기)과 홈·노트 경로를 가린다. 설치본에서의 가림 확인(S6 수용 A5)은 한 번 시도했지만 노트 경로가 번들 입력에 들어가지 않아 판정하지 못했다(INCONCLUSIVE). 그래서 NOT_RUN으로 남아 있다.
+- 저장된 비밀 값(원문·JSON 이스케이프·디버그 표기)과 홈·노트 경로를 가린다. 설치본에서의 가림 확인은 한 번 시도했지만 노트 경로가 번들 입력에 들어가지 않아 판정하지 못했다(INCONCLUSIVE). 그래서 NOT_RUN으로 남아 있다.
 - 비밀 저장소가 잠겨 있으면 가릴 값을 알 수 없으므로 로그와 crash 기록을 넣지 않는다(`logs_omitted: "secrets_locked"`). 노트가 꺼져 있으면 노트 경로를 알 수 없으므로 역시 넣지 않는다(`logs_omitted: "notes_disabled"`).
 
 ## 설치 파일과 업데이트
 
 - 설치 파일 `devbox-<버전>-setup.exe`에는 코드 서명(Authenticode)이 없고, 앱 업데이트도 서명을 쓰지 않는다(ADR 0016).
 - 앱 업데이트는 받은 파일의 크기와 SHA-256을 GitHub Release 자산의 값과 비교한 뒤에만 설치 준비를 마친다. 직접 받은 설치 파일은 PowerShell `Get-FileHash`로 SHA-256을 확인한다.
-- 서명이 없는 설치 파일에 Windows가 보이는 경고와 그 문구는 S7-14에서 확인한다.
+- 서명이 없는 설치 파일에 Windows가 보이는 경고와 그 문구는 1.0.0 공개 전 Windows 확인에서 본다.
 
 ## WSL 쪽 연결
 

@@ -1,8 +1,9 @@
 // devbox opencode plugin. devbox writes this file and loads it only in its own tasks, through
 // OPENCODE_CONFIG_CONTENT, next to the user's own plugins. It reports the task's session to
 // devbox with `devbox agent event --from opencode <report>`, imports nothing but
-// node:child_process, and never throws into opencode. It takes the task out of opencode's
-// environment, so nothing opencode starts, a nested opencode included, reports as the task.
+// node:child_process, and never throws into opencode. It takes the task id and launch id out of
+// opencode's environment, so a child that opencode starts with a copy of that environment gets no
+// task id, and a nested opencode among them stays inert. S7-14 H3 observes this in the real tool.
 import { spawn } from "node:child_process";
 
 /** One report: the last argument of `devbox agent event --from opencode`. */
@@ -153,9 +154,11 @@ type Task = { bin: string; id: string; launch?: string };
  * process for each folder it opens and after a reload, when the environment no longer has it. */
 let taken: Task | undefined;
 
-/** The task to report for. Its id and launch leave the environment before any tool can run, so a
- * nested `opencode run` loads this plugin with no task and stays inert instead of reporting its
- * sessions as the task's. The reports carry them instead. */
+/** The task to report for. Its id and launch are deleted from the environment, so a child that
+ * opencode starts with a copy of it (`{ ...process.env }`) gets no task id, and a nested
+ * `opencode run` loads this plugin with no task and stays inert instead of reporting its sessions
+ * as the task's. Under Bun Workers a direct read of `process.env` and a spawn without an `env`
+ * option may still see them. The reports carry the id and the launch instead. */
 function take(env: typeof process.env): Task | undefined {
   const { DEVBOX_BIN: bin, DEVBOX_AGENT_ID: id, DEVBOX_AGENT_LAUNCH: launch } = env;
   delete env.DEVBOX_AGENT_ID;

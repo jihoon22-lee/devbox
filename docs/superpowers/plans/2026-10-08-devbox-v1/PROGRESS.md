@@ -17,18 +17,18 @@ devbox v1 재구축의 진행 상태를 적는 **유일한 원장**이다. 계�
 
 | 항목 | 값 |
 |---|---|
-| 단계 | **S7(rc.2 보강) 작업 중 — 2026-10-27 착수.** S3 #644·S4 #646·S5 #645·S6 #648은 모두 squash 머지됐고(S6 → `8b53484b`, 2026-10-26) 사용자 결정으로 임시 RC #649 → `28eb2a91` 머지 뒤 main `28eb2a91`의 주석 태그 `v1.0.0-rc.1`로 GitHub prerelease를 공개했다(release run40340583942 SUCCESS). 인계 문서 #650이 `b6e5eba8`로 머지됐다(2026-10-27). 공식 `v1.0.0` tag·release는 없다. 사용자가 2026-10-27 [10-s7-s8-release](10-s7-s8-release.md)의 실행을 승인했다(§2). 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
-| 현재 작업 | S7 브랜치 `v1/s7-rc2`, worktree `/home/jihoon/projects/devbox-wt/v1-s7-rc2`, 계획 [10-s7-s8-release](10-s7-s8-release.md)(origin/main `b6e5eba8`에서 분기). **S7-0(규칙·원장·cache)** 의 문서 수정과 cache 정리를 반영했다(독립 문서 검토는 이 커밋 뒤). **다음 S7-1**(B1: 업데이트 뒤에도 hook이 끊기지 않게). S6·RC 브랜치·worktree 정리와 근거 보관은 완료했고(§5), #650의 `docs/s6-release-handoff` 브랜치와 `devbox-wt/v1-rc1` worktree도 머지 뒤 제거돼 있다(2026-10-27 확인: worktree는 main과 `v1-s7-rc2`뿐, 원격 브랜치는 main뿐). 이전 S6 진행 기록은 §5 S6-6b 항목들에 그대로 둔다. push·PR·태그는 하지 않았다(push는 S7-14의 후보 직전, PR은 S7-15). |
+| 단계 | **S7(rc.2 보강) 작업 중 — 2026-10-27 착수.** S3 #644·S4 #646·S5 #645·S6 #648은 모두 squash 머지됐고(S6 → `8b53484b`, 2026-10-26) 사용자 결정으로 임시 RC #649 → `28eb2a91` 머지 뒤 main `28eb2a91`의 주석 태그 `v1.0.0-rc.1`로 GitHub prerelease를 공개했다(release run40340583942 SUCCESS). 인계 문서 #650이 `b6e5eba8`로 머지됐다(2026-10-27). 공식 `v1.0.0` tag·release는 없다. 사용자가 2026-10-27 [10-s7-s8-release](10-s7-s8-release.md)의 실행을 승인했다(§2). **S7-0–S7-12(선택 과제 O1a·O1b·O2–O6b 포함)가 끝났고, S7-13은 영역 1–5의 브랜치 전체 검토와 수정(Fix A–F, 과제별 별도 검토 포함)이 끝났다.** 영역 6(문서·고지·CI 범위) 검토, 버전 `1.0.0-rc.2`, `pnpm check`, S7-14가 남았다. 과거 source별 PASS·FAIL·NOT_RUN은 아래 보존한다. |
+| 현재 작업 | S7 브랜치 `v1/s7-rc2`, worktree `/home/jihoon/projects/devbox-wt/v1-s7-rc2`, 계획 [10-s7-s8-release](10-s7-s8-release.md)(origin/main `b6e5eba8`에서 분기). **S7-13 문서 정리**(검토가 남긴 문서 항목 교정과 결과 기록)를 끝냈다. 결과는 §5(S7-13 결과·계획 대비 편차), §8(미룬 항목), 계획 S7-14 표(검토가 더한 실기 확인)에 있다. 영역 1–5 수정의 마지막 커밋은 `77cd92c1`(Fix F 1차)이고 그 재검토는 Approved라 더 올 코드 커밋은 없다. **다음은 영역 6 검토**(문서·고지·CI 범위, 최종 HEAD에서)다. 그 검토가 코드를 바꾸면 그 커밋이 이 정리 뒤에 온다. S6·RC 브랜치·worktree 정리와 근거 보관은 완료했고(§5), #650의 `docs/s6-release-handoff` 브랜치와 `devbox-wt/v1-rc1` worktree도 머지 뒤 제거돼 있다(2026-10-27 확인: worktree는 main과 `v1-s7-rc2`뿐, 원격 브랜치는 main뿐). 이전 S6 진행 기록은 §5 S6-6b 항목들에 그대로 둔다. push·PR·태그는 하지 않았다(push는 S7-14의 후보 직전, PR은 S7-15). |
 | 트랙 1(S3→S4) 위치 | 완료. S3 검증e56c3096→머지e91c9b22, S4 최종검증346e00ca→머지20dcded6은 각각 tree 동일이다. 기존 S3/S4 worktree·로컬/원격 브랜치는 제거 완료다. S4 설치5/8은e6304a7e 실제 PASS,1/6은07ebb413 과거 PASS,2/3/4/7 NOT_RUN을 유지한다. |
 | 트랙 2(S5) 위치 | 완료. S5 검증b18bc740→머지a55907a2의 tree 동일. 기존 S5 worktree·로컬/원격 브랜치도 제거 완료다. b18 설치1/2 PASS,429 소스3/4 과거 PASS,5/6 NOT_RUN 및 리뷰3회·차단 예외1건 수정 기록을 유지한다. |
-| 이어받은 미결 | I1(Windows 사본 reader의 고아 자손 notFound, 실제 Windows CONFIRMED·미수정, Devbox 소유 사본만 영향)은 **v1.0.0 공개 전 release-gating**(§8). A6 FAIL·A3/A5 NOT_RUN·SC2 raw 미달·SC7 PR Windows 15분 미달(§8). RC1 Windows 설치·실행 수용 NOT_RUN, RC→1.0.0 수동 설치 미시험, release publisher의 stable 경로 미실행. R1/R2는 v1.0.0 공개 직전 사용자 확인으로 유지한다. |
-| 다음 제품 작업 | **S7-1**(B1 hook 안정) → S7-2·3(B2 기능 저하 시작·화면) → S7-4(B3 보내기 차단) → S7-5–S7-9(Codex 신뢰 화면, CLI 경로·환경 점검 4종, opencode·pi, Shift+Enter) → S7-10(I1) → 승인된 선택 과제 O1–O6 → S7-11·12(문서 P0, MIT·고지) → S7-13·14(브랜치 전체 검토·`1.0.0-rc.2` 버전·Windows accept 수용) → S7-15(PR·리뷰·머지) → S7-16(rc.2 prerelease, **별도 승인**) → S8(`1.0.0`). 공식 `v1.0.0` tag·GitHub Release는 S8-5의 별도 명시 사용자 승인 뒤에만 한다. 이전 S6-6c의 남은 단계는 이 계획이 이어받는다: 버전 되돌림 S8-1, I1 S7-10, RC 수용·13개 확인 S7-14·S7-16·S8-5(그 전까지 main 빌드는 updater가 꺼져 있다, §8 RC M4). scripts+.github 1,982/2,000줄·workflow 2다. |
+| 이어받은 미결 | I1(Windows 사본 reader의 고아 자손 notFound, rc.1 때 실제 Windows CONFIRMED, Devbox 소유 사본만 영향)은 S7-10에서 holder와 영수증으로 코드를 고쳤다(§5). 실제 Windows 동작은 S7-14 W1 전까지 미검증이고 실행하지 않으면 **v1.0.0 공개 전 release-gating**이다(§8). A6 FAIL·A3/A5 NOT_RUN·SC2 raw 미달·SC7 PR Windows 15분 미달(§8). RC1 Windows 설치·실행 수용 NOT_RUN, RC→1.0.0 수동 설치 미시험, release publisher의 stable 경로 미실행. R1/R2는 v1.0.0 공개 직전 사용자 확인으로 유지한다. |
+| 다음 제품 작업 | **영역 6 검토**(문서·고지·CI 범위, 최종 HEAD에서) → 버전 `1.0.0-rc.2`와 고지 재생성(S7-13 단계 2) → `pnpm check` 한 번(단계 3) → 후보 SHA 고정(단계 4) → **S7-14**(Windows 후보·accept 수용, 계획 표에 S7-13 검토가 더한 확인 포함) → S7-15(PR·리뷰·머지) → S7-16(rc.2 prerelease, **별도 승인**) → S8(`1.0.0`). 공식 `v1.0.0` tag·GitHub Release는 S8-5의 별도 명시 사용자 승인 뒤에만 한다. 이전 S6-6c의 남은 단계는 이 계획이 이어받는다: 버전 되돌림 S8-1, I1 S7-10, RC 수용·13개 확인 S7-14·S7-16·S8-5(그 전까지 main 빌드는 updater가 꺼져 있다, §8 RC M4). scripts+.github 1,982/2,000줄·workflow 2다. |
 | 운영 기록(2026-10-27) | **D2:** GitHub 비공개 취약점 신고(Private vulnerability reporting)는 이미 켜져 있었다(API 응답 `{"enabled":true}`) — 변경 없음. **cache(S7-0 단계 3):** `~/.cache/targets/`의 `devbox-s5`(70 GiB, S5 전용)·`devbox-platform-check`(23 GiB)·`devbox-native-lsp`(470 MiB)를 삭제하고(뒤의 둘은 D1), cargo-sweep 0.8.0을 설치했다. 공유 target `~/.cache/targets/devbox`의 정리 전 `du -sh`는 합계 271G다: `debug` 269G(그중 `debug/incremental` 148G·`debug/deps` 117G·`debug/build` 4.5G), `tmp` 4.0K, `x86_64-pc-windows-msvc` 998M, `x86_64-unknown-linux-musl` 1.2G. `cargo sweep --time 3`의 자체 보고는 "Cleaned 63.22 GiB"(그 도구의 집계)이고, 정리 뒤 `du -sh`로 다시 재면 213G다(집계 방식이 달라 두 값은 일치하지 않는다). 150 GiB를 넘어 `debug/incremental/`을 비웠고 그 뒤 `du -sh`는 67G다. 디스크(`df -h /`의 Used)는 564G → 269G다. `scripts/sweep.sh`는 고치지 않았다(정리 유보 no-op). |
-| 마지막 갱신 | 2026-10-27 · S7-0 착수 반영: CONVENTIONS에 PR 리뷰 규칙(결정 5)과 00 §3의 유효 규칙을 옮김(§5·8·11)·AGENTS·00 포인터·이 원장(§1·§2·§4)·`.gitignore`(`.pi/tasks/`). 문서만 변경했고 제품 코드·빌드·설치 실행은 없다. 그 전 2026-10-27 · S6 #648 squash 머지(`8b53484b`)·RC #649(`28eb2a91`)·`v1.0.0-rc.1` prerelease·§8 Windows 잔여2건 사용자 결정·로컬 근거 archive(`devbox-archive/cleanup-20261026/`)와 S6/RC 브랜치·worktree 정리를 기록. 문서만 변경했고 제품·빌드·설치 실행은 없다. 그 전 2026-10-26 · S6-6b Windows candidate(19cff21e·run40305797593)·accept 설치 수용 결과와 로컬 최종 검토·전체 검사·수정 기록(§5 S6-6b). |
+| 마지막 갱신 | 2026-11-02 · S7-13 문서 정리 반영: 영역 1–5 검토·수정 결과와 계획 대비 편차(§5), 미룬 항목과 닫은 항목(§8), 계획 S7-14 표의 추가 확인, 01-design(R5·§4.6·§6.5)·README·docs/config.md·SECURITY.md 교정. 코드는 주석(opencode 플러그인·Claude fixture·ignored 시험 doc), 앱 문구 두 줄, 시험 보강 두 곳(문서 예시 울타리 정보 문자열, Claude 셸 모드 footer 변형)만 바꿨다. 전체 검사(`pnpm check`)·E2E·Windows 실행은 하지 않았다. 그 전 2026-10-27 · S7-0 착수 반영: CONVENTIONS에 PR 리뷰 규칙(결정 5)과 00 §3의 유효 규칙을 옮김(§5·8·11)·AGENTS·00 포인터·이 원장(§1·§2·§4)·`.gitignore`(`.pi/tasks/`). 문서만 변경했고 제품 코드·빌드·설치 실행은 없다. 그 전 2026-10-27 · S6 #648 squash 머지(`8b53484b`)·RC #649(`28eb2a91`)·`v1.0.0-rc.1` prerelease·§8 Windows 잔여2건 사용자 결정·로컬 근거 archive(`devbox-archive/cleanup-20261026/`)와 S6/RC 브랜치·worktree 정리를 기록. 문서만 변경했고 제품·빌드·설치 실행은 없다. 그 전 2026-10-26 · S6-6b Windows candidate(19cff21e·run40305797593)·accept 설치 수용 결과와 로컬 최종 검토·전체 검사·수정 기록(§5 S6-6b). |
 
 ## 2. 막힌 것 · 사용자 결정 대기
 
-**S7·S8 순서(2026-10-27 사용자 승인):** 사용자가 [10-s7-s8-release](10-s7-s8-release.md)의 결정 1–6(각각의 원문은 아래 표)으로 rc.2 방향을 승인했고, §2.2·§2.3 질문에는 "네 권장대로 진행해주세요"로 답해 S7(rc.2 보강)·S8(1.0.0)의 실행을 승인했다(아래 표의 2026-10-27 행). 다음은 S7-1이다. rc.2 prerelease(S7-16)와 공식 `v1.0.0` 공개(S8-5)는 각각 그 시점의 별도 명시 승인 뒤에만 하며, 이 승인은 공개·tag 승인이 아니다. 아래 S6-6c 순서는 이 계획으로 대체됐다.
+**S7·S8 순서(2026-10-27 사용자 승인):** 사용자가 [10-s7-s8-release](10-s7-s8-release.md)의 결정 1–6(각각의 원문은 아래 표)으로 rc.2 방향을 승인했고, §2.2·§2.3 질문에는 "네 권장대로 진행해주세요"로 답해 S7(rc.2 보강)·S8(1.0.0)의 실행을 승인했다(아래 표의 2026-10-27 행). 그때 다음은 S7-1이었다(지금 위치는 §1). rc.2 prerelease(S7-16)와 공식 `v1.0.0` 공개(S8-5)는 각각 그 시점의 별도 명시 승인 뒤에만 하며, 이 승인은 공개·tag 승인이 아니다. 아래 S6-6c 순서는 이 계획으로 대체됐다.
 
 **S6 머지·RC 뒤 순서(2026-10-27 갱신, 같은 날 위 S7·S8 계획으로 대체):** S6 PR #648은 `8b53484b`로 squash 머지됐고, 사용자 결정에 따라 임시 RC `v1.0.0-rc.1`을 main에서 GitHub prerelease로 공개했다(아래 두 문단, §5). 다음은 S6-6c다: 버전 되돌림 PR(`1.0.0-rc.1`→`1.0.0`, 공식 공개 전 필수) → I1 release-gating 처리(§8) → 공개 준비 결과·13개 참고 확인 제시 → **공식 `v1.0.0` tag·GitHub Release는 별도 명시 사용자 승인 뒤에만**. release publisher의 stable 경로는 아직 실제 GitHub에서 실행된 적이 없다(§8 ci-docs M2). 이전 사용자 판단 대기 2건(S1 잔여 key·NSIS 제조사 key)은 아래 결정으로 종결됐다.
 
@@ -199,7 +199,7 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 
 ## 5. 계획과 달라진 점
 
-### S7 rc.2 보강의 계획 대비 편차 (2026-10-29 · S7-0–S7-O 반영 · S7-11 문서 정리)
+### S7 rc.2 보강의 계획 대비 편차 (2026-11-02 · S7-0–S7-13 반영 · S7-13 문서 정리)
 
 - **S7-1 hook 산출물 게시:** 계획은 "0600 create_new"였다. 실제로는 같은 폴더의 0600 임시 파일에 쓰고 `sync_all`한 뒤 `persist_noclobber`로 원자적으로 게시한다(`crates/agents/src/artifacts.rs`, `4b3f31e9`, Ruling 8). 예전 `bin/devbox-<sha>`는 지우지 않는다. rc.1 hook이 해시 경로를 가리키기 때문이다(`app/src-tauri/src/core/deploy.rs`의 설치 스크립트는 새 파일을 더하고 `devbox` 링크만 바꾼다).
 - **S7-3에서 바뀐 것**(`app/src-tauri/src/core/log_tail.rs`):
@@ -212,16 +212,16 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
 - **S7-6 셸 조회 cache(Ruling 21·22):** 셸이 답한 결과만 5분 동안 cache한다. 환경 점검은 매번 셸을 다시 실행한다. 셸이 답하지 않으면 그 작업은 서비스 PATH 결과로 시작하고 다음 작업 시작 때 셸에 다시 묻는다(`crates/agents/src/command_path.rs`). 계획 502·877행의 "5분에 한 번"을 정정했다.
 - **S7-7 PATH 규칙(Ruling 23·26):** 계획 488행은 해석한 폴더를 PATH 앞에 둔다고 했다. 실제로는 공유 폴더(`/usr/local/sbin`·`/usr/local/bin`·`/usr/sbin`·`/usr/bin`·`/sbin`·`/bin`·`/snap/bin`·`/home/linuxbrew/.linuxbrew/bin`)를 PATH 끝에 붙이고 절대 경로로 실행한다(`crates/agents/src/start.rs`, `572a0051`). 계획 488·511·530행을 정정했다.
 - **S7-8 pi 재개(Ruling 30):** pi를 재개할 때 지시문을 다시 보내지 않는다. pi 세션 id가 없으면 지시 없이 새 pi 세션을 연다(`crates/agents/src/resume.rs`, `52239b8b`). 다른 도구는 S1부터 원래 지시로 새로 시작한다.
-- **S7-9 tmux 확장 키:** 이미 떠 있는 소유 tmux 서버에도 데몬 시작 때 적용한다(`Tmux::apply_extended_keys`, `43a860b5`). 계획 858행의 "pi의 Shift+Enter에는 3.5 이상"은 pi 1.3.0 `docs/tmux.md`에 맞춰 정정했다(3.2–3.4는 `modifyOtherKeys`).
+- **S7-9 tmux 확장 키(S7-13 Fix F로 바뀜):** 이미 떠 있는 소유 tmux 서버에도 데몬 시작 때 옵션을 적용한다(`Tmux::apply_extended_keys`, `43a860b5`). 처음에는 앱이 늘 Shift+Enter를 CSI u(`\x1b[13;2u`)로 보냈고, 계획 858행과 이 기록은 "pi의 Shift+Enter는 3.5 이상에서 CSI u, 3.2–3.4에서 xterm `modifyOtherKeys`"라고 했다(pi 1.3.0 `docs/tmux.md`). 영역 2 검토가 tmux 3.4 소스를 따라가 두 가지를 바로잡았다. 3.2–3.4도 확장 키를 요청한 프로그램에는 CSI u를 보내므로 `modifyOtherKeys` 형식이 아니다. 요청하지 않은 프로그램에는 CSI u Shift+Enter가 아무것도 전해지지 않아, rc.1에서 Enter였던 키가 삼켜진다. 그래서 지금은 실행 중인 tmux 서버가 3.5 이상일 때만 CSI u로 보내고(서버의 `#{version}`을 터미널을 연결할 때마다 물어 `TerminalAttached.extendedKeys`로 알린다, `8de2a39d`·`434e63a1`), 아니면 xterm.js 기본인 Enter로 보낸다. 3.2–3.4에서는 pi도 Shift+Enter로 줄을 바꾸지 못한다(README :16). 3.4 실기는 S7-14 K1이다. 계획 858행도 같이 고쳤다.
 - **S7-10 I1(Ruling 31·34–36):** 영구 보류 대신 holder가 사라진 것이 확실할 때 reader를 닫는다(`681a7b82`·`64d14394`·`68bb9e82`). 남는 위험이 하나 있다. 같은 Windows 로그온 세션에서 holder만 강제 종료되고 bootstrap도 끝났는데 고아 프로세스가 도는 경우 reader가 일찍 닫힌다(rc.1의 I1 결과). 실제 동작은 S7-14 W1 전까지 미검증이며, W1을 실행하지 않으면 1.0.0을 막는 NOT_RUN이다. README에서 줄인 세부: holder는 Windows 실행마다 하나 더 뜨는 숨은 powershell.exe다(`crates/protocol/src/windows/native.ps1` `StartHolder`의 `CREATE_NO_WINDOW`). 그 시작 비용은 W1 전까지 재지 않았다. holder 필드 없이 rc.1이 저장한 실행은 rc.1 규칙(`Empty`·`NotFound`면 닫음)을 따른다(`crates/protocol/src/windows/observation.rs` `ControlShape::Legacy`, `crates/runtime/src/windows_observation.rs`).
-- **O1a 빠른 길(Ruling 40·41):** 자동 시작은 설치가 바뀌었거나 데몬이 그 실행 파일로 돌고 있지 않을 때만 다시 시작한다. [다시 설정]과 [다시 시도]는 항상 다시 시작한다(`2074c4dd`, `app/src-tauri/src/core/deploy.rs` `setup_args`).
+- **O1a 빠른 길(Ruling 40·41):** 자동 시작은 설치가 바뀌었거나 데몬이 그 실행 파일로 돌고 있지 않을 때만 다시 시작한다. [다시 설정]과 [다시 시도]는 항상 다시 시작한다(`2074c4dd`, `app/src-tauri/src/core/deploy.rs` `setup_args`). S7-13 Fix E 뒤에는 예외가 하나 있다. 연결 화면에서 배포판을 고르는 것은 다시 시작하지 않고, 연결 배너의 [다시 시도]는 다시 시작한다(아래 Fix E).
 - **O6a 브랜치 이름(Ruling 42):** `checked_slug` 규칙만 받는다. 소문자·숫자·하이픈, 40바이트까지이며 `git check-ref-format`보다 좁은 부분집합이다(`crates/agents/src/plan.rs`, `9b41181c`).
 - **O3:** `load()`의 객체 동일성 대신 draft 번호로 비교한다. 저장하는 동안 고친 내용의 digest를 지키기 위해서다(`c56ecbeb`).
 - **S7-11 문서에서 brief·기록과 달리 쓴 것**(코드가 사실):
   - accept 채널 MCP 등록에 `--instance accept`를 더했다. 인자도 `DEVBOX_INSTANCE`도 없으면 accept 실행 파일도 prod 인스턴스에 연결한다(`crates/core/src/paths.rs` `Instance::from_env`, `crates/cli/src/main.rs`의 전역 `--instance`).
-  - 활동 기록 규칙 저장 거절 코드는 Ruling 11에 적은 `activity.config_invalid`가 아니라 기존 `activity.config_unavailable`이다(`crates/activity/src/dto.rs`). 비밀은 `secrets.config_invalid`다.
+  - 활동 기록 규칙 저장 거절 코드는 Ruling 11에 적은 `activity.config_invalid`가 아니라 기존 `activity.config_unavailable`이다(`crates/activity/src/dto.rs`). 비밀은 `secrets.config_invalid`다. S7-13 Fix F(`44000c22`) 뒤에는 `activity.config_invalid`도 있다. 두 설정 파일 중 어느 쪽이든 `[activity]`를 읽지 못할 때의 저장 거절이고, `activity.config_unavailable`은 `config.toml` 자체가 TOML이 아니거나 일반 파일이 아닐 때다.
   - Codex 상태는 hook이 아니라 `notify`(턴 완료 후보)와 rollout 기록, 그리고 화면 패턴으로 안다(`crates/agents/src/start.rs`·`tracker.rs`·`profile.rs`). README 표는 코드대로 적었다.
-  - 경로 찾기 안내는 brief의 "5분에 한 번"이 아니라 위 S7-6 동작으로 적었다. pi의 Shift+Enter 요구 버전도 위 S7-9대로 적었다.
+  - 경로 찾기 안내는 brief의 "5분에 한 번"이 아니라 위 S7-6 동작으로 적었다. pi의 Shift+Enter 요구 버전도 위 S7-9대로 적었다(S7-13 Fix F가 README 문장을 "3.5 이상"과 "3.2–3.4에서는 Enter"로 바로잡았다).
   - 컨트롤러 추가 사실 두 가지를 README에 넣었다: rc.1에서 시작한 Claude 작업은 rc.1 hook 설정(PostToolUse·PostToolUseFailure·PermissionDenied 없음)을 계속 써서 승인 뒤에도 그 턴이 끝날 때까지 보내기가 막히고 재개하면 새 설정을 쓴다(`git show b6e5eba8:crates/agents/src/hooks.rs`, `crates/agents/src/hooks.rs`·`approvals.rs`·`send.rs`·`resume.rs`). 에이전트 작업은 로그인 셸 환경의 허용 목록만 받는다(`crates/cli/src/setup.rs` `ALLOWED`).
 - **S7-11 수정 1회차(Ruling 50, task-S7-11-review-1)에서 코드대로 고친 것:**
   - `[agent] copy`: 1차 문서의 "이미 있는 파일은 바꾸지 않는다"는 틀렸다. 작업 폴더에 이미 있으면 `DestinationExists`로 준비가 실패한다(`crates/projects/src/config/copy.rs`, `crates/agents/src/prepare.rs`의 `internal("agent copy")`). Git이 추적하지 않는 파일용이라고 고쳤다.
@@ -230,7 +230,30 @@ P0와 S0a 결과는 PR 없이 `docs/v1-plan`에 커밋한다(00-roadmap §2 P0).
   - `XDG_CONFIG_HOME`: 검토자 주장대로 서비스 drop-in이 넣는다. 값은 `devbox setup`이 정한 값이고, 앱은 셸 설정 파일을 읽지 않는 `wsl.exe --exec sh -c`로 설정하므로 보통 `~/.config`다(`crates/cli/src/setup.rs` `instance_units`, `app/src-tauri/src/platform/deploy.rs`). 항상 `~/.config`인 것은 아니어서 README에 "보통"으로 적었다.
   - 파일별 확인(영역 2 검토 M1): rc.1은 두 파일을 합친 표만 확인했다(`git show b6e5eba8:crates/cli/src/daemon/mod.rs`의 `Config::load` 뒤 `from_table`). 그때는 잘못된 `[notes]`·`[search]`가 데몬 시작을 막았으므로, 문서는 rc.1이 더 너그러웠다고 쓰지 않고 덮어쓰기 경우만 적었다.
   - 문서 예시 시험: `[windows] root`는 `devbox_runtime::windows::windows_to_wsl`, `[launch]` 터미널·에이전트는 데몬 preflight와 같은 함수(`devbox_terminal::validate_command`·`validate_title`, `devbox_agents::validate_input`, `devbox_agents::profile::resolve`)로 확인한다. `[launch]` 서비스 id는 `RuntimeService::prepare_launch_snapshot` 안에서만 확인하고 따로 부를 함수가 없어 확인하지 않는다.
-  - 기본 도구 id를 쓰는 프로필의 입력 대기 패턴 동작은 설계 검토 중이라 문서에 적지 않았다(컨트롤러 지시).
+  - 기본 도구 id를 쓰는 프로필의 입력 대기 패턴 동작은 설계 검토 중이라 문서에 적지 않았다(컨트롤러 지시). S7-13 Fix A(`fa5614f7`) 뒤에 docs/config.md에 적었다. 기본 대기 패턴은 `id`가 아니라 프로필의 `hooks`를 따라 늘 붙고 `waitingPatterns`는 거기에 더해진다.
+- **S7-12 라이선스 파일 탐색(Ruling 45):** 계획은 패키지마다 최상위 `LICENSE*`·`COPYING*`·`NOTICE*` 본문을 읽는다고 했고, 첫 구현(`06790dda`)은 최상위에 없을 때만 깊이 2까지 찾았다. 실제(`ee23a1ef`)는 모든 패키지에서 깊이 제한 없이 `LICENSE*`·`LICENCE*`·`COPYING*`·`NOTICE*`·`OFL*`(대소문자 무시)를 읽는다. `node_modules`와 심볼릭 링크는 들어가지 않고, 깊이가 무제한이라 소스 파일(`src/license.rs` 등)을 잘못 읽지 않도록 코드·데이터·이진 확장자 제외 목록을 넓혔다(`xtask/src/notices/license_files.rs`). 이유: 정적으로 링크된 C 코드와 번들 데이터(libmimalloc-sys의 mimalloc, ring의 fiat-crypto, regex-syntax의 Unicode 데이터 등)의 고지가 깊은 폴더에 있어, 누락은 공개 배포의 라이선스 준수 결함이고 과포함은 법적으로 무해하다. 입력 지문과 신선도 시험은 계획대로다.
+- **S7-13 브랜치 전체 검토 결과(영역 1–5 완료):** 영역마다 새 검토 에이전트가 맡았고 지적마다 수정 과제와 별도 검토를 거쳤다. Critical은 0건이다.
+  - 영역 1(에이전트·hooks·하네스) Important 1·Minor 5 → Fix A, Fix B. 영역 2(데몬·설정·setup·CLI) Important 1·Minor 4 → Fix F(M1은 S7-11 수정 회차, M4는 Fix E). 영역 3(runtime·Windows·PowerShell) Important 1·Minor 6 → Fix C. 영역 4(화면) Important 2·Minor 10 → Fix D. 영역 5(native) Important 1·Minor 8 → Fix E(M6·M7은 §8).
+  - 수정 과제의 별도 검토: Fix A는 5회차 상한까지 가고 남은 지적은 비차단으로 닫았다. Fix B는 1회에 Approved다. Fix C·E·F는 1회차 수정의 재검토까지 Approved이고, Fix D는 3회차 수정의 재검토에서 Approved다.
+  - 수정 커밋은 `ee23a1ef` 뒤 `bcc620fb`부터 `77cd92c1`까지다. 과제별 보고서와 판정 기록(Ruling 번호)은 작업 폴더의 `.superpowers/sdd/10-s7-s8-release/`에 있고 이 PC 전용이다.
+  - 검토가 남긴 문서·시험 항목은 이 문서 정리 과제가 처리했다. 시험 보강 두 곳(문서 예시 시험이 `toml,ignore`·`{toml}` 같은 울타리 정보 문자열을 거절하고, Claude 셸 모드 시험이 `! git st` 초안은 두고 footer만 바꾼 화면을 검사한다)과 앱 문구 두 줄(정리 알림의 재시도 문장 순서, 진행 중인 Git 작업을 중단하는 예를 `git cherry-pick --abort`로)을 더했다. 나머지 미룬 항목은 §8, 실기 확인은 계획 S7-14 표에 있다.
+  - 영역 6(문서·고지·CI 범위) 검토는 최종 HEAD에서 한다.
+- **S7-13 Fix A 입력 대기 감지와 보내기 거절(Ruling 46·51·53·54·56·58·59):** 계획(S7-4·S7-5·S7-7·S7-8)은 대기 화면 패턴을 프로필의 `waitingPatterns`(builtin Codex에는 승인 화면 하나와 신뢰·hook 검토 화면)에 두고 화면의 비어 있지 않은 마지막 6줄만 봤다. 실제로는 다음과 같다.
+  - 계열 패턴: `hooks` 계열마다 기본 패턴(`crates/agents/src/family_patterns.rs`)이 프로필 `id`와 상관없이 늘 붙고 `waitingPatterns`는 거기에 더해진다(`fa5614f7`). 프로필이 기본 도구 id를 덮어써도 안전 패턴은 사라지지 않는다.
+  - Codex: 승인 양식 전부(`bcc620fb`), 화면 가운데에 그려지는 확인 상자와 화면을 덮는 보기는 읽은 화면 전체의 서명(`c7eb8405`), Enter가 보낸 글을 프롬프트로 보내는 대신 다른 일을 하는 모든 입력 상자·설정·선택 목록·재개 화면은 힌트 줄 패턴(`d18a2351`, 0.164–0.166 공개 소스의 화면 53개를 따져 표로 만들고 이력·markdown·diff 등 약 220개 snapshot에는 맞지 않음을 셌다), feedback 메모(`e6dc25ec`)로 알아본다.
+  - 입력창이 셸 모드(`!` 초안)인 Codex·opencode·Claude Code는 보내지 않는다(`e84c60c8`·`c7d0eba1`). 보낸 글이 그 초안 뒤에 붙고 Enter가 셸 명령으로 실행되기 때문이다. opencode 화면도 이제 읽고, Claude 폴더 신뢰 대화도 화면으로 알아본다(`708eef39`). opencode·pi 보고는 launch id에 묶어 확인한다(`add112f1`).
+  - 보내기 거절(Ruling 56 6·58): 탭·줄바꿈 말고 다른 제어 문자(C0·DEL·C1)가 든 글은 앱·MCP 모두 `agents.control_characters`로 거절한다(`3b859ba6`). 실패 로그는 ANSI 시퀀스를 지우고 남은 제어 문자를 `�`로 바꾼 평문으로 보낸다(`f45944dc`). MCP `devbox_agent_send`는 앞 공백을 뺀 첫 글자가 `!`·`/`이면 어느 도구든 거절한다(`0989a870`, 앱에서 사용자가 보내는 글은 그대로 넘긴다). 줄마다 앞 글자를 검사하지는 않는다.
+  - 이유: 보낸 글과 Enter가 승인 버튼이나 셸 명령을 누르는 것은 CONVENTIONS §8의 차단 부류(승인하지 않은 실행)이고, 검토마다 새 화면이 나와 사례가 아니라 부류를 막았다.
+- **S7-13 Fix B opencode 환경과 폐기 재확인(Ruling 46 (b)):** 계획 S7-7의 플러그인은 `DEVBOX_AGENT_ID`가 있으면 켜졌고 그 변수를 opencode의 환경에 그대로 뒀다. 실제로는 `server()`가 작업 id와 launch id를 잡은 뒤 `process.env`에서 지우고 모듈 변수에 보관하며, 보고를 띄울 때만 그 자식의 환경에 넣는다(`5c669a88`). 작업 안에서 띄운 중첩 `opencode run`이 환경을 물려받아 작업 대신 보고하던 문제(영역 1 M5)를 막는다. `DEVBOX_BIN`·`DEVBOX_INSTANCE`·`DEVBOX_PORT`·`DEVBOX_PROMPT_FILE`은 남는다. 확실한 것은 환경의 복사본으로 시작하는 프로세스뿐이다(Bun Worker에서는 삭제가 직접 읽기와 env 없는 spawn에 보이지 않는다. §8, S7-14 H3). 폐기(O5)의 최종 확인은 디렉터리의 크기·mtime·ctime을 빼고 경로·mode·dev·ino만 비교한다(`582898fc`). 정리 명령이 임시 파일을 만들고 지우면 폴더의 시각이 바뀌어 폐기가 매번 `agents.state_changed`로 거절됐기 때문이다. 파일은 그대로 전부 비교한다.
+- **S7-13 Fix C Windows 사본 보호(Ruling 47·55):** 계획 S7-10은 배정 기한을 20초로 두고, 붙잡힌 reader를 10초마다 확인하고, 앱과 데몬이 시작 기한을 따로 가졌다. 실제로는 배정 기한이 20초에 holder 준비 한도 15초를 더한 35초이고(`08ec3ffa`) 앱의 native 실행 추적도 같은 상수(`OBSERVATION_ASSIGNMENT_DEADLINE_MS`)를 쓴다(`cd5a0b73`). 붙잡힌 reader의 확인은 시도마다 60초에 한 번이고 실행이 봉인된 뒤 첫 확인은 바로 한다(`904686ef`·`0102ca8f`). 같은 assigned로 이미 닫힌 시도를 다시 닫는 것은 성공이다(`680cd461`). 관찰 probe와 Windows 실행은 콘솔 창 없이 띄운다(`adc8e0c9`·`475ac462`). busy 문구는 남은 프로세스(빌드 서버 등)와 끄는 방법을 말한다(`5568f600`·`b33ea333`). 닫힘 규칙(holder가 사라진 것이 확실할 때만 닫는다)은 바꾸지 않았다. "사용자 확인 뒤 남은 프로세스 끝내기"는 W1 자료를 본 뒤 사용자가 정할 1.0.0 판단이다.
+- **S7-13 Fix D 정리·버리기(Ruling 60·61·64·65·67·68):** 계획(O5, S1 정리)은 정리 명령 뒤 폴더가 더러우면 거절했고, 닫은 작업의 정리 후보는 브랜치가 기준 브랜치에 병합된 것(`unmerged_count == 0`)만 냈다. 실제로는 다음과 같다.
+  - 정리 전에 깨끗했고 HEAD가 닫을 때 그대로인 폴더는 정리 명령 뒤 생긴 변경을 되돌린 다음(무시 파일·중첩 저장소는 건드리지 않는다) `--force` 없이 지운다(`686b0568`). 정리 명령이 실패해도 같은 되돌리기를 하고 작업을 목록에 남긴다(`cf7d2839`). git이 숨기는 변경(assume-unchanged·skip-worktree)이 있으면 되돌리지 않고(`1a1090a6`), sparse로 비운 항목은 파일이 있는 것만 센다(`378db52f`).
+  - 정리 명령 실패는 `agents.teardown_failed {index, exit_code}`(명령 원문은 담지 않는다, `5251d18b`)로, 초기화된 하위 모듈이 있는 폴더는 `agents.worktree_has_submodules`(`4dbe6c45`)로 거절한다.
+  - 스쿼시·PR로 닫았고 자동 정리가 실패해 `cleanup_error`가 남은 작업은, 자동 정리와 같은 pin(HEAD와 브랜치 끝이 닫을 때 OID, 상태 clean, 병합·PR로 닫힘)이면 unmerged 검사 없이 정리 후보에 오른다. 닫을 때 저장한 병합 결과가 기준 브랜치에 있는지 본다(`d9bbce31`). 목록에는 "스쿼시·PR로 닫힘 — 브랜치의 개별 커밋은 기준 브랜치에 없습니다"가 붙는다.
+  - 버리기는 fingerprint 확인을 정리 명령 전(quiesce 직후)으로 옮기고 그 뒤에는 HEAD·기준 브랜치 pin만 본다(`fcae837c`·`e39d32c7`). 정리 명령이 쓴 것은 폴더와 함께 버린다. 확인 창은 초기화된 하위 모듈이 있으면 "하위 모듈이 있습니다…"를 보인다(`d0683209`).
+  - 이유: 정리 명령이 남긴 파일 때문에 반복해도 풀리지 않는 막다른 길(영역 4 I1)을 닫되, 삭제 기준은 자동 정리가 이미 쓰는 pin과 정리 전 깨끗함이다.
+- **S7-13 Fix E 연결·설정 복구(Ruling 49·63):** 계획 O1a는 자동 시작만 빠른 길로 두었고, 01 §6.5의 "5회 실패하면 버튼 표시"는 이때까지 구현되지 않았다(설계 차이). 실제로는 연결 배너가 Welcome 없는 시도 5회 뒤 [다시 시도]를 보이고 `gate_retry`(강제 재시작)로 잇는다(`9a021d62`). 앱 진단의 [다시 설정]은 RPC 자료 없이도 보인다(`9a021d62`). 재시작은 `SetupTrigger`(Launch·Retry·Redeploy·DistroChoice)로 정하고 Retry·Redeploy만 강제로 다시 시작한다(`3c9ba1a6`). 앱 시작 doctor는 에이전트 CLI 조회 행(`tool.claude`·`tool.codex`·`tool.opencode`·`tool.pi`와 `auth.*`)을 빼고, 그 행은 환경 점검 RPC에서만 조회한다(`44e601c5`). [다시 설정] 실패의 원인은 detail로 보이고 깨진 `settings.json`은 전용 상태(`settingsInvalid`)로 안내한다(`ff3e07b9`). 이유: 빠른 길이 "앱을 다시 열어 복구"를 없앴으므로 앱 안의 복구 길이 보여야 하고, 시작 때마다 대화형 셸 4개와 `--version` 4개를 연결 전에 돌리는 것은 SC2에 직접 영향을 준다(영역 2 M4).
+- **S7-13 Fix F Shift+Enter와 시작 문제의 효과(Ruling 49·52·66·70):** 계획 S7-9는 앱이 늘 Shift+Enter를 CSI u로 보내게 했고(위 S7-9), S7-2·S7-3의 시작 문제는 파일·영역·내용만 알렸다. 실제로는 CSI u를 실행 중인 tmux 서버가 3.5 이상일 때만 보낸다(`8de2a39d`·`434e63a1`). 시작 문제는 효과(`SectionEffect`: 껐음 Disabled, 일부만 무시함 Ignored)를 싣고 문구가 다르다(`d196a25f`). 활동 기록은 규칙을 적용할 수 없는 동안 아무 세션도 저장하지 않는다(`6f121430`). 이전에는 제외하려던 앱의 이름과 시간이 기록됐다. 컴파일되지 않는 규칙은 새 시작 문제 `activityRules {file, message, local}`로 보이고(`ddad7221`), 읽지 못하는 `[activity]`는 설정 → 활동에서 덮어쓸 수 없다(`activity.config_invalid`, `RulesView.readable`, `44000c22`). 파일 전체가 읽히지 않을 때의 배너는 꺼진 기능을 이름으로 말한다(`77cd92c1`). 이유: 제외한 앱을 기록하는 것은 개인정보 약속 위반이고, 업그레이드 뒤 tmux 3.4 사용자의 Shift+Enter가 삼켜지는 회귀(영역 2 I1)를 남길 수 없었다.
 
 ### S6 머지·RC1 prerelease·정리 인계 (2026-10-27 · #648·#649 squash 머지·`v1.0.0-rc.1` prerelease 공개·RC Windows 수용 NOT_RUN·정리 완료)
 
@@ -1713,14 +1736,24 @@ CONVENTIONS §8의 3회 상한 뒤 도착한 지적 가운데 차단 기준(일�
 
 - S3 Windows cfg Clippy 수정 최종 독립 검토 APPROVE: `s3-task12/windows-cfg-clippy/review.txt`. 두 let-chain의 단락 평가 보존, MSVC all-target strict Clippy·Biome451 PASS. run40071793138 실패 보존, 이후 검증부터 child-only XDG/DBus 환경으로 memory_enforced=true 확인(호스트 서비스 변경 없음).
 
-### S7 rc.2 후속 목록 (2026-10-29 · S7-11 정리 · 1.0 이후)
+### S7 rc.2 후속 목록 (2026-11-02 · S7-13 문서 정리 · 1.0 이후)
 
-S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]** 표시가 없는 항목은 1.0.0을 막지 않는다. 줄 수는 2026-10-29 `wc -l` 값이다.
+S7-0–S7-13 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]** 표시가 없는 항목은 1.0.0을 막지 않는다. 줄 수는 2026-11-02 `wc -l` 값이다.
+
+- **S7-13에서 닫은 항목**(아래 목록에서 뺐다)
+  - 활동 기록 규칙을 읽거나 컴파일하지 못하면 제외하려던 앱의 이름과 시간이 기록되던 문제: 규칙을 적용할 수 없는 동안에는 아무 세션도 저장하지 않는다(`6f121430`). 컴파일되지 않는 규칙은 시작 문제로 보이고(`ddad7221`), 읽지 못하는 `[activity]`는 편집기로 덮어쓰지 못한다(`44000c22`).
+  - `hooks='pi'` 사용자 정의 프로필에 기본 pane 패턴이 없던 문제: 계열 패턴이 프로필 `id`와 상관없이 늘 붙는다(`fa5614f7`).
+  - `discard_snapshot.rs`가 600줄에 가까워 probe를 분리해야 한다는 항목: `d0683209`가 `discard_probe.rs`로 나눠 556/600이 됐다(Fix B 때는 593/600이었다).
 
 - **에이전트·하네스**
   - Codex 화면 감지·보내기(S7-5)
     - 보내기 경로에서 tmux 실패나 pane 캡처 실패가 다음 행동 없는 internal 오류로 끝난다(S7-5).
-    - Idle 상태 Codex pane의 마지막 6줄에 패턴과 같은 목록 줄이 있으면 후속 보내기가 거절된다(낮은 확률).
+    - Idle 상태 Codex pane의 마지막 6줄에 패턴과 같은 목록·기록 줄이 있거나, 읽은 줄 전체에 화면 가운데 확인 상자·화면을 덮는 보기의 서명과 같은 글이 있으면 화면이 바뀔 때까지 후속 보내기가 거절된다(닫힘 쪽, 낮은 확률). 기록에 남은 `/ D I F F`나 선택지 줄 같은 글이 그렇다.
+    - 알아보지 못하는 Codex 화면(Fix A 3회차, 이유가 각각 있다): 연결이 끊긴 동안의 초안("Reconnecting to server…" 줄은 정상 사용에도 깜빡여, 맞추면 끊긴 Codex가 "입력 대기"로 보인다), 다른 쪽이 쓰는 대화의 "Input disabled."(입력창 자체의 상태), 사용자가 `/`·`@`를 쳐 두어 명령·파일 목록이 열린 초안(devbox는 입력창에 남은 글 뒤에 붙인다), ChatGPT 브라우저·기기 코드 로그인("Press esc to cancel"뿐이라 너무 일반적이고 잠깐 뜬다), Enter 힌트가 없는 짧은 로딩 화면(사용량 보고서·전체 화면 기록의 검색 중·Bedrock 설정 중), 힌트가 잘리는 좁은 터미널(라벨 앞에서 잘린 힌트는 맞지 않는다), 키를 다시 지정한 경우(기본 키 `enter`·`esc`를 가정한다). 받아들인 과일치: 전체 화면 기록의 활동 살펴보기는 붙여 넣은 글이 입력창으로 가는데도 보내기를 막는다.
+    - 알려진 한계(Fix A 4회차): pi의 셸 모드는 글이 아니라 입력창 테두리 색만 바뀌어 알아보지 못한다(색 캡처가 필요해 제품 결정이다). 좁은 터미널에서는 Codex의 `Shell mode`·/side 라벨이 가려질 수 있다. Codex 외부 편집기(Ctrl+G)는 알아보지 않는다(GUI 편집기가 떠 있을 때 footer에 `Save and close external editor to continue.`가 남지만 그동안 붙여 넣은 글이 어디로 가는지는 확인하지 못했다).
+    - 앱에서 보낸 글에 textarea에 보이지 않는 제어 문자(Changes 탭에서 인용한 form feed, 붙여 넣은 색 코드, 충돌 경로)가 있으면 `agents.control_characters`로 거절된다(Fix A 4회차 재검토 F2). 닫힘 쪽이고 초안은 남는다. 나중에: `quoteForPrompt`에서 제어 문자를 control picture로 보이고 메시지에 그 글자 이름을 말한다.
+    - 정확히 `exit`·`quit`·`:q`만 보내면 opencode가 끝나는 것으로 추정된다(Fix A 4회차 재검토 F3). 명령 실행도 파일 쓰기도 없고 `-s <id>`로 재개된다. 정확한 낱말의 MCP 거절은 나중에 싸게 더할 수 있다.
+    - tmux는 pane의 프로그램이 bracketed paste를 켰는지 알려 주지 않는다(Ruling 58). 켜지 않은 도구 상태에서는 tmux가 붙여 넣은 글의 줄바꿈을 Enter로 바꿔 여러 줄 글이 줄마다 제출된다. 도구의 일반 입력 상태에서는 한 번에 붙는다. 줄마다 `!`·`/`를 검사하지는 않는다.
   - opencode(S7-7)
     - cost를 합산하지 않는다.
     - subagent 토큰이 빠진다.
@@ -1728,8 +1761,8 @@ S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]
     - idle로 요청을 버릴 때 남은 요청의 문구가 갱신되지 않는다.
     - 루트가 idle이 된 뒤에도 자식 요청이 남는다.
     - 빈 PATH 항목을 다루는 방식이 다르다.
+    - Fix B: env 옵션 없이 띄우는 opencode `Process.spawn` 호출자를 모두 세지 못했다. Bun Worker에서는 `process.env`에서 지운 변수가 spread와 열거에는 보이지만 직접 읽기와 env 없는 spawn에는 보이지 않는다. 에이전트가 닿는 spawn은 모두 spread라 이 수정은 유효하다(S7-14 H3).
   - pi(S7-8)
-    - `hooks='pi'` 사용자 정의 프로필에는 기본 pane 패턴이 없다.
     - 사용자 `sessionDir`의 사용량을 집계하지 않는다.
     - Codex 시작 창 경합이 있다.
     - `~/.pi/agent` lock은 pi 자체 동작이다.
@@ -1741,17 +1774,29 @@ S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]
     - 이름이 정확히 `agent`인 브랜치가 있으면 모든 `agent/…` 이름이 막힌다. 준비 단계에서 실패하고 데이터 손실은 없다.
     - 기본값과 같은 문자를 입력하면 '고침'으로 보는데, 이를 고정하는 시험이 없다.
     - 칸을 비웠을 때의 설명 문구가 없다.
+  - 준비
+    - `[agent] copy`가 실패하면 다음 행동이 없는 일반 internal 오류로 끝난다(S7-11, SC5).
 - **폐기·정리(O5)**
   - `discard_check`의 `git status`는 UTF-8과 8 MiB로 제한된다.
   - 시험 probe와 Cap 레지스트리가 프로세스 전역이다.
-  - `discard_snapshot.rs`가 583/600줄이라 probe를 분리해야 한다.
   - 64 MiB 목록을 읽을 때 일시 메모리가 커진다.
   - walk 사유가 `DiscardSnapshotUnavailable`로만 보인다.
-- **Windows(S7-10, O1b)**
+  - Fix B: `discard_snapshot_tests.rs`의 `changes_after_confirmation_still_refuse_discard`는 검토에서 시험 이름 가림으로 지적됐다(이름을 정리한다). 무시된 하위 폴더 안에서 파일을 더하고 지우는 경우를 확인하는 시험이 없다.
+  - **버리기는 작업 폴더 자신의 하위 모듈 사본(`.git/worktrees/<이름>/modules`)에만 있는, push하지 않은 커밋을 지운다.** 버리기는 `--force`로 작업 폴더를 지우고, 확인 창과 fingerprint는 작업 폴더만 다룬다(기존 동작). Fix D 3차가 확인 창에 "하위 모듈이 있습니다…" 경고를 더했지만 막지는 않는다. 하위 모듈 감지(`has_submodules`)로 버리기를 거절할 수도 있다.
+  - 버리기는 이제 fingerprint 확인을 정리 명령 전에 하므로, 정리 명령이 도는 동안 다른 프로세스가 폴더에 만든 변경은 확인 없이 버려진다(Ruling 65 (5)). 도구는 이미 멈췄고 사용자가 폴더를 버리기로 확인한 뒤다.
+  - Fix D 2차 재검토(사용자에게 보이는 효과로): (기존) git이 숨기는 변경(assume-unchanged·skip-worktree)만 있는 작업 폴더는 그 변경째 지워진다. 파일이 약 30만 개를 넘는 프로젝트는(index 32 MiB 상한) 작업 폴더 정리가 모두 내부 오류 문장으로 멈추고 목록에도 나오지 않는다. 하위 모듈이 없어도 그렇다. 정리 명령이 없는 작업 폴더에 진행 중인 Git 작업 표시(`MERGE_HEAD` 등)가 있으면 그 작업을 중단할 때까지 정리를 거절한다.
+  - Fix D 3차 재검토: 버리기 확인 창은 하위 모듈 검사가 답을 못 하면 "하위 모듈이 있습니다"를 보인다. index가 32–64 MiB인 저장소에서는 버리기마다 그렇다(3상태 flag로 정확하게 할 수 있다).
+- **Windows(S7-10, O1b, Fix C)**
   - holder·bootstrap 신원 doc 주석을 보강한다.
   - `bootstrap_identity` probe 검증을 고정하는 단언이 필요하다.
   - JSON `null` holder 필드는 Legacy로 처리된다(도달 불가).
   - 늦은 저장 실패 알림에 이름이 없다(O3).
+  - Fix C: 자식이 정지를 넘겨 살아남고 reserve가 busy로 남는 service 수준 시험이 없다. 10초 poll이 `restart()`의 봉인과 옛 트리 종료 사이에 걸리는 드문 경쟁이 있다(닫힘 쪽, 다시 시도하면 된다).
+  - Fix C: "최신 시도"는 `ORDER BY rowid DESC`(`crates/runtime/src/windows_copy_store.rs`)로 정한다. SQLite rowid 규칙으로 성립하며, 명시적 시작 순번을 두면 이 의존이 사라진다.
+  - Fix C: holder가 끝내 준비되지 못해(종료 코드 75) 끝나거나 `assigned` 전에 끝난 실행은 여전히 활동이 알 수 없음으로 남는다(rc.1 규칙, `app/src-tauri/src/core/native_activity.rs`).
+  - Fix C: `containers_tests::containers_malformed_and_output_bounds`가 전체 실행에서 한 번 실패했다(단독 5/5, 이후 전체 4회 통과). `pnpm check`에서 다시 보일 때만 기록한다.
+  - 영역 3 M-2: holder가 이미 죽었어도 bootstrap은 15초를 다 기다린 뒤 끝난다(`StartHolder`가 holder 핸들을 바로 닫아 죽음을 알 수 없다, `crates/protocol/src/windows/native.ps1`·`bootstrap.ps1`). holder가 일찍 죽는 PC(보안 정책 등)에서는 Windows 실행마다 15초를 기다린 뒤 실패한다.
+  - 영역 3 M-5: 시도마다 만든 비공개 파일 다섯 개는 지우지 않고, 쓰다 죽은 `*.tmp-*`도 남는다.
 - **앱·설정**
   - setup이 파일을 기록한 뒤 재시작 전에 끊기면 다음 자동 시작에서 재시작을 생략한다. [다시 설정]으로 복구한다.
   - `api.redaction_failed`(matcher)의 다음 행동이 약하다.
@@ -1759,15 +1804,36 @@ S7-0–S7-O 과제 기록의 미룬 항목을 영역별로 모았다. **[차단]
   - `redactKnownTokenPatterns`의 `sk_`·`sk-` 접두에 왼쪽 경계가 없어 과하게 가린다. 데몬 쪽과 함께 고친다.
   - 노트가 꺼진 동안 search.notes 색인이 낡는다(S7-2).
   - `SupportBundle`의 `notes_disabled` 줄에 다음 행동이 없다.
+  - 영역 5 M6: 1 MiB를 넘는 로그 tail은 자르지 않고 실패한다(`app/src-tauri/src/core/process.rs`의 `OutputLimit`, "WSL 출력 제한을 초과했습니다"). 영역 5 M7: bridge 재연결 루프가 200 ms 바닥에서 돌 수 있다(기존). bridge가 연결하기 전에 표지를 찍고 supervisor가 표지를 보면 backoff를 되돌리기 때문이다.
+  - Fix E 검토 M2: [다시 시도]로 깨진 `settings.json`에서 회복해도 앱을 다시 열 때까지 전역 단축키는 등록되지 않고 트레이는 옛 오류를 보인다(`app/src-tauri/src/platform/shortcuts.rs`의 `initialize`를 `lib.rs`가 한 번만 부른다).
+  - Fix E: 자동 시작 설정 명령(`app/src-tauri/src/platform/preferences.rs`)은 설정 오류를 원문 그대로 보인다. [다시 설정] 실패의 detail은 가리지 않는다(연결 화면 [자세히]가 보이는 글과 같다).
+  - Fix E 1차 재검토 nit: `refused`가 ready에 이르지 못한 Welcome 뒤에도 남아, 이전에 거절된 재시도의 "다시 시도하지 못했습니다" 줄이 [다시 시도] 제안이 돌아올 때 다시 보인다(`app/src/shell/ConnectionBanner.tsx`).
+  - Fix D §6: 몇몇 화면은 오류 제목만 보이고 다음 행동을 버린다(`features/notes/pasteImage.ts`, `ReadOnlyBar`, `ActivityDay`, `ActivityWeek`, `FileOperationDialog`, `FileTree`, `SourcePage`, `QuickOpen`). `features/agents/detail/RunTab.tsx`는 `${message.title} ${message.action}`를 만들어 다음 행동이 없는 코드(`cancelled`, `not_found`)에서 "undefined"를 찍는다(`messageText`로 고친다). `RulesEditor`는 Fix F에서 고쳤다.
+  - Fix F: `config.local.toml`의 나쁜 규칙은 설정 → 활동에서 저장하면 다음 시작까지만 기록이 다시 시작되고, 그때 그 파일의 규칙이 다시 이겨 기록이 멈춘다(배너는 파일 이름을 말하지만 편집기는 말하지 않는다). 저장이 성공해도 배너는 다음 10초 확인 때 사라진다.
+  - Fix F 재검토, 기존(rc.1부터): 설정 → 활동 편집기는 합쳐진 `[activity]`를 보여 주지만 저장하면 다섯 키를 모두 `config.toml`에 쓴다. 그래서 `config.local.toml`이 덮어쓰는 키는 `config.toml` 자신의 값이 편집기에 보이던 합친 값으로 바뀐다. 나쁜 규칙이 `config.local.toml`에 있으면 저장은 배너를 지우고 다음 시작까지 기록을 다시 시작한다.
+  - Fix F 재검토(선택): 읽기 전용 미리보기도 `terminal.attach`로 tmux 서버 버전을 묻는데 Shift+Enter는 보내지 않는다. 미리보기에서는 질의를 건너뛸 수 있다(`crates/terminal/src/service.rs`).
+  - Fix F: Windows 앱은 컴파일된 규칙이 아직 없는 동안에도 제목 없는 앱 이름을 데몬에 보낸다. 데몬은 규칙을 적용할 수 없는 동안 그것을 하나도 저장하지 않는다(01 §6.2). 선택: 수집기가 `RulesView.readable`로 규칙을 읽지 못하는 동안 앱 이름 전송을 멈출 수 있다.
+  - Fix F: 기본값으로 돌아가는 영역(프로젝트·PC·터미널·에이전트·비밀·MCP)도 배너가 "이 기능을 껐습니다"라고 한다. "기본값으로 실행"이 더 정확하다.
 - **시험·크기**
   - 시험이 `/tmp/tmux-<uid>`에 socket 파일을 남긴다.
-  - 거의 꽉 찬 파일: `crates/agents/src/command_path.rs` 542/600, `app/src/features/terminal/TerminalView.test.tsx` 588/600, `crates/cli/tests/agents.rs` 591/600, `crates/agents/src/discard_snapshot.rs` 583/600.
+  - 거의 꽉 찬 파일(이 브랜치가 건드린 것, `wc -l`): `crates/runtime/src/execution.rs` 600/600, `app/src/features/terminal/TerminalView.test.tsx` 592/600, `crates/cli/tests/agents.rs` 591/600, `crates/core/src/config/lenient.rs` 590/600, `crates/runtime/src/windows_observation.rs` 573/600, `crates/terminal/src/tmux.rs` 572/600, `crates/agents/src/prepare.rs` 567/600, `crates/agents/src/discard_snapshot.rs` 556/600, `crates/agents/src/command_path.rs` 542/600. 다음 추가에는 나눠야 한다.
   - tmux.conf와 `apply_extended_keys`에 옵션이 중복되고, format 줄을 묶는 시험이 없다.
+- **문서·고지·CI 범위(S7-12)**
+  - `scripts/ci-scope.sh`는 루트의 `*.md`를 문서로 본다. `THIRD_PARTY_NOTICES.md`만 바꾼 변경은 코드 job을 건너뛰어 고지 신선도 시험(`notices_inputs_are_current`)이 돌지 않는다. 고치려면 scripts 줄이 든다(지금 1,982/2,000줄이다).
+  - 고지에 라이선스 파일이 없는 패키지가 21개다. `@tauri-apps/plugin-opener` npm 패키지는 `LICENSE.spdx`만 싣고(`.spdx`는 텍스트로 읽지 않는다), 같은 이름의 Rust crate(`tauri-plugin-opener`)의 MIT·Apache 본문이 고지 파일에 있다.
+  - `COPYRIGHT`·`UNLICENSE`와 `LICENSES/` 폴더 안 파일은 이름 규칙(`LICENSE*`·`LICENCE*`·`COPYING*`·`NOTICE*`·`OFL*`)에 맞지 않아 읽지 않는다. 그것이 가리키는 본문은 읽는다.
 - **1.0.0 공개 전 실기(S7-14) — 실행하지 않으면 NOT_RUN이며 PASS가 아니다**
   - **I1 W1 [차단]:** holder 실기, AMSI/ASR, 로그아웃·재부팅 뒤 해제. 실행하지 않으면 1.0.0을 막는다.
-  - K1: pi에서 Shift+Enter, WebView2, tmux 3.4 호스트.
-  - H3: 실제 pi·opencode.
-  - P1: 실제 Claude 승인 상관.
+  - K1: tmux 3.4 호스트와 3.5 이상 호스트의 Shift+Enter(pi 줄바꿈 포함), 3.5 경계, WebView2, 호스트 tmux를 올린 뒤 devbox tmux 서버가 다시 시작될 때까지의 동작.
+  - H1: Claude 폴더 신뢰 대화가 새 작업 폴더에서 나타나는지, 셸 모드와 `?` 도움말의 실제 화면.
+  - H2: Codex 목표가 멈춘 작업의 재개, `codex resume` 직후 1초 안 보내기, 실제 `/feedback` 화면, 입력 상자·설정·목록·재개 선택·기록 보기의 실화면(Fix A 3회차의 화면 목록), 외부 편집기.
+  - H3: 실제 pi·opencode, opencode의 환경(`DEVBOX_AGENT_ID`·`DEVBOX_AGENT_LAUNCH` 없음)·중첩 `opencode run`·셸 모드 힌트·`exit`/`quit`/`:q`의 효과.
+  - P1: 실제 Claude 승인 상관과 Codex 승인 사례(exec 승인 overlay).
+  - U1: rc.1 Claude 작업의 승인 뒤 보내기 막힘과 재개 회복.
+  - W1 추가: 빌드 서버가 사본을 붙잡는 시간과 문구, `#[ignore]` bootstrap 시험, 정지·수정·재시작에 busy 없음, 콘솔 창 없음, cold 시작 35초, 느린 holder 시작 뒤 업데이트 설치.
+  - 연결·설정: STOP한 데몬에서 앱 안 회복, 강제·빠른 재시작의 MainPID, [나중에], [자세히], `settings.json` 깨짐, 느린 정상 시작에서 배너의 [다시 시도].
+  - 정리·버리기: 실제 정리 명령, 스쿼시로 닫은 작업의 실패한 정리, 하위 모듈 작업 폴더.
   - O1a·O1b: Windows 실제 재시작, 연결 유지.
   - O6b: `mark_autostart_asked` 실행.
-  - S7-11 문서의 확인 대기 자리: 서명 없는 설치 파일의 Windows 경고 문구, Windows 앱 제거 뒤 남는 항목, MCP 등록 명령의 설치본 재확인. README 본문은 "아직 확인하지 않았다"로 적고 S7-14 항목은 README 알려진 제한의 "확인 상태" 줄에 모았다. SECURITY.md는 "S7-14에서 확인"으로 둔다.
+  - S7-11 문서의 확인 대기 자리: 서명 없는 설치 파일의 Windows 경고 문구, Windows 앱 제거 뒤 남는 항목, MCP 등록 명령의 설치본 재확인. README 본문은 "아직 확인하지 않았다"로 적고 S7-14 항목은 README 알려진 제한의 "확인 상태" 줄에 모았다. SECURITY.md는 내부 이름 없이 "1.0.0 공개 전 Windows 확인에서 본다"로 적는다.
+  - 위 행의 정본은 계획 [10-s7-s8-release](10-s7-s8-release.md)의 S7-14 표다.

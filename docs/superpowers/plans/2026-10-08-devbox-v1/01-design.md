@@ -96,7 +96,7 @@
 | 에이전트 | 작업 생성: 제목·도구 프로필·기준 브랜치 선택 → worktree(또는 "worktree 없이 현재 체크아웃에서") → 준비(`[agent] copy`·`setup`) → tmux 세션 → 도구 실행 + 초기 지시문 | 유지·강화 | `agent_hub` |
 | 에이전트 | 목록: 긴급순(입력 대기 → 실패 → 검토 대기 → 실행 중 → 준비 중 → 닫힘). 행마다 hook 메시지 한 줄, 경과 시간, CPU·메모리, 토큰 합계, 변경 파일 수, 기준 대비 뒤처짐 | 강화 | `agent_resources`, `agent_usage` |
 | 에이전트 | 격자 보기: 여러 에이전트 터미널을 읽기 전용으로 동시에(분리 창 가능) | 신규 | |
-| 에이전트 | 상태 감지: 기본 도구 4종(Claude Code·Codex·opencode·pi). 연결은 작업 실행마다 주입하고 사용자 설정은 건드리지 않음. Claude Code hooks(`--settings`)·Codex `notify`(`-c`, 턴 완료 후보)와 rollout 기록·opencode 플러그인(`OPENCODE_CONFIG_CONTENT`, 권한 요청·질문)·pi 확장(`-e`, 준비 알림·폴더 신뢰 질문) → `devbox agent event` → 데몬. 승인·입력 대기 화면은 프로필의 `waitingPatterns`로 tmux 화면에서 알아봄. `DEVBOX_AGENT_ID`가 없으면 hook·플러그인·확장은 아무것도 하지 않음 | 신규 | 화면 긁기 대신 공식 hook(PL-5). 4종 연결은 S7-5·S7-7·S7-8 |
+| 에이전트 | 상태 감지: 기본 도구 4종(Claude Code·Codex·opencode·pi). 연결은 작업 실행마다 주입하고 사용자 설정은 건드리지 않음. Claude Code hooks(`--settings`)·Codex `notify`(`-c`, 턴 완료 후보)와 rollout 기록·opencode 플러그인(`OPENCODE_CONFIG_CONTENT`, 권한 요청·질문)·pi 확장(`-e`, 준비 알림·폴더 신뢰 질문) → `devbox agent event` → 데몬. 승인·입력 대기 화면은 `hooks` 계열마다 늘 붙는 기본 패턴(`family_patterns.rs`)과 프로필의 `waitingPatterns`로 tmux 화면에서 알아봄. `DEVBOX_AGENT_ID`가 없으면 hook·플러그인·확장은 아무것도 하지 않음 | 신규 | 화면 긁기 대신 공식 hook(PL-5). 4종 연결은 S7-5·S7-7·S7-8 |
 | 에이전트 | 세션 ID 기록과 재개(`claude --resume <id>`, `codex resume <id>`, `opencode -s <id>`, `pi --session-id <id>`). id를 모르면 pi는 지시문 없이 새 세션을 열고 나머지는 처음 지시문으로 새로 시작. 지시문·이어서 지시 이력·토큰 합계·커밋 목록을 종료 시 DB에 고정 | 신규 | Claude transcript는 30일 뒤 삭제됨 |
 | 에이전트 | 검토: 변경(파일별 '봤음', 줄 인용으로 지시) · 커밋 · 실행(테스트) 탭 → 병합(merge·squash·rebase) · PR(gh) · 폐기 · 이어서 지시 | 강화 | Source 검토 흐름 |
 | 에이전트 | 기준 반영(rebase)과 뒤처짐 표시. 충돌 시 충돌 화면 또는 에이전트에게 해결 지시 | 신규 | |
@@ -340,7 +340,7 @@ set -g allow-passthrough on
 
 ### 4.6 업데이트·재시작
 
-1. Windows 앱이 새 바이너리를 배치하고 `systemctl --user restart devbox@<i>.service`를 실행한다.
+1. Windows 앱이 새 바이너리를 배치하고 `devbox setup`을 실행한다. setup은 `systemctl --user restart devbox@<i>.service`를 unit·환경 파일·`tmux.conf`가 바뀌었거나, 서비스가 실행 중이 아니거나, 지금 배치한 실행 파일로 실행 중이 아닐 때(`/proc/<MainPID>/exe`로 확인)만 실행하고, 아니면 재시작 단계를 "건너뜀(변경 없음)"으로 보고한다(S7-O O1a). 사용자가 누른 [다시 시도](연결 화면, 그리고 5회 실패 뒤 연결 배너)와 [다시 설정]은 `devbox setup --restart`로 바뀐 것이 없어도 다시 시작한다. 멈춘 데몬을 사용자 행동으로 되살릴 길이 남아야 하기 때문이다. 배포판을 고르는 것은 다시 시작하지 않는다(S7-13 Fix E의 `SetupTrigger`: Retry·Redeploy만 다시 시작).
 2. 실행 unit·tmux 세션은 유지된다.
 3. 재시작 중 요청은 `daemon_restarting`(적용 안 됨)을 받는다. 연결이 응답 전에 끊기면 클라이언트는 `connection_lost`(결과 불명)를 만든다.
 4. 화면은 query만 자동 재시도한다. mutation은 "결과 확인 필요"로 표시하고 상태를 다시 읽는다.
@@ -513,9 +513,9 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 | WSL1 배포판 | "WSL2만 지원" + 변환 명령 안내 | [다시 시도] |
 | systemd 꺼짐 | `/etc/wsl.conf`에 `[boot] systemd=true`를 넣고 `wsl --shutdown`하라는 안내와 실행 중인 WSL 프로그램이 모두 종료된다는 경고 | 사용자가 직접 수정한 뒤 [다시 시도]. 설계의 [자동으로 켜기]는 구현되지 않음(설계 차이) |
 | tmux 없음·3.2 미만 | 별도 연결 화면 상태 없음. doctor 점검(설정 → 앱 진단)이 결과를 보여 준다 | 설계의 [터미널에서 설치]는 구현되지 않음(설계 차이) |
-| linger·setup 실패 | "WSL 쪽 설치에 실패했습니다" + 실패 내용 | [다시 시도]. [로그 열기][진단] 버튼은 연결 화면에 없고 설정 → 앱 진단에서 확인(설계 차이) |
-| WSL 쪽 배치·setup 중(연결 시작마다, 데몬 서비스만 재시작) | 진행 표시 | — |
-| 데몬 끊김 | 상단 배너 "다시 연결 중". 터미널 위에는 "입력 전송 안 됨"을 덮어 표시. 5회 실패하면 버튼 표시 | [다시 시도][WSL 재시작][진단] |
+| linger·setup 실패 | "WSL 쪽 설치에 실패했습니다". 원인(실패한 단계·원문·최근 데몬 로그)은 [자세히] 아래에 있다 | [다시 시도][자세히]. [로그 열기][진단] 버튼은 없다(설계 차이). 데몬 상태·로그 위치·점검은 설정 → 앱 진단에서 본다 |
+| WSL 쪽 배치·setup 중(연결 시작마다 실행. 데몬 서비스는 바뀐 것이 있을 때만 재시작) | 진행 표시. 바뀐 것은 unit·환경 파일·`tmux.conf`, 서비스가 실행 중이 아님, 실행 중인 데몬이 지금 배치한 실행 파일이 아님이다. 바뀐 것이 없으면 재시작 단계는 "건너뜀(변경 없음)"이다(S7-O O1a). 배포판 선택도 다시 시작하지 않는다 | — ([다시 시도]·[다시 설정]은 늘 다시 시작한다. §4.6) |
+| 데몬 끊김 | 상단 배너 "WSL 쪽 devbox에 다시 연결하고 있습니다 · 마지막 갱신 hh:mm"(첫 연결에서는 5회 실패 전까지 배너가 없다). 터미널 위에는 "다시 연결 중 · 입력 전송 안 됨"을 덮어 표시. 연결 시도가 Welcome 없이 끝나는 일(5초 기한 초과, Welcome 전에 닫힘)이 5회 쌓이면(약 29초로 계산했고 실제 Windows에서는 재지 않았다) Windows 앱의 배너가 "WSL 쪽 devbox가 응답하지 않습니다. [다시 시도]를 누르면 WSL 쪽 devbox를 다시 시작합니다."로 바뀐다 | [다시 시도](`gate_retry`, 데몬 서비스를 강제로 다시 시작). [WSL 재시작][진단] 버튼은 구현되지 않음(설계 차이). 진단은 설정 → 앱 진단이고, 데몬이 응답하지 않아도 그 [다시 설정]은 보인다 |
 | 업데이트 설치 중 | 설정 정보·상태 표시줄의 설치 준비 상태 | [설치 준비 취소]. 설치·재실행 실패는 다음 실행 때 원인 안내, 상태 불명은 자동 재시도 없이 설치 프로그램 종료 확인 안내 |
 | 비밀 키 불일치 | §6.3 | [복구 문자열 입력][비밀 다시 입력] |
 | hook 미연결 | 에이전트 목록 상단 배너 "상태 알림이 연결되지 않았습니다" | [연결 확인](doctor의 hook 점검) |
@@ -1022,7 +1022,7 @@ agents = [{ tool = "claude", worktree = false }]
 | R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | socket activation은 S0a 완료, shutdown 복귀·걸린 시간은 S6 공개 직전 사용자 확인(그전 미실행) |
 | R3 | `wsl.exe` stdio 브리지의 지연·처리량·바이너리 안전성 | `cat` echo 실측은 목표의 수십 배(p50 0.16ms, 77–93 MiB/s, 바이너리 일치). S0a에서는 실제 bridge + 데몬 경로로 한 번만 확인. 미달이면 WSL localhost TCP + 토큰으로 전환 | S0a |
 | R4 | Tauri Windows 빌드가 Windows에서만 가능 | 화면은 브라우저 + dev-gateway로 개발. 껍데기 변경은 드묾 | S0b |
-| R5 | 에이전트 CLI(Claude Code·Codex·opencode·pi)의 hook·인자·로그 형식 변경 | 도구별 연결을 `crates/agents/src/hooks.rs`(Claude 설정·Codex notify)·`plugin_event.rs`와 `crates/agents/assets/`(opencode 플러그인·pi 확장)·`profile.rs`의 `waitingPatterns`(화면 감지)에 모은다. 계약은 실제 녹화 fixture(`crates/agents/tests/fixtures/`)로 시험하고, 환경 점검이 devbox가 확인한 가장 낮은 버전보다 낮은 CLI를 경고한다 | S0a·S1·S7 |
+| R5 | 에이전트 CLI(Claude Code·Codex·opencode·pi)의 hook·인자·로그 형식 변경 | 도구별 연결을 `crates/agents/src/hooks.rs`(Claude 설정·Codex notify)·`plugin_event.rs`와 `crates/agents/assets/`(opencode 플러그인·pi 확장)에, 화면 감지(입력 대기)를 `crates/agents/src/family_patterns.rs`에 모은다. 그 기본 패턴은 프로필의 `hooks` 계열마다 `id`와 상관없이 늘 붙고(Codex의 화면 가운데 확인 상자와 화면을 덮는 보기는 읽은 화면 전체에서 찾는다), `profile.rs`의 `waitingPatterns`는 거기에 더해진다. 계약은 `crates/agents/tests/fixtures/`의 fixture로 시험한다. 실제 녹화(Codex 0.164.0 폴더 신뢰 화면, pi 1.3.0 화면, opencode 1.19.3 이벤트·export)와 도구의 공개 소스·설치본 문자열에서 만든 fixture(Codex 0.164–0.166 화면, Claude 폴더 신뢰·셸 모드, opencode 셸 모드)를 머리말에 구분해 적고, 소스·문자열 기반은 S7-14에서 실제 화면으로 확인한다. 환경 점검이 devbox가 확인한 가장 낮은 버전보다 낮은 CLI를 경고한다 | S0a·S1·S7 |
 | R6 | 재구축이 기능 동등에 이르기 전에 멈춤 | 사용 빈도 순서. 각 S 끝의 빌드가 단독으로 쓸 만해야 함. **전환점:** S2 뒤 에이전트·실행·터미널의 선택적 조기 사용을 안내하되 기다리지 않음. 기능 완성 뒤 실사용이 기본 | 매 S |
 | R7 | WSL 안 LSP 메모리 | 지연 시작, 세션 0개부터 15분 유휴 종료, 메모리 표시 | S4 |
 | R8 | 다시 비대해짐 | SC8 예산 점검, "구조 먼저" 규칙 | 매 S |

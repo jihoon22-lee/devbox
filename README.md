@@ -13,7 +13,7 @@ Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·
 ## 요구 사항
 
 - Windows 11과 systemd가 켜진 WSL2 배포판.
-- WSL의 tmux 3.2 이상. 더 낮으면 환경 점검이 실패로 표시한다. 프로그램이 Shift+Enter를 Enter와 다른 키로 받으려면(pi의 줄바꿈) tmux 3.5 이상이 필요하다. 3.2–3.4에서는 Shift+Enter도 Enter로 동작하므로 pi에서도 줄을 바꾸지 않고 보낸다(Ubuntu 24.04의 tmux는 3.4다). devbox는 자기 tmux 서버(`tmux -L devbox-prod`)에만 확장 키 옵션을 켜고, 사용자의 다른 tmux는 건드리지 않는다. 이 옵션은 WSL 쪽 devbox가 시작할 때 적용하므로, 그 전에 확장 키를 요청한 프로그램은 다시 시작할 때까지 Shift+Enter를 Enter로 받는다.
+- WSL의 tmux 3.2 이상. 더 낮으면 환경 점검이 실패로 표시한다. 프로그램이 Shift+Enter를 Enter와 다른 키로 받으려면(pi의 줄바꿈) tmux 3.5 이상이 필요하다. 3.2–3.4에서는 Shift+Enter도 Enter로 동작하므로 pi에서도 줄을 바꾸지 않고 보낸다(Ubuntu 24.04의 tmux는 3.4다). devbox는 자기 tmux 서버(`tmux -L devbox-prod`)에만 확장 키 옵션을 켜고, 사용자의 다른 tmux는 건드리지 않는다. 이 옵션은 WSL 쪽 devbox가 시작할 때 적용하므로, 그 전에 확장 키를 요청한 프로그램은 다시 시작할 때까지 Shift+Enter를 Enter로 받는다. devbox는 터미널을 열 때마다 이미 떠 있는 devbox tmux 서버의 버전을 물어 Shift+Enter를 확장 키로 보낼지 정하므로, tmux를 올려도 이미 떠 있는 devbox tmux 서버가 다시 시작될 때까지는 Shift+Enter가 Enter로 동작한다.
 - WSL의 git. PR 만들기에는 WSL의 GitHub CLI(`gh`) 로그인이 필요하다.
 - 쓸 에이전트 CLI(`claude`·`codex`·`opencode`·`pi`)를 WSL에 설치하고 각 CLI에서 로그인한다. 환경 점검은 devbox가 연결을 확인한 가장 낮은 버전보다 낮으면 경고한다: Claude Code 2.1.300, opencode 1.19.3, pi 1.3.0. Codex는 기준 버전이 없다.
 
@@ -23,7 +23,7 @@ Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·
 
 1. systemd가 켜진 WSL2 배포판이 필요하다. WSL이 없거나 WSL1이거나 systemd가 꺼져 있으면 첫 화면이 실행할 명령을 안내하고 [다시 시도]를 보여 준다.
 2. 배포판이 여러 개면 "devbox가 쓸 WSL 배포판을 고르세요"에서 하나를 고른다.
-3. 앱은 시작할 때마다 내장 Linux 실행 파일을 `~/.local/share/devbox/bin/devbox`에 배치하고 `devbox setup`으로 user unit `devbox@prod.socket`·`devbox@prod.service`·`devbox-tmux@prod.service`를 켠다. 데몬 서비스(`devbox@prod.service`)는 unit·환경 파일·`tmux.conf`가 바뀌었거나, 실행 중이 아니거나, 지금 배치한 실행 파일로 실행 중이 아닐 때만 다시 시작한다. 연결 화면의 [다시 시도]와 설정 → 앱 진단의 [다시 설정]은 바뀐 것이 없어도 데몬 서비스를 다시 시작한다.
+3. 앱은 시작할 때마다 내장 Linux 실행 파일을 `~/.local/share/devbox/bin/devbox`에 배치하고 `devbox setup`으로 user unit `devbox@prod.socket`·`devbox@prod.service`·`devbox-tmux@prod.service`를 켠다. 데몬 서비스(`devbox@prod.service`)는 unit·환경 파일·`tmux.conf`가 바뀌었거나, 실행 중이 아니거나, 지금 배치한 실행 파일로 실행 중이 아닐 때만 다시 시작한다. 연결 화면의 [다시 시도], 앱이 열려 있는 동안 연결이 5번 실패하면 상단 배너에 나오는 [다시 시도], 설정 → 앱 진단의 [다시 설정]은 바뀐 것이 없어도 데몬 서비스를 다시 시작한다. 연결 화면에서 배포판을 고르는 것은 다시 시작하지 않는다.
 4. "devbox 시작하기"에서 Windows 시작 시 실행 여부를 고른다. 트레이에 있는 동안 WSL 연결을 유지한다.
 
 prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 `~/.config/devbox`, 로그는 `~/.local/state/devbox/prod/logs`에 있다. Windows 앱 데이터는 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox`다.
@@ -34,9 +34,9 @@ prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 
 
 | 도구 | 상태를 아는 방법 | 재개 | 토큰 합계 |
 |---|---|---|---|
-| Claude Code | 작업마다 붙이는 hook(`--settings`). 승인 대기는 도구 이름과 입력으로 짝지어, 같은 호출의 완료·실패·거절이 와야 끝난다. hook이 알리지 않는 폴더 신뢰 대화는 터미널 화면으로 알아본다 | `claude --resume <Claude 세션 id>` | `~/.claude/projects`의 그 세션 기록 |
-| Codex | 작업마다 붙이는 `notify`(`-c`, 턴 완료 후보)와 `~/.codex/sessions`의 rollout 기록. 승인·질문 화면, Codex가 스스로 여는 선택 목록, 폴더 신뢰·hook 검토 화면은 터미널 마지막 줄로, 화면 가운데에 띄우는 확인 상자는 화면 전체로 알아본다 | `codex resume <Codex 세션 id>` | rollout 기록 |
-| opencode | 작업마다 붙이는 devbox 플러그인(`OPENCODE_CONFIG_CONTENT`). 권한 요청과 질문도 알린다 | `opencode -s <opencode 세션 id>` | `opencode export`. 하위 에이전트 토큰은 빠진다 |
+| Claude Code | 작업마다 붙이는 hook(`--settings`). 승인 대기는 도구 이름과 입력으로 짝지어, 같은 호출의 완료·실패·거절이 와야 끝난다. hook이 알리지 않는 폴더 신뢰 대화와 입력창의 셸 모드(`!`로 시작하는 초안)는 터미널 화면으로 알아본다 | `claude --resume <Claude 세션 id>` | `~/.claude/projects`의 그 세션 기록 |
+| Codex | 작업마다 붙이는 `notify`(`-c`, 턴 완료 후보)와 `~/.codex/sessions`의 rollout 기록. 승인·질문 화면, Codex가 스스로 여는 선택 목록, 폴더 신뢰·hook 검토 화면, 그리고 Enter가 보낸 글을 Codex에게 주는 대신 그 화면에서 처리하는 입력 상자(목표 편집·이름 바꾸기 등)·설정·선택 목록과 입력창의 셸 모드는 터미널 마지막 줄로, 화면 가운데에 띄우는 확인 상자와 화면을 덮는 보기(대화 기록 보기 등)는 화면 전체로 알아본다. 이런 화면이 보이는 동안에는 보내지 않는다 | `codex resume <Codex 세션 id>` | rollout 기록 |
+| opencode | 작업마다 붙이는 devbox 플러그인(`OPENCODE_CONFIG_CONTENT`). 권한 요청과 질문도 알린다. 입력창의 셸 모드는 터미널 화면으로 알아본다 | `opencode -s <opencode 세션 id>` | `opencode export`. 하위 에이전트 토큰은 빠진다 |
 | pi | 작업마다 붙이는 devbox 확장(`-e`). 확장이 준비됐다고 알릴 때까지 보내기를 미루고, 알림이 없으면 도구 시작 30초 뒤부터 보낸다. 폴더 신뢰 질문도 알아본다 | `pi --session-id <pi 세션 id>` | pi 세션 파일(기본 `~/.pi/agent/sessions` 아래). pi 설정의 `sessionDir`은 읽지 않는다 |
 
 - 토큰 합계는 입력·출력·캐시 읽기·캐시 쓰기 토큰이다. 비용은 어느 도구도 더하지 않는다.
@@ -121,11 +121,11 @@ v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동
 - Windows 실행이 남긴 프로세스가 도는 동안은 실행이 끝났어도 Windows 사본을 쓰는 중으로 본다. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)처럼 빌드가 끝난 뒤에도 남는 프로세스도 그렇다. 그동안 바뀐 내용으로 하는 다음 실행은 시작하지 않으므로(`runtime.windows_copy_busy`), 그 프로세스가 스스로 끝나기를 기다리거나, Windows 터미널에서 `dotnet build-server shutdown`·`gradle --stop`(Gradle Wrapper 프로젝트는 `.\gradlew --stop`)을 실행하거나 작업 관리자에서 끝낸 뒤 다시 실행한다. WSL에서 실행한 `dotnet`·`gradle`은 Linux 쪽 빌드 서버만 끝낸다. 모두 끝났는데도 1분 넘게 계속되면 Windows 앱 연결을 확인한다.
 - 앱 자동 시작 때 설정이 파일을 쓴 뒤 다시 시작하기 전에 끊기면 다음 자동 시작도 다시 시작하지 않는다. [다시 설정]으로 복구한다.
 - Codex는 rollout 기록의 끝 8 MiB만 읽는다. 한 턴의 기록이 8 MiB를 넘으면 그 턴의 시작이 읽는 범위 밖에 있어 다음 턴까지 추적하지 못한다.
-- 확인 상태: 실행하지 않은 확인은 PASS로 적지 않으며, 원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §5·§8에 있다. 성공 기준 SC2·SC7은 위 첫 두 항목대로 미달이다. 아직 실행하지 않은 것(NOT_RUN)은 1.0.0 공개 전 실기 확인(S7-14)인 I1 W1(위 Windows 사본 보호, 실행하지 않으면 1.0.0을 막는다)·K1(pi의 Shift+Enter와 tmux 3.4 호스트)·H3(실제 pi·opencode 연결)·P1(실제 Claude 승인 짝짓기)·O1a·O1b(Windows의 실제 재시작과 연결 유지)·설치 경고 문구·제거 뒤 남는 항목·MCP 등록 명령의 설치본 확인, 지난 수용의 A3(SC2의 전역 단축키 → 명령 팔레트 300ms)·A5(설치본 지원 번들 가림은 시도했으나 판정하지 못함, accept 업데이트 화면)·RC1 Windows 설치·실행 수용, 그리고 RC → 1.0.0 수동 설치와 정식 버전 릴리스 게시다. A6(accept 조용한 제거 직후의 제거 등록 확인)은 FAIL이다. R1·R2(WSL 유휴 유지, `wsl --shutdown` 뒤 복귀)는 공개 직전 사용자 확인으로 남아 있다.
+- 확인 상태: 실행하지 않은 확인은 PASS로 적지 않으며, 원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §5·§8에 있다. 성공 기준 SC2·SC7은 위 첫 두 항목대로 미달이다. 아직 실행하지 않은 것(NOT_RUN)은 1.0.0 공개 전 실기 확인(S7-14)인 I1 W1(위 Windows 사본 보호, 실행하지 않으면 1.0.0을 막는다)·K1(pi의 Shift+Enter, tmux 3.4·3.5 이상 호스트, tmux를 올린 뒤의 동작)·H3(실제 pi·opencode 연결)·P1(실제 Claude 승인 짝짓기)·O1a·O1b(Windows의 실제 재시작과 연결 유지)·설치 경고 문구·제거 뒤 남는 항목·MCP 등록 명령의 설치본 확인, 지난 수용의 A3(SC2의 전역 단축키 → 명령 팔레트 300ms)·A5(설치본 지원 번들 가림은 시도했으나 판정하지 못함, accept 업데이트 화면)·RC1 Windows 설치·실행 수용, 그리고 RC → 1.0.0 수동 설치와 정식 버전 릴리스 게시다. A6(accept 조용한 제거 직후의 제거 등록 확인)은 FAIL이다. R1·R2(WSL 유휴 유지, `wsl --shutdown` 뒤 복귀)는 공개 직전 사용자 확인으로 남아 있다.
 
 ## 문제 해결
 
-- 연결 화면의 안내(WSL 없음·WSL1·systemd 꺼짐·WSL 쪽 설치 실패·데몬 연결 실패)를 따른 뒤 [다시 시도]한다.
+- 연결 화면의 안내(WSL 없음·WSL1·systemd 꺼짐·WSL 쪽 설치 실패·데몬 연결 실패)를 따른 뒤 [다시 시도]한다. 앱이 열린 뒤 연결이 계속 끊기면 상단 배너의 [다시 시도]를 누르거나 설정 → 앱 진단의 [다시 설정]을 쓴다.
 - 설정 파일에 오류가 있으면 앱의 경고 배너가 파일과 영역을 알려 준다. 고친 뒤 [다시 설정]을 누른다([설정 파일 안내](docs/config.md)).
 - 설정 → 앱 진단에서 데몬 상태·로그 위치·점검 결과를 본다. [다시 설정]은 내장 WSL 실행 파일을 다시 배치하고 이 채널의 데몬을 다시 시작한다. [WSL 쪽 정리]는 이 채널의 터미널 세션을 끝내고 WSL 서비스와 실행 파일을 지우며 데이터·설정과 다른 채널은 남긴다.
 - "Devbox를 시작하지 않았습니다" 안내 후 앱이 열리지 않으면, 이전 업데이트 설치가 끝났는지 확인하지 못한 상태다. 업데이트 설치 프로그램이 실행 중이면 끝날 때까지 기다린다. 실행 중이 아닌데도 계속 이 안내가 나오면 `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\updates`의 `install-`로 시작하는 폴더만 지우고 다시 시작한다(accept 채널은 `io.github.jihoon22lee.devbox.accept`). 같은 위치의 다른 파일은 지우지 않는다.

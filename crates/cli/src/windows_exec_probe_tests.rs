@@ -258,8 +258,10 @@ fn the_owned_folder_goes_on_a_failed_step_and_an_existing_one_is_never_adopted()
 /// ```
 ///
 /// A harness that already holds `windows-acceptance` runs step 2 without the wrapper: a nested
-/// wrapper waits for its own lock until it exits 75 an hour later. There, a bare
-/// `cargo test -p devbox-cli --lib -j 2 <test> -- --ignored --exact` after step 1 also works.
+/// wrapper waits for its own lock until it exits 75 an hour later. There, `env
+/// DEVBOX_TEST_WINDOWS_POWERSHELL=… 'DEVBOX_TEST_WINDOWS_DIR=…' cargo test -p devbox-cli --lib
+/// -j 2 <test> -- --ignored --exact` after step 1 also works, with the two variables of step 2.
+/// The test reads both and panics at once without them.
 ///
 /// `DEVBOX_TEST_WINDOWS_DIR` is an existing local folder of the tester with no reparse point on
 /// its path (the bootstrap refuses one). The test creates its own `devbox-w1-<uuid>` folder in
