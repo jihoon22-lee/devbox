@@ -113,7 +113,7 @@ export function useRunActions(projectId: string, onRun: (run: Run) => void) {
     busy: busy || trust.pending,
     feedback: (
       <>
-        {error && <Banner tone="danger">{messageText(error.code, error.detail)}</Banner>}
+        {error && <Banner tone="danger">{messageText(error.code, error.detail, error.diagnosticId)}</Banner>}
         {trust.notice && <Banner tone="warn">{trust.notice}</Banner>}
         {trust.dialog}
         {confirm && (

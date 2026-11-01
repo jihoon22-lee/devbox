@@ -1,18 +1,13 @@
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
-import { Button, EmptyState, ErrorState } from "../../ui";
+import { EmptyState } from "../../ui";
+import { NotesErrorState } from "./NotesErrorState";
 import s from "./notes.module.css";
 
 /** Tags in the vault with how many notes carry each (`notes.tags`). */
 export function TagList() {
   useTopicInvalidation("notes.changed", [["notes.tags"]]);
   const tags = useRpcQuery("notes.tags", {});
-  if (tags.isError)
-    return (
-      <ErrorState
-        title="태그를 읽지 못했습니다"
-        action={<Button onClick={() => void tags.refetch()}>다시 시도</Button>}
-      />
-    );
+  if (tags.error) return <NotesErrorState error={tags.error} retry={() => void tags.refetch()} />;
   if (tags.data && !tags.data.items.length)
     return <EmptyState title="태그가 없습니다" body="노트 frontmatter의 tags에 적은 태그가 여기에 보입니다." />;
   return (

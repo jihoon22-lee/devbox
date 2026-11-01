@@ -50,3 +50,18 @@ test("a file that cannot be read says what to do about it, not only what happene
   expect(alert).toHaveTextContent("문서가 허용 크기를 넘었습니다.");
   expect(alert).toHaveTextContent("내용을 줄인 뒤 다시 시도해 주세요.");
 });
+
+test("a file read that failed unexpectedly shows its diagnostic ID", async () => {
+  const wire = new NotesWire();
+  vi.spyOn(wire.docs, "call").mockRejectedValue(new RpcError("internal", undefined, "diag-3"));
+  render(
+    <RpcProvider client={wire.client}>
+      <CodePreview
+        hit={{ root: "project:owned", path: "big.ts", title: null, snippet: "", line: null, rangesUtf16: [] }}
+      />
+    </RpcProvider>,
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "예상하지 못한 문제가 생겼습니다. 진단 ID를 복사해 두면 원인을 찾을 수 있습니다. · 진단 diag-3",
+  );
+});

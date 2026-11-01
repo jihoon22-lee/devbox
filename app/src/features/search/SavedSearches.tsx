@@ -46,7 +46,7 @@ export function SavedSearches({ query, onSelect }: { query?: SearchQuery; onSele
           </li>
         ))}
       </ul>
-      {error && <p role="alert">{messageText(error.code, error.detail)}</p>}
+      {error && <p role="alert">{messageText(error.code, error.detail, error.diagnosticId)}</p>}
     </section>
   );
 }

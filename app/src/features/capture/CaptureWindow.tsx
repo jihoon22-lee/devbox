@@ -86,7 +86,7 @@ export function CaptureWindow() {
       await submitCapture(text, append.mutateAsync, hideCapture, change);
     } catch (failure) {
       const e = failure instanceof RpcError ? failure : new RpcError("internal");
-      setError(messageText(e.code, e.detail));
+      setError(messageText(e.code, e.detail, e.diagnosticId));
     } finally {
       pending.current = false;
       setBusy(false);

@@ -126,7 +126,7 @@ export const AGENT_MESSAGES: Messages<Domain> = {
   },
   "agents.slug_exhausted": {
     title: "같은 이름의 에이전트 작업이 너무 많습니다.",
-    action: "다른 제목을 입력해 주세요. 또는 브랜치 이름을 직접 입력해 주세요.",
+    action: "다른 제목을 입력하거나 브랜치 이름을 직접 입력해 주세요.",
   },
   "agents.not_found": { title: "에이전트 작업을 찾을 수 없습니다.", action: "목록을 다시 확인해 주세요." },
   "agents.project_not_found": {

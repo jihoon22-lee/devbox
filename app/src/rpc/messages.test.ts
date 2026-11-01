@@ -91,6 +91,14 @@ test("a plain error line gives what happened, then what to do when the table say
   expect(messageText("agents.base_dirty", { files: ["a.rs"] })).toContain("a.rs");
 });
 
+test("a plain error line ends with the error's diagnostic ID when it has one", () => {
+  expect(messageText("internal", undefined, "diag-1")).toBe(
+    "예상하지 못한 문제가 생겼습니다. 진단 ID를 복사해 두면 원인을 찾을 수 있습니다. · 진단 diag-1",
+  );
+  expect(messageText("cancelled", undefined, "diag-2")).toBe("요청이 취소되었습니다. · 진단 diag-2");
+  expect(messageText("internal")).not.toContain("· 진단");
+});
+
 test("a taken branch name names the branch and says a work folder can be the cause too", () => {
   expect(messageFor("agents.branch_exists", { branch: "agent/fix-login" })).toEqual({
     title: "같은 이름의 브랜치나 작업 폴더가 이미 있습니다: agent/fix-login",
@@ -101,7 +109,7 @@ test("a taken branch name names the branch and says a work folder can be the cau
     expect(messageFor("agents.branch_exists", detail).title).toBe("같은 이름의 브랜치나 작업 폴더가 이미 있습니다.");
   expect(messageFor("agents.slug_exhausted")).toEqual({
     title: "같은 이름의 에이전트 작업이 너무 많습니다.",
-    action: "다른 제목을 입력해 주세요. 또는 브랜치 이름을 직접 입력해 주세요.",
+    action: "다른 제목을 입력하거나 브랜치 이름을 직접 입력해 주세요.",
   });
 });
 

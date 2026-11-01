@@ -1,5 +1,5 @@
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
-import { Button, ErrorState } from "../../ui";
+import { NotesErrorState } from "./NotesErrorState";
 import s from "./notes.module.css";
 
 /** Notes that link here (`notes.backlinks`); choosing one opens it. */
@@ -9,12 +9,7 @@ export function Backlinks({ path, onOpen }: { path: string; onOpen(path: string)
   return (
     <aside className={s.backlinks} aria-label="백링크">
       <h3 className={s.panelTitle}>백링크 {links.data ? links.data.items.length : ""}</h3>
-      {links.isError && (
-        <ErrorState
-          title="백링크를 읽지 못했습니다"
-          action={<Button onClick={() => void links.refetch()}>다시 시도</Button>}
-        />
-      )}
+      {links.error && <NotesErrorState error={links.error} retry={() => void links.refetch()} />}
       {links.data && !links.data.items.length && <p className={s.notice}>이 노트를 가리키는 노트가 없습니다.</p>}
       <ul>
         {links.data?.items.map((item) => (

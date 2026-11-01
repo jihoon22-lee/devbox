@@ -28,10 +28,14 @@ const TABLE: Record<RpcErrorCode, Entry> = {
   ...SOURCE_MESSAGES,
   ...SYSTEM_MESSAGES,
 };
-/** A code's message as the one sentence a plain error line shows: what happened, then what to do. */
-export function messageText(code: ErrorCode, detail?: unknown): string {
+/**
+ * A code's message as the one sentence a plain error line shows: what happened, then what to do,
+ * then the error's diagnostic ID when it has one, as the next action of `internal` asks to copy.
+ */
+export function messageText(code: ErrorCode, detail?: unknown, diagnosticId?: string): string {
   const { title, action } = messageFor(code, detail);
-  return action ? `${title} ${action}` : title;
+  const text = action ? `${title} ${action}` : title;
+  return diagnosticId ? `${text} · 진단 ${diagnosticId}` : text;
 }
 export function messageFor(code: ErrorCode, detail?: unknown): Message {
   if (code === "connection_lost")

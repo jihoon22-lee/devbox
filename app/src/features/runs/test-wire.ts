@@ -109,7 +109,12 @@ export class RunWire extends ProjectWire {
     if (!subscription) throw new Error("missing runtime topic subscription");
     this.deliver({ type: "event", subId: subscription.id, rev, payload: { rev, projectId: "p" } });
   }
-  reject(method: string, code: string) {
-    this.deliver({ type: "response", id: this.request(method, -1).id, error: { code, detail: { id: "p" } } });
+  reject(method: string, code: string, diagnosticId?: string) {
+    this.deliver({
+      type: "response",
+      id: this.request(method, -1).id,
+      error: { code, detail: { id: "p" } },
+      ...(diagnosticId ? { diagnosticId } : {}),
+    });
   }
 }

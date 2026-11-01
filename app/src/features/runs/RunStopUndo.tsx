@@ -69,9 +69,8 @@ export function RunStopUndo() {
       } catch (failure) {
         const error = failure instanceof RpcError ? failure : new RpcError("internal");
         const message = messageFor(error.code, error.detail);
-        useToasts
-          .getState()
-          .push({ tone: "danger", title: message.title, ...(message.action ? { body: message.action } : {}) });
+        const body = [message.action, error.diagnosticId && `진단 ${error.diagnosticId}`].filter(Boolean).join(" · ");
+        useToasts.getState().push({ tone: "danger", title: message.title, ...(body ? { body } : {}) });
       } finally {
         finish();
       }

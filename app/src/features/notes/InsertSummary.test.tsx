@@ -68,3 +68,19 @@ test("a summary refused because notes are off says how to turn them back on", as
   expect(alert).toHaveTextContent("노트 설정을 읽지 못해 노트를 껐습니다.");
   expect(alert).toHaveTextContent("설정 → 앱 진단 → [다시 설정]을 눌러 주세요.");
 });
+
+test("a summary that failed unexpectedly shows its diagnostic ID", async () => {
+  const wire = new NotesWire();
+  wire.handlers["notes.insert_summary"] = () => {
+    throw new RpcError("internal", undefined, "diag-4");
+  };
+  render(
+    <RpcProvider client={wire.client}>
+      <InsertSummary onOpen={vi.fn()} />
+    </RpcProvider>,
+  );
+  const button = await screen.findByRole("button", { name: "오늘 한 일 넣기" });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+  expect(await screen.findByRole("alert")).toHaveTextContent("· 진단 diag-4");
+});

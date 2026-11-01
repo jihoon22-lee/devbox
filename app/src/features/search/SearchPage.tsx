@@ -107,7 +107,7 @@ export function SearchPage({
       {result.refreshing && <p role="status">검색 중… 이전 결과를 유지합니다.</p>}
       {result.error && (
         <p role="alert">
-          {messageText(result.error.code, result.error.detail)}{" "}
+          {messageText(result.error.code, result.error.detail, result.error.diagnosticId)}{" "}
           {/* While search is off, the daemon answers every call with this until it restarts. */}
           {result.error.code !== "search.disabled" && <Button onClick={result.retry}>다시 시도</Button>}
         </p>

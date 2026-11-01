@@ -36,7 +36,7 @@ export function Preview({ path, text, onOpenNote }: { path: string; text: string
         (failure) => {
           if (!live) return;
           const e = failure instanceof RpcError ? failure : new RpcError("internal");
-          setError(messageText(e.code, e.detail));
+          setError(messageText(e.code, e.detail, e.diagnosticId));
         },
       );
     }, DEBOUNCE_MS);

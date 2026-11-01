@@ -71,7 +71,12 @@ export class NotesWire implements Transport {
       this.deliver({ type: "response", id: msg.id, result });
     } catch (error) {
       const e = error instanceof RpcError ? error : new RpcError("internal");
-      this.deliver({ type: "response", id: msg.id, error: { code: e.code, detail: e.detail } });
+      this.deliver({
+        type: "response",
+        id: msg.id,
+        error: { code: e.code, detail: e.detail },
+        ...(e.diagnosticId ? { diagnosticId: e.diagnosticId } : {}),
+      });
     }
   }
   deliver(msg: unknown) {

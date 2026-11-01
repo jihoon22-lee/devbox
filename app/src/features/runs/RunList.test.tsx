@@ -113,6 +113,19 @@ test("a service that undo cannot restart shows what to do next in its toast", as
   act(() => wire.reject("runtime.restart", "runtime.windows_copy_busy"));
   expect(await screen.findByText(/dotnet build-server shutdown/)).toBeVisible();
 });
+test("a service that undo failed to restart unexpectedly shows the diagnostic ID in its toast", async () => {
+  const wire = new RunWire();
+  show(wire);
+  await screen.findByText("PID 111");
+  await userEvent.click(screen.getByRole("button", { name: "web 중지" }));
+  await waitFor(() => expect(wire.requests("runtime.stop")).toHaveLength(1));
+  wire.selected = { ...runFixture, state: "stopped", pid: null };
+  act(() => wire.reply("runtime.stop", wire.selected));
+  await userEvent.click(await screen.findByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(wire.requests("runtime.restart")).toHaveLength(1));
+  act(() => wire.reject("runtime.restart", "internal", "diag-5"));
+  expect(await screen.findByText("진단 ID를 복사해 두면 원인을 찾을 수 있습니다. · 진단 diag-5")).toBeVisible();
+});
 test("container stop uses server undo only and restart never creates an undo", async () => {
   const wire = new RunWire();
   show(wire);

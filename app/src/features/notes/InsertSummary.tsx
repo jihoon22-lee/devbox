@@ -20,7 +20,7 @@ export function InsertSummary({ onOpen }: { onOpen(path: string): void }) {
       onOpen(result.path);
     } catch (failure) {
       const e = failure instanceof RpcError ? failure : new RpcError("internal");
-      setError(messageText(e.code, e.detail));
+      setError(messageText(e.code, e.detail, e.diagnosticId));
     } finally {
       inFlight.current = false;
       setBusy(false);
