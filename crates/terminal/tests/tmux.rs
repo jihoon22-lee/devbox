@@ -204,7 +204,7 @@ async fn applying_extended_keys_without_a_server_starts_nothing() {
 }
 #[test]
 fn only_tmux_3_5_or_newer_carries_extended_keys() {
-    // `tmux -V` ends its line with a newline.
+    // `tmux -V` prints `tmux 3.6` and a newline; the server's `#{version}` a bare `3.6`.
     for version in [
         "tmux 3.5",
         "tmux 3.5a",
@@ -213,19 +213,33 @@ fn only_tmux_3_5_or_newer_carries_extended_keys() {
         "tmux next-3.6",
         "tmux 4.0",
         "tmux 10.1",
+        "3.5",
+        "3.5a",
+        "3.6",
+        "3.6\n",
+        "next-3.6",
+        "4.0",
     ] {
         assert!(supports_extended_keys(version), "{version:?}");
     }
-    // Unknown counts as older: Shift+Enter then stays a plain Enter.
+    // Unknown counts as older: Shift+Enter then stays a plain Enter. `next-3.5` is a build
+    // on the way to 3.5, so it is older than 3.5.
     for version in [
         "tmux 3.4",
         "tmux 3.4\n",
         "tmux 3.3a",
         "tmux 3.2",
         "tmux next-3.4",
+        "tmux next-3.5",
         "tmux master",
         "tmux 3.5-rc",
         "tmux openbsd-7.6",
+        "3.4",
+        "3.4\n",
+        "3.3a",
+        "next-3.5",
+        "master",
+        "3.5-rc",
         "garbage 9.9",
         "",
     ] {
@@ -274,8 +288,11 @@ async fn shift_enter_reaches_a_program_that_did_not_ask_for_extended_keys_as_ent
         .await
         .expect("send marker");
     let bytes = until(&|bytes| bytes.iter().any(|byte| byte == "78")).await;
-    let version = t.run(&["-V"]).await.expect("tmux -V");
-    if t.extended_keys().await {
+    let version = t
+        .run(&["display-message", "-p", "#{version}"])
+        .await
+        .expect("server version");
+    if t.extended_keys("keys").await {
         assert_eq!(bytes, ["0d", "78"], "{version} {sent:?}");
     } else {
         assert!(

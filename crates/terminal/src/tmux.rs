@@ -26,11 +26,17 @@ pub struct PasteFailure {
     pub error: TmuxError,
     pub delivery: PasteDelivery,
 }
-/// Whether `tmux -V` output names tmux 3.5 or newer. From 3.5, Shift+Enter sent as an extended
-/// key (CSI u) reaches a program that never asked for extended keys as Enter; 3.2–3.4 drop it.
-/// An unknown version counts as older, so Shift+Enter stays a plain Enter.
+/// Whether a version names tmux 3.5 or newer, as the server's `#{version}` (`3.5a`) or
+/// `tmux -V` (`tmux 3.5a`) prints it. From 3.5, Shift+Enter sent as an extended key (CSI u)
+/// reaches a program that never asked for extended keys as Enter; 3.2–3.4 drop it. `next-3.5`
+/// comes before 3.5, and an unknown version counts as older, so Shift+Enter stays plain Enter.
 pub fn supports_extended_keys(version: &str) -> bool {
-    devbox_core::tmux_at_least(version.trim(), (3, 5))
+    let version = version.trim();
+    let version = version.strip_prefix("tmux ").unwrap_or(version);
+    devbox_core::tmux_version(version).is_some_and(|(major, minor, next)| match next {
+        true => (major, minor) > (3, 5),
+        false => (major, minor) >= (3, 5),
+    })
 }
 impl TmuxError {
     fn missing(&self) -> bool {
@@ -140,10 +146,15 @@ impl Tmux {
             other => other.map(drop),
         }
     }
-    /// Whether this tmux carries Shift+Enter as an extended key, by [`supports_extended_keys`].
-    /// `tmux -V` only prints the version: it reads no server and starts none.
-    pub async fn extended_keys(&self) -> bool {
-        self.run(&["-V"])
+    /// Whether the running server carries Shift+Enter as an extended key, by its `#{version}`
+    /// and [`supports_extended_keys`]. Not `tmux -V`: that names the binary on PATH, and the
+    /// server can be older after an upgrade or a PATH change. It starts no server, and any
+    /// failure is false. `name` only gives the query a target, as `capture_history` does.
+    pub async fn extended_keys(&self, name: &str) -> bool {
+        let Ok(target) = Self::target(name) else {
+            return false;
+        };
+        self.run(&["display-message", "-p", "-t", &target, "#{version}"])
             .await
             .is_ok_and(|version| supports_extended_keys(&version))
     }

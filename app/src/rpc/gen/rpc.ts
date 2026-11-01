@@ -729,9 +729,9 @@ export type TemplateProblem = "not_found" | "unknown_placeholder" | "invalid_con
 export type Templates = { items: Array<TemplateItem>, };
 export type TerminalAttached = { streamId: number, cols: number, rows: number, 
 /**
- * The instance's tmux is 3.5 or newer, so the app may send Shift+Enter as an extended key:
- * a program that did not ask for extended keys still gets Enter. Older tmux drops it there,
- * so the app then leaves Shift+Enter as plain Enter.
+ * The instance's running tmux server, asked on this attach, is 3.5 or newer, so the app may
+ * send Shift+Enter as an extended key: a program that did not ask for extended keys still
+ * gets Enter. Older tmux drops it there, so the app then leaves Shift+Enter as plain Enter.
  */
 extendedKeys: boolean, };
 export type TerminalChanged = { rev: string, };

@@ -86,9 +86,9 @@ pub struct TerminalAttached {
     pub stream_id: u32,
     pub cols: u16,
     pub rows: u16,
-    /// The instance's tmux is 3.5 or newer, so the app may send Shift+Enter as an extended key:
-    /// a program that did not ask for extended keys still gets Enter. Older tmux drops it there,
-    /// so the app then leaves Shift+Enter as plain Enter.
+    /// The instance's running tmux server, asked on this attach, is 3.5 or newer, so the app may
+    /// send Shift+Enter as an extended key: a program that did not ask for extended keys still
+    /// gets Enter. Older tmux drops it there, so the app then leaves Shift+Enter as plain Enter.
     pub extended_keys: bool,
 }
 #[derive(Debug, Deserialize, Serialize, TS)]

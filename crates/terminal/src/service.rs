@@ -22,8 +22,6 @@ pub struct TerminalService {
     config: TerminalConfig,
     mutations: Mutex<()>,
     attachments: crate::attach::Attachments,
-    /// [`Tmux::extended_keys`], asked once on the first attach.
-    extended_keys: tokio::sync::OnceCell<bool>,
 }
 fn changed(hub: &Hub, rev: u64) {
     hub.publish::<TerminalChangedTopic>(
@@ -90,7 +88,6 @@ impl TerminalService {
             config,
             mutations: Mutex::new(()),
             attachments: Default::default(),
-            extended_keys: tokio::sync::OnceCell::new(),
         }
     }
     pub async fn attach(
@@ -116,10 +113,8 @@ impl TerminalService {
         {
             return Err(TerminalError::NotFound { id: p.id }.into());
         }
-        let extended_keys = *self
-            .extended_keys
-            .get_or_init(|| self.tmux.extended_keys())
-            .await;
+        // Asked on every attach and never kept: the server can be replaced while the daemon runs.
+        let extended_keys = self.tmux.extended_keys(&p.id).await;
         if ctx.cancel.is_cancelled() {
             return Err(TerminalError::StreamUnavailable {}.into());
         }

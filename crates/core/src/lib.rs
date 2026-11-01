@@ -58,26 +58,27 @@ pub fn sh_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Whether `tmux -V` output (`tmux 3.4`, `tmux 3.5a`, `tmux next-3.6`) names `want` or newer.
-/// Anything else, such as `tmux master`, does not. Shared by the environment check and the
-/// terminal, so both read a version the same way.
-pub fn tmux_at_least(v: &str, want: (u32, u32)) -> bool {
-    let Some(v) = v.strip_prefix("tmux ") else {
-        return false;
-    };
-    let v = v.strip_prefix("next-").unwrap_or(v);
-    let Some((major, rest)) = v.split_once('.') else {
-        return false;
-    };
+/// A tmux version as the `#{version}` format prints it (`3.4`, `3.5a`, `next-3.6`), which is
+/// what `tmux -V` prints after `tmux `: `(major, minor, next)`, where `next` marks a build on
+/// the way to that release. Anything else, such as `master`, is `None`. Shared by the
+/// environment check and the terminal, so both read a version the same way.
+pub fn tmux_version(v: &str) -> Option<(u32, u32, bool)> {
+    let (v, next) = v.strip_prefix("next-").map_or((v, false), |v| (v, true));
+    let (major, rest) = v.split_once('.')?;
     let len = rest.bytes().take_while(u8::is_ascii_digit).count();
     let (minor, suffix) = rest.split_at(len);
     if !suffix.bytes().all(|b| b.is_ascii_alphabetic()) {
-        return false;
+        return None;
     }
-    match (major.parse::<u32>(), minor.parse::<u32>()) {
-        (Ok(a), Ok(b)) => (a, b) >= want,
-        _ => false,
-    }
+    Some((major.parse().ok()?, minor.parse().ok()?, next))
+}
+
+/// Whether `tmux -V` output (`tmux 3.4`, `tmux 3.5a`, `tmux next-3.6`) names `want` or newer.
+/// Anything else, such as `tmux master`, does not.
+pub fn tmux_at_least(v: &str, want: (u32, u32)) -> bool {
+    v.strip_prefix("tmux ")
+        .and_then(tmux_version)
+        .is_some_and(|(major, minor, _)| (major, minor) >= want)
 }
 
 #[cfg(test)]
