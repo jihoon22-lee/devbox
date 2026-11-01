@@ -381,6 +381,81 @@ async fn agent_send_reports_awaiting_input() {
     m.finish();
 }
 
+/// What `devbox_agent_send` says when a tool could run the text as a command.
+const RUNS_AS_COMMAND: &str = "보낼 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않았습니다. 앞에 다른 말을 붙여 다시 보내세요.";
+#[tokio::test]
+async fn agent_send_refuses_text_a_tool_would_run_as_a_command() {
+    let mut d = agent_fixture(true);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let c = d.client().await;
+    let project = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &project, "owned-fake", false).await;
+    d.wait_for(&c, &id, "waiting", Duration::from_secs(10))
+        .await;
+    // The fixture starts at a permission prompt; its PostToolUse lets sends through.
+    let hook = r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#;
+    c.raw_call(
+        "agents.event",
+        json!({"agentId":id,"launchId":d.agent_launch(&id).await,"source":"claude","payload":hook}),
+        None,
+    )
+    .await
+    .expect("owned fixture");
+    let running = d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
+    let mut m = Mcp::start(&d);
+    // Codex, Claude Code and pi run a leading "!" as a shell command, and each tool runs a
+    // leading "/" as its own command, whatever blanks or line breaks come first.
+    for text in ["!ls", "  /clear", "\n!x"] {
+        let refused = m.tool("devbox_agent_send", json!({"id":id,"text":text}));
+        assert_eq!(refused["result"]["isError"], true, "{text:?}");
+        assert_eq!(
+            refused["result"]["content"][0]["text"], RUNS_AS_COMMAND,
+            "{text:?}"
+        );
+    }
+    let after = d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
+    for field in ["attention", "followUps", "activitySeq"] {
+        assert_eq!(after[field], running[field], "{field}");
+    }
+    let pane = format!("={}:", after["terminalId"].as_str().expect("terminal"));
+    let shown = d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane]);
+    let buffers = d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"]);
+    for text in ["!ls", "/clear", "!x"] {
+        assert!(!shown.contains(text), "{text}");
+        assert!(!buffers.contains(text), "{text}");
+    }
+    // The same characters later in the text are sent as before.
+    for (sent_before, text) in ["hello !ls", "fix /tmp/x"].into_iter().enumerate() {
+        let sent = body(&m.tool("devbox_agent_send", json!({"id":id,"text":text})));
+        let follow_ups = sent["followUps"].as_array().expect("owned fixture");
+        assert_eq!(follow_ups.len(), sent_before + 1, "{text}");
+        assert_eq!(follow_ups[sent_before]["text"], text);
+    }
+    m.finish();
+}
+#[test]
+fn agent_send_refuses_such_text_before_any_daemon_call() {
+    let d = TestDaemon::fixture();
+    d.write_config("[mcp]\nwrite=true\n");
+    let mut m = Mcp::start(&d);
+    let refused = m.tool("devbox_agent_send", json!({"id":"owned","text":"!ls"}));
+    assert_eq!(refused["result"]["content"][0]["text"], RUNS_AS_COMMAND);
+    // Any other text goes to the daemon, which this fixture does not run.
+    let unreachable = m.tool(
+        "devbox_agent_send",
+        json!({"id":"owned","text":"hello !ls"}),
+    );
+    assert_eq!(unreachable["result"]["isError"], true);
+    assert!(
+        unreachable["result"]["content"][0]["text"]
+            .as_str()
+            .expect("owned fixture")
+            .contains("데몬")
+    );
+    m.finish();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stalled_daemon_rpc_is_bounded_and_connection_is_closed_at_eof() {
     use devbox_protocol::frame::FrameCodec;

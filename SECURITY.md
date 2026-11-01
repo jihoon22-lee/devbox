@@ -24,6 +24,7 @@ GitHub 비공개 취약점 신고(Private vulnerability reporting)를 쓴다. �
   - `devbox_agent_send`: 부른 에이전트 자신의 작업이 아니어도 어느 에이전트 작업에든 지시를 보낸다.
   - `devbox_run_task`: 프로젝트의 작업이나 서비스를 시작한다. `.devbox/devbox.toml`의 정의는 승인한 내용으로만 실행하고, 앱에서 "이 PC에만" 저장한 정의는 승인 없이 실행한다.
   - `devbox_note_add`: 받은 노트함(`inbox`)이나 오늘의 일일 기록에 글을 덧붙인다.
+- `devbox_agent_send`는 앞의 공백·줄바꿈을 뺀 글이 `!`나 `/`로 시작하면 어느 도구의 작업이든 보내지 않는다. 도구가 그 글을 셸 명령이나 도구 명령으로 실행할 수 있어서다(Codex·Claude Code·pi의 `!`, 각 도구의 `/` 명령). 앱에서 보내는 글은 그대로 넘긴다.
 - "LAN에서 받기"를 켜면 0.0.0.0에서 받는다. Windows나 다른 PC에서 받는 데 필요한 `netsh interface portproxy` 명령은 화면에 안내만 하고 실행하지 않는다.
 
 ## 활동 기록

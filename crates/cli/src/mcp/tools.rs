@@ -105,6 +105,15 @@ impl Server {
                         "MCP 쓰기 도구가 꺼져 있습니다. [mcp] write = true 설정이 필요합니다.",
                     ));
                 }
+                // Codex, Claude Code and pi run a text that starts with "!" as a shell command,
+                // and the tools run one that starts with "/" as their own command, after any
+                // blanks. No pane check can see it: the screen is a plain prompt. Every task
+                // gets this, whatever its tool; the app's own sends are passed as typed.
+                if args.text.trim_start().starts_with(['!', '/']) {
+                    return Ok(ToolResult::error(
+                        "보낼 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않았습니다. 앞에 다른 말을 붙여 다시 보내세요.",
+                    ));
+                }
                 match self.rpc::<AgentsSend>(&args).await {
                     Ok(result) => ToolResult::json(result),
                     Err(error) => Ok(error),
