@@ -1,10 +1,11 @@
-//! M-3: an attempt held after its run ended (sealed reader, no receipt yet) is probed on
-//! Windows at most once per window, while its receipt is still read on every 10 s pass. Each
-//! test keeps one service across passes, as the daemon does; the window lives in that service.
+//! M-3: an attempt held after its run ended (its reader sealed, or a newer attempt replaced
+//! it; no receipt yet) is probed on Windows at once, then at most once per window, while its
+//! receipt is still read on every 10 s pass. Each test keeps one service across passes, as the
+//! daemon does; the window lives in that service.
 use super::*;
 use crate::{
     windows_copy_store::ReaderState,
-    windows_probe_cadence::{HELD_PROBE_INTERVAL, ProbeCadence},
+    windows_probe_cadence::{AttemptRun, HELD_PROBE_INTERVAL, ProbeCadence},
 };
 use std::{sync::atomic::AtomicBool, time::Duration};
 
@@ -17,6 +18,119 @@ async fn pass(svc: &RuntimeService) {
     svc.reconcile_windows_copies()
         .await
         .expect("reconcile Windows copies");
+}
+/// The unit of the live run below. A pass asks the user's systemd about a live reader; where it
+/// answers, this unit is not found and the pass seals the reader at its end, which every test
+/// with a live reader allows for.
+const UNIT: &str = "devbox-test-copy-run-live.service";
+/// A live run's reader, reserved and launched as a run's start does it, with these attempts
+/// committed in this order (each start of a service's wrapper appends one).
+async fn live(o: &Owned, svc: &RuntimeService, ids: &[(&str, u8)]) -> Vec<Attempt> {
+    let permit = svc
+        .reserve_windows_copy(o.copy.clone(), "run-live".into(), UNIT.into())
+        .await
+        .expect("reserve");
+    permit.submitted().await.expect("dispatch");
+    permit.launched().await.expect("submission ACK");
+    let mut r = reader(o, &permit.reference.launch_id, &permit.reference.revision);
+    r.run_id = "run-live".into();
+    let attempts: Vec<_> = ids.iter().map(|(id, n)| attempt(o, &r, id, *n)).collect();
+    let stored = attempts.clone();
+    o.f.db
+        .write(move |tx| {
+            for a in &stored {
+                store::intent(tx, a)?.expect("attempt");
+                store::commit(tx, &a.control.nonce, &assigned(a))?.expect("commit");
+            }
+            Ok(())
+        })
+        .await
+        .expect("committed attempts");
+    attempts
+}
+#[tokio::test]
+async fn a_stop_then_an_edited_restart_is_not_refused_as_busy() {
+    // A stop seals the reader and reconciles; a restart seals it and reserves at once.
+    for stop_reconciles in [true, false] {
+        let mut o = owned().await;
+        let running = Arc::new(AtomicBool::new(true));
+        let job = running.clone();
+        let observations = Arc::new(AtomicUsize::new(0));
+        let count = observations.clone();
+        o.config.windows_observation = Arc::new(move |_| {
+            count.fetch_add(1, Ordering::SeqCst);
+            let state = if job.load(Ordering::SeqCst) {
+                ObservationState::Active { count: 1 }
+            } else {
+                ObservationState::Empty
+            };
+            Box::pin(async move { state })
+        });
+        let svc = service(&o);
+        let [a] = live(&o, &svc, &[("one", 1)])
+            .await
+            .try_into()
+            .expect("one attempt");
+        // Each 10 s pass of the live run probes it.
+        pass(&svc).await;
+        assert_eq!(observations.load(Ordering::SeqCst), 1);
+        // Stopped with no child outliving it; the holder's receipt is still up to 500 ms away.
+        running.store(false, Ordering::SeqCst);
+        svc.seal_windows_copy(&a.control.launch_id)
+            .await
+            .expect("stop");
+        if stop_reconciles {
+            svc.reconcile_windows_target(&o.copy.identity.key)
+                .await
+                .expect("the stop's reconcile");
+        }
+        // The restart of an edited source reserves the copy at once.
+        std::fs::write(o.copy.source.join("input.txt"), "source v2").expect("edited source");
+        let restarted = svc
+            .reserve_windows_copy(o.copy.clone(), "run-live".into(), UNIT.into())
+            .await;
+        assert!(
+            restarted.is_ok(),
+            "stop reconciles: {stop_reconciles}: {:?}",
+            restarted.err()
+        );
+        assert_eq!(phase(&o.f.db, &a).await, AttemptPhase::Closed);
+        // The sealed reader was probed once, at once: the job had emptied.
+        assert_eq!(observations.load(Ordering::SeqCst), 2);
+        drop(restarted);
+        svc.shutdown().await;
+    }
+}
+#[tokio::test]
+async fn an_attempt_a_service_restart_replaced_is_held_while_the_service_runs() {
+    let mut o = owned().await;
+    let asked = Arc::new(Mutex::new(Vec::<String>::new()));
+    let record = asked.clone();
+    o.config.windows_observation = Arc::new(move |assigned| {
+        record.lock().expect("observations").push(assigned.nonce);
+        Box::pin(async { ObservationState::Active { count: 1 } })
+    });
+    let svc = service(&o);
+    // The service restarted while orphans of its first attempt kept that job alive. The ids sort
+    // against their order: the newest attempt is the last one started, not the largest id.
+    let [old, new] = live(&o, &svc, &[("z-first", 1), ("a-second", 2)])
+        .await
+        .try_into()
+        .expect("two attempts");
+    let probes = |a: &Attempt| {
+        let asked = asked.lock().expect("observations");
+        asked.iter().filter(|n| **n == a.control.nonce).count()
+    };
+    // Two passes: the replaced attempt is probed once, the running one on both. (Where the pass
+    // seals the reader, the running attempt's second probe is the first after its run ended.)
+    pass(&svc).await;
+    pass(&svc).await;
+    assert_eq!((probes(&old), probes(&new)), (1, 2));
+    svc.probe_cadence.backdate(HELD_PROBE_INTERVAL);
+    pass(&svc).await;
+    assert_eq!((probes(&old), probes(&new)), (2, 3));
+    assert_eq!(phase(&o.f.db, &old).await, AttemptPhase::Committed);
+    svc.shutdown().await;
 }
 #[tokio::test]
 async fn a_held_attempt_is_probed_at_most_once_per_window() {
@@ -126,19 +240,34 @@ async fn attempts_that_are_not_held_keep_the_pass_cadence() {
     }
     assert_eq!(observations.load(Ordering::SeqCst), 3);
     svc.shutdown().await;
-    // A live run's attempt (its reader submitted, not yet sealed) is probed on every pass; the
-    // reconcile pass of a live reader also asks the user's systemd, so the cadence is checked
-    // here directly. Its last live probe starts the window once the run ended, and a closed
-    // attempt is forgotten.
-    let (live, sealed) = (ReaderState::Submitted, ReaderState::Sealed);
+    // A live run's attempt is probed on every pass; the reconcile pass of a live reader also
+    // asks the user's systemd, so the cadence is checked here directly. The first claim once the
+    // run ended probes at once (the job may have emptied with it), then once per window; a
+    // closed attempt is forgotten.
+    let (live, ended) = (AttemptRun::Live, AttemptRun::Ended);
     let cadence = ProbeCadence::default();
     assert!((0..3).all(|_| cadence.claim("one", live)));
-    assert!(!cadence.claim("one", sealed));
+    assert!(cadence.claim("one", ended));
+    assert!(!cadence.claim("one", ended));
     cadence.backdate(HELD_PROBE_INTERVAL);
-    assert!(cadence.claim("one", sealed));
-    assert!(!cadence.claim("one", sealed));
+    assert!(cadence.claim("one", ended));
+    assert!(!cadence.claim("one", ended));
     cadence.forget("one");
-    assert!(cadence.claim("one", sealed));
+    assert!(cadence.claim("one", ended));
+    // A run is live only while its reader is not sealed and it is the reader's newest attempt.
+    use ReaderState::{Sealed, Submitted};
+    assert_eq!(AttemptRun::of(Submitted, Some("one"), "one"), live);
+    for (reader, newest) in [
+        (Submitted, Some("two")),
+        (Sealed, Some("one")),
+        (Submitted, None),
+    ] {
+        assert_eq!(
+            AttemptRun::of(reader, newest, "one"),
+            ended,
+            "{reader:?} {newest:?}"
+        );
+    }
 }
 #[tokio::test]
 async fn a_restarted_daemon_probes_a_held_attempt_at_once() {

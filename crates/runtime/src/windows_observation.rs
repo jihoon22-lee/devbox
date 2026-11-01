@@ -3,7 +3,7 @@ use crate::{
     R, RuntimeError, RuntimeService,
     windows_copy_service::{owner_alive, process_owner},
     windows_copy_store::{self as store, Attempt, AttemptPhase, CopyRef, ReaderState},
-    windows_probe_cadence::ProbeCadence,
+    windows_probe_cadence::{AttemptRun, ProbeCadence},
 };
 use devbox_protocol::{
     Fail, Internal,
@@ -155,12 +155,12 @@ fn bootstrap_identity(assigned: &ObservationAssigned) -> HolderIdentity {
 /// I1 under Rulings 34-36 for a holder control. The receipt alone closes, before any probe.
 /// Otherwise `Empty` closes; a vanished job (`NotFound`) or one hidden by another session
 /// (`IdentityMismatch`) closes only once this attempt's own holder is provably gone, and for
-/// another session the bootstrap too. The receipt is read on every pass; once the run ended (a
-/// sealed `reader`), Windows is probed only as often as [`ProbeCadence`] allows.
+/// another session the bootstrap too. The receipt is read on every pass; once the attempt's
+/// `run` ended, Windows is probed only as often as [`ProbeCadence`] allows.
 async fn holder_attempt_ended(
     execution: &crate::ExecutionConfig,
     cadence: &ProbeCadence,
-    reader: ReaderState,
+    run: AttemptRun,
     copy: &store::CopyRecord,
     control: &ObservationControl,
     assigned: &ObservationAssigned,
@@ -168,7 +168,7 @@ async fn holder_attempt_ended(
     if emptied(copy, control) {
         return true;
     }
-    if !cadence.claim(&control.nonce, reader) {
+    if !cadence.claim(&control.nonce, run) {
         return false;
     }
     let cross_session = match (execution.windows_observation)(assigned.clone()).await {
@@ -444,9 +444,16 @@ impl RuntimeService {
             }
             let launch = reader.copy.launch_id.clone();
             let key = reader.copy.key.clone();
-            let (copy, attempts) = self
+            let (copy, attempts, newest) = self
                 .db
-                .read(move |tx| Ok((store::copy(tx, &key)?, store::attempts(tx, &launch)?)))
+                .read(move |tx| {
+                    let newest = store::newest_attempt(tx, &launch)?;
+                    Ok((
+                        store::copy(tx, &key)?,
+                        store::attempts(tx, &launch)?,
+                        newest,
+                    ))
+                })
                 .await
                 .internal("read Windows consumer proofs")?;
             let Some(copy) = copy else {
@@ -477,12 +484,19 @@ impl RuntimeService {
                         let ended = match attempt.control.observes(&run, assigned) {
                             // The name vanishes with the last handle even while orphaned
                             // descendants run (I1): the holder and its receipt decide.
-                            // Held once its run ended: sealed, the job not yet empty (M-3).
+                            // Held once its run ended (sealed or replaced), the job not yet
+                            // empty (M-3).
                             Some(ControlShape::Holder) => {
-                                let cadence = &self.probe_cadence;
-                                let (state, control) = (reader.state, &attempt.control);
+                                let (cadence, control) = (&self.probe_cadence, &attempt.control);
+                                let attempt_run =
+                                    AttemptRun::of(reader.state, newest.as_deref(), &control.nonce);
                                 holder_attempt_ended(
-                                    execution, cadence, state, &copy, control, assigned,
+                                    execution,
+                                    cadence,
+                                    attempt_run,
+                                    &copy,
+                                    control,
+                                    assigned,
                                 )
                                 .await
                             }

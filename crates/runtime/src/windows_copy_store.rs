@@ -304,6 +304,19 @@ pub(crate) fn attempts(tx: &Transaction<'_>, launch: &str) -> rusqlite::Result<V
         .query_map([launch], |r| decode(r.get(0)?))?
         .collect()
 }
+/// The nonce of the reader's last started attempt. Attempt ids are random, so the order is the
+/// rows' insertion order: each start of a service's wrapper appends one, and updates keep it.
+pub(crate) fn newest_attempt(
+    tx: &Transaction<'_>,
+    launch: &str,
+) -> rusqlite::Result<Option<String>> {
+    tx.query_row(
+        "SELECT nonce FROM runtime_windows_attempts WHERE launch_id=?1 ORDER BY rowid DESC LIMIT 1",
+        [launch],
+        |r| r.get(0),
+    )
+    .optional()
+}
 pub(crate) fn attempt(tx: &Transaction<'_>, nonce: &str) -> rusqlite::Result<Option<Attempt>> {
     tx.query_row(
         "SELECT body FROM runtime_windows_attempts WHERE nonce=?1",
