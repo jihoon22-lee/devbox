@@ -283,6 +283,8 @@ case "$2" in
       printf 'late uncommitted edit\n' > "$wt/tracked";;
     *late-commit) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
       git -C "$wt" commit -q --allow-empty -m late;;
+    *late-submodules) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
+      mkdir "$(git -C "$wt" rev-parse --path-format=absolute --git-path modules)";;
    esac;;
  show) case "$DEVBOX_CLOSE_CASE" in *ended) printf 'not-found\n';; *) printf 'loaded\n';; esac;;
  *) exit 24;;

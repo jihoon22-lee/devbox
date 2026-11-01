@@ -20,6 +20,12 @@ type Intent =
   | { kind: "pr"; title: string; body: string }
   | { kind: "discard" };
 type Snapshot = { intent: Intent; changes?: Changes; check?: Check };
+/**
+ * A discard removes its work folder with force, which also takes the store of its initialized
+ * submodules, with the commits in them that were never pushed. The daemon also reports
+ * `hasSubmodules` when it could not check, so the warning errs toward showing.
+ */
+const SUBMODULES = "하위 모듈이 있습니다. 하위 모듈 안의 push하지 않은 커밋도 함께 사라집니다.";
 export function useReviewAction(task: AgentTask, onConflict: (files: string[]) => void) {
   const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const changes = useRpcQuery("agents.changes", { id: task.id }, { enabled: false });
@@ -230,7 +236,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       ? inline
         ? `이 에이전트 작업의 세션을 끝냅니다.${snapshot.check ? ` HEAD ${snapshot.check.headOid} · 병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개` : " 현재 상태 확인 중…"}`
         : snapshot.check
-          ? `${snapshot.check.unmergedCommits === 0 && snapshot.check.dirtyFiles === 0 ? "작업 폴더와 브랜치를 지웁니다." : `병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개와 커밋하지 않은 파일 ${snapshot.check.dirtyFiles}개가 사라집니다.`} HEAD ${snapshot.check.headOid}`
+          ? `${snapshot.check.unmergedCommits === 0 && snapshot.check.dirtyFiles === 0 ? "작업 폴더와 브랜치를 지웁니다." : `병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개와 커밋하지 않은 파일 ${snapshot.check.dirtyFiles}개가 사라집니다.`} HEAD ${snapshot.check.headOid}${snapshot.check.hasSubmodules ? `\n${SUBMODULES}` : ""}`
           : "현재 상태 확인 중…"
       : snapshot?.changes
         ? `기준 ${snapshot.changes.base} · 브랜치 ${task.branch} · 앞섬 ${snapshot.changes.ahead} · 뒤처짐 ${snapshot.changes.behind}\nHEAD ${snapshot.changes.headOid} · 기준 ${snapshot.changes.baseOid}${snapshot.intent.kind === "pr" ? `\nPR 제목: ${snapshot.intent.title}\n${snapshot.intent.body}` : snapshot.intent.message ? `\n커밋 메시지: ${snapshot.intent.message}` : ""}`

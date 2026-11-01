@@ -363,6 +363,20 @@ pub(crate) struct DiscardSnapshot {
     index: Vec<u8>,
     fingerprint: String,
     stamp: String,
+    /// What [`submodules`] said, part of the fingerprint: the confirmation warns of it.
+    submodules: bool,
+}
+/// Whether the discard's forced removal would also take initialized submodules, and with them
+/// their store under `.git/worktrees/<name>/modules`, unpushed commits included. Without an answer
+/// (a Git failure, or an index past the check's cap) it may: the confirmation then warns all the
+/// same, and the discard stays allowed.
+async fn submodules(dir: &Path) -> bool {
+    devbox_git::mutate::has_submodules(dir)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "submodule check failed; the discard warns of submodules");
+            true
+        })
 }
 fn unavailable(reason: &str) -> Fail<AgentsError> {
     AgentsError::DiscardSnapshotUnavailable {
@@ -420,7 +434,8 @@ impl AgentsService {
             ],
         )
         .await?;
-        let mut seed = format!("{head}\0{base}\0").into_bytes();
+        let submodules = submodules(dir).await;
+        let mut seed = format!("{head}\0{base}\0{submodules}\0").into_bytes();
         seed.extend_from_slice(&index_before);
         let directory = dir.to_owned();
         let walked = tokio::task::spawn_blocking(move || {
@@ -439,15 +454,18 @@ impl AgentsService {
             index: index_before,
             fingerprint: walked.fingerprint,
             stamp: walked.stamp,
+            submodules,
         })
     }
+    /// The fingerprint the user confirms a discard with, and whether it would take submodules.
     pub(crate) async fn discard_fingerprint(
         &self,
         dir: &Path,
         head: &str,
         base: &str,
-    ) -> Result<String> {
-        Ok(self.snapshot(dir, head, base).await?.fingerprint)
+    ) -> Result<(String, bool)> {
+        let snapshot = self.snapshot(dir, head, base).await?;
+        Ok((snapshot.fingerprint, snapshot.submodules))
     }
     /// Hashes the worktree a discard would remove, before the lifecycle lock. `None` when there
     /// is nothing to hash: no confirmed fingerprint, or a task the locked checks will refuse or
@@ -501,8 +519,8 @@ impl AgentsService {
             .await?;
         Ok(snapshot)
     }
-    /// Under the lifecycle lock: the worktree, index, head and base are still the hashed ones.
-    /// Compares metadata only and never opens a file, so any change since refuses the discard.
+    /// Under the lifecycle lock: the worktree, index, head, base and submodules are still the hashed
+    /// ones. Compares metadata only and never opens a file, so any change since refuses the discard.
     pub(crate) async fn verify_discard_snapshot(
         &self,
         snapshot: &DiscardSnapshot,
@@ -514,6 +532,7 @@ impl AgentsService {
             || snapshot.head != head
             || snapshot.base != base
             || index(dir).await? != snapshot.index
+            || submodules(dir).await != snapshot.submodules
         {
             return Err(changed(dir, head, base).await);
         }
@@ -530,65 +549,8 @@ impl AgentsService {
 }
 /// Test observation of each file whose bytes a discard hash reads.
 #[cfg(test)]
-pub(crate) mod probe {
-    use std::{
-        path::{Path, PathBuf},
-        sync::{Arc, Mutex},
-    };
-    type Watch = Arc<dyn Fn(&Path) + Send + Sync>;
-    /// Keyed by the hashed directory, so each test sees only its own worktree.
-    static WATCHES: Mutex<Vec<(PathBuf, Watch)>> = Mutex::new(Vec::new());
-    /// Watching stops when this is dropped.
-    pub(crate) struct Guard(PathBuf);
-    /// Calls `watch` with each file, relative to `root`, just before its bytes are read.
-    pub(crate) fn watch(root: &Path, watch: impl Fn(&Path) + Send + Sync + 'static) -> Guard {
-        let mut watches = WATCHES.lock().expect("discard probe");
-        watches.push((root.to_owned(), Arc::new(watch)));
-        Guard(root.to_owned())
-    }
-    pub(super) fn read(root: &Path, relative: &Path) {
-        let watches: Vec<Watch> = WATCHES
-            .lock()
-            .expect("discard probe")
-            .iter()
-            .filter(|(watched, _)| watched == root)
-            .map(|(_, watch)| watch.clone())
-            .collect();
-        for watch in watches {
-            watch(relative);
-        }
-    }
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            if let Ok(mut watches) = WATCHES.lock() {
-                watches.retain(|(watched, _)| watched != &self.0);
-            }
-        }
-    }
-    /// Listing caps in place of the real one, by worktree.
-    static CAPS: Mutex<Vec<(PathBuf, usize)>> = Mutex::new(Vec::new());
-    /// The cap applies until this is dropped.
-    pub(crate) struct Cap(PathBuf);
-    /// Caps each Git listing of `root` at `bytes`.
-    pub(crate) fn cap_listings(root: &Path, bytes: usize) -> Cap {
-        let mut caps = CAPS.lock().expect("discard probe");
-        caps.push((root.to_owned(), bytes));
-        Cap(root.to_owned())
-    }
-    pub(super) fn listing_cap(root: &Path) -> Option<usize> {
-        let caps = CAPS.lock().expect("discard probe");
-        caps.iter()
-            .find(|(capped, _)| capped == root)
-            .map(|(_, bytes)| *bytes)
-    }
-    impl Drop for Cap {
-        fn drop(&mut self) {
-            if let Ok(mut caps) = CAPS.lock() {
-                caps.retain(|(capped, _)| capped != &self.0);
-            }
-        }
-    }
-}
+#[path = "discard_probe.rs"]
+pub(crate) mod probe;
 #[cfg(test)]
 #[path = "discard_scan_tests.rs"]
 mod tests;

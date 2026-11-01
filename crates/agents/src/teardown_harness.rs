@@ -4,7 +4,8 @@
 //! - a transparent `git` that notes the arguments of each `git clean` and, when a removal starts,
 //!   whether the fixture's ignored file is still in the folder. In a `ref-lock` mode it also fails
 //!   the first deletion of `refs/heads/agent/review`, as a lock another Git process holds would,
-//!   whatever the ref backend.
+//!   whatever the ref backend. In a mode ending in `-unknown` it fails the lookup of the folder's
+//!   submodule store, so the submodule check has no answer.
 //!
 //! The child's Git reads no user or system configuration: HOME is an owned folder,
 //! `GIT_CONFIG_GLOBAL` is empty and `GIT_CONFIG_NOSYSTEM` is set. Its repositories use the `files`
@@ -62,6 +63,10 @@ case " $* " in
         printf '%s\n' "fatal: cannot lock ref 'refs/heads/agent/review'" >&2
         exit 128
       fi;;
+   esac;;
+ *" --git-path modules "*)
+   case "$DEVBOX_UNDO_CASE" in
+    *-unknown) printf '%s\n' "fatal: cannot read the submodule store" >&2; exit 128;;
    esac;;
 esac
 exec "$DEVBOX_UNDO_REAL_GIT" "$@"

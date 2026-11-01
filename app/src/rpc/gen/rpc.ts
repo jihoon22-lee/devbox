@@ -202,7 +202,12 @@ export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" |
 export type DiffSnapshot = { path: string, oldPath: string | null, staged: boolean, patch: string, hunks: Array<Hunk>, fileOnly: boolean, expect: FileExpect, };
 export type Direction = "sent" | "received";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
-export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
+export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, 
+/**
+ * The work folder has initialized submodules, or the check had no answer: the discard's forced
+ * removal also takes their store, with any commits not pushed. Part of the fingerprint.
+ */
+hasSubmodules: boolean, };
 export type DiskDocument = { key: DocKey, rev: DiskRev | null, text: string | null, readOnly: ReadOnly | null, };
 export type DiskRev = { hash: string, size: number, mtimeNs: string, ino: string, };
 export type DocKey = { root: string, path: string, };

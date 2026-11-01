@@ -284,6 +284,9 @@ pub struct DiscardCheck {
     pub dirty_files: u32,
     pub head_oid: String,
     pub fingerprint: Option<String>,
+    /// The work folder has initialized submodules, or the check had no answer: the discard's forced
+    /// removal also takes their store, with any commits not pushed. Part of the fingerprint.
+    pub has_submodules: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]

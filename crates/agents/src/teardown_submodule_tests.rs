@@ -27,6 +27,18 @@ fn the_submodule_code_never_covers_a_folder_cleanup_must_not_take() {
     );
 }
 
+/// A discard removes the work folder with force, which also takes an initialized submodule's store
+/// and any commits in it not pushed. Its confirmation says so, and says so as well when the check
+/// has no answer; the discard still goes.
+#[test]
+fn a_discard_warns_of_submodules_and_still_goes() {
+    cases(
+        "teardown_submodule_tests::a_discard_warns_of_submodules_and_still_goes",
+        &["discard-submodule", "discard-submodule-unknown"],
+        case,
+    );
+}
+
 /// Adds an initialized submodule `lib` to the work folder, then commits in it a change that exists
 /// only in the folder's own submodule store, which a forced removal would lose. Returns the
 /// submodule's folder and that commit.
@@ -256,6 +268,33 @@ async fn case(mode: String) {
             assert!(!ran.exists());
             assert_eq!(f.svc.get(&task.id).await.expect("task").cleanup_error, None);
             untouched(&f, &wt, &sub, &unpushed, "unpushed\n").await;
+        }
+        "discard-submodule" | "discard-submodule-unknown" => {
+            if mode == "discard-submodule" {
+                let check = f.svc.discard_check(&task.id).await.expect("check");
+                assert!(!check.has_submodules, "nothing to warn of yet");
+                add_submodule(&f, &wt).await;
+            }
+            let check = f
+                .svc
+                .discard_check(&task.id)
+                .await
+                .expect("discard confirmation");
+            assert!(check.has_submodules, "{check:?}");
+            f.svc
+                .discard(DiscardAgent {
+                    id: task.id.clone(),
+                    expect: ReviewExpect {
+                        head_oid: check.head_oid,
+                        base_oid: None,
+                        unmerged_commits: Some(check.unmerged_commits),
+                        discard_fingerprint: check.fingerprint,
+                    },
+                })
+                .await
+                .expect("the discard still goes");
+            assert!(!wt.exists());
+            assert!(!has_branch(&f).await);
         }
         other => panic!("unknown mode {other}"),
     }

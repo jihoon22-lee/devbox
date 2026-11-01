@@ -31,14 +31,16 @@ fn discard_drops_what_its_own_teardown_wrote() {
     ]);
 }
 /// A change made after the user confirmed the discard and before its teardown runs (here, while
-/// the agent stops) is still refused, before the teardown: an edit, or a commit that changes no
-/// file and so leaves the folder's listing and stamp as they were. So is a teardown that moves
-/// HEAD, or the base branch, which the UI's confirmation pins only through the snapshot.
+/// the agent stops) is still refused, before the teardown: an edit, a commit that changes no file
+/// and so leaves the folder's listing and stamp as they were, or a submodule store made outside
+/// the folder, which the confirmation warned of or not. So is a teardown that moves HEAD, or the
+/// base branch, which the UI's confirmation pins only through the snapshot.
 #[test]
 fn discard_still_refuses_a_change_before_its_teardown_and_a_moved_head() {
     cases(&[
         "teardown-discard-late-dirty",
         "teardown-discard-late-commit",
+        "teardown-discard-late-submodules",
         "teardown-discard-moved",
         "teardown-discard-base-moved",
     ]);
@@ -73,6 +75,7 @@ pub(super) async fn case(mode: &str) {
         "wrote",
         "late-dirty",
         "late-commit",
+        "late-submodules",
         "moved",
     ]
     .iter()
@@ -87,7 +90,7 @@ pub(super) async fn case(mode: &str) {
             "printf edited > tracked"
         } else if mode.ends_with("wrote") {
             "printf x > teardown.log"
-        } else if mode.ends_with("late-dirty") || mode.ends_with("late-commit") {
+        } else if mode.contains("-late-") {
             "true"
         } else if mode.ends_with("base-moved") {
             "git update-ref refs/heads/main \"$(git commit-tree -p main -m moved 'main^{tree}')\""
@@ -331,7 +334,7 @@ pub(super) async fn case(mode: &str) {
             .await
             .map(|_| ())
     };
-    if mode.ends_with("late-dirty") || mode.ends_with("late-commit") || mode.ends_with("moved") {
+    if mode.starts_with("teardown-discard-late-") || mode.ends_with("moved") {
         assert!(
             matches!(result, Err(Fail::Domain(AgentsError::StateChanged { .. }))),
             "{result:?}"
@@ -341,7 +344,7 @@ pub(super) async fn case(mode: &str) {
             f.svc.get(&task.id).await.expect("task").state,
             AgentState::Closed
         );
-        if mode.ends_with("late-dirty") || mode.ends_with("late-commit") {
+        if mode.starts_with("teardown-discard-late-") {
             // Refused right after the agent stopped: the teardown never ran.
             assert!(!first.exists() && !second.exists());
         } else {
