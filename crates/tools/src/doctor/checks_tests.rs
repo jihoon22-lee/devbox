@@ -220,7 +220,7 @@ fn reports_all_four_agent_tools_with_versions() {
     // The login and interactive shells disagree: the task uses the interactive one.
     assert_eq!(
         check(&checks, "tool.codex").message,
-        "로그인 셸과 대화형 셸이 다른 codex을 가리킵니다. devbox는 대화형 셸의 /home/u/.nvm/bin/codex(0.164.0)를 씁니다."
+        "로그인 셸과 대화형 셸이 다른 codex 실행 파일을 가리킵니다. devbox는 대화형 셸의 /home/u/.nvm/bin/codex(0.164.0)를 씁니다."
     );
     let order: Vec<_> = checks.iter().map(|c| c.id.as_str()).collect();
     let at = |id: &str| order.iter().position(|c| *c == id).expect("listed");

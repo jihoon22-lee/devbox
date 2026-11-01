@@ -34,7 +34,7 @@ export const command = (d: unknown) => {
 };
 export const toolMissing = (d: unknown) => ({
   title: `${command(d)} 명령을 찾을 수 없습니다.`,
-  action: "설정 → 환경 점검에서 설치 방법을 확인하세요.",
+  action: "설정 → 앱 진단 → 환경 점검에서 설치 방법을 확인하세요.",
 });
 export const check = "입력란을 확인해 주세요.";
 export const configFile = (d: unknown) => {

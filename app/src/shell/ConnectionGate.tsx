@@ -116,7 +116,14 @@ export function GateView({
         />
       );
     case "setupFailed":
-      return <View title="WSL 쪽 설치에 실패했습니다" body={status.detail ?? ""} action={failed} />;
+      // The raw text is often an OS or WSL message in English; it is under [자세히], not here.
+      return (
+        <View
+          title="WSL 쪽 설치에 실패했습니다"
+          body="[자세히]에서 원인을 확인하고 [다시 시도]하세요."
+          action={failed}
+        />
+      );
     case "bridgeFailed":
       return (
         <View

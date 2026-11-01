@@ -484,7 +484,7 @@ test("a taken name is explained with the fixed code message and the typed name s
     }),
   );
   const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("같은 이름의 브랜치가 이미 있습니다.");
+  expect(alert).toHaveTextContent("같은 이름의 브랜치나 작업 폴더가 이미 있습니다: agent/fix-taken");
   expect(alert).toHaveTextContent("브랜치 이름을 바꿔");
   expect(branchField()).toHaveValue("fix-taken");
   await userEvent.type(branchField(), "-2");

@@ -1,4 +1,4 @@
-import { cloneMessage, files, type Message, type Messages, path, toolMissing } from "./messageDetail";
+import { cloneMessage, field, files, type Message, type Messages, path, toolMissing } from "./messageDetail";
 
 type Domain = "agents" | "projects" | "terminal";
 /**
@@ -117,7 +117,7 @@ export const AGENT_MESSAGES: Messages<Domain> = {
   },
   "agents.slug_exhausted": {
     title: "같은 이름의 에이전트 작업이 너무 많습니다.",
-    action: "다른 제목을 입력해 주세요.",
+    action: "다른 제목을 입력해 주세요. 또는 브랜치 이름을 직접 입력해 주세요.",
   },
   "agents.not_found": { title: "에이전트 작업을 찾을 수 없습니다.", action: "목록을 다시 확인해 주세요." },
   "agents.project_not_found": {
@@ -166,9 +166,16 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     title: "작업 폴더의 소유 상태를 확인할 수 없습니다.",
     action: "등록된 작업 폴더와 경로를 확인해 주세요.",
   },
-  "agents.branch_exists": {
-    title: "같은 이름의 브랜치가 이미 있습니다.",
-    action: "브랜치 이름을 바꿔 다시 시작해 주세요.",
+  // The daemon also refuses a name whose work folder exists, so the title names both.
+  "agents.branch_exists": (d) => {
+    const branch = field(d, "branch");
+    return {
+      title:
+        typeof branch === "string" && branch
+          ? `같은 이름의 브랜치나 작업 폴더가 이미 있습니다: ${branch}`
+          : "같은 이름의 브랜치나 작업 폴더가 이미 있습니다.",
+      action: "브랜치 이름을 바꿔 다시 시작해 주세요.",
+    };
   },
   "agents.worktree_add_partial": {
     title: "작업 폴더 준비가 일부만 완료되었습니다.",

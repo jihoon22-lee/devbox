@@ -29,14 +29,16 @@ test("agent errors use actual generated file details and terminal codes", () => 
   for (const code of ["agents.tool_missing", "projects.launch_tool_missing"] as const) {
     expect(messageFor(code, { command: "pi" })).toEqual({
       title: "pi 명령을 찾을 수 없습니다.",
-      action: "설정 → 환경 점검에서 설치 방법을 확인하세요.",
+      action: "설정 → 앱 진단 → 환경 점검에서 설치 방법을 확인하세요.",
     });
   }
 });
 
 test("an unready Windows job holder says to run again and where to look", () => {
+  // The bootstrap refuses before it writes its assignment receipt, which comes before any
+  // command, so "run again" is safe and the copy says the command did not run.
   expect(messageFor("windows.observer_unavailable")).toEqual({
-    title: "Windows 작업 관찰을 준비하지 못했습니다.",
+    title: "Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다).",
     action: "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.",
   });
 });
@@ -47,8 +49,12 @@ test("a busy Windows copy names a live run and leftover build servers, and how t
   expect(busy).toEqual({
     title: "Windows 사본을 쓰는 실행이나 그 실행이 남긴 프로세스(빌드 서버 등)가 아직 끝나지 않았습니다.",
     action:
-      "끝날 때까지 기다린 뒤 다시 실행하세요. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)는 한동안 쓰이지 않아야 스스로 끝나므로, 바로 끝내려면 Windows 터미널에서 dotnet build-server shutdown이나 gradle --stop(Gradle Wrapper 프로젝트는 gradlew --stop)을 실행하거나 작업 관리자에서 끝내세요. 모두 끝났는데도 1분 넘게 계속되면 Windows 앱 연결을 확인해 주세요.",
+      "끝날 때까지 기다린 뒤 다시 실행하세요. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)는 한동안 쓰이지 않아야 스스로 끝나므로, 바로 끝내려면 Windows 터미널에서 dotnet build-server shutdown이나 gradle --stop(Gradle Wrapper 프로젝트는 .\\gradlew --stop)을 실행하거나 작업 관리자에서 끝내세요. 모두 끝났는데도 1분 넘게 계속되면 Windows 앱 연결을 확인해 주세요.",
   });
+  // PowerShell, Windows Terminal's default shell, runs a script of the current folder only with a
+  // path: `.\gradlew`, which cmd also takes. The backslash must reach the screen (a literal "\g"
+  // in a TS string would not).
+  expect(busy.action).toContain(String.raw`.\gradlew --stop`);
   // From WSL these commands reach only the Linux servers. A release that needs a probe can take
   // about a minute, so the connection hint waits that long.
   // "Gradle daemon" stays a build server: 데몬 is the devbox daemon on diagnostics screens only.
@@ -64,6 +70,20 @@ test("a plain error line gives what happened, then what to do when the table say
   expect(messageFor("cancelled").action).toBeUndefined();
   expect(messageText("cancelled")).toBe(messageFor("cancelled").title);
   expect(messageText("agents.base_dirty", { files: ["a.rs"] })).toContain("a.rs");
+});
+
+test("a taken branch name names the branch and says a work folder can be the cause too", () => {
+  expect(messageFor("agents.branch_exists", { branch: "agent/fix-login" })).toEqual({
+    title: "같은 이름의 브랜치나 작업 폴더가 이미 있습니다: agent/fix-login",
+    action: "브랜치 이름을 바꿔 다시 시작해 주세요.",
+  });
+  // Without a usable branch in the detail, the sentence stands without the name.
+  for (const detail of [undefined, {}, { branch: "" }, { branch: 7 }])
+    expect(messageFor("agents.branch_exists", detail).title).toBe("같은 이름의 브랜치나 작업 폴더가 이미 있습니다.");
+  expect(messageFor("agents.slug_exhausted")).toEqual({
+    title: "같은 이름의 에이전트 작업이 너무 많습니다.",
+    action: "다른 제목을 입력해 주세요. 또는 브랜치 이름을 직접 입력해 주세요.",
+  });
 });
 
 test("redaction failure actions distinguish capacity and rejected server input", () => {

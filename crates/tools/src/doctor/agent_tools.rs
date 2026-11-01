@@ -41,7 +41,7 @@ pub(super) fn tool_check(agent: AgentTool, found: Probed<Option<AgentCommand>>) 
     let version = command.version.as_deref().unwrap_or("버전 확인 못 함");
     let message = if command.interactive && command.login_path.is_some() {
         format!(
-            "로그인 셸과 대화형 셸이 다른 {tool}을 가리킵니다. devbox는 대화형 셸의 {path}({version})를 씁니다."
+            "로그인 셸과 대화형 셸이 다른 {tool} 실행 파일을 가리킵니다. devbox는 대화형 셸의 {path}({version})를 씁니다."
         )
     } else {
         format!("{tool} {version} · {source} · {path}")

@@ -298,7 +298,8 @@ where
 }
 
 /// The run-log copy for `windows.observer_unavailable`: the screen table's exact text.
-const OBSERVER_UNAVAILABLE_TITLE: &str = "Windows 작업 관찰을 준비하지 못했습니다.";
+const OBSERVER_UNAVAILABLE_TITLE: &str =
+    "Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다).";
 const OBSERVER_UNAVAILABLE_ACTION: &str = "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.";
 /// The bootstrap exits 75 for itself only when its job holder was not ready, which is before
 /// the `assigned` receipt is written. So 75 is the fixed code only with proof that no receipt
@@ -429,7 +430,7 @@ mod tests {
             observer_unavailable_line(&devbox_runtime::RuntimeError::WindowsObserverUnavailable);
         assert_eq!(
             line,
-            "windows.observer_unavailable: Windows 작업 관찰을 준비하지 못했습니다. 다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요."
+            "windows.observer_unavailable: Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다). 다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요."
         );
         // The same strings as the screen's message table, so the two cannot drift.
         let table = include_str!("../../../app/src/rpc/systemMessages.ts");

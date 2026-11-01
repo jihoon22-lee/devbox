@@ -118,6 +118,19 @@ test("자세히 shows the failed step and the log tail with 복사, and survives
   expect(screen.getByText("native child")).toBeInTheDocument();
   expect(screen.queryByRole("region", { name: "연결 실패 자세히" })).toBeNull();
 });
+test("a failed setup has a fixed body, and the raw text of what failed stays in the details", async () => {
+  const raw = "서비스 다시 시작 실패: Failed to connect to bus: No such file or directory";
+  mocks.invoke.mockImplementation(async (cmd) =>
+    cmd === "gate_status" ? failed("setupFailed", "1", raw) : cmd === "daemon_log_tail" ? "journal tail" : undefined,
+  );
+  render(<ConnectionGate>native child</ConnectionGate>);
+  expect(await screen.findByText("WSL 쪽 설치에 실패했습니다")).toBeInTheDocument();
+  expect(screen.getByText("[자세히]에서 원인을 확인하고 [다시 시도]하세요.")).toBeInTheDocument();
+  expect(screen.queryByText(raw)).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "자세히" }));
+  const details = await screen.findByRole("region", { name: "연결 실패 자세히" });
+  expect(within(details).getByText(raw)).toBeInTheDocument();
+});
 test("no pre-connection copy says 데몬, including details and an unreadable log", async () => {
   const states = [
     "checking",
@@ -245,7 +258,8 @@ test("post-ready recovery retains user state and permits repeated retry and dist
     act(() => mocks.listen.mock.calls.at(-1)?.[1]({ payload: latest }));
   };
   publish("setupFailed", "2");
-  expect(screen.getByText("units FAIL")).toBeInTheDocument();
+  expect(screen.getByText("[자세히]에서 원인을 확인하고 [다시 시도]하세요.")).toBeInTheDocument();
+  expect(screen.queryByText("units FAIL")).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "다시 시도" }));
   await waitFor(() => expect(mocks.listen).toHaveBeenCalledTimes(2));
   publish("bridgeFailed", "3");
