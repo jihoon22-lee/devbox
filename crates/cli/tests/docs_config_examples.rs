@@ -39,7 +39,8 @@ fn debug(error: impl Debug) -> String {
 
 /// Each TOML block: the line its fence opens on, and its body. Backtick and tilde fences of any
 /// length count, and the info string's first word is compared without case, so ```` ```TOML ````
-/// and `~~~toml` blocks are checked too.
+/// and `~~~toml` blocks are checked too. A first word that contains `toml` without being it
+/// (`toml,ignore`, `{toml}`) is an error, not a block that is skipped.
 fn toml_blocks(doc: &str) -> Result<Vec<(usize, String)>, String> {
     // The open fence: its character, its length, and the TOML block it holds, if it is one.
     let (mut blocks, mut open) = (Vec::new(), None::<(char, usize, Option<(usize, String)>)>);
@@ -59,6 +60,14 @@ fn toml_blocks(doc: &str) -> Result<Vec<(usize, String)>, String> {
         } else if let Some(mark) = mark.filter(|_| run >= 3) {
             let info = rest.split_whitespace().next().unwrap_or_default();
             let toml = info.eq_ignore_ascii_case("toml");
+            // `toml,ignore` or `{toml}` would be skipped without a word and never read.
+            if !toml && info.to_ascii_lowercase().contains("toml") {
+                return Err(format!(
+                    "line {}: info string {info:?} names TOML but is not `toml`, so the block \
+                     would not be checked",
+                    index + 1
+                ));
+            }
             open = Some((mark, run, toml.then(|| (index + 1, String::new()))));
         }
     }
@@ -164,4 +173,30 @@ fn every_toml_example_in_the_config_doc_loads_without_problems() {
         seen.iter().all(|count| *count > 0),
         "each of {MARKERS:?} needs an example; found {seen:?}"
     );
+}
+
+#[test]
+fn a_fence_that_names_toml_any_other_way_than_plain_toml_is_refused() {
+    let fence = |info: &str| format!("```{info}\n# config.toml\n[pc]\nname = \"x\"\n```\n");
+    // Left unrefused, each of these would be skipped without a word and never read.
+    for info in [
+        "toml,ignore",
+        "{toml}",
+        ".toml",
+        "language-toml",
+        "Toml-ignore",
+    ] {
+        let error = toml_blocks(&fence(info)).expect_err(info);
+        assert!(
+            error.contains("line 1") && error.contains(info),
+            "{info}: {error}"
+        );
+    }
+    // Plain `toml` in any case is checked, whatever follows it; other languages are not TOML.
+    for info in ["toml", "TOML", "toml title=\"x\""] {
+        assert_eq!(toml_blocks(&fence(info)).expect(info).len(), 1, "{info}");
+    }
+    for info in ["", "json", "bash", "text"] {
+        assert!(toml_blocks(&fence(info)).expect(info).is_empty(), "{info}");
+    }
 }

@@ -498,6 +498,10 @@ fn a_claude_draft_in_shell_mode_is_waiting() {
     assert_ne!(normal, shell);
     assert!(!normal.contains("! for shell mode"));
     assert!(!matches_waiting(&patterns, &normal));
+    // Only the footer changed, with the `!` draft kept: the draft row marks nothing by itself.
+    let footer_only = shell.replacen("! for shell mode", "? for shortcuts", 1);
+    assert!(footer_only.contains("! git st") && !footer_only.contains("! for shell mode"));
+    assert!(!matches_waiting(&patterns, &footer_only));
     // A normal idle screen, and words about the mode that are not its footer, are not the mode.
     let working = screen(include_str!("../tests/fixtures/claude-2.1.308/working.txt"));
     assert!(!matches_waiting(&patterns, working));
