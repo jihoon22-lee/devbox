@@ -1,5 +1,7 @@
 //! One worker owns each attempt until cancellation cleanup has finished. The first attempt is
-//! the automatic start; every later one answers a user's retry (`retried`).
+//! the automatic start; every later one answers `gate_retry`: a distro choice when it carries a
+//! distro, [다시 시도] otherwise. The attempt gets that as its `SetupTrigger`.
+use super::deploy::SetupTrigger;
 use std::future::Future;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -8,7 +10,7 @@ pub async fn run<F, Fut>(
     stop: CancellationToken,
     mut attempt: F,
 ) where
-    F: FnMut(u64, Option<String>, bool, CancellationToken) -> Fut,
+    F: FnMut(u64, Option<String>, SetupTrigger, CancellationToken) -> Fut,
     Fut: Future<Output = ()>,
 {
     let mut generation = 0u64;
@@ -19,8 +21,13 @@ pub async fn run<F, Fut>(
         }
         generation = generation.checked_add(1).expect("generation exhausted");
         let forced = retries.borrow_and_update().clone();
+        let trigger = match (retried, &forced) {
+            (false, _) => SetupTrigger::Launch,
+            (true, Some(_)) => SetupTrigger::DistroChoice,
+            (true, None) => SetupTrigger::Retry,
+        };
         let cancel = stop.child_token();
-        let work = attempt(generation, forced, retried, cancel.clone());
+        let work = attempt(generation, forced, trigger, cancel.clone());
         tokio::pin!(work);
         tokio::select! {
             _=stop.cancelled()=>{cancel.cancel();work.await;return;}
@@ -65,20 +72,41 @@ mod tests {
         assert_eq!(active.load(Ordering::SeqCst), 0);
     }
     #[tokio::test]
-    async fn only_runs_after_a_user_retry_are_marked_as_retries() {
+    async fn each_run_names_what_started_it() {
         let (tx, rx) = watch::channel(None);
         let stop = CancellationToken::new();
         let (seen, mut runs) = tokio::sync::mpsc::unbounded_channel();
-        let task = tokio::spawn(run(rx, stop.clone(), move |generation, _, retried, _| {
-            seen.send((generation, retried)).unwrap();
+        let task = tokio::spawn(run(rx, stop.clone(), move |generation, _, trigger, _| {
+            seen.send((generation, trigger)).unwrap();
             async {}
         }));
-        // The automatic start, then [다시 시도] twice (a distro choice is a retry too).
-        assert_eq!(runs.recv().await, Some((1, false)));
+        // The automatic start, a distro chosen on the connection screen, then [다시 시도].
+        assert_eq!(runs.recv().await, Some((1, SetupTrigger::Launch)));
         tx.send_replace(Some("distro".into()));
-        assert_eq!(runs.recv().await, Some((2, true)));
+        assert_eq!(runs.recv().await, Some((2, SetupTrigger::DistroChoice)));
         tx.send_replace(None);
-        assert_eq!(runs.recv().await, Some((3, true)));
+        assert_eq!(runs.recv().await, Some((3, SetupTrigger::Retry)));
+        stop.cancel();
+        task.await.unwrap();
+    }
+    #[tokio::test]
+    async fn a_retry_during_a_running_attempt_forces_the_restart() {
+        // [다시 시도] usually arrives while the bridge loop still runs: the attempt is still
+        // waiting on its token, so the loop takes its `changed` arm, not the finished one.
+        let (tx, rx) = watch::channel(None);
+        let stop = CancellationToken::new();
+        let (seen, mut runs) = tokio::sync::mpsc::unbounded_channel();
+        let task = tokio::spawn(run(
+            rx,
+            stop.clone(),
+            move |generation, _, trigger: SetupTrigger, token: CancellationToken| {
+                seen.send((generation, trigger.forces_restart())).unwrap();
+                async move { token.cancelled().await }
+            },
+        ));
+        assert_eq!(runs.recv().await, Some((1, false)));
+        tx.send_replace(None);
+        assert_eq!(runs.recv().await, Some((2, true)));
         stop.cancel();
         task.await.unwrap();
     }

@@ -2,6 +2,7 @@ use super::{connection::Connection, deploy, wsl};
 use crate::core::{
     bridge::{self, Event},
     connection::{INSTANCE, IpcError},
+    deploy::SetupTrigger,
     process::ShellError,
     secrets::{self, NativeSecrets},
     settings, wsl as selection,
@@ -27,7 +28,7 @@ pub async fn run(
     conn: &Connection,
     generation: u64,
     forced: Option<String>,
-    retried: bool,
+    trigger: SetupTrigger,
     cancel: CancellationToken,
 ) {
     conn.gate(app, generation, "checking", None, None);
@@ -123,7 +124,7 @@ pub async fn run(
     let setup = async {
         let _guard = deploy::maintenance_wait(cancel.clone()).await?;
         let bytes = deploy::bundled_binary(app)?;
-        deploy::apply(&distro, INSTANCE, bytes, retried, cancel.clone()).await
+        deploy::apply(&distro, INSTANCE, bytes, trigger, cancel.clone()).await
     }
     .await;
     if let Err(e) = setup {

@@ -35,9 +35,42 @@ mod tests {
         .await
     }
     #[test]
-    fn setup_forces_the_daemon_restart_only_for_user_runs() {
-        assert_eq!(setup_args(false), ["setup", "--json"]);
-        assert_eq!(setup_args(true), ["setup", "--json", "--restart"]);
+    fn only_a_retry_or_a_redeploy_forces_the_daemon_restart() {
+        for (trigger, restarts) in [
+            (SetupTrigger::Launch, false),
+            (SetupTrigger::Retry, true),
+            (SetupTrigger::Redeploy, true),
+            (SetupTrigger::DistroChoice, false),
+        ] {
+            assert_eq!(trigger.forces_restart(), restarts, "{trigger:?}");
+            let expected: &[&str] = if restarts {
+                &["setup", "--json", "--restart"]
+            } else {
+                &["setup", "--json"]
+            };
+            assert_eq!(setup_args(trigger), expected, "{trigger:?}");
+        }
+    }
+    #[test]
+    fn each_setup_call_site_passes_its_trigger() {
+        // Both call sites are Windows-only code: the MSVC check compiles them, and this pins
+        // them. Whitespace is dropped so that formatting cannot hide or fake a match.
+        let flat = |source: &str| source.split_whitespace().collect::<String>();
+        let deploy = flat(include_str!("../platform/deploy.rs"));
+        let redeploy = &deploy[deploy.find("pubasyncfnredeploy_wsl").expect("redeploy_wsl")..];
+        assert!(redeploy.contains("apply(&distro,INSTANCE,bytes,SetupTrigger::Redeploy,"));
+        assert!(deploy.contains("||setup(distro,instance,trigger,cancel)"));
+        assert!(deploy.contains(".args(setup_args(trigger))"));
+        // The supervisor passes on what the supervision loop chose, and never names a trigger.
+        let connection = flat(include_str!("../platform/connection.rs"));
+        let supervisor = flat(include_str!("../platform/supervisor.rs"));
+        assert!(
+            connection.contains("supervisor::run(&app,&conn,generation,forced,trigger,cancel)")
+        );
+        assert!(supervisor.contains("deploy::apply(&distro,INSTANCE,bytes,trigger,"));
+        for source in [&connection, &supervisor] {
+            assert!(!source.contains("SetupTrigger::"));
+        }
     }
     #[tokio::test]
     async fn redeploy_uses_the_first_launch_deploy_plan() {
@@ -333,11 +366,31 @@ pub fn install_script() -> String {
 pub fn exec_script() -> String {
     exec_script_for(CHANNEL)
 }
-/// `devbox setup` arguments. The automatic start restarts the daemon only when its install
-/// changed; a user's [다시 설정] or [다시 시도] (`restart`) always restarts it, so a hung but
-/// active daemon can still be recovered.
-pub fn setup_args(restart: bool) -> &'static [&'static str] {
-    if restart {
+/// What started a setup run. Without `--restart`, setup restarts the daemon only when its install
+/// changed or the unit does not already run it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupTrigger {
+    /// The automatic start: app launch or sign-in autostart.
+    Launch,
+    /// [다시 시도] on the connection screen or the connection banner (`gate_retry` without a
+    /// distro).
+    Retry,
+    /// [다시 설정] (`redeploy_wsl`).
+    Redeploy,
+    /// A distro chosen on the connection screen (`gate_retry` with one). Its `enable --now` has
+    /// just started the daemon, so a forced restart would only add a cold start.
+    DistroChoice,
+}
+impl SetupTrigger {
+    /// Only the two user actions force the restart. A daemon that hangs while systemd reports it
+    /// active is restarted no other way: an app relaunch finds it running this install.
+    pub fn forces_restart(self) -> bool {
+        matches!(self, Self::Retry | Self::Redeploy)
+    }
+}
+/// `devbox setup` arguments for a run started by `trigger`.
+pub fn setup_args(trigger: SetupTrigger) -> &'static [&'static str] {
+    if trigger.forces_restart() {
         &["setup", "--json", "--restart"]
     } else {
         &["setup", "--json"]

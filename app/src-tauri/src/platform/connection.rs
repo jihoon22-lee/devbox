@@ -11,7 +11,8 @@ pub type FrameChannel = Channel<InvokeResponseBody>;
 struct Shared {
     state: Mutex<State<FrameChannel>>,
     attempt: crate::core::maintenance::AttemptControl,
-    /// Only user actions (`gate_retry`) send here: the next supervisor run forces a daemon restart.
+    /// Only `gate_retry` sends here: a distro chosen on the connection screen, or `None` for
+    /// [다시 시도]. The supervision loop turns that into the next run's `SetupTrigger`.
     retry: watch::Sender<Option<String>>,
     stop: CancellationToken,
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
@@ -130,7 +131,7 @@ async fn supervise(app: AppHandle, conn: Connection) {
     crate::core::supervision::run(
         conn.0.retry.subscribe(),
         conn.0.stop.clone(),
-        move |generation, forced, retried, cancel| {
+        move |generation, forced, trigger, cancel| {
             let app = app.clone();
             let conn = conn.clone();
             async move {
@@ -138,7 +139,7 @@ async fn supervise(app: AppHandle, conn: Connection) {
                     return;
                 };
                 conn.state().generation = generation;
-                super::supervisor::run(&app, &conn, generation, forced, retried, cancel).await;
+                super::supervisor::run(&app, &conn, generation, forced, trigger, cancel).await;
             }
         },
     )
