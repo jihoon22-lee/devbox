@@ -11,15 +11,45 @@ use std::path::{Path, PathBuf};
 /// submodule check has no answer, so nothing is removed either.
 const INDEX_BYTES: usize = 32 * 1024 * 1024;
 
-/// Whether the index marks an entry assume-unchanged (a lowercase tag in `git ls-files -v`) or
-/// skip-worktree (`S`). `git status` shows no edit to such a file, so the folder can look clean
-/// while it holds one, maybe the user's: nothing may be undone there.
-pub async fn hides_edits(dir: &Path) -> Result<bool, GitError> {
+/// What the index of a work folder says about undoing what changed in it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexUndo {
+    /// The undo may run.
+    Safe,
+    /// An entry may hold an edit `git status` does not show, maybe the user's.
+    HiddenEdit,
+    /// No plain entry: `git restore -- .` would match nothing and fail.
+    NoPlainEntry,
+}
+
+/// What the index of the work folder `dir` says about undoing what changed in it, entry by entry
+/// from `git ls-files -v` (`<tag> <path>`):
+/// - an entry marked assume-unchanged (a lowercase tag) may hold an edit `git status` does not
+///   show, maybe the user's;
+/// - so may a skip-worktree entry (`S`) whose file is in the folder. One whose file is absent holds
+///   none: a sparse checkout leaves every entry outside its cone so, and `git worktree add` copies
+///   a sparse checkout to the new folder;
+/// - with no plain entry (`H`) at all, `git restore -- .` matches nothing and fails.
+pub async fn index_undo(dir: &Path) -> Result<IndexUndo, GitError> {
     let listing = git_bytes(dir, &["ls-files", "-v", "-z"], INDEX_BYTES).await?;
-    Ok(listing
+    let mut plain = false;
+    for entry in listing
         .split(|byte| *byte == 0)
-        .filter_map(|entry| entry.first())
-        .any(|tag| tag.is_ascii_lowercase() || *tag == b'S'))
+        .filter(|entry| !entry.is_empty())
+    {
+        let (tag, path) = (entry[0], entry.get(2..).unwrap_or_default());
+        if tag.is_ascii_lowercase()
+            || tag == b'S' && std::fs::symlink_metadata(dir.join(listed(path))).is_ok()
+        {
+            return Ok(IndexUndo::HiddenEdit);
+        }
+        plain |= tag == b'H';
+    }
+    Ok(if plain {
+        IndexUndo::Safe
+    } else {
+        IndexUndo::NoPlainEntry
+    })
 }
 
 /// Whether Git refuses to remove the work folder `dir` without force for its submodules, by the

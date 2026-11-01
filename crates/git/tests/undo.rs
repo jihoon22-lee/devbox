@@ -167,8 +167,13 @@ async fn worktree_clean_is_the_check_a_removal_without_force_makes() {
     ));
 }
 
+async fn undo_of(dir: &Path) -> git::mutate::IndexUndo {
+    git::mutate::index_undo(dir).await.expect("index flags")
+}
+
 #[tokio::test]
-async fn hides_edits_finds_entries_whose_edits_status_does_not_show() {
+async fn index_undo_counts_assume_unchanged_always_and_skip_worktree_only_where_its_file_is() {
+    use git::mutate::IndexUndo::{HiddenEdit, Safe};
     let root = tempfile::tempdir().expect("owned fixture");
     let dir = repo(root.path(), "work");
     for name in ["a.txt", "b.txt", "c.txt"] {
@@ -176,30 +181,94 @@ async fn hides_edits_finds_entries_whose_edits_status_does_not_show() {
     }
     sh(&dir, &["add", "."]);
     sh(&dir, &["commit", "-qm", "init"]);
-    assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
+    assert_eq!(undo_of(&dir).await, Safe);
     // An edit status shows is not hidden.
     std::fs::write(dir.join("c.txt"), "shown\n").expect("owned fixture");
-    assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
-    for (flag, name) in [
-        ("--assume-unchanged", "a.txt"),
-        ("--skip-worktree", "b.txt"),
-    ] {
-        sh(&dir, &["update-index", flag, name]);
-        std::fs::write(dir.join(name), "the user's edit\n").expect("owned fixture");
-        // Status lists only the edit it can see, so a clean check alone would miss this one.
-        assert_eq!(
-            sh(&dir, &["status", "--porcelain=v1"]),
-            " M c.txt\n",
-            "{flag}"
-        );
-        assert!(
-            git::mutate::hides_edits(&dir).await.expect("index flags"),
-            "{flag}"
-        );
-        sh(&dir, &["update-index", &flag.replace("--", "--no-"), name]);
-        std::fs::write(dir.join(name), "base\n").expect("owned fixture");
-        assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
+    assert_eq!(undo_of(&dir).await, Safe);
+    // Assume-unchanged counts with or without an edit: status would show neither.
+    sh(&dir, &["update-index", "--assume-unchanged", "a.txt"]);
+    assert_eq!(undo_of(&dir).await, HiddenEdit);
+    std::fs::write(dir.join("a.txt"), "the user's edit\n").expect("owned fixture");
+    assert_eq!(sh(&dir, &["status", "--porcelain=v1"]), " M c.txt\n");
+    assert_eq!(undo_of(&dir).await, HiddenEdit);
+    sh(&dir, &["update-index", "--no-assume-unchanged", "a.txt"]);
+    std::fs::write(dir.join("a.txt"), "base\n").expect("owned fixture");
+    // Skip-worktree counts while its file is in the folder, where it can hold an edit status does
+    // not show...
+    sh(&dir, &["update-index", "--skip-worktree", "b.txt"]);
+    std::fs::write(dir.join("b.txt"), "the user's edit\n").expect("owned fixture");
+    assert_eq!(sh(&dir, &["status", "--porcelain=v1"]), " M c.txt\n");
+    assert_eq!(undo_of(&dir).await, HiddenEdit);
+    // ...and not once the file is gone: an absent file holds no edit.
+    std::fs::remove_file(dir.join("b.txt")).expect("owned fixture");
+    assert_eq!(undo_of(&dir).await, Safe);
+}
+
+#[tokio::test]
+async fn index_undo_lets_a_sparse_checkout_be_undone_and_keeps_out_what_restore_cannot_match() {
+    use git::mutate::IndexUndo::{HiddenEdit, NoPlainEntry, Safe};
+    let root = tempfile::tempdir().expect("owned fixture");
+    let main = repo(root.path(), "main");
+    for name in ["top.txt", "keep/kept.txt", "out/outside.txt"] {
+        let file = main.join(name);
+        std::fs::create_dir_all(file.parent().expect("owned fixture")).expect("owned fixture");
+        std::fs::write(file, "base\n").expect("owned fixture");
     }
+    sh(&main, &["add", "."]);
+    sh(&main, &["commit", "-qm", "init"]);
+    sh(&main, &["sparse-checkout", "set", "--cone", "keep"]);
+    // A worktree added from a sparse checkout is sparse too: the entry outside the cone is
+    // skip-worktree and its file is not there.
+    let add = |name: &str| {
+        let dir = root.path().join(name);
+        let path = dir.to_str().expect("owned fixture");
+        sh(&main, &["worktree", "add", "-q", "-b", name, path]);
+        dir
+    };
+    let wt = add("wt");
+    assert_eq!(
+        sh(&wt, &["ls-files", "-v"]),
+        "H keep/kept.txt\nS out/outside.txt\nH top.txt\n"
+    );
+    assert!(!wt.join("out").exists());
+    assert_eq!(undo_of(&wt).await, Safe);
+    // The undo's own steps work there: the edit and the new file go, and the cone stays.
+    std::fs::write(wt.join("keep/kept.txt"), "edited\n").expect("owned fixture");
+    std::fs::write(wt.join("teardown.log"), "x\n").expect("owned fixture");
+    git::mutate::restore_tracked(&wt)
+        .await
+        .expect("restore in a sparse checkout");
+    git::mutate::clean_untracked(&wt)
+        .await
+        .expect("clean in a sparse checkout");
+    git::mutate::worktree_clean(&wt)
+        .await
+        .expect("nothing is left");
+    assert_eq!(read(&wt.join("keep/kept.txt")), "base\n");
+    assert!(!wt.join("teardown.log").exists());
+    assert!(!wt.join("out").exists());
+    // A file outside the cone that the user put back, still skip-worktree, can hold an edit.
+    sh(
+        &wt,
+        &[
+            "config",
+            "--worktree",
+            "sparse.expectFilesOutsideOfPatterns",
+            "true",
+        ],
+    );
+    std::fs::create_dir(wt.join("out")).expect("owned fixture");
+    std::fs::write(wt.join("out/outside.txt"), "the user's copy\n").expect("owned fixture");
+    assert_eq!(sh(&wt, &["status", "--porcelain=v1"]), "");
+    assert_eq!(undo_of(&wt).await, HiddenEdit);
+    // With every entry skip-worktree, `git restore -- .` matches nothing and fails.
+    let none = add("none");
+    sh(
+        &none,
+        &["sparse-checkout", "set", "--no-cone", "/nothing-matches"],
+    );
+    assert_eq!(undo_of(&none).await, NoPlainEntry);
+    assert!(git::mutate::restore_tracked(&none).await.is_err());
 }
 
 #[tokio::test]

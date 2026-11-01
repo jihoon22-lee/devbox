@@ -18,10 +18,12 @@ async fn case(mode: String) {
     let (f, task, wt) = action_fixture().await;
     match mode {
         "ref-lock-files" | "ref-lock-reftable" => {
-            let format = devbox_git::run::git(&f.repo, &["rev-parse", "--show-ref-format"])
-                .await
-                .expect("ref backend");
-            assert_eq!(format.trim(), ref_format());
+            // The backend, from the disk: a reftable repository keeps its refs in `.git/reftable`.
+            // (`git rev-parse --show-ref-format` needs Git 2.45.)
+            assert_eq!(
+                f.repo.join(".git/reftable").is_dir(),
+                ref_format() == "reftable"
+            );
             let closed = close(&f, &task, MergeKind::Squash).await;
             // Automatic cleanup removed the folder, then its branch deletion was refused once.
             assert_eq!(receipt("locked"), ["refused"]);

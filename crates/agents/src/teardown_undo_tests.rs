@@ -64,10 +64,112 @@ fn cleanup_never_undoes_an_edit_git_status_does_not_show() {
     );
 }
 
+/// A sparse checkout marks every entry outside its cone skip-worktree, with no file in the folder:
+/// such an entry holds no edit, so the undo still runs and the folder goes. An entry outside the
+/// cone whose file is there again can hold the user's edit: Git shows it unless told to expect such
+/// files, and then nothing is undone. With no entry inside the cone, `git restore` would match
+/// nothing, so nothing is undone either, and the removal refuses what is left.
+#[test]
+fn the_undo_keeps_to_what_a_sparse_checkout_leaves_out() {
+    cases(
+        "teardown_undo_tests::the_undo_keeps_to_what_a_sparse_checkout_leaves_out",
+        &[
+            "sparse",
+            "sparse-materialized",
+            "sparse-materialized-shown",
+            "all-skip-worktree",
+        ],
+        case,
+    );
+}
+
+/// Commits `keep/kept.txt` and `out/outside.txt` on the task's branch, then narrows the work folder
+/// to a cone of `keep` with `pattern`, as a sparse-checkout project's work folders are.
+fn narrow(wt: &Path, pattern: &[&str]) {
+    for name in ["keep/kept.txt", "out/outside.txt"] {
+        let file = wt.join(name);
+        fs::create_dir_all(file.parent().expect("owned folder")).expect("owned folder");
+        fs::write(file, "base\n").expect("owned file");
+    }
+    git(wt, &["add", "keep", "out"]);
+    git(wt, &["commit", "-qm", "sparse layout"]);
+    git(wt, &[&["sparse-checkout", "set"][..], pattern].concat());
+    assert!(!wt.join("out").exists());
+}
+
 async fn case(mode: String) {
     let mode = mode.as_str();
     let (mut f, task, wt) = action_fixture().await;
     match mode {
+        "sparse" => {
+            narrow(&wt, &["--cone", "keep"]);
+            let ran = approve_teardown(&f, &task, &wt, &["printf x > teardown.log"]).await;
+            let closed = close(&f, &task, MergeKind::Squash).await;
+            assert!(ran.exists(), "the teardown ran");
+            assert_eq!(closed.cleanup_error, None, "{closed:?}");
+            assert!(!wt.exists());
+            assert!(!has_branch(&f).await);
+            let cleaned = receipt("clean");
+            assert_eq!(cleaned.len(), 1, "{cleaned:?}");
+        }
+        "sparse-materialized" | "sparse-materialized-shown" => {
+            set_cleanup(&mut f, false);
+            narrow(&wt, &["--cone", "keep"]);
+            if mode == "sparse-materialized" {
+                // Git then keeps the entry skip-worktree, and status shows no edit to it.
+                git(
+                    &wt,
+                    &[
+                        "config",
+                        "--worktree",
+                        "sparse.expectFilesOutsideOfPatterns",
+                        "true",
+                    ],
+                );
+            }
+            close(&f, &task, MergeKind::Merge).await;
+            let ran = approve_teardown(&f, &task, &wt, &["printf x > teardown.log"]).await;
+            fs::create_dir(wt.join("out")).expect("owned folder");
+            fs::write(wt.join("out/outside.txt"), "the user's copy\n").expect("user file");
+            let snapshot = f
+                .svc
+                .projects
+                .teardown_snapshot(&f.project)
+                .await
+                .expect("approved teardown");
+            f.svc
+                .cleanup_closed_after_quiesce(&task.id, &snapshot)
+                .await;
+            assert!(ran.exists(), "the teardown still runs");
+            let note = note_of(&f.svc.get(&task.id).await.expect("task"));
+            assert_eq!(note["code"], "agents.worktree_dirty", "{note}");
+            // Shown, the edit made the folder dirty before cleanup, so nothing was undone either.
+            let files = if mode == "sparse-materialized" {
+                serde_json::json!(["teardown.log"])
+            } else {
+                serde_json::json!(["out/outside.txt", "teardown.log"])
+            };
+            assert_eq!(note["detail"]["files"], files);
+            assert_eq!(
+                fs::read_to_string(wt.join("out/outside.txt")).expect("kept file"),
+                "the user's copy\n"
+            );
+            assert!(wt.join("teardown.log").exists(), "nothing was undone");
+            assert!(receipt("clean").is_empty());
+            assert!(has_branch(&f).await);
+        }
+        "all-skip-worktree" => {
+            narrow(&wt, &["--no-cone", "/nothing-matches"]);
+            let ran = approve_teardown(&f, &task, &wt, &["printf x > teardown.log"]).await;
+            let closed = close(&f, &task, MergeKind::Squash).await;
+            assert!(ran.exists(), "the teardown ran");
+            // The removal's refusal, not a failed `git restore`.
+            let note = note_of(&closed);
+            assert_eq!(note["code"], "agents.worktree_dirty", "{note}");
+            assert_eq!(note["detail"]["files"], serde_json::json!(["teardown.log"]));
+            assert!(receipt("clean").is_empty(), "nothing was undone");
+            assert!(has_branch(&f).await);
+        }
         "auto-untracked" | "auto-tracked" | "auto-ignored" => {
             let teardown = match mode {
                 "auto-tracked" => "printf edited > tracked && git add tracked",

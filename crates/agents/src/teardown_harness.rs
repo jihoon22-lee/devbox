@@ -8,7 +8,9 @@
 //!
 //! The child's Git reads no user or system configuration: HOME is an owned folder,
 //! `GIT_CONFIG_GLOBAL` is empty and `GIT_CONFIG_NOSYSTEM` is set. Its repositories use the `files`
-//! ref backend, or `reftable` in a mode whose name says so.
+//! ref backend, or `reftable` in a mode whose name says so. A `reftable` mode is skipped, with the
+//! reason printed, where the installed Git cannot make such repositories; every Git makes `files`
+//! ones, so those modes always run, and a run in which no mode ran fails.
 use super::*;
 
 const CHILD: &str = "DEVBOX_UNDO_CASE";
@@ -75,18 +77,22 @@ exec "$DEVBOX_UNDO_REAL_GIT" "$@"
     ))
     .expect("owned PATH");
     let mut failures = vec![];
+    let mut ran = 0;
     for mode in modes {
         let format = if mode.contains("reftable") {
             "reftable"
         } else {
             "files"
         };
-        if let Err(reason) = backend(&real_git, root.path(), format) {
+        if format == "reftable"
+            && let Err(reason) = reftable(&real_git, root.path())
+        {
             println!(
-                "{mode}: skipped, the installed Git cannot make {format} repositories: {reason}"
+                "{mode}: skipped, the installed Git cannot make reftable repositories: {reason}"
             );
             continue;
         }
+        ran += 1;
         let home = root.path().join(format!("home-{mode}"));
         fs::create_dir(&home).expect("owned home");
         let output = Command::new(std::env::current_exe().expect("test executable"))
@@ -116,14 +122,15 @@ exec "$DEVBOX_UNDO_REAL_GIT" "$@"
             ));
         }
     }
+    assert!(ran > 0, "no mode of {test} ran");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// Whether the installed Git makes a repository with the `format` ref backend.
-fn backend(git: &str, root: &Path, format: &str) -> std::result::Result<(), String> {
-    let probe = root.join(format!("probe-{format}"));
+/// Whether the installed Git makes a repository with the `reftable` ref backend.
+fn reftable(git: &str, root: &Path) -> std::result::Result<(), String> {
+    let probe = root.join("probe-reftable");
     let output = Command::new(git)
-        .args(["init", "-q", &format!("--ref-format={format}")])
+        .args(["init", "-q", "--ref-format=reftable"])
         .arg(&probe)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
