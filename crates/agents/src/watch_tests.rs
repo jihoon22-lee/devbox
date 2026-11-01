@@ -379,5 +379,7 @@ fn every_profile_of_a_tool_family_keeps_its_patterns_and_adds_its_own() {
 
 #[path = "watch_dialog_tests.rs"]
 mod dialogs;
+#[path = "watch_form_tests.rs"]
+mod forms;
 #[path = "watch_prompt_tests.rs"]
 mod prompts;

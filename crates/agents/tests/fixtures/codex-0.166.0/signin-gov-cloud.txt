@@ -1,0 +1,15 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/onboarding/bedrock.rs가 그리는 Bedrock(AWS GovCloud) 로그인 안내 화면이다. Enter는 안내를 확인하고 다음 로그인 단계로 간다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/onboarding/snapshots/codex_tui__onboarding__bedrock__tests__gov_cloud_warning.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 그리는 소스 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+Using Codex with AWS GovCloud
+
+You are using Codex with AWS GovCloud. Please ensure you or your
+administrator have read the application configuration and security
+guidance before proceeding.
+
+> Acknowledge
+
+  Press enter to continue

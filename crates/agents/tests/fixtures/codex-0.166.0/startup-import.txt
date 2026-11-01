@@ -1,0 +1,26 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/external_agent_config_migration/render.rs, codex-rs/tui/src/external_agent_config_migration/mod.rs가 그리는 다른 coding agent의 설정 가져오기 화면이다. Enter는 고른 동작을 실행한다. Import selected는 지금 프로젝트 폴더에 파일을 더한다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/external_agent_config_migration/snapshots/codex_tui__external_agent_config_migration__tests__external_agent_config_migration_prompt.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 그리는 소스 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  > Import setup
+  Bring over supported setup from another coding agent.
+  Codex may add files to your current project folder.
+  Your existing setup will not be changed.
+    [x] Tools & setup
+        Settings, instructions, integrations, agents, commands, and skills
+        Importing: Settings 1, Memory 1
+    [x] Current project
+        Add Codex files alongside your existing project files
+        Importing: Plugins 6, Instructions 1
+    [x] Chat sessions (1)
+        Last 30 days of chats
+        Importing: Chat sessions 1
+
+  Selected 5 of 5 items.
+  › 1. Import selected
+    2. Customize selection
+    3. Cancel
+  Use ↑/↓ to move, enter to select, c to customize

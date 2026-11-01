@@ -2,7 +2,8 @@
 //! prompts that stop the tool until the user decides, so every profile of the family gets them,
 //! whatever its id, and a profile's own `waitingPatterns` add to them (see `profile::compiled`).
 //!
-//! Codex 승인·결정 화면과 확인 상자는 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면 아님),
+//! Codex 승인·결정 화면, 확인 상자, 입력 상자·목록·설정의 힌트 줄과 화면을 덮는 보기는 0.164.0~0.166.0 공개
+//! 소스가 그리는 화면(소스 기반, 실제 화면 아님),
 //! 폴더 신뢰 화면은 0.164.0 실제 녹화와 0.166.0 소스, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면
 //! 아님)이다. Claude 폴더 신뢰 대화는 설치본 2.1.308의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은
 //! 실제 fixture로 보강한다.
@@ -28,6 +29,7 @@ pub(crate) fn family_patterns(hooks: Hooks) -> FamilyPatterns {
             screen: CODEX_DIALOGS
                 .iter()
                 .map(|(title, choices)| dialog(title, choices))
+                .chain(CODEX_SCREENS.iter().map(|&pattern| pattern.to_owned()))
                 .collect(),
         },
         Hooks::Pi => FamilyPatterns {
@@ -51,17 +53,20 @@ const CLAUDE: &[&str] = &[
 
 /// Codex. Its `notify` reports only finished turns, so every prompt is matched on screen.
 const CODEX: &[&str] = &[
-    // Prompts that stop Codex until the user decides. Evidence:
-    // crates/agents/tests/fixtures/codex-0.166.0/ (소스 기반: drawn by the TUI source of
-    // rust-v0.164.0 to rust-v0.166.0, the same in all three; not real captures). The question and
-    // long choices can leave the matched tail, so each pattern reads rows only such a prompt
-    // draws, whatever their number, order or cursor, and none needs the footer. Matching too
-    // much only holds sends back while it shows.
-    // 1. The footer of a choice list Enter would answer: the approvals of commands, network
-    //    hosts, permissions, edits and terminal input, MCP requests and user verification,
-    //    whatever their choices are called. "to submit" is the feedback note's, where Enter
-    //    uploads the feedback with what the note holds, a pasted send included.
-    r"(?m)^\s*Press \S+ to (?:confirm|submit)\b",
+    // Prompts that stop Codex until the user decides, and the views where a send would not
+    // reach Codex as a prompt: it is pasted into the view or dropped, and Enter then acts on the
+    // view. Evidence: crates/agents/tests/fixtures/codex-0.166.0/ (소스 기반: drawn by the TUI
+    // source of rust-v0.164.0 to rust-v0.166.0, the same in all three; not real captures). The
+    // question and long choices can leave the matched tail, so each pattern reads rows only such
+    // a prompt draws, whatever their number, order or cursor, and none needs the footer.
+    // Matching too much only holds sends back while it shows.
+    // 1. The footer of a choice list or a form Enter would answer: the approvals of commands,
+    //    network hosts, permissions, edits and terminal input, MCP requests and user
+    //    verification, whatever their choices are called. "to submit" is the feedback note's,
+    //    where Enter uploads the feedback with what the note holds, a pasted send included.
+    //    "to save" and "to continue" are the sign-in steps' (Enter saves a pasted send as the
+    //    API key, or goes on with the selected way to sign in) and the setup import's.
+    r"(?m)^\s*Press \S+ to (?:confirm|submit|save|continue)\b",
     // 2. Their choices.
     r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)",
     // 3. MCP forms and the model's questions: tool-call choices, and the footers. The tips share
@@ -80,6 +85,30 @@ const CODEX: &[&str] = &[
     // 7. The footer of any other list ("enter select · esc back"): Enter answers the list,
     //    whoever opened it.
     r"(?m)^\s*\S+ (?:select|choose|confirm|open) · \S+ back\s*$",
+    // 8. Any other hint row that offers Enter next to another hint after " · ", as Codex draws
+    //    them under its text prompts, lists, pickers, settings and forms, the prompt box's
+    //    popups, the usage report and the transcript's search ("enter submit · esc back",
+    //    "space toggle · enter save · esc cancel", "reverse-i-search: git  enter accept · esc
+    //    cancel"; form-*.txt). Only the key's own name counts, alone or joined by "/" to other
+    //    key names, so a path or a word that ends in "enter" does not. "Browsing · ↵ rewind" is
+    //    left out: in the full-screen transcript a paste leaves the browsing for the prompt box,
+    //    and the pager's browsing is matched by its top row (`CODEX_SCREENS`).
+    r"(?m)(?:^[ \t]*|[ \t]{2}|[ \t]·[ \t])(?:[a-z]+/)*enter(?:/[a-z]+)*[ \t][^·\n]*?[ \t]·(?:[ \t]|$)|[ \t]·[ \t](?:[a-z]+/)*enter(?:/[a-z]+)*[ \t][^\s·][^·\n]*$",
+    // 9. The rows that space their hints by two blanks: the model's questions ("enter submit
+    //    ⌃] skip", Enter answers the question), the resume picker ("enter resume  esc start
+    //    new") and the agent command center ("esc back  ↑/↓ move  enter open").
+    r"(?m)(?:^[ \t]*|[ \t]{2})enter[ \t](?:to[ \t])?(?:submit|resume|fork|open|rename)(?:[ \t]{2}|[ \t]*$)",
+    // 10. Views whose hint rows leave Enter out, where a send is dropped and Enter acts or does
+    //     nothing: a row that only leaves ("esc close" under a plugin, whose Enter installs it;
+    //     "esc back"), the hooks of an event that need review or are managed, a shortcut being
+    //     remapped (Enter becomes its key), the setup import from another agent, the startup
+    //     warnings and the usage report.
+    r"(?m)^[ \t]*esc (?:back|close|clear search)[ \t]*$",
+    r"(?m)^[ \t]*(?:t trust|Managed \(always on\)) · esc back[ \t]*$",
+    r"(?m)^[ \t]*(?:Press the |First key: )[^\n]*\. Esc cancels\.[ \t]*$",
+    r"(?m)^\s*Use \S+ to move, \S+ to (?:select|toggle)\b",
+    r"(?m)(?:^|[ \t])k keep & next\b|\bdismiss & close\b",
+    r"(?m)\btab(?:/\S+)? report · z \S",
     // Folder trust. Evidence: crates/agents/tests/fixtures/codex-0.164.0/trust.txt (real
     // capture), and for a folder saved as untrusted or a task started while it was trusted,
     // codex-0.166.0/trust-restricted.txt and trust-existing-task.txt (소스 기반:
@@ -150,6 +179,18 @@ const CODEX_DIALOGS: [(&str, &str); 15] = [
         r"(?:Archive|Permanently delete) “[^\n]*",
         "Cancel|(?:Archive|Permanently delete) task and child agents",
     ),
+];
+
+/// Views that cover the screen and read no prompt, by rows they always draw. The pagers Codex
+/// opens over the history (the transcript, a diff, an approval's whole patch, command,
+/// permissions, request or verification, a paused chat's findings) name themselves on the top
+/// row: a send is dropped there, and while the transcript browses prompts Enter rewinds the
+/// conversation to the selected one. The keypress inspector only shows the keys it gets.
+/// Evidence: crates/agents/tests/fixtures/codex-0.166.0/overlay-*.txt (소스 기반, see their
+/// headers).
+const CODEX_SCREENS: &[&str] = &[
+    r"(?m)^/ (?:T R A N S C R I P T|D I F F|P A T C H|E X E C|P E R M I S S I O N S|E L I C I T A T I O N|U S E R  V E R I F I C A T I O N|What we detected)[ /]*$",
+    r"(?m)^[ \t]*Keypress Inspector[ \t]*\n[ \t]*Press any key to see what Codex receives\b",
 ];
 
 /// A dialog drawn anywhere on the screen: its title alone on its row (the dialog's margin before

@@ -1,0 +1,20 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/config_panel/render.rs, codex-rs/tui/src/config_panel/input.rs가 그리는 설정 패널(/config) 화면이다. Enter는 고른 설정을 바꾸거나 그 설정의 목록을 연다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/config_panel/snapshots/codex_tui__config_panel__tests__config_Notifications.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 그리는 소스 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Configuration
+  Changes save automatically
+
+   Appearance   Notifications   Input   Sessions   Text selection
+
+› Notifications         [x] On               Let your terminal notify you when a turn finishes or approval is needed
+  Notify when           Unfocused ›          Notify only while you are away or while this terminal is focused too
+  Test notification     Send in 5s           Send in 5 seconds so you can switch apps before the notification appears
+
+
+
+
+  left/right group · / search · enter toggle · esc clear search/close

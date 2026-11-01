@@ -1,0 +1,17 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/chatwidget/session_model_selection.rs, codex-rs/tui/src/chatwidget/model_popups.rs가 그리는 추론 수준 고르기(/model) 화면이다. Enter는 고른 모델과 수준을 기본값으로 저장한다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__model_reasoning_selection_popup.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 그리는 소스 중 session_model_selection.rs, model_popups.rs는 다른 곳만 바뀌어 힌트 줄 문구가 세 태그에서 같다(diff). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+  Select Reasoning Level for GPT-5.5
+
+
+  1. Low               Fast responses with lighter reasoning
+  2. Medium (default)  Balances speed and reasoning depth for everyday tasks
+› 3. High (current)    Greater reasoning depth for complex problems
+  4. Extra high        Extra high reasoning depth for complex problems
+  5. Persistent        Continue working until put to sleep
+  6. More reasoning…   Max and Ultra consume usage limits faster
+
+  enter default · s session · esc back

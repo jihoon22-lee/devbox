@@ -1,0 +1,41 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/keymap_setup/picker.rs가 그리는 단축키 목록(/keymap) 화면이다. Enter는 고른 동작의 단축키를 바꾸는 화면을 연다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/snapshots/codex_tui__keymap_setup__tests__keymap_picker_wide.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 그리는 소스 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Keymap
+  All configurable shortcuts.
+  153 actions, 0 customized, 5 unbound.
+
+   All   Common   Customized (0)   Unbound (5)   App   Composer   Editor   Vim   Navigation   Agents   Approval      ›
+
+  Type to search shortcuts
+
+› Global       - Open Agents                unbound
+  Global         Open Transcript            ctrl-t
+  Global         Find Transcript            f3
+  Global         Focus Activity             f4
+  Global         Open External Editor       ctrl-g
+  Global         Copy                       ctrl-o
+  Global         Clear Terminal             ctrl-l
+  Global       - Toggle Vim Mode            unbound
+  Global         Toggle Raw Output          alt-r
+  Global         Toggle Side Conversation   ctrl-/
+  Global         Leader                     ctrl-x
+  Chat           Interrupt Turn             esc
+  Chat           Decrease Reasoning Effort  alt-,, shift-down
+  Chat           Increase Reasoning Effort  alt-., shift-up
+  Chat         - Previous Permission Mode   unbound
+  Chat         - Next Permission Mode       unbound
+  Chat           Edit Queued Message        shift-left, alt-up
+  Chat           Prompt Stack Back          shift-right, alt-down
+  Chat           Skip Question              ctrl-]
+  Chat           Toggle Voice               f8
+  Chat           Open Presets               leader p (ctrl-x p)
+  Chat           Toggle Voice Mute          f9
+  Composer       Submit                     enter
+  Composer       Queue                      tab
+↓
+  left/right group · enter edit shortcut · * custom · - unbound · esc close
