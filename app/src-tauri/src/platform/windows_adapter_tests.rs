@@ -272,3 +272,17 @@ async fn windows_native_readiness_stops_when_process_exits_without_emitting_read
     .expect("fixture result");
     assert!(events.try_recv().is_err());
 }
+
+#[test]
+fn windows_runs_start_powershell_without_a_console_window() {
+    // The GUI app has no console, so each run would get a visible one for its whole life. The
+    // bootstrap uses only its pipes, so it sets CREATE_NO_WINDOW as windows_probe.rs, external.rs
+    // and wsl.rs do. The flag is Windows-only code: the MSVC check compiles it, and this pins it.
+    let source = include_str!("windows.rs");
+    assert_eq!(source.matches("Command::new(executable)").count(), 1);
+    let start = source
+        .find("Command::new(executable)")
+        .expect("the run's spawn");
+    let end = start + source[start..].find(".spawn()").expect("the run's spawn");
+    assert!(source[start..end].contains(".creation_flags(0x0800_0000)"));
+}
