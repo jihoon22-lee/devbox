@@ -57,7 +57,7 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   // delete. The closed task has nothing to retry, and a commit would move HEAD off the closed one,
   // which takes the work folder out of the cleanup list for good.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 정리 명령이 만든 것이면 그 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요.",
   );
   expect(alert).not.toHaveTextContent("커밋한 뒤");
   expect(alert).not.toHaveTextContent("다시 시도");
@@ -98,8 +98,19 @@ test("a teardown stopped without an exit code says it hit the time limit or was 
 test("a work folder kept for its submodules: the notice gives the command that removes it, then points to the cleanup list", () => {
   header(JSON.stringify({ code: "agents.worktree_has_submodules", detail: { path: "/fixture/owned" } }));
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "정리하지 못한 항목이 있습니다. 하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force '/fixture/owned'로 직접 지우세요. 설정 → 에이전트 → 정리 후보에서 남은 항목을 확인하세요.",
+    "정리하지 못한 항목이 있습니다. 하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 변경은 커밋하고 커밋은 push한 뒤 프로젝트 폴더의 터미널에서 git worktree remove --force '/fixture/owned'로 직접 지우세요. 설정 → 에이전트 → 정리 후보에서 남은 항목을 확인하세요.",
   );
+});
+
+test("a work folder kept for an unfinished merge or rebase: the notice says to abort it, not finish it, then points to the cleanup list", () => {
+  header(JSON.stringify({ code: "agents.operation_in_progress" }));
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent(
+    "정리하지 못한 항목이 있습니다. 작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다. 작업 폴더에서 그 작업을 마치지 말고 중단한 뒤(예: git merge --abort, git rebase --abort) 설정 → 에이전트 → 정리 후보에서 다시 정리하세요. 마치면 커밋이 생겨 이 작업 폴더는 다시 정리 후보에 나오지 않습니다.",
+  );
+  // The table's copy, for a rebase or merge, says to finish the operation, which would commit.
+  expect(alert).not.toHaveTextContent("다른 Git 작업");
+  expect(alert).not.toHaveTextContent("진행 중인 작업을 마친 뒤");
 });
 
 test("a merge's own next action never reaches the notice: other codes point to the cleanup list, and the stored text stays under [자세히]", async () => {

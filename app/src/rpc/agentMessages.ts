@@ -91,12 +91,14 @@ export const AGENT_MESSAGES: Messages<Domain> = {
   },
   // A closed task's cleanup, by default; the cleanup list and a discard say their own next step.
   "agents.teardown_failed": (d) => teardownFailed(d, `${CLEANUP_LIST}에서 다시 정리하세요.`),
-  // Git removes such a folder only with force, which devbox never uses. The command names the folder
-  // from the detail. Deleting the folder by hand instead would leave it registered, and its branch
-  // would never be listed again.
+  // Git removes such a folder only with force, which devbox never uses, and the force takes the
+  // submodules' uncommitted changes and unpushed commits with it, so the copy says to commit and
+  // push first. The command names the folder from the detail and runs in the project folder: run
+  // outside any checkout, Git does not find the folder. Deleting the folder by hand instead would
+  // leave it registered, and its branch would never be listed again.
   "agents.worktree_has_submodules": (d) => ({
     title: "하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다.",
-    action: `하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force ${path(d) ? shellQuote(path(d)) : "<폴더>"}로 직접 지우세요.`,
+    action: `하위 모듈의 변경은 커밋하고 커밋은 push한 뒤 프로젝트 폴더의 터미널에서 git worktree remove --force ${path(d) ? shellQuote(path(d)) : "<폴더>"}로 직접 지우세요.`,
   }),
   "agents.delivery_unknown": {
     title: "지시 전달 결과를 확인할 수 없습니다.",
@@ -196,6 +198,8 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     title: "확인한 뒤 작업이 바뀌었습니다.",
     action: "바뀐 내용을 확인하고 다시 실행하세요.",
   },
+  // For a rebase, merge or PR. Where a closed task's cleanup stopped, finishing the operation would
+  // take the folder out of the cleanup list for good, so that copy is its own (`cleanupMessages.ts`).
   "agents.operation_in_progress": {
     title: "다른 Git 작업이 진행 중입니다.",
     action: "진행 중인 작업을 마친 뒤 다시 시도해 주세요.",

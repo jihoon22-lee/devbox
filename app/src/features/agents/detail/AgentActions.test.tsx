@@ -86,7 +86,7 @@ test("a discard stopped by its failed teardown says to fix the command and disca
   // The task is still open, so it is not in the cleanup list: the discard is what to try again.
   const notice = await screen.findByText(/정리 명령이 실패했습니다\(종료 코드 3\)/);
   expect(notice).toHaveTextContent(
-    "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 다시 버리세요.",
+    "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 다시 폐기하세요.",
   );
   expect(document.body).not.toHaveTextContent("정리 후보");
   expect(wire.requests("agents.discard")).toHaveLength(1);

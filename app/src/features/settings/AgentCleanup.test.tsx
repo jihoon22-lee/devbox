@@ -47,14 +47,24 @@ test("a cleanup stopped by changes it will not delete says to clear them, not co
   const alert = await refuse({ code: "agents.worktree_dirty", detail: { files: ["notes.txt", "build/out.bin"] } });
   // After its own undo, what stops cleanup are changes devbox does not delete. A commit would move
   // the folder off the head the task closed with and take it out of this list for good.
-  // The undo leaves what a teardown makes that it does not take, such as a nested repository,
-  // and the teardown makes it again on every retry.
+  // Only what comes back on a retry is the teardown's to fix: the undo leaves what it does not
+  // take, such as a nested repository, and the teardown makes it again on every retry.
   expect(alert).toHaveTextContent(
-    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 정리 명령이 만든 것이면 그 명령부터 고치세요. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 다시 정리하세요. 다시 정리해도 같은 것이 또 생기면 정리 명령부터 고치세요.",
   );
   expect(alert).toHaveTextContent("변경 파일: notes.txt, build/out.bin");
   expect(alert).not.toHaveTextContent("커밋한 뒤");
   // This line is in the list already.
+  expect(alert).not.toHaveTextContent("정리 후보에서");
+});
+
+test("a cleanup refused for an unfinished merge or rebase says to abort it in the work folder, not finish it", async () => {
+  const alert = await refuse({ code: "agents.operation_in_progress" });
+  // Finishing it commits, which moves the folder off the head the task closed with.
+  expect(alert).toHaveTextContent(
+    "작업 폴더에 끝나지 않은 Git 작업(병합·rebase·cherry-pick 등)이 있습니다. 작업 폴더에서 그 작업을 마치지 말고 중단한 뒤(예: git merge --abort, git rebase --abort) 다시 정리하세요. 마치면 커밋이 생겨 이 작업 폴더는 다시 정리 후보에 나오지 않습니다.",
+  );
+  expect(alert).not.toHaveTextContent("다른 Git 작업");
   expect(alert).not.toHaveTextContent("정리 후보에서");
 });
 
@@ -66,7 +76,7 @@ test("a cleanup stopped by a failed teardown names which command to run in the w
   expect(alert).not.toHaveTextContent("정리 후보에서");
 });
 
-const SUBMODULES = `하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force '${WORKTREE}'로 직접 지우세요.`;
+const SUBMODULES = `하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 변경은 커밋하고 커밋은 push한 뒤 프로젝트 폴더의 터미널에서 git worktree remove --force '${WORKTREE}'로 직접 지우세요.`;
 
 test("a work folder with submodules is listed apart with how to remove it, and cannot be selected", async () => {
   await showList({ worktrees: [], branches: [], submodules: [WORKTREE] });

@@ -214,6 +214,27 @@ async fn case(mode: String) {
                 "unpushed\nteardown"
             };
             untouched(&f, &wt, &sub, &unpushed, file).await;
+            if mode == "submodule-manual" {
+                // The user then removes the folder as the note says. Run from the project folder,
+                // `git worktree remove --force` deletes the folder and `.git/worktrees/<name>`,
+                // submodule store included. A test never forces a removal, so it deletes this
+                // owned folder and prunes its registration, which leaves the same.
+                fs::remove_dir_all(&wt).expect("owned folder");
+                git(&f.repo, &["worktree", "prune"]);
+                let options = listed(&f).await;
+                assert_eq!(options.branches, ["agent/review"]);
+                assert!(
+                    options.worktrees.is_empty() && options.submodules.is_empty(),
+                    "{options:?}"
+                );
+                f.svc
+                    .cleanup(offered(&f, &options))
+                    .await
+                    .expect("cleanup of the branch left");
+                assert!(!has_branch(&f).await);
+                assert_eq!(reservation(&f, &task).await, Resources::Planned);
+                assert_eq!(f.svc.get(&task.id).await.expect("task").cleanup_error, None);
+            }
         }
         "submodule-dirty" => {
             // The user's own file was there before cleanup: those changes are named, since the

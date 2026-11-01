@@ -58,7 +58,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
     // once the command is fixed, the discard is what to try again.
     const message =
       kind === "discard" && error.code === "agents.teardown_failed"
-        ? teardownFailed(error.detail, "다시 버리세요.")
+        ? teardownFailed(error.detail, "다시 폐기하세요.")
         : messageFor(error.code, error.detail);
     return `${message.title} ${message.action ?? ""}${error.diagnosticId ? ` · 진단 ${error.diagnosticId}` : ""}`;
   };

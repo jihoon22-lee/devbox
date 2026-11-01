@@ -22,7 +22,7 @@ fn cleanup_undoes_what_its_teardown_left_in_a_clean_folder_and_removes_it() {
 fn cleanup_keeps_a_folder_whose_changes_it_cannot_account_for() {
     cases(
         "teardown_undo_tests::cleanup_keeps_a_folder_whose_changes_it_cannot_account_for",
-        &["user-file", "nested", "head-moved"],
+        &["user-file", "nested", "head-moved", "merge-in-progress"],
         case,
     );
 }
@@ -274,6 +274,43 @@ async fn case(mode: String) {
                 "data"
             );
             assert!(has_branch(&f).await);
+        }
+        "merge-in-progress" => {
+            // A clean folder with no teardown, holding a merge that was started and not finished.
+            // Git would remove it without force, and the merge's state with it.
+            let side = devbox_git::run::git(
+                &wt,
+                &["commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "side"],
+            )
+            .await
+            .expect("side commit");
+            git(
+                &wt,
+                &["merge", "--no-commit", "--no-ff", "-s", "ours", side.trim()],
+            );
+            let closed = close(&f, &task, MergeKind::Squash).await;
+            assert_eq!(note_of(&closed)["code"], "agents.operation_in_progress");
+            assert!(wt.exists());
+            assert!(devbox_git::run::resolve(&wt, "MERGE_HEAD").await.is_ok());
+            assert!(receipt("remove").is_empty(), "Git's removal never ran");
+            assert!(has_branch(&f).await);
+            let options = listed(&f).await;
+            assert!(
+                options.worktrees.is_empty() && options.branches.is_empty(),
+                "{options:?}"
+            );
+            // Once the merge is aborted, not finished, the folder is listed and cleaned up.
+            git(&wt, &["merge", "--abort"]);
+            let options = listed(&f).await;
+            assert_eq!(options.worktrees, [wt.to_string_lossy().into_owned()]);
+            assert_eq!(options.branches, ["agent/review"]);
+            f.svc
+                .cleanup(offered(&f, &options))
+                .await
+                .expect("cleanup after the abort");
+            assert!(!wt.exists());
+            assert!(!has_branch(&f).await);
+            assert_eq!(f.svc.get(&task.id).await.expect("task").cleanup_error, None);
         }
         "head-moved" => {
             let ran =
