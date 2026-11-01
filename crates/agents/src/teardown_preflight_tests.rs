@@ -20,9 +20,21 @@ fn teardown_lists_preflight_runner_and_entire_cleanup_selection() {
         "teardown-runner-nul-fails",
     ]);
 }
+/// What a discard's own teardown writes into the work folder goes with the folder: a lock file
+/// made and removed again, a tracked edit or a new file.
 #[test]
-fn teardown_scratch_files_do_not_block_discard_but_edits_do() {
-    cases(&["teardown-discard-scratch", "teardown-discard-edited"]);
+fn discard_drops_what_its_own_teardown_wrote() {
+    cases(&[
+        "teardown-discard-scratch",
+        "teardown-discard-edited",
+        "teardown-discard-wrote",
+    ]);
+}
+/// A change made after the user confirmed the discard and before its teardown runs (here, while
+/// the agent stops) is still refused, before the teardown. So is a teardown that moves HEAD.
+#[test]
+fn discard_still_refuses_a_change_before_its_teardown_and_a_moved_head() {
+    cases(&["teardown-discard-late-dirty", "teardown-discard-moved"]);
 }
 #[test]
 fn teardown_bounds_preserve_snapshot_bytes_and_unused_paths() {
@@ -48,12 +60,22 @@ pub(super) async fn case(mode: &str) {
     );
     let command = if mode.ends_with("nul-fails") {
         "true\0bad".into()
-    } else if mode.ends_with("scratch") || mode.ends_with("edited") {
-        // Teardown runs in the worktree: a lock file made and removed again, or a tracked edit.
+    } else if ["scratch", "edited", "wrote", "late-dirty", "moved"]
+        .iter()
+        .any(|end| mode.ends_with(end))
+    {
+        // Teardown runs in the worktree: a lock file made and removed again, a tracked edit, a new
+        // file, nothing (the change is made while the agent stops) or a commit.
         let change = if mode.ends_with("scratch") {
             "touch teardown.lock && rm teardown.lock"
-        } else {
+        } else if mode.ends_with("edited") {
             "printf edited > tracked"
+        } else if mode.ends_with("wrote") {
+            "printf x > teardown.log"
+        } else if mode.ends_with("late-dirty") {
+            "true"
+        } else {
+            "git commit --allow-empty -qm moved"
         };
         format!(
             "{change} && printf second > {}",
@@ -169,6 +191,11 @@ pub(super) async fn case(mode: &str) {
             .expect("earlier branch-only resource");
     }
     fs::write(
+        std::env::var_os("DEVBOX_CLOSE_WORKTREE_RECEIPT").expect("worktree receipt"),
+        wt.to_str().expect("owned worktree"),
+    )
+    .expect("owned worktree receipt");
+    fs::write(
         f.svc.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
     )
@@ -282,19 +309,26 @@ pub(super) async fn case(mode: &str) {
             .await
             .map(|_| ())
     };
-    if mode.ends_with("edited") {
-        // Teardown ran and edited what the user confirmed: nothing is removed.
+    if mode.ends_with("late-dirty") || mode.ends_with("moved") {
         assert!(
             matches!(result, Err(Fail::Domain(AgentsError::StateChanged { .. }))),
             "{result:?}"
         );
-        assert!(first.exists() && second.exists());
         assert!(wt.exists());
-        assert_eq!(fs::read(wt.join("tracked")).expect("kept edit"), b"edited");
         assert_ne!(
             f.svc.get(&task.id).await.expect("task").state,
             AgentState::Closed
         );
+        if mode.ends_with("late-dirty") {
+            // Refused right after the agent stopped: the teardown never ran.
+            assert!(!first.exists() && !second.exists());
+            assert_eq!(
+                fs::read(wt.join("tracked")).expect("kept edit"),
+                b"late uncommitted edit\n"
+            );
+        } else {
+            assert!(first.exists() && second.exists());
+        }
         return;
     }
     if mode.ends_with("fails") {

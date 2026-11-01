@@ -357,7 +357,9 @@ os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
         } else if modes[0].ends_with("fails") {
             "teardown_preflight_tests::teardown_lists_reject_before_discard_merge_or_pr_side_effects"
         } else if modes[0].ends_with("scratch") {
-            "teardown_preflight_tests::teardown_scratch_files_do_not_block_discard_but_edits_do"
+            "teardown_preflight_tests::discard_drops_what_its_own_teardown_wrote"
+        } else if modes[0].ends_with("late-dirty") {
+            "teardown_preflight_tests::discard_still_refuses_a_change_before_its_teardown_and_a_moved_head"
         } else {
             "teardown_preflight_tests::teardown_bounds_preserve_snapshot_bytes_and_unused_paths"
         }

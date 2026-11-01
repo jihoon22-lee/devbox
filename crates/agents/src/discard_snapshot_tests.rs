@@ -182,8 +182,8 @@ async fn tracked_change_after_confirmation_still_blocks_discard() {
     assert!(!wt.exists());
 }
 
-/// The discard's last check, under the lock after quiesce and teardown, with `change` made
-/// between the confirmation and that check.
+/// The discard's last check of the folder, under the lock after quiesce and before the teardown,
+/// with `change` made between the confirmation and that check.
 async fn final_check(
     fixture: &Fixture,
     task: &AgentTask,

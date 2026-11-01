@@ -189,7 +189,7 @@ async fn discard_refuses_same_head_dirty_content_and_ignored_changes() {
 }
 
 #[tokio::test]
-async fn discard_refuses_teardown_writing_unconfirmed_contents() {
+async fn discard_drops_what_its_teardown_wrote() {
     let mut d = fixture(Some(false));
     let repo = d.git_repo("projects/app");
     std::fs::create_dir(Path::new(&repo).join(".devbox")).expect("config directory");
@@ -208,25 +208,29 @@ async fn discard_refuses_teardown_writing_unconfirmed_contents() {
         .wait_for(&client, &id, "idle", Duration::from_secs(10))
         .await;
     let check = call(&client, "agents.discard_check", json!({"id":id})).await;
-    let result = client
-        .raw_call(
-            "agents.discard",
-            json!({"id":id,"expect":discard_expect(&check)}),
-            None,
-        )
-        .await;
-    assert!(
-        result.is_err(),
-        "teardown changes are outside the confirmed snapshot"
-    );
-    assert!(format!("{result:?}").contains("agents.state_changed"));
-    assert_eq!(
-        std::fs::read_to_string(
-            Path::new(idle["worktreePath"].as_str().expect("path")).join("agent.txt")
-        )
-        .expect("file"),
-        "changed"
-    );
+    // The folder is checked against the confirmation before the teardown runs. What the teardown
+    // then writes into it, here an edit of a committed file, goes with the folder.
+    let closed = call(
+        &client,
+        "agents.discard",
+        json!({"id":id,"expect":discard_expect(&check)}),
+    )
+    .await;
+    assert_eq!(closed["closedHow"], "discarded");
+    assert!(!Path::new(idle["worktreePath"].as_str().expect("path")).exists());
+    let branch = d
+        .environment("git")
+        .args([
+            "-C",
+            &repo,
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{}", idle["branch"].as_str().expect("branch")),
+        ])
+        .status()
+        .expect("owned fixture");
+    assert!(!branch.success(), "the discarded branch is deleted");
 }
 
 #[tokio::test]

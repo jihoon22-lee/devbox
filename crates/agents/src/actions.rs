@@ -487,16 +487,20 @@ impl AgentsService {
             .await?;
         let snapshot = self.authorize_teardown(&task, &project).await?;
         self.quiesce(&task).await?;
-        let usage = self.closure_usage(&task.id).await;
-        self.teardown_commands(&task, &snapshot).await?;
-        // Hooks and teardown may have committed. Destructive removal still uses the confirmed state.
-        self.owned_worktree(&task).await?;
-        self.check_expect(&task, repo, &wt, &branch, &p.expect)
-            .await?;
+        // The agent and its processes are stopped: the folder must still be exactly what the user
+        // confirmed, so what changed while they stopped is refused before the teardown runs.
         let base = devbox_git::run::resolve(repo, &task.base_branch)
             .await
             .map_err(git_failure)?;
         self.verify_discard_snapshot(&hashed, &wt, &p.expect.head_oid, &base)
+            .await?;
+        let usage = self.closure_usage(&task.id).await;
+        self.teardown_commands(&task, &snapshot).await?;
+        // The teardown may have committed, moved a ref or replaced the folder, so the pins are
+        // checked again. What it wrote into the folder is not: it goes with the folder, which is
+        // what discard means.
+        self.owned_worktree(&task).await?;
+        self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
         // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
