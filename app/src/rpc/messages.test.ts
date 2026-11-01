@@ -34,6 +34,18 @@ test("an unready Windows job holder says to run again and where to look", () => 
   });
 });
 
+test("a busy Windows copy names a live run and leftover build servers, and how to end them", () => {
+  const busy = messageFor("runtime.windows_copy_busy");
+  // The Runs page banner shows the title alone, so the title names both causes by itself.
+  expect(busy).toEqual({
+    title: "Windows 사본을 쓰는 실행이나 그 실행이 남긴 프로세스(빌드 서버 등)가 아직 끝나지 않았습니다.",
+    action:
+      "끝날 때까지 기다린 뒤 다시 실행하세요. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)는 한동안 쓰이지 않아야 스스로 끝나므로, 바로 끝내려면 dotnet build-server shutdown이나 gradle --stop을 실행하거나 작업 관리자에서 끝내세요. 모두 끝났는데도 계속되면 Windows 앱 연결을 확인해 주세요.",
+  });
+  // "Gradle daemon" stays a build server: 데몬 is the devbox daemon on diagnostics screens only.
+  expect(`${busy.title} ${busy.action}`).not.toMatch(/데몬|영수증|receipt/);
+});
+
 test("redaction failure actions distinguish capacity and rejected server input", () => {
   expect(messageFor("api.redaction_failed", { reason: "capacity" }).action).toContain("크기");
   expect(messageFor("api.redaction_failed", { reason: "input" }).action).toContain("서버 응답");
