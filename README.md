@@ -13,7 +13,7 @@ Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·
 ## 요구 사항
 
 - Windows 11과 systemd가 켜진 WSL2 배포판.
-- WSL의 tmux 3.2 이상. 더 낮으면 환경 점검이 실패로 표시한다. 프로그램이 Shift+Enter를 Enter와 다른 키로 받으려면(pi의 줄바꿈) tmux 3.5 이상이 필요하다. 3.2–3.4에서는 Shift+Enter도 Enter로 동작하므로 pi에서도 줄을 바꾸지 않고 보낸다(Ubuntu 24.04의 tmux는 3.4다). devbox는 자기 tmux 서버(`tmux -L devbox-prod`)에만 확장 키 옵션을 켜고, 사용자의 다른 tmux는 건드리지 않는다. 이 옵션은 WSL 쪽 devbox가 시작할 때 적용하므로, 그 전에 확장 키를 요청한 프로그램은 다시 시작할 때까지 Shift+Enter를 Enter로 받는다. devbox는 터미널을 열 때마다 이미 떠 있는 devbox tmux 서버의 버전을 물어 Shift+Enter를 확장 키로 보낼지 정하므로, tmux를 올려도 이미 떠 있는 devbox tmux 서버가 다시 시작될 때까지는 Shift+Enter가 Enter로 동작한다.
+- WSL의 tmux 3.2 이상. 더 낮으면 환경 점검이 실패로 표시한다. 프로그램이 Shift+Enter를 Enter와 다른 키로 받으려면(pi의 줄바꿈) tmux 3.5 이상이 필요하다. 3.2–3.4에서는 Shift+Enter도 Enter로 동작하므로 pi에서도 줄을 바꾸지 않고 보낸다(Ubuntu 24.04의 tmux는 3.4다). devbox는 자기 tmux 서버(`tmux -L devbox-prod`)에만 확장 키 옵션을 켜고, 사용자의 다른 tmux는 건드리지 않는다. 이 옵션은 WSL 쪽 devbox가 시작할 때 적용하므로, 그 전에 확장 키를 요청한 프로그램은 다시 시작할 때까지 Shift+Enter를 Enter로 받는다. devbox는 터미널을 열 때마다 이미 떠 있는 devbox tmux 서버의 버전을 물어 Shift+Enter를 확장 키로 보낼지 정하므로, tmux를 3.4 이하에서 3.5 이상으로 올려도 이미 떠 있는 devbox tmux 서버가 다시 시작될 때까지는 Shift+Enter가 Enter로 동작한다.
 - WSL의 git. PR 만들기에는 WSL의 GitHub CLI(`gh`) 로그인이 필요하다.
 - 쓸 에이전트 CLI(`claude`·`codex`·`opencode`·`pi`)를 WSL에 설치하고 각 CLI에서 로그인한다. 환경 점검은 devbox가 연결을 확인한 가장 낮은 버전보다 낮으면 경고한다: Claude Code 2.1.300, opencode 1.19.3, pi 1.3.0. Codex는 기준 버전이 없다.
 
