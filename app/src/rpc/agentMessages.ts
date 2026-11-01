@@ -1,11 +1,17 @@
 import { cloneMessage, files, type Message, type Messages, path, toolMissing } from "./messageDetail";
 
 type Domain = "agents" | "projects" | "terminal";
+/**
+ * What a closed task's cleanup notice says to do. The code's own action was written for the merge
+ * or PR that failed, and the closed task has nothing to retry. What cleanup left is cleaned from
+ * the list in settings, which offers a work folder only while it is clean and still at the head
+ * the task closed with, so a commit would take it out of the list for good.
+ */
+const CLEANUP_LIST = "설정 → 에이전트 → 정리 후보";
+export const CLEANUP_ACTION = `${CLEANUP_LIST}에서 남은 항목을 확인하세요.`;
+export const CLEANUP_FILES_ACTION = `남은 파일을 옮기거나 지운 뒤(커밋하지 말고) ${CLEANUP_LIST}에서 정리하세요.`;
 /** For a closed task's cleanup error that carries no code this table knows. */
-export const CLEANUP_UNKNOWN: Message = {
-  title: "원인을 확인하지 못했습니다.",
-  action: "작업 폴더와 브랜치가 남아 있는지 확인해 주세요.",
-};
+export const CLEANUP_UNKNOWN: Message = { title: "원인을 확인하지 못했습니다.", action: CLEANUP_ACTION };
 /** Messages for agent tasks, projects and terminals. */
 export const AGENT_MESSAGES: Messages<Domain> = {
   "terminal.command_too_long": {

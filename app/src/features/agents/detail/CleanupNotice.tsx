@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CLEANUP_UNKNOWN } from "../../../rpc/agentMessages";
+import { CLEANUP_ACTION, CLEANUP_FILES_ACTION, CLEANUP_UNKNOWN } from "../../../rpc/agentMessages";
 import type { ErrorCode } from "../../../rpc/client";
 import { RPC_ERROR_CODES } from "../../../rpc/gen/rpc";
 import { type Message, messageFor } from "../../../rpc/messages";
@@ -13,6 +13,7 @@ const KNOWN: readonly string[] = RPC_ERROR_CODES;
  * `{"code":"agents.worktree_dirty","detail":{...}}`, or a sentence of its own for a fault it does
  * not describe. What the code says (or a general message, when the code is missing or unknown) is
  * the main text; the stored text, with any files it names, is only the details behind [자세히].
+ * The next action is the notice's own: the table's action belongs to the operation that failed.
  */
 function messageOf(raw: string): Message {
   try {
@@ -20,7 +21,11 @@ function messageOf(raw: string): Message {
     if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
       if (KNOWN.includes(error.code)) {
         const message = messageFor(error.code as ErrorCode, "detail" in error ? error.detail : undefined);
-        if (message?.title) return message;
+        if (message?.title)
+          return {
+            title: message.title,
+            action: error.code === "agents.worktree_dirty" ? CLEANUP_FILES_ACTION : CLEANUP_ACTION,
+          };
       }
     }
   } catch {

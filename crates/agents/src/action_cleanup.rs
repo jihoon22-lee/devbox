@@ -142,6 +142,13 @@ impl AgentsService {
         )
         .await
         .map_err(git_failure)?;
+        self.record_cleaned(id).await
+    }
+    /// A closed task's last resource is gone: release its reservation and drop the note of what
+    /// cleanup left behind. Automatic cleanup and the cleanup list both end here, for that one
+    /// task. Callers reach it only after the work folder and the branch are removed, so a failed
+    /// or partial cleanup keeps the note.
+    pub(crate) async fn record_cleaned(&self, id: &str) -> Result<()> {
         self.record_resources(id, crate::tracker::Resources::Planned)
             .await?;
         self.update(id, |task| {

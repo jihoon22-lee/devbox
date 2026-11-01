@@ -333,7 +333,7 @@ impl AgentsService {
                 )
                 .await
                 .map_err(git_failure)?;
-                self.record_resources(&task.id, Resources::Planned).await?;
+                self.record_cleaned(&task.id).await?;
                 continue;
             }
             // Stop only the closed task's resources before removing its working directory.
@@ -400,7 +400,7 @@ impl AgentsService {
                 )
                 .await
                 .map_err(git_failure)?;
-                self.record_resources(&task.id, Resources::Planned).await?;
+                self.record_cleaned(&task.id).await?;
             }
         }
         Ok(Done {

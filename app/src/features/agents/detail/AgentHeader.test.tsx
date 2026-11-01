@@ -53,9 +53,15 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   header(raw);
   const alert = screen.getByRole("alert");
   expect(alert).toHaveTextContent("정리하지 못한 항목이 있습니다.");
-  // The fixed message of the code: what stopped it, and what to do.
+  // The code's own title says what stopped it. The next action is the cleanup notice's own: the
+  // closed task has nothing to retry, and a commit would move HEAD off the closed one, which
+  // takes the work folder out of the cleanup list for good.
   expect(alert).toHaveTextContent("작업 폴더에 커밋하지 않은 변경이 있습니다.");
-  expect(alert).toHaveTextContent("변경을 확인하고 커밋한 뒤 다시 시도해 주세요.");
+  expect(alert).toHaveTextContent(
+    "남은 파일을 옮기거나 지운 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 정리하세요.",
+  );
+  expect(alert).not.toHaveTextContent("커밋한 뒤");
+  expect(alert).not.toHaveTextContent("다시 시도");
   // The stored text, with the files it names, is only the details behind [자세히].
   expect(screen.queryByText(raw)).not.toBeInTheDocument();
   expect(document.body).not.toHaveTextContent("agents.worktree_dirty");
@@ -70,14 +76,18 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   expect(screen.queryByText(raw)).not.toBeInTheDocument();
 });
 
-test("a cleanup error's detail reaches the message of its code, and the stored text is still under [자세히]", async () => {
+test("a code's own next action never reaches the notice: other codes point to the cleanup list, and the stored text stays under [자세히]", async () => {
   const raw = JSON.stringify({ code: "agents.base_dirty", detail: { files: ["a.txt", "b.txt"] } });
   header(raw);
-  expect(screen.getByRole("alert")).toHaveTextContent("기준 체크아웃에 커밋하지 않은 변경이 있어 병합하지 않았습니다.");
-  expect(screen.getByRole("alert")).toHaveTextContent("변경 파일: a.txt, b.txt");
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("기준 체크아웃에 커밋하지 않은 변경이 있어 병합하지 않았습니다.");
+  expect(alert).toHaveTextContent("설정 → 에이전트 → 정리 후보에서 남은 항목을 확인하세요.");
+  // That action was written for the merge; a closed task has no merge to try again.
+  expect(alert).not.toHaveTextContent("다시 시도");
+  expect(alert).not.toHaveTextContent("a.txt");
   expect(screen.queryByText(raw)).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "자세히" }));
-  expect(screen.getByText(raw)).toBeInTheDocument();
+  expect(screen.getByText(raw)).toHaveTextContent("a.txt");
 });
 
 test.each([
@@ -99,7 +109,7 @@ test.each([
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("정리하지 못한 항목이 있습니다.");
     expect(alert).toHaveTextContent("원인을 확인하지 못했습니다.");
-    expect(alert).toHaveTextContent("작업 폴더와 브랜치가 남아 있는지 확인해 주세요.");
+    expect(alert).toHaveTextContent("설정 → 에이전트 → 정리 후보에서 남은 항목을 확인하세요.");
     expect(document.body).not.toHaveTextContent(raw);
     await userEvent.click(screen.getByRole("button", { name: "자세히" }));
     expect(screen.getByText(raw)).toBeInTheDocument();
