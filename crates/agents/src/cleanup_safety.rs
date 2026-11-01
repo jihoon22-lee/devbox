@@ -151,7 +151,8 @@ impl AgentsService {
     /// tracked files and the index go back to HEAD, and untracked files that are not ignored go.
     /// Submodules, nested repositories and ignored files are left as they are, so the removal's
     /// clean check, made again here, still refuses a folder whose submodule or nested repository
-    /// changed. Git itself still refuses a folder with an initialized submodule.
+    /// changed. Git itself still refuses a folder with an initialized submodule. In a folder with
+    /// assume-unchanged or skip-worktree entries nothing is undone.
     pub(crate) async fn undo_teardown(&self, task: &AgentTask, wt: &Path) -> Result<()> {
         if cleanup_in_progress(wt).await? {
             return Err(AgentsError::OperationInProgress.into());
@@ -161,6 +162,19 @@ impl AgentsService {
             Err(devbox_git::GitError::WorktreeDirty { files }) => files.len(),
             Err(error) => return Err(git_failure(error)),
         };
+        // An edit `git status` does not show may be the user's, from before cleanup. Then nothing
+        // is undone, and the removal refuses what is left, as it did before the undo existed.
+        match devbox_git::mutate::hides_edits(wt).await {
+            Ok(false) => (),
+            Ok(true) => {
+                tracing::info!(agent = %task.id, "work folder has entries git status does not show; nothing undone");
+                return Ok(());
+            }
+            Err(error) => {
+                tracing::warn!(agent = %task.id, %error, "work folder index flags unknown; nothing undone");
+                return Ok(());
+            }
+        }
         // Paths stay out of the log; the count says how much cleanup undid.
         tracing::info!(agent = %task.id, changed, "undoing what changed in the work folder during cleanup");
         devbox_git::mutate::restore_tracked(wt)

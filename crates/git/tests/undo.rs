@@ -11,6 +11,8 @@ fn sh(dir: &Path, args: &[&str]) -> String {
         .env("GIT_AUTHOR_EMAIL", "test@test")
         .env("GIT_COMMITTER_NAME", "test")
         .env("GIT_COMMITTER_EMAIL", "test@test")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .expect("fixture git");
     assert!(
@@ -163,4 +165,39 @@ async fn worktree_clean_is_the_check_a_removal_without_force_makes() {
         git::mutate::worktree_clean(&dir).await,
         Err(git::GitError::WorktreeDirty { files }) if files == ["a.txt", "new.txt"]
     ));
+}
+
+#[tokio::test]
+async fn hides_edits_finds_entries_whose_edits_status_does_not_show() {
+    let root = tempfile::tempdir().expect("owned fixture");
+    let dir = repo(root.path(), "work");
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::write(dir.join(name), "base\n").expect("owned fixture");
+    }
+    sh(&dir, &["add", "."]);
+    sh(&dir, &["commit", "-qm", "init"]);
+    assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
+    // An edit status shows is not hidden.
+    std::fs::write(dir.join("c.txt"), "shown\n").expect("owned fixture");
+    assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
+    for (flag, name) in [
+        ("--assume-unchanged", "a.txt"),
+        ("--skip-worktree", "b.txt"),
+    ] {
+        sh(&dir, &["update-index", flag, name]);
+        std::fs::write(dir.join(name), "the user's edit\n").expect("owned fixture");
+        // Status lists only the edit it can see, so a clean check alone would miss this one.
+        assert_eq!(
+            sh(&dir, &["status", "--porcelain=v1"]),
+            " M c.txt\n",
+            "{flag}"
+        );
+        assert!(
+            git::mutate::hides_edits(&dir).await.expect("index flags"),
+            "{flag}"
+        );
+        sh(&dir, &["update-index", &flag.replace("--", "--no-"), name]);
+        std::fs::write(dir.join(name), "base\n").expect("owned fixture");
+        assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
+    }
 }

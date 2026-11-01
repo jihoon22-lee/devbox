@@ -15,7 +15,7 @@ mod squash_index;
 
 #[path = "undo.rs"]
 mod undo;
-pub use undo::{clean_untracked, restore_tracked};
+pub use undo::{clean_untracked, hides_edits, restore_tracked};
 
 #[derive(Debug, Clone)]
 pub enum MergeStrategy {

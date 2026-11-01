@@ -2,6 +2,8 @@ use super::*;
 use crate::tracker::{Binding, Resources};
 use devbox_protocol::Fail;
 
+#[path = "cleanup_left_tests.rs"]
+mod cleanup_left_tests;
 #[path = "close_review_tests.rs"]
 mod close_review_tests;
 #[path = "discard_cas_tests.rs"]
@@ -16,6 +18,8 @@ mod manual_cleanup_tests;
 mod merge_retry_tests;
 #[path = "squash_cleanup_tests.rs"]
 mod squash_cleanup_tests;
+#[path = "teardown_harness.rs"]
+mod teardown_harness;
 #[path = "teardown_undo_tests.rs"]
 mod teardown_undo_tests;
 

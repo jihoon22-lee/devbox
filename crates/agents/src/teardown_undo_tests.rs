@@ -2,27 +2,26 @@
 //! without force. What the teardown leaves in a folder that was clean at the closed head is undone
 //! first; a folder with changes of its own, or one the undo cannot account for, is refused as
 //! before (Ruling 61).
-use super::*;
-
-const CHILD: &str = "DEVBOX_UNDO_CASE";
+use super::{teardown_harness::*, *};
 
 #[test]
 fn cleanup_undoes_what_its_teardown_left_in_a_clean_folder_and_removes_it() {
-    undo_cases(
-        "cleanup_undoes_what_its_teardown_left_in_a_clean_folder_and_removes_it",
+    cases(
+        "teardown_undo_tests::cleanup_undoes_what_its_teardown_left_in_a_clean_folder_and_removes_it",
         &[
             "auto-untracked",
             "manual-untracked",
             "auto-tracked",
             "auto-ignored",
         ],
+        case,
     );
 }
 
 #[test]
 fn cleanup_keeps_a_folder_whose_changes_it_cannot_account_for() {
-    undo_cases(
-        "cleanup_keeps_a_folder_whose_changes_it_cannot_account_for",
+    cases(
+        "teardown_undo_tests::cleanup_keeps_a_folder_whose_changes_it_cannot_account_for",
         &[
             "user-file",
             "submodule",
@@ -30,6 +29,7 @@ fn cleanup_keeps_a_folder_whose_changes_it_cannot_account_for() {
             "nested",
             "head-moved",
         ],
+        case,
     );
 }
 
@@ -38,190 +38,27 @@ fn cleanup_keeps_a_folder_whose_changes_it_cannot_account_for() {
 /// stays out; the user reads it in the file. The folder and branch stay.
 #[test]
 fn a_failing_teardown_names_its_command_and_keeps_the_folder() {
-    undo_cases(
-        "a_failing_teardown_names_its_command_and_keeps_the_folder",
+    cases(
+        "teardown_undo_tests::a_failing_teardown_names_its_command_and_keeps_the_folder",
         &["fails-auto", "fails-killed", "fails-manual"],
+        case,
     );
 }
 
-/// Each mode runs alone in a child process. Its PATH starts with owned wrappers: `bash` without
-/// profile files (the teardown runs `bash -lc`, which would read the user's), and a transparent
-/// `git` that notes the arguments of each `git clean` and, when a removal starts, whether the
-/// fixture's ignored file is still in the folder. HOME is an owned folder, so no user Git
-/// configuration applies.
-fn undo_cases(test: &str, modes: &[&str]) {
-    if let Ok(mode) = std::env::var(CHILD) {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .expect("owned runtime")
-            .block_on(case(&mode));
-        return;
-    }
-    let root = tempfile::tempdir().expect("owned wrappers");
-    let real_git = Command::new("sh")
-        .args(["-c", "command -v git"])
-        .output()
-        .expect("git path");
-    assert!(real_git.status.success());
-    let real_git = String::from_utf8(real_git.stdout)
-        .expect("Git path")
-        .trim()
-        .to_owned();
-    fs::write(
-        root.path().join("bash"),
-        "#!/bin/sh\nexec /bin/bash --noprofile --norc \"$@\"\n",
-    )
-    .expect("owned bash wrapper");
-    fs::write(
-        root.path().join("git"),
-        r#"#!/bin/sh
-case " $* " in
- *" clean "*) printf '%s\n' "$*" >> "$DEVBOX_UNDO_RECEIPT.clean";;
- *" worktree remove "*)
-   for last do :; done
-   if [ -e "$last/ignored.log" ]; then state=kept; else state=gone; fi
-   printf '%s\n' "$state" >> "$DEVBOX_UNDO_RECEIPT.remove";;
-esac
-exec "$DEVBOX_UNDO_REAL_GIT" "$@"
-"#,
-    )
-    .expect("owned git wrapper");
-    for name in ["bash", "git"] {
-        fs::set_permissions(root.path().join(name), fs::Permissions::from_mode(0o700))
-            .expect("wrapper mode");
-    }
-    let path = std::env::join_paths(std::iter::once(root.path().to_owned()).chain(
-        std::env::split_paths(&std::env::var_os("PATH").expect("PATH")),
-    ))
-    .expect("owned PATH");
-    let mut failures = vec![];
-    for mode in modes {
-        let home = root.path().join(format!("home-{mode}"));
-        fs::create_dir(&home).expect("owned home");
-        let output = Command::new(std::env::current_exe().expect("test executable"))
-            .args([
-                "--exact",
-                &format!(
-                    "service::resource_tests::action_review_tests::teardown_undo_tests::{test}"
-                ),
-                "--nocapture",
-            ])
-            .env(CHILD, mode)
-            .env("PATH", &path)
-            .env("HOME", &home)
-            .env("DEVBOX_UNDO_REAL_GIT", &real_git)
-            .env(
-                "DEVBOX_UNDO_RECEIPT",
-                root.path().join(format!("receipt-{mode}")),
-            )
-            .output()
-            .expect("owned child");
-        if !output.status.success() {
-            failures.push(format!(
-                "{mode}: {}\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+/// `git status` does not show an edit to a file marked assume-unchanged or skip-worktree, so the
+/// folder looks clean while it holds one, maybe the user's. Then nothing is undone: the removal
+/// refuses what the teardown left, as it did before the undo existed.
+#[test]
+fn cleanup_never_undoes_an_edit_git_status_does_not_show() {
+    cases(
+        "teardown_undo_tests::cleanup_never_undoes_an_edit_git_status_does_not_show",
+        &["assume-unchanged", "skip-worktree"],
+        case,
+    );
 }
 
-/// What a wrapper noted for this child, one line per call; empty when it was never called.
-fn receipt(kind: &str) -> Vec<String> {
-    let mut path = std::env::var_os("DEVBOX_UNDO_RECEIPT").expect("receipt path");
-    path.push(format!(".{kind}"));
-    fs::read_to_string(path)
-        .map(|text| text.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
-}
-
-/// Writes the project's teardown, commits it on the base branch and approves it, as a user would.
-/// The first command leaves a marker outside the work folder, so a test can tell it ran.
-async fn approve_teardown(f: &Fixture, task: &AgentTask, wt: &Path, commands: &[&str]) -> PathBuf {
-    let marker = f.root.path().join("teardown-ran");
-    let mut list = vec![format!(
-        "printf ran > {}",
-        crate::plan::sh_quote(marker.to_str().expect("owned marker"))
-    )];
-    list.extend(commands.iter().map(|command| (*command).to_owned()));
-    let list: Vec<_> = list
-        .iter()
-        .map(|command| serde_json::to_string(command).expect("TOML string"))
-        .collect();
-    fs::create_dir_all(f.repo.join(".devbox")).expect("owned config directory");
-    fs::write(
-        f.repo.join(".devbox/devbox.toml"),
-        format!("[agent]\nteardown=[{}]\n", list.join(",")),
-    )
-    .expect("owned config");
-    git(&f.repo, &["add", ".devbox/devbox.toml"]);
-    git(&f.repo, &["commit", "-qm", "owned teardown"]);
-    let preview = f
-        .svc
-        .projects
-        .trust_preview(
-            devbox_projects::TrustPreviewParams {
-                id: f.project.clone(),
-                operation: devbox_projects::TrustOperation::Cleanup,
-                agent_id: Some(task.id.clone()),
-                worktrees: vec![],
-                worktree: None,
-            },
-            true,
-            vec![wt.to_string_lossy().into_owned()],
-        )
-        .await
-        .expect("owned preview");
-    f.svc
-        .projects
-        .trust_approve(devbox_projects::TrustApprove {
-            id: f.project.clone(),
-            expected_canonical_path: preview.canonical_path,
-            expected_digest: preview.digest.expect("config digest"),
-            expected_scope_version: preview.scope_version,
-        })
-        .await
-        .expect("explicit owned command consent");
-    marker
-}
-
-/// Closes the task by merge. With cleanup on, automatic cleanup runs before this returns.
-async fn close(f: &Fixture, task: &AgentTask, strategy: MergeKind) -> AgentTask {
-    let review = expect(f, task).await;
-    f.svc
-        .merge(MergeAgent {
-            id: task.id.clone(),
-            strategy,
-            message: Some("owned change".into()),
-            expect: review,
-        })
-        .await
-        .expect("closed by merge")
-}
-
-async fn has_branch(f: &Fixture) -> bool {
-    devbox_git::branches(&f.repo)
-        .await
-        .expect("branches")
-        .contains(&"agent/review".into())
-}
-
-/// The code of the note a closed task keeps of what cleanup left, and its detail.
-fn note_of(task: &AgentTask) -> serde_json::Value {
-    serde_json::from_str(task.cleanup_error.as_deref().expect("a cleanup note"))
-        .expect("the note is an error's JSON")
-}
-
-fn set_cleanup(f: &mut Fixture, on: bool) {
-    Arc::get_mut(&mut f.svc)
-        .expect("owned service")
-        .cleanup_after_close = on;
-}
-
-async fn case(mode: &str) {
+async fn case(mode: String) {
+    let mode = mode.as_str();
     let (mut f, task, wt) = action_fixture().await;
     match mode {
         "auto-untracked" | "auto-tracked" | "auto-ignored" => {
@@ -479,6 +316,24 @@ async fn case(mode: &str) {
                 serde_json::json!({"code":"agents.teardown_failed","detail":{"index":2,"exit_code":3}})
             );
             assert!(wt.exists());
+            assert!(has_branch(&f).await);
+        }
+        "assume-unchanged" | "skip-worktree" => {
+            let flag = format!("--{mode}");
+            git(&wt, &["update-index", &flag, "tracked"]);
+            fs::write(wt.join("tracked"), "the user's edit\n").expect("user edit");
+            let ran = approve_teardown(&f, &task, &wt, &["printf x > teardown.log"]).await;
+            let closed = close(&f, &task, MergeKind::Squash).await;
+            assert!(ran.exists(), "the teardown ran");
+            let note = note_of(&closed);
+            assert_eq!(note["code"], "agents.worktree_dirty", "{note}");
+            assert_eq!(note["detail"]["files"], serde_json::json!(["teardown.log"]));
+            assert_eq!(
+                fs::read_to_string(wt.join("tracked")).expect("kept edit"),
+                "the user's edit\n"
+            );
+            assert!(wt.join("teardown.log").exists(), "nothing was undone");
+            assert!(receipt("clean").is_empty());
             assert!(has_branch(&f).await);
         }
         other => panic!("unknown mode {other}"),

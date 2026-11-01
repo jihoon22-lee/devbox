@@ -325,41 +325,6 @@ async fn after_a_cleanup_of_the_folder_alone_the_branch_is_still_listed_and_remo
     assert_eq!(note(&f, &task).await, None);
 }
 
-/// The folder went, then the branch deletion failed: another Git process held the branch's ref
-/// lock. The branch is still at the closed head.
-#[tokio::test]
-async fn the_branch_a_failed_deletion_left_is_listed_and_removable() {
-    let (f, task, wt) = action_fixture().await;
-    let lock = f.repo.join(".git/refs/heads/agent/review.lock");
-    fs::write(&lock, "").expect("held ref lock");
-    let review = expect(&f, &task).await;
-    let closed = f
-        .svc
-        .merge(MergeAgent {
-            id: task.id.clone(),
-            strategy: MergeKind::Squash,
-            message: Some("squash owned change".into()),
-            expect: review,
-        })
-        .await
-        .expect("squash");
-    assert!(!wt.exists(), "the folder went first");
-    assert!(closed.cleanup_error.is_some(), "{closed:?}");
-    assert!(has_branch(&f, "agent/review").await);
-    fs::remove_file(&lock).expect("lock released");
-    let options = listed(&f).await;
-    assert!(options.worktrees.is_empty(), "{options:?}");
-    assert_eq!(options.branches, ["agent/review"]);
-    assert_eq!(options.off_base, ["agent/review"]);
-    f.svc
-        .cleanup(offered(&f, &options))
-        .await
-        .expect("branch cleanup");
-    assert!(!has_branch(&f, "agent/review").await);
-    assert_eq!(reservation(&f, &task).await, Resources::Planned);
-    assert_eq!(note(&f, &task).await, None);
-}
-
 #[tokio::test]
 async fn every_item_the_list_offers_passes_cleanup() {
     let (f, squash, squash_wt) = squashed(true).await;
