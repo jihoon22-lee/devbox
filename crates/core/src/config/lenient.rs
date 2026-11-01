@@ -161,6 +161,14 @@ impl ConfigLoad {
         }
     }
 
+    /// The file whose `section.key` the merged copy holds: the last that sets it, since lists
+    /// replace, or `config.toml`.
+    pub fn source(&self, section: &str, key: &str) -> PathBuf {
+        let sets = |table: &toml::Table| table.get(section).and_then(|s| s.get(key)).is_some();
+        let found = self.files.iter().rev().find(|(_, table)| sets(table));
+        found.map_or_else(|| self.shared.clone(), |(path, _)| path.clone())
+    }
+
     fn report(&mut self, file: &Path, section: &str, effect: SectionEffect, message: String) {
         self.problems.push(StartupProblem::ConfigSection {
             file: file.display().to_string(),

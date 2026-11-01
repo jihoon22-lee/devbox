@@ -1,36 +1,51 @@
 //! What the daemon started without (`system.info.startupProblems`), and the background
 //! retry of agent initialization while tmux cannot list sessions.
 use super::state::Services;
+use devbox_activity::ActivitySettings;
 use devbox_agents::{AgentsError, KnownTasks};
-use devbox_core::config::Disabled;
+use devbox_core::config::{ConfigLoad, Disabled};
 use devbox_protocol::{Fail, system::StartupProblem};
+use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-/// Config problems stay until the next start; the agents one clears when a retry succeeds.
+/// Config problems stay until the next start; the agents one clears when a retry succeeds,
+/// and the activity rules ones once activity records again.
 pub(super) struct Startup {
     pub disabled: Disabled,
     config: Vec<StartupProblem>,
+    /// [`activity_rules`], shown while the activity service records nothing.
+    activity: Vec<StartupProblem>,
     agents: Mutex<Option<String>>,
 }
 
 impl Startup {
-    pub fn new(disabled: Disabled, config: Vec<StartupProblem>) -> Self {
-        for problem in &config {
+    pub fn new(
+        disabled: Disabled,
+        config: Vec<StartupProblem>,
+        activity: Vec<StartupProblem>,
+    ) -> Self {
+        for problem in config.iter().chain(&activity) {
             tracing::warn!(?problem, "started without part of the configuration");
         }
         Self {
             disabled,
             config,
+            activity,
             agents: Mutex::default(),
         }
     }
 
-    pub fn problems(&self) -> Vec<StartupProblem> {
+    /// `activity_off`: the activity service records nothing right now. Saving rules that
+    /// compile turns it back on, so the problems that explained it go.
+    pub fn problems(&self, activity_off: bool) -> Vec<StartupProblem> {
         let mut problems = self.config.clone();
+        if activity_off {
+            problems.extend(self.activity.iter().cloned());
+        }
         if let Some(message) = self.agents.lock().expect("startup problems").clone() {
             problems.push(StartupProblem::AgentsReconcile { message });
         }
@@ -64,6 +79,28 @@ pub(super) fn windows_reason(problems: &[StartupProblem], local: &Path) -> Strin
             _ => None,
         })
         .unwrap_or_else(|| "[windows] did not load".into())
+}
+
+/// `[activity]` rules that loaded but do not compile, one problem per file that holds them.
+/// Not a section failure: the rules stay readable, so 설정 → 활동 can show and fix them.
+pub(super) fn activity_rules(
+    load: &ConfigLoad,
+    settings: &ActivitySettings,
+    local: &Path,
+) -> Vec<StartupProblem> {
+    let mut files = BTreeMap::<PathBuf, Vec<String>>::new();
+    for rule in settings.invalid_rules() {
+        let file = load.source("activity", rule.field.key());
+        files.entry(file).or_default().push(rule.to_string());
+    }
+    files
+        .into_iter()
+        .map(|(file, rules)| StartupProblem::ActivityRules {
+            local: file == local,
+            file: file.display().to_string(),
+            message: rules.join("; "),
+        })
+        .collect()
 }
 
 /// The first agents initialization, before the daemon serves requests. On failure the

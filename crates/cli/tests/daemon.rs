@@ -362,6 +362,50 @@ async fn valid_toml_with_an_invalid_section_survives_an_activity_rule_write() {
 }
 
 #[tokio::test]
+async fn activity_rules_that_do_not_compile_are_reported_until_a_save_that_compiles() {
+    use devbox_activity::{ActivityRules, ActivitySetRules, NoParams, SetRules};
+    for name in ["config.toml", "config.local.toml"] {
+        let mut d = TestDaemon::fixture();
+        let file = d.paths.config_dir.join(name);
+        std::fs::create_dir_all(&d.paths.config_dir).expect("owned config folder");
+        std::fs::write(
+            &file,
+            "[activity]\nexcluded_title_patterns = ['(unclosed']\n",
+        )
+        .expect("owned config");
+        d.launch();
+        let c = d.client().await;
+        // Activity records nothing now, so the banner names the file that holds the rule.
+        let problems = startup_problems(&c).await;
+        assert!(
+            matches!(problems.as_slice(), [p] if p["kind"] == "activityRules"
+                && p["file"] == file.display().to_string().as_str()
+                && p["local"] == (name == "config.local.toml")
+                && p["message"].as_str().is_some_and(|m| m.contains("excluded_title_patterns[0]"))),
+            "{name}: {problems:?}"
+        );
+        // The rules stay readable, so 설정 → 활동 shows them to fix.
+        let rules = c.call::<ActivityRules>(&NoParams {}).await.expect("rules");
+        assert_eq!(rules.rules.excluded_title_patterns, ["(unclosed"]);
+        c.call::<ActivitySetRules>(&SetRules {
+            rules: devbox_activity::model::privacy::PrivacyRules {
+                excluded_title_patterns: vec!["fixed".into()],
+                ..Default::default()
+            },
+            idle_threshold_ms: 300_000,
+        })
+        .await
+        .expect("rules that compile are saved");
+        // Recording is back on, so the problem is gone without a restart.
+        assert_eq!(
+            startup_problems(&c).await,
+            [] as [serde_json::Value; 0],
+            "{name}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn agents_initialize_failure_does_not_stop_the_daemon() {
     use std::os::unix::fs::PermissionsExt;
     let mut d = TestDaemon::fixture();

@@ -10,6 +10,7 @@ const TITLE = {
   configFile: "설정 파일을 읽지 못했습니다",
   configSection: "설정 일부를 읽지 못했습니다",
   agentsReconcile: "에이전트 상태를 확인하지 못했습니다",
+  activityRules: "개인정보 규칙을 적용하지 못했습니다",
 } as const;
 
 function Guidance({ problem }: { problem: StartupProblem }) {
@@ -38,6 +39,16 @@ function Guidance({ problem }: { problem: StartupProblem }) {
       return (
         <p style={{ margin: 0 }}>
           터미널 서버(tmux)에 연결하지 못했습니다. 자동으로 다시 시도합니다. 계속되면 설정 → 앱 진단을 확인하세요.
+        </p>
+      );
+    case "activityRules":
+      // 설정 → 활동 saves to config.toml, and a rule in config.local.toml wins on the next start.
+      return (
+        <p style={{ margin: 0 }}>
+          <code>{problem.file}</code>의 [activity]에 맞지 않는 개인정보 규칙이 있어 활동 기록을 껐습니다.{" "}
+          {problem.local
+            ? "이 파일의 규칙을 고친 뒤 [다시 설정]을 누르세요."
+            : "설정 → 활동에서 규칙을 고쳐 저장하세요."}
         </p>
       );
   }

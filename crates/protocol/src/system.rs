@@ -46,6 +46,15 @@ pub enum StartupProblem {
     },
     /// Agent tasks were not checked against tmux yet; the daemon keeps retrying.
     AgentsReconcile { message: String },
+    /// `[activity]` loaded, but rules in `file` do not compile (`message` names them), so
+    /// activity records nothing. Cleared once rules that compile are saved. With `local`,
+    /// `file` is `config.local.toml`: saving writes `config.toml`, and the local rule wins
+    /// again on the next start, so it must be fixed in `file`.
+    ActivityRules {
+        file: String,
+        message: String,
+        local: bool,
+    },
 }
 
 /// What a [`StartupProblem::ConfigSection`] did to the feature the section configures.
@@ -128,12 +137,18 @@ mod tests {
             StartupProblem::AgentsReconcile {
                 message: "m".into(),
             },
+            StartupProblem::ActivityRules {
+                file: "/c/config.local.toml".into(),
+                message: "m".into(),
+                local: true,
+            },
         ];
         let wire = serde_json::json!([
             {"kind": "configFile", "file": "/c/config.toml", "message": "m"},
             {"kind": "configSection", "file": "/c/config.local.toml", "section": "notes", "message": "m", "effect": "disabled"},
             {"kind": "configSection", "file": "/c/config.toml", "section": "windows", "message": "m", "effect": "ignored"},
             {"kind": "agentsReconcile", "message": "m"},
+            {"kind": "activityRules", "file": "/c/config.local.toml", "message": "m", "local": true},
         ]);
         assert_eq!(
             serde_json::to_value(&problems).expect("problems JSON"),

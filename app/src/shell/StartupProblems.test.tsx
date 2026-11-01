@@ -36,6 +36,12 @@ const ignoredSection = {
   effect: "ignored",
 };
 const agentsReconcile = { kind: "agentsReconcile", message: "tmux list-sessions: no server running" };
+const activityRules = {
+  kind: "activityRules",
+  file: "/fixture/devbox/config.toml",
+  message: "excluded_title_patterns[0]: not a valid regular expression",
+  local: false,
+};
 /** Matches the one element whose whole text is `text`, even when `<code>` splits it. */
 const whole = (text: string) => (_: string, element: Element | null) => element?.textContent === text;
 
@@ -113,6 +119,31 @@ test("a section problem that turned nothing off says it was only ignored, with t
   expect(item!.textContent).not.toMatch(/껐습니다/);
   expect(within(item!).getByRole("button", { name: "다시 설정" })).toBeInTheDocument();
   expect(within(item!).getByRole("button", { name: "경로 복사" })).toBeInTheDocument();
+});
+
+test("privacy rules that do not compile say recording is off and where to fix them", async () => {
+  await show([activityRules, { ...activityRules, file: "/fixture/devbox/config.local.toml", local: true }]);
+  const [shared, local] = screen.getAllByRole("listitem");
+  for (const item of [shared!, local!]) {
+    expect(within(item).getByText("개인정보 규칙을 적용하지 못했습니다")).toBeInTheDocument();
+    expect(within(item).getByText(activityRules.message)).toBeInTheDocument();
+    expect(within(item).getByRole("button", { name: "경로 복사" })).toBeInTheDocument();
+  }
+  // 설정 → 활동 saves to config.toml, and a rule in config.local.toml wins on the next start.
+  expect(
+    within(shared!).getByText(
+      whole(
+        "/fixture/devbox/config.toml의 [activity]에 맞지 않는 개인정보 규칙이 있어 활동 기록을 껐습니다. 설정 → 활동에서 규칙을 고쳐 저장하세요.",
+      ),
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(local!).getByText(
+      whole(
+        "/fixture/devbox/config.local.toml의 [activity]에 맞지 않는 개인정보 규칙이 있어 활동 기록을 껐습니다. 이 파일의 규칙을 고친 뒤 [다시 설정]을 누르세요.",
+      ),
+    ),
+  ).toBeInTheDocument();
 });
 
 test("nothing is drawn and nothing is polled without startup problems", async () => {

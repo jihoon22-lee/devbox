@@ -3,7 +3,7 @@
 //! recorded) instead of stopping the daemon. Writes take the shared config lock
 //! (also taken by `devbox_secrets` `save_name`) and keep comments and other sections.
 use crate::model::idle::{DEFAULT_IDLE_THRESHOLD_MS, MAX_IDLE_THRESHOLD_MS, MIN_IDLE_THRESHOLD_MS};
-use crate::model::privacy::{CompiledRules, PrivacyRules};
+use crate::model::privacy::{CompiledRules, InvalidRule, PrivacyRules};
 use serde::Deserialize;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -89,6 +89,16 @@ impl ActivitySettings {
             return CompiledRules::fail_closed();
         }
         CompiledRules::compile(&self.rules).unwrap_or_else(|_| CompiledRules::fail_closed())
+    }
+
+    /// Why rules that parsed do not compile; empty when they compile or did not parse.
+    pub fn invalid_rules(&self) -> Vec<InvalidRule> {
+        if !self.readable {
+            return Vec::new();
+        }
+        CompiledRules::compile(&self.rules)
+            .err()
+            .unwrap_or_default()
     }
 }
 

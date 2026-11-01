@@ -81,12 +81,15 @@ fn build_services_with_runtime(
                 .map_err(|error| error.message().to_owned())
         })
         .unwrap_or_else(devbox_activity::ActivitySettings::unreadable);
+    let local = paths.config_dir.join("config.local.toml");
+    let activity_rules = startup::activity_rules(&load, &activity, &local);
     let (profiles, invalid_profiles) =
         devbox_agents::profile::configured_lenient(&load.config.agents);
     load.problems.extend(invalid_profiles);
-    let windows_invalid = load.disabled.windows.then(|| {
-        startup::windows_reason(&load.problems, &paths.config_dir.join("config.local.toml"))
-    });
+    let windows_invalid = load
+        .disabled
+        .windows
+        .then(|| startup::windows_reason(&load.problems, &local));
     let devbox_core::config::ConfigLoad {
         config,
         disabled,
@@ -208,7 +211,7 @@ fn build_services_with_runtime(
     Ok(Arc::new(Services {
         windows,
         runtime,
-        startup: startup::Startup::new(disabled, problems),
+        startup: startup::Startup::new(disabled, problems, activity_rules),
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
         started: Instant::now(),

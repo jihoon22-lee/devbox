@@ -312,6 +312,12 @@ impl ActivityService {
         Ok(self.writer.status())
     }
 
+    /// The rules in force store nothing: the stored ones could not be read or compiled, and
+    /// no rules that compile have been saved since.
+    pub fn records_nothing(&self) -> bool {
+        self.rules.read().expect("activity rules").compiled.closed()
+    }
+
     pub async fn rules(&self, _p: NoParams) -> R<RulesView> {
         let rules = self.rules.read().expect("activity rules");
         Ok(RulesView {
