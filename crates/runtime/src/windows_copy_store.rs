@@ -420,7 +420,14 @@ pub(crate) fn observed_closed(
     let Some(mut value) = attempt(tx, nonce)? else {
         return Ok(Err(invalid()));
     };
-    if value.phase != AttemptPhase::Committed || value.assigned.as_ref() != Some(assigned) {
+    if value.assigned.as_ref() != Some(assigned) {
+        return Ok(Err(invalid()));
+    }
+    // Concurrent passes (the poll, a reservation, a stop) can prove the same exit.
+    if value.phase == AttemptPhase::Closed {
+        return Ok(Ok(()));
+    }
+    if value.phase != AttemptPhase::Committed {
         return Ok(Err(invalid()));
     }
     value.phase = AttemptPhase::Closed;
