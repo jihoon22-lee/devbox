@@ -1,4 +1,4 @@
-import { ansiToSpans, followState, LogDecoder, retainLogLines } from "./model";
+import { ansiToSpans, ansiToText, followState, LogDecoder, retainLogLines } from "./model";
 
 test("renders ANSI 16, 256, truecolor, bold and underline and resets styles", () => {
   const spans = ansiToSpans("\x1b[31;1;4mred\x1b[0m plain \x1b[38;5;196m256\x1b[48;2;1;2;3mRGB");
@@ -14,6 +14,12 @@ test("renders ANSI 16, 256, truecolor, bold and underline and resets styles", ()
 test("strips cursor/OSC/DCS/C1 and hidden controls without creating HTML", () => {
   const spans = ansiToSpans("\x1b]8;;https://bad\x07safe\x1b]8;;\x1b\\\x1b[2J\x1bPsecret\x1b\\\x9b2J\x00<script>");
   expect(spans.map((s) => s.text).join("")).toBe("safe<script>");
+});
+
+test("plain text drops the same sequences whole and marks every control code but tab and line feed", () => {
+  const text = ansiToText("\x1b]8;;https://bad\x07safe\x1b]8;;\x1b\\\x1b[2J\x1bPsecret\x1b\\\x9b2J\x00<script>");
+  expect(text).toBe("safe�<script>");
+  expect(ansiToText("\x1b[1mok\x1b[0m\ta\nb\rc\x7f\x85\x9c")).toBe("ok\ta\nb�c���");
 });
 
 test("follow pauses on upward scrolling and new lines never override an explicit pause", () => {

@@ -9,6 +9,12 @@ const row = (text: string, runId = "run-1"): LogLine => ({
   stream: "stdout",
 });
 const cursor = (offset: number) => ({ sources: [{ offset }] }) as unknown as SearchCursor;
+/** What the daemon refuses in a send, and CR as well: a quote only breaks lines with LF. */
+const controls = (text: string) =>
+  Array.from(text).filter((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (code < 32 && code !== 9 && code !== 10) || (code >= 127 && code <= 159);
+  });
 test("quotes only the newest 200 server rows in chronological order", () => {
   const text = quoteFailureLogs(
     "run-1",
@@ -25,6 +31,30 @@ test("long UTF-8 logs include explicit omission and remain under the agent input
   expect(text).toContain("일부 로그 생략");
   expect(text).not.toContain("�");
   expect(new TextDecoder("utf-8", { fatal: true }).decode(new TextEncoder().encode(text))).toBe(text);
+});
+test("terminal colors and keys in a row are sent as plain text", () => {
+  const colored = quoteFailureLogs("run-1", [row("\x1b[31mFAIL\x1b[0m")]);
+  expect(colored.split("\n").slice(1)).toEqual(["> FAIL", ""]);
+  // In the agent's terminal this would end the paste, erase the prompt box, type a command and
+  // press Enter.
+  const keys = quoteFailureLogs("run-1", [row("\x1b[201~\x15!rm -rf ~\r")]);
+  expect(keys.split("\n").slice(1)).toEqual(["> �!rm -rf ~�", ""]);
+  for (const text of [colored, keys]) {
+    expect(text).not.toContain("\x1b");
+    expect(controls(text)).toEqual([]);
+  }
+});
+test("a row cut to fit is plain text too and counts its replacement characters", () => {
+  const colored = quoteFailureLogs("run-1", [row(`\x1b[31m${"한".repeat(30000)}\x15\x1b[0m`)]);
+  expect(colored).toContain("일부 로그 생략");
+  expect(colored).toMatch(/한�\n$/);
+  // Each control code becomes a 3-byte "�", which must fit the budget as well.
+  const replaced = quoteFailureLogs("run-1", [row("\x15".repeat(30000))]);
+  expect(new TextEncoder().encode(replaced).length).toBeLessThanOrEqual(64 * 1024);
+  for (const text of [colored, replaced]) {
+    expect(text).not.toContain("\x1b");
+    expect(controls(text)).toEqual([]);
+  }
 });
 test("older long rows are omitted and quote/header bytes count in the limit", () => {
   const text = quoteFailureLogs("run-1", [row("newest [REDACTED]"), row("한".repeat(30000))]);
