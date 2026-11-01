@@ -82,6 +82,12 @@ export function Compose({
     })();
   };
   const error = send.error && messageFor(send.error.code, send.error.detail);
+  // The daemon can refuse on what the screen shows before the task's state says so; the waiting
+  // notice has the button once it does.
+  const toTerminal =
+    !waiting &&
+    onShowTerminal &&
+    (send.error?.code === "agents.awaiting_input" || send.error?.code === "agents.tool_starting");
   return (
     <form
       className={s.compose}
@@ -148,6 +154,14 @@ export function Compose({
         <p role="alert">
           {error.title} {error.action}
           {send.error?.diagnosticId && ` · 진단 ${send.error.diagnosticId}`}
+          {toTerminal && (
+            <>
+              {" "}
+              <Button size="sm" onClick={onShowTerminal}>
+                터미널 보기
+              </Button>
+            </>
+          )}
         </p>
       )}
     </form>

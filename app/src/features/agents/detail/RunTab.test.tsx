@@ -116,3 +116,13 @@ test("runtime.changed refreshes the selected result", async () => {
   expect(await screen.findByText(/종료 코드 0/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "에이전트에게 실패 로그 보내기" })).toBeNull();
 });
+
+test("the failure log is held while the agent waits for a choice in its terminal", async () => {
+  const { wire, view, node } = await setup("waiting");
+  const button = screen.getByRole("button", { name: "에이전트에게 실패 로그 보내기" });
+  expect(button).toBeDisabled();
+  fireEvent.click(button);
+  expect(wire.requests("logs.search")).toHaveLength(0);
+  view.rerender(node("running"));
+  expect(screen.getByRole("button", { name: "에이전트에게 실패 로그 보내기" })).toBeEnabled();
+});

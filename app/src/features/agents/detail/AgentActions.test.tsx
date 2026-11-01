@@ -219,3 +219,23 @@ test("trust denial discards old Git confirmation and explicitly rechecks trust b
     expect: { headOid: "fresh-head", baseOid: "fresh-base" },
   });
 });
+
+test("the resolution instruction is held while the agent waits for a choice in its terminal", async () => {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  const node = (state: ReturnType<typeof task>["state"]) => (
+    <RpcProvider client={wire.client}>
+      <TooltipProvider>
+        <AgentActions task={task("a1", state)} sessionAlive onInstruct={vi.fn()} />
+      </TooltipProvider>
+    </RpcProvider>
+  );
+  const view = render(node("waiting"));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+  await act(async () => wire.reply("agents.rebase_status", { owned: true, files: ["a.txt"] }));
+  // Text sent now could answer the approval prompt, as in the composer. The other choices stay open.
+  expect(await screen.findByRole("button", { name: "해결 지시 보내기" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "되돌리기" })).toBeEnabled();
+  expect(wire.requests("agents.send")).toHaveLength(0);
+  view.rerender(node("idle"));
+  await waitFor(() => expect(screen.getByRole("button", { name: "해결 지시 보내기" })).toBeEnabled());
+});

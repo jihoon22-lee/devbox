@@ -379,13 +379,50 @@ test("a typed name stops following the title and is sent as typed", async () => 
   await act(async () => wire.reply("agents.create", task("new", "preparing")));
 });
 
-test("the app omits branch when the field is empty", async () => {
+test("the app omits branch when the field is empty, and the empty field shows the name that will be used", async () => {
   const { wire } = await dialog();
-  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.type(screen.getByLabelText("제목"), "Fix Login bug");
   await userEvent.clear(branchField());
+  expect(branchField()).toHaveValue("");
+  expect(branchField()).toHaveAttribute("placeholder", "fix-login-bug");
   await userEvent.click(screen.getByRole("button", { name: "시작" }));
   await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
   expect(wire.request("agents.create").params).not.toHaveProperty("branch");
+});
+
+test("a title without a name to follow leaves an empty field with no placeholder to promise one", async () => {
+  await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "로그인 수정");
+  expect(branchField()).toHaveAttribute("placeholder", "");
+});
+
+test("an uppercase letter typed in the branch name becomes lowercase instead of an error", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "Fix-Login");
+  expect(branchField()).toHaveValue("fix-login");
+  expect(branchField()).toBeValid();
+  expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ branch: "fix-login" });
+});
+
+test("only ASCII capitals are lowercased, and the caret stays where the letter was typed", async () => {
+  await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "ab-cd");
+  // A capital typed in the middle keeps the caret after it (the field's value is rewritten).
+  await userEvent.type(branchField(), "X", { initialSelectionStart: 2, initialSelectionEnd: 2 });
+  expect(branchField()).toHaveValue("abx-cd");
+  expect((branchField() as HTMLInputElement).selectionStart).toBe(3);
+  // Other letters are not folded into ASCII: they are still named as the problem.
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "Ä");
+  expect(branchField()).toHaveValue("Ä");
+  expect(branchField()).toBeInvalid();
 });
 
 test("korean_title_requires_a_branch_name", async () => {
@@ -412,7 +449,6 @@ test("korean_title_requires_a_branch_name", async () => {
 
 test.each([
   ["Bad Name", /영문 소문자, 숫자, 하이픈/],
-  ["Fix", /영문 소문자, 숫자, 하이픈/],
   ["fix--login", /영문 소문자, 숫자, 하이픈/],
   ["-fix", /영문 소문자, 숫자, 하이픈/],
   ["agent/fix", /영문 소문자, 숫자, 하이픈/],
