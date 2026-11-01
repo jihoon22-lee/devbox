@@ -68,8 +68,10 @@ const CODEX: &[&str] = &[
     //    verification, whatever their choices are called. "to submit" is the feedback note's,
     //    where Enter uploads the feedback with what the note holds, a pasted send included.
     //    "to save" and "to continue" are the sign-in steps' (Enter saves a pasted send as the
-    //    API key, or goes on with the selected way to sign in) and the setup import's.
-    r"(?m)^\s*Press \S+ to (?:confirm|submit|save|continue)\b",
+    //    API key, or goes on with the selected way to sign in) and the setup import's. Codex
+    //    names the key in lower case ("enter", "f3"), so "Press Enter to continue" in an agent's
+    //    reply or a command's output is not it.
+    r"(?m)^\s*Press [^A-Z\s\[]\S* to (?:confirm|submit|save|continue)\b",
     // 2. Their choices.
     r"(?m)^\s*(?:[›>]\s*)?(?:\d+[.)]\s+)?(?:Yes, proceed|Yes, just this once|Yes, and (?:don't ask again|allow this host|allow these permissions)|Yes, grant (?:these permissions|for this turn)|Yes, provide the requested info|Verify and approve|No, and tell Codex|No, and block this host|No, continue without (?:running it|permissions)|No, but continue without it|Cancel this request)",
     // 3. MCP forms and the model's questions: tool-call choices, and the footers. The tips share
@@ -104,12 +106,12 @@ const CODEX: &[&str] = &[
     // 10. Views whose hint rows leave Enter out, where a send is dropped and Enter acts or does
     //     nothing: a row that only leaves ("esc close" under a plugin, whose Enter installs it;
     //     "esc back"), the hooks of an event that need review or are managed, a shortcut being
-    //     remapped (Enter becomes its key), the setup import from another agent, the startup
-    //     warnings and the usage report.
+    //     remapped (Enter becomes its key), the setup import from another agent (its key names
+    //     in lower case, as in item 1), the startup warnings and the usage report.
     r"(?m)^[ \t]*esc (?:back|close|clear search)[ \t]*$",
     r"(?m)^[ \t]*(?:t trust|Managed \(always on\)) · esc back[ \t]*$",
     r"(?m)^[ \t]*(?:Press the |First key: )[^\n]*\. Esc cancels\.[ \t]*$",
-    r"(?m)^\s*Use \S+ to move, \S+ to (?:select|toggle)\b",
+    r"(?m)^\s*Use \S+ to move, [^A-Z\s\[]\S* to (?:select|toggle)\b",
     r"(?m)(?:^|[ \t])k keep & next\b|\bdismiss & close\b",
     r"(?m)\btab(?:/\S+)? report · z \S",
     // 11. States of the prompt box itself, where Enter would not hand a send to the task's agent

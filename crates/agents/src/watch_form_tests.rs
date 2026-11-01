@@ -308,6 +308,7 @@ fn a_codex_view_that_covers_the_screen_holds_sends_while_it_shows() {
 fn a_codex_screen_where_a_send_still_reaches_the_prompt_is_not_waiting() {
     let patterns = codex_patterns();
     let working = screen(include_str!("../tests/fixtures/codex-0.164.0/working.txt"));
+    let mut held = Vec::new();
     for row in [
         // The prompt box's footers (bottom_pane/footer.rs).
         "  ? for shortcuts · Plan mode (⇧tab to cycle)                        100% context left",
@@ -344,10 +345,17 @@ fn a_codex_screen_where_a_send_still_reaches_the_prompt_is_not_waiting() {
         "• Press the new key now. Esc cancels. is what the remap view says.",
         "• Typing ! first switches the prompt to Shell mode",
         "  Shell mode runs the command in your shell.",
+        // Instructions in an agent's reply, a code block or a command's output: Codex draws its
+        // key names in lower case ("Press enter to continue", "enter to select").
+        "  Press Enter to continue, or Ctrl-C to stop.",
+        "  Press Enter to continue",
+        "    Press Enter to continue",
+        "  Press Ctrl+S to save, then reload the page.",
+        "  Use ↑/↓ to move, Enter to select.",
     ] {
-        assert!(
-            !matches_waiting(&patterns, &format!("{working}\n{row}")),
-            "{row}"
-        );
+        if matches_waiting(&patterns, &format!("{working}\n{row}")) {
+            held.push(row);
+        }
     }
+    assert!(held.is_empty(), "waiting: {held:#?}");
 }
