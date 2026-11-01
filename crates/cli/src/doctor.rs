@@ -69,6 +69,24 @@ pub async fn run(json: bool, startup: bool) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+mod scope_tests {
+    /// Only the app's start-up call (`devbox doctor --startup`) leaves the agent CLI rows out.
+    /// 환경 점검, 에이전트 settings and support bundles read these two routes, which keep them.
+    #[test]
+    fn the_rpc_doctor_and_the_support_bundle_keep_the_agent_rows() {
+        for source in [
+            include_str!("daemon/routes.rs"),
+            include_str!("daemon/tools_routes.rs"),
+        ] {
+            let flat = source.split_whitespace().collect::<String>();
+            assert!(flat.contains("crate::doctor::checks(&probe)"));
+            assert!(!flat.contains("checks_for"));
+            assert!(!flat.contains("Scope::Startup"));
+        }
+    }
+}
+
+#[cfg(test)]
 mod probe_tests {
     use super::*;
 
