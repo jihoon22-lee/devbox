@@ -13,6 +13,7 @@ mod windows_copy;
 mod windows_copy_service;
 mod windows_copy_store;
 mod windows_observation;
+mod windows_probe_cadence;
 mod windows_ready;
 pub use agent_test::AgentTestRequest;
 pub mod exit_record;

@@ -3,6 +3,7 @@ use crate::{
     R, RuntimeError, RuntimeService,
     windows_copy_service::{owner_alive, process_owner},
     windows_copy_store::{self as store, Attempt, AttemptPhase, CopyRef, ReaderState},
+    windows_probe_cadence::ProbeCadence,
 };
 use devbox_protocol::{
     Fail, Internal,
@@ -154,15 +155,21 @@ fn bootstrap_identity(assigned: &ObservationAssigned) -> HolderIdentity {
 /// I1 under Rulings 34-36 for a holder control. The receipt alone closes, before any probe.
 /// Otherwise `Empty` closes; a vanished job (`NotFound`) or one hidden by another session
 /// (`IdentityMismatch`) closes only once this attempt's own holder is provably gone, and for
-/// another session the bootstrap too.
+/// another session the bootstrap too. The receipt is read on every pass; once the run ended (a
+/// sealed `reader`), Windows is probed only as often as [`ProbeCadence`] allows.
 async fn holder_attempt_ended(
     execution: &crate::ExecutionConfig,
+    cadence: &ProbeCadence,
+    reader: ReaderState,
     copy: &store::CopyRecord,
     control: &ObservationControl,
     assigned: &ObservationAssigned,
 ) -> bool {
     if emptied(copy, control) {
         return true;
+    }
+    if !cadence.claim(&control.nonce, reader) {
+        return false;
     }
     let cross_session = match (execution.windows_observation)(assigned.clone()).await {
         ObservationState::Empty => return true,
@@ -470,9 +477,14 @@ impl RuntimeService {
                         let ended = match attempt.control.observes(&run, assigned) {
                             // The name vanishes with the last handle even while orphaned
                             // descendants run (I1): the holder and its receipt decide.
+                            // Held once its run ended: sealed, the job not yet empty (M-3).
                             Some(ControlShape::Holder) => {
-                                holder_attempt_ended(execution, &copy, &attempt.control, assigned)
-                                    .await
+                                let cadence = &self.probe_cadence;
+                                let (state, control) = (reader.state, &attempt.control);
+                                holder_attempt_ended(
+                                    execution, cadence, state, &copy, control, assigned,
+                                )
+                                .await
                             }
                             // rc.1 rule for an rc.1 row: no holder ever ran for it.
                             Some(ControlShape::Legacy) => matches!(
@@ -483,6 +495,7 @@ impl RuntimeService {
                         };
                         if ended {
                             let nonce = attempt.control.nonce.clone();
+                            self.probe_cadence.forget(&nonce);
                             let assigned = assigned.clone();
                             self.db
                                 .write_checked(move |tx| {

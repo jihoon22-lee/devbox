@@ -403,3 +403,5 @@ async fn every_new_control_carries_the_holder_fields() {
     }
     svc.shutdown().await;
 }
+#[path = "windows_copy_lifecycle_cadence_tests.rs"]
+mod cadence;
