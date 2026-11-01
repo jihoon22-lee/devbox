@@ -76,8 +76,9 @@ async fn case(mode: &str) {
         .svc
         .close_record(
             &task.id,
-            crate::state::CloseHow::Merged,
-            None,
+            crate::closed_review::Closure::Merged {
+                result: host.clone(),
+            },
             confirmed.head_oid,
             fixture.svc.closure_usage(&task.id).await,
             review,

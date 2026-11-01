@@ -28,7 +28,12 @@ export type AgentRebaseStatus = { owned: boolean, files: Array<string>, };
 export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes: number | null, };
 export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
-export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, 
+export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, 
+/**
+ * The commit a merge close made on the base branch: the merge or squash commit, or the rebased
+ * head. Recorded with the close itself; tasks merged before it was recorded have none.
+ */
+closedMergeOid: string | null, cleanupError: string | null, 
 /**
  * When the current launch started, until its tool says it reads its input. Only pi says so,
  * through devbox's extension, so other tools never have it.
@@ -80,7 +85,13 @@ export type Claimed = { key: DocKey, leaseId: string | null, rev: DiskRev | null
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
 export type CleanupCandidate = { path: string | null, branch: string, oid: string, };
 export type CleanupCandidates = { projectId: string, };
-export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, };
+export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, 
+/**
+ * The listed work folders and branches of tasks that closed by squash or PR and whose
+ * automatic cleanup failed: the branch's own commits are not on the base branch, though what
+ * they changed is there or in the PR. Listed only while the rest of the rule holds (Ruling 60).
+ */
+offBase?: Array<string>, };
 export type CloneProject = { url: string, dir: string | null, };
 export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };

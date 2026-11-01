@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { cleanupMessage } from "../../rpc/cleanupMessages";
 import { RpcError } from "../../rpc/client";
 import type { Methods } from "../../rpc/gen/rpc";
@@ -10,8 +10,16 @@ import { isProjectTrustError, useProjectTrust } from "../projects/useProjectTrus
 import { QueryResult } from "./QueryResult";
 
 type Params = Methods["agents.cleanup"]["params"];
+/**
+ * Next to an item the daemon lists in `offBase`: a task closed by squash or PR whose automatic
+ * cleanup stopped. Its branch's own commits are not on the base branch, so "safe" in the list's
+ * heading holds for it only with this said.
+ */
+const OFF_BASE = "스쿼시·PR로 닫힘 — 브랜치의 개별 커밋은 기준 브랜치에 없습니다";
 export function AgentCleanup({ projectId }: { projectId: string }) {
   const candidates = useRpcQuery("agents.cleanup_candidates", { projectId });
+  const offBase = new Set(candidates.data?.offBase);
+  const noteId = useId();
   useTopicInvalidation("agents.changed", [["agents.cleanup_candidates", { projectId }]]);
   const cleanup = useRpcMutation("agents.cleanup");
   const trust = useProjectTrust(projectId);
@@ -135,18 +143,23 @@ export function AgentCleanup({ projectId }: { projectId: string }) {
         {(["worktrees", "branches"] as const).map((kind) => (
           <fieldset key={kind} disabled={cleanup.isPending || preparing || !!snapshot}>
             <legend>{kind === "worktrees" ? "작업 폴더" : "브랜치"}</legend>
-            {candidates.data?.[kind].map((value) => (
-              <p key={value}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={available[kind].includes(value)}
-                    onChange={(event) => toggle(kind, value, event.target.checked)}
-                  />{" "}
-                  {value}
-                </label>
-              </p>
-            ))}
+            {candidates.data?.[kind].map((value, index) => {
+              const note = offBase.has(value) ? `${noteId}-${kind}-${index}` : undefined;
+              return (
+                <p key={value}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-describedby={note}
+                      checked={available[kind].includes(value)}
+                      onChange={(event) => toggle(kind, value, event.target.checked)}
+                    />{" "}
+                    {value}
+                  </label>
+                  {note && <small id={note}> {OFF_BASE}</small>}
+                </p>
+              );
+            })}
           </fieldset>
         ))}
         {candidates.data && !candidates.data.worktrees.length && !candidates.data.branches.length && (
@@ -180,7 +193,10 @@ export function AgentCleanup({ projectId }: { projectId: string }) {
       >
         <ul>
           {[...(snapshot?.worktrees ?? []), ...(snapshot?.branches ?? [])].map((value) => (
-            <li key={value}>{value}</li>
+            <li key={value}>
+              {value}
+              {offBase.has(value) && <small> {OFF_BASE}</small>}
+            </li>
           ))}
         </ul>
         {notice && <p role="alert">{notice}</p>}

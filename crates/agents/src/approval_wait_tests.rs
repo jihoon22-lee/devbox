@@ -160,10 +160,8 @@ async fn closing_exiting_or_losing_the_session_forgets_the_approvals() {
                     tokens: None,
                     truncated: false,
                 };
-                let how = crate::state::CloseHow::Discarded;
-                let closed = f
-                    .svc
-                    .close_record("a", how, None, "head".into(), usage, review);
+                let how = crate::closed_review::Closure::Discarded;
+                let closed = f.svc.close_record("a", how, "head".into(), usage, review);
                 closed.await.expect("closed record");
             }
         }

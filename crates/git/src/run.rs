@@ -412,6 +412,26 @@ pub async fn merge_base(dir: &Path, base: &str) -> Result<String, GitError> {
     let head = resolve(dir, "HEAD").await?;
     Ok(git(dir, &["merge-base", &base, &head]).await?.trim().into())
 }
+/// Whether `commit` is in the history of `reference` (`git merge-base --is-ancestor`). A commit the
+/// repository no longer has, for example one collected after a reset, is not.
+pub async fn is_ancestor(dir: &Path, commit: &str, reference: &str) -> Result<bool, GitError> {
+    if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(GitError::InvalidInput);
+    }
+    let tip = resolve(dir, reference).await?;
+    let (code, _, stderr) = output(dir, &["cat-file", "-e", commit]).await?;
+    match code {
+        0 => (),
+        1 => return Ok(false),
+        _ => return Err(failure(&["cat-file"], &stderr)),
+    }
+    let (code, _, stderr) = output(dir, &["merge-base", "--is-ancestor", commit, &tip]).await?;
+    match code {
+        0 => Ok(true),
+        1 => Ok(false),
+        _ => Err(failure(&["merge-base"], &stderr)),
+    }
+}
 pub(crate) fn number(s: &str) -> Result<u32, GitError> {
     s.parse().map_err(|_| GitError::InvalidOutput)
 }

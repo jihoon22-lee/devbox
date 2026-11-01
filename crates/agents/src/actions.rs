@@ -1,8 +1,9 @@
 //! Serialized user actions. Hooks still update the latest database row independently.
 use crate::{
+    closed_review::Closure,
     model::*,
     service::{AgentsService, Result, apply_event, now_ms},
-    state::{AgentEvent, AgentState, CloseHow},
+    state::{AgentEvent, AgentState},
 };
 use devbox_protocol::{Fail, Internal};
 use std::path::Path;
@@ -309,8 +310,9 @@ impl AgentsService {
         if let Err(error) = self
             .close_record(
                 &task.id,
-                CloseHow::Merged,
-                None,
+                Closure::Merged {
+                    result: outcome.sha.clone(),
+                },
                 outcome.source_sha.clone(),
                 usage,
                 review,
@@ -385,8 +387,7 @@ impl AgentsService {
         let usage = self.closure_usage(&task.id).await;
         self.close_record(
             &task.id,
-            CloseHow::PullRequest,
-            Some(url),
+            Closure::PullRequest { url },
             p.expect.head_oid.clone(),
             usage,
             review,
@@ -463,8 +464,7 @@ impl AgentsService {
             let usage = self.closure_usage(&task.id).await;
             self.close_record(
                 &task.id,
-                CloseHow::Discarded,
-                None,
+                Closure::Discarded,
                 p.expect.head_oid.clone(),
                 usage,
                 review,
@@ -501,8 +501,7 @@ impl AgentsService {
         // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
             &task.id,
-            CloseHow::Discarded,
-            None,
+            Closure::Discarded,
             p.expect.head_oid.clone(),
             usage,
             review,

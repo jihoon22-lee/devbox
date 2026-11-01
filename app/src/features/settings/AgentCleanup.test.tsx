@@ -8,8 +8,8 @@ import { AgentCleanup } from "./AgentCleanup";
 const WORKTREE = "/fixture/owned";
 const BRANCH = "agent/closed";
 
-/** Shows the list for one project, picks its folder and branch and opens the confirmation. */
-async function confirmCleanup(candidates: Record<string, unknown> = { worktrees: [WORKTREE], branches: [BRANCH] }) {
+/** Shows the list for one project, with `candidates` as the daemon offers them. */
+async function showList(candidates: Record<string, unknown>) {
   const wire = new ProjectWire({ trustNotRequired: true });
   useCurrentProject.getState().set("owned");
   render(
@@ -19,6 +19,12 @@ async function confirmCleanup(candidates: Record<string, unknown> = { worktrees:
   );
   await waitFor(() => expect(wire.requests("agents.cleanup_candidates")).toHaveLength(1));
   await act(async () => wire.reply("agents.cleanup_candidates", candidates));
+  return wire;
+}
+
+/** Shows the list for one project, picks its folder and branch and opens the confirmation. */
+async function confirmCleanup(candidates: Record<string, unknown> = { worktrees: [WORKTREE], branches: [BRANCH] }) {
+  const wire = await showList(candidates);
   await userEvent.click(await screen.findByRole("checkbox", { name: WORKTREE }));
   await userEvent.click(screen.getByRole("checkbox", { name: BRANCH }));
   await userEvent.click(screen.getByRole("button", { name: "선택 항목 정리" }));
@@ -53,4 +59,25 @@ test("a cleanup stopped by a failed teardown names which command to run and fix,
   expect(alert).toHaveTextContent(
     "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요. · 진단 diag-7",
   );
+});
+
+const OFF_BASE = "스쿼시·PR로 닫힘 — 브랜치의 개별 커밋은 기준 브랜치에 없습니다";
+const MIXED = {
+  worktrees: [WORKTREE, "/fixture/merged"],
+  branches: [BRANCH, "agent/merged"],
+  offBase: [WORKTREE, BRANCH],
+};
+
+test("the folder and branch of a task closed by squash or PR say the branch's own commits are not on the base branch", async () => {
+  await showList(MIXED);
+  // Only the items the daemon marks; the ones merged as usual have no such note.
+  expect(await screen.findByRole("checkbox", { name: WORKTREE })).toHaveAccessibleDescription(OFF_BASE);
+  expect(screen.getByRole("checkbox", { name: BRANCH })).toHaveAccessibleDescription(OFF_BASE);
+  expect(screen.getByRole("checkbox", { name: "/fixture/merged" })).not.toHaveAccessibleDescription();
+  expect(screen.getByRole("checkbox", { name: "agent/merged" })).not.toHaveAccessibleDescription();
+});
+
+test("the confirmation repeats that note for each such item it is about to delete", async () => {
+  const { dialog } = await confirmCleanup(MIXED);
+  expect(within(dialog).getAllByText(OFF_BASE)).toHaveLength(2);
 });

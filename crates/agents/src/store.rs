@@ -154,6 +154,7 @@ mod tests {
             closed_ms: None,
             closed_commits: None,
             closed_head_oid: None,
+            closed_merge_oid: None,
             cleanup_error: None,
             tokens_truncated: false,
             activity_seq: 0,

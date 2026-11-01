@@ -12,11 +12,74 @@ use crate::{
     cleanup::cleanup_in_progress,
     model::*,
     service::{AgentsService, Result},
+    state::{AgentState, CloseHow},
 };
 use devbox_projects::trust::AuthorizedConfig;
 use std::path::Path;
 
+/// Why cleanup may delete a closed task's branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Release {
+    /// Every commit of the branch is on the base branch.
+    Merged,
+    /// The branch's own commits are not on the base branch, but what they changed is: in the
+    /// squash commit the close made, or in the PR (Ruling 60). The cleanup list says so.
+    OffBase,
+}
+
 impl AgentsService {
+    /// The one rule the cleanup list and cleanup itself apply to a closed task's branch, so the
+    /// list never offers what cleanup then refuses. A branch whose commits are all on the base
+    /// branch may go, as before. Otherwise only when all of these hold:
+    /// - the task closed with a note of a cleanup that stopped, so the user wanted it cleaned up;
+    /// - it closed as a merge or a PR, never as a discard;
+    /// - the branch is still at the head the task closed with (a folder that is left must also be
+    ///   clean at that head, which its callers check);
+    /// - for a merge, the commit the close made is still on the base branch: a reset of the base
+    ///   past it leaves the branch the only copy of the work. A task closed before that commit was
+    ///   recorded keeps the strict rule.
+    pub(crate) async fn release(
+        &self,
+        repo: &Path,
+        task: &AgentTask,
+        branch: &str,
+    ) -> Result<Option<Release>> {
+        if devbox_git::mutate::unmerged_count(repo, branch, &task.base_branch)
+            .await
+            .map_err(git_failure)?
+            == 0
+        {
+            return Ok(Some(Release::Merged));
+        }
+        let Some(pin) = task.closed_head_oid.as_deref() else {
+            return Ok(None);
+        };
+        if task.state != AgentState::Closed || task.cleanup_error.is_none() {
+            return Ok(None);
+        }
+        let tip = devbox_git::run::resolve(repo, &format!("refs/heads/{branch}"))
+            .await
+            .map_err(git_failure)?;
+        if tip != pin {
+            return Ok(None);
+        }
+        let off_base = match (task.closed_how, task.closed_merge_oid.as_deref()) {
+            (Some(CloseHow::PullRequest), _) => true,
+            (Some(CloseHow::Merged), Some(result)) => {
+                match devbox_git::run::is_ancestor(repo, result, &task.base_branch).await {
+                    Ok(on_base) => on_base,
+                    // No answer keeps the branch; the rest of the list still shows.
+                    Err(error) => {
+                        tracing::warn!(agent = %task.id, %error, "merge commit ancestry unknown; branch kept");
+                        false
+                    }
+                }
+            }
+            _ => false,
+        };
+        Ok(off_base.then_some(Release::OffBase))
+    }
+
     /// Right before the teardown: whether what the folder shows after it is cleanup's own. It is
     /// when a teardown is configured, and the folder passes the removal's own clean check and is at
     /// the head the task closed with. Then any change made since came from the teardown or from

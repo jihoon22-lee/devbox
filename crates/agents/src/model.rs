@@ -79,6 +79,10 @@ pub struct AgentTask {
     pub closed_commits: Option<u32>,
     #[serde(default)]
     pub closed_head_oid: Option<String>,
+    /// The commit a merge close made on the base branch: the merge or squash commit, or the rebased
+    /// head. Recorded with the close itself; tasks merged before it was recorded have none.
+    #[serde(default)]
+    pub closed_merge_oid: Option<String>,
     #[serde(default)]
     pub cleanup_error: Option<String>,
     /// When the current launch started, until its tool says it reads its input. Only pi says so,
@@ -239,9 +243,15 @@ pub struct CleanupAgents {
     pub branches: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanupOptions {
     pub worktrees: Vec<String>,
     pub branches: Vec<String>,
+    /// The listed work folders and branches of tasks that closed by squash or PR and whose
+    /// automatic cleanup failed: the branch's own commits are not on the base branch, though what
+    /// they changed is there or in the PR. Listed only while the rest of the rule holds (Ruling 60).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub off_base: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

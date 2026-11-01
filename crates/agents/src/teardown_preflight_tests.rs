@@ -126,11 +126,13 @@ pub(super) async fn case(mode: &str) {
             .await
             .expect("review");
         git(&f.repo, &["merge", "--no-ff", "--no-edit", "agent/review"]);
+        let merged = devbox_git::run::resolve(&f.repo, "main")
+            .await
+            .expect("merge commit");
         f.svc
             .close_record(
                 &task.id,
-                crate::state::CloseHow::Merged,
-                None,
+                crate::closed_review::Closure::Merged { result: merged },
                 confirmed.head_oid,
                 f.svc.closure_usage(&task.id).await,
                 review,

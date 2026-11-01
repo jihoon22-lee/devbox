@@ -14,6 +14,8 @@ mod discard_snapshot_tests;
 mod manual_cleanup_tests;
 #[path = "merge_retry_tests.rs"]
 mod merge_retry_tests;
+#[path = "squash_cleanup_tests.rs"]
+mod squash_cleanup_tests;
 #[path = "teardown_undo_tests.rs"]
 mod teardown_undo_tests;
 
@@ -256,8 +258,9 @@ async fn child_cleanup(mode: &str) {
         .svc
         .close_record(
             &task.id,
-            crate::state::CloseHow::PullRequest,
-            Some("https://example.invalid/pr/1".into()),
+            crate::closed_review::Closure::PullRequest {
+                url: "https://example.invalid/pr/1".into(),
+            },
             confirmed.head_oid.clone(),
             fixture.svc.closure_usage(&task.id).await,
             review,
