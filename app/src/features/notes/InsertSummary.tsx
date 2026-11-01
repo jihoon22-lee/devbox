@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { RpcError } from "../../rpc/client";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Button } from "../../ui";
 
@@ -20,7 +20,7 @@ export function InsertSummary({ onOpen }: { onOpen(path: string): void }) {
       onOpen(result.path);
     } catch (failure) {
       const e = failure instanceof RpcError ? failure : new RpcError("internal");
-      setError(messageFor(e.code, e.detail).title);
+      setError(messageText(e.code, e.detail));
     } finally {
       inFlight.current = false;
       setBusy(false);

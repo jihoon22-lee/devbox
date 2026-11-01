@@ -75,6 +75,26 @@ test("failed capture stays visible with its draft and an error", async () => {
   expect(sessionStorage.getItem(DRAFT_KEY)).toBe("keep draft");
 });
 
+test("a capture refused because notes are off says how to turn them back on, since this window has no banner", async () => {
+  const wire = new NotesWire();
+  wire.handlers["notes.append"] = () => {
+    throw new RpcError("notes.disabled");
+  };
+  sessionStorage.setItem(DRAFT_KEY, "keep draft");
+  render(
+    <RpcProvider client={wire.client}>
+      <CaptureWindow />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).toBeEnabled());
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "캡처할 내용" }), { key: "Enter" });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("노트 설정을 읽지 못해 노트를 껐습니다.");
+  expect(alert).toHaveTextContent("설정 → 앱 진단 → [다시 설정]을 눌러 주세요.");
+  expect(hideCapture).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem(DRAFT_KEY)).toBe("keep draft");
+});
+
 test("Esc keeps unsaved contents visible when sessionStorage cannot preserve the draft", async () => {
   const wire = new NotesWire();
   render(

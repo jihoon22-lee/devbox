@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { RpcError } from "../../rpc/client";
 import type { ContainerInfo, Definition, Run } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcMutation } from "../../rpc/query";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Banner, ConfirmDialog, useToasts } from "../../ui";
@@ -113,7 +113,7 @@ export function useRunActions(projectId: string, onRun: (run: Run) => void) {
     busy: busy || trust.pending,
     feedback: (
       <>
-        {error && <Banner tone="danger">{messageFor(error.code, error.detail).title}</Banner>}
+        {error && <Banner tone="danger">{messageText(error.code, error.detail)}</Banner>}
         {trust.notice && <Banner tone="warn">{trust.notice}</Banner>}
         {trust.dialog}
         {confirm && (

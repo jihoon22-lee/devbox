@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
+import { RpcError } from "../../rpc/client";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { NotesWire } from "../notes/test-wire";
 import { CodePreview } from "./CodePreview";
@@ -33,4 +34,19 @@ test("edit action carries the exact search file and line without claiming the pr
   fireEvent.click(await screen.findByRole("button", { name: "편집기로 열기" }));
   expect(onOpen).toHaveBeenCalledWith(hit);
   expect(wire.requests("documents.claim")).toHaveLength(0);
+});
+
+test("a file that cannot be read says what to do about it, not only what happened", async () => {
+  const wire = new NotesWire();
+  vi.spyOn(wire.docs, "call").mockRejectedValue(new RpcError("documents.too_large"));
+  render(
+    <RpcProvider client={wire.client}>
+      <CodePreview
+        hit={{ root: "project:owned", path: "big.ts", title: null, snippet: "", line: null, rangesUtf16: [] }}
+      />
+    </RpcProvider>,
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("문서가 허용 크기를 넘었습니다.");
+  expect(alert).toHaveTextContent("내용을 줄인 뒤 다시 시도해 주세요.");
 });

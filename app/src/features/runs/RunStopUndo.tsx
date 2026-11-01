@@ -68,7 +68,10 @@ export function RunStopUndo() {
         useToasts.getState().push({ tone: "ok", title: `${current.run.defId} 다시 시작됨` });
       } catch (failure) {
         const error = failure instanceof RpcError ? failure : new RpcError("internal");
-        useToasts.getState().push({ tone: "danger", title: messageFor(error.code, error.detail).title });
+        const message = messageFor(error.code, error.detail);
+        useToasts
+          .getState()
+          .push({ tone: "danger", title: message.title, ...(message.action ? { body: message.action } : {}) });
       } finally {
         finish();
       }

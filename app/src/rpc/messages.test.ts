@@ -1,5 +1,5 @@
 import { RPC_ERROR_CODES } from "./gen/rpc";
-import { messageFor } from "./messages";
+import { messageFor, messageText } from "./messages";
 
 test("all generated codes have Korean messages and uncertain results stay explicit", () => {
   for (const code of RPC_ERROR_CODES) expect(messageFor(code).title).toMatch(/[가-힣]/);
@@ -43,7 +43,7 @@ test("an unready Windows job holder says to run again and where to look", () => 
 
 test("a busy Windows copy names a live run and leftover build servers, and how to end them", () => {
   const busy = messageFor("runtime.windows_copy_busy");
-  // The Runs page banner shows the title alone, so the title names both causes by itself.
+  // A toast headline shows the title alone, so the title names both causes by itself.
   expect(busy).toEqual({
     title: "Windows 사본을 쓰는 실행이나 그 실행이 남긴 프로세스(빌드 서버 등)가 아직 끝나지 않았습니다.",
     action:
@@ -53,6 +53,17 @@ test("a busy Windows copy names a live run and leftover build servers, and how t
   // about a minute, so the connection hint waits that long.
   // "Gradle daemon" stays a build server: 데몬 is the devbox daemon on diagnostics screens only.
   expect(`${busy.title} ${busy.action}`).not.toMatch(/데몬|영수증|receipt/);
+});
+
+test("a plain error line gives what happened, then what to do when the table says", () => {
+  expect(messageText("notes.disabled")).toBe(
+    `${messageFor("notes.disabled").title} ${messageFor("notes.disabled").action}`,
+  );
+  expect(messageText("notes.disabled")).toContain("설정 → 앱 진단 → [다시 설정]");
+  // A code without a next action is its title alone, with no trailing space or "undefined".
+  expect(messageFor("cancelled").action).toBeUndefined();
+  expect(messageText("cancelled")).toBe(messageFor("cancelled").title);
+  expect(messageText("agents.base_dirty", { files: ["a.rs"] })).toContain("a.rs");
 });
 
 test("redaction failure actions distinguish capacity and rejected server input", () => {

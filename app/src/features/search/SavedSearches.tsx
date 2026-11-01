@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { SearchQuery } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { Button } from "../../ui";
 export function SavedSearches({ query, onSelect }: { query?: SearchQuery; onSelect(query: SearchQuery): void }) {
@@ -46,7 +46,7 @@ export function SavedSearches({ query, onSelect }: { query?: SearchQuery; onSele
           </li>
         ))}
       </ul>
-      {error && <p role="alert">{messageFor(error.code, error.detail).title}</p>}
+      {error && <p role="alert">{messageText(error.code, error.detail)}</p>}
     </section>
   );
 }

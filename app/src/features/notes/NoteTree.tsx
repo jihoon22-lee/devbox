@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Ellipsis, FileText, Folder } from "lucide-react";
 import { type DragEvent, useMemo, useState } from "react";
+import { messageFor } from "../../rpc/messages";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Button, EmptyState, ErrorState, Menu } from "../../ui";
 import { VirtualList } from "../../ui/VirtualList";
@@ -117,13 +118,22 @@ export function NoteTree() {
     if ((await moveToTrash(client, path)) && useNoteSelection.getState().path === path) select(undefined);
   };
 
-  if (tree.isError)
+  if (tree.error) {
+    const message = messageFor(tree.error.code, tree.error.detail);
     return (
       <ErrorState
-        title="노트 목록을 읽지 못했습니다"
-        action={<Button onClick={() => void tree.refetch()}>다시 시도</Button>}
+        title={message.title}
+        diagnosticId={tree.error.diagnosticId}
+        action={
+          <>
+            {message.action && <span>{message.action}</span>}
+            {/* While notes are off, the daemon answers every call with this until it restarts. */}
+            {tree.error.code !== "notes.disabled" && <Button onClick={() => void tree.refetch()}>다시 시도</Button>}
+          </>
+        }
       />
     );
+  }
   if (tree.data && !rows.length)
     return <EmptyState title="노트가 없습니다" body="새 노트를 만들거나 일일 기록을 열어 시작하세요." />;
   return (

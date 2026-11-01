@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { RpcError } from "../../rpc/client";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { Preview } from "./Preview";
 import { NotesWire } from "./test-wire";
@@ -123,4 +124,18 @@ test.each([
   );
   await screen.findByText("외부 리소스 차단을 위해 이 다이어그램 종류나 문법은 표시하지 않습니다.");
   expect(mermaid.render).not.toHaveBeenCalled();
+});
+
+test("a preview refused because notes are off says how to turn them back on", async () => {
+  wire.handlers["notes.render"] = () => {
+    throw new RpcError("notes.disabled");
+  };
+  render(
+    <RpcProvider client={wire.client}>
+      <Preview path="sub/a.md" text="# a" onOpenNote={opened} />
+    </RpcProvider>,
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("노트 설정을 읽지 못해 노트를 껐습니다.");
+  expect(alert).toHaveTextContent("설정 → 앱 진단 → [다시 설정]을 눌러 주세요.");
 });

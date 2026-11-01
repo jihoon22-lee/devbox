@@ -28,6 +28,11 @@ const TABLE: Record<RpcErrorCode, Entry> = {
   ...SOURCE_MESSAGES,
   ...SYSTEM_MESSAGES,
 };
+/** A code's message as the one sentence a plain error line shows: what happened, then what to do. */
+export function messageText(code: ErrorCode, detail?: unknown): string {
+  const { title, action } = messageFor(code, detail);
+  return action ? `${title} ${action}` : title;
+}
 export function messageFor(code: ErrorCode, detail?: unknown): Message {
   if (code === "connection_lost")
     return {
