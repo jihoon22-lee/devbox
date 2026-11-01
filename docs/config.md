@@ -155,7 +155,7 @@ hooks = "pi"
 
 `devbox mcp`의 읽기 도구(`devbox_projects`·`devbox_agents`·`devbox_runs`·`devbox_logs`·`devbox_problems`·`devbox_notes_search`·`devbox_note_read`)는 늘 켜져 있다. 쓰기 도구(`devbox_agent_send`·`devbox_run_task`·`devbox_note_add`)는 `[mcp] write = true`일 때만 목록에 나오고 실행된다. 이 값 말고 쓰기 도구를 켜는 방법은 없다.
 
-`devbox_agent_send`는 앞의 공백·줄바꿈을 뺀 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않는다. 어느 도구의 작업이든 같고, 앞에 다른 말을 붙이면 보낸다. 앱에서 보내는 글은 쓴 그대로 넘긴다.
+`devbox_agent_send`는 앞의 공백·줄바꿈을 뺀 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않는다. 어느 도구의 작업이든 같고, 앞에 다른 말을 붙이면 보낸다. 앱에서 보내는 그런 글은 쓴 그대로 넘긴다.
 
 ```toml
 # config.toml

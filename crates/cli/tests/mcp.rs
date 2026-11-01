@@ -383,6 +383,8 @@ async fn agent_send_reports_awaiting_input() {
 
 /// What `devbox_agent_send` says when a tool could run the text as a command.
 const RUNS_AS_COMMAND: &str = "보낼 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않았습니다. 앞에 다른 말을 붙여 다시 보내세요.";
+/// What it says when the daemon refuses a control character, which the pane would take as a key.
+const CONTROL_CHARACTERS: &str = "보낼 글에 제어 문자가 있어 보내지 않았습니다. 제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요.";
 #[tokio::test]
 async fn agent_send_refuses_text_a_tool_would_run_as_a_command() {
     let mut d = agent_fixture(true);
@@ -406,7 +408,7 @@ async fn agent_send_refuses_text_a_tool_would_run_as_a_command() {
     let mut m = Mcp::start(&d);
     // Codex, Claude Code and pi run a leading "!" as a shell command, and each tool runs a
     // leading "/" as its own command, whatever blanks or line breaks come first.
-    for text in ["!ls", "  /clear", "\n!x"] {
+    for text in ["!ls", "  /clear", "\n!x", "\u{feff}!ls"] {
         let refused = m.tool("devbox_agent_send", json!({"id":id,"text":text}));
         assert_eq!(refused["result"]["isError"], true, "{text:?}");
         assert_eq!(
@@ -414,6 +416,14 @@ async fn agent_send_refuses_text_a_tool_would_run_as_a_command() {
             "{text:?}"
         );
     }
+    // Ctrl-U would erase "owned" in the prompt box and leave "!ls" to run. The daemon refuses
+    // the send, for MCP as for the app.
+    let keys = m.tool(
+        "devbox_agent_send",
+        json!({"id":id,"text":"owned\u{15}!ls"}),
+    );
+    assert_eq!(keys["result"]["isError"], true);
+    assert_eq!(keys["result"]["content"][0]["text"], CONTROL_CHARACTERS);
     let after = d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
     for field in ["attention", "followUps", "activitySeq"] {
         assert_eq!(after[field], running[field], "{field}");
@@ -439,8 +449,14 @@ fn agent_send_refuses_such_text_before_any_daemon_call() {
     let d = TestDaemon::fixture();
     d.write_config("[mcp]\nwrite=true\n");
     let mut m = Mcp::start(&d);
-    let refused = m.tool("devbox_agent_send", json!({"id":"owned","text":"!ls"}));
-    assert_eq!(refused["result"]["content"][0]["text"], RUNS_AS_COMMAND);
+    // JavaScript's trimStart, which Claude Code, opencode and pi may use, also drops U+FEFF.
+    for text in ["!ls", "\u{feff}!ls"] {
+        let refused = m.tool("devbox_agent_send", json!({"id":"owned","text":text}));
+        assert_eq!(
+            refused["result"]["content"][0]["text"], RUNS_AS_COMMAND,
+            "{text:?}"
+        );
+    }
     // Any other text goes to the daemon, which this fixture does not run.
     let unreachable = m.tool(
         "devbox_agent_send",

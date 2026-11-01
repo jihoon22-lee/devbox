@@ -22,6 +22,8 @@ struct Reservation {
 impl AgentsService {
     pub async fn send(&self, p: SendToAgent) -> Result<AgentTask> {
         crate::limits::input(&p.text)?;
+        // Before the task, its pane or tmux is touched: the app and MCP alike.
+        crate::limits::pasted(&p.text)?;
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;

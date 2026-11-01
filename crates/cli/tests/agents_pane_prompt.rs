@@ -1,6 +1,6 @@
 //! A send must not answer a Codex or pi prompt the output watcher has not reported yet. The
 //! watcher needs 2 to about 6 s of unchanged output, and Enter on a trust prompt saves trust for
-//! good.
+//! good. Nor may a send carry a control character, which the pane would take as a key.
 mod support;
 use devbox_cli::client::{Client, ClientError};
 use serde_json::{Value, json};
@@ -232,6 +232,47 @@ async fn a_pane_that_cannot_be_read_refuses_the_send_instead_of_skipping_the_che
         "{refused:?}"
     );
     assert_nothing_sent(&d, &client, &id).await;
+}
+
+#[tokio::test]
+async fn a_send_with_a_control_character_is_refused_before_the_pane_is_read() {
+    // In the pane each is a key: ESC [201~ ends the bracketed paste, so what follows is typed;
+    // Ctrl-U erases the prompt box; DEL and Ctrl-H erase; 0x9b starts a CSI as ESC [ does.
+    let (d, client, id) = showing(WORKING, "context left", "capture-pane", None).await;
+    // A send that reached the pane check would fail on this unreadable pane instead.
+    let unreadable = d.home.path().join("fail-tmux");
+    std::fs::write(&unreadable, "owned failure").expect("marker");
+    for control in ["\x1b[201~", "\x15", "\x7f", "\x08", "\u{9b}"] {
+        // Nor does the check wait for the task: an unknown one is refused the same way.
+        for task in [id.as_str(), "missing"] {
+            let text = format!("owned{control}!ls");
+            let refused = client
+                .raw_call("agents.send", json!({"id":task,"text":text}), None)
+                .await
+                .expect_err("send with a control character");
+            assert!(
+                matches!(&refused, ClientError::Rpc { code, .. } if code == "agents.control_characters"),
+                "{control:?} to {task}: {refused:?}"
+            );
+        }
+    }
+    assert_nothing_sent(&d, &client, &id).await;
+    std::fs::remove_file(&unreadable).expect("marker");
+    // Tab and line breaks are text, sent as before.
+    for (before, text) in ["owned\ttab", "owned\nline", "owned\r\nline"]
+        .into_iter()
+        .enumerate()
+    {
+        let body = client
+            .raw_call("agents.send", json!({"id":id,"text":text}), None)
+            .await
+            .expect("send with a tab or line break");
+        let sent: Value = serde_json::from_str(&body).expect("task JSON");
+        let follow_ups = sent["followUps"].as_array().expect("history");
+        assert_eq!(follow_ups.len(), before + 1, "{text:?}");
+        assert_eq!(follow_ups[before]["text"], text);
+    }
+    assert_eq!(d.paste_count(), 3);
 }
 
 #[tokio::test]

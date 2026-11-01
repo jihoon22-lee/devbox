@@ -66,6 +66,11 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     title: "에이전트가 시작하는 중입니다.",
     action: "터미널에 에이전트 화면이 나타나면 다시 보내세요.",
   },
+  "agents.control_characters": {
+    title: "보낼 글에 제어 문자가 있어 보내지 않았습니다.",
+    action:
+      "제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요.",
+  },
   "agents.resume_unavailable": {
     title: "에이전트를 이어서 실행할 수 없습니다.",
     action: "이전 도구 실행을 확인할 수 없습니다. 새 작업을 만들어 주세요.",

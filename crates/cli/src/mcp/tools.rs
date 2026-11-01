@@ -105,11 +105,9 @@ impl Server {
                         "MCP 쓰기 도구가 꺼져 있습니다. [mcp] write = true 설정이 필요합니다.",
                     ));
                 }
-                // Codex, Claude Code and pi run a text that starts with "!" as a shell command,
-                // and the tools run one that starts with "/" as their own command, after any
-                // blanks. No pane check can see it: the screen is a plain prompt. Every task
-                // gets this, whatever its tool; the app's own sends are passed as typed.
-                if args.text.trim_start().starts_with(['!', '/']) {
+                // No pane check can see this: the screen is a plain prompt. Every task gets it,
+                // whatever its tool; the app's own sends skip it.
+                if runs_as_command(&args.text) {
                     return Ok(ToolResult::error(
                         "보낼 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않았습니다. 앞에 다른 말을 붙여 다시 보내세요.",
                     ));
@@ -169,6 +167,14 @@ impl Server {
         }
     }
 }
+/// Codex, Claude Code and pi run a text that starts with "!" as a shell command, and the tools
+/// run one that starts with "/" as their own command, after any blanks. A blank is whatever Rust
+/// or JavaScript trims: Codex is Rust, and Claude Code, opencode and pi are JavaScript, whose
+/// trimStart also drops U+FEFF.
+fn runs_as_command(text: &str) -> bool {
+    text.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+        .starts_with(['!', '/'])
+}
 fn message_for(error: &ClientError) -> &'static str {
     match error {
         ClientError::Rpc { code, .. } => match code.as_str() {
@@ -182,6 +188,9 @@ fn message_for(error: &ClientError) -> &'static str {
             }
             "agents.tool_starting" => {
                 "에이전트가 시작하는 중입니다. 터미널에 에이전트 화면이 나타나면 다시 보내세요."
+            }
+            "agents.control_characters" => {
+                "보낼 글에 제어 문자가 있어 보내지 않았습니다. 제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요."
             }
             "agents.invalid_input" | "invalid_params" => {
                 "에이전트 작업의 입력값이 올바르지 않습니다."
@@ -220,5 +229,33 @@ mod tests {
             message_for(&error),
             "에이전트가 시작하는 중입니다. 터미널에 에이전트 화면이 나타나면 다시 보내세요."
         );
+    }
+    #[test]
+    fn a_send_with_a_control_character_says_what_to_remove() {
+        let error = ClientError::Rpc {
+            code: "agents.control_characters".into(),
+            detail: None,
+            diagnostic_id: None,
+        };
+        assert_eq!(
+            message_for(&error),
+            "보낼 글에 제어 문자가 있어 보내지 않았습니다. 제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요."
+        );
+    }
+    #[test]
+    fn a_command_prefix_counts_after_any_blank_that_rust_or_javascript_trims() {
+        // Every code point Node 24's String.prototype.trimStart drops, and every one Rust's
+        // char::is_whitespace matches: the two lists differ only in U+FEFF and U+0085.
+        let javascript = "\t\n\u{b}\u{c}\r \u{a0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}";
+        let rust = (char::MIN..=char::MAX).filter(|c| c.is_whitespace());
+        for blank in javascript.chars().chain(rust) {
+            assert!(runs_as_command(&format!("{blank}!ls")), "{blank:?}");
+            assert!(
+                runs_as_command(&format!("{blank}{blank}/clear")),
+                "{blank:?}"
+            );
+        }
+        assert!(!runs_as_command("hello !ls"));
+        assert!(!runs_as_command("fix /tmp/x"));
     }
 }

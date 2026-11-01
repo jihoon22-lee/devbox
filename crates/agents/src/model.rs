@@ -322,6 +322,7 @@ domain_error! {
         SessionMissing = "agents.session_missing",
         SessionMetadata { diagnostic: crate::tracker::Diagnostic } = "agents.session_metadata",
         InputTooLarge { limit_bytes: u32 } = "agents.input_too_large",
+        ControlCharacters = "agents.control_characters",
         PrTitleTooLong { limit_bytes: u32 } = "agents.pr_title_too_long",
         SquashMessageTooLong { limit_bytes: u32 } = "agents.squash_message_too_long",
         TeardownCommandTooLong { limit_bytes: u32 } = "agents.teardown_command_too_long",

@@ -19,6 +19,13 @@ test("agent errors use actual generated file details and terminal codes", () => 
     title: "에이전트가 시작하는 중입니다.",
     action: "터미널에 에이전트 화면이 나타나면 다시 보내세요.",
   });
+  // A send with a control character, which the agent's terminal would take as a key, says what
+  // to remove. MCP joins the same two sentences.
+  expect(messageFor("agents.control_characters")).toEqual({
+    title: "보낼 글에 제어 문자가 있어 보내지 않았습니다.",
+    action:
+      "제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요.",
+  });
   for (const code of ["agents.tool_missing", "projects.launch_tool_missing"] as const) {
     expect(messageFor(code, { command: "pi" })).toEqual({
       title: "pi 명령을 찾을 수 없습니다.",
