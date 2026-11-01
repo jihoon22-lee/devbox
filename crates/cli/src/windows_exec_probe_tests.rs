@@ -170,9 +170,11 @@ try {{
     );
 }
 
-/// A hidden PowerShell that sleeps 5 s, started without waiting: it stays in the job after the
-/// bootstrap exits, as a build server would, and ends by itself. The test never ends it.
-const ORPHAN: &str = "Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 5'";
+/// A hidden PowerShell started without waiting, in the command folder: it stays in the job after
+/// the bootstrap exits, as a build server would, and ends by itself 5 s later. It writes
+/// `orphan-started` as it starts and `orphan-ended` just before it exits, so a failure shows
+/// whether it ran. The test never ends it.
+const ORPHAN: &str = "Start-Process -FilePath powershell.exe -WindowStyle Hidden -WorkingDirectory (Get-Location).ProviderPath -ArgumentList '-NoProfile','-NonInteractive','-Command','Set-Content -LiteralPath orphan-started -Value 1; Start-Sleep -Seconds 5; Set-Content -LiteralPath orphan-ended -Value 1'";
 /// The holder's `{"nonce":…}` receipt, read as strictly as the daemon reads it.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -198,27 +200,72 @@ async fn appears(path: &Path, within: Duration) -> Option<Instant> {
     }
     Some(Instant::now())
 }
+/// The test's own folder, created fresh (an existing one is never adopted) and removed on every
+/// path, a failed step or assertion included.
+struct OwnedFolder(Option<std::path::PathBuf>);
+impl OwnedFolder {
+    fn create(path: std::path::PathBuf) -> Self {
+        std::fs::create_dir(&path).expect("the owned test folder");
+        Self(Some(path))
+    }
+    /// Removes it now, so that the test can check the removal.
+    fn remove(mut self) -> std::io::Result<()> {
+        self.0.take().map_or(Ok(()), std::fs::remove_dir_all)
+    }
+}
+impl Drop for OwnedFolder {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+}
+#[test]
+fn the_owned_folder_goes_on_a_failed_step_and_an_existing_one_is_never_adopted() {
+    let temp = tempfile::tempdir().expect("owned temporary directory");
+    let path = temp.path().join("devbox-w1-owned");
+    let failed = std::panic::catch_unwind(|| {
+        let _owned = OwnedFolder::create(path.clone());
+        std::fs::create_dir(path.join("control")).expect("the control folder");
+        panic!("a failed step");
+    });
+    assert!(failed.is_err());
+    assert!(!path.exists());
+    std::fs::create_dir(&path).expect("someone else's folder");
+    assert!(std::panic::catch_unwind(|| OwnedFolder::create(path.clone())).is_err());
+    assert!(path.exists());
+}
 
 /// I1 on real Windows: the production bootstrap, through the same direct interop path as a
 /// Windows run, with a command that leaves a 5 s orphan. In order: the holder is ready, then
 /// `assigned`; no receipt while the orphan outlives the bootstrap; the receipt after it ended.
 ///
-/// S7-14 W1 runs it on the Windows PC from WSL, under the acceptance lock, and again after any
-/// fix to the bootstrap, the holder or the receipt:
+/// S7-14 W1 runs it on the Windows PC from WSL, and again after any fix to the bootstrap, the
+/// holder or the receipt. The build holds the default verification lock and only the run holds
+/// the acceptance lock, so it is two steps:
 ///
 /// ```text
+/// source ~/.cargo/env
+/// # 1. Build under the default lock. It prints the test binary:
+/// #    "Executable unittests src/lib.rs (<binary>)".
+/// python3 scripts/verify-resources.py --wait -- cargo test -p devbox-cli --lib -j 2 --no-run
+/// # 2. Run only this test, under the acceptance lock.
 /// python3 scripts/verify-resources.py --wait --lock windows-acceptance -- env \
 ///   DEVBOX_TEST_WINDOWS_POWERSHELL=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe \
 ///   'DEVBOX_TEST_WINDOWS_DIR=C:\Users\<name>\AppData\Local\Temp' \
-///   cargo test -p devbox-cli --lib -j 2 \
-///   windows_exec::probe_tests::the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap \
-///   -- --ignored --exact
+///   <binary> windows_exec::probe_tests::the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap \
+///   --ignored --exact
 /// ```
+///
+/// A harness that already holds `windows-acceptance` runs step 2 without the wrapper: a nested
+/// wrapper waits for its own lock until it exits 75 an hour later. There, a bare
+/// `cargo test -p devbox-cli --lib -j 2 <test> -- --ignored --exact` after step 1 also works.
 ///
 /// `DEVBOX_TEST_WINDOWS_DIR` is an existing local folder of the tester with no reparse point on
 /// its path (the bootstrap refuses one). The test creates its own `devbox-w1-<uuid>` folder in
 /// it, plays the daemon's part (it grants exactly the `assigned` receipt within the bootstrap's
-/// 15 s) and removes only that folder.
+/// 15 s) and removes only that folder, on every path. If the orphan still runs there (a failed
+/// run), Windows keeps the folder; W1 removes it once the orphan has ended.
 #[tokio::test]
 #[ignore = "real Windows only: S7-14 W1 runs it under the windows-acceptance lock with DEVBOX_TEST_WINDOWS_POWERSHELL and DEVBOX_TEST_WINDOWS_DIR"]
 async fn the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap() {
@@ -232,13 +279,13 @@ async fn the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap() {
         devbox_runtime::windows::target_directory(parent, name).expect("a Windows folder")
     };
     let wsl = |path: &str| devbox_runtime::windows::windows_to_wsl(path).expect("a mapped path");
-    let owned = folder(&parent, &format!("devbox-w1-{id}"));
-    let (directory, cwd) = (folder(&owned, "control"), folder(&owned, "files"));
-    // create_dir never adopts an existing folder.
-    let owned_wsl = wsl(&owned);
-    std::fs::create_dir(&owned_wsl).expect("the owned test folder");
+    let root = folder(&parent, &format!("devbox-w1-{id}"));
+    let (directory, cwd) = (folder(&root, "control"), folder(&root, "files"));
+    let owned = OwnedFolder::create(wsl(&root));
     std::fs::create_dir(wsl(&directory)).expect("the private control folder");
-    std::fs::create_dir(wsl(&cwd)).expect("the command folder");
+    let files = wsl(&cwd);
+    std::fs::create_dir(&files).expect("the command folder");
+    let (started, ended) = (files.join("orphan-started"), files.join("orphan-ended"));
     let control = ObservationControl::new(format!("w1-{id}"), id.clone(), &directory);
     let assigned_path = wsl(&control.assigned_path);
     let grant_path = wsl(&control.grant_path);
@@ -269,19 +316,21 @@ async fn the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap() {
         publish(&grant_path, &grant).map_err(|_| "no grant via a temporary file and hard link")?;
         Ok::<_, &str>((ready_first, assigned, holder, Instant::now()))
     };
-    let (started, _) = tokio::sync::oneshot::channel();
+    let (started_tx, _) = tokio::sync::oneshot::channel();
     let outcome = tokio::time::timeout(Duration::from_secs(120), async {
-        tokio::join!(direct(&request, executable, started), daemon)
+        tokio::join!(direct(&request, executable, started_tx), daemon)
     })
     .await;
-    let receipt_at_exit = receipt_path.exists();
+    // What the receipt and the orphan's markers show: as the bootstrap exited, 2 s later while
+    // the orphan should still run, and when the receipt came.
+    let at_exit = (receipt_path.exists(), started.exists());
     tokio::time::sleep(Duration::from_secs(2)).await;
-    let receipt_while_orphan = receipt_path.exists();
+    let later = (receipt_path.exists(), started.exists(), ended.exists());
     let receipt_at = appears(&receipt_path, Duration::from_secs(30)).await;
+    let ended_first = ended.exists();
     let receipt = std::fs::read(&receipt_path).ok();
     let receipt: Option<Receipt> = receipt.and_then(|b| serde_json::from_slice(&b).ok());
-    // Only this test's folder. The orphan has ended once the receipt exists.
-    let removed = std::fs::remove_dir_all(&owned_wsl);
+    let removed = owned.remove();
     let (exit, seen) = outcome.expect("the bootstrap ends in time");
     let (ready_first, assigned, holder, granted) =
         seen.unwrap_or_else(|why| panic!("the daemon's part: {why}"));
@@ -296,11 +345,24 @@ async fn the_holder_receipt_waits_for_an_orphan_that_outlives_the_bootstrap() {
     // 2. `assigned` is this attempt's own, and the command ran to its end.
     assert!(control.accepts(&run, &assigned), "{assigned:?}");
     assert_eq!(exit, Direct::Finished(0));
-    // 3. No receipt while the orphan outlived the bootstrap; without it, one comes in 500 ms.
-    assert!(!receipt_at_exit, "a receipt as the bootstrap exited");
-    assert!(!receipt_while_orphan, "a receipt while the orphan ran");
+    // 3. No receipt while the orphan outlived the bootstrap; without it, one comes in 500 ms. The
+    // markers tell an orphan that never ran (or ended early) from a holder that wrote too soon.
+    let (receipt_at_exit, started_at_exit) = at_exit;
+    assert!(
+        !receipt_at_exit,
+        "a receipt as the bootstrap exited (orphan started: {started_at_exit}, later: {later:?})"
+    );
+    let (receipt_later, started_later, ended_later) = later;
+    assert!(
+        !receipt_later,
+        "a receipt 2 s after the exit (orphan started: {started_later}, ended: {ended_later})"
+    );
     // 4. The receipt once the orphan ended by itself, at least its 5 s after the grant.
     let receipt_at = receipt_at.expect("the holder's receipt after the orphan");
+    assert!(
+        ended_first,
+        "a receipt before the orphan wrote `orphan-ended`"
+    );
     assert!(
         receipt_at.duration_since(granted) >= Duration::from_secs(4),
         "receipt {:?} after the grant",
