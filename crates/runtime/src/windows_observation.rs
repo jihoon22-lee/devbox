@@ -8,7 +8,7 @@ use crate::{
 use devbox_protocol::{
     Fail, Internal,
     windows::{
-        ControlShape, HolderIdentity, OBSERVATION_HOLDER_READY_TIMEOUT_MS, ObservationAssigned,
+        ControlShape, HolderIdentity, OBSERVATION_ASSIGNMENT_DEADLINE_MS, ObservationAssigned,
         ObservationControl, ObservationState, RunIdentity,
     },
 };
@@ -30,15 +30,11 @@ pub type WindowsHolder = Arc<
         + Send
         + Sync,
 >;
-/// The bootstrap's own start before it assigns itself (interop, PowerShell, Add-Type): what the
-/// daemon allowed it before the job holder existed.
-const BOOTSTRAP_START_MS: u64 = 20_000;
 /// How long the daemon waits for `assigned` after `windows.prepare` before it revokes the attempt
-/// (and the commit's own deadline check). The bootstrap assigns itself only once its holder is
-/// ready, so the holder wait comes on top of its start (M-1): a revoke inside that wait would end
+/// (and the commit's own deadline check): the bootstrap's start after its whole holder wait, the
+/// deadline the app's native-run tracker shares (M-1). A revoke inside the holder wait would end
 /// a slow but working start as a generic failure instead of the bootstrap's own fixed code.
-const ASSIGNMENT_DEADLINE: Duration =
-    Duration::from_millis(BOOTSTRAP_START_MS + OBSERVATION_HOLDER_READY_TIMEOUT_MS);
+const ASSIGNMENT_DEADLINE: Duration = Duration::from_millis(OBSERVATION_ASSIGNMENT_DEADLINE_MS);
 pub(crate) fn unavailable_holder() -> WindowsHolder {
     Arc::new(|_, _| Box::pin(async { ObservationState::Unavailable }))
 }

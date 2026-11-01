@@ -103,6 +103,13 @@ fn bootstrap_fails_with_observer_unavailable_when_the_holder_is_not_ready() {
     // Distinct from success, the generic bootstrap failure and the command's own result path.
     assert!((2..=255).contains(&OBSERVER_UNAVAILABLE_EXIT));
     assert_eq!(BOOTSTRAP.matches(&unavailable).count(), 1);
+    // `assigned` follows that whole wait, so its deadline (the daemon's and the app's) still
+    // leaves the start the 20 s it had before the holder existed (M-1).
+    assert_eq!(OBSERVATION_BOOTSTRAP_START_MS, 20_000);
+    assert_eq!(
+        OBSERVATION_ASSIGNMENT_DEADLINE_MS,
+        OBSERVATION_BOOTSTRAP_START_MS + OBSERVATION_HOLDER_READY_TIMEOUT_MS
+    );
     assert!(BOOTSTRAP.contains("exit 1"));
 }
 #[test]

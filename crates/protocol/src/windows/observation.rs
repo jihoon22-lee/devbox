@@ -7,6 +7,14 @@ pub const OBSERVATION_JOB_PREFIX: &str = "Local\\Devbox.Observe.";
 pub const OBSERVATION_GRANT_TIMEOUT_MS: u64 = 15_000;
 /// The bootstrap runs no command unless its job holder is ready within this time.
 pub const OBSERVATION_HOLDER_READY_TIMEOUT_MS: u64 = 15_000;
+/// The bootstrap's own start (interop, PowerShell, Add-Type): what the daemon allowed it before
+/// the job holder existed.
+pub const OBSERVATION_BOOTSTRAP_START_MS: u64 = 20_000;
+/// How long the daemon and the app's native-run tracker wait for a bootstrap's `assigned`
+/// receipt. It is written only once the holder is ready, so the whole holder wait comes on top
+/// of the start (M-1).
+pub const OBSERVATION_ASSIGNMENT_DEADLINE_MS: u64 =
+    OBSERVATION_BOOTSTRAP_START_MS + OBSERVATION_HOLDER_READY_TIMEOUT_MS;
 pub const OBSERVATION_HOLDER_POLL_MS: u64 = 500;
 /// A holder whose job never had a process leaves without a receipt after this time.
 pub const OBSERVATION_HOLDER_IDLE_MS: u64 = 60_000;

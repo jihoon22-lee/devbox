@@ -67,3 +67,19 @@ fn unknown_lifetimes_are_bounded_and_never_expire_to_zero() {
     assert!(ledger.reserve(false).is_some());
     assert_eq!(ledger.snapshot().0, None);
 }
+#[test]
+fn the_native_tracker_waits_for_assigned_as_long_as_the_daemon() {
+    // The bootstrap writes `assigned` only once its holder is ready, so the tracker allows its
+    // start after the whole holder wait, from the constant the daemon uses (M-1). Otherwise a
+    // slow start leaves the run unknown, which blocks app updates until the app restarts. The
+    // tracker is Windows-only code: the MSVC check compiles it, and this pins its deadline.
+    let source = include_str!("../platform/native_activity.rs");
+    assert_eq!(source.matches("let deadline").count(), 1);
+    let start = source.find("let deadline").expect("the tracker's deadline");
+    let end = start + source[start..].find(';').expect("its statement");
+    let deadline = &source[start..end];
+    assert!(
+        deadline.contains("Duration::from_millis(OBSERVATION_ASSIGNMENT_DEADLINE_MS)"),
+        "{deadline}"
+    );
+}
