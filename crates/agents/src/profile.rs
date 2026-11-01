@@ -1,6 +1,6 @@
 // crates/agents/src/profile.rs
 use crate::{family_patterns::family_patterns, watch::WaitingPatterns};
-use devbox_protocol::system::StartupProblem;
+use devbox_protocol::system::{SectionEffect, StartupProblem};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -99,6 +99,8 @@ pub fn configured_lenient(
                     file: file.clone(),
                     section: "agents.profiles".into(),
                     message: format!("{label}: {message}"),
+                    // The other entries and the builtin profiles still work.
+                    effect: SectionEffect::Ignored,
                 });
             }
         }
@@ -165,7 +167,8 @@ mod tests {
         config.profiles_file = Some("/owned/config.toml".into());
         config
     }
-    /// `(section, message)` of each problem, which must all name the profiles' file.
+    /// `(section, message)` of each problem, which must all name the profiles' file. A skipped
+    /// entry leaves the other profiles working, so each one is only ignored.
     fn reported(problems: &[StartupProblem]) -> Vec<(String, String)> {
         problems
             .iter()
@@ -174,8 +177,10 @@ mod tests {
                     file,
                     section,
                     message,
+                    effect,
                 } => {
                     assert_eq!(file, "/owned/config.toml");
+                    assert_eq!(*effect, SectionEffect::Ignored, "{message}");
                     (section.clone(), message.clone())
                 }
                 other => panic!("unexpected problem {other:?}"),

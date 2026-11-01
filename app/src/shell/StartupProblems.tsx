@@ -22,7 +22,13 @@ function Guidance({ problem }: { problem: StartupProblem }) {
         </p>
       );
     case "configSection":
-      return (
+      // An unknown section, [windows] in config.toml or one profile entry turns nothing off.
+      return problem.effect === "ignored" ? (
+        <p style={{ margin: 0 }}>
+          <code>{problem.file}</code>의 [{problem.section}] 항목에서 잘못된 부분만 무시했습니다. 나머지 설정은 그대로
+          동작합니다. 고치거나 지운 뒤 [다시 설정]을 누르세요.
+        </p>
+      ) : (
         <p style={{ margin: 0 }}>
           <code>{problem.file}</code>의 [{problem.section}] 항목에 오류가 있어 이 기능을 껐습니다. 고친 뒤 [다시 설정]을
           누르세요.

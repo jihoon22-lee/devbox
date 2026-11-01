@@ -57,6 +57,7 @@ pub(super) fn windows_reason(problems: &[StartupProblem], local: &Path) -> Strin
                 file,
                 section,
                 message,
+                ..
             } if section == "windows" && Path::new(file) == local => {
                 Some(format!("{file} [windows]: {message}"))
             }

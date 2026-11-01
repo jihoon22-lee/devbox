@@ -37,14 +37,26 @@ pub struct DaemonInfo {
 pub enum StartupProblem {
     /// The file could not be read or parsed: every section runs on its failure policy.
     ConfigFile { file: String, message: String },
-    /// One section of the file was invalid and ignored: that feature is off or default.
+    /// One section of the file, or one entry of it, did not load; `effect` says what that did.
     ConfigSection {
         file: String,
         section: String,
         message: String,
+        effect: SectionEffect,
     },
     /// Agent tasks were not checked against tmux yet; the daemon keeps retrying.
     AgentsReconcile { message: String },
+}
+
+/// What a [`StartupProblem::ConfigSection`] did to the feature the section configures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum SectionEffect {
+    /// The section is on its failure policy: its feature is off or runs on defaults.
+    Disabled,
+    /// Only this section or entry is left out, such as an unknown section, `[windows]` in
+    /// `config.toml` or one `[[agents.profiles]]` entry. Everything else still works.
+    Ignored,
 }
 
 domain_error! {
@@ -92,7 +104,7 @@ pub fn export<X: Exporter>(x: &mut X) {
 
 #[cfg(test)]
 mod tests {
-    use super::{DaemonInfo, StartupProblem};
+    use super::{DaemonInfo, SectionEffect, StartupProblem};
     use ts_rs::TS;
     #[test]
     fn startup_problems_are_kind_tagged_and_omitted_when_empty() {
@@ -105,6 +117,13 @@ mod tests {
                 file: "/c/config.local.toml".into(),
                 section: "notes".into(),
                 message: "m".into(),
+                effect: SectionEffect::Disabled,
+            },
+            StartupProblem::ConfigSection {
+                file: "/c/config.toml".into(),
+                section: "windows".into(),
+                message: "m".into(),
+                effect: SectionEffect::Ignored,
             },
             StartupProblem::AgentsReconcile {
                 message: "m".into(),
@@ -112,7 +131,8 @@ mod tests {
         ];
         let wire = serde_json::json!([
             {"kind": "configFile", "file": "/c/config.toml", "message": "m"},
-            {"kind": "configSection", "file": "/c/config.local.toml", "section": "notes", "message": "m"},
+            {"kind": "configSection", "file": "/c/config.local.toml", "section": "notes", "message": "m", "effect": "disabled"},
+            {"kind": "configSection", "file": "/c/config.toml", "section": "windows", "message": "m", "effect": "ignored"},
             {"kind": "agentsReconcile", "message": "m"},
         ]);
         assert_eq!(
@@ -132,7 +152,7 @@ mod tests {
         );
         info.startup_problems = problems;
         assert_eq!(
-            serde_json::to_value(&info).expect("JSON")["startupProblems"][2]["kind"],
+            serde_json::to_value(&info).expect("JSON")["startupProblems"][3]["kind"],
             "agentsReconcile"
         );
         let config = ts_rs::Config::new().with_large_int("number");

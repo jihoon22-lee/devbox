@@ -240,11 +240,13 @@ async fn daemon_starts_with_a_broken_config_and_reports_problems() {
         .expect("daemon answers");
     let problems = startup_problems(&c).await;
     let file = config_file(&d).display().to_string();
+    // Only the broken entry is skipped, so the banner must not say profiles were turned off.
     assert!(
         problems.iter().any(|p| p["kind"] == "configSection"
             && p["file"] == file.as_str()
             && p["section"] == "agents.profiles"
-            && p["message"].as_str().is_some_and(|m| m.contains("broken"))),
+            && p["message"].as_str().is_some_and(|m| m.contains("broken"))
+            && p["effect"] == "ignored"),
         "{problems:?}"
     );
     let profiles = c

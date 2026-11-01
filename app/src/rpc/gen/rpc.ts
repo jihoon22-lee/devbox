@@ -649,6 +649,7 @@ limit: number, };
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
 export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" } | { "code": "secrets.config_invalid", "detail": { file: string, } };
+export type SectionEffect = "disabled" | "ignored";
 export type SelectResponseNote = { target: ResponseNoteTarget, };
 export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
 export type SendRequest = { sourceRoot?: CollectionRoot, snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
@@ -689,7 +690,7 @@ url: string, headers: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot,
 lastEventId: string | null, origin: RequestOrigin | null, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
-export type StartupProblem = { "kind": "configFile", file: string, message: string, } | { "kind": "configSection", file: string, section: string, message: string, } | { "kind": "agentsReconcile", message: string, };
+export type StartupProblem = { "kind": "configFile", file: string, message: string, } | { "kind": "configSection", file: string, section: string, message: string, effect: SectionEffect, } | { "kind": "agentsReconcile", message: string, };
 export type StashEntry = { oid: string, reference: string, subject: string, };
 export type Status = "ok" | "warn" | "fail";
 export type StatusSummary = { branch: string | null, ahead: number, behind: number, staged: number, unstaged: number, untracked: number, conflicted: Array<string>, clean: boolean, };

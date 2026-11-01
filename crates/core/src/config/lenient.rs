@@ -1,7 +1,7 @@
 //! Lenient loading for the daemon: a file or section that does not load turns off only
 //! what it configures and is reported as a [`StartupProblem`] instead of stopping startup.
 use super::*;
-use devbox_protocol::system::StartupProblem;
+use devbox_protocol::system::{SectionEffect, StartupProblem};
 use std::collections::BTreeSet;
 
 /// Features that stay off because their settings did not load. They never fall back to
@@ -145,7 +145,7 @@ impl ConfigLoad {
         }
         if !errors.is_empty() {
             for (path, message) in errors {
-                self.report(&path, name, message);
+                self.report(&path, name, SectionEffect::Disabled, message);
             }
             self.fail(name);
             return None;
@@ -154,18 +154,19 @@ impl ConfigLoad {
             Ok(value) => Some(value),
             Err(error) => {
                 let file = last.unwrap_or_else(|| self.shared.clone());
-                self.report(&file, name, error.to_string());
+                self.report(&file, name, SectionEffect::Disabled, error.to_string());
                 self.fail(name);
                 None
             }
         }
     }
 
-    fn report(&mut self, file: &Path, section: &str, message: String) {
+    fn report(&mut self, file: &Path, section: &str, effect: SectionEffect, message: String) {
         self.problems.push(StartupProblem::ConfigSection {
             file: file.display().to_string(),
             section: section.to_owned(),
             message,
+            effect,
         });
     }
 
@@ -191,14 +192,16 @@ impl ConfigLoad {
     fn check_file(&mut self, path: &Path, table: &mut toml::Table, local: bool) {
         let keys: Vec<String> = table.keys().cloned().collect();
         for key in keys {
+            // These two only drop this file's copy: nothing else is turned off.
             if !SECTIONS.contains(&key.as_str()) {
                 table.remove(&key);
-                self.report(path, &key, "unknown section".into());
+                self.report(path, &key, SectionEffect::Ignored, "unknown section".into());
             } else if key == "windows" && !local {
                 table.remove(&key);
                 self.report(
                     path,
                     &key,
+                    SectionEffect::Ignored,
                     "windows is only allowed in config.local.toml".into(),
                 );
             } else if let Err(message) = check(&key, &table[&key]) {
@@ -209,7 +212,7 @@ impl ConfigLoad {
                         table.remove(&key);
                     }
                 }
-                self.report(path, &key, message);
+                self.report(path, &key, SectionEffect::Disabled, message);
                 self.fail(&key);
             }
         }
@@ -219,7 +222,12 @@ impl ConfigLoad {
             .filter(|agents| agents.get("profiles").is_some_and(|p| !p.is_array()));
         if let Some(agents) = profiles {
             agents.remove("profiles");
-            self.report(path, PROFILES, "must be an array of tables".into());
+            self.report(
+                path,
+                PROFILES,
+                SectionEffect::Disabled,
+                "must be an array of tables".into(),
+            );
             self.fail(PROFILES);
         }
     }
@@ -468,6 +476,48 @@ mod tests {
             [
                 ("config.toml".into(), "unexpected".into()),
                 ("config.toml".into(), "windows".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn each_section_problem_says_whether_it_turned_something_off() {
+        use devbox_protocol::system::SectionEffect::{Disabled, Ignored};
+        let temp = tempfile::tempdir().expect("owned config");
+        let paths = paths_in(temp.path());
+        let shared =
+            "x = 1\n[windows]\nroot = 'C:\\s'\n[mcp]\nwrite = 'yes'\n[agents]\nprofiles = 1\n";
+        write(&paths, "config.toml", shared);
+        write(&paths, "config.local.toml", "[windows]\nroot = 1\n");
+        let mut load = load_lenient(&paths);
+        assert!(load.section("notes", |_| Err::<(), _>("no")).is_none());
+        let mut effects: Vec<_> = (load.problems.iter())
+            .map(|problem| match problem {
+                StartupProblem::ConfigSection {
+                    file,
+                    section,
+                    effect,
+                    ..
+                } => (
+                    file.rsplit('/').next().map(str::to_owned),
+                    section.as_str(),
+                    *effect,
+                ),
+                other => panic!("unexpected problem {other:?}"),
+            })
+            .collect();
+        effects.sort_by_key(|(file, section, _)| (file.clone(), *section));
+        let shared = Some("config.toml".to_owned());
+        assert_eq!(
+            effects,
+            [
+                (Some("config.local.toml".into()), "windows", Disabled),
+                (shared.clone(), "agents.profiles", Disabled),
+                (shared.clone(), "mcp", Disabled),
+                (shared.clone(), "notes", Disabled),
+                // Left out, while every other section and Windows copies still load.
+                (shared.clone(), "windows", Ignored),
+                (shared, "x", Ignored),
             ]
         );
     }

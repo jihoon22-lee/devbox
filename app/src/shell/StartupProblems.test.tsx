@@ -26,6 +26,14 @@ const configSection = {
   file: "/fixture/devbox/config.local.toml",
   section: "notes",
   message: 'invalid type: string "yes", expected a boolean',
+  effect: "disabled",
+};
+const ignoredSection = {
+  kind: "configSection",
+  file: "/fixture/devbox/config.toml",
+  section: "windows",
+  message: "windows is only allowed in config.local.toml",
+  effect: "ignored",
 };
 const agentsReconcile = { kind: "agentsReconcile", message: "tmux list-sessions: no server running" };
 /** Matches the one element whose whole text is `text`, even when `<code>` splits it. */
@@ -88,6 +96,23 @@ test("each startup problem shows its fixed title and guidance with the raw messa
   }
   expect(within(agents!).queryByRole("button")).toBeNull();
   expect(document.body.textContent).not.toMatch(/데몬/);
+});
+
+test("a section problem that turned nothing off says it was only ignored, with the same recovery", async () => {
+  await show([ignoredSection]);
+  const [item] = screen.getAllByRole("listitem");
+  expect(within(item!).getByText("설정 일부를 읽지 못했습니다")).toBeInTheDocument();
+  expect(
+    within(item!).getByText(
+      whole(
+        "/fixture/devbox/config.toml의 [windows] 항목에서 잘못된 부분만 무시했습니다. 나머지 설정은 그대로 동작합니다. 고치거나 지운 뒤 [다시 설정]을 누르세요.",
+      ),
+    ),
+  ).toBeInTheDocument();
+  expect(within(item!).getByText(ignoredSection.message)).toBeInTheDocument();
+  expect(item!.textContent).not.toMatch(/껐습니다/);
+  expect(within(item!).getByRole("button", { name: "다시 설정" })).toBeInTheDocument();
+  expect(within(item!).getByRole("button", { name: "경로 복사" })).toBeInTheDocument();
 });
 
 test("nothing is drawn and nothing is polled without startup problems", async () => {
