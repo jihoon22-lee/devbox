@@ -161,10 +161,14 @@ struct Walked {
     fingerprint: String,
     stamp: String,
 }
-/// Metadata that changes whenever an entry's bytes, mode, name or identity change.
+/// Metadata that changes whenever an entry's bytes, mode, name or identity change. A directory
+/// keeps only its name, mode and identity, its size and times zeroed: a scratch file made and
+/// removed again moves its times, and on ext4 can grow its size, though nothing is left. Each of
+/// its entries is stamped too, so one added, removed or renamed still changes the stamp.
 fn stamp(stamp: &mut Sha256, relative: &Path, meta: &Metadata) {
+    let whole = !meta.is_dir();
     field(stamp, relative.as_os_str().as_encoded_bytes());
-    stamp.update(meta.len().to_le_bytes());
+    stamp.update(if whole { meta.len() } else { 0 }.to_le_bytes());
     stamp.update(mode(meta).to_le_bytes());
     #[cfg(unix)]
     for value in [
@@ -173,14 +177,16 @@ fn stamp(stamp: &mut Sha256, relative: &Path, meta: &Metadata) {
         meta.ctime(),
         meta.ctime_nsec(),
     ] {
-        stamp.update(value.to_le_bytes());
+        stamp.update(if whole { value } else { 0 }.to_le_bytes());
     }
     #[cfg(unix)]
     for value in [meta.dev(), meta.ino()] {
         stamp.update(value.to_le_bytes());
     }
     #[cfg(not(unix))]
-    field(stamp, format!("{:?}", meta.modified().ok()).as_bytes());
+    let modified = whole.then(|| meta.modified().ok()).flatten();
+    #[cfg(not(unix))]
+    field(stamp, format!("{modified:?}").as_bytes());
 }
 fn tree(
     path: &Path,
@@ -208,6 +214,10 @@ fn tree(
         walk.budget.check()?;
         let entry = entry.map_err(|_| "unreadable")?;
         if depth == 0 && entry.file_name() == ".git" {
+            // Git's own entry is neither walked nor read, only stamped: the worktree folder's
+            // times are not, so its replacement, removal or arrival must change the stamp.
+            let meta = entry.metadata().map_err(|_| "unreadable_or_changed")?;
+            stamp(&mut walk.stamp, Path::new(".git"), &meta);
             continue;
         }
         if entries.len() + walk.budget.entries >= walk.budget.limits.entries {

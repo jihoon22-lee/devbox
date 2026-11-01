@@ -147,3 +147,46 @@ fn metadata_stamp_sees_every_change_without_opening_files() {
     .expect("mode");
     assert!(metadata_stamp(root.path(), LIMITS).is_ok());
 }
+#[cfg(unix)]
+#[test]
+fn metadata_stamp_ignores_directory_times_but_not_their_entries() {
+    let root = tempfile::tempdir().expect("fixture");
+    let path = |relative: &str| root.path().join(relative);
+    fs::write(path(".git"), "gitdir: /owned/elsewhere\n").expect("git link");
+    fs::create_dir_all(path("src/deep")).expect("directories");
+    fs::write(path("src/deep/file"), "one").expect("file");
+    let stamp = || metadata_stamp(root.path(), LIMITS).expect("stamp");
+    let first = stamp();
+    // A scratch file or folder made and removed again, as a teardown's lock file would be, moves
+    // only its folder's times.
+    std::thread::sleep(Duration::from_millis(20));
+    for folder in ["", "src", "src/deep"] {
+        let scratch = path(folder).join("scratch");
+        fs::write(&scratch, "lock").expect("scratch file");
+        fs::remove_file(&scratch).expect("scratch file removed");
+        fs::create_dir(&scratch).expect("scratch folder");
+        fs::remove_dir(&scratch).expect("scratch folder removed");
+    }
+    assert_eq!(stamp(), first);
+    let hashed = hash(root.path(), b"index", &Ignored::default(), LIMITS).expect("hash");
+    assert_eq!(hashed.stamp, first);
+    // Whatever stays behind is an entry of its own, and still counts.
+    let mut last = first;
+    let mut changed = |what: &str| {
+        let now = stamp();
+        assert_ne!(now, last, "{what}");
+        last = now;
+    };
+    fs::write(path("src/deep/file"), "two!").expect("edit");
+    changed("edited");
+    fs::write(path("src/new"), "new").expect("add");
+    changed("added");
+    fs::rename(path("src/new"), path("src/old")).expect("rename");
+    changed("renamed in its folder");
+    fs::remove_file(path("src/old")).expect("remove");
+    changed("removed");
+    // Git's own entry is never walked or read, but an identical one in its place still counts.
+    fs::copy(path(".git"), path("git-link")).expect("copy");
+    fs::rename(path("git-link"), path(".git")).expect("replace");
+    changed("git link replaced");
+}

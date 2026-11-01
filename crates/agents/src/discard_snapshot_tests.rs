@@ -182,6 +182,87 @@ async fn tracked_change_after_confirmation_still_blocks_discard() {
     assert!(!wt.exists());
 }
 
+/// The discard's last check, under the lock after quiesce and teardown, with `change` made
+/// between the confirmation and that check.
+async fn final_check(
+    fixture: &Fixture,
+    task: &AgentTask,
+    wt: &Path,
+    change: impl FnOnce(),
+) -> crate::service::Result<()> {
+    let request = confirmed(fixture, task).await;
+    let head = &request.expect.head_oid;
+    let base = devbox_git::run::resolve(&fixture.repo, "main")
+        .await
+        .expect("base");
+    let hashed = fixture.svc.hash_for_discard(&request).await;
+    let snapshot = fixture
+        .svc
+        .confirm_discard_snapshot(hashed, wt, head, &base, &request.expect)
+        .await
+        .expect("confirmed under the lock");
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    change();
+    fixture
+        .svc
+        .verify_discard_snapshot(&snapshot, wt, head, &base)
+        .await
+}
+
+#[tokio::test]
+async fn scratch_files_after_confirmation_do_not_refuse_discard() {
+    let (fixture, task, wt) = action_fixture().await;
+    fs::write(wt.join(".gitignore"), "/target/\n").expect("owned ignore rules");
+    fs::create_dir_all(wt.join("target/debug")).expect("owned build directory");
+    fs::write(wt.join("target/debug/app"), "build output").expect("owned build output");
+    // A teardown or a stopped process makes a lock file and removes it again, in the worktree
+    // and in an ignored folder: nothing the discard removes has changed.
+    let result = final_check(&fixture, &task, &wt, || {
+        for folder in ["", "target", "target/debug"] {
+            let scratch = wt.join(folder).join("teardown.lock");
+            fs::write(&scratch, "lock").expect("owned scratch file");
+            fs::remove_file(&scratch).expect("owned scratch file removed");
+        }
+    })
+    .await;
+    assert!(result.is_ok(), "{result:?}");
+}
+
+#[tokio::test]
+async fn changes_after_confirmation_still_refuse_discard() {
+    let (fixture, task, wt) = action_fixture().await;
+    fs::write(wt.join(".gitignore"), "*.log\n").expect("owned ignore rules");
+    fs::write(wt.join("notes.txt"), "user notes").expect("owned untracked note");
+    fs::write(wt.join("draft.txt"), "user draft").expect("owned untracked draft");
+    // Neither the index nor any ref moves: only the metadata check can refuse these.
+    let refused = |what: &str, result: crate::service::Result<()>| {
+        assert!(
+            matches!(result, Err(Fail::Domain(AgentsError::StateChanged { .. }))),
+            "{what}: {result:?}"
+        );
+    };
+    let edit = || fs::write(wt.join("tracked"), "edited\n").expect("owned edit");
+    refused(
+        "tracked edit",
+        final_check(&fixture, &task, &wt, edit).await,
+    );
+    let add = || fs::write(wt.join("new.log"), "log").expect("owned ignored file");
+    refused(
+        "ignored file added",
+        final_check(&fixture, &task, &wt, add).await,
+    );
+    let remove = || fs::remove_file(wt.join("notes.txt")).expect("owned removal");
+    refused(
+        "file removed",
+        final_check(&fixture, &task, &wt, remove).await,
+    );
+    let rename = || fs::rename(wt.join("draft.txt"), wt.join("draft.md")).expect("owned rename");
+    refused(
+        "renamed in its folder",
+        final_check(&fixture, &task, &wt, rename).await,
+    );
+}
+
 #[tokio::test]
 async fn discard_holds_the_lock_only_for_verification() {
     let (fixture, task, wt) = action_fixture().await;

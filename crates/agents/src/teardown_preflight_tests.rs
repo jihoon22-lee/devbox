@@ -21,6 +21,10 @@ fn teardown_lists_preflight_runner_and_entire_cleanup_selection() {
     ]);
 }
 #[test]
+fn teardown_scratch_files_do_not_block_discard_but_edits_do() {
+    cases(&["teardown-discard-scratch", "teardown-discard-edited"]);
+}
+#[test]
 fn teardown_bounds_preserve_snapshot_bytes_and_unused_paths() {
     cases(&[
         "teardown-discard-ascii",
@@ -44,6 +48,17 @@ pub(super) async fn case(mode: &str) {
     );
     let command = if mode.ends_with("nul-fails") {
         "true\0bad".into()
+    } else if mode.ends_with("scratch") || mode.ends_with("edited") {
+        // Teardown runs in the worktree: a lock file made and removed again, or a tracked edit.
+        let change = if mode.ends_with("scratch") {
+            "touch teardown.lock && rm teardown.lock"
+        } else {
+            "printf edited > tracked"
+        };
+        format!(
+            "{change} && printf second > {}",
+            crate::plan::sh_quote(second.to_str().expect("owned marker"))
+        )
     } else if mode.ends_with("ascii") || mode.ends_with("unicode") {
         let prefix = format!(
             "printf second > {}; #",
@@ -265,6 +280,21 @@ pub(super) async fn case(mode: &str) {
             .await
             .map(|_| ())
     };
+    if mode.ends_with("edited") {
+        // Teardown ran and edited what the user confirmed: nothing is removed.
+        assert!(
+            matches!(result, Err(Fail::Domain(AgentsError::StateChanged { .. }))),
+            "{result:?}"
+        );
+        assert!(first.exists() && second.exists());
+        assert!(wt.exists());
+        assert_eq!(fs::read(wt.join("tracked")).expect("kept edit"), b"edited");
+        assert_ne!(
+            f.svc.get(&task.id).await.expect("task").state,
+            AgentState::Closed
+        );
+        return;
+    }
     if mode.ends_with("fails") {
         assert!(
             !first.exists(),

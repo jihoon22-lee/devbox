@@ -356,6 +356,8 @@ os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
             "teardown_preflight_tests::teardown_lists_preflight_runner_and_entire_cleanup_selection"
         } else if modes[0].ends_with("fails") {
             "teardown_preflight_tests::teardown_lists_reject_before_discard_merge_or_pr_side_effects"
+        } else if modes[0].ends_with("scratch") {
+            "teardown_preflight_tests::teardown_scratch_files_do_not_block_discard_but_edits_do"
         } else {
             "teardown_preflight_tests::teardown_bounds_preserve_snapshot_bytes_and_unused_paths"
         }
