@@ -1,4 +1,13 @@
-import { cloneMessage, field, files, type Message, type Messages, path, toolMissing } from "./messageDetail";
+import {
+  cloneMessage,
+  field,
+  files,
+  type Message,
+  type Messages,
+  path,
+  shellQuote,
+  toolMissing,
+} from "./messageDetail";
 
 type Domain = "agents" | "projects" | "terminal";
 /**
@@ -69,6 +78,13 @@ export const AGENT_MESSAGES: Messages<Domain> = {
       action: `.devbox/devbox.toml의 [agent] teardown ${typeof index === "number" ? `${index}번째 ` : ""}명령을 터미널에서 직접 실행해 원인을 고친 뒤 정리 후보에서 다시 정리하세요.`,
     };
   },
+  // Git removes such a folder only with force, which devbox never uses. The command names the folder
+  // from the detail. Deleting the folder by hand instead would leave it registered, and its branch
+  // would never be listed again.
+  "agents.worktree_has_submodules": (d) => ({
+    title: "하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다.",
+    action: `하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force ${path(d) ? shellQuote(path(d)) : "<폴더>"}로 직접 지우세요.`,
+  }),
   "agents.delivery_unknown": {
     title: "지시 전달 결과를 확인할 수 없습니다.",
     action: "터미널을 확인한 뒤 새 지시를 보내세요. 자동으로 다시 보내지 않습니다.",

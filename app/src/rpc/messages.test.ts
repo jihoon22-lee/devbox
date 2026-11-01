@@ -53,6 +53,19 @@ test("a failed teardown names which command of [agent] teardown to run and fix, 
   );
 });
 
+test("a work folder with submodules says devbox keeps it and gives the command that removes it, the folder quoted", () => {
+  expect(messageFor("agents.worktree_has_submodules", { path: "/home/me/app/.devbox/worktrees/fix" })).toEqual({
+    title: "하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다.",
+    action:
+      "하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force '/home/me/app/.devbox/worktrees/fix'로 직접 지우세요.",
+  });
+  // A space or a quote in the path stays inside the one word the shell reads.
+  const quoted = messageFor("agents.worktree_has_submodules", { path: "/home/me/my app/it's" }).action;
+  expect(quoted).toContain(String.raw`git worktree remove --force '/home/me/my app/it'\''s'로`);
+  // Deleting the folder by hand would leave it registered, and its branch never listed again.
+  expect(quoted).not.toMatch(/rm -rf/);
+});
+
 test("an unready Windows job holder says to run again and where to look", () => {
   // The bootstrap refuses before it writes its assignment receipt, which comes before any
   // command, so "run again" is safe and the copy says the command did not run.

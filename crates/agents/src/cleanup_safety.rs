@@ -3,6 +3,7 @@
 //!
 //! devbox never removes a work folder with force: that would also skip Git's refusal of a folder
 //! with initialized submodules, whose commits can exist only under `.git/worktrees/<name>/modules`.
+//! Such a folder is refused before the undo with a code that says how to remove it (Ruling 64 (c)).
 //! A teardown (or a process of the closed task) that writes into the folder used to make every
 //! cleanup refuse with `agents.worktree_dirty`, again on each retry, since each retry runs the
 //! teardown again. So when the folder was clean at the closed head right before the teardown, what
@@ -174,6 +175,8 @@ impl AgentsService {
             {
                 return Err(AgentsError::UnsafeWorktree.into());
             }
+            // The folder stays either way: one with submodules is not undone.
+            self.refuse_submodules(wt, true).await?;
             self.undo_teardown(task, wt).await
         }
         .await;
@@ -186,11 +189,39 @@ impl AgentsService {
         }
     }
 
+    /// Right before the undo, after every other check passed. Git removes a folder with initialized
+    /// submodules only with force, which devbox never uses, so such a folder is refused here with
+    /// `agents.worktree_has_submodules`, which names it, and nothing is undone. The teardown has
+    /// run by then, so what it stops is stopped. The force that code advises would lose changes
+    /// and an operation in progress, so a folder that was not [`Self::undoable`] is first refused
+    /// for changes the removal does not take, and any folder for an operation in progress. Without
+    /// an answer to any of these, nothing is removed.
+    pub(crate) async fn refuse_submodules(&self, wt: &Path, undoable: bool) -> Result<()> {
+        if !undoable {
+            devbox_git::mutate::worktree_clean(wt)
+                .await
+                .map_err(git_failure)?;
+        }
+        if cleanup_in_progress(wt).await? {
+            return Err(AgentsError::OperationInProgress.into());
+        }
+        if devbox_git::mutate::has_submodules(wt)
+            .await
+            .map_err(git_failure)?
+        {
+            return Err(AgentsError::WorktreeHasSubmodules {
+                path: wt.to_string_lossy().into_owned(),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
     /// The last step before an [`Self::undoable`] folder's removal, after every other check passed:
     /// tracked files and the index go back to HEAD, and untracked files that are not ignored go.
-    /// Submodules, nested repositories and ignored files are left as they are, so the removal's
-    /// clean check, made again here, still refuses a folder whose submodule or nested repository
-    /// changed. Git itself still refuses a folder with an initialized submodule. In a folder with
+    /// Nested repositories and ignored files are left as they are, so the removal's clean check,
+    /// made again here, still refuses a folder whose nested repository changed. A folder with
+    /// initialized submodules never gets here ([`Self::refuse_submodules`]). In a folder with
     /// assume-unchanged or skip-worktree entries nothing is undone.
     pub(crate) async fn undo_teardown(&self, task: &AgentTask, wt: &Path) -> Result<()> {
         if cleanup_in_progress(wt).await? {

@@ -85,7 +85,15 @@ impl AgentsService {
         Ok(snapshot)
     }
     pub(crate) async fn record_cleanup_error(&self, id: &str, error: &Fail<AgentsError>) {
-        tracing::error!(?error, agent = id, "closed task cleanup retained resources");
+        // A domain error's detail can name files or the folder: the log has its code only.
+        match error {
+            Fail::Domain(code) => {
+                tracing::error!(%code, agent = id, "closed task cleanup retained resources")
+            }
+            Fail::Internal(_) => {
+                tracing::error!(?error, agent = id, "closed task cleanup retained resources")
+            }
+        }
         // Domain errors contain safe details; process causes remain in diagnostics/logs.
         let message = match error {
             Fail::Domain(error) => {
@@ -156,6 +164,7 @@ impl AgentsService {
         {
             return Err(AgentsError::UnsafeWorktree.into());
         }
+        self.refuse_submodules(&wt, undo).await?;
         // Automatic cleanup never removes changes it cannot account for, even after a successful
         // merge/PR: only what changed during cleanup in a folder that was clean before is undone.
         if undo {

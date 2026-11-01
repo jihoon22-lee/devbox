@@ -20,6 +20,8 @@ mod merge_retry_tests;
 mod squash_cleanup_tests;
 #[path = "teardown_harness.rs"]
 mod teardown_harness;
+#[path = "teardown_submodule_tests.rs"]
+mod teardown_submodule_tests;
 #[path = "teardown_undo_tests.rs"]
 mod teardown_undo_tests;
 

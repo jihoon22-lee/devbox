@@ -252,6 +252,11 @@ pub struct CleanupOptions {
     /// they changed is there or in the PR. Listed only while the rest of the rule holds (Ruling 60).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub off_base: Vec<String>,
+    /// Work folders of closed tasks that pass every other check but hold initialized submodules.
+    /// Git removes such a folder only with force, which devbox never uses, so neither it nor its
+    /// branch is offered: the list names it with how to remove it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub submodules: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -340,6 +345,9 @@ domain_error! {
         // Which `[agent] teardown` command failed (1-based) and its exit code, `None` when it was
         // killed or timed out. Its text stays out; the user reads it in the file.
         TeardownFailed { index: u32, exit_code: Option<i32> } = "agents.teardown_failed",
+        // A work folder with initialized submodules: Git removes it only with force, which devbox
+        // never uses. `path` is the folder, for the command that removes it.
+        WorktreeHasSubmodules { path: String } = "agents.worktree_has_submodules",
         DeliveryUnknown = "agents.delivery_unknown",
         AwaitingInput = "agents.awaiting_input",
         ToolStarting = "agents.tool_starting",

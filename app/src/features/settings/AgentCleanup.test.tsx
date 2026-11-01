@@ -61,6 +61,24 @@ test("a cleanup stopped by a failed teardown names which command to run and fix,
   );
 });
 
+const SUBMODULES = `하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force '${WORKTREE}'로 직접 지우세요.`;
+
+test("a work folder with submodules is listed apart with how to remove it, and cannot be selected", async () => {
+  await showList({ worktrees: [], branches: [], submodules: [WORKTREE] });
+  const kept = await screen.findByRole("region", { name: "직접 지울 작업 폴더" });
+  expect(kept).toHaveTextContent(`${WORKTREE} ${SUBMODULES}`);
+  // Git removes it only with force, which devbox never uses: it is not among the safe items.
+  expect(within(kept).queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: WORKTREE })).not.toBeInTheDocument();
+  expect(screen.getByText("정리할 항목이 없습니다")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "선택 항목 정리" })).toBeDisabled();
+});
+
+test("a cleanup refused for submodules gives the command that removes the folder", async () => {
+  const alert = await refuse({ code: "agents.worktree_has_submodules", detail: { path: WORKTREE } });
+  expect(alert).toHaveTextContent(SUBMODULES);
+});
+
 const OFF_BASE = "스쿼시·PR로 닫힘 — 브랜치의 개별 커밋은 기준 브랜치에 없습니다";
 const MIXED = {
   worktrees: [WORKTREE, "/fixture/merged"],

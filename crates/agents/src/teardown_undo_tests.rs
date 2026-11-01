@@ -1,7 +1,7 @@
 //! A closed task's cleanup runs the project's teardown in the work folder, then removes the folder
 //! without force. What the teardown leaves in a folder that was clean at the closed head is undone
 //! first; a folder with changes of its own, or one the undo cannot account for, is refused as
-//! before (Ruling 61).
+//! before (Ruling 61). Folders with submodules are in `teardown_submodule_tests`.
 use super::{teardown_harness::*, *};
 
 #[test]
@@ -22,13 +22,7 @@ fn cleanup_undoes_what_its_teardown_left_in_a_clean_folder_and_removes_it() {
 fn cleanup_keeps_a_folder_whose_changes_it_cannot_account_for() {
     cases(
         "teardown_undo_tests::cleanup_keeps_a_folder_whose_changes_it_cannot_account_for",
-        &[
-            "user-file",
-            "submodule",
-            "submodule-edit",
-            "nested",
-            "head-moved",
-        ],
+        &["user-file", "nested", "head-moved"],
         case,
     );
 }
@@ -157,96 +151,6 @@ async fn case(mode: String) {
             assert!(wt.join("teardown.log").exists(), "nothing is undone");
             assert!(has_branch(&f).await);
             assert!(receipt("clean").is_empty());
-        }
-        "submodule" | "submodule-edit" => {
-            set_cleanup(&mut f, false);
-            let lib = f.root.path().join("lib");
-            fs::create_dir(&lib).expect("owned submodule source");
-            git(&lib, &["init", "-qb", "main"]);
-            git(&lib, &["config", "user.name", "fixture"]);
-            git(&lib, &["config", "user.email", "fixture@example.invalid"]);
-            git(&lib, &["config", "commit.gpgSign", "false"]);
-            fs::write(lib.join("file.txt"), "one\n").expect("submodule file");
-            git(&lib, &["add", "file.txt"]);
-            git(&lib, &["commit", "-qm", "lib"]);
-            git(
-                &wt,
-                &[
-                    "-c",
-                    "protocol.file.allow=always",
-                    "submodule",
-                    "add",
-                    "-q",
-                    lib.to_str().expect("owned source"),
-                    "lib",
-                ],
-            );
-            git(&wt, &["commit", "-qm", "submodule"]);
-            // A commit that exists only in the work folder's own submodule store
-            // (.git/worktrees/<name>/modules/lib), which a forced removal would lose.
-            let sub = wt.join("lib");
-            git(&sub, &["config", "user.name", "fixture"]);
-            git(&sub, &["config", "user.email", "fixture@example.invalid"]);
-            git(&sub, &["config", "commit.gpgSign", "false"]);
-            fs::write(sub.join("file.txt"), "unpushed\n").expect("submodule edit");
-            git(&sub, &["commit", "-qam", "unpushed"]);
-            git(&wt, &["add", "lib"]);
-            git(&wt, &["commit", "-qm", "bump lib"]);
-            let unpushed = devbox_git::run::resolve(&sub, "HEAD")
-                .await
-                .expect("submodule head");
-            close(&f, &task, MergeKind::Merge).await;
-            // `git restore` would reset the submodule and detach its HEAD under this setting
-            // unless it is told not to recurse.
-            git(&f.repo, &["config", "submodule.recurse", "true"]);
-            let teardown = if mode == "submodule" {
-                "printf x > teardown.log"
-            } else {
-                "printf x > teardown.log && printf teardown >> lib/file.txt"
-            };
-            let ran = approve_teardown(&f, &task, &wt, &[teardown]).await;
-            let result = f
-                .svc
-                .cleanup(CleanupAgents {
-                    project_id: f.project.clone(),
-                    worktrees: vec![wt.to_string_lossy().into_owned()],
-                    branches: vec!["agent/review".into()],
-                })
-                .await;
-            assert!(ran.exists(), "the teardown ran");
-            if mode == "submodule" {
-                // Git itself refuses a folder with an initialized submodule without force.
-                assert!(result.is_err(), "{result:?}");
-            } else {
-                assert!(
-                    matches!(&result, Err(Fail::Domain(AgentsError::WorktreeDirty { files })) if files == &["lib"]),
-                    "{result:?}"
-                );
-            }
-            assert!(wt.exists());
-            assert!(has_branch(&f).await);
-            let expected = if mode == "submodule" {
-                "unpushed\n"
-            } else {
-                "unpushed\nteardown"
-            };
-            assert_eq!(
-                fs::read_to_string(sub.join("file.txt")).expect("submodule file"),
-                expected
-            );
-            assert_eq!(
-                devbox_git::run::resolve(&sub, "HEAD")
-                    .await
-                    .expect("submodule head"),
-                unpushed
-            );
-            assert_eq!(
-                devbox_git::current_branch(&sub)
-                    .await
-                    .expect("submodule branch")
-                    .as_deref(),
-                Some("main")
-            );
         }
         "nested" => {
             // The teardown makes a nested repository: a single `-f` leaves it, so the folder stays.

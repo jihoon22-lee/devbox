@@ -201,3 +201,92 @@ async fn hides_edits_finds_entries_whose_edits_status_does_not_show() {
         assert!(!git::mutate::hides_edits(&dir).await.expect("index flags"));
     }
 }
+
+#[tokio::test]
+async fn has_submodules_agrees_with_what_git_refuses_to_remove() {
+    let root = tempfile::tempdir().expect("owned fixture");
+    let lib = repo(root.path(), "lib");
+    std::fs::write(lib.join("file.txt"), "one\n").expect("owned fixture");
+    sh(&lib, &["add", "."]);
+    sh(&lib, &["commit", "-qm", "lib"]);
+    let main = repo(root.path(), "main");
+    std::fs::write(main.join("top.txt"), "top\n").expect("owned fixture");
+    sh(&main, &["add", "."]);
+    sh(&main, &["commit", "-qm", "init"]);
+    let source = lib.to_str().expect("owned fixture");
+    sh(
+        &main,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            source,
+            "lib",
+        ],
+    );
+    sh(&main, &["commit", "-qm", "submodule"]);
+    let add = |name: &str| {
+        let dir = root.path().join(name);
+        let path = dir.to_str().expect("owned fixture");
+        sh(&main, &["worktree", "add", "-q", "-b", name, path]);
+        dir
+    };
+    // Checked out without its submodule, the gitlink is an empty folder.
+    let plain = add("plain");
+    assert!(
+        !git::mutate::has_submodules(&plain)
+            .await
+            .expect("submodule check")
+    );
+    // Initialized, the submodule's repository is in the folder's own Git directory.
+    let initialized = add("initialized");
+    sh(
+        &initialized,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "update",
+            "--init",
+            "-q",
+        ],
+    );
+    assert!(main.join(".git/worktrees/initialized/modules").is_dir());
+    assert!(
+        git::mutate::has_submodules(&initialized)
+            .await
+            .expect("submodule check")
+    );
+    // A repository of its own in the gitlink's folder, with no `modules` folder.
+    let cloned = add("cloned");
+    sh(
+        root.path(),
+        &[
+            "clone",
+            "-q",
+            source,
+            cloned.join("lib").to_str().expect("owned fixture"),
+        ],
+    );
+    assert!(!main.join(".git/worktrees/cloned/modules").exists());
+    assert!(
+        git::mutate::has_submodules(&cloned)
+            .await
+            .expect("submodule check")
+    );
+    // Git, without force, refuses to remove the last two and removes the first.
+    for (dir, refused) in [(&initialized, true), (&cloned, true), (&plain, false)] {
+        let removal = Command::new("git")
+            .current_dir(&main)
+            .args(["worktree", "remove", "--"])
+            .arg(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .expect("owned removal");
+        assert_eq!(!removal.status.success(), refused, "{dir:?}");
+        assert_eq!(dir.exists(), refused, "{dir:?}");
+    }
+}

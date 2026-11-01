@@ -29,5 +29,7 @@ export function cleanupMessage(code: ErrorCode, detail: unknown, where: "notice"
   }
   const message = messageFor(code, detail);
   if (where === "list" || code === "agents.teardown_failed") return message;
+  // A folder devbox does not remove: the notice keeps how to remove it, then points to the list.
+  if (code === "agents.worktree_has_submodules") return { ...message, action: `${message.action} ${CLEANUP_ACTION}` };
   return { title: message.title, action: CLEANUP_ACTION };
 }

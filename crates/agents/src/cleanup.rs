@@ -190,6 +190,7 @@ impl AgentsService {
         let mut worktrees = Vec::new();
         let mut branches = Vec::new();
         let mut off_base = Vec::new();
+        let mut submodules = Vec::new();
         for task in tasks.iter().filter(|t| t.state == AgentState::Closed) {
             // A matching path name is never ownership evidence. Keep unknown/partial resources.
             let Ok((project, path, branch)) = self.owned_worktree(task).await else {
@@ -233,6 +234,20 @@ impl AgentsService {
             else {
                 continue;
             };
+            // Only now, with every other rule held: Git removes a folder with initialized
+            // submodules only with force, so it is named apart and neither it nor its branch is
+            // offered. Without an answer it is not offered either.
+            match devbox_git::mutate::has_submodules(&path).await {
+                Ok(false) => (),
+                Ok(true) => {
+                    submodules.push(path.to_string_lossy().into_owned());
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(agent = %task.id, %error, "submodule check failed; work folder not offered");
+                    continue;
+                }
+            }
             let path = path.to_string_lossy().into_owned();
             if release == Release::OffBase {
                 off_base.extend([path.clone(), branch.clone()]);
@@ -240,7 +255,12 @@ impl AgentsService {
             worktrees.push(path);
             branches.push(branch);
         }
-        for list in [&mut worktrees, &mut branches, &mut off_base] {
+        for list in [
+            &mut worktrees,
+            &mut branches,
+            &mut off_base,
+            &mut submodules,
+        ] {
             list.sort();
             list.dedup();
         }
@@ -248,6 +268,7 @@ impl AgentsService {
             worktrees,
             branches,
             off_base,
+            submodules,
         })
     }
 
@@ -260,15 +281,29 @@ impl AgentsService {
             .await?;
         let selected_paths: HashSet<_> = p.worktrees.iter().collect();
         let selected_branches: HashSet<_> = p.branches.iter().collect();
+        let tasks = self.cleanup_tasks(&p.project_id).await?;
+        // A folder the list names for its submodules is still taken, with its branch when the
+        // folder is selected too: its teardown runs, then it is refused with the code that says
+        // how to remove it. Its branch alone is not taken.
+        let held: HashSet<_> = tasks
+            .iter()
+            .filter(|t| {
+                t.worktree_path.as_ref().is_some_and(|v| {
+                    candidates.submodules.contains(v) && selected_paths.contains(v)
+                })
+            })
+            .filter_map(|t| t.branch.as_ref())
+            .collect();
         if p.worktrees
             .iter()
-            .any(|v| !candidates.worktrees.contains(v))
-            || p.branches.iter().any(|v| !candidates.branches.contains(v))
+            .any(|v| !candidates.worktrees.contains(v) && !candidates.submodules.contains(v))
+            || p.branches
+                .iter()
+                .any(|v| !candidates.branches.contains(v) && !held.contains(v))
         {
             return Err(AgentsError::UnsafeWorktree.into());
         }
         // Validate the entire request before removing any resource; checked-out branches require their own selected worktree.
-        let tasks = self.cleanup_tasks(&p.project_id).await?;
         let selected: Vec<_> = tasks
             .into_iter()
             .filter(|t| {
@@ -402,6 +437,16 @@ impl AgentsService {
                 )
             {
                 return Err(AgentsError::UnsafeWorktree.into());
+            }
+            if let Err(error) = self.refuse_submodules(&path, undo).await {
+                // The folder stays until the user removes it: the task's notice says how.
+                if matches!(
+                    error,
+                    Fail::Domain(AgentsError::WorktreeHasSubmodules { .. })
+                ) {
+                    self.record_cleanup_error(&task.id, &error).await;
+                }
+                return Err(error);
             }
             if undo {
                 self.undo_teardown(&task, &path).await?;

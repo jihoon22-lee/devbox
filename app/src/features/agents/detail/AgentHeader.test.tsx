@@ -88,6 +88,13 @@ test("a failed teardown's notice names the command to fix and the cleanup list, 
   expect(alert).not.toHaveTextContent("남은 항목을 확인하세요");
 });
 
+test("a work folder kept for its submodules: the notice gives the command that removes it, then points to the cleanup list", () => {
+  header(JSON.stringify({ code: "agents.worktree_has_submodules", detail: { path: "/fixture/owned" } }));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "정리하지 못한 항목이 있습니다. 하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다. 하위 모듈의 커밋을 push한 뒤 작업 폴더 밖의 터미널에서 git worktree remove --force '/fixture/owned'로 직접 지우세요. 설정 → 에이전트 → 정리 후보에서 남은 항목을 확인하세요.",
+  );
+});
+
 test("a merge's own next action never reaches the notice: other codes point to the cleanup list, and the stored text stays under [자세히]", async () => {
   const raw = JSON.stringify({ code: "agents.base_dirty", detail: { files: ["a.txt", "b.txt"] } });
   header(raw);

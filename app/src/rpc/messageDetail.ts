@@ -10,6 +10,8 @@ export type Entry = Message | ((detail: unknown) => Message);
 export type Messages<Domain extends string> = Record<Extract<RpcErrorCode, `${Domain}.${string}`>, Entry>;
 export const path = (d: unknown) =>
   d && typeof d === "object" && "path" in d && typeof d.path === "string" ? d.path : "";
+/** `text` as one word of a shell command the user copies: in single quotes, each `'` as `'\''`. */
+export const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 export const files = (detail: unknown) =>
   detail && typeof detail === "object" && "files" in detail && Array.isArray(detail.files)
     ? detail.files.filter((file): file is string => typeof file === "string").join(", ")

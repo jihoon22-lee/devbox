@@ -16,6 +16,12 @@ type Params = Methods["agents.cleanup"]["params"];
  * heading holds for it only with this said.
  */
 const OFF_BASE = "스쿼시·PR로 닫힘 — 브랜치의 개별 커밋은 기준 브랜치에 없습니다";
+/**
+ * The daemon lists apart (`submodules`) a closed task's work folder that passes every check but
+ * holds initialized submodules: Git removes it only with force, which devbox never uses. It is
+ * shown with how to remove it, outside the safe items, and cannot be selected.
+ */
+const KEPT = "직접 지울 작업 폴더";
 export function AgentCleanup({ projectId }: { projectId: string }) {
   const candidates = useRpcQuery("agents.cleanup_candidates", { projectId });
   const offBase = new Set(candidates.data?.offBase);
@@ -164,6 +170,23 @@ export function AgentCleanup({ projectId }: { projectId: string }) {
         ))}
         {candidates.data && !candidates.data.worktrees.length && !candidates.data.branches.length && (
           <p>정리할 항목이 없습니다</p>
+        )}
+        {!!candidates.data?.submodules?.length && (
+          <section aria-label={KEPT}>
+            <h4>{KEPT}</h4>
+            {candidates.data.submodules.map((path) => {
+              const message = messageFor("agents.worktree_has_submodules", { path });
+              return (
+                <p key={path}>
+                  {path}
+                  <small>
+                    {" "}
+                    {message.title} {message.action}
+                  </small>
+                </p>
+              );
+            })}
+          </section>
         )}
       </QueryResult>
       <Button
