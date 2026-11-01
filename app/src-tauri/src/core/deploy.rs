@@ -73,6 +73,17 @@ mod tests {
         }
     }
     #[test]
+    fn the_app_start_doctor_skips_the_agent_cli_lookups() {
+        // After every setup the app acts only on failed rows, and agent rows never fail. The
+        // environment check (`system.doctor`) keeps them.
+        assert_eq!(STARTUP_DOCTOR_ARGS, ["doctor", "--json", "--startup"]);
+        let deploy = include_str!("../platform/deploy.rs")
+            .split_whitespace()
+            .collect::<String>();
+        assert!(deploy.contains(".args(STARTUP_DOCTOR_ARGS);"));
+        assert!(!deploy.contains("\"doctor\""));
+    }
+    #[test]
     fn a_failed_redeploy_keeps_the_fixed_message_and_the_failed_step() {
         let step = "서비스 다시 시작 실패: command failed: systemctl";
         let error = redeploy_failed(ShellError::Invalid(step.into()));
@@ -400,6 +411,10 @@ impl SetupTrigger {
         matches!(self, Self::Retry | Self::Redeploy)
     }
 }
+/// The check after every setup. The app acts only on its failed rows, which agent rows never
+/// are, so it leaves out the agent CLI lookups: up to four interactive shells and `--version`
+/// runs on every start. The environment check (`system.doctor`) keeps them.
+pub const STARTUP_DOCTOR_ARGS: [&str; 3] = ["doctor", "--json", "--startup"];
 /// `devbox setup` arguments for a run started by `trigger`.
 pub fn setup_args(trigger: SetupTrigger) -> &'static [&'static str] {
     if trigger.forces_restart() {

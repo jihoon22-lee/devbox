@@ -1,11 +1,14 @@
 use super::*;
 use devbox_protocol::system::Status;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Default)]
 struct Fake {
     available: bool,
     env_path_valid: bool,
     agents: Vec<(AgentTool, AgentCommand)>,
+    /// Questions that would start an interactive shell or an agent CLI on a real system.
+    agent_lookups: AtomicUsize,
 }
 impl Probe for Fake {
     fn daemon_path(&self) -> String {
@@ -36,8 +39,13 @@ impl Probe for Fake {
         assert_eq!(path, "/daemon/bin");
         Ok(!matches!(tool, "claude" | "codex" | "gh"))
     }
+    fn agent_auth(&self, _agent: AgentTool) -> Probed<AgentAuth> {
+        self.agent_lookups.fetch_add(1, Ordering::SeqCst);
+        Err(ProbeIssue::Unavailable)
+    }
     fn agent_command(&self, agent: AgentTool, path: &str) -> Probed<Option<AgentCommand>> {
         assert_eq!(path, "/daemon/bin");
+        self.agent_lookups.fetch_add(1, Ordering::SeqCst);
         Ok(self
             .agents
             .iter()
@@ -188,6 +196,7 @@ fn reports_all_four_agent_tools_with_versions() {
                 found("/home/u/.npm/bin/pi", true, "1.3.0", None),
             ),
         ],
+        ..Fake::default()
     });
     for (id, version, path, source) in [
         (
@@ -248,6 +257,7 @@ fn low_opencode_or_pi_version_warns() {
             available: true,
             env_path_valid: true,
             agents: vec![(agent, found("/owned/bin/tool", true, version, None))],
+            ..Fake::default()
         });
         let tool = check(&checks, &format!("tool.{}", agent.binary()));
         if warns {
@@ -269,4 +279,50 @@ fn low_opencode_or_pi_version_warns() {
             );
         }
     }
+}
+
+#[test]
+fn the_startup_check_leaves_out_only_the_rows_that_look_up_an_agent_cli() {
+    // The app runs this after every setup and acts only on failed rows; agent rows never fail.
+    let probe = Fake {
+        available: true,
+        ..Fake::default()
+    };
+    let row = |c: &devbox_protocol::system::Check| {
+        (c.id.clone(), c.status, c.message.clone(), c.fix.clone())
+    };
+    let full: Vec<_> = checks(&probe).iter().map(row).collect();
+    let asked = probe.agent_lookups.load(Ordering::SeqCst);
+    assert!(asked > 0);
+    let startup: Vec<_> = checks_for(&probe, Scope::Startup).iter().map(row).collect();
+    assert_eq!(probe.agent_lookups.load(Ordering::SeqCst), asked);
+    let agent_rows = [
+        "tool.claude",
+        "tool.codex",
+        "tool.opencode",
+        "tool.pi",
+        "auth.claude",
+        "auth.codex",
+    ];
+    for id in agent_rows {
+        assert!(
+            full.iter().any(|(full, ..)| full == id),
+            "the full check has {id}"
+        );
+    }
+    let expected: Vec<_> = full
+        .iter()
+        .filter(|(id, ..)| !agent_rows.contains(&id.as_str()))
+        .cloned()
+        .collect();
+    assert_eq!(startup, expected);
+    // The failed rows that stop a launch are all still there.
+    for id in ["systemd", "tool.tmux", "env", "tool.git", "hook.binary"] {
+        assert!(startup.iter().any(|(startup, ..)| startup == id), "{id}");
+    }
+    assert!(
+        startup
+            .iter()
+            .any(|(_, status, ..)| *status == Status::Fail)
+    );
 }

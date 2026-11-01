@@ -46,7 +46,21 @@ fn boolean(
         Err(issue) => super::extended::unknown(id, issue, fix),
     }
 }
+/// Which rows a doctor run makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// Every row: the environment check (`system.doctor`), support bundles and `devbox doctor`.
+    Full,
+    /// The app's check after each setup (`devbox doctor --startup`). It leaves out the rows that
+    /// look up an agent CLI (`tool.<agent>`, `auth.<agent>`): no interactive shell runs and no
+    /// CLI is asked for its version. Those rows are never `Fail`, so a launch goes on or stops
+    /// exactly as with every row.
+    Startup,
+}
 pub fn checks(p: &dyn Probe) -> Vec<Check> {
+    checks_for(p, Scope::Full)
+}
+pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
     let systemd = p.pid1().and_then(|pid| {
         if pid.trim() == "systemd" {
             p.user_manager_available()
@@ -111,10 +125,12 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
         "git", "claude", "codex", "opencode", "pi", "gh", "node", "pnpm",
     ] {
         if let Some(agent) = AgentTool::ALL.into_iter().find(|a| a.binary() == tool) {
-            out.push(super::agent_tools::tool_check(
-                agent,
-                p.agent_command(agent, &path),
-            ));
+            if scope == Scope::Full {
+                out.push(super::agent_tools::tool_check(
+                    agent,
+                    p.agent_command(agent, &path),
+                ));
+            }
             continue;
         }
         out.push(boolean(
@@ -142,6 +158,6 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
         "상태 알림 실행 파일을 실행할 수 없습니다",
         "devbox 실행 파일 배치를 확인하세요",
     ));
-    out.extend(super::extended::checks(p));
+    out.extend(super::extended::checks(p, scope));
     out
 }

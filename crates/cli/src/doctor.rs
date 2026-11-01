@@ -2,7 +2,7 @@ mod agent_cli;
 mod os;
 mod runner;
 use devbox_protocol::system::{DoctorReport, Status};
-pub use devbox_tools::doctor::{Probe, checks};
+pub use devbox_tools::doctor::{Probe, Scope, checks, checks_for};
 
 pub struct OsProbe {
     pub env_file: std::path::PathBuf,
@@ -35,13 +35,15 @@ fn executable(path: &std::path::Path) -> bool {
     // this read-only syscall. AT_EACCESS checks effective credentials and ACLs.
     unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
-pub async fn run(json: bool) -> anyhow::Result<()> {
+/// `startup` is the app's check after each setup: see [`Scope::Startup`].
+pub async fn run(json: bool, startup: bool) -> anyhow::Result<()> {
     let probe = OsProbe::new(
         crate::paths()?.instance_config_dir.join("env"),
         crate::paths()?.bin_dir.join("devbox"),
     );
+    let scope = if startup { Scope::Startup } else { Scope::Full };
     let report = DoctorReport {
-        checks: tokio::task::spawn_blocking(move || checks(&probe)).await?,
+        checks: tokio::task::spawn_blocking(move || checks_for(&probe, scope)).await?,
     };
     if json {
         println!("{}", serde_json::to_string(&report)?);

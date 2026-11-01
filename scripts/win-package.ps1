@@ -59,10 +59,10 @@ try {
         Run pnpm (@('--filter', 'app', 'tauri', $Mode) + $configArgs + @('--', '--locked'))
         if ($Mode -eq 'build') {
             $release = Join-Path $env:CARGO_TARGET_DIR 'release'
-            foreach ($name in @('Devbox.exe', 'devbox-linux', 'devbox-version.txt')) {
+            foreach ($name in @('Devbox.exe', 'devbox-linux', 'devbox-version.txt', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
                 $file = Join-Path $release $name
                 if (!(Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing built file: $name" }
-                if ($name -ne 'Devbox.exe' -and (Get-FileHash $file).Hash -ne (Get-FileHash "app/src-tauri/resources/$name").Hash) { throw "Built resource differs: $name" }
+                if ($name -ne 'Devbox.exe' -and (Get-FileHash $file).Hash -ne (Get-FileHash $(if ($name -like 'devbox-*') { "app/src-tauri/resources/$name" } else { $name })).Hash) { throw "Built resource differs: $name" }
             }
             $process = Start-Process -FilePath (Join-Path $release 'Devbox.exe') -ArgumentList @('--self-check', '--channel', $selected) -PassThru
             $null = $process.Handle # Keep the process handle until ExitCode is collected (Windows PowerShell 5.1).

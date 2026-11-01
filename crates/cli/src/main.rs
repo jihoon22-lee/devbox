@@ -49,6 +49,9 @@ enum Cmd {
     Doctor {
         #[arg(long)]
         json: bool,
+        /// 앱이 설정 뒤 하는 점검: 에이전트 CLI 조회(대화형 셸·버전 확인) 항목을 뺀다.
+        #[arg(long)]
+        startup: bool,
     },
     /// 에이전트 도구의 상태를 알린다.
     Agent {
@@ -171,7 +174,7 @@ fn main() -> anyhow::Result<()> {
             } => devbox_cli::gateway::run(port, origin, token).await,
             Cmd::Setup { json, restart } => devbox_cli::setup::run(json, restart).await,
             Cmd::Uninstall { json } => devbox_cli::setup::uninstall::run(json).await,
-            Cmd::Doctor { json } => devbox_cli::doctor::run(json).await,
+            Cmd::Doctor { json, startup } => devbox_cli::doctor::run(json, startup).await,
             Cmd::Agent {
                 cmd:
                     AgentCmd::Event {

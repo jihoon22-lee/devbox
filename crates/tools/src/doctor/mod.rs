@@ -4,7 +4,7 @@ mod extended;
 mod probe;
 pub mod wsl;
 
-pub use checks::{checks, tmux_at_least};
+pub use checks::{Scope, checks, checks_for, tmux_at_least};
 pub use probe::{
     AgentAuth, AgentCommand, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions,
 };

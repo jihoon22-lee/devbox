@@ -1,5 +1,8 @@
 use crate::core::{
-    deploy::{SetupTrigger, digest, exec_script, install_script, redeploy_failed, setup_args},
+    deploy::{
+        STARTUP_DOCTOR_ARGS, SetupTrigger, digest, exec_script, install_script, redeploy_failed,
+        setup_args,
+    },
     diagnostics::{ReportKind, describe},
     process::{self, ShellError},
 };
@@ -38,17 +41,17 @@ pub async fn setup(
         .await
         .map_err(|e| describe(e, ReportKind::Setup))?;
     let mut doctor = crate::platform::wsl::command(distro);
-    doctor.args([
-        "--exec",
-        "env",
-        &format!("DEVBOX_INSTANCE={instance}"),
-        "sh",
-        "-c",
-        &exec_script(),
-        "sh",
-        "doctor",
-        "--json",
-    ]);
+    doctor
+        .args([
+            "--exec",
+            "env",
+            &format!("DEVBOX_INSTANCE={instance}"),
+            "sh",
+            "-c",
+            &exec_script(),
+            "sh",
+        ])
+        .args(STARTUP_DOCTOR_ARGS);
     process::run(doctor, vec![], Duration::from_secs(30), cancel)
         .await
         .map_err(|e| describe(e, ReportKind::Doctor))?;

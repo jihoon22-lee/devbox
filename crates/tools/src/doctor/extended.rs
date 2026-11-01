@@ -1,4 +1,4 @@
-use super::checks::check;
+use super::checks::{Scope, check};
 use super::{AgentTool, Probe, ProbeIssue, Probed};
 use devbox_protocol::system::{Check, Status};
 
@@ -13,6 +13,31 @@ pub(super) fn unknown(id: &str, issue: ProbeIssue, fix: &str) -> Check {
         ProbeIssue::InvalidData => "확인하지 못함: 응답 형식이나 크기가 올바르지 않습니다",
     };
     check(id, Status::Warn, message, Some(fix))
+}
+fn auth(p: &dyn Probe, agent: AgentTool) -> Check {
+    let id = format!("auth.{}", agent.binary());
+    let fix =
+        "CLI에서 로그인 상태를 확인하세요. 키링·환경 변수 인증은 파일 존재만으로 판단하지 않습니다";
+    match p.agent_auth(agent) {
+        Ok(value) => match (version(value.version.as_deref()), value.file_present) {
+            (Some(version), true) => check(
+                &id,
+                Status::Ok,
+                format!(
+                    "{} {version} · 인증 파일 존재 확인(인증 유효성은 확인하지 않음)",
+                    agent.binary()
+                ),
+                None,
+            ),
+            _ => check(
+                &id,
+                Status::Warn,
+                "CLI 버전 또는 인증 파일을 확인하지 못했습니다(인증 유효성은 확인하지 않음)",
+                Some(fix),
+            ),
+        },
+        Err(issue) => unknown(&id, issue, fix),
+    }
 }
 /// Render only the numeric version core, never arbitrary CLI output/paths.
 fn version(text: Option<&str>) -> Option<String> {
@@ -33,7 +58,7 @@ fn evidence(id: &str, value: Probed<bool>, ok: &str, missing: &str, fix: &str) -
         Err(issue) => unknown(id, issue, fix),
     }
 }
-pub(super) fn checks(p: &dyn Probe) -> Vec<Check> {
+pub(super) fn checks(p: &dyn Probe, scope: Scope) -> Vec<Check> {
     let idle_fix = "앱 연결을 유지하세요. 선택적으로 Windows .wslconfig의 [general] instanceIdleTimeout=-1을 검토하세요(자동 변경 안 함)";
     let idle = match p
         .wsl_config()
@@ -112,28 +137,10 @@ pub(super) fn checks(p: &dyn Probe) -> Vec<Check> {
         ),
     ];
     for agent in [AgentTool::Claude, AgentTool::Codex] {
-        let id = format!("auth.{}", agent.binary());
-        let fix = "CLI에서 로그인 상태를 확인하세요. 키링·환경 변수 인증은 파일 존재만으로 판단하지 않습니다";
-        out.push(match p.agent_auth(agent) {
-            Ok(value) => match (version(value.version.as_deref()), value.file_present) {
-                (Some(version), true) => check(
-                    &id,
-                    Status::Ok,
-                    format!(
-                        "{} {version} · 인증 파일 존재 확인(인증 유효성은 확인하지 않음)",
-                        agent.binary()
-                    ),
-                    None,
-                ),
-                _ => check(
-                    &id,
-                    Status::Warn,
-                    "CLI 버전 또는 인증 파일을 확인하지 못했습니다(인증 유효성은 확인하지 않음)",
-                    Some(fix),
-                ),
-            },
-            Err(issue) => unknown(&id, issue, fix),
-        });
+        // The version comes from the agent CLI lookup, which the start-up check leaves out.
+        if scope == Scope::Full {
+            out.push(auth(p, agent));
+        }
         // Global settings are not read: each task is started with its hooks attached.
         out.push(check(
             &format!("hook.{}", agent.binary()),
