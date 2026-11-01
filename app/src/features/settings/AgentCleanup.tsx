@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { cleanupMessage } from "../../rpc/cleanupMessages";
 import { RpcError } from "../../rpc/client";
 import type { Methods } from "../../rpc/gen/rpc";
 import { messageFor } from "../../rpc/messages";
@@ -100,7 +101,7 @@ export function AgentCleanup({ projectId }: { projectId: string }) {
     } catch (error) {
       if (!current()) return;
       const failure = error instanceof RpcError ? error : new RpcError("internal");
-      const message = messageFor(failure.code, failure.detail);
+      const message = cleanupMessage(failure.code, failure.detail, "list");
       setNotice(
         `${message.title} ${message.action ?? ""}${failure.diagnosticId ? ` · 진단 ${failure.diagnosticId}` : ""}`,
       );

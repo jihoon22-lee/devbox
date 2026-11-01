@@ -103,14 +103,19 @@ impl AgentsService {
     ) -> Result<()> {
         let task = self.get(id).await?;
         let (project, wt, branch) = self.owned_worktree(&task).await?;
+        let repo = Path::new(&project.path);
         if snapshot.as_ref().is_some_and(|s| {
             s.project_id() != task.project_id || s.canonical_path() != project.path
         }) {
             return Err(AgentsError::UnsafeWorktree.into());
         }
         // Do not stop a second time; only optional teardown and Git removal remain.
+        let undo = self.undoable(&task, &wt, snapshot).await;
         self.teardown_commands(&task, snapshot).await?;
         self.owned_worktree(&task).await?;
+        if undo {
+            self.pins_held(&task, repo, &wt, &branch).await?;
+        }
         if task.closed_head_oid.as_deref()
             != Some(
                 devbox_git::run::resolve(&wt, "HEAD")
@@ -129,12 +134,16 @@ impl AgentsService {
         {
             return Err(AgentsError::UnsafeWorktree.into());
         }
-        // Automatic cleanup never removes dirty files, even for a successful merge/PR.
-        devbox_git::mutate::worktree_remove(Path::new(&project.path), &wt, false)
+        // Automatic cleanup never removes changes it cannot account for, even after a successful
+        // merge/PR: only what changed during cleanup in a folder that was clean before is undone.
+        if undo {
+            self.undo_teardown(&task, &wt).await?;
+        }
+        devbox_git::mutate::worktree_remove(repo, &wt, false)
             .await
             .map_err(git_failure)?;
         devbox_git::mutate::delete_branch_at(
-            Path::new(&project.path),
+            repo,
             &branch,
             task.closed_head_oid
                 .as_deref()

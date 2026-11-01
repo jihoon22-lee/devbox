@@ -13,6 +13,10 @@ mod pull_request;
 #[path = "squash_index.rs"]
 mod squash_index;
 
+#[path = "undo.rs"]
+mod undo;
+pub use undo::{clean_untracked, restore_tracked};
+
 #[derive(Debug, Clone)]
 pub enum MergeStrategy {
     Merge,
@@ -218,6 +222,11 @@ pub async fn worktree_add(
         });
     }
     Ok(())
+}
+/// The check a removal without force makes first: `WorktreeDirty` names the changed and untracked
+/// files. Ignored files do not count; the removal takes them with the folder.
+pub async fn worktree_clean(dir: &Path) -> Result<(), GitError> {
+    clean(dir, false).await
 }
 pub async fn worktree_remove(repo: &Path, dir: &Path, force: bool) -> Result<(), GitError> {
     registered(repo, dir).await?;

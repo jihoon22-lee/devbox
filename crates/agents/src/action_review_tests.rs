@@ -14,6 +14,8 @@ mod discard_snapshot_tests;
 mod manual_cleanup_tests;
 #[path = "merge_retry_tests.rs"]
 mod merge_retry_tests;
+#[path = "teardown_undo_tests.rs"]
+mod teardown_undo_tests;
 
 async fn action_fixture() -> (Fixture, AgentTask, PathBuf) {
     let mut fixture = Fixture::new().await;

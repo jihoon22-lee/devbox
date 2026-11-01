@@ -53,12 +53,11 @@ test("cleanup_error_shows_cause_and_next_action", async () => {
   header(raw);
   const alert = screen.getByRole("alert");
   expect(alert).toHaveTextContent("정리하지 못한 항목이 있습니다.");
-  // The code's own title says what stopped it. The next action is the cleanup notice's own: the
-  // closed task has nothing to retry, and a commit would move HEAD off the closed one, which
-  // takes the work folder out of the cleanup list for good.
-  expect(alert).toHaveTextContent("작업 폴더에 커밋하지 않은 변경이 있습니다.");
+  // Cleanup first undoes what changed during it, so what stopped it are changes devbox does not
+  // delete. The closed task has nothing to retry, and a commit would move HEAD off the closed one,
+  // which takes the work folder out of the cleanup list for good.
   expect(alert).toHaveTextContent(
-    "남은 파일을 옮기거나 지운 뒤(커밋하지 말고) 설정 → 에이전트 → 정리 후보에서 정리하세요.",
+    "작업 폴더에 devbox가 지우지 않는 변경이 남아 있습니다. 남은 파일은 옮기거나 지우고 바뀐 파일은 되돌린 뒤(커밋하지 말고) 정리 후보에서 다시 정리하세요.",
   );
   expect(alert).not.toHaveTextContent("커밋한 뒤");
   expect(alert).not.toHaveTextContent("다시 시도");

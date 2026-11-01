@@ -339,8 +339,13 @@ impl AgentsService {
             // Stop only the closed task's resources before removing its working directory.
             let (project, path, branch) = self.owned_worktree(&task).await?;
             self.quiesce(&task).await?;
+            let undo = self.undoable(&task, &path, &snapshot).await;
             self.teardown_commands(&task, &snapshot).await?;
             self.owned_worktree(&task).await?;
+            if undo {
+                self.pins_held(&task, Path::new(&project.path), &path, &branch)
+                    .await?;
+            }
             if self.get(&task.id).await?.state != AgentState::Closed {
                 return Err(AgentsError::StateChanged {
                     head: devbox_git::run::resolve(&path, "HEAD")
@@ -387,6 +392,9 @@ impl AgentsService {
             {
                 return Err(AgentsError::UnsafeWorktree.into());
             }
+            if undo {
+                self.undo_teardown(&task, &path).await?;
+            }
             devbox_git::mutate::worktree_remove(Path::new(&project.path), &path, false)
                 .await
                 .map_err(git_failure)?;
@@ -409,7 +417,7 @@ impl AgentsService {
     }
 }
 
-async fn cleanup_in_progress(path: &Path) -> Result<bool> {
+pub(crate) async fn cleanup_in_progress(path: &Path) -> Result<bool> {
     for marker in [
         "MERGE_HEAD",
         "rebase-merge",
