@@ -281,6 +281,8 @@ case "$2" in
       git -C "$wt" update-ref refs/heads/main refs/heads/agent/review;;
     *late-dirty) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
       printf 'late uncommitted edit\n' > "$wt/tracked";;
+    *late-commit) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
+      git -C "$wt" commit -q --allow-empty -m late;;
    esac;;
  show) case "$DEVBOX_CLOSE_CASE" in *ended) printf 'not-found\n';; *) printf 'loaded\n';; esac;;
  *) exit 24;;

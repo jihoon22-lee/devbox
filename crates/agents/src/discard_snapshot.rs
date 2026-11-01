@@ -358,7 +358,8 @@ fn metadata_stamp(dir: &Path, limits: Limits) -> ScanResult<String> {
 pub(crate) struct DiscardSnapshot {
     dir: PathBuf,
     head: String,
-    base: String,
+    /// The base branch's commit the user confirmed the discard against.
+    pub(crate) base: String,
     index: Vec<u8>,
     fingerprint: String,
     stamp: String,

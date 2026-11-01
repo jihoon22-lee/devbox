@@ -487,8 +487,11 @@ impl AgentsService {
             .await?;
         let snapshot = self.authorize_teardown(&task, &project).await?;
         self.quiesce(&task).await?;
-        // The agent and its processes are stopped: the folder must still be exactly what the user
-        // confirmed, so what changed while they stopped is refused before the teardown runs.
+        // The agent and its processes are stopped: the head, branch and folder must still be what
+        // the user confirmed, so what changed while they stopped, a commit that changes no file
+        // included, is refused before the teardown runs.
+        self.check_expect(&task, repo, &wt, &branch, &p.expect)
+            .await?;
         let base = devbox_git::run::resolve(repo, &task.base_branch)
             .await
             .map_err(git_failure)?;
@@ -497,11 +500,25 @@ impl AgentsService {
         let usage = self.closure_usage(&task.id).await;
         self.teardown_commands(&task, &snapshot).await?;
         // The teardown may have committed, moved a ref or replaced the folder, so the pins are
-        // checked again. What it wrote into the folder is not: it goes with the folder, which is
-        // what discard means.
+        // checked again, the confirmed base included. What it wrote into the folder is not: it
+        // goes with the folder, which is what discard means.
         self.owned_worktree(&task).await?;
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
+        let base = devbox_git::run::resolve(repo, &task.base_branch)
+            .await
+            .map_err(git_failure)?;
+        if base != hashed.base {
+            let unmerged = devbox_git::mutate::unmerged_count(repo, &p.expect.head_oid, &base)
+                .await
+                .map_err(git_failure)?;
+            return Err(AgentsError::StateChanged {
+                head: p.expect.head_oid.clone(),
+                base,
+                unmerged,
+            }
+            .into());
+        }
         // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
             &task.id,
