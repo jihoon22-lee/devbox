@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { InvalidRule, PrivacyRules, RuleField, RuleProblem } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Button } from "../../ui";
@@ -58,11 +58,19 @@ export function RulesEditor() {
     );
   };
   const error = save.error ?? query.error;
+  // The rules shown are not the user's, so a save would overwrite what the file holds.
+  const unreadable = query.data?.readable === false;
   return (
     <section aria-label="활동 개인정보 규칙">
       <h3>개인정보 규칙</h3>
       <p>제외할 앱은 기록하지 않습니다. 제목 제외는 제목만 비우고, 제목 가림은 일치한 부분을 가립니다.</p>
       {!rules && !query.error && <p role="status">규칙을 불러오는 중…</p>}
+      {unreadable && (
+        <p role="alert">
+          설정 파일의 [activity]를 읽지 못해 활동 기록을 껐습니다. 여기서 저장하면 파일에 적은 규칙을 덮어쓰므로 저장할
+          수 없습니다. 그 파일을 직접 고친 뒤 설정 → 앱 진단 → [다시 설정]을 눌러 주세요.
+        </p>
+      )}
       {rules && (
         <>
           <label>
@@ -127,7 +135,7 @@ export function RulesEditor() {
               }}
             />
           </label>
-          <Button disabled={save.isPending || state !== "ready"} onClick={submit}>
+          <Button disabled={save.isPending || state !== "ready" || unreadable} onClick={submit}>
             {save.isPending ? "저장 중…" : "개인정보 규칙 저장"}
           </Button>
           {save.isSuccess && <p role="status">개인정보 규칙을 저장했습니다.</p>}
@@ -136,7 +144,7 @@ export function RulesEditor() {
       {validation && <p role="alert">{validation}</p>}
       {error && !problems.length && (
         <p role="alert">
-          {messageFor(error.code, error.detail).title}{" "}
+          {messageText(error.code, error.detail, error.diagnosticId)}{" "}
           {!rules && <Button onClick={() => void query.refetch()}>다시 시도</Button>}
         </p>
       )}

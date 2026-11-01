@@ -7,7 +7,7 @@ use crate::model::privacy::{CompiledRules, InvalidRule, PrivacyRules};
 use serde::Deserialize;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Empty file in the config folder; every `config.toml` writer holds it exclusively.
 pub const LOCK_FILE: &str = ".config.toml.lock";
@@ -106,8 +106,26 @@ impl ActivitySettings {
 pub(crate) enum WriteError {
     #[error("config.toml is not a regular TOML file")]
     Unavailable,
+    /// This file's `[activity]` does not parse.
+    #[error("[activity] in {} does not parse", .0.display())]
+    Invalid(PathBuf),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+}
+
+/// Whether `text`'s `[activity]` parses as the daemon reads each file's copy at start. A file
+/// without one does; rules that parse but do not compile do too.
+fn activity_parses(text: &str) -> bool {
+    match text
+        .parse::<toml::Table>()
+        .map(|mut table| table.remove("activity"))
+    {
+        Ok(None) => true,
+        Ok(Some(toml::Value::Table(activity))) => {
+            ActivitySettings::try_from_table(&activity).is_ok()
+        }
+        _ => false,
+    }
 }
 
 /// Opens (creating) the lock file without following a symlink and waits for the
@@ -146,7 +164,8 @@ fn set(section: &mut dyn toml_edit::TableLike, key: &str, value: toml_edit::Valu
 }
 
 /// Blocking: lock → read `config.toml` (missing is empty; symlink or not a regular
-/// file is refused) → edit `[activity]` → same-folder temp file, fsync, rename.
+/// file is refused) → refuse while its or `config.local.toml`'s `[activity]` does not
+/// parse → edit `[activity]` → same-folder temp file, fsync, rename.
 pub(crate) fn write(dir: &Path, rules: &PrivacyRules, idle: i64) -> Result<(), WriteError> {
     std::fs::create_dir_all(dir)?;
     let _lock = lock(dir)?;
@@ -165,6 +184,17 @@ pub(crate) fn write(dir: &Path, rules: &PrivacyRules, idle: i64) -> Result<(), W
     let mut document = text
         .parse::<toml_edit::DocumentMut>()
         .map_err(|_| WriteError::Unavailable)?;
+    // The editor was shown `unreadable()` lists then, not what the user wrote. Both files are
+    // read now, under the lock: one broken by hand since the daemon started counts too.
+    if !activity_parses(&text) {
+        return Err(WriteError::Invalid(path));
+    }
+    let local = dir.join("config.local.toml");
+    match std::fs::read_to_string(&local) {
+        Ok(text) if activity_parses(&text) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return Err(WriteError::Invalid(local)),
+    }
     let section = document
         .as_table_mut()
         .entry("activity")

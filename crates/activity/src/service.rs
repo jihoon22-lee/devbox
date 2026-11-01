@@ -324,6 +324,7 @@ impl ActivityService {
             rev: self.rules_rev.load(Ordering::Acquire).to_string(),
             rules: rules.settings.rules.clone(),
             idle_threshold_ms: rules.settings.idle_threshold_ms,
+            readable: rules.settings.readable,
         })
     }
 
@@ -345,6 +346,10 @@ impl ActivityService {
         {
             Ok(()) => {}
             Err(WriteError::Unavailable) => return Err(ActivityError::ConfigUnavailable.into()),
+            Err(WriteError::Invalid(file)) => {
+                let file = file.display().to_string();
+                return Err(ActivityError::ConfigInvalid { file }.into());
+            }
             Err(WriteError::Io(e)) => {
                 return Err(Fail::Internal(format!("write activity rules: {e}")));
             }

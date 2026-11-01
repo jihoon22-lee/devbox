@@ -1,4 +1,4 @@
-import { type Messages, restart } from "./messageDetail";
+import { configFile, type Messages, restart } from "./messageDetail";
 
 type Domain = "runtime" | "observe" | "activity" | "debug" | "system" | "tools" | "windows";
 /** Messages for runs, observation, activity, diagnostics and the environment. */
@@ -122,5 +122,10 @@ export const SYSTEM_MESSAGES: Messages<Domain> = {
     title: "설정 파일에 규칙을 저장하지 못했습니다.",
     action: "config.toml이 일반 파일인지, TOML 형식이 맞는지 확인해 주세요.",
   },
+  // Saving would replace what the user wrote in that file's [activity].
+  "activity.config_invalid": (d) => ({
+    title: `${configFile(d)}의 [activity]를 읽지 못해 규칙을 저장하지 않았습니다.`,
+    action: `그 파일의 [activity]를 직접 고친 뒤 ${restart}`,
+  }),
   "system.unavailable": { title: "데몬 정보를 읽지 못했습니다." },
 };

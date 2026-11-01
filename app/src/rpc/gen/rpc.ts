@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 export type ActivityChanged = { rev: string, };
-export type ActivityError = { "code": "activity.invalid_rules", "detail": { problems: Array<InvalidRule>, } } | { "code": "activity.invalid_range" } | { "code": "activity.invalid_input" } | { "code": "activity.config_unavailable" };
+export type ActivityError = { "code": "activity.invalid_rules", "detail": { problems: Array<InvalidRule>, } } | { "code": "activity.invalid_range" } | { "code": "activity.invalid_input" } | { "code": "activity.config_unavailable" } | { "code": "activity.config_invalid", "detail": { file: string, } };
 export type ActivityStatus = { rev: string, state: StorageState, 
 /**
  * Closed sessions waiting to be written.
@@ -579,7 +579,12 @@ export type RewriteRequest = { opId: string, key: DocKey, leaseId: string, journ
 export type RuleField = "excludedProcesses" | "excludedTitlePatterns" | "redactTitlePatterns";
 export type RuleProblem = "empty" | "too_long" | "too_many" | "syntax";
 export type RulesRev = { rev: string, };
-export type RulesView = { rev: string, rules: PrivacyRules, idleThresholdMs: number, };
+export type RulesView = { rev: string, rules: PrivacyRules, idleThresholdMs: number, 
+/**
+ * `false`: the stored `[activity]` did not parse, so `rules` are not the user's and
+ * mask every title. A save is refused until that file is fixed by hand.
+ */
+readable: boolean, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunDetail = { rev: string, run: Run, };
@@ -1204,6 +1209,7 @@ export const METHOD_INFO = {
 } as const;
 
 export const RPC_ERROR_CODES = [
+  "activity.config_invalid",
   "activity.config_unavailable",
   "activity.invalid_input",
   "activity.invalid_range",
