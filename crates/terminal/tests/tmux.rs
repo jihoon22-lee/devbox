@@ -248,7 +248,10 @@ fn only_tmux_3_5_or_newer_carries_extended_keys() {
 }
 /// The one place tmux decides what Shift+Enter becomes for a program that never asked for
 /// extended keys. From 3.5, which is when the app sends Shift+Enter as an extended key, that
-/// program gets Enter. Older tmux may drop the key, so there the app keeps it a plain Enter.
+/// program gets Enter. Below 3.5 the app sends a plain Enter. tmux 3.4 parses `S-Enter` but
+/// drops Shift+Enter for a program that never asked for extended keys (the drop
+/// `supports_extended_keys` documents), so `send-keys` falls back to typing the name as text
+/// and the test does not apply there.
 #[tokio::test]
 async fn shift_enter_reaches_a_program_that_did_not_ask_for_extended_keys_as_enter() {
     let fixture = Fixture::new();
@@ -282,22 +285,23 @@ async fn shift_enter_reaches_a_program_that_did_not_ask_for_extended_keys_as_ent
         .expect("byte dump deadline")
     };
     until(&|_| true).await;
+    let version = t
+        .run(&["display-message", "-p", "#{version}"])
+        .await
+        .expect("server version");
+    // The app sends no extended Shift+Enter on this tmux; tmux 3.4 would type `S-Enter` as text.
+    if !supports_extended_keys(&version) {
+        return;
+    }
     let sent = t.run(&["send-keys", "-t", "=keys:", "S-Enter"]).await;
     // `x` marks the end of whatever tmux wrote for Shift+Enter.
     t.run(&["send-keys", "-t", "=keys:", "-l", "x"])
         .await
         .expect("send marker");
     let bytes = until(&|bytes| bytes.iter().any(|byte| byte == "78")).await;
-    let version = t
-        .run(&["display-message", "-p", "#{version}"])
-        .await
-        .expect("server version");
-    if t.extended_keys("keys").await {
-        assert_eq!(bytes, ["0d", "78"], "{version} {sent:?}");
-    } else {
-        assert!(
-            bytes == ["78"] || bytes == ["0d", "78"],
-            "{version} {sent:?}: {bytes:?}"
-        );
-    }
+    assert!(
+        t.extended_keys("keys").await,
+        "extended_keys is false on tmux {version}: {bytes:?}"
+    );
+    assert_eq!(bytes, ["0d", "78"], "{version} {sent:?}");
 }
