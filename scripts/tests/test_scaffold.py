@@ -62,7 +62,7 @@ class WorkflowScope(unittest.TestCase):
         return subprocess.check_output(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", *args], cwd=root).decode().strip()
 
     def test_rename_classification_uses_actual_workflow(self):
-        for source, target, expected in [("scripts/check.sh", "docs/check.md", "true"), ("docs/old.md", "docs/new.md", "false"), *[(doc, doc, "true" if doc == "docs/config.md" else "false") for doc in ("docs/config.md", "docs/guide/config.md", "README.md", "SECURITY.md", "docs/ui-terms.md", "docs/adr/0016-personal-security-scope.md", "docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md")]]:
+        for source, target, expected in [("scripts/check.sh", "docs/check.md", "true"), ("docs/old.md", "docs/new.md", "false"), *[(doc, doc, "true" if doc in ("docs/config.md", "THIRD_PARTY_NOTICES.md") else "false") for doc in ("docs/config.md", "docs/guide/config.md", "THIRD_PARTY_NOTICES.md", "docs/THIRD_PARTY_NOTICES.md", "README.md", "SECURITY.md", "docs/ui-terms.md", "docs/adr/0016-personal-security-scope.md", "docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md")]]:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 self.git(root, "init", "-q")

@@ -1746,6 +1746,7 @@ S7-0–S7-13 과제 기록의 미룬 항목을 영역별로 모았다. **[차단
   - 활동 기록 규칙을 읽거나 컴파일하지 못하면 제외하려던 앱의 이름과 시간이 기록되던 문제: 규칙을 적용할 수 없는 동안에는 아무 세션도 저장하지 않는다(`6f121430`). 컴파일되지 않는 규칙은 시작 문제로 보이고(`ddad7221`), 읽지 못하는 `[activity]`는 편집기로 덮어쓰지 못한다(`44000c22`).
   - `hooks='pi'` 사용자 정의 프로필에 기본 pane 패턴이 없던 문제: 계열 패턴이 프로필 `id`와 상관없이 늘 붙는다(`fa5614f7`).
   - `docs/config.md`만 바뀐 변경이 Rust job을 건너뛰던 문제(영역 6 I-1): 그 파일은 코드로 센다(`166698c0`).
+  - `THIRD_PARTY_NOTICES.md`만 바뀐 변경이 코드 job을 건너뛰어 고지 신선도 시험(`notices_inputs_are_current`)이 돌지 않던 문제(S7-12 후속): 그 파일도 코드로 센다(Ruling 73). 이제 `scripts/ci-scope.sh`가 코드로 세는 문서는 `docs/config.md`와 `THIRD_PARTY_NOTICES.md` 둘이고, 나머지 `docs/`와 루트의 `*.md`는 문서로 본다. 줄은 늘지 않았다.
   - 내장 D2Coding 글꼴이 고지에 없던 문제(영역 6 I-2)와 입력 지문이 lock 파일만 덮던 한계(M4): 글꼴을 고지에 싣고 지문에 manifest와 글꼴 라이선스를 넣었다(`918fb478`).
   - `discard_snapshot.rs`가 600줄에 가까워 probe를 분리해야 한다는 항목: `d0683209`가 `discard_probe.rs`로 나눠 556/600이 됐다(Fix B 때는 593/600이었다).
 
@@ -1823,7 +1824,6 @@ S7-0–S7-13 과제 기록의 미룬 항목을 영역별로 모았다. **[차단
   - 거의 꽉 찬 파일(이 브랜치가 건드린 것, `wc -l`): `crates/runtime/src/execution.rs` 600/600, `app/src/features/terminal/TerminalView.test.tsx` 592/600, `crates/cli/tests/agents.rs` 591/600, `crates/core/src/config/lenient.rs` 590/600, `crates/runtime/src/windows_observation.rs` 573/600, `crates/terminal/src/tmux.rs` 572/600, `crates/agents/src/prepare.rs` 567/600, `crates/agents/src/discard_snapshot.rs` 556/600, `crates/agents/src/command_path.rs` 542/600. 다음 추가에는 나눠야 한다.
   - tmux.conf와 `apply_extended_keys`에 옵션이 중복되고, format 줄을 묶는 시험이 없다.
 - **문서·고지·CI 범위(S7-12)**
-  - `scripts/ci-scope.sh`는 `docs/config.md`만 코드로 세고(예시 시험이 읽는 파일이다, 영역 6 I-1) 나머지 `docs/`와 루트의 `*.md`는 문서로 본다. `THIRD_PARTY_NOTICES.md`만 바꾼 변경은 코드 job을 건너뛰어 고지 신선도 시험(`notices_inputs_are_current`)이 돌지 않는다. 패턴에 `(?!THIRD_PARTY_NOTICES\.md$)`를 더하면 줄이 늘지 않는다(영역 6 검토). 고칠지는 정하지 않았다.
   - **[1.0.0 전에 판단]** 고지가 싣지 않은 코드가 있다(영역 6 M5). 하나는 toolchain이 바이너리에 링크하는 코드다. `devbox-linux`는 정적 `x86_64-unknown-linux-musl` 바이너리라 musl(MIT)과 Rust 표준 라이브러리(MIT/Apache-2.0)를 담고, 두 실행 파일 모두 Rust 표준 라이브러리를 담는다. 다른 하나는 `webview2-com-sys@0.39.1`이 정적으로 링크하는 Microsoft의 WebView2 로더(`WebView2LoaderStatic.lib`)다. 그 crate가 `x64/`에 싣고 라이선스 파일은 없으며, 고지에는 crate가 SPDX-only MIT 항목으로만 있다. 로더에 Microsoft가 어떤 조건을 붙이는지는 확인하지 못했다. 고정 절을 생성기에 더하거나, 하지 않기로 한 결정을 아래 SPDX-only 항목 옆에 적는다.
   - 고지에 라이선스 파일이 없는 패키지가 21개다. `@tauri-apps/plugin-opener` npm 패키지는 `LICENSE.spdx`만 싣고(`.spdx`는 텍스트로 읽지 않는다), 같은 이름의 Rust crate(`tauri-plugin-opener`)의 MIT·Apache 본문이 고지 파일에 있다.
   - `COPYRIGHT`·`UNLICENSE`와 `LICENSES/` 폴더 안 파일은 이름 규칙(`LICENSE*`·`LICENCE*`·`COPYING*`·`NOTICE*`·`OFL*`)에 맞지 않아 읽지 않는다. 그것이 가리키는 본문은 읽는다.
