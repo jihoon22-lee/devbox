@@ -126,9 +126,9 @@ try {
     foreach ($name in $previous.Keys) { $packageExpected[$name] = [Environment]::GetEnvironmentVariable($name) }
     $packageCwd = (Get-Location).Path
     Package-Case 'missing resources rejects before tools' { Reject { & $copy } -Package; Counts 0 0 0 0 0 }
-    foreach ($name in @('devbox-linux', 'devbox-version.txt')) {
-        Set-Content (Join-Path $resources $name) 'owned fixture'
-        Copy-Item (Join-Path $resources $name) (Join-Path $fixture "app\src-tauri\target\prod\release\$name")
+    foreach ($name in @('devbox-linux', 'devbox-version.txt', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
+        $origin = Join-Path $(if ($name -like 'devbox-*') { $resources } else { $fixture }) $name
+        Set-Content $origin 'owned fixture'; Copy-Item $origin (Join-Path $fixture "app\src-tauri\target\prod\release\$name")
     }
     Set-Content (Join-Path $fixture 'app\src-tauri\target\prod\release\Devbox.exe') 'never executed'
     Set-Content (Join-Path $release 'Devbox-setup.exe') 'never executed'
@@ -191,6 +191,7 @@ try {
         Set-Content $binary 'different'
         try { Reject { & $copy } -Package; Counts 1 1 0 1 0 } finally { Copy-Item (Join-Path $resources 'devbox-linux') $binary -Force }
     }
+    Package-Case 'built notices hash mismatch rejects before self-check' { $notices = Join-Path $fixture 'app\src-tauri\target\prod\release\THIRD_PARTY_NOTICES.md'; Set-Content $notices 'different'; try { Reject { & $copy } -Package; Counts 1 1 0 1 0 } finally { Copy-Item (Join-Path $fixture 'THIRD_PARTY_NOTICES.md') $notices -Force } }
     Package-Case 'failed config directory creation preserves unowned sentinel' {
         $global:DevboxTestcollision = $null
         function global:New-Item {
@@ -216,8 +217,7 @@ try {
     }
     Package-Case 'missing installer rejects receipt' {
         Remove-Item (Join-Path $release 'Devbox-setup.exe')
-        Reject { & $copy } -Package
-        Counts 1 1 0 1 1
+        Reject { & $copy } -Package; Counts 1 1 0 1 1
         if (Test-Path (Join-Path $release 'receipt.json')) { throw 'Missing installer produced receipt' }
     }
     Package-Case 'unowned tree rejects before tools' { Remove-Item -LiteralPath $marker -Force; Reject { & $copy } -Package; Counts 0 0 0 0 0 }
