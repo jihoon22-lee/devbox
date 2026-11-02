@@ -74,7 +74,7 @@ test("each startup problem shows its fixed title and guidance with the raw messa
   expect(
     within(file!).getByText(
       whole(
-        "/fixture/devbox/config.toml에 문법 오류가 있어 기본값으로 실행 중입니다. 노트·검색·활동 기록·Windows 사본·MCP 쓰기 도구와 사용자 정의 도구 프로필이 꺼져 있습니다. 파일을 고친 뒤 [다시 설정]을 누르세요.",
+        "/fixture/devbox/config.toml에 문법 오류가 있어 기본값으로 실행 중입니다. 노트·검색·활동 기록·Windows 사본·MCP 쓰기 도구, 사용자 정의 도구 프로필과 닫은 작업의 자동 정리가 꺼져 있습니다. 파일을 고친 뒤 [다시 설정]을 누르세요.",
       ),
     ),
   ).toBeInTheDocument();
@@ -102,6 +102,30 @@ test("each startup problem shows its fixed title and guidance with the raw messa
   }
   expect(within(agents!).queryByRole("button")).toBeNull();
   expect(document.body.textContent).not.toMatch(/데몬/);
+});
+
+test("a disabled section says what its failure policy did: cleanup off, defaults, or the feature off", async () => {
+  const file = "/fixture/devbox/config.toml";
+  // These four run on their defaults, and [agents] loses only cleanup after close.
+  const defaulted = ["projects", "pc", "terminal", "secrets"];
+  const turnedOff = ["notes", "search", "windows", "mcp", "activity", "agents.profiles"];
+  const sections = ["agents", ...defaulted, ...turnedOff];
+  await show(sections.map((section) => ({ ...configSection, file, section })));
+  const items = screen.getAllByRole("listitem");
+  const expected = [
+    `${file}의 [agents] 항목에 오류가 있어 닫은 작업의 자동 정리를 껐습니다. 도구 프로필은 그대로 씁니다. 고친 뒤 [다시 설정]을 누르세요.`,
+    ...defaulted.map(
+      (section) =>
+        `${file}의 [${section}] 항목에 오류가 있어 이 항목은 기본값으로 실행 중입니다. 고친 뒤 [다시 설정]을 누르세요.`,
+    ),
+    ...turnedOff.map(
+      (section) => `${file}의 [${section}] 항목에 오류가 있어 이 기능을 껐습니다. 고친 뒤 [다시 설정]을 누르세요.`,
+    ),
+  ];
+  expect(items).toHaveLength(sections.length);
+  sections.forEach((section, index) => {
+    expect(within(items[index]!).getByText(whole(expected[index]!)), section).toBeInTheDocument();
+  });
 });
 
 test("a section problem that turned nothing off says it was only ignored, with the same recovery", async () => {

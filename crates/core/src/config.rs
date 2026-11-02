@@ -63,6 +63,7 @@ pub struct TerminalProfile {
 #[serde(default, deny_unknown_fields)]
 pub struct AgentsConfig {
     pub profiles: Vec<toml::Value>,
+    /// Unset reads as on. [`load_lenient`] sets it to `Some(false)` while `[agents]` does not load.
     pub cleanup_after_close: Option<bool>,
     /// The file `profiles` came from (lists replace, so it is one file); set by [`load_lenient`].
     #[serde(skip)]

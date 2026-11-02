@@ -13,17 +13,28 @@ const TITLE = {
   activityRules: "개인정보 규칙을 적용하지 못했습니다",
 } as const;
 
+/** Sections whose failure policy is the defaults, so nothing is turned off (docs/config.md 오류 동작). */
+const DEFAULTED = new Set(["projects", "pc", "terminal", "secrets"]);
+
+/** What the failure policy did to a disabled section. `[agents]` loses only cleanup after close. */
+function disabledEffect(section: string) {
+  if (section === "agents") return "닫은 작업의 자동 정리를 껐습니다. 도구 프로필은 그대로 씁니다.";
+  return DEFAULTED.has(section) ? "이 항목은 기본값으로 실행 중입니다." : "이 기능을 껐습니다.";
+}
+
 function Guidance({ problem }: { problem: StartupProblem }) {
   switch (problem.kind) {
     case "configFile":
       return (
         <p style={{ margin: 0 }}>
           <code>{problem.file}</code>에 문법 오류가 있어 기본값으로 실행 중입니다. 노트·검색·활동 기록·Windows 사본·MCP
-          쓰기 도구와 사용자 정의 도구 프로필이 꺼져 있습니다. 파일을 고친 뒤 [다시 설정]을 누르세요.
+          쓰기 도구, 사용자 정의 도구 프로필과 닫은 작업의 자동 정리가 꺼져 있습니다. 파일을 고친 뒤 [다시 설정]을
+          누르세요.
         </p>
       );
     case "configSection":
-      // An unknown section, [windows] in config.toml or one profile entry turns nothing off.
+      // `ignored` (an unknown section, [windows] in config.toml or one profile entry) turns nothing
+      // off. Otherwise the copy follows the section's failure policy.
       return problem.effect === "ignored" ? (
         <p style={{ margin: 0 }}>
           <code>{problem.file}</code>의 [{problem.section}] 항목에서 잘못된 부분만 무시했습니다. 나머지 설정은 그대로
@@ -31,8 +42,8 @@ function Guidance({ problem }: { problem: StartupProblem }) {
         </p>
       ) : (
         <p style={{ margin: 0 }}>
-          <code>{problem.file}</code>의 [{problem.section}] 항목에 오류가 있어 이 기능을 껐습니다. 고친 뒤 [다시 설정]을
-          누르세요.
+          <code>{problem.file}</code>의 [{problem.section}] 항목에 오류가 있어 {disabledEffect(problem.section)} 고친 뒤
+          [다시 설정]을 누르세요.
         </p>
       );
     case "agentsReconcile":

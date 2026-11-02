@@ -314,6 +314,7 @@ PR 리뷰(사용자 결정 2026-10-27):
 | `[notes]` | 노트를 끈다. 기본 vault로 대체하지 않는다 |
 | `[search]` | 검색을 끈다 |
 | `[windows]`(config.local.toml) | Windows 사본을 쓰는 실행을 `windows.config_invalid`로 시작하지 않는다 |
+| `[agents]` | 닫은 작업의 자동 정리를 끈다(`cleanup_after_close = false`). 도구 프로필은 아래 줄대로 확인한다 |
 | `[[agents.profiles]]` | 잘못된 항목·중복 id만 건너뛴다 |
 | `[mcp]` | `write = false` |
 | `[activity]` | 지금처럼 제목을 가린다 |
