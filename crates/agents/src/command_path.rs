@@ -1,9 +1,11 @@
 //! Finds an agent CLI the way the user's terminal does.
 //!
 //! Version managers usually add their folders to `PATH` in `~/.bashrc`, which the login-shell
-//! capture behind the service `PATH` never reads, so the interactive shell is asked first. Its
-//! output is whatever the user's shell prints: only the absolute path between the last pair of
-//! `\x1e` markers is used, and nothing else of it is logged, kept or returned.
+//! capture behind the service `PATH` never reads, so the interactive shell is asked first. It is
+//! a login shell too, like the one Devbox's terminal and WSL terminals start, because
+//! `~/.profile` can put folders before what `~/.bashrc` adds. Its output is whatever the user's
+//! shell prints: only the absolute path between the last pair of `\x1e` markers is used, and
+//! nothing else of it is logged, kept or returned.
 //!
 //! A lookup never starts the program it finds. Only the environment check asks the agent CLIs
 //! it knows for their versions, with [`version`].
@@ -146,7 +148,7 @@ pub enum ShellAnswer {
     NoAnswer,
 }
 
-/// Asks the user's interactive shell where a command is.
+/// Asks the user's interactive login shell where a command is.
 pub trait ShellProbe: Send + Sync {
     /// The shell's answer for `command -v -- <program>`. Nothing else of what the shell prints
     /// leaves the probe.
@@ -159,23 +161,40 @@ impl<T: ShellProbe + ?Sized> ShellProbe for Arc<T> {
     }
 }
 
-/// Runs `bash -ic 'printf "\036%s\036" "$(command -v -- "$1")"' devbox-probe <program>` and
-/// nothing else: stdin `/dev/null`, stderr discarded, 5 seconds, 64 KiB of stdout.
+/// Runs `bash -lic 'printf "\036%s\036" "$(command -v -- "$1")"' devbox-probe <program>` and
+/// nothing else: stdin `/dev/null`, stderr discarded, 5 seconds, 64 KiB of stdout. It has the
+/// daemon's environment, plus `MOTD_SHOWN`, so Ubuntu's once-a-day login notice is neither run
+/// nor marked as shown by a lookup.
 pub struct InteractiveShell;
 
 impl ShellProbe for InteractiveShell {
     fn command_v<'a>(&'a self, program: &'a str) -> BoxFuture<'a, ShellAnswer> {
-        let mut command = Command::new("bash");
-        command.args(["-ic", SCRIPT, "devbox-probe", program]);
-        Box::pin(async move {
-            // The exit status says nothing here: the markers are the answer.
-            answer(
-                crate::bounded::run(command, SHELL_TIMEOUT, OUTPUT_LIMIT)
-                    .await
-                    .map(|(_, stdout)| stdout),
-            )
-        })
+        Box::pin(ask(probe_command(program)))
     }
+}
+
+/// The probe's command: an interactive (`-i`) login (`-l`) shell, like the ones the user's
+/// terminals start, in the daemon's environment. A test sets its own `HOME` and `PATH` on it
+/// before it is [asked](ask), which adds `MOTD_SHOWN`.
+fn probe_command(program: &str) -> Command {
+    let mut command = Command::new("bash");
+    command.args(["-lic", SCRIPT, "devbox-probe", program]);
+    command
+}
+
+/// Runs the probe's command and reads its answer. Whatever environment the command has, it gets
+/// `MOTD_SHOWN` too, so a login shell leaves Ubuntu's once-a-day notice alone.
+async fn ask(mut command: Command) -> ShellAnswer {
+    // `/etc/profile.d/update-motd.sh` runs `update-motd` and touches `~/.motd_shown` in an
+    // interactive shell unless `MOTD_SHOWN` is set: a lookup must not write to the user's home or
+    // use up the notice their next terminal would show.
+    command.env("MOTD_SHOWN", "devbox-probe");
+    // The exit status says nothing here: the markers are the answer.
+    answer(
+        crate::bounded::run(command, SHELL_TIMEOUT, OUTPUT_LIMIT)
+            .await
+            .map(|(_, stdout)| stdout),
+    )
 }
 
 /// The answer in the shell's stdout: the value between its last two markers, passed on only

@@ -197,6 +197,58 @@ fn reads_only_the_value_between_markers() {
     }
 }
 
+/// The real probe in an owned `HOME` laid out like Ubuntu's: `~/.profile` reads `~/.bashrc`, where
+/// a version manager puts its folder first, and then puts `~/.local/bin` first. The daemon's
+/// `PATH` already has `~/.local/bin` first, so only a login shell, like Devbox's terminal, ends up
+/// with `~/.local/bin` before the version manager's folder. The shell must be interactive too, or
+/// `~/.bashrc` adds nothing, and it must leave the login scripts' once-a-day notice alone: Ubuntu's
+/// `update-motd.sh` stamps `~/.motd_shown`.
+#[tokio::test]
+async fn the_probe_finds_what_a_login_terminal_finds() {
+    let root = tempfile::tempdir().expect("owned fixture");
+    let home = root.path();
+    std::fs::write(
+        home.join(".bashrc"),
+        "case $- in *i*) ;; *) return;; esac\nPATH=\"$HOME/node/bin:$PATH\"\n",
+    )
+    .expect("owned fixture");
+    std::fs::write(
+        home.join(".profile"),
+        "if [ -n \"$BASH_VERSION\" ] && [ -f \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n\
+         PATH=\"$HOME/.local/bin:$PATH\"\n",
+    )
+    .expect("owned fixture");
+    // The same name in both folders: only the order of the folders tells them apart.
+    cli(&home.join("node/bin"));
+    let terminal = cli(&home.join(".local/bin"));
+    // A name only the version manager's folder has: `~/.bashrc` returns at its interactive guard
+    // before it adds that folder, so a shell that is not interactive cannot find it.
+    let version_manager = tool(&home.join("node/bin"), "node-only-cli", "#!/bin/sh\n");
+    // The daemon's environment, reduced to what matters: its login-capture `PATH`, and a `HOME`
+    // that is not the real one.
+    let probe = |program: &str| {
+        let mut command = probe_command(program);
+        command.env_clear().env("HOME", home).env(
+            "PATH",
+            path_with(&[home.join(".local/bin"), "/usr/bin".into(), "/bin".into()]),
+        );
+        command
+    };
+    assert_eq!(
+        ask(probe("fixture-cli")).await,
+        ShellAnswer::Answered(Some(terminal))
+    );
+    assert_eq!(
+        ask(probe("node-only-cli")).await,
+        ShellAnswer::Answered(Some(version_manager))
+    );
+    // Neither lookup ran the notice, which would have stamped the home.
+    assert!(
+        !home.join(".motd_shown").exists(),
+        "a lookup ran the once-a-day login notice"
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_late_shell_is_abandoned_after_five_seconds() {
     let root = tempfile::tempdir().expect("owned fixture");
