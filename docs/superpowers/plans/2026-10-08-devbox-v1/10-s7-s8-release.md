@@ -930,11 +930,11 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 - Rust 쪽은 `cargo metadata --format-version 1 --locked --offline`을 루트와 `app/src-tauri` 두 manifest에 돌린다. normal 의존성만 넣는다(dev·build 제외).
 - npm 쪽은 `pnpm --filter app licenses list --prod --json`이다.
 - 패키지마다 원본 폴더의 `LICENSE*`·`COPYING*`·`NOTICE*` 본문을 넣는다. 같은 본문은 하나로 묶고 패키지 목록을 붙인다. 파일이 없으면 SPDX 식을 적는다.
-- 머리에 입력 지문을 둔다: `<!-- inputs: Cargo.lock=<sha256> app/src-tauri/Cargo.lock=<sha256> pnpm-lock.yaml=<sha256> -->`.
+- 머리에 입력 지문을 둔다: `<!-- inputs: Cargo.lock=<sha256> app/src-tauri/Cargo.lock=<sha256> pnpm-lock.yaml=<sha256> -->`. S7-13 영역 6 뒤에는 `manifests=<sha256>`(작업 공간 root와 모든 멤버, 앱 crate, 앱 package의 manifest)와 `bundled=<sha256>`(함께 싣는 글꼴의 라이선스 본문)도 든다. 앱에 내장된 D2Coding 글꼴은 어느 lock 파일에도 없어 `xtask/src/notices/bundled.rs`의 표로 고지에 더한다.
 - 신선도 시험은 `xtask/src/notices.rs`의 `#[test] notices_inputs_are_current`다.
-  - 세 lock 파일의 SHA-256을 다시 계산해 지문과 비교한다. 네트워크는 쓰지 않는다.
+  - 세 lock 파일의 SHA-256을 다시 계산해 지문과 비교한다(영역 6 뒤에는 manifest와 글꼴 라이선스도). 네트워크는 쓰지 않는다.
   - CI의 `cargo test --workspace`가 돌리므로 `.github` 줄을 늘리지 않는다.
-  - 실패 문구: "THIRD_PARTY_NOTICES.md가 lock 파일과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요."
+  - 실패 문구: "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요."(S7-13 영역 6 뒤. 처음에는 "lock 파일과 다릅니다"였다)
 
 **단계**
 - [ ] 1. 실패 시험을 쓴다.
@@ -1013,10 +1013,9 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 | SN1 | Changes 탭에서 form feed(^L) 같은 제어 문자가 든 줄을 인용해 에이전트에 보내거나, 색 코드가 든 터미널 출력을 입력창에 붙여 보낸다. 보내기가 거절되고 초안이 남으며 메시지가 지울 것을 말한다 | Fix A 4회차 |
 | SN2 | 보이지 않는 글자(U+200B, U+2060)를 앞에 붙인 `!echo devbox-ok`를 각 도구 작업에 앱과 MCP로 보내, 도구가 셸 명령으로 실행하는지 기록한다(거절도 trim도 되지 않는다. 기록만 하고 고치지 않는다) | Fix A 4회차 |
 | C1 | accept 설정 `~/.config/devbox-accept/config.toml`을 소유 사본으로 백업하고 문법을 깨뜨린 뒤 앱을 다시 연다. 확인할 것: 기능 저하 안내, 파일 바이트 불변. 원복 뒤 정상 | B2 |
-| K1 | tmux 3.5 이상 호스트에서 pi의 Shift+Enter는 줄바꿈, Enter는 보내기. 일반 터미널에서 Shift+Enter가 무해하다. 3.4 이하는 아래 K1 추가(3.4)에서 본다 | S7-9, Fix F |
+| K1 | tmux 3.5 이상 호스트에서 pi는 Shift+Enter로 줄바꿈하고 Enter로 제출한다. claude·codex·opencode의 반응을 기록하고, 일반 셸은 Shift+Enter로 줄을 실행하며 이상한 문자를 남기지 않는다. 3.4 이하는 아래 K1 추가(3.4)에서 본다 | S7-9, Fix F |
 | K1 추가(3.4) | tmux 3.4 호스트(Ubuntu 24.04 기본)에서 bash·claude·codex·opencode·pi 작업을 연다. Shift+Enter가 Enter처럼 동작하고(줄이 실행되거나 입력창이 제출되며, 삼켜지거나 이상한 문자가 남지 않는다) pi는 줄바꿈 대신 제출한다. 터미널 attach 결과의 `extendedKeys`는 `false`다. 호스트가 없으면 NOT_RUN이다. CI(ubuntu-24.04의 tmux 3.4)는 `false`까지만 보여 준다 | Fix F |
-| K1 추가(3.5 이상) | tmux 3.5 이상 호스트에서 pi는 Shift+Enter로 줄바꿈하고 Enter로 제출한다. claude·codex·opencode의 반응을 기록하고, 일반 셸은 Shift+Enter로 줄을 실행한다 | Fix F |
-| K1 추가(3.5 경계) | tmux 3.5 또는 3.5a 호스트가 있으면 같은 확인을 한다(지금까지 3.6에서만 돌렸다) | Fix F |
+| K1 추가(3.5 경계) | tmux 3.5 또는 3.5a 호스트가 있으면 K1과 같은 확인을 한다. 3.5 경계는 tmux 소스를 읽어 정했고, 실제로 돌려 본 것은 이 PC의 tmux 3.6뿐이다(CI의 3.4는 서버 버전 질의 시험까지만 돈다) | Fix F |
 | K1 추가(WebView2) | tmux 3.5 이상에서 취소된 keydown 뒤 `keypress`가 막히는지, Shift+NumpadEnter도 같은 길로 가는지 확인한다 | Fix F |
 | K1 추가(보내기 경로) | pi가 확장 키를 켠 뒤에도 devbox의 보내기(`paste-buffer -p` 뒤 `send-keys Enter`)가 pi에서 제출되는지 확인한다 | Fix F |
 | K1 추가(tmux 업그레이드) | devbox tmux 서버가 떠 있는 채로 호스트 tmux를 3.4에서 3.5 이상으로 올린다. 새로 연 터미널에서도 그 서버가 다시 시작될 때까지 Shift+Enter는 Enter로 동작하고(`extendedKeys`가 `false`), 다시 시작한 뒤에는 CSI-u로 간다. 호스트 tmux를 바꾸는 것은 사용자 PC 설정 변경이므로 먼저 묻고, 못 바꾸면 NOT_RUN이다 | Fix F 1회차 |
@@ -1046,11 +1045,11 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 | CL5 | 새 작업 창의 브랜치 이름 칸에 대문자를 입력하면 소문자로 바뀌어도 커서 위치가 그대로다(WebView2. 지금은 jsdom 시험뿐이다) | Fix D |
 | CL6 | 에이전트 상세의 [터미널 보기]와 재개가 터미널에 포커스를 준다. 손으로 고른 터미널 탭은 포커스를 가져가지 않는다 | Fix D |
 | S6 묶음 | G1·G2·A1–A6을 같은 harness로 다시 돈다. A3·A5는 검토된 helper가 없으면 NOT_RUN이다. A6은 uninstall 등록 key를 30초까지 polling하도록 harness만 고친다 | B7 |
-| N1 | prod와 accept 설치본 모두에서 설치 폴더에 `LICENSE`와 `THIRD_PARTY_NOTICES.md`가 있다. 두 채널의 `win-package.ps1` 빌드가 넓힌 빌드 결과 파일 검사(LICENSE·고지)를 통과한다 | S7-12, Fix E 8 |
+| N1 | accept 설치본의 설치 폴더에 `LICENSE`와 `THIRD_PARTY_NOTICES.md`가 있고, 고지 파일에 D2Coding의 NAVER 저작권 줄과 OFL 본문이 든다. prod 쪽은 prod를 설치하지 않고 확인한다: 후보 SHA의 `windows.yml` 실행 로그에서 prod 채널의 `win-package.ps1 -Verify`(빌드 결과 폴더에 두 파일이 있고 저장소의 파일과 해시가 같은지 본다)가 통과했는지 보거나, 받은 prod 설치 파일(`devbox-setup` 산출물)의 내용 목록에서 두 파일을 찾는다. 설치된 prod 폴더는 사용자가 S7-16에서 확인한다(prod는 시험으로 바꾸지 않는다). 둘 다 못 하면 prod 쪽만 NOT_RUN으로 적고 이유를 쓴다 | S7-12, Fix E 8 |
 | SV1 | accept 인스턴스에서 프로젝트 `[[service]]`를 시작하고, 로그가 보이는지 확인하고, 멈춘다. 데몬 RPC로 확인한다 | 13개 중 3 |
 | NT1 | `devbox note add`로 accept 인스턴스에 노트를 쓰고 검색으로 찾는다 | 13개 중 4 |
 | DS1 | `wsl.exe -l -q`로 배포판 수를 센다. 내부 배포판이 아닌 것이 2개 이상이면 선택 화면을 확인하고, 하나뿐이면 해당 없음 | 13개 중 13 |
-| R | SC2 cold raw를 다시 잰다(O1 승인 시 비교). SmartScreen 문구를 관찰한다 | SC2, 문서 |
+| R | SC2 cold raw를 다시 잰다(rc.1 값과 비교). SmartScreen 문구를 관찰한다 | SC2, 문서 |
 
 **07c 13개 확인의 담당**
 
