@@ -1,4 +1,5 @@
-//! Where the notices come from: the Cargo crates and npm packages that ship, and their license files.
+//! Where the notices come from: the Cargo crates and npm packages that ship, the fonts bundled with the app,
+//! and their license files.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
@@ -12,6 +13,8 @@ const UNDECLARED: &str = "not declared";
 pub enum Ecosystem {
     Cargo,
     Npm,
+    /// A font file kept in this repository (`bundled.rs`), in no lock file.
+    Font,
 }
 
 impl Ecosystem {
@@ -19,6 +22,7 @@ impl Ecosystem {
         match self {
             Ecosystem::Cargo => "Rust",
             Ecosystem::Npm => "npm",
+            Ecosystem::Font => "font",
         }
     }
 }
@@ -33,6 +37,8 @@ pub struct Component {
     pub license: String,
     /// Package root, where its license files live.
     pub dir: PathBuf,
+    /// The one file that holds the license text, when the package is not scanned for license files.
+    pub license_file: Option<PathBuf>,
 }
 
 impl Component {
@@ -226,6 +232,7 @@ pub fn cargo_components(
                 .parent()
                 .with_context(|| format!("{}의 manifest 경로가 비어 있습니다.", package.name))?
                 .to_path_buf(),
+            license_file: None,
         });
     }
     components.sort_by_key(Component::sort_key);
@@ -262,6 +269,7 @@ pub fn npm_components(json: &str) -> Result<Vec<Component>> {
                 version: version.clone(),
                 license: declared(Some(&package.license)),
                 dir: dir.clone(),
+                license_file: None,
             });
         }
     }

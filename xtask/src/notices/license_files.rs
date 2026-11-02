@@ -1,6 +1,6 @@
 //! The license files of one package: which files count, and their text normalized for comparison.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,6 +37,18 @@ const NOT_TEXT_EXTENSIONS: &[&str] = &[
     // compiled code and native libraries
     "wasm", "so", "dll", "dylib", "exe", "obj", "rlib", "jar",
 ];
+
+/// Normalized text of one license file that is named, not searched for (a bundled font's). It must
+/// exist and must not be blank: a notice without its license text is the failure to catch.
+pub fn read_license_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("라이선스 파일을 읽지 못했습니다: {}", path.display()))?;
+    let text = normalize_text(&String::from_utf8_lossy(&bytes));
+    if text.is_empty() {
+        bail!("라이선스 파일이 비어 있습니다: {}", path.display());
+    }
+    Ok(text)
+}
 
 /// Normalized text of the license files of the package in `dir`.
 ///
@@ -112,6 +124,23 @@ mod tests {
         let file = root.join(path);
         fs::create_dir_all(file.parent().expect("file has a folder")).expect("create folders");
         fs::write(file, text).expect("write fixture file");
+    }
+
+    #[test]
+    fn a_named_license_file_is_read_normalized_and_must_exist_and_not_be_blank() {
+        let dir = tempfile::tempdir().expect("create folder");
+        put(
+            dir.path(),
+            "LICENSE-Font.txt",
+            "\u{feff}Copyright (c) NAVER \r\nSIL OFL 1.1 \r\n\r\n",
+        );
+        assert_eq!(
+            read_license_file(&dir.path().join("LICENSE-Font.txt")).expect("read"),
+            "Copyright (c) NAVER\nSIL OFL 1.1"
+        );
+        put(dir.path(), "blank.txt", " \r\n\r\n");
+        assert!(read_license_file(&dir.path().join("blank.txt")).is_err());
+        assert!(read_license_file(&dir.path().join("missing.txt")).is_err());
     }
 
     #[test]

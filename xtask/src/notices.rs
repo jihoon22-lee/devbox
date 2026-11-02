@@ -1,11 +1,13 @@
 //! `cargo run -p xtask -- notices`: writes THIRD_PARTY_NOTICES.md, the license texts of the third-party
 //! software that ships in the installer: the crates of the WSL `devbox` command, the crates of the
-//! Windows app and the production npm packages of its UI.
+//! Windows app, the production npm packages of its UI and the fonts kept in this repository (`bundled`).
 //!
-//! The first line fingerprints the lock files the notices were made from. `notices_inputs_are_current`
-//! recomputes it (hashing only: no cargo, no pnpm, no network), so a lock change that is committed
-//! without regenerating this file fails `cargo test --workspace`.
+//! The first line fingerprints the inputs the notices were made from: the lock files, the manifests and
+//! the license texts of the bundled fonts. `notices_inputs_are_current` recomputes it (hashing only: no
+//! cargo, no pnpm, no network), so an input change that is committed without regenerating this file
+//! fails `cargo test --workspace`.
 
+mod bundled;
 mod fingerprint;
 #[cfg(test)]
 mod fixture;
@@ -13,8 +15,8 @@ mod license_files;
 mod sources;
 
 use anyhow::{Context, Result};
-use fingerprint::{ensure_current, header_line, lock_fingerprint};
-use license_files::read_license_texts;
+use fingerprint::{ensure_current, header_line, input_fingerprint};
+use license_files::{read_license_file, read_license_texts};
 use sha2::{Digest, Sha256};
 use sources::{Component, cargo_components, cargo_metadata, npm_components, pnpm_licenses};
 use std::collections::BTreeMap;
@@ -60,7 +62,13 @@ pub fn run() -> Result<()> {
     let command_crates = cargo_components(&cli, &["devbox-cli"], &repo)?;
     let app_crates = cargo_components(&app, &["devbox-app"], &repo)?;
     let npm_packages = npm_components(&pnpm_licenses(&repo)?)?;
-    let counts = (command_crates.len(), app_crates.len(), npm_packages.len());
+    let fonts = bundled::components(&repo)?;
+    let counts = (
+        command_crates.len(),
+        app_crates.len(),
+        npm_packages.len(),
+        fonts.len(),
+    );
     let sources = [
         (
             "Rust crates of the WSL `devbox` command (`Cargo.lock`, every platform)",
@@ -74,18 +82,23 @@ pub fn run() -> Result<()> {
             "npm packages of the app UI (`pnpm-lock.yaml`, production)",
             npm_packages,
         ),
+        (
+            "Fonts bundled with the app UI (`app/src/assets/fonts`, listed in `xtask/src/notices/bundled.rs`)",
+            fonts,
+        ),
     ];
-    let notices = generate(&sources, &lock_fingerprint(&repo)?)?;
+    let notices = generate(&sources, &input_fingerprint(&repo)?)?;
     fs::write(repo.join(NOTICES_FILE), &notices)
         .with_context(|| format!("{NOTICES_FILE}을 쓰지 못했습니다."))?;
     // The check `notices_inputs_are_current` makes, so a generator that disagrees with it fails here.
     ensure_current(&repo)?;
     println!(
-        "notices: wrote {NOTICES_FILE} ({} bytes; packages: Rust command {}, Rust app {}, npm {})",
+        "notices: wrote {NOTICES_FILE} ({} bytes; packages: Rust command {}, Rust app {}, npm {}, bundled fonts {})",
         notices.len(),
         counts.0,
         counts.1,
-        counts.2
+        counts.2,
+        counts.3
     );
     Ok(())
 }
@@ -96,10 +109,22 @@ fn scan<'a>(components: impl IntoIterator<Item = &'a Component>) -> Result<Vec<E
     unique
         .into_values()
         .map(|component| {
-            let texts = read_license_texts(&component.dir).with_context(|| {
+            let texts = match &component.license_file {
+                Some(file) => read_license_file(file).map(|text| vec![text]),
+                None => read_license_texts(&component.dir),
+            }
+            .with_context(|| {
+                let hint = match component.ecosystem {
+                    sources::Ecosystem::Font => {
+                        "글꼴 라이선스 파일이 저장소에 있는지 확인하세요(`xtask/src/notices/bundled.rs`)."
+                    }
+                    _ => {
+                        "Rust는 `cargo fetch --locked`, npm은 `pnpm install --frozen-lockfile`로 \
+                         소스를 받은 뒤 다시 실행하세요."
+                    }
+                };
                 format!(
-                    "{} ({}) 라이선스 파일을 읽지 못했습니다. Rust는 `cargo fetch --locked`, \
-                     npm은 `pnpm install --frozen-lockfile`로 소스를 받은 뒤 다시 실행하세요.",
+                    "{} ({}) 라이선스 파일을 읽지 못했습니다. {hint}",
                     component.label(),
                     component.ecosystem.label()
                 )
@@ -175,8 +200,9 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
     out.push_str(
         "Devbox is licensed under the MIT License (see `LICENSE`). This file lists the third-party \
          software that ships with it, with the license text each package provides. It is generated \
-         by `cargo run -p xtask -- notices` from the lock files named in its first line; do not \
-         edit it by hand.\n\nPackages by source:\n\n",
+         by `cargo run -p xtask -- notices` from the inputs fingerprinted in its first line (the lock \
+         files, the manifests and the license text of each bundled font); do not edit it by hand.\n\n\
+         Packages by source:\n\n",
     );
     for (source, components) in sources {
         out.push_str(&format!("- {source}: {}\n", components.len()));
@@ -370,6 +396,42 @@ fn nested_license_file_is_used_when_the_top_level_has_none() {
     assert!(notices.contains("SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007\n```\n"));
     assert!(notices.contains("- `pretendard@1.3.9` (npm, OFL-1.1)\n"));
     assert!(!notices.contains("### OFL-1.1"));
+}
+
+#[test]
+fn a_bundled_font_is_listed_under_the_text_of_its_license() {
+    let dir = tempfile::tempdir().expect("create folder");
+    let license = dir.path().join("LICENSE-Font.txt");
+    fs::write(
+        &license,
+        "Copyright (c) 2015, NAVER\r\nSIL OPEN FONT LICENSE Version 1.1 \r\n",
+    )
+    .expect("write license");
+    let font = Component {
+        ecosystem: sources::Ecosystem::Font,
+        name: "D2Coding".into(),
+        version: "1.4.0".into(),
+        license: "OFL-1.1".into(),
+        dir: dir.path().to_path_buf(),
+        license_file: Some(license),
+    };
+    let notices =
+        generate(&[("Fonts bundled with the app", vec![font])], FINGERPRINT).expect("generate");
+    assert!(notices.contains("- Fonts bundled with the app: 1\n"));
+    assert!(notices.contains("- `D2Coding@1.4.0` (font, OFL-1.1)\n"));
+    assert!(notices.contains(
+        "\n```text\nCopyright (c) 2015, NAVER\nSIL OPEN FONT LICENSE Version 1.1\n```\n"
+    ));
+    // A font whose license file is missing stops the run instead of being listed without its text.
+    let missing = Component {
+        ecosystem: sources::Ecosystem::Font,
+        name: "Gone".into(),
+        version: "1".into(),
+        license: "OFL-1.1".into(),
+        dir: dir.path().to_path_buf(),
+        license_file: Some(dir.path().join("missing.txt")),
+    };
+    assert!(generate(&[("Fonts", vec![missing])], FINGERPRINT).is_err());
 }
 
 #[test]
