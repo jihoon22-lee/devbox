@@ -18,8 +18,11 @@ const DEPENDENCY_FOLDER: &str = "node_modules";
 /// suffix that names a license or a project (`LICENSE-APACHE-2.0`, `LICENSE.httprouter`, `COPYING.LIB`).
 ///
 /// An unlisted suffix is read: losing a license text is worse than including an odd file. So the list
-/// holds only unambiguous types and leaves out suffixes that are also language codes of translated
-/// licenses (`.pl`, `.cs`) or that name a plausible project (`.lib`, `.node`, `.cc`). All lower case.
+/// holds only suffixes that name a file type far more often than anything else. It leaves out suffixes
+/// that more likely mark a translated license, as language codes do (`.pl`, `.cs`), and suffixes that
+/// name a plausible project (`.lib`, `.node`, `.cc`). A suffix that is also a language code stays when
+/// the file type is far more common under that name: `.ts` (Tsonga, but TypeScript) and `.so` (Somali,
+/// but shared libraries). All lower case.
 const NOT_TEXT_EXTENSIONS: &[&str] = &[
     // source code
     "rs", "c", "cpp", "cxx", "h", "hh", "hpp", "hxx", "go", "java", "kt", "kts", "scala", "swift",

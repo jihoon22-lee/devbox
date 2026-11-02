@@ -43,7 +43,7 @@ struct TextGroup {
 struct Groups {
     /// Sorted by the digest of the text.
     texts: Vec<TextGroup>,
-    /// Packages without a license file, by declared SPDX expression.
+    /// Packages without license text, by declared SPDX expression.
     unlicensed: Vec<(String, Vec<Component>)>,
 }
 
@@ -232,9 +232,9 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
     }
     if !groups.unlicensed.is_empty() {
         out.push_str(
-            "## Packages without a license file\n\nThese packages publish no license file (`LICENSE*`, \
-             `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) anywhere in the package. The license they \
-             declare is listed instead.\n\n",
+            "## Packages without license text\n\nThese packages publish no license text: no plain-text \
+             `LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*` file in the package. The license \
+             they declare is listed instead.\n\n",
         );
         for (license, packages) in &groups.unlicensed {
             out.push_str(&format!("### {license}\n\n"));
@@ -345,7 +345,11 @@ fn missing_license_file_falls_back_to_spdx() {
     }
 
     let notices = generate(&fixture.sources(false), FINGERPRINT).expect("generate");
-    assert!(notices.contains("## Packages without a license file\n"));
+    // The section is about license text, not files: a package can ship a license-like file that is
+    // not text (the `LICENSE.spdx` of `@tauri-apps/plugin-opener`) and still be listed here.
+    assert!(notices.contains("## Packages without license text\n"));
+    assert!(notices.contains("These packages publish no license text: no plain-text "));
+    assert!(!notices.contains("no license file"));
     assert!(notices.contains(
         "### MIT\n\n- `qrcode-generator@2.0.4` (npm)\n\n### Unlicense OR MIT\n\n- `memchr@2.8.3` (Rust)\n"
     ));

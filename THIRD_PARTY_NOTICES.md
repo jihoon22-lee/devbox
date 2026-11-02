@@ -21860,9 +21860,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## Packages without a license file
+## Packages without license text
 
-These packages publish no license file (`LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*`) anywhere in the package. The license they declare is listed instead.
+These packages publish no license text: no plain-text `LICENSE*`, `LICENCE*`, `COPYING*`, `NOTICE*` or `OFL*` file in the package. The license they declare is listed instead.
 
 ### BSD-3-Clause
 

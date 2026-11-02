@@ -70,13 +70,13 @@ fn manifest_paths(repo: &Path) -> Result<Vec<String>> {
 }
 
 /// The `members` of the workspace root manifest, read as text so that the check needs no TOML parser.
-/// Anything it cannot list (a glob, another quoting) is an error: a manifest left out would be a stale
-/// notice nobody sees.
+/// Anything it cannot list (a glob, another quoting, a comment inside the list) is an error: a manifest
+/// left out would be a stale notice nobody sees.
 fn workspace_members(manifest: &str) -> Result<Vec<String>> {
     let unreadable = || {
         anyhow::anyhow!(
             "Cargo.toml의 [workspace] members를 \"경로\" 목록으로 읽지 못했습니다. 지문이 manifest를 하나도 \
-             놓치지 않으려면 members에 glob이나 다른 따옴표를 쓰지 않아야 합니다."
+             놓치지 않으려면 members에 glob, 다른 따옴표, 주석을 쓰지 않아야 합니다."
         )
     };
     let from_members: Vec<&str> = manifest
@@ -291,8 +291,16 @@ mod tests {
             "[workspace]\nmembers = [\"../outside\"]\n",
             "[workspace]\nresolver = \"3\"\n",
             "[workspace]\nmembers = []\n",
+            // A comment inside the list, after an item or on a line of its own.
+            "[workspace]\nmembers = [\n  \"crates/a\", # the a crate\n  \"crates/b\",\n]\n",
+            "[workspace]\nmembers = [\n  # core\n  \"crates/a\",\n]\n",
         ] {
             assert!(members(text).is_err(), "{text}");
+        }
+        // The refusal says what to change: it names the globs, the other quotes and the comments.
+        let error = members("[workspace]\nmembers = [\"crates/*\"]\n").expect_err("a glob");
+        for named in ["glob", "따옴표", "주석"] {
+            assert!(error.contains(named), "{named}: {error}");
         }
     }
 }
