@@ -84,7 +84,7 @@
 
 **크기와 타입**
 - `PROTOCOL_VERSION`은 S7·S8 동안 1로 둔다. S7-1의 Hello 완화는 이 값이 같다는 것을 전제로 한다. 바꿔야 하면 멈추고 사용자에게 묻는다.
-- S7-12 뒤 `Cargo.lock`이나 `pnpm-lock.yaml`이 바뀌는 커밋은 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. 버전 변경(S7-13, S8-1)도 여기에 해당한다.
+- S7-12 뒤 고지의 입력이 바뀌는 커밋은 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. 입력은 lock 파일 셋(`Cargo.lock`, `app/src-tauri/Cargo.lock`, `pnpm-lock.yaml`), manifest(작업 공간 root와 모든 멤버, 앱 crate, 앱 package), 함께 싣는 글꼴의 라이선스 본문이다(`xtask/src/notices/fingerprint.rs`). 버전 변경(S7-13, S8-1)도 여기에 해당한다.
 - 파일 600줄, 컴포넌트 300줄 이하.
 - `.github`+`scripts`는 1,982/2,000줄, workflow 2개다. 이 계획은 두 곳에 줄을 더하지 않는다. 생성기와 검사는 xtask와 기존 `cargo test --workspace`에 둔다.
 - 경계 타입에 `Result<T,String>`과 `serde_json::Value`를 쓰지 않는다. 생성 파일은 `pnpm gen`으로만 바꾼다.
@@ -963,7 +963,7 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
   - `pnpm install --frozen-lockfile --offline`이 통과해야 한다.
   - `scripts/tests/test_release.py`의 버전 고정 fixture를 확인한다.
   - 버전 원장 일치 검사를 한다(07c S6-6a와 같은 방식). 런타임에 포함되는 경로에 `1.0.0-rc.1`이 0건이어야 한다.
-  - `Cargo.lock`이 바뀌므로 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. `cargo test -p xtask notices`가 PASS여야 한다.
+  - manifest(`Cargo.toml`, `app/src-tauri/Cargo.toml`, `app/package.json`)와 Cargo lock 둘(`Cargo.lock`, `app/src-tauri/Cargo.lock`)이 바뀌므로 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. `cargo test -p xtask notices`가 PASS여야 한다.
   - `pnpm exec biome ci .` 뒤 커밋: `chore(release): set version to 1.0.0-rc.2`.
 - [ ] 3. `python3 scripts/verify-resources.py --wait -- pnpm check`를 한 번 돌린다. 실패하면 원본을 보존하고 실패·직접 영향 범위만 고쳐서 다시 돌린다. 이 수정 커밋은 버전 커밋 뒤에 와도 된다.
 - [ ] 4. 이 시점의 HEAD를 Windows 후보 SHA로 고정한다. 후보 SHA에는 rc.2 버전이 들어 있어야 한다(U1이 버전 불일치 경로를 실제로 거치게 하기 위해서다). 이후 제품 입력이 바뀌면 새 후보로 S7-14의 영향 시나리오를 다시 돈다.

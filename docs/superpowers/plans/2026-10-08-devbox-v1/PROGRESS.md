@@ -1747,7 +1747,7 @@ S7-0–S7-13 과제 기록의 미룬 항목을 영역별로 모았다. **[차단
   - `hooks='pi'` 사용자 정의 프로필에 기본 pane 패턴이 없던 문제: 계열 패턴이 프로필 `id`와 상관없이 늘 붙는다(`fa5614f7`).
   - `docs/config.md`만 바뀐 변경이 Rust job을 건너뛰던 문제(영역 6 I-1): 그 파일은 코드로 센다(`166698c0`).
   - `THIRD_PARTY_NOTICES.md`만 바뀐 변경이 코드 job을 건너뛰어 고지 신선도 시험(`notices_inputs_are_current`)이 돌지 않던 문제(S7-12 후속): 그 파일도 코드로 센다(Ruling 73, `b8e1ff4e`). 이제 `scripts/ci-scope.sh`가 코드로 세는 문서는 `docs/config.md`와 `THIRD_PARTY_NOTICES.md` 둘이고, 나머지 `docs/`와 루트의 `*.md`는 문서로 본다. 줄은 늘지 않았다.
-  - 내장 D2Coding 글꼴이 고지에 없던 문제(영역 6 I-2)와 입력 지문이 lock 파일만 덮던 한계(M4): 글꼴을 고지에 싣고 지문에 manifest와 글꼴 라이선스를 넣었다(`918fb478`).
+  - 내장 D2Coding 글꼴이 고지에 없던 문제(영역 6 I-2)와 입력 지문이 lock 파일만 덮던 한계(M4): 글꼴을 고지에 싣고 지문에 manifest와 글꼴 라이선스를 넣었다(`918fb478`). 지문 밖에 입력이 둘 남아 있어 둘 중 하나를 바꾸면 `cargo run -p xtask -- notices`를 직접 돌려야 한다: 고지 생성기 자신의 코드(`xtask/src/notices.rs`·`xtask/src/notices/`의 머리 문구, 확장자 목록, 묶는 방식)와 글꼴 파일 자체(`app/src/assets/fonts/D2Coding.woff2`; 지문은 `FONTS` 항목의 `name`·`version`·`license`·`license_file`과 라이선스 본문만 해시하고 글꼴 파일은 해시하지 않으므로, `FONTS.version`이 옛 값인 채 새 글꼴 파일을 넣어도 고지는 최신으로 보인다).
   - `discard_snapshot.rs`가 600줄에 가까워 probe를 분리해야 한다는 항목: `d0683209`가 `discard_probe.rs`로 나눠 556/600이 됐다(Fix B 때는 593/600이었다).
 
 - **에이전트·하네스**
