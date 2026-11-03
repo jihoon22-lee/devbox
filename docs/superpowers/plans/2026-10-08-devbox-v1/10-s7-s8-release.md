@@ -499,10 +499,10 @@ PR 리뷰(사용자 결정 2026-10-27):
 - `pub struct ResolvedCommand { pub program: PathBuf, pub source: CommandSource, pub version: Option<String> }`
 - `pub async fn resolve(program: &str, service_path: &OsStr, probe: &impl ShellProbe) -> Option<ResolvedCommand>`
   - `program`에 `/`가 있으면 그 파일만 확인한다.
-  - 그 밖에는 대화형 셸을 먼저 찾고, 없으면 서비스 PATH(설정 env 파일)를 찾는다. 사용자가 터미널에서 쓰는 것과 같은 실행 파일을 쓰기 위해서다(지금 이 PC에서 Codex는 로그인 0.146.0, 대화형 0.164.0).
+  - 그 밖에는 로그인 대화형 셸(Devbox 터미널의 `bash -l`과 같은 시작 파일을 읽는다)을 먼저 찾고, 없으면 서비스 PATH(설정 env 파일)를 찾는다. 사용자가 터미널에서 쓰는 것과 같은 실행 파일을 쓰기 위해서다. 계획을 쓸 때 이 PC의 Codex는 로그인 0.146.0, 대화형 0.164.0이어서 대화형 셸(`bash -ic`)로 충분했다. 2026-10-28·10-30 standalone 설치 뒤에는 `~/.profile`이 `~/.bashrc` 다음에 `~/.local/bin`을 앞에 붙여, 대화형 셸만으로는 사용자 터미널과 다른 0.146.0을 찾았다. 그래서 S7-14에서 로그인 대화형 셸로 고쳤다(P-DEF-1, `40d97a83`).
   - 셸이 답한 결과만 5분 동안 cache한다. 셸이 답하지 않으면 그 호출에만 서비스 PATH 결과를 쓰고 다음 호출에서 셸에 다시 묻는다. 환경 점검은 cache를 읽지 않고 매번 셸을 실행한다(S7-11 정정, Ruling 21·22).
 - `pub trait ShellProbe`. 실제 구현은 아래 명령 하나를 실행한다.
-  - 명령: `bash -ic 'printf "\036%s\036" "$(command -v -- "$1")"' devbox-probe <program>`
+  - 명령: `bash -lic 'printf "\036%s\036" "$(command -v -- "$1")"' devbox-probe <program>`. 조회 자식 환경에만 `MOTD_SHOWN=devbox-probe`를 둬 로그인 셸이 그날의 MOTD를 소모하지 않게 한다(S7-14 P-DEF-1).
   - stdin은 `/dev/null`, stderr는 버린다. 5초 timeout, stdout 64 KiB cap.
   - 마지막 `\x1e` 쌍 사이 값이 절대 경로이고 실행 가능할 때만 쓴다.
   - stdout 원문은 기록하지 않는다.
@@ -972,16 +972,16 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 ## S7-14 Windows 후보·accept 수용
 
 **준비**
-- [ ] 1. rc.1 기준선(업그레이드 시험용). accept 채널 빌드는 PR·dispatch 실행에만 있고, rc.1의 release 브랜치는 지워졌다. 그래서 백업형 push를 한다(PR 없음, CI 산출물 예외).
+- [x] 1. rc.1 기준선(업그레이드 시험용). accept 채널 빌드는 PR·dispatch 실행에만 있고, rc.1의 release 브랜치는 지워졌다. 그래서 백업형 push를 한다(PR 없음, CI 산출물 예외).
   1. `git push origin 28eb2a91f3…:refs/heads/v1/s7-rc1-accept`(정확한 40자 SHA는 `git rev-parse 28eb2a91`).
   2. `bash scripts/dogfood.sh v1/s7-rc1-accept --channel accept`. 실행이 없으면 dogfood가 windows.yml을 dispatch한다. SHA·run·채널·해시를 확인한다.
   3. dispatch는 `scripts/ci-scope.sh`에서 늘 `code=true`이고 accept 채널도 함께 포장하므로 기준선 산출물이 만들어진다(2026-10-27 확인).
-- [ ] 2. 후보.
+- [x] 2. 후보.
   1. `git push -u origin v1/s7-rc2`. 백업 push이며 PR은 열지 않는다.
   2. `gh workflow run windows.yml --ref v1/s7-rc2`
   3. `bash scripts/dogfood.sh v1/s7-rc2 --channel accept`
   4. Windows strict clippy·build 근거는 그 run의 결과다.
-- [ ] 3. harness를 복원한다.
+- [x] 3. harness를 복원한다.
   1. Git common-dir `devbox-archive/cleanup-20261026/local-verification-20261026.tar.gz`의 SHA-256이 `a292415367811796f7f16efcf5ce2b02eb69be4e2e76b08ca0d1e67ea8afecea`인지 확인한다.
   2. `devbox-verification/s6-6b/acceptance/harness/`만 소유 임시 폴더 `/tmp/devbox-s7-acceptance-<난수>/`에 푼다.
   3. 결과는 common-dir `devbox-verification/s7/`에 bounded JSON·로그로 남긴다.
@@ -1031,7 +1031,7 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 | CS1 | `systemctl --user kill -s STOP devbox-accept@accept.service` 뒤 앱을 끝내고 다시 실행한다. 앱 안에서 어느 길이 회복하는지 기록한다: 약 30초 뒤 연결 배너의 [다시 시도](5회 실패 뒤), 설정 → 앱 진단의 [다시 설정]. 배너가 나오기까지 걸린 시간을 적고, 앱이 이미 연결된 상태에서 STOP을 보낸 경우도 본다. 마지막에 `kill -s CONT` | Fix E 1–2, 영역 5 확인 1 |
 | CS2 | [다시 설정]과 [다시 시도](연결 화면과 연결 배너)가 각각 MainPID를 바꾼다. 배포판 선택은 MainPID를 바꾸지 않는다(선택 화면에 닿을 수 있을 때만: 사용자 배포판이 둘 이상이고 accept 앱의 `settings.json`에 배포판이 없을 때) | Fix E 3, 영역 5 확인 2 |
 | CS3 | 바뀐 것이 없는 일반 재실행은 MainPID를 유지하고 setup의 재시작 단계 메모가 "건너뜀(변경 없음)"이다 | O1a, 영역 5 확인 3 |
-| CS4 | 시작 doctor(`devbox doctor --json --startup`)는 시작 중에 `bash -ic`나 에이전트 `--version`을 실행하지 않는다(읽기 전용 `pgrep -af 'bash -ic'` 반복으로 보거나 ready까지 시간을 rc.1과 비교한다). 환경 점검과 설정 → 에이전트는 `tool.claude`·`tool.codex`·`tool.opencode`·`tool.pi`를 계속 보인다 | Fix E 7 |
+| CS4 | 시작 doctor(`devbox doctor --json --startup`)는 시작 중에 CLI 조회 셸(`bash -lic … devbox-probe`, S7-14 전에는 `bash -ic`)이나 에이전트 `--version`을 실행하지 않는다(읽기 전용 `pgrep -af devbox-probe` 반복으로 보거나 ready까지 시간을 rc.1과 비교한다). 환경 점검과 설정 → 에이전트는 `tool.claude`·`tool.codex`·`tool.opencode`·`tool.pi`를 계속 보인다 | Fix E 7 |
 | CS5 | rc.1 → rc.2 제자리 업그레이드: 첫 실행 뒤 `/proc/<MainPID>/exe`가 rc.2의 `devbox-<sha>`이고, rc.1 세션의 hook이 여전히 데몬에 닿는다(U1) | 영역 5 확인 4 |
 | CS6 | [나중에](버튼·Esc·바깥 클릭): accept 앱의 HKCU `…\CurrentVersion\Run` 값이 그대로이고 `settings.json`에 `autostart_asked: true`가 있으며 다시 열어도 대화상자가 없다 | O6b, 영역 5 확인 5 |
 | CS7 | 실패한 연결 화면의 [자세히]가 journal 줄을 보인다. 비었거나 읽을 수 없는 사용자 journal이 무엇을 보이는지 기록한다 | 영역 5 확인 6 |
@@ -1070,22 +1070,22 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 사용자 담당 항목은 S8-5 승인 때 결과가 없어도 된다(07c). 그때는 NOT_RUN으로 적는다.
 
 **마무리**
-- [ ] 4. prod 경로가 그대로인지 S6과 같은 방식으로 확인한다. 소유 자원만 정리한다.
-- [ ] 5. 결과를 PROGRESS 작업 사본과 PR 본문에 남긴다. 결과만 담은 문서 커밋은 제품 입력을 바꾸지 않는다(CONVENTIONS §8).
+- [x] 4. prod 경로가 그대로인지 S6과 같은 방식으로 확인한다. 소유 자원만 정리한다.
+- [x] 5. 결과를 PROGRESS 작업 사본과 PR 본문에 남긴다. 결과만 담은 문서 커밋은 제품 입력을 바꾸지 않는다(CONVENTIONS §8).
 
 ## S7-15 PR·리뷰·머지
 
-- [ ] 1. 최종 Biome를 돌리고 push한 뒤 `gh pr create --base main`으로 PR을 연다. 본문에 담을 것:
+- [x] 1. 최종 Biome를 돌리고 push한 뒤 `gh pr create --base main`으로 PR을 연다. 본문에 담을 것:
   - 범위와 결정 1–6
   - 선택 과제 답
   - 시나리오 결과, NOT_RUN과 그 이유
   - 리뷰 상태
-- [ ] 2. CONVENTIONS §8 새 규칙을 적용한다.
+- [x] 2. CONVENTIONS §8 새 규칙을 적용한다.
   - 10분 동안 봇 반응을 본다(켜짐·꺼짐 판정).
   - 켜짐이면 최대 3회 반영한다.
   - 꺼짐이면 독립 코드·보안 검토를 1회만 한다.
-- [ ] 3. 최종 head에서 `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)`가 SUCCESS여야 한다. e2e 등 실제 요구 job도 확인한다. 보호 규칙은 유지한다.
-- [ ] 4. squash 머지 뒤 할 것:
+- [x] 3. 최종 head에서 `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)`가 SUCCESS여야 한다. e2e 등 실제 요구 job도 확인한다. 보호 규칙은 유지한다.
+- [x] 4. squash 머지 뒤 할 것:
   - main CI 확인.
   - 원본 checkout `git pull --ff-only`.
   - 검증 tree와 머지 tree가 같은지 대조.
@@ -1093,15 +1093,15 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 
 ## S7-16 rc.2 prerelease — 별도 승인
 
-- [ ] 1. 태그 메시지(릴리스 본문) 초안을 쓴다.
+- [x] 1. 태그 메시지(릴리스 본문) 초안을 쓴다.
   - rc.1 이후 바뀐 것: B1–B4, I1, 문서, 라이선스.
   - 알려진 제한과 NOT_RUN 목록.
   - RC는 업데이트가 꺼져 있어 직접 설치해야 한다는 점.
-- [ ] 2. 사용자에게 묻는다: "main `<sha>`에 `v1.0.0-rc.2` 주석 태그를 push해 prerelease를 공개할까요?" 답이 "예"일 때만 진행한다.
+- [x] 2. 사용자에게 묻는다: "main `<sha>`에 `v1.0.0-rc.2` 주석 태그를 push해 prerelease를 공개할까요?" 답이 "예"일 때만 진행한다.
   1. `git tag -a v1.0.0-rc.2 <sha> -F <노트 파일>`
   2. `git push origin v1.0.0-rc.2`
   3. release run SUCCESS, asset SHA-256을 확인한다. `releases/latest`는 여전히 v0.9.0이어야 한다.
-- [ ] 3. 사용자 인계. 각 항목을 PROGRESS에 기록한다.
+- [x] 3. 사용자 인계. 각 항목을 PROGRESS에 기록한다.
   - prod rc.2 설치는 사용자가 직접 한다.
   - S7-14 담당 표에서 사용자 몫(13개 중 5–12)을 부탁한다. R1(30분 유휴 유지)과 R2(`wsl --shutdown` 뒤 재연결과 걸린 시간)가 여기에 들어 있다.
 
@@ -1113,7 +1113,7 @@ S7 머지와 rc.2 공개 뒤, `v1/s8-release`를 origin/main에서 만든다. �
 
 ### S8-0 착수
 
-- [ ] PROGRESS에 S7 결과를 기록한다(S7 작업 사본에서 옮김): rc.2 공개, 사용자 확인 결과.
+- [x] PROGRESS에 S7 결과를 기록한다(S7 작업 사본에서 옮김): rc.2 공개, 사용자 확인 결과.
 
 ### S8-1 버전 `1.0.0` (B5)
 
