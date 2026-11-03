@@ -1,24 +1,7 @@
-use super::{Probe, Probed};
+use super::{AgentTool, Probe, Probed};
 use devbox_protocol::system::{Check, Status};
 
-pub fn tmux_at_least(v: &str, want: (u32, u32)) -> bool {
-    let Some(v) = v.strip_prefix("tmux ") else {
-        return false;
-    };
-    let v = v.strip_prefix("next-").unwrap_or(v);
-    let Some((major, rest)) = v.split_once('.') else {
-        return false;
-    };
-    let len = rest.bytes().take_while(u8::is_ascii_digit).count();
-    let (minor, suffix) = rest.split_at(len);
-    if !suffix.bytes().all(|b| b.is_ascii_alphabetic()) {
-        return false;
-    }
-    match (major.parse::<u32>(), minor.parse::<u32>()) {
-        (Ok(a), Ok(b)) => (a, b) >= want,
-        _ => false,
-    }
-}
+pub use devbox_core::tmux_at_least;
 pub(super) fn check(
     id: &str,
     status: Status,
@@ -46,7 +29,21 @@ fn boolean(
         Err(issue) => super::extended::unknown(id, issue, fix),
     }
 }
+/// Which rows a doctor run makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// Every row: the environment check (`system.doctor`), support bundles and `devbox doctor`.
+    Full,
+    /// The app's check after each setup (`devbox doctor --startup`). It leaves out the rows that
+    /// look up an agent CLI (`tool.<agent>`, `auth.<agent>`): no interactive shell runs and no
+    /// CLI is asked for its version. Those rows are never `Fail`, so a launch goes on or stops
+    /// exactly as with every row.
+    Startup,
+}
 pub fn checks(p: &dyn Probe) -> Vec<Check> {
+    checks_for(p, Scope::Full)
+}
+pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
     let systemd = p.pid1().and_then(|pid| {
         if pid.trim() == "systemd" {
             p.user_manager_available()
@@ -107,7 +104,18 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
         "devbox setup",
     ));
     let path = p.daemon_path();
-    for tool in ["git", "claude", "codex", "gh", "node", "pnpm"] {
+    for tool in [
+        "git", "claude", "codex", "opencode", "pi", "gh", "node", "pnpm",
+    ] {
+        if let Some(agent) = AgentTool::ALL.into_iter().find(|a| a.binary() == tool) {
+            if scope == Scope::Full {
+                out.push(super::agent_tools::tool_check(
+                    agent,
+                    p.agent_command(agent, &path),
+                ));
+            }
+            continue;
+        }
         out.push(boolean(
             &format!("tool.{tool}"),
             p.which(tool, &path),
@@ -133,6 +141,6 @@ pub fn checks(p: &dyn Probe) -> Vec<Check> {
         "상태 알림 실행 파일을 실행할 수 없습니다",
         "devbox 실행 파일 배치를 확인하세요",
     ));
-    out.extend(super::extended::checks(p));
+    out.extend(super::extended::checks(p, scope));
     out
 }

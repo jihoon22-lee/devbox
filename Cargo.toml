@@ -4,10 +4,11 @@ members = ["crates/protocol", "crates/mux", "crates/core", "crates/projects", "c
 exclude = ["app/src-tauri"]
 
 [workspace.package]
-version = "1.0.0-rc.1"
+version = "1.0.0-rc.2"
 edition = "2024"
 rust-version = "1.98"
 publish = false
+license = "MIT"
 
 [workspace.dependencies]
 zip = { version = "=8.6.0", default-features = false }

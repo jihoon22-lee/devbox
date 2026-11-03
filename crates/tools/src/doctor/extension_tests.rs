@@ -1,15 +1,15 @@
 use super::*;
 use devbox_protocol::system::{Check, Status};
-const NEW_IDS: [&str; 8] = [
+const NEW_IDS: [&str; 6] = [
     "wsl.idle",
     "tool.rust",
     "tool.docker",
     "auth.gh",
     "auth.claude",
     "auth.codex",
-    "hook.claude",
-    "hook.codex",
 ];
+/// Not probes: devbox connects these hooks to every task it starts.
+const TASK_HOOKS: [&str; 2] = ["hook.claude", "hook.codex"];
 struct FakeProbe {
     issue: Option<ProbeIssue>,
     ready: bool,
@@ -84,9 +84,6 @@ impl Probe for FakeProbe {
             version: Some(format!("{} {}", agent.binary(), self.version)),
             file_present: self.ready,
         })
-    }
-    fn agent_hook(&self, _: AgentTool) -> Probed<bool> {
-        self.result(self.ready)
     }
 }
 fn find<'a>(checks: &'a [Check], id: &str) -> &'a Check {
@@ -176,7 +173,7 @@ fn existing_doctor_probes_also_report_timeouts_as_unknown_not_failures() {
         issue: Some(ProbeIssue::Timeout),
         ..Default::default()
     });
-    for check in all {
+    for check in all.iter().filter(|c| !TASK_HOOKS.contains(&c.id.as_str())) {
         assert_eq!(check.status, Status::Warn, "{}", check.id);
         assert!(check.message.contains("확인하지 못함"), "{}", check.id);
     }
@@ -197,4 +194,35 @@ fn unsupported_gh_capability_is_unknown_with_a_read_only_upgrade_hint() {
             .unwrap_or_default()
             .contains("--no-refresh")
     );
+}
+
+#[test]
+fn global_hook_warning_is_gone() {
+    for probe in [
+        FakeProbe::default(),
+        FakeProbe {
+            ready: false,
+            ..Default::default()
+        },
+        FakeProbe {
+            issue: Some(ProbeIssue::Timeout),
+            ..Default::default()
+        },
+    ] {
+        let all = checks(&probe);
+        for id in TASK_HOOKS {
+            let check = find(&all, id);
+            assert_eq!(check.status, Status::Ok, "{id}");
+            assert_eq!(check.message, "devbox가 작업마다 연결합니다");
+            assert_eq!(check.fix, None, "{id}");
+        }
+        for check in &all {
+            let text = format!(
+                "{} {}",
+                check.message,
+                check.fix.as_deref().unwrap_or_default()
+            );
+            assert!(!text.contains("전역"), "{}: {text}", check.id);
+        }
+    }
 }

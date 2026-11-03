@@ -62,6 +62,7 @@ function SessionProvider({ client, children }: { client: RpcClient; children: Re
       publish();
     };
     const offState = client.onState(onState);
+    const offAttempts = client.onFailedAttempts(connection.setFailedAttempts);
     const offReset = client.onReset(() => {
       runtime.qc.clear();
       runtime.generation++;
@@ -70,9 +71,11 @@ function SessionProvider({ client, children }: { client: RpcClient; children: Re
       publish();
     });
     onState(client.state);
+    connection.setFailedAttempts(client.failedAttempts);
     client.start();
     return () => {
       offState();
+      offAttempts();
       offReset();
       void runtime.qc.cancelQueries();
       client.stop();

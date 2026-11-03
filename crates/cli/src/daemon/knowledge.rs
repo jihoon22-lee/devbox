@@ -72,17 +72,21 @@ fn agents_dir(project: &Path) -> Option<PathBuf> {
     Some(project.parent()?.join(format!("{name}-agents")))
 }
 
-/// Registered projects, their agent folders and the configured vault, recomputed
-/// per request (like `logs::roots`). The data folder is not a root: no Task 2
-/// caller writes there, and a later task adds a dedicated subfolder if needed.
-fn roots(vault: PathBuf, projects: Arc<ProjectsService>) -> Roots {
+/// Registered projects, their agent folders and the configured vault (none while
+/// `[notes]` is invalid), recomputed per request (like `logs::roots`). The data folder
+/// is not a root: no Task 2 caller writes there, and a later task adds a dedicated
+/// subfolder if needed.
+fn roots(vault: Option<PathBuf>, projects: Arc<ProjectsService>) -> Roots {
     Arc::new(move || {
         let (projects, vault) = (projects.clone(), vault.clone());
         Box::pin(async move {
-            let mut roots = vec![Root {
-                id: "vault".into(),
-                path: vault,
-            }];
+            let mut roots: Vec<_> = vault
+                .into_iter()
+                .map(|path| Root {
+                    id: "vault".into(),
+                    path,
+                })
+                .collect();
             match projects.list(devbox_projects::ListProjects {}).await {
                 Ok(list) => {
                     for project in list.items {
@@ -209,7 +213,7 @@ fn project_names(projects: Arc<ProjectsService>) -> devbox_activity::ProjectName
     })
 }
 
-/// Activity from `config.toml [activity]` (unreadable rules store no titles),
+/// Activity from `config.toml [activity]` (unreadable rules record nothing),
 /// stored in `devbox.db`, exported to `<data>/exports`.
 pub(super) fn activity(
     paths: &Paths,
@@ -219,7 +223,7 @@ pub(super) fn activity(
     projects: &Arc<ProjectsService>,
 ) -> Arc<devbox_activity::ActivityService> {
     if !settings.readable {
-        tracing::warn!("[activity] settings are unreadable; titles are not stored");
+        tracing::warn!("[activity] settings are unreadable; activity is not recorded");
     }
     Arc::new(devbox_activity::ActivityService::new(
         devbox_activity::ActivityConfig::new(
@@ -233,18 +237,26 @@ pub(super) fn activity(
     ))
 }
 
-/// `pc` is `config.pc.name`.
+/// `pc` is `config.pc.name`. Without `settings` (`[notes]` did not load) documents get
+/// no vault root, and the notes service is built on default settings it never acts on:
+/// it does not start, `notes.*` routes answer `notes.disabled`, and log roots and support
+/// bundles take the vault from `Services::notes_vault`, which is `None` then.
 pub(super) fn build(
     paths: &Paths,
-    (settings, search, pc): (NotesSettings, SearchSettings, Option<String>),
+    (settings, search, pc): (Option<NotesSettings>, SearchSettings, Option<String>),
     db: &Db,
     index: &IndexDb,
     hub: &Arc<Hub>,
     projects: &Arc<ProjectsService>,
 ) -> anyhow::Result<Knowledge> {
+    let vault = settings.as_ref().map(|settings| settings.vault.clone());
+    let settings = match settings {
+        Some(settings) => settings,
+        None => NotesSettings::from_table(&Default::default(), &paths.home)?,
+    };
     let mut documents_config = DocumentsConfig::new(
         paths.data_dir.clone(),
-        roots(settings.vault.clone(), projects.clone()),
+        roots(vault, projects.clone()),
         hub.clone(),
     );
     documents_config.hooks.before_lease_insert = test_gate(paths);

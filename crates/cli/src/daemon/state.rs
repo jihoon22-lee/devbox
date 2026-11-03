@@ -6,6 +6,7 @@ use std::time::Instant;
 pub struct Services {
     pub(super) windows: Arc<super::windows_broker::WindowsBroker>,
     pub(super) runtime: super::system::Runtime,
+    pub(super) startup: super::startup::Startup,
     pub version: &'static str,
     pub daemon_id: String,
     pub paths: Paths,
@@ -31,4 +32,12 @@ pub struct Services {
     pub webhooks: Arc<devbox_webhooks::WebhooksService>,
     pub api: Arc<devbox_api::ApiService>,
     pub api_collections: Arc<devbox_api::CollectionsService>,
+}
+
+impl Services {
+    /// The notes vault, or `None` while notes are off because `[notes]` did not load: the
+    /// default vault never stands in for it (log roots, support bundles).
+    pub(super) fn notes_vault(&self) -> Option<&std::path::Path> {
+        (!self.startup.disabled.notes).then(|| self.notes.vault())
+    }
 }

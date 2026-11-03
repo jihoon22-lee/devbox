@@ -26,6 +26,46 @@ pub struct DaemonInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub hostname: Option<String>,
+    /// What runs on defaults or is off since this daemon started; absent when nothing is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub startup_problems: Vec<StartupProblem>,
+}
+
+/// A startup problem the daemon worked around instead of exiting. `file` is absolute.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StartupProblem {
+    /// The file could not be read or parsed: every section runs on its failure policy.
+    ConfigFile { file: String, message: String },
+    /// One section of the file, or one entry of it, did not load; `effect` says what that did.
+    ConfigSection {
+        file: String,
+        section: String,
+        message: String,
+        effect: SectionEffect,
+    },
+    /// Agent tasks were not checked against tmux yet; the daemon keeps retrying.
+    AgentsReconcile { message: String },
+    /// `[activity]` loaded, but rules in `file` do not compile (`message` names them), so
+    /// activity records nothing. Cleared once rules that compile are saved. With `local`,
+    /// `file` is `config.local.toml`: saving writes `config.toml`, and the local rule wins
+    /// again on the next start, so it must be fixed in `file`.
+    ActivityRules {
+        file: String,
+        message: String,
+        local: bool,
+    },
+}
+
+/// What a [`StartupProblem::ConfigSection`] did to the feature the section configures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub enum SectionEffect {
+    /// The section is on its failure policy: its feature is off or runs on defaults.
+    Disabled,
+    /// Only this section or entry is left out, such as an unknown section, `[windows]` in
+    /// `config.toml` or one `[[agents.profiles]]` entry. Everything else still works.
+    Ignored,
 }
 
 domain_error! {
@@ -73,8 +113,70 @@ pub fn export<X: Exporter>(x: &mut X) {
 
 #[cfg(test)]
 mod tests {
-    use super::DaemonInfo;
+    use super::{DaemonInfo, SectionEffect, StartupProblem};
     use ts_rs::TS;
+    #[test]
+    fn startup_problems_are_kind_tagged_and_omitted_when_empty() {
+        let problems = vec![
+            StartupProblem::ConfigFile {
+                file: "/c/config.toml".into(),
+                message: "m".into(),
+            },
+            StartupProblem::ConfigSection {
+                file: "/c/config.local.toml".into(),
+                section: "notes".into(),
+                message: "m".into(),
+                effect: SectionEffect::Disabled,
+            },
+            StartupProblem::ConfigSection {
+                file: "/c/config.toml".into(),
+                section: "windows".into(),
+                message: "m".into(),
+                effect: SectionEffect::Ignored,
+            },
+            StartupProblem::AgentsReconcile {
+                message: "m".into(),
+            },
+            StartupProblem::ActivityRules {
+                file: "/c/config.local.toml".into(),
+                message: "m".into(),
+                local: true,
+            },
+        ];
+        let wire = serde_json::json!([
+            {"kind": "configFile", "file": "/c/config.toml", "message": "m"},
+            {"kind": "configSection", "file": "/c/config.local.toml", "section": "notes", "message": "m", "effect": "disabled"},
+            {"kind": "configSection", "file": "/c/config.toml", "section": "windows", "message": "m", "effect": "ignored"},
+            {"kind": "agentsReconcile", "message": "m"},
+            {"kind": "activityRules", "file": "/c/config.local.toml", "message": "m", "local": true},
+        ]);
+        assert_eq!(
+            serde_json::to_value(&problems).expect("problems JSON"),
+            wire
+        );
+        let back: Vec<StartupProblem> = serde_json::from_value(wire).expect("problems");
+        assert_eq!(back, problems);
+        let mut info: DaemonInfo = serde_json::from_value(serde_json::json!({"version": "v",
+            "instance": "i", "pid": 1, "startedMs": 1, "dataDir": "/d", "configPath": "/c"}))
+        .expect("metadata without problems");
+        assert!(
+            serde_json::to_value(&info)
+                .expect("JSON")
+                .get("startupProblems")
+                .is_none()
+        );
+        info.startup_problems = problems;
+        assert_eq!(
+            serde_json::to_value(&info).expect("JSON")["startupProblems"][3]["kind"],
+            "agentsReconcile"
+        );
+        let config = ts_rs::Config::new().with_large_int("number");
+        assert!(
+            DaemonInfo::decl(&config).contains("startupProblems?: Array<StartupProblem>"),
+            "{}",
+            DaemonInfo::decl(&config)
+        );
+    }
     #[test]
     fn daemon_hostname_metadata_roundtrips_and_remains_optional() {
         let legacy = serde_json::json!({"version":"test", "instance":"test", "pid":1,

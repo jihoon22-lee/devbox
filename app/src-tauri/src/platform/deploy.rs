@@ -1,5 +1,8 @@
 use crate::core::{
-    deploy::{digest, exec_script, install_script},
+    deploy::{
+        STARTUP_DOCTOR_ARGS, SetupTrigger, digest, exec_script, install_script, redeploy_failed,
+        setup_args,
+    },
     diagnostics::{ReportKind, describe},
     process::{self, ShellError},
 };
@@ -20,6 +23,7 @@ pub async fn install(
 pub async fn setup(
     distro: &str,
     instance: &str,
+    trigger: SetupTrigger,
     cancel: CancellationToken,
 ) -> Result<(), ShellError> {
     let mut cmd = crate::platform::wsl::command(distro);
@@ -31,24 +35,23 @@ pub async fn setup(
         "-c",
         &exec_script(),
         "sh",
-        "setup",
-        "--json",
-    ]);
+    ])
+    .args(setup_args(trigger));
     process::run(cmd, vec![], Duration::from_secs(90), cancel.clone())
         .await
         .map_err(|e| describe(e, ReportKind::Setup))?;
     let mut doctor = crate::platform::wsl::command(distro);
-    doctor.args([
-        "--exec",
-        "env",
-        &format!("DEVBOX_INSTANCE={instance}"),
-        "sh",
-        "-c",
-        &exec_script(),
-        "sh",
-        "doctor",
-        "--json",
-    ]);
+    doctor
+        .args([
+            "--exec",
+            "env",
+            &format!("DEVBOX_INSTANCE={instance}"),
+            "sh",
+            "-c",
+            &exec_script(),
+            "sh",
+        ])
+        .args(STARTUP_DOCTOR_ARGS);
     process::run(doctor, vec![], Duration::from_secs(30), cancel)
         .await
         .map_err(|e| describe(e, ReportKind::Doctor))?;
@@ -83,16 +86,18 @@ pub fn bundled_binary(app: &tauri::AppHandle) -> Result<Vec<u8>, ShellError> {
     }
     Ok(bytes)
 }
+/// `trigger` decides whether setup forces the daemon restart; see `SetupTrigger`.
 pub async fn apply(
     distro: &str,
     instance: &str,
     bytes: Vec<u8>,
+    trigger: SetupTrigger,
     cancel: CancellationToken,
 ) -> Result<(), ShellError> {
     let install_cancel = cancel.clone();
     crate::core::deploy::apply_deployment(
         || install(distro, bytes, install_cancel),
-        || setup(distro, instance, cancel),
+        || setup(distro, instance, trigger, cancel),
     )
     .await
 }
@@ -106,7 +111,13 @@ pub async fn redeploy_wsl(
     let distro = conn.state().ready_distro()?.to_owned();
     let bytes = bundled_binary(&app)
         .map_err(|_| IpcError::new("내장 WSL 실행 파일을 확인하지 못했습니다"))?;
-    apply(&distro, INSTANCE, bytes, conn.operation_cancel())
-        .await
-        .map_err(|_| IpcError::new("WSL 다시 설정을 완료하지 못했습니다"))
+    apply(
+        &distro,
+        INSTANCE,
+        bytes,
+        SetupTrigger::Redeploy,
+        conn.operation_cancel(),
+    )
+    .await
+    .map_err(redeploy_failed)
 }

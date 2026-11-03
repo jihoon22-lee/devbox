@@ -1,4 +1,4 @@
-import { terminalKey } from "./keys";
+import { isShiftEnter, terminalKey } from "./keys";
 
 const key = (init: KeyboardEventInit) => new KeyboardEvent("keydown", init);
 test("terminal shortcuts preserve shell Ctrl+C and IME/AltGr", () => {
@@ -19,4 +19,20 @@ test("terminal shortcuts preserve shell Ctrl+C and IME/AltGr", () => {
   expect(terminalKey(key({ code: "KeyC", ctrlKey: true, isComposing: true }), true)).toBeNull();
   expect(terminalKey(key({ code: "KeyV", ctrlKey: true, shiftKey: true, altKey: true }), false)).toBeNull();
   expect(terminalKey(key({ code: "KeyC", ctrlKey: true, metaKey: true }), true)).toBeNull();
+});
+test("Shift+Enter is only Shift alone on Enter, outside IME composition", () => {
+  const enter = (init: KeyboardEventInit) => isShiftEnter(key({ key: "Enter", ...init }));
+  expect(enter({ shiftKey: true })).toBe(true);
+  expect(enter({ shiftKey: true, code: "NumpadEnter" })).toBe(true);
+  for (const init of [
+    {},
+    { ctrlKey: true },
+    { altKey: true },
+    { metaKey: true, shiftKey: true },
+    { ctrlKey: true, shiftKey: true },
+    { shiftKey: true, isComposing: true },
+    { shiftKey: true, keyCode: 229 },
+    { key: "a", shiftKey: true },
+  ])
+    expect(enter(init)).toBe(false);
 });

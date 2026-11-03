@@ -19,6 +19,16 @@ impl AgentsService {
         rx.await.internal("resume task completion")?
     }
     async fn resume_owned(&self, id: &str) -> Result<AgentTask> {
+        // A task's profile is fixed when it is created, so its CLI is looked up before the shared
+        // action lock: a slow shell must not hold up other tasks. The result is checked below,
+        // in its usual place, so a task that changed meanwhile fails as it did before.
+        let looked_up = match self.get(id).await {
+            Ok(task) => match crate::profile::resolve(&self.profiles, &task.profile) {
+                Some(profile) => Some(self.resolve_tool(&profile).await),
+                None => None,
+            },
+            Err(_) => None,
+        };
         let _guard = self.actions.lock().await;
         let task = self.get(id).await?;
         crate::actions::open(&task)?;
@@ -81,6 +91,11 @@ impl AgentsService {
                 id: task.profile.clone(),
             },
         )?;
+        let tool = match looked_up {
+            Some(tool) => tool?,
+            // The task could not be read before the lock: look now.
+            None => self.resolve_tool(&profile).await?,
+        };
         let session_id = if profile.hooks == crate::profile::Hooks::Codex {
             self.refresh_binding(&task, true).await?.thread_id
         } else {
@@ -93,7 +108,8 @@ impl AgentsService {
         crate::prepare::private_file(&phase, "starting\n", false).internal("resume phase")?;
         let script = data.join(format!("resume-{generation}.sh"));
         let prompt = data.join(format!("resume-{generation}.md"));
-        crate::prepare::private_file(&prompt, &task.prompt, false).internal("resume prompt")?;
+        let text = crate::prepare::prompt_text(profile.hooks, &task.prompt);
+        crate::prepare::private_file(&prompt, &text, false).internal("resume prompt")?;
         let settings = if profile.hooks == crate::profile::Hooks::Claude {
             let path = data.join(format!("claude-{generation}.json"));
             crate::prepare::private_file(
@@ -104,7 +120,7 @@ impl AgentsService {
             .internal("resume hooks")?;
             Some(path.to_string_lossy().into_owned())
         } else {
-            None
+            self.hook_file(profile.hooks).await?
         };
         let plan = crate::start::StartPlan {
             devbox: self.devbox_bin.clone(),
@@ -115,10 +131,18 @@ impl AgentsService {
             workdir: task.workdir.clone(),
             setup: vec![],
             tool_command: profile.command.clone(),
+            tool_dir: tool
+                .as_ref()
+                .and_then(crate::command_path::ResolvedCommand::dir)
+                .map(Into::into),
             hooks: profile.hooks,
-            claude_settings: settings,
-            prompt_file: Some(prompt.to_string_lossy().into_owned()),
+            hook_file: settings,
+            // pi gets the task's prompt only on its first launch. A resume names the session
+            // devbox knows, or starts pi fresh without one: pi may have run the prompt already.
+            prompt_file: (profile.hooks != crate::profile::Hooks::Pi)
+                .then(|| prompt.to_string_lossy().into_owned()),
             resume_session: session_id.clone(),
+            session_id: None,
             use_scope: self.use_scope,
             port: task.port,
         };
@@ -136,8 +160,10 @@ impl AgentsService {
         let new_terminal = format!("t{}", terminal_uuid.simple());
         let key = task.id.clone();
         let launch = now_ms();
+        let says_ready = profile.hooks == crate::profile::Hooks::Pi;
         let initial_session = session_id.clone();
         let hub = self.hub.clone();
+        let approvals = self.approvals.clone();
         let previous_binding = self
             .db
             .write_checked_with_commit(
@@ -159,6 +185,9 @@ impl AgentsService {
                     current.reason = None;
                     current.attention = None;
                     current.updated_ms = launch;
+                    current.starting_since_ms = says_ready.then_some(launch);
+                    // A new launch starts without the previous launch's approvals.
+                    approvals.forget(&key);
                     crate::store::put_binding(tx, &key, &binding)?;
                     crate::store::put(tx, &current)?;
                     Ok(Ok::<_, std::convert::Infallible>((

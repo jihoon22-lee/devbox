@@ -78,7 +78,7 @@ struct Event {
 struct Info {
     total_token_usage: Option<Counts>,
 }
-fn empty(truncated: bool) -> AgentUsage {
+pub(crate) fn empty(truncated: bool) -> AgentUsage {
     AgentUsage {
         tokens: None,
         truncated,
@@ -86,7 +86,7 @@ fn empty(truncated: bool) -> AgentUsage {
 }
 // fill_buf bounds allocation even for a huge unterminated record. Malformed records
 // and incomplete tails are reported, never silently advertised as complete usage.
-fn records(mut reader: impl BufRead, mut visit: impl FnMut(&[u8]) -> bool) -> bool {
+pub(crate) fn records(mut reader: impl BufRead, mut visit: impl FnMut(&[u8]) -> bool) -> bool {
     let mut budget = MAX_BYTES;
     let mut line = Vec::new();
     let mut truncated = false;
@@ -239,7 +239,7 @@ fn codex_read(reader: impl BufRead, session: &str, cwd: &str) -> AgentUsage {
         }
     }
 }
-fn safe_file(path: &Path) -> bool {
+pub(crate) fn safe_file(path: &Path) -> bool {
     path.ancestors()
         .all(|p| std::fs::symlink_metadata(p).is_ok_and(|m| !m.file_type().is_symlink()))
 }
@@ -320,7 +320,7 @@ pub(crate) fn tokens_for(
     binding: Option<&Binding>,
 ) -> AgentUsage {
     let (path, session) = match hooks {
-        Hooks::None => return empty(false),
+        Hooks::None | Hooks::Opencode | Hooks::Pi => return empty(false),
         Hooks::Claude => {
             let Some(id) = task.session_id.as_deref().filter(|id| {
                 !id.is_empty()
@@ -367,7 +367,7 @@ pub(crate) fn tokens_for(
     match hooks {
         Hooks::Claude => claude_read(BufReader::new(file), session, &task.workdir),
         Hooks::Codex => codex_read(BufReader::new(file), session, &task.workdir),
-        Hooks::None => empty(false),
+        Hooks::None | Hooks::Opencode | Hooks::Pi => empty(false),
     }
 }
 #[cfg(test)]

@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { teardownFailed } from "../../../rpc/agentMessages";
 import { RpcError } from "../../../rpc/client";
 import type { MergeKind, Methods } from "../../../rpc/gen/rpc";
 import { messageFor } from "../../../rpc/messages";
@@ -19,6 +20,12 @@ type Intent =
   | { kind: "pr"; title: string; body: string }
   | { kind: "discard" };
 type Snapshot = { intent: Intent; changes?: Changes; check?: Check };
+/**
+ * A discard removes its work folder with force, which also takes the store of its initialized
+ * submodules, with the commits in them that were never pushed. The daemon also reports
+ * `hasSubmodules` when it could not check, so the warning errs toward showing.
+ */
+const SUBMODULES = "하위 모듈이 있습니다. 하위 모듈 안의 push하지 않은 커밋도 함께 사라집니다.";
 export function useReviewAction(task: AgentTask, onConflict: (files: string[]) => void) {
   const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const changes = useRpcQuery("agents.changes", { id: task.id }, { enabled: false });
@@ -46,8 +53,13 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       version.current++;
     };
   }, [task.id, task.projectId, task.state === "closed"]);
-  const errorText = (error: RpcError) => {
-    const message = messageFor(error.code, error.detail);
+  const errorText = (error: RpcError, kind?: Intent["kind"]) => {
+    // A discard's teardown failed while the task is still open, so it is not in the cleanup list:
+    // once the command is fixed, the discard is what to try again.
+    const message =
+      kind === "discard" && error.code === "agents.teardown_failed"
+        ? teardownFailed(error.detail, "다시 폐기하세요.")
+        : messageFor(error.code, error.detail);
     return `${message.title} ${message.action ?? ""}${error.diagnosticId ? ` · 진단 ${error.diagnosticId}` : ""}`;
   };
   const refresh = async (intent: Intent, stamp: number) => {
@@ -176,7 +188,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
     } catch (error) {
       if (stamp !== version.current) return;
       const failure = error instanceof RpcError ? error : new RpcError("internal");
-      setNotice(errorText(failure));
+      setNotice(errorText(failure, intent.kind));
       if (isProjectTrustError(failure)) {
         // The old Git snapshot cannot survive a changed command definition.
         // Only an explicit recheck may obtain approval and a fresh Git snapshot.
@@ -224,7 +236,7 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
       ? inline
         ? `이 에이전트 작업의 세션을 끝냅니다.${snapshot.check ? ` HEAD ${snapshot.check.headOid} · 병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개` : " 현재 상태 확인 중…"}`
         : snapshot.check
-          ? `${snapshot.check.unmergedCommits === 0 && snapshot.check.dirtyFiles === 0 ? "작업 폴더와 브랜치를 지웁니다." : `병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개와 커밋하지 않은 파일 ${snapshot.check.dirtyFiles}개가 사라집니다.`} HEAD ${snapshot.check.headOid}`
+          ? `${snapshot.check.unmergedCommits === 0 && snapshot.check.dirtyFiles === 0 ? "작업 폴더와 브랜치를 지웁니다." : `병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개와 커밋하지 않은 파일 ${snapshot.check.dirtyFiles}개가 사라집니다.`} HEAD ${snapshot.check.headOid}${snapshot.check.hasSubmodules ? `\n${SUBMODULES}` : ""}`
           : "현재 상태 확인 중…"
       : snapshot?.changes
         ? `기준 ${snapshot.changes.base} · 브랜치 ${task.branch} · 앞섬 ${snapshot.changes.ahead} · 뒤처짐 ${snapshot.changes.behind}\nHEAD ${snapshot.changes.headOid} · 기준 ${snapshot.changes.baseOid}${snapshot.intent.kind === "pr" ? `\nPR 제목: ${snapshot.intent.title}\n${snapshot.intent.body}` : snapshot.intent.message ? `\n커밋 메시지: ${snapshot.intent.message}` : ""}`

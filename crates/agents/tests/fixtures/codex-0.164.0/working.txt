@@ -1,0 +1,13 @@
+# 문자열 기반(실제 화면 아님). 일하는 중인 Codex 화면은 폴더 신뢰를 고르고 모델을 불러야 나와서, 소유 자원만 쓰고 아무것도 고르지 않는 이 녹화로는 만들 수 없었다.
+# 문장 출처: codex-cli 0.164.0 실행 파일 문자열 "Working", "Ask Codex to do anything", "for shortcuts", "% context left".
+# "esc to interrupt" 안내와 줄 배치는 알려진 Codex 화면 모양을 가정한 것이고 문자열로 확인하지 못했다.
+# 실제 화면 확인은 S7-14 H1·H2에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+› Reply with OK and stop.
+
+• Working (12s • esc to interrupt)
+
+› Ask Codex to do anything
+
+  ? for shortcuts                                                                                          100% context left

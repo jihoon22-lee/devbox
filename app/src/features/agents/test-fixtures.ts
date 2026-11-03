@@ -36,6 +36,8 @@ export function task(
     closedMs: state === "closed" ? updatedMs : null,
     closedCommits: null,
     closedHeadOid: null,
+    closedMergeOid: null,
     cleanupError: null,
+    startingSinceMs: null,
   };
 }

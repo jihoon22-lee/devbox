@@ -1,3 +1,4 @@
+use crate::command_path::shared_folder;
 use crate::hooks::codex_notify_arg;
 use crate::plan::sh_quote;
 use crate::profile::Hooks;
@@ -11,10 +12,15 @@ pub struct StartPlan {
     pub workdir: String,
     pub setup: Vec<String>,
     pub tool_command: String,
+    /// The folder of the CLI found for `tool_command`, put first on `PATH` before the CLI runs by
+    /// name. A shared folder such as `/usr/bin` goes last instead, and the CLI runs by its path.
+    pub tool_dir: Option<String>,
     pub hooks: Hooks,
-    pub claude_settings: Option<String>,
+    pub hook_file: Option<String>,
     pub prompt_file: Option<String>,
     pub resume_session: Option<String>,
+    /// The session a new launch starts in when devbox chose it: pi creates it with this id.
+    pub session_id: Option<String>,
     pub use_scope: bool,
     pub port: u16,
 }
@@ -54,19 +60,62 @@ pub fn render_start_script(p: &StartPlan) -> String {
         s.push_str("if [ \"$setup\" -ne 0 ]; then echo \"[devbox] 준비 명령이 실패했습니다($setup).\"; hold_terminal; fi\n");
     }
     let mut tool = p.tool_command.clone();
+    match p.tool_dir.as_deref() {
+        // Exactly the CLI that was found. Its folder goes last, where it shadows nothing and
+        // still has the interpreter a `#!/usr/bin/env` line names when nothing before it does.
+        Some(dir) if shared_folder(dir) => {
+            tool = by_path(dir, &p.tool_command);
+            s.push_str(&format!("export PATH=\"$PATH\":{}\n", sh_quote(dir)));
+        }
+        // The CLI found for this task, and the interpreter its `#!/usr/bin/env` line names.
+        Some(dir) => s.push_str(&format!("export PATH={}:\"$PATH\"\n", sh_quote(dir))),
+        None => {}
+    }
+    if let (Hooks::Opencode, Some(plugin)) = (p.hooks, &p.hook_file) {
+        // opencode merges this into the user's own config, so their plugins still load.
+        let config = serde_json::json!({ "plugin": [file_url(plugin)] });
+        s.push_str(&format!(
+            "export OPENCODE_CONFIG_CONTENT={}\n",
+            sh_quote(&config.to_string())
+        ));
+    }
     match p.hooks {
         Hooks::Claude => {
-            if let Some(f) = &p.claude_settings {
+            if let Some(f) = &p.hook_file {
                 tool.push_str(&format!(" --settings {}", sh_quote(f)));
             }
         }
         Hooks::Codex => tool.push_str(&format!(" -c {}", sh_quote(&codex_notify_arg(&p.devbox)))),
-        Hooks::None => {}
+        // pi loads it in addition to the user's own extensions.
+        Hooks::Pi => {
+            if let Some(f) = &p.hook_file {
+                tool.push_str(&format!(" -e {}", sh_quote(f)));
+            }
+        }
+        Hooks::Opencode | Hooks::None => {}
     }
     match (&p.resume_session, p.hooks) {
         (Some(id), Hooks::Claude) => tool.push_str(&format!(" --resume {}", sh_quote(id))),
         (Some(id), Hooks::Codex) => tool.push_str(&format!(" resume {}", sh_quote(id))),
+        (Some(id), Hooks::Opencode) => tool.push_str(&format!(" -s {}", sh_quote(id))),
+        (Some(id), Hooks::Pi) => tool.push_str(&format!(" --session-id {}", sh_quote(id))),
         (None, Hooks::Claude | Hooks::Codex) => {
+            if let Some(f) = &p.prompt_file {
+                tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
+            }
+        }
+        // With `=` a prompt that starts with `-` is still the value, never an option.
+        (None, Hooks::Opencode) => {
+            if let Some(f) = &p.prompt_file {
+                tool.push_str(&format!(" --prompt=\"$(cat {})\"", sh_quote(f)));
+            }
+        }
+        // pi creates the session devbox chose. After `--` the prompt is a message, but one that
+        // starts with `@` would still be a file, so `prompt.md` has a space before it.
+        (None, Hooks::Pi) => {
+            if let Some(id) = &p.session_id {
+                tool.push_str(&format!(" --session-id {}", sh_quote(id)));
+            }
             if let Some(f) = &p.prompt_file {
                 tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
             }
@@ -86,6 +135,32 @@ pub fn render_start_script(p: &StartPlan) -> String {
     s
 }
 
+/// `command` with its first word, the program the lookup found in `dir`, replaced by that
+/// program's path. The rest of the command is kept as written.
+fn by_path(dir: &str, command: &str) -> String {
+    let command = command.trim_start_matches(|c: char| c.is_ascii_whitespace());
+    let end = command
+        .find(|c: char| c.is_ascii_whitespace())
+        .unwrap_or(command.len());
+    let (program, rest) = command.split_at(end);
+    let name = program.rsplit('/').next().unwrap_or(program);
+    format!("{}{rest}", sh_quote(&format!("{dir}/{name}")))
+}
+
+/// The `file://` URL of an absolute path. Every byte other than `A-Z a-z 0-9 - . _ ~ /` is
+/// percent-encoded, so the URL needs no escaping in JSON or between shell single quotes.
+fn file_url(path: &str) -> String {
+    let mut url = String::from("file://");
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            url.push(char::from(byte));
+        } else {
+            url.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    url
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,10 +174,12 @@ mod tests {
             workdir: "/w/x y".into(),
             setup: vec!["pnpm install".into()],
             tool_command: "claude".into(),
+            tool_dir: None,
             hooks: Hooks::Claude,
-            claude_settings: Some("/d/claude.json".into()),
+            hook_file: Some("/d/claude.json".into()),
             prompt_file: Some("/d/prompt.md".into()),
             resume_session: None,
+            session_id: None,
             use_scope: true,
             port: 5200,
         }
@@ -197,6 +274,160 @@ mod tests {
         );
         fs::remove_dir_all(root).expect("owned fixture");
     }
+    #[cfg(unix)]
+    #[test]
+    fn resolved_tool_directory_is_prepended_to_path() {
+        use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+        let root = tempfile::tempdir().expect("owned fixture");
+        // Only the user's interactive shell knows this folder. Its CLI is a `#!/usr/bin/env`
+        // script whose interpreter sits next to it, the way nvm installs Node CLIs.
+        let tools = root.path().join("it's a \"tool\" dir");
+        fs::create_dir(&tools).expect("owned fixture");
+        let devbox = root.path().join("devbox");
+        for (file, body) in [
+            (
+                tools.join("fixture-node"),
+                "#!/bin/sh\nexec /bin/sh \"$@\"\n",
+            ),
+            (
+                tools.join("fixture-agent"),
+                "#!/usr/bin/env fixture-node\nprintf '%s' \"$PATH\" > \"$DEVBOX_PATH_RECEIPT\"\n",
+            ),
+            (devbox.clone(), "#!/bin/sh\nexit 0\n"),
+        ] {
+            fs::write(&file, body).expect("owned fixture");
+            fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).expect("owned fixture");
+        }
+        let tools_text = tools.to_str().expect("fixture UTF-8");
+        let receipt = root.path().join("path-receipt");
+        let mut p = plan();
+        p.devbox = devbox.to_string_lossy().into_owned();
+        p.workdir = root.path().to_string_lossy().into_owned();
+        p.phase_file = root.path().join("phase").to_string_lossy().into_owned();
+        p.setup = vec![];
+        p.hooks = Hooks::None;
+        p.use_scope = false;
+        p.tool_command = "fixture-agent".into();
+        p.tool_dir = Some(tools_text.into());
+        let script = render_start_script(&p);
+        let line = format!("export PATH={}:\"$PATH\"\n", sh_quote(tools_text));
+        let (before, after) = script.split_once(&line).expect("PATH line");
+        assert!(after.starts_with("fixture-agent\n"), "{script}");
+        assert!(before.contains("printf 'tool\\n'"), "after setup: {script}");
+        let file = root.path().join("start.sh");
+        fs::write(&file, &script).expect("owned fixture");
+        let output = Command::new("/bin/bash")
+            .arg(&file)
+            .env("PATH", "/usr/bin:/bin")
+            .env("DEVBOX_PATH_RECEIPT", &receipt)
+            .output()
+            .expect("owned fixture");
+        assert!(output.status.success());
+        assert_eq!(
+            fs::read_to_string(&receipt).expect("the tool and its interpreter ran"),
+            format!("{tools_text}:/usr/bin:/bin")
+        );
+        p.tool_dir = None;
+        assert!(!render_start_script(&p).contains("export PATH="));
+    }
+    #[test]
+    fn a_cli_in_a_shared_folder_runs_by_its_path_with_the_folder_last() {
+        // Putting one of these first would change which systemd-run, node or other program
+        // the script finds next. Last, it shadows nothing and still gives an env-shebang CLI
+        // the interpreter next to it; the CLI itself runs by its absolute path.
+        for dir in [
+            "/usr/local/sbin",
+            "/usr/local/bin",
+            "/usr/sbin",
+            "/usr/bin",
+            "/sbin",
+            "/bin",
+            "/snap/bin",
+            "/home/linuxbrew/.linuxbrew/bin",
+        ] {
+            let mut p = plan();
+            p.tool_dir = Some(dir.into());
+            p.tool_command = "claude --verbose".into();
+            let s = render_start_script(&p);
+            let last = format!("\nexport PATH=\"$PATH\":'{dir}'\n");
+            assert!(s.contains(&last), "{dir}: {s}");
+            assert_eq!(s.matches("export PATH=").count(), 1, "{dir}: {s}");
+            assert!(!s.contains(&format!("export PATH='{dir}'")), "{dir}: {s}");
+            let tool = format!(
+                " -- '{dir}/claude' --verbose --settings '/d/claude.json' -- \"$(cat '/d/prompt.md')\"\n"
+            );
+            assert!(s.contains(&tool), "{dir}: {s}");
+            assert!(s.find(&last) < s.find(&tool), "{dir}: {s}");
+        }
+        // Also when the command names the CLI by its path or starts with blanks.
+        let mut p = plan();
+        p.use_scope = false;
+        p.tool_dir = Some("/usr/bin".into());
+        p.tool_command = "  /usr/bin/claude".into();
+        let s = render_start_script(&p);
+        assert!(s.contains("\nexport PATH=\"$PATH\":'/usr/bin'\n"), "{s}");
+        assert!(
+            s.contains("\n'/usr/bin/claude' --settings '/d/claude.json'"),
+            "{s}"
+        );
+        // Any other folder, a version manager's for one, still goes first and the CLI runs
+        // by name, as before.
+        for own in ["/home/u/.nvm/versions/node/v24.1.0/bin", "/usr/bin-extra"] {
+            p.tool_dir = Some(own.into());
+            p.tool_command = "claude --verbose".into();
+            let s = render_start_script(&p);
+            assert!(
+                s.contains(&format!("export PATH='{own}':\"$PATH\"\n")),
+                "{s}"
+            );
+            assert_eq!(s.matches("export PATH=").count(), 1, "{s}");
+            assert!(
+                s.contains("\nclaude --verbose --settings '/d/claude.json'"),
+                "{s}"
+            );
+        }
+    }
+    fn opencode_plan() -> StartPlan {
+        let mut p = plan();
+        p.hooks = Hooks::Opencode;
+        p.tool_command = "opencode".into();
+        p.hook_file = Some("/d/agent-hooks/opencode-plugin-0123456789abcdef.ts".into());
+        p
+    }
+    #[test]
+    fn opencode_launch_exports_plugin_config_and_uses_prompt_equals() {
+        let s = render_start_script(&opencode_plan());
+        let config = r#"export OPENCODE_CONFIG_CONTENT='{"plugin":["file:///d/agent-hooks/opencode-plugin-0123456789abcdef.ts"]}'"#;
+        let tool = r#"opencode --prompt="$(cat '/d/prompt.md')""#;
+        let (before, after) = s.split_once(config).expect("plugin config line");
+        assert!(before.contains("printf 'tool\\n'"), "after setup: {s}");
+        assert!(after.contains(tool), "{s}");
+        assert!(
+            !s.contains("--settings") && !s.contains("-- \"$(cat"),
+            "{s}"
+        );
+        // Without a plugin file there is nothing to load.
+        let mut p = opencode_plan();
+        p.hook_file = None;
+        assert!(!render_start_script(&p).contains("OPENCODE_CONFIG_CONTENT"));
+        // Characters a URL or JSON would misread are percent-encoded.
+        p.hook_file = Some("/d/it's a #1 100% \"폴더\"?/opencode-plugin-x.ts".into());
+        assert!(render_start_script(&p).contains(
+            r#"{"plugin":["file:///d/it%27s%20a%20%231%20100%25%20%22%ED%8F%B4%EB%8D%94%22%3F/opencode-plugin-x.ts"]}"#
+        ));
+    }
+    #[test]
+    fn opencode_resume_uses_the_session_flag_without_a_prompt() {
+        let mut p = opencode_plan();
+        p.resume_session = Some("ses_9".into());
+        let s = render_start_script(&p);
+        assert!(s.contains("-- opencode -s 'ses_9'\n"), "{s}");
+        assert!(s.contains("export OPENCODE_CONFIG_CONTENT="), "{s}");
+        assert!(!s.contains("--prompt") && !s.contains("$(cat"), "{s}");
+        // A task that never reported a session starts again from its prompt.
+        p.resume_session = None;
+        assert!(render_start_script(&p).contains(r#"opencode --prompt="$(cat '/d/prompt.md')""#));
+    }
     #[test]
     fn resume_and_custom_profiles_have_no_prompt_argument() {
         let mut p = plan();
@@ -215,6 +446,9 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+#[path = "start_pi_tests.rs"]
+mod pi_tests;
 #[cfg(all(test, unix))]
 #[path = "start_prompt_tests.rs"]
 mod prompt_tests;

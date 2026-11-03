@@ -143,5 +143,7 @@ domain_error! {
         ProjectNotFound = "search.project_not_found",
         NotFound = "search.not_found",
         StreamUnsupported = "search.stream_unsupported",
+        // `[search]` did not load.
+        Disabled = "search.disabled",
     }
 }

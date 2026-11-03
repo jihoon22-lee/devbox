@@ -1,0 +1,15 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/chat_composer.rs가 그리는, 하위 에이전트 대화를 보는 동안의 입력창이다(app/session_lifecycle.rs가 부모가 맡은 대화로 옮길 때 이 안내를 둔다). 붙여 넣은 글은 입력창에 남고 Enter는 그것을 보내지 않는다(ParentOwnedInputBlocked).
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/snapshots/codex_tui__bottom_pane__chat_composer__tests__parent_owned_thread_placeholder.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 그리는 소스 중 chat_composer.rs·session_lifecycle.rs는 다른 곳만 바뀌어 이 안내를 두고 그리는 부분이 세 태그에서 같다(diff). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+› Viewing sub-agent — direct input is disabled
+
+
+
+
+
+
+  ? for shortcuts                                                                100% context left

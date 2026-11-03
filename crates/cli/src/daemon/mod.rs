@@ -1,6 +1,7 @@
 mod agent_test;
 mod debug;
 mod dedupe;
+mod exe;
 mod hostname;
 mod knowledge;
 mod knowledge_routes;
@@ -20,6 +21,7 @@ mod source_deps;
 mod source_external;
 mod source_git;
 mod source_routes;
+mod startup;
 pub mod state;
 mod streams;
 mod summary;
@@ -31,7 +33,7 @@ mod windows_broker;
 mod windows_observe;
 mod windows_routes;
 
-use devbox_core::{Config, Db, Hub, Paths, log};
+use devbox_core::{Db, Hub, Paths, log};
 use state::Services;
 use std::sync::Arc;
 use std::time::Instant;
@@ -67,9 +69,33 @@ fn build_services_with_runtime(
     runtime: system::Runtime,
 ) -> anyhow::Result<Arc<Services>> {
     paths.ensure_dirs()?;
-    let config = Config::load(&paths)?;
-    let notes = devbox_notes::NotesSettings::from_table(&config.notes, &paths.home)?;
-    let search = devbox_search::SearchSettings::from_table(&config.search)?;
+    // A setting that does not load turns off only its feature, reported by `system.info`.
+    let mut load = devbox_core::config::load_lenient(&paths);
+    let notes = load.section("notes", |table| {
+        devbox_notes::NotesSettings::from_table(table, &paths.home)
+    });
+    let search = load.section("search", devbox_search::SearchSettings::from_table);
+    let activity = load
+        .section("activity", |table| {
+            devbox_activity::ActivitySettings::try_from_table(table)
+                .map_err(|error| error.message().to_owned())
+        })
+        .unwrap_or_else(devbox_activity::ActivitySettings::unreadable);
+    let local = paths.config_dir.join("config.local.toml");
+    let activity_rules = startup::activity_rules(&load, &activity, &local);
+    let (profiles, invalid_profiles) =
+        devbox_agents::profile::configured_lenient(&load.config.agents);
+    load.problems.extend(invalid_profiles);
+    let windows_invalid = load
+        .disabled
+        .windows
+        .then(|| startup::windows_reason(&load.problems, &local));
+    let devbox_core::config::ConfigLoad {
+        config,
+        disabled,
+        problems,
+        ..
+    } = load;
     let db = Db::open(
         &paths.db_path,
         &paths.backups_dir,
@@ -90,8 +116,12 @@ fn build_services_with_runtime(
         projects.clone(),
         config.terminal,
     ));
-    let profiles = devbox_agents::profile::configured(&config.agents)?;
-    let executable = std::env::current_exe()?;
+    // Debug builds of test instances may pin the path hooks run, so a daemon test can
+    // change it across restarts the way an update does.
+    let executable = match std::env::var_os("DEVBOX_TEST_BIN") {
+        Some(path) if cfg!(debug_assertions) && paths.instance.is_test() => path.into(),
+        _ => exe::stable_devbox_path(&std::env::current_exe()?),
+    };
     let devbox_bin = executable
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("executable path is not UTF-8"))?
@@ -108,6 +138,9 @@ fn build_services_with_runtime(
             devbox_bin,
             use_scope,
             cleanup_after_close: config.agents.cleanup_after_close.unwrap_or(true),
+            shell: Arc::new(devbox_agents::command_path::InteractiveShell),
+            // The environment check refreshes this same cache, so the next start uses its look.
+            lookups: devbox_agents::command_path::LookupCache::shared(),
         },
     ));
     let windows = Arc::new(windows_broker::WindowsBroker::default());
@@ -115,6 +148,7 @@ fn build_services_with_runtime(
     windows_observe::configure(&mut execution, windows.clone(), runtime.shutdown.clone());
     execution.readiness = observe::readiness();
     execution.windows_root = config.windows.root.clone();
+    execution.windows_config_invalid = windows_invalid;
     execution.slice = std::env::var("DEVBOX_TEST_SLICE").ok().filter(|slice| {
         paths.instance.is_test() && slice.starts_with("devbox-test-") && slice.ends_with(".slice")
     });
@@ -165,19 +199,19 @@ fn build_services_with_runtime(
     );
     let knowledge = knowledge::build(
         &paths,
-        (notes, search, config.pc.name.clone()),
+        (notes, search.unwrap_or_default(), config.pc.name.clone()),
         &db,
         &index,
         &hub,
         &projects,
     )?;
-    let activity = devbox_activity::ActivitySettings::from_table(&config.activity);
     let activity = knowledge::activity(&paths, activity, &db, &hub, &projects);
     let git = source_git::service(&hub);
     let deps = source_deps::service(&hub);
     Ok(Arc::new(Services {
         windows,
         runtime,
+        startup: startup::Startup::new(disabled, problems, activity_rules),
         version: crate::VERSION,
         daemon_id: uuid::Uuid::new_v4().simple().to_string(),
         started: Instant::now(),
@@ -235,8 +269,18 @@ pub async fn run(foreground: bool) -> anyhow::Result<()> {
     let runtime = system::Runtime::new(!foreground);
     let shutdown = runtime.shutdown.clone();
     let services = build_services_with_runtime(paths.clone(), runtime.clone())?;
-    // Notes first: it creates a missing vault before documents starts watching it.
-    let _notes_startup = services.notes.start();
+    // A tmux server that outlived an update never re-reads tmux.conf, so Shift+Enter would stay
+    // Enter in its sessions. Give it the key options once, off the startup path: no server is
+    // fine, and nothing here may delay or fail the start.
+    let tmux = services.terminal.tmux().clone();
+    tokio::spawn(async move {
+        if let Err(error) = tmux.apply_extended_keys().await {
+            tracing::warn!(%error, "tmux extended keys were not applied to the running server");
+        }
+    });
+    // Notes first: it creates a missing vault before documents starts watching it. Notes
+    // whose settings did not load never start, so no default vault is created.
+    let _notes_startup = (!services.startup.disabled.notes).then(|| services.notes.start());
     let _documents_startup = services.documents.start();
     let _activity_writer = services.activity.start();
     let activity = services.activity.clone();

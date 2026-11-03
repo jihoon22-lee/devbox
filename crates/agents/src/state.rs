@@ -156,6 +156,25 @@ mod tests {
     }
 
     #[test]
+    fn output_resumed_changes_only_a_waiting_state() {
+        for state in [
+            S::Preparing,
+            S::Running,
+            S::Waiting,
+            S::Idle,
+            S::Failed,
+            S::Review,
+            S::Closed,
+        ] {
+            assert_eq!(
+                next(state, &E::OutputResumed),
+                (state == S::Waiting).then_some(S::Running),
+                "{state:?}"
+            );
+        }
+    }
+
+    #[test]
     fn attention_states_are_waiting_idle_and_failed() {
         assert!(is_attention(S::Waiting) && is_attention(S::Idle) && is_attention(S::Failed));
         assert!(!is_attention(S::Running) && !is_attention(S::Review) && !is_attention(S::Closed));

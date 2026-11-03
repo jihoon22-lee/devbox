@@ -13,7 +13,10 @@ use devbox_protocol::{Done, Fail, Internal};
 use devbox_terminal::TerminalService;
 #[cfg(test)]
 use std::path::Path;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 use tokio::sync::Mutex;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub(crate) type Result<T> = std::result::Result<T, Fail<AgentsError>>;
@@ -21,6 +24,11 @@ pub struct AgentRuntime {
     pub devbox_bin: String,
     pub use_scope: bool,
     pub cleanup_after_close: bool,
+    /// Finds agent CLIs the way the user's terminal does.
+    pub shell: Arc<dyn crate::command_path::ShellProbe>,
+    /// Where those lookups are kept. The daemon passes the shared cache, which its environment
+    /// check refreshes.
+    pub lookups: Arc<crate::command_path::LookupCache>,
 }
 pub struct AgentsService {
     pub(crate) db: Db,
@@ -35,9 +43,21 @@ pub struct AgentsService {
     pub(crate) actions: Mutex<()>,
     pub(crate) cleanup_after_close: bool,
     pub(crate) hook_files: Mutex<()>,
+    pub(crate) shell: Arc<dyn crate::command_path::ShellProbe>,
+    pub(crate) lookups: Arc<crate::command_path::LookupCache>,
     pub(crate) background: TaskTracker,
     pub(crate) stop: CancellationToken,
     pub(crate) resource_samples: Mutex<crate::resources::ResourceSampler>,
+    pub(crate) approvals: Arc<crate::approvals::Approvals>,
+    /// opencode usage already exported, per task.
+    pub(crate) exports: Arc<crate::usage_plugins::ExportCache>,
+    /// Compiled waiting patterns by profile id, published once by the output watcher so a send
+    /// reads the pane with the same patterns. Unset while no watcher runs.
+    pub(crate) waiting_patterns: OnceLock<Arc<HashMap<String, crate::watch::WaitingPatterns>>>,
+    /// What this daemon has seen of each task's latest pi launch (see `ready`).
+    pub(crate) launches: Arc<crate::ready::Launches>,
+    /// When this daemon started: it may have missed the reports of launches from before.
+    pub(crate) started_ms: i64,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -68,9 +88,16 @@ impl AgentsService {
             actions: Mutex::new(()),
             cleanup_after_close: runtime.cleanup_after_close,
             hook_files: Mutex::new(()),
+            shell: runtime.shell,
+            lookups: runtime.lookups,
             background: TaskTracker::new(),
             stop: CancellationToken::new(),
             resource_samples: Mutex::new(crate::resources::ResourceSampler::default()),
+            approvals: Arc::default(),
+            exports: Default::default(),
+            waiting_patterns: OnceLock::new(),
+            launches: Arc::default(),
+            started_ms: now_ms(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -101,14 +128,23 @@ impl AgentsService {
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
-        self.update_bound(id, None, f).await
+        self.update_bound(id, None, false, f).await
     }
-    async fn update_bound<F>(&self, id: &str, launch: Option<String>, f: F) -> Result<Done>
+    /// `announce_later` holds back the notice of a wait the update enters (see
+    /// `announce_later`); the task still changes at once.
+    async fn update_bound<F>(
+        &self,
+        id: &str,
+        launch: Option<String>,
+        announce_later: bool,
+        f: F,
+    ) -> Result<Done>
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
         let id = id.to_owned();
         let hub = self.hub.clone();
+        let approvals = self.approvals.clone();
         let result = self
             .db
             .write_checked_with_commit(
@@ -128,17 +164,27 @@ impl AgentsService {
                     if !f(&mut task) {
                         return Ok(Err(None));
                     }
+                    if task.state != AgentState::Waiting {
+                        approvals.forget(&task.id);
+                    }
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous_state)))
                 },
-                move |(task, previous), rev| changed(&hub, task, rev, task.state != *previous),
+                move |(task, previous), rev| {
+                    changed(&hub, task, rev, !announce_later && task.state != *previous)
+                },
             )
             .await
             .internal("update agent")?;
         match result {
-            Ok((_, rev)) => Ok(Done {
-                rev: rev.to_string(),
-            }),
+            Ok(((task, previous), rev)) => {
+                if announce_later && task.state != previous && task.state == AgentState::Waiting {
+                    self.announce_later(task);
+                }
+                Ok(Done {
+                    rev: rev.to_string(),
+                })
+            }
             Err(Some(e)) => Err(e.into()),
             Err(None) => Ok(Done {
                 rev: self.db.rev().to_string(),
@@ -156,14 +202,13 @@ impl AgentsService {
             None
         };
         let task = self.get(&p.agent_id).await?;
-        if lifecycle
-            && self
-                .launch_binding(&task.id)
-                .await?
-                .launch_id
-                .as_deref()
-                .is_some_and(|launch| launch != p.payload)
-        {
+        let binding = if lifecycle {
+            Some(self.launch_binding(&task.id).await?)
+        } else {
+            None
+        };
+        let launch_id = binding.as_ref().and_then(|b| b.launch_id.as_deref());
+        if launch_id.is_some_and(|launch| launch != p.payload) {
             return Ok(Done {
                 rev: self.db.rev().to_string(),
             });
@@ -173,8 +218,19 @@ impl AgentsService {
                 rev: self.db.rev().to_string(),
             });
         }
+        // The launch's setup is over and its tool starts now.
+        if p.source == crate::hooks::HookSource::Setup
+            && p.code == Some(0)
+            && launch_id == Some(p.payload.as_str())
+            && self.says_ready(&task)
+        {
+            self.launches.tool_started(&task.id, &p.payload, now_ms());
+        }
+        if crate::plugin_event::is_ready_report(p.source, &p.payload) {
+            return self.record_ready(&task.id, p.launch_id).await;
+        }
         let launch = if p.source == crate::hooks::HookSource::Claude {
-            let Some(launch) = p.launch_id.filter(|id| !id.is_empty()) else {
+            let Some(launch) = p.launch_id.clone().filter(|id| !id.is_empty()) else {
                 return Ok(Done {
                     rev: self.db.rev().to_string(),
                 });
@@ -183,6 +239,20 @@ impl AgentsService {
         } else {
             None
         };
+        // Claude ends every tool call with a hook. Without a recorded approval the ending
+        // changes nothing, so skip it before keying its input or opening a write.
+        if launch.is_some()
+            && !self.approvals.has_pending(&task.id)
+            && crate::hooks::claude_event(&p.payload)
+                .is_some_and(|event| crate::hooks::ends_tool_call(&event))
+        {
+            return Ok(Done {
+                rev: self.db.rev().to_string(),
+            });
+        }
+        let approval = launch
+            .as_ref()
+            .and_then(|_| crate::hooks::approval(&p.payload));
         let events = if p.source == crate::hooks::HookSource::Codex {
             let Some(candidate) = crate::hooks::parse_codex_candidate(&p.payload) else {
                 return Ok(Done {
@@ -211,7 +281,54 @@ impl AgentsService {
                 crate::limits::identity(session_id)?;
             }
         }
-        self.update_bound(&p.agent_id, launch, move |t| {
+        if matches!(
+            p.source,
+            crate::hooks::HookSource::Opencode | crate::hooks::HookSource::Pi
+        ) {
+            // The plugin reports a resolved request even when nothing waits for it. Such a
+            // report, or one that means nothing, changes nothing, so no write is opened.
+            if events.is_empty()
+                || (events == [AgentEvent::OutputResumed] && task.state != AgentState::Waiting)
+            {
+                return Ok(Done {
+                    rev: self.db.rev().to_string(),
+                });
+            }
+        }
+        // A finished turn may have added tokens, so the usage read from its export is dropped,
+        // but only for a report of the current launch (see below): a late one from the launch
+        // before a resume says nothing about this one.
+        let turn_done = matches!(
+            p.source,
+            crate::hooks::HookSource::Opencode | crate::hooks::HookSource::Pi
+        ) && events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::TurnComplete { .. }));
+        let exports = turn_done.then(|| self.exports.clone());
+        // pi asks about trust even in a folder whose trust is decided, and goes on at once.
+        let trust = p.source == crate::hooks::HookSource::Pi
+            && events.iter().any(|event| {
+                matches!(event, AgentEvent::NeedsInput { message }
+                    if message == crate::plugin_event::PI_TRUST_COPY)
+            });
+        // A report changes the task only while the launch it names is current: a plugin's
+        // report can arrive after a resume. Only Claude's go through `approvals`; the plugins
+        // pair their own requests and replies. A plugin report naming no launch applies as
+        // before, so a wait is never lost for it.
+        let bound = match p.source {
+            crate::hooks::HookSource::Opencode | crate::hooks::HookSource::Pi => {
+                p.launch_id.filter(|id| !id.is_empty())
+            }
+            _ => launch.clone(),
+        };
+        let approvals = self.approvals.clone();
+        self.update_bound(&p.agent_id, bound, trust, move |t| {
+            if let Some(exports) = exports {
+                exports.turn_completed(&t.id);
+            }
+            if let Some(launch) = &launch {
+                return approvals.apply(t, launch, approval, events);
+            }
             let mut changed = false;
             for event in events {
                 changed |= apply_event(t, &event, now_ms())

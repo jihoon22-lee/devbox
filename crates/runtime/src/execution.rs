@@ -48,8 +48,10 @@ pub struct ExecutionConfig {
     pub readiness: Readiness,
     pub worktree: Option<WorktreeResolver>,
     pub windows_root: Option<String>,
+    pub windows_config_invalid: Option<String>, // why `[windows]` did not load
     pub windows_owner: String,
     pub windows_observation: WindowsObservation,
+    pub windows_holder: crate::WindowsHolder,
     pub windows_paths: WindowsPaths,
     pub windows_listeners: crate::WindowsListeners,
     #[cfg(test)]
@@ -76,10 +78,10 @@ impl ExecutionConfig {
             readiness: Arc::new(|check| Box::pin(async move { check.ports.is_empty() })),
             worktree: None,
             windows_root: None,
+            windows_config_invalid: None,
             windows_owner,
-            windows_observation: Arc::new(|_| {
-                Box::pin(async { devbox_protocol::windows::ObservationState::Unavailable })
-            }),
+            windows_observation: crate::windows_observation::unavailable_observation(),
+            windows_holder: crate::windows_observation::unavailable_holder(),
             windows_paths: Arc::new(|_| {
                 Box::pin(async { devbox_protocol::windows::PathObservation::Unavailable })
             }),

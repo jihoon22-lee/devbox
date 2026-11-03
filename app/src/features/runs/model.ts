@@ -66,15 +66,12 @@ function sgr(style: CSSProperties, values: number[]): CSSProperties {
   return next;
 }
 
-/** SGR is the only executable terminal sequence retained, as ordinary React styles. */
-export function ansiToSpans(text: string): AnsiSpan[] {
-  const spans: AnsiSpan[] = [];
-  let style: CSSProperties = {};
-  let plain = "";
-  const flush = () => {
-    if (plain) spans.push({ text: plain, style: { ...style } });
-    plain = "";
-  };
+/**
+ * Walks terminal output and skips each escape sequence whole: a CSI (ESC [ or 0x9b) up to its
+ * final byte, a string sequence (OSC, DCS, SOS, PM, APC) up to BEL or ST, and any other ESC
+ * sequence. `unit` gets every other UTF-16 unit, and `sgr` the values of each SGR sequence.
+ */
+function walkAnsi(text: string, unit: (character: string, code: number) => void, sgr?: (values: number[]) => void) {
   for (let i = 0; i < text.length; ) {
     const code = text.charCodeAt(i);
     const escaped = code === 27;
@@ -83,10 +80,7 @@ export function ansiToSpans(text: string): AnsiSpan[] {
       const start = i + (escaped ? 2 : 1);
       i = start;
       while (i < text.length && !(text.charCodeAt(i) >= 64 && text.charCodeAt(i) <= 126)) i++;
-      if (text[i] === "m" && /^[\d;]*$/.test(text.slice(start, i))) {
-        flush();
-        style = sgr(style, text.slice(start, i).split(";").map(Number));
-      }
+      if (text[i] === "m" && /^[\d;]*$/.test(text.slice(start, i))) sgr?.(text.slice(start, i).split(";").map(Number));
       i++;
     } else if ((escaped && [93, 80, 88, 94, 95].includes(next)) || [144, 152, 157, 158, 159].includes(code)) {
       i += escaped ? 2 : 1;
@@ -96,14 +90,50 @@ export function ansiToSpans(text: string): AnsiSpan[] {
     } else if (escaped) {
       i++;
       while (i < text.length && text.charCodeAt(i) >= 32 && text.charCodeAt(i) <= 47) i++;
-      i++;
+      // The final character, whole: one outside the BMP is two UTF-16 units.
+      i += (text.codePointAt(i) ?? 0) > 0xffff ? 2 : 1;
     } else {
-      if (code === 9 || (code >= 32 && !(code >= 127 && code <= 159))) plain += text[i];
+      unit(text[i]!, code);
       i++;
     }
   }
+}
+/** A control code (C0, DEL or C1), which a terminal acts on instead of showing. */
+const isControl = (code: number) => code < 32 || (code >= 127 && code <= 159);
+
+/** SGR is the only executable terminal sequence retained, as ordinary React styles. */
+export function ansiToSpans(text: string): AnsiSpan[] {
+  const spans: AnsiSpan[] = [];
+  let style: CSSProperties = {};
+  let plain = "";
+  const flush = () => {
+    if (plain) spans.push({ text: plain, style: { ...style } });
+    plain = "";
+  };
+  walkAnsi(
+    text,
+    (character, code) => {
+      if (code === 9 || !isControl(code)) plain += character;
+    },
+    (values) => {
+      flush();
+      style = sgr(style, values);
+    },
+  );
   flush();
   return spans;
+}
+
+/**
+ * Terminal output as plain text to pass on, for example to an agent's terminal: escape sequences
+ * go whole, tab and line feed stay, and every other control code becomes "�", so none acts there.
+ */
+export function ansiToText(text: string): string {
+  let plain = "";
+  walkAnsi(text, (character, code) => {
+    plain += code === 9 || code === 10 || !isControl(code) ? character : "�";
+  });
+  return plain;
 }
 
 export function followState(

@@ -9,7 +9,7 @@ fn snapshot() -> Snapshot {
     }
 }
 #[test]
-fn observed_codex_wrapped_choices_match_only_current_ordered_footer() {
+fn observed_codex_0_162_1_approval_with_wrapped_choices_is_waiting() {
     let builtin = profile::builtin();
     let patterns =
         profile::compiled(&crate::AgentProfiles { items: builtin }).expect("owned fixture");
@@ -26,7 +26,10 @@ fn observed_codex_wrapped_choices_match_only_current_ordered_footer() {
         patterns,
         &format!("{tail}\nworking\n1\n2\n3\n4\n5\n6")
     ));
-    assert!(!matches_waiting(
+    // Since S7-13 no row order or footer is required: a choice row marks the prompt on its
+    // own, wherever the footer is (Codex 0.164 forms have 2 to 5 choices, see
+    // watch_prompt_tests.rs). This swapped pair used to be refused for its order.
+    assert!(matches_waiting(
         patterns,
         "Press enter to confirm or esc to cancel\n3. No, and tell Codex what to do differently (esc)"
     ));
@@ -81,6 +84,24 @@ fn in_flight_output_cannot_replace_new_hook_terminal_or_turn() {
     let mut binding = old.binding.clone();
     binding.as_mut().expect("owned fixture").turn_id = Some("new-turn".into());
     assert!(!old.current(&old.task, &binding));
+}
+#[test]
+fn output_observation_only_resumes_its_own_wait() {
+    // `apply_event` lets any OutputResumed end a wait; this filter keeps quiet
+    // output from ending a hook's permission wait.
+    let mut output = task();
+    apply_event(&mut output, &AgentEvent::OutputWaiting, 1);
+    assert!(eligible(&output));
+    let mut hook = task();
+    apply_event(
+        &mut hook,
+        &AgentEvent::NeedsInput {
+            message: "permission".into(),
+        },
+        1,
+    );
+    assert_eq!(hook.state, AgentState::Waiting);
+    assert!(!eligible(&hook));
 }
 #[test]
 fn invalid_profile_regex_is_a_typed_configuration_error() {
@@ -143,3 +164,268 @@ fn session_metadata_keeps_initial_approval_detection_eligible() {
     assert!(!observation.observe(started.clone(), "approval".into(), now + QUIET));
     assert!(observation.observe(started, "approval".into(), now + QUIET * 2));
 }
+
+/// Fixtures in `tests/fixtures/codex-0.164.0/` and `tests/fixtures/pi-1.3.0/` start with `#`
+/// provenance lines and a `---` line. Only the text after that line is the pane, so the header
+/// never reaches the matcher.
+fn screen(fixture: &str) -> &str {
+    fixture
+        .split_once("\n---\n")
+        .expect("fixture header ends with a --- line")
+        .1
+}
+fn builtin_patterns(id: &str) -> WaitingPatterns {
+    profile::compiled(&crate::AgentProfiles {
+        items: profile::builtin(),
+    })
+    .expect("owned fixture")
+    .remove(id)
+    .expect("builtin profile")
+}
+fn codex_patterns() -> WaitingPatterns {
+    builtin_patterns("codex")
+}
+
+#[test]
+fn codex_trust_screen_is_waiting() {
+    let patterns = codex_patterns();
+    let trust = screen(include_str!("../tests/fixtures/codex-0.164.0/trust.txt"));
+    assert!(matches_waiting(&patterns, trust));
+    // Moving the cursor to the other choice leaves it the same prompt.
+    let moved = trust.replacen("› 1. Trust and continue", "  1. Trust and continue", 1);
+    let moved = moved.replacen("  2. Back", "› 2. Back", 1);
+    assert_ne!(moved, trust);
+    assert!(matches_waiting(&patterns, &moved));
+    // The same screen re-wrapped to 60 columns: the question now starts on the 8th non-empty
+    // row from the bottom, outside the 6 rows `matches_waiting` reads, so only the choice rows
+    // can identify the prompt.
+    let narrow = "  Folder access\n  /tmp/devbox-codex-fixture\n\n  Trust this folder? Codex can read, edit, and run files\n  here, subject to your permission settings. Folder\n  settings can run code automatically, even without a\n  model request. Continue only if you trust these files.\n  Your trust decision will be saved.\n\n› 1. Trust and continue\n  2. Back to Agent Command Center\n\n  enter continue · esc back\n";
+    let question = WaitingPatterns {
+        tail: vec![Regex::new(r"(?m)^\s*Trust this folder\?").expect("owned fixture")],
+        screen: Vec::new(),
+    };
+    assert!(
+        !matches_waiting(&question, narrow),
+        "holds only while matches_waiting reads 6 non-empty rows: the question is the 8th from the bottom; \
+         if that window grows past 8 this screen no longer shows why the pattern anchors on the choice rows"
+    );
+    assert!(matches_waiting(&patterns, narrow));
+    // Output below the prompt means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn codex_hooks_review_screen_is_waiting() {
+    let patterns = codex_patterns();
+    let review = screen(include_str!(
+        "../tests/fixtures/codex-0.164.0/hooks-review.txt"
+    ));
+    assert!(matches_waiting(&patterns, review));
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{review}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn codex_working_screen_is_not_waiting() {
+    let patterns = codex_patterns();
+    let working = screen(include_str!("../tests/fixtures/codex-0.164.0/working.txt"));
+    assert!(!matches_waiting(&patterns, working));
+    // A hooks notice, or the trust question quoted in output, is not the prompt itself.
+    for line in [
+        "3 hooks need review before they can run.",
+        "Trust this folder? Codex can read, edit, and run files here, subject to your permission settings.",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{working}\n{line}")),
+            "{line}"
+        );
+    }
+}
+
+#[test]
+fn pi_trust_screen_is_waiting() {
+    let patterns = builtin_patterns("pi");
+    let trust = screen(include_str!("../tests/fixtures/pi-1.3.0/trust.txt"));
+    assert!(matches_waiting(&patterns, trust));
+    // Moving the selection onto either row the pattern reads leaves it the same prompt.
+    let unselected = trust.replacen(" → Trust\n", "   Trust\n", 1);
+    assert_ne!(unselected, trust);
+    for row in ["Do not trust\n", "Do not trust (this session only)\n"] {
+        let moved = unselected.replacen(&format!("   {row}"), &format!(" → {row}"), 1);
+        assert_ne!(moved, unselected, "{row}");
+        assert!(matches_waiting(&patterns, &moved), "{row}");
+    }
+    // Output below the prompt means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+}
+
+#[test]
+fn pi_screens_after_the_trust_decision_are_not_waiting() {
+    let patterns = builtin_patterns("pi");
+    for (name, fixture) in [
+        (
+            "l1",
+            include_str!("../tests/fixtures/pi-1.3.0/after-trust-l1.txt"),
+        ),
+        (
+            "l2",
+            include_str!("../tests/fixtures/pi-1.3.0/after-trust-l2.txt"),
+        ),
+        (
+            "l3",
+            include_str!("../tests/fixtures/pi-1.3.0/after-trust-l3.txt"),
+        ),
+    ] {
+        let after = screen(fixture);
+        assert!(!matches_waiting(&patterns, after), "{name}");
+        // The question or one choice quoted in pi's output is not the prompt itself.
+        for line in [
+            "Trust project folder?",
+            " → Trust",
+            "Do not trust (this session only)",
+        ] {
+            assert!(
+                !matches_waiting(&patterns, &format!("{after}\n{line}")),
+                "{name}: {line}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_opencode_draft_in_shell_mode_is_waiting() {
+    let patterns = builtin_patterns("opencode");
+    // Enter would run the draft, and a send pasted after it, as a shell command.
+    let shell = screen(include_str!(
+        "../tests/fixtures/opencode-1.19.3/shell-mode.txt"
+    ));
+    assert!(matches_waiting(&patterns, shell));
+    // Output below it means it is no longer the current screen.
+    assert!(!matches_waiting(
+        &patterns,
+        &format!("{shell}\nworking\n1\n2\n3\n4\n5\n6")
+    ));
+    // The prompt box out of shell mode, and the words in a sentence, are not the mode.
+    let normal = shell.replacen("┃  Shell", "┃  Build", 1).replacen(
+        "esc exit shell mode",
+        "tab agents  ctrl+p commands",
+        1,
+    );
+    assert_ne!(normal, shell);
+    assert!(!matches_waiting(&patterns, &normal));
+    for line in [
+        "• Press esc to exit shell mode, then send the prompt.",
+        "  Exit shell mode",
+    ] {
+        assert!(
+            !matches_waiting(&patterns, &format!("{normal}\n{line}")),
+            "{line}"
+        );
+    }
+}
+
+#[test]
+fn codex_trust_screens_for_untrusted_folders_are_waiting() {
+    let patterns = codex_patterns();
+    // A folder whose saved trust is "untrusted" opens restricted, and a task that was started
+    // while it was trusted opens as it is; Enter picks either.
+    for (name, fixture) in [
+        (
+            "restricted",
+            include_str!("../tests/fixtures/codex-0.166.0/trust-restricted.txt"),
+        ),
+        (
+            "existing task",
+            include_str!("../tests/fixtures/codex-0.166.0/trust-existing-task.txt"),
+        ),
+    ] {
+        let trust = screen(fixture);
+        assert!(matches_waiting(&patterns, trust), "{name}");
+        // Without the "Agent Command Center", the other choice quits.
+        let quit = trust.replacen("2. Back to Agent Command Center", "2. Quit", 1);
+        assert_ne!(quit, trust, "{name}");
+        assert!(matches_waiting(&patterns, &quit), "{name}");
+        // Output below the prompt means it is no longer the current screen.
+        assert!(
+            !matches_waiting(&patterns, &format!("{trust}\nworking\n1\n2\n3\n4\n5\n6")),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn every_profile_of_a_tool_family_keeps_its_patterns_and_adds_its_own() {
+    let profile = |id: &str, hooks, patterns: &[&str]| profile::ToolProfile {
+        id: id.into(),
+        label: id.into(),
+        command: id.into(),
+        hooks,
+        waiting_patterns: patterns.iter().map(|&p| p.to_owned()).collect(),
+    };
+    let compiled = profile::compiled(&crate::AgentProfiles {
+        items: vec![
+            // A configured `codex` replaces the builtin one; the others are added.
+            profile("codex", profile::Hooks::Codex, &[]),
+            profile("codex-fast", profile::Hooks::Codex, &["(?m)^ready$"]),
+            profile("claude-work", profile::Hooks::Claude, &[]),
+            profile("pi-alt", profile::Hooks::Pi, &[]),
+            profile("opencode-alt", profile::Hooks::Opencode, &[]),
+            profile("mine", profile::Hooks::None, &["(?m)^ready$"]),
+        ],
+    })
+    .expect("owned profiles");
+    let network = screen(include_str!(
+        "../tests/fixtures/codex-0.166.0/approval-network.txt"
+    ));
+    let dialog = screen(include_str!(
+        "../tests/fixtures/codex-0.166.0/dialog-resume-goal-200x50.txt"
+    ));
+    let claude = screen(include_str!("../tests/fixtures/claude-2.1.308/trust.txt"));
+    let claude_shell = screen(include_str!(
+        "../tests/fixtures/claude-2.1.308/shell-mode.txt"
+    ));
+    let pi = screen(include_str!("../tests/fixtures/pi-1.3.0/trust.txt"));
+    let opencode = screen(include_str!(
+        "../tests/fixtures/opencode-1.19.3/shell-mode.txt"
+    ));
+    let waits = |id: &str, shown: &str| matches_waiting(&compiled[id], shown);
+    for id in ["codex", "codex-fast"] {
+        assert!(waits(id, network), "{id}");
+        assert!(waits(id, dialog), "{id}");
+        assert!(!waits(id, opencode), "{id}");
+        assert!(!waits(id, claude_shell), "{id}");
+    }
+    assert!(waits("claude-work", claude));
+    // Claude's shell mode comes with its family, whatever the profile's id, and with no other.
+    assert!(waits("claude-work", claude_shell));
+    assert!(!waits("pi-alt", claude_shell));
+    assert!(waits("pi-alt", pi));
+    assert!(waits("opencode-alt", opencode));
+    // A profile's own patterns add to its family's.
+    assert!(waits("codex-fast", "ready\n"));
+    assert!(!waits("codex", "ready\n"));
+    assert!(waits("mine", "ready\n"));
+    assert!(!waits("mine", opencode));
+    // opencode's plugin reports its prompts, so only its shell mode is read from the screen, and
+    // `none` has only its own patterns.
+    for id in ["opencode-alt", "mine"] {
+        for shown in [network, dialog, claude, pi, claude_shell] {
+            assert!(!waits(id, shown), "{id}");
+        }
+    }
+}
+
+#[path = "watch_dialog_tests.rs"]
+mod dialogs;
+#[path = "watch_form_tests.rs"]
+mod forms;
+#[path = "watch_prompt_tests.rs"]
+mod prompts;

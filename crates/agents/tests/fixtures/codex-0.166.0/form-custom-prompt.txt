@@ -1,0 +1,14 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/custom_prompt_view.rs, codex-rs/tui/src/bottom_pane/custom_prompt_view/picker.rs, codex-rs/tui/src/chatwidget/goal_menu.rs가 그리는 목표 편집(Edit goal)처럼 글 한 덩이를 받는 입력 상자(CustomPromptView, 40×8) 화면이다. 붙여 넣은 글은 이 상자에 들어가고 Enter는 그 글로 목표를 정한다. 검토 지시·대화 저장·이름 바꾸기·빠른 다이얼·마켓플레이스 추가도 같은 상자다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/snapshots/codex_tui__bottom_pane__custom_prompt_view__tests__picker_prompt_multiline_40x8.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 그리는 소스 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Edit goal
+
+› Check the parser and preserve 日 本
+  語 .
+
+
+  enter submit · esc normal mode

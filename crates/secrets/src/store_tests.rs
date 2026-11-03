@@ -83,6 +83,15 @@ async fn crud_list_has_names_and_presence_but_no_values() {
     ));
 }
 
+/// The settings file, not the secret, is what needs fixing: the refusal names it.
+fn config_invalid<T>(
+    result: &Result<T, devbox_protocol::Fail<SecretsError>>,
+    path: &std::path::Path,
+) -> bool {
+    matches!(result, Err(devbox_protocol::Fail::Domain(SecretsError::ConfigInvalid { file }))
+        if *file == path.display().to_string())
+}
+
 #[tokio::test]
 async fn invalid_secret_config_section_returns_error_and_preserves_file() {
     for text in [
@@ -90,6 +99,7 @@ async fn invalid_secret_config_section_returns_error_and_preserves_file() {
         "secrets = []\n",
         "[secrets]\nnames='oops'\n",
         "[secrets]\nnames=[1]\n",
+        "[secrets]\nnames = ['A'\n",
     ] {
         let (_t, db, p) = fixture();
         let service = SecretsService::with_key(db, p.clone(), crypto::Key::from_bytes([3; 32]))
@@ -97,15 +107,13 @@ async fn invalid_secret_config_section_returns_error_and_preserves_file() {
             .expect("key");
         let path = p.config_dir.join("config.toml");
         std::fs::write(&path, text).expect("owned invalid config");
-        assert!(matches!(
-            service
-                .set(SetSecret {
-                    name: "TOKEN".into(),
-                    value: "owned-token".into(),
-                })
-                .await,
-            Err(devbox_protocol::Fail::Domain(SecretsError::InvalidInput))
-        ));
+        let result = service
+            .set(SetSecret {
+                name: "TOKEN".into(),
+                value: "owned-token".into(),
+            })
+            .await;
+        assert!(config_invalid(&result, &path), "{text}: {result:?}");
         assert_eq!(
             std::fs::read_to_string(path).expect("config preserved"),
             text
@@ -115,6 +123,39 @@ async fn invalid_secret_config_section_returns_error_and_preserves_file() {
             Err(devbox_protocol::Fail::Domain(SecretsError::Missing { .. }))
         ));
     }
+}
+
+/// A linked or non-UTF-8 `config.toml` is a settings-file problem too, and stays untouched.
+#[tokio::test]
+async fn linked_or_unreadable_config_is_refused_as_a_config_problem() {
+    let (_t, db, p) = fixture();
+    let service = SecretsService::with_key(db, p.clone(), crypto::Key::from_bytes([3; 32]))
+        .await
+        .expect("key");
+    let path = p.config_dir.join("config.toml");
+    let set = || {
+        service.set(SetSecret {
+            name: "TOKEN".into(),
+            value: "owned-token".into(),
+        })
+    };
+    let target = p.config_dir.join("elsewhere.toml");
+    std::fs::write(&target, "# not ours\n").expect("owned link target");
+    std::os::unix::fs::symlink(&target, &path).expect("owned link");
+    let result = set().await;
+    assert!(config_invalid(&result, &path), "{result:?}");
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("target"),
+        "# not ours\n"
+    );
+    std::fs::remove_file(&path).expect("owned link");
+    std::fs::write(&path, b"[secrets]\nnames = ['\xff']\n").expect("owned non-UTF-8 config");
+    let result = set().await;
+    assert!(config_invalid(&result, &path), "{result:?}");
+    assert_eq!(
+        std::fs::read(&path).expect("config preserved"),
+        b"[secrets]\nnames = ['\xff']\n"
+    );
 }
 
 #[tokio::test]

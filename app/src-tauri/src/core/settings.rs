@@ -58,6 +58,14 @@ pub fn load(path: &Path) -> std::io::Result<Settings> {
         Err(e) => Err(e),
     }
 }
+/// What the app says when its own settings file does not load. Deleting or renaming the file
+/// starts the app on defaults; the app never moves or deletes it for the user.
+pub fn unreadable(path: &Path, error: &std::io::Error) -> String {
+    format!(
+        "앱 설정 파일 {}을(를) 읽지 못했습니다. 이 파일을 지우거나 이름을 바꾸면 기본 설정으로 시작합니다.\n{error}",
+        path.display()
+    )
+}
 pub fn save(path: &Path, settings: &Settings) -> std::io::Result<()> {
     let parent = path
         .parent()
@@ -117,6 +125,29 @@ mod tests {
                 paused: true
             }
         );
+    }
+    #[test]
+    fn an_unreadable_settings_file_names_itself_and_the_way_back_to_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, b"{ broken").unwrap();
+        let error = load(&path).err().expect("a broken file does not load");
+        let text = unreadable(&path, &error);
+        assert!(text.starts_with(&format!(
+            "앱 설정 파일 {}을(를) 읽지 못했습니다. 이 파일을 지우거나 이름을 바꾸면 기본 설정으로 시작합니다.\n",
+            path.display()
+        )));
+        assert!(text.ends_with(&error.to_string()));
+        // Only the user moves or deletes the file.
+        assert_eq!(std::fs::read(&path).unwrap(), b"{ broken");
+        // Both readers are Windows-only code: the MSVC check compiles them, and this pins them.
+        let supervisor = include_str!("../platform/supervisor.rs")
+            .split_whitespace()
+            .collect::<String>();
+        assert!(
+            supervisor.contains("Err(e)=>{conn.settings_invalid(app,generation,&path,&e);return;}")
+        );
+        assert!(supervisor.contains("IpcError::new(settings::unreadable(&path,&error))"));
     }
     #[test]
     fn atomic_save_reports_errors_and_preserves_previous_settings() {

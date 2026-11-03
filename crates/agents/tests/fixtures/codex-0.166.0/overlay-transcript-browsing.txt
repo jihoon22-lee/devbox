@@ -1,0 +1,14 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/pager_overlay/transcript.rs, codex-rs/tui/src/app_backtrack/prompt_navigation.rs가 그리는 대화 기록 보기(Ctrl+T, 대체 화면)의 이전 입력 고르기(80열) 화면이다. 붙여 넣은 글은 버려지고 Enter는 고른 입력 앞으로 대화를 되감는다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/app/snapshots/codex_tui__app__owned_transcript__tests__browsing__browsing_footer.snap의 '80 columns' 화면에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.165.0에서 같고(cmp) rust-v0.164.0에서는 머리 줄과 footer 사이 입력 줄의 자리만 다르다. 그리는 소스 중 transcript.rs는 다른 곳만 바뀌어 머리 줄과 footer 문구가 세 태그에서 같다(diff). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+/ T R A N S C R I P T / / / / / / / / / / / / / / / / / / / / / / / / / / / / /
+
+› first prompt
+
+› second prompt
+
+
+Browsing · ↑↓/jk scroll · ←→/hl prompts · ⌃t details · ↵ rewind · esc back

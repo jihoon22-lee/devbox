@@ -1,4 +1,5 @@
 use crate::{
+    command_path::ResolvedCommand,
     model::{AgentTask, AgentsError},
     profile::{Hooks, ToolProfile},
     service::{AgentsService, Result, apply_event, changed, now_ms},
@@ -20,13 +21,18 @@ pub(crate) fn private_dir(path: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
+/// Refuses a directory that is, or sits below, a symlink before a private file is created in it.
+pub(crate) fn no_symlink_ancestors(dir: &Path) -> std::io::Result<()> {
+    for ancestor in dir.ancestors() {
+        if std::fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(std::io::Error::other("symlink private file ancestor"));
+        }
+    }
+    Ok(())
+}
 pub(crate) fn private_file(path: &Path, body: &str, executable: bool) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
-        for ancestor in parent.ancestors() {
-            if std::fs::symlink_metadata(ancestor).is_ok_and(|m| m.file_type().is_symlink()) {
-                return Err(std::io::Error::other("symlink private file ancestor"));
-            }
-        }
+        no_symlink_ancestors(parent)?;
     }
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
@@ -38,6 +44,15 @@ pub(crate) fn private_file(path: &Path, body: &str, executable: bool) -> std::io
     let mut file = options.open(path)?;
     file.write_all(body.as_bytes())?;
     file.sync_all()
+}
+/// The prompt as the tool reads it from `prompt.md`. pi attaches an argument that starts with
+/// `@` as a file, even after `--`; one space before it keeps it the message.
+pub(crate) fn prompt_text(hooks: Hooks, prompt: &str) -> std::borrow::Cow<'_, str> {
+    if hooks == Hooks::Pi && prompt.starts_with('@') {
+        std::borrow::Cow::Owned(format!(" {prompt}"))
+    } else {
+        std::borrow::Cow::Borrowed(prompt)
+    }
 }
 fn internal(context: &str, error: impl std::fmt::Display) -> Fail<AgentsError> {
     Fail::Internal(format!("{context}: {error}"))
@@ -66,10 +81,73 @@ impl From<Fail<AgentsError>> for PreparationFailure {
 }
 type PreparationResult = std::result::Result<(), PreparationFailure>;
 impl AgentsService {
+    /// The profile's CLI, found the way the user's terminal finds it, before anything is created.
+    /// `None` when shell syntax comes before the program: that command runs as written.
+    pub(crate) async fn resolve_tool(
+        &self,
+        profile: &ToolProfile,
+    ) -> Result<Option<ResolvedCommand>> {
+        let Some(program) = crate::command_path::program_of(&profile.command) else {
+            return Ok(None);
+        };
+        // systemd gives the daemon the settings env file's PATH, which new panes start with.
+        let service_path = std::env::var_os("PATH").unwrap_or_default();
+        self.lookups
+            .resolve(program, &service_path, &self.shell)
+            .await
+            .map(Some)
+            .ok_or_else(|| {
+                AgentsError::ToolMissing {
+                    command: program.to_owned(),
+                }
+                .into()
+            })
+    }
+    /// The file a session loads devbox's connection from: the Claude settings, the opencode
+    /// plugin or the pi extension, content-addressed under `agent-hooks/`. Codex takes an
+    /// argument instead.
+    pub(crate) async fn hook_file(&self, hooks: Hooks) -> Result<Option<String>> {
+        let (stem, ext, body) = match hooks {
+            // A changed devbox path gets a new file; running sessions keep their old one,
+            // including the pre-content-addressed `claude.json`.
+            Hooks::Claude => (
+                "claude",
+                "json",
+                crate::hooks::claude_settings(&self.devbox_bin),
+            ),
+            Hooks::Opencode => (
+                "opencode-plugin",
+                "ts",
+                crate::plugin_event::OPENCODE_PLUGIN.to_owned(),
+            ),
+            Hooks::Pi => (
+                "pi-extension",
+                "ts",
+                crate::plugin_event::PI_EXTENSION.to_owned(),
+            ),
+            Hooks::Codex | Hooks::None => return Ok(None),
+        };
+        let _hook_files = self.hook_files.lock().await;
+        let dir = self.paths.data_dir.join("agent-hooks");
+        private_dir(&dir).map_err(|e| internal("agent hooks directory", e))?;
+        let path = crate::artifacts::write_artifact(&dir, stem, ext, &body)
+            .map_err(|e| internal("agent hooks", e))?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    }
+    /// The program of profile `id` when its CLI cannot be found the way a start looks for it.
+    /// A composite launch checks each of its agents this way before it starts anything.
+    pub async fn missing_tool(&self, id: &str) -> Option<String> {
+        let profile = crate::profile::resolve(&self.profiles, id)?;
+        match self.resolve_tool(&profile).await {
+            Err(Fail::Domain(AgentsError::ToolMissing { command })) => Some(command),
+            _ => None,
+        }
+    }
     pub(crate) async fn prepare(
         &self,
         task: &AgentTask,
         profile: &ToolProfile,
+        tool: Option<&ResolvedCommand>,
         project: &devbox_projects::Project,
         config: &devbox_projects::trust::SetupSnapshot,
     ) -> PreparationResult {
@@ -79,7 +157,7 @@ impl AgentsService {
             .await?
             .launch_id
             .ok_or_else(|| internal("agent launch", "missing launch identity"))?;
-        self.prepare_owned(task, profile, project, config, &launch_id)
+        self.prepare_owned(task, profile, tool, project, config, &launch_id)
             .await
             .map_err(|failure| match failure {
                 PreparationFailure::Failed { error, .. } => PreparationFailure::Failed {
@@ -93,6 +171,7 @@ impl AgentsService {
         &self,
         task: &AgentTask,
         profile: &ToolProfile,
+        tool: Option<&ResolvedCommand>,
         project: &devbox_projects::Project,
         config: &devbox_projects::trust::SetupSnapshot,
         launch_id: &str,
@@ -139,32 +218,11 @@ impl AgentsService {
         private_dir(&data).map_err(|e| internal("agent data permissions", e))?;
         let prompt = data.join("prompt.md");
         let script = data.join("start.sh");
-        private_file(&prompt, &task.prompt, false).map_err(|e| internal("agent prompt", e))?;
+        private_file(&prompt, &prompt_text(profile.hooks, &task.prompt), false)
+            .map_err(|e| internal("agent prompt", e))?;
         let phase = self.phase_path(task, launch_id);
         private_file(&phase, "starting\n", false).map_err(|e| internal("agent phase", e))?;
-        let settings = if profile.hooks == Hooks::Claude {
-            let _hook_files = self.hook_files.lock().await;
-            let hooks = self.paths.data_dir.join("agent-hooks");
-            private_dir(&hooks).map_err(|e| internal("agent hooks directory", e))?;
-            let path = hooks.join("claude.json");
-            let body = crate::hooks::claude_settings(&self.devbox_bin);
-            match private_file(&path, &body, false) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file())
-                        || std::fs::read_to_string(&path)
-                            .map_err(|e| internal("read agent hooks", e))?
-                            != body
-                    {
-                        return Err(internal("agent hooks", "existing file differs").into());
-                    }
-                }
-                Err(e) => return Err(internal("agent hooks", e).into()),
-            };
-            Some(path.to_string_lossy().into_owned())
-        } else {
-            None
-        };
+        let hook_file = self.hook_file(profile.hooks).await?;
         let plan = crate::start::StartPlan {
             devbox: self.devbox_bin.clone(),
             instance: self.paths.instance.as_str().into(),
@@ -175,10 +233,12 @@ impl AgentsService {
             workdir: task.workdir.clone(),
             setup: config.setup().to_vec(),
             tool_command: profile.command.clone(),
+            tool_dir: tool.and_then(ResolvedCommand::dir).map(Into::into),
             hooks: profile.hooks,
-            claude_settings: settings,
+            hook_file,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
             resume_session: None,
+            session_id: task.session_id.clone(),
             use_scope: self.use_scope,
         };
         private_file(&script, &crate::start::render_start_script(&plan), true)
@@ -319,31 +379,46 @@ impl AgentsService {
             .await
             .ok()
             .map(|refs| refs.iter().any(|r| r == branch));
-        let registered = devbox_git::run::output(
+        let records = devbox_git::run::output(
             Path::new(&project.path),
             &["worktree", "list", "--porcelain", "-z"],
         )
         .await
         .ok()
-        .and_then(|(code, out, _)| {
-            if code == 0 {
-                Some(
-                    out.split_terminator('\0')
-                        .any(|field| field == format!("worktree {path}")),
-                )
-            } else {
-                None
-            }
+        .and_then(|(code, out, _)| (code == 0).then_some(out));
+        let registered = records.as_ref().map(|out| {
+            out.split_terminator('\0')
+                .any(|field| field == format!("worktree {path}"))
         });
-        self.record_resources(
-            &task.id,
-            crate::tracker::Resources::Partial {
-                path_exists,
-                branch_exists,
-                worktree_registered: registered,
-            },
-        )
-        .await?;
+        // Owned stays owned only while its directory, its branch and that directory's
+        // registration on that branch are all exactly there, so cleanup can remove them.
+        let exact = std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
+            && branch_exists == Some(true)
+            && records.as_ref().is_some_and(|out| {
+                out.split("\0\0").any(|record| {
+                    let fields: Vec<_> = record.split('\0').collect();
+                    fields.first() == Some(&format!("worktree {path}").as_str())
+                        && fields.contains(&format!("branch refs/heads/{branch}").as_str())
+                })
+            });
+        let observed = crate::tracker::Resources::Partial {
+            path_exists,
+            branch_exists,
+            worktree_registered: registered,
+        };
+        let id = task.id.clone();
+        self.db
+            .write(move |tx| {
+                let mut binding =
+                    crate::store::binding(tx, &id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+                if exact && binding.resources == crate::tracker::Resources::Owned {
+                    return Ok(());
+                }
+                binding.resources = observed;
+                crate::store::put_binding(tx, &id, &binding)
+            })
+            .await
+            .map_err(|e| internal("record agent resources", e))?;
         if !path_exists && branch_exists == Some(false) && registered == Some(false) {
             self.update(&task.id, move |t| {
                 t.branch = None;
@@ -454,5 +529,39 @@ impl AgentsService {
             .await
             .map_err(|e| internal("record preparation failure", e))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn prompt_starting_with_at_sign_is_prefixed_for_pi_only() {
+        let prompts = [
+            "@notes.md fix it",
+            "@",
+            "-x",
+            "--",
+            "--model=unrequested",
+            "quotes '\" $HOME $(touch injected) `touch ticked` \\ end",
+            "한국어 --option\n두 번째 줄",
+            "",
+            " @spaced",
+            "see @notes.md",
+        ];
+        // Claude, Codex and opencode get the prompt byte for byte.
+        for hooks in [Hooks::Claude, Hooks::Codex, Hooks::Opencode, Hooks::None] {
+            for prompt in prompts {
+                assert_eq!(prompt_text(hooks, prompt), prompt, "{hooks:?} {prompt:?}");
+            }
+        }
+        // pi would attach `@…` as a file: one leading space keeps it the message.
+        for prompt in prompts {
+            let expected = match prompt.strip_prefix('@') {
+                Some(_) => format!(" {prompt}"),
+                None => prompt.to_owned(),
+            };
+            assert_eq!(prompt_text(Hooks::Pi, prompt), expected, "{prompt:?}");
+        }
     }
 }

@@ -26,24 +26,52 @@ export function nextWaiting(groups: ReturnType<typeof groupByUrgency>, current?:
 export function attentionCount(tasks: AgentTask[]) {
   return tasks.filter((t) => t.state === "waiting" || t.state === "idle" || t.state === "failed").length;
 }
+/** A task of a profile devbox connects to that reported no session in its first 90 seconds, or a
+ * pi launch that has not said in its first 90 seconds that it is ready. */
 export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: number) {
-  const claude = new Set(profiles.filter((p) => p.hooks === "claude").map((p) => p.id));
-  return tasks.some(
-    (t) => t.state === "running" && claude.has(t.profile) && !t.sessionId && nowMs - t.createdMs > 90_000,
-  );
+  const hooks = new Map(profiles.map((p) => [p.id, p.hooks]));
+  // Only Claude reports a session before a prompt; the others report it with the first one.
+  const reports = (t: AgentTask) => {
+    const kind = hooks.get(t.profile);
+    return kind === "claude" || (kind !== undefined && kind !== "none" && t.prompt.trim() !== "");
+  };
+  // pi has its session from the start, and says on every launch, prompt or not, that it is ready.
+  const silent = (t: AgentTask) =>
+    hooks.get(t.profile) === "pi"
+      ? t.startingSinceMs !== null && nowMs - t.startingSinceMs > 90_000
+      : reports(t) && !t.sessionId && nowMs - t.createdMs > 90_000;
+  return tasks.some((t) => t.state === "running" && silent(t));
 }
 export function fillTemplate(body: string, vars: { title: string; branch: string; project: string }) {
   return body.replace(/\{\{(title|branch|project)\}\}/g, (_, key: keyof typeof vars) => vars[key]);
 }
-/** Approximate only: the daemon reserves the branch and may add a collision suffix. */
-export function previewBranch(title: string, nowMs: number) {
-  const slug = title
+/** Every task branch lives under this prefix; cleanup only ever touches branches that do. */
+export const BRANCH_PREFIX = "agent/";
+const MAX_BRANCH_NAME = 40;
+/** The part after `agent/` that the daemon makes from a title: ASCII only, empty when there is none. */
+export function titleSlug(title: string) {
+  return title
     .replace(/[^a-zA-Z0-9]+/g, "-")
     .toLowerCase()
     .replace(/^-/, "")
-    .slice(0, 40)
+    .slice(0, MAX_BRANCH_NAME)
     .replace(/-$/, "");
-  return `agent/${slug || `task-${Math.floor(nowMs / 1000)}`}`;
+}
+/** Approximate only: the daemon reserves the branch and may add a collision suffix. */
+export function previewBranch(title: string, nowMs: number) {
+  return `${BRANCH_PREFIX}${titleSlug(title) || `task-${Math.floor(nowMs / 1000)}`}`;
+}
+/**
+ * Why a branch name (the part after `agent/`) cannot be used, or null. This is the daemon's slug
+ * rule (`plan::checked_slug`), which the daemon applies again: lowercase ASCII letters and digits
+ * with single hyphens between them, up to 40 characters. It is a strict subset of what
+ * `git check-ref-format` accepts, so anything that passes here is also a valid ref name.
+ */
+export function branchNameProblem(name: string) {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))
+    return "브랜치 이름에는 영문 소문자, 숫자, 하이픈(-)만 쓸 수 있습니다. 하이픈은 처음이나 끝에 쓸 수 없고 연달아 쓸 수도 없습니다. 이름을 고쳐 주세요.";
+  if (name.length > MAX_BRANCH_NAME) return "브랜치 이름이 40자를 넘었습니다. 40자 이내로 줄여 주세요.";
+  return null;
 }
 export const STATE_LABEL: Record<AgentTask["state"], string> = {
   preparing: "준비 중",

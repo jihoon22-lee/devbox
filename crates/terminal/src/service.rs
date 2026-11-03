@@ -113,6 +113,8 @@ impl TerminalService {
         {
             return Err(TerminalError::NotFound { id: p.id }.into());
         }
+        // Asked on every attach and never kept: the server can be replaced while the daemon runs.
+        let extended_keys = self.tmux.extended_keys(&p.id).await;
         if ctx.cancel.is_cancelled() {
             return Err(TerminalError::StreamUnavailable {}.into());
         }
@@ -132,6 +134,7 @@ impl TerminalService {
             stream_id,
             cols: dimensions.cols,
             rows: dimensions.rows,
+            extended_keys,
         })
     }
     pub async fn resize(&self, ctx: devbox_protocol::Ctx, p: ResizeStream) -> Result<Done> {

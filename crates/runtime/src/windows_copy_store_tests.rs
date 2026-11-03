@@ -255,6 +255,42 @@ async fn committed_grant_is_one_shot_and_cancellation_cannot_release_its_consume
         .expect("one-shot grant");
 }
 #[tokio::test]
+async fn a_second_close_of_the_same_exit_is_done_and_a_different_one_still_fails() {
+    // Two reconcile passes (the poll, a reservation, a stop) can both prove one exit.
+    let o = owned().await;
+    let identity = o.copy.identity.clone();
+    let r = reader(&o, "run", "rev1");
+    let a = attempt(&o, &r, "attempt", 1);
+    let receipt = assigned(&a);
+    o.f.db
+        .write(move |tx| {
+            store::reserve(tx, &identity, &r)?.expect("admitted transition");
+            store::publish(tx, &r.copy)?.expect("admitted transition");
+            store::submit(tx, &r.copy)?.expect("admitted transition");
+            store::intent(tx, &a)?.expect("admitted transition");
+            store::commit(tx, &a.control.nonce, &receipt)?.expect("admitted transition");
+            store::seal(tx, &r.copy.launch_id)?;
+            store::observed_closed(tx, &a.control.nonce, &receipt)?.expect("the first close");
+            store::observed_closed(tx, &a.control.nonce, &receipt)?.expect("the same exit again");
+            let mut other = receipt.clone();
+            other.creation_time.push('1');
+            assert!(matches!(
+                store::observed_closed(tx, &a.control.nonce, &other)?,
+                Err(RuntimeError::WindowsCopyUnavailable)
+            ));
+            let closed = store::attempt(tx, &a.control.nonce)?.expect("attempt");
+            assert_eq!(closed.phase, store::AttemptPhase::Closed);
+            assert_eq!(closed.assigned, Some(receipt));
+            assert_eq!(
+                store::reader(tx, &r.copy.launch_id)?.expect("reader").state,
+                store::ReaderState::Closed
+            );
+            Ok(())
+        })
+        .await
+        .expect("a repeated close");
+}
+#[tokio::test]
 async fn precommit_cancel_fences_delayed_assignment_and_explicit_stop_seals_new_attempt_admission()
 {
     let o = owned().await;

@@ -6,6 +6,8 @@ devbox_protocol::domain_error! {pub enum SecretsError {
  InvalidInput = "secrets.invalid_input",
  Missing { names:Vec<String> } = "secrets.missing",
  Unavailable = "secrets.unavailable",
+ // `config.toml` is linked, not a regular file, not UTF-8/TOML or has an invalid `[secrets]`.
+ ConfigInvalid { file:String } = "secrets.config_invalid",
 }}
 #[derive(Serialize, Deserialize, ts_rs::TS)]
 #[serde(deny_unknown_fields)]

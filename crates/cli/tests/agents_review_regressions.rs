@@ -189,7 +189,7 @@ async fn discard_refuses_same_head_dirty_content_and_ignored_changes() {
 }
 
 #[tokio::test]
-async fn discard_refuses_teardown_writing_unconfirmed_contents() {
+async fn discard_drops_what_its_teardown_wrote() {
     let mut d = fixture(Some(false));
     let repo = d.git_repo("projects/app");
     std::fs::create_dir(Path::new(&repo).join(".devbox")).expect("config directory");
@@ -208,25 +208,29 @@ async fn discard_refuses_teardown_writing_unconfirmed_contents() {
         .wait_for(&client, &id, "idle", Duration::from_secs(10))
         .await;
     let check = call(&client, "agents.discard_check", json!({"id":id})).await;
-    let result = client
-        .raw_call(
-            "agents.discard",
-            json!({"id":id,"expect":discard_expect(&check)}),
-            None,
-        )
-        .await;
-    assert!(
-        result.is_err(),
-        "teardown changes are outside the confirmed snapshot"
-    );
-    assert!(format!("{result:?}").contains("agents.state_changed"));
-    assert_eq!(
-        std::fs::read_to_string(
-            Path::new(idle["worktreePath"].as_str().expect("path")).join("agent.txt")
-        )
-        .expect("file"),
-        "changed"
-    );
+    // The folder is checked against the confirmation before the teardown runs. What the teardown
+    // then writes into it, here an edit of a committed file, goes with the folder.
+    let closed = call(
+        &client,
+        "agents.discard",
+        json!({"id":id,"expect":discard_expect(&check)}),
+    )
+    .await;
+    assert_eq!(closed["closedHow"], "discarded");
+    assert!(!Path::new(idle["worktreePath"].as_str().expect("path")).exists());
+    let branch = d
+        .environment("git")
+        .args([
+            "-C",
+            &repo,
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{}", idle["branch"].as_str().expect("branch")),
+        ])
+        .status()
+        .expect("owned fixture");
+    assert!(!branch.success(), "the discarded branch is deleted");
 }
 
 #[tokio::test]
@@ -303,38 +307,10 @@ async fn oversized_prompt_is_rejected_before_task_reservation() {
     );
 }
 
-fn tmux_failure_wrapper(d: &mut TestDaemon, operation: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    let bin = d.home.path().join("bin");
-    std::fs::create_dir(&bin).expect("owned wrapper directory");
-    let wrapper = bin.join("tmux");
-    let marker = d.home.path().join("fail-tmux");
-    let count = d.home.path().join("paste-count");
-    // Only this fixture daemon sees the wrapper; the real owned tmux server remains unchanged.
-    std::fs::write(&wrapper, format!(
-        "#!/bin/sh\nfor arg in \"$@\"; do if [ \"$arg\" = paste-buffer ]; then printf x >>{}; fi; done\nif [ -f {} ]; then\n for arg in \"$@\"; do\n  if [ \"$arg\" = '{}' ]; then cat >/dev/null; exit 1; fi\n done\nfi\nexec /usr/bin/tmux \"$@\"\n",
-        devbox_core::sh_quote(count.to_str().expect("counter")), devbox_core::sh_quote(marker.to_str().expect("marker")), operation,
-    )).expect("owned wrapper");
-    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755))
-        .expect("wrapper permissions");
-    let mut path = vec![bin];
-    path.extend(std::env::split_paths(
-        &std::env::var_os("PATH").expect("PATH"),
-    ));
-    d.extra_env.push((
-        "PATH".into(),
-        std::env::join_paths(path)
-            .expect("fixture PATH")
-            .to_str()
-            .expect("UTF-8 PATH")
-            .into(),
-    ));
-}
-
 #[tokio::test]
 async fn failed_load_buffer_preserves_idle_attention_and_instruction_history() {
     let mut d = fixture(Some(false));
-    tmux_failure_wrapper(&mut d, "load-buffer");
+    d.tmux_failure_wrapper("load-buffer");
     let (_, client, _, id, idle) = start(&mut d).await;
     std::fs::write(d.home.path().join("fail-tmux"), "owned failure").expect("marker");
     let result = client
@@ -354,7 +330,7 @@ async fn failed_load_buffer_preserves_idle_attention_and_instruction_history() {
 #[tokio::test]
 async fn failed_enter_records_unknown_delivery_without_claiming_success_or_retry() {
     let mut d = fixture(Some(false));
-    tmux_failure_wrapper(&mut d, "send-keys");
+    d.tmux_failure_wrapper("send-keys");
     let (_, client, _, id, _) = start(&mut d).await;
     std::fs::write(d.home.path().join("fail-tmux"), "owned failure").expect("marker");
     let result = client
@@ -483,7 +459,7 @@ fn send_persistence_db(d: &TestDaemon) -> devbox_core::Db {
 }
 async fn send_finish_failure(ambiguous_paste: bool) {
     let mut d = fixture(Some(false));
-    tmux_failure_wrapper(&mut d, "send-keys");
+    d.tmux_failure_wrapper("send-keys");
     let (_, client, _, id, _) = start(&mut d).await;
     let db = send_persistence_db(&d);
     db.write(|tx| tx.execute_batch("CREATE TRIGGER fail_send_finish BEFORE UPDATE ON agents_tasks WHEN json_extract(NEW.body,'$.followUps[#-1].delivery') IN ('delivered','unknown') BEGIN SELECT RAISE(FAIL,'fixture finish failure'); END"))
@@ -521,7 +497,7 @@ async fn ambiguous_paste_then_finish_db_failure_still_reports_delivery_unknown()
 #[tokio::test]
 async fn successful_paste_then_final_get_failure_reports_delivery_unknown() {
     let mut d = fixture(Some(false));
-    tmux_failure_wrapper(&mut d, "send-keys");
+    d.tmux_failure_wrapper("send-keys");
     let (_, client, _, id, _) = start(&mut d).await;
     let db = send_persistence_db(&d);
     db.write(|tx| tx.execute_batch("CREATE TRIGGER fail_send_result AFTER UPDATE ON agents_tasks WHEN json_extract(NEW.body,'$.followUps[#-1].delivery')='delivered' AND json_extract(NEW.body,'$.state')!='fixture-final-get-failure' BEGIN UPDATE agents_tasks SET body=json_set(NEW.body,'$.state','fixture-final-get-failure') WHERE id=NEW.id; END"))

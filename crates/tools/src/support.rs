@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 pub struct BundleInput {
     pub paths: Paths,
     pub doctor: DoctorReport,
-    pub notes_vault: VaultSnapshot,
+    /// `None` while notes are off: note paths cannot be masked, so logs and crashes are
+    /// left out (`logs_omitted: "notes_disabled"`).
+    pub notes_vault: Option<VaultSnapshot>,
     pub version: String,
 }
 /// One configured alias and its canonical directory, captured before collecting diagnostics.
@@ -46,7 +48,8 @@ pub struct SupportBundle {
     #[ts(optional)]
     pub logs_omitted: Option<String>,
 }
-/// A locked/unavailable store is not an export failure: omit logs and crashes.
+/// A locked/unavailable store is not an export failure: omit logs and crashes. Neither is
+/// a missing notes vault (notes off).
 pub async fn create_bundle(input: BundleInput, secrets: &SecretsService) -> R<SupportBundle> {
     let values = match secrets.public_status().await {
         Ok(status) if !status.locked => match secrets.list().await {

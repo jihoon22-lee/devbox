@@ -1,8 +1,9 @@
 //! Serialized user actions. Hooks still update the latest database row independently.
 use crate::{
+    closed_review::Closure,
     model::*,
     service::{AgentsService, Result, apply_event, now_ms},
-    state::{AgentEvent, AgentState, CloseHow},
+    state::{AgentEvent, AgentState},
 };
 use devbox_protocol::{Fail, Internal};
 use std::path::Path;
@@ -309,8 +310,9 @@ impl AgentsService {
         if let Err(error) = self
             .close_record(
                 &task.id,
-                CloseHow::Merged,
-                None,
+                Closure::Merged {
+                    result: outcome.sha.clone(),
+                },
                 outcome.source_sha.clone(),
                 usage,
                 review,
@@ -385,8 +387,7 @@ impl AgentsService {
         let usage = self.closure_usage(&task.id).await;
         self.close_record(
             &task.id,
-            CloseHow::PullRequest,
-            Some(url),
+            Closure::PullRequest { url },
             p.expect.head_oid.clone(),
             usage,
             review,
@@ -399,6 +400,8 @@ impl AgentsService {
         self.get(&task.id).await
     }
     pub async fn discard(&self, p: DiscardAgent) -> Result<AgentTask> {
+        // Hash before the lock; under it, the confirmed hash is checked again by metadata only.
+        let hashed = self.hash_for_discard(&p).await;
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;
@@ -461,8 +464,7 @@ impl AgentsService {
             let usage = self.closure_usage(&task.id).await;
             self.close_record(
                 &task.id,
-                CloseHow::Discarded,
-                None,
+                Closure::Discarded,
                 p.expect.head_oid.clone(),
                 usage,
                 review,
@@ -480,26 +482,47 @@ impl AgentsService {
         let review = self
             .capture_review(&task, repo, &p.expect.head_oid, &base)
             .await?;
-        self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
+        let hashed = self
+            .confirm_discard_snapshot(hashed, &wt, &p.expect.head_oid, &base, &p.expect)
             .await?;
         let snapshot = self.authorize_teardown(&task, &project).await?;
         self.quiesce(&task).await?;
+        // The agent and its processes are stopped: the head, branch and folder must still be what
+        // the user confirmed, so what changed while they stopped, a commit that changes no file
+        // included, is refused before the teardown runs.
+        self.check_expect(&task, repo, &wt, &branch, &p.expect)
+            .await?;
+        let base = devbox_git::run::resolve(repo, &task.base_branch)
+            .await
+            .map_err(git_failure)?;
+        self.verify_discard_snapshot(&hashed, &wt, &p.expect.head_oid, &base)
+            .await?;
         let usage = self.closure_usage(&task.id).await;
         self.teardown_commands(&task, &snapshot).await?;
-        // Hooks and teardown may have committed. Destructive removal still uses the confirmed state.
+        // The teardown may have committed, moved a ref or replaced the folder, so the pins are
+        // checked again, the confirmed base included. What it wrote into the folder is not: it
+        // goes with the folder, which is what discard means.
         self.owned_worktree(&task).await?;
         self.check_expect(&task, repo, &wt, &branch, &p.expect)
             .await?;
         let base = devbox_git::run::resolve(repo, &task.base_branch)
             .await
             .map_err(git_failure)?;
-        self.check_discard_fingerprint(&wt, &p.expect.head_oid, &base, &p.expect)
-            .await?;
+        if base != hashed.base {
+            let unmerged = devbox_git::mutate::unmerged_count(repo, &p.expect.head_oid, &base)
+                .await
+                .map_err(git_failure)?;
+            return Err(AgentsError::StateChanged {
+                head: p.expect.head_oid.clone(),
+                base,
+                unmerged,
+            }
+            .into());
+        }
         // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
             &task.id,
-            CloseHow::Discarded,
-            None,
+            Closure::Discarded,
             p.expect.head_oid.clone(),
             usage,
             review,

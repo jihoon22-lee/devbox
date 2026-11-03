@@ -104,6 +104,8 @@ pub(crate) fn attempt(o: &Owned, r: &Reader, id: &str, n: u8) -> Attempt {
             assigned_path: format!("{dir}\\{nonce}.assigned.json"),
             grant_path: format!("{dir}\\{nonce}.grant.json"),
             closed_path: format!("{dir}\\{nonce}.closed.json"),
+            holder_ready_path: Some(format!("{dir}\\{nonce}.holder-ready")),
+            emptied_path: Some(format!("{dir}\\{nonce}.emptied.json")),
             nonce,
         },
         phase: AttemptPhase::Intent,
@@ -127,4 +129,12 @@ pub(crate) fn assigned(a: &Attempt) -> ObservationAssigned {
 }
 pub(crate) fn marker(path: &Path) -> PathBuf {
     path.join(".devbox-owner.json")
+}
+/// Where the Windows holder publishes this attempt's receipt, seen through the copy mapping.
+pub(crate) fn emptied_receipt(o: &Owned, a: &Attempt) -> PathBuf {
+    o.copy
+        .identity
+        .mapped_base
+        .join("control")
+        .join(format!("{}.emptied.json", a.control.nonce))
 }

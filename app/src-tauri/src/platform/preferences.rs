@@ -77,3 +77,14 @@ pub fn set_autostart(
     })
     .map_err(|error| IpcError::new(error.to_string()))
 }
+/// [나중에] on the first-run dialog. Only the settings file changes: this never asks the OS about
+/// autostart, let alone changes it, so a choice made in Windows meanwhile is left alone.
+#[tauri::command]
+pub fn mark_autostart_asked(app: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
+    main_only(&window)?;
+    let path = settings_path(&app)?;
+    settings::with_settings(&path, |settings| {
+        preferences::mark_asked(settings, |settings| settings::save(&path, settings))
+    })
+    .map_err(|error| IpcError::new(error.to_string()))
+}

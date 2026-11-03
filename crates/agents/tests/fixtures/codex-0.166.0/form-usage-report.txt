@@ -1,0 +1,50 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/analytics/hints.rs가 그리는 사용량 보고서(analytics) 화면이다. 붙여 넣은 글은 버려지고 Enter는 고른 카드를 연다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/analytics/snapshots/codex_tui__analytics__tests__summary__summary_daily_wide.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷과 그리는 소스 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+ Usage · Plus
+  1 Overview   2 Usage   3 Messages   4 Plugins   5 Skills   6 Chats
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ g Daily
+
+
+
+
+                                                                Example User
+                                                               @example.user
+                                                                    Plus
+
+                       142.3B                  7B                  44h 7m               158 days              160 days
+                  Lifetime tokens         Peak tokens           Longest chat         Current streak        Longest streak
+
+               Token activity
+               Last 12 months
+
+                         Oct     Nov       Dec     Jan     Feb     Mar       Apr     May       Jun     Jul     Aug
+                Su □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □
+                Mo □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □
+                Tu □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ ■
+                We □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ ■
+                Th □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □
+                Fr □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □
+                Sa □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □ □
+
+                  Less □ ■ ■ ■ ■ More
+
+               Activity insights                                        Most used plugins and skills
+
+               Fast Mode                                         37%    $review                                    1,142 runs
+               Most used reasoning                        high · 26%    @GitHub                                    1,059 runs
+               Skills explored                                   147
+               Total skills used                              13,190
+               Total chats                                    21,482
+
+               Statistics as of Sep 9, 2026
+
+
+
+
+ esc back
+ tab/1–6 report · z dashboard · ? help · R refresh

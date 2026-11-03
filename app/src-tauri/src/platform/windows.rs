@@ -267,13 +267,19 @@ async fn run_observed(
         let _ = emit(&output, &identity, WindowsOutput::Failed).await;
         return;
     };
-    let child = Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .args(powershell_args())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn();
+        .kill_on_drop(true);
+    // CREATE_NO_WINDOW, as windows_probe.rs, external.rs and wsl.rs set it: from the GUI app each
+    // run would otherwise open a console window for as long as it runs. Nothing here needs one:
+    // stdio are pipes, and a stop is `start_kill`, never a console control event.
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
+    let child = command.spawn();
     let Ok(mut child) = child else {
         spawned(None);
         tokio::select! {

@@ -80,38 +80,126 @@ async fn ingest_reapplies_rules_server_side() -> T {
     Ok(())
 }
 
+/// The daemon's service for this stored `[activity]`, which is also in `config.toml`.
+fn stored(activity: &str) -> Ax {
+    let a = fixture_with(activity);
+    std::fs::write(a.config(), format!("[activity]\n{activity}\n")).expect("stored config");
+    a
+}
+
+/// The app the user excluded and another app, then a pause that closes both sessions.
+async fn ingest_excluded_and_other(a: &Ax, at: i64) -> T {
+    a.ingest(a.fg("KeePassXC.exe", "vault", at, at))
+        .await
+        .map_err(fail)?;
+    a.ingest(a.fg("code.exe", "devbox — private.md", at + 1_000, at + 1_000))
+        .await
+        .map_err(fail)?;
+    a.ingest(a.pause(at + 2_000)).await.map_err(fail)?;
+    a.flush().await;
+    Ok(())
+}
+
 #[tokio::test]
-async fn broken_rules_store_no_titles() -> T {
-    for broken in [
-        "excluded_title_patterns = ['(unclosed']",
-        "redact_title_patterns = 'not a list'",
-        "unknown_key = 1",
-    ] {
-        let a = fixture_with(broken);
-        *a.projects.lock().expect("projects") = vec![ProjectMatch {
-            project_id: "p1".into(),
-            basenames: vec!["devbox".into()],
-        }];
-        a.ingest(a.fg("code.exe", "devbox — private.md", 1_000, 1_000))
-            .await
-            .map_err(fail)?;
-        a.ingest(a.pause(2_000)).await.map_err(fail)?;
-        a.flush().await;
-        let rows = a.sessions().await;
-        assert_eq!(rows.len(), 1, "{broken}");
-        assert_eq!(rows[0].app, "code.exe");
-        assert_eq!(rows[0].title, "", "{broken}: fail-closed stores no title");
+async fn rules_that_do_not_compile_store_nothing_until_rules_that_compile_are_saved() -> T {
+    // The app the user excluded is in the rules that cannot be applied.
+    let a =
+        stored("excluded_processes = ['KeePassXC.exe']\nexcluded_title_patterns = ['(unclosed']");
+    ingest_excluded_and_other(&a, 1_000).await?;
+    assert_eq!(a.sessions().await, [], "fail-closed stores nothing");
+    // They parse, so 설정 → 활동 shows them as stored, to fix.
+    let view = a.svc.rules(NoParams {}).await.map_err(fail)?;
+    assert!(view.readable, "{view:?}");
+    assert_eq!(view.rules.excluded_title_patterns, ["(unclosed"]);
+    // Saving rules that compile, as 설정 → 활동 does, records again at once.
+    a.svc.set_rules(rules(&[])).await.map_err(fail)?;
+    a.ingest(a.fg("code.exe", "after", 4_000, 4_000))
+        .await
+        .map_err(fail)?;
+    a.ingest(a.pause(5_000)).await.map_err(fail)?;
+    a.flush().await;
+    let rows = a.sessions().await;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(
+        (rows[0].app.as_str(), rows[0].title.as_str()),
+        ("code.exe", "after")
+    );
+    Ok(())
+}
+
+/// The editor shows `unreadable()` lists, so saving them would replace what the user wrote and
+/// record the apps they excluded.
+#[tokio::test]
+async fn a_save_is_refused_while_the_stored_activity_rules_do_not_parse() -> T {
+    for broken in ["redact_title_patterns = 'not a list'", "unknown_key = 1"] {
+        let a = stored(&format!("excluded_processes = ['KeePassXC.exe']\n{broken}"));
+        let before = std::fs::read(a.config())?;
+        ingest_excluded_and_other(&a, 1_000).await?;
         assert_eq!(
-            rows[0].project_id, None,
-            "no title, so nothing to attribute"
+            a.sessions().await,
+            [],
+            "{broken}: fail-closed stores nothing"
         );
-        // The app receives rules that compile to "no titles" or do not compile.
         let view = a.svc.rules(NoParams {}).await.map_err(fail)?;
-        let compiled = model::privacy::CompiledRules::compile(&view.rules);
         assert!(
-            compiled.is_err() || view.rules.mask_all_titles,
+            !view.readable && view.rules.mask_all_titles,
             "{broken}: {view:?}"
         );
+        let refused = a.svc.set_rules(rules(&[])).await;
+        assert!(
+            matches!(&refused, Err(Fail::Domain(ActivityError::ConfigInvalid { file }))
+                if *file == a.config().display().to_string()),
+            "{broken}: {refused:?}"
+        );
+        assert_eq!(
+            std::fs::read(a.config())?,
+            before,
+            "{broken}: the user's text"
+        );
+        ingest_excluded_and_other(&a, 10_000).await?;
+        assert_eq!(a.sessions().await, [], "{broken}: still nothing");
+    }
+    // Read at save time, not at start: this file broke after the daemon read it.
+    let a = stored("excluded_processes = ['KeePassXC.exe']");
+    std::fs::write(
+        a.config(),
+        "[activity]\nexcluded_processes = 'KeePassXC.exe'\n",
+    )?;
+    let refused = a.svc.set_rules(rules(&[])).await;
+    assert!(
+        matches!(
+            &refused,
+            Err(Fail::Domain(ActivityError::ConfigInvalid { .. }))
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(a.config())?,
+        "[activity]\nexcluded_processes = 'KeePassXC.exe'\n"
+    );
+    Ok(())
+}
+
+/// A `config.local.toml` whose `[activity]` cannot be read made the rules unreadable too. Saving
+/// would overwrite `config.toml`'s rules with the editor's empty lists.
+#[tokio::test]
+async fn a_broken_local_copy_refuses_the_save_and_keeps_config_toml() -> T {
+    for local in [
+        "[activity]\nexcluded_processes = 'KeePassXC.exe'\n",
+        "activity = 1\n",
+        "[activity\n",
+    ] {
+        let a = stored("excluded_processes = ['KeePassXC.exe']");
+        let path = a.config_dir.join("config.local.toml");
+        std::fs::write(&path, local)?;
+        let before = std::fs::read(a.config())?;
+        let refused = a.svc.set_rules(rules(&[])).await;
+        assert!(
+            matches!(&refused, Err(Fail::Domain(ActivityError::ConfigInvalid { file }))
+                if *file == path.display().to_string()),
+            "{local:?}: {refused:?}"
+        );
+        assert_eq!(std::fs::read(a.config())?, before, "{local:?}");
     }
     Ok(())
 }

@@ -9,10 +9,12 @@ import { profiles, task } from "./test-fixtures";
 
 beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  localStorage.clear();
 });
 
-async function dialog(items = projects, saved = "claude", trustRequired = false) {
-  localStorage.setItem("devbox.lastProfile", saved);
+const profileKey = (projectId: string) => `devbox.newTask.lastProfile.${projectId}`;
+async function dialog(items = projects, saved: string | null = "claude", trustRequired = false) {
+  if (saved !== null) localStorage.setItem(profileKey("a"), saved);
   useCurrentProject.getState().set("a");
   const wire = new ProjectWire({ trustNotRequired: !trustRequired }),
     created = vi.fn(),
@@ -73,7 +75,7 @@ test("snapshots chosen profile, project, template, branch and worktree; guards I
   await act(async () => wire.reply("agents.create", task("new", "preparing")));
   await waitFor(() => expect(created).toHaveBeenCalledWith("new"));
   expect(changed).toHaveBeenCalledWith(false);
-  expect(localStorage.getItem("devbox.lastProfile")).toBe("codex");
+  expect(localStorage.getItem(profileKey("a"))).toBe("codex");
 });
 
 test("requires a registered project and never sends null project", async () => {
@@ -277,4 +279,230 @@ test("a note draft fills the prompt without sending or bypassing the normal form
   } finally {
     useAgentsUi.getState().setCreating(false);
   }
+});
+
+const tool = () => screen.getByRole("combobox", { name: "도구" });
+const branchField = () => screen.getByLabelText("브랜치 이름");
+/** Opens a select and takes its last option (or its first, with `{Home}`). */
+async function pick(name: string, key = "{End}") {
+  act(() => screen.getByRole("combobox", { name }).focus());
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("listbox");
+  await userEvent.keyboard(`${key}{Enter}`);
+}
+
+test("remembers_the_last_tool_per_project", async () => {
+  localStorage.setItem(profileKey("a"), "codex");
+  const { wire } = await dialog(projects, null);
+  expect(tool()).toHaveTextContent("Codex");
+  // Project b has no memory: it falls back to the first tool, not to what project a used.
+  await pick("프로젝트");
+  expect(screen.getByRole("combobox", { name: "프로젝트" })).toHaveTextContent("family");
+  expect(tool()).toHaveTextContent("Claude Code");
+  await userEvent.type(screen.getByLabelText("제목"), "Other project");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ projectId: "b", profile: "claude" });
+  await act(async () => wire.reply("agents.create", task("new", "preparing")));
+  // The tool is remembered for the project it started in, and only for that one.
+  await waitFor(() => expect(localStorage.getItem(profileKey("b"))).toBe("claude"));
+  expect(localStorage.getItem(profileKey("a"))).toBe("codex");
+  expect(localStorage.getItem("devbox.lastProfile")).toBeNull();
+});
+
+test("a project without a memory of its own starts from the old global key, which is never written", async () => {
+  localStorage.setItem("devbox.lastProfile", "codex");
+  const { wire } = await dialog(projects, null);
+  expect(tool()).toHaveTextContent("Codex");
+  // Starting with another tool remembers it for this project and leaves the old key as it was.
+  await pick("도구", "{Home}");
+  expect(tool()).toHaveTextContent("Claude Code");
+  await userEvent.type(screen.getByLabelText("제목"), "Old key");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ projectId: "a", profile: "claude" });
+  await act(async () => wire.reply("agents.create", task("new", "preparing")));
+  await waitFor(() => expect(localStorage.getItem(profileKey("a"))).toBe("claude"));
+  expect(localStorage.getItem("devbox.lastProfile")).toBe("codex");
+});
+
+test("a project's own memory of a removed tool does not fall back to the old global key", async () => {
+  localStorage.setItem("devbox.lastProfile", "codex");
+  await dialog(projects, "removed");
+  expect(tool()).toHaveTextContent("Claude Code");
+});
+
+test("a tool picked in the dialog wins over the remembered one when the project changes", async () => {
+  localStorage.setItem(profileKey("b"), "codex");
+  await dialog(projects, "codex");
+  expect(tool()).toHaveTextContent("Codex");
+  await pick("도구", "{Home}");
+  expect(tool()).toHaveTextContent("Claude Code");
+  // Project b remembers Codex, but the tool chosen here is the user's own.
+  await pick("프로젝트");
+  expect(screen.getByRole("combobox", { name: "프로젝트" })).toHaveTextContent("family");
+  expect(tool()).toHaveTextContent("Claude Code");
+});
+
+test("the branch name starts from the title, shows the fixed agent/ prefix and is not sent while unedited", async () => {
+  const { wire } = await dialog();
+  expect(branchField()).toHaveValue("");
+  await userEvent.type(screen.getByLabelText("제목"), "Fix Login  bug!");
+  expect(screen.getByText("agent/")).toBeVisible();
+  expect(branchField()).toHaveValue("fix-login-bug");
+  // The note under the form and the template's {{branch}} are about a name nobody edited: it may be numbered.
+  expect(
+    screen.getByText(/브랜치 이름을 직접 고치지 않으면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다/),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "템플릿: bugfix" }));
+  expect(screen.getByLabelText("지시문")).toHaveValue("버그: Fix Login  bug!\nagent/fix-login-bug devbox {{other}}");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  // It is only the title's own name, so the daemon still makes it and numbers it when it is taken.
+  expect(wire.request("agents.create").params).not.toHaveProperty("branch");
+});
+
+test("a typed name stops following the title and is sent as typed", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
+  await userEvent.type(branchField(), "my-fix");
+  await userEvent.type(screen.getByLabelText("제목"), " more words");
+  expect(branchField()).toHaveValue("my-fix");
+  // A template's {{branch}} is the branch the task will get.
+  await userEvent.click(screen.getByRole("button", { name: "템플릿: bugfix" }));
+  expect(screen.getByLabelText("지시문")).toHaveValue("버그: Fix more words\nagent/my-fix devbox {{other}}");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ title: "Fix more words", branch: "my-fix" });
+  await act(async () => wire.reply("agents.create", task("new", "preparing")));
+});
+
+test("the app omits branch when the field is empty, and the empty field shows the name that will be used", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix Login bug");
+  await userEvent.clear(branchField());
+  expect(branchField()).toHaveValue("");
+  expect(branchField()).toHaveAttribute("placeholder", "fix-login-bug");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).not.toHaveProperty("branch");
+});
+
+test("a title without a name to follow leaves an empty field with no placeholder to promise one", async () => {
+  await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "로그인 수정");
+  expect(branchField()).toHaveAttribute("placeholder", "");
+});
+
+test("an uppercase letter typed in the branch name becomes lowercase instead of an error", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "Fix-Login");
+  expect(branchField()).toHaveValue("fix-login");
+  expect(branchField()).toBeValid();
+  expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ branch: "fix-login" });
+});
+
+test("only ASCII capitals are lowercased, and the caret stays where the letter was typed", async () => {
+  await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "ab-cd");
+  // A capital typed in the middle keeps the caret after it (the field's value is rewritten).
+  await userEvent.type(branchField(), "X", { initialSelectionStart: 2, initialSelectionEnd: 2 });
+  expect(branchField()).toHaveValue("abx-cd");
+  expect((branchField() as HTMLInputElement).selectionStart).toBe(3);
+  // Other letters are not folded into ASCII: they are still named as the problem.
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "Ä");
+  expect(branchField()).toHaveValue("Ä");
+  expect(branchField()).toBeInvalid();
+});
+
+test("korean_title_requires_a_branch_name", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "로그인 수정");
+  expect(branchField()).toHaveValue("");
+  expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
+  expect(screen.getByText(/영문이나 숫자가 없어/)).toBeInTheDocument();
+  await userEvent.type(branchField(), "fix-login");
+  expect(screen.queryByText(/영문이나 숫자가 없어/)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toEqual({
+    projectId: "a",
+    title: "로그인 수정",
+    profile: "claude",
+    baseBranch: null,
+    worktree: true,
+    prompt: "",
+    branch: "fix-login",
+  });
+});
+
+test.each([
+  ["Bad Name", /영문 소문자, 숫자, 하이픈/],
+  ["fix--login", /영문 소문자, 숫자, 하이픈/],
+  ["-fix", /영문 소문자, 숫자, 하이픈/],
+  ["agent/fix", /영문 소문자, 숫자, 하이픈/],
+  ["x".repeat(41), /40자/],
+])("an invalid branch name (%s) explains itself and cannot be started", async (name, message) => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), name);
+  expect(screen.getByText(message)).toBeInTheDocument();
+  expect(branchField()).toBeInvalid();
+  expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
+  fireEvent.keyDown(branchField(), { key: "Enter", ctrlKey: true });
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  await userEvent.clear(branchField());
+  expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
+});
+
+test("a taken name is explained with the fixed code message and the typed name stays editable", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.type(branchField(), "-taken");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  const first = wire.request("agents.create");
+  // An edited name is asked for exactly, so a taken one is refused instead of numbered.
+  expect(first.params).toMatchObject({ branch: "fix-taken" });
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: first.id,
+      error: { code: "agents.branch_exists", detail: { branch: "agent/fix-taken" } },
+    }),
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("같은 이름의 브랜치나 작업 폴더가 이미 있습니다: agent/fix-taken");
+  expect(alert).toHaveTextContent("브랜치 이름을 바꿔");
+  expect(branchField()).toHaveValue("fix-taken");
+  await userEvent.type(branchField(), "-2");
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(2));
+  expect(wire.request("agents.create", 1).params).toMatchObject({ branch: "fix-taken-2" });
+  expect(wire.request("agents.create", 1).clientRequestId).not.toBe(first.clientRequestId);
+});
+
+test("without a work folder there is no branch to name, so the field is hidden and nothing is sent", async () => {
+  const { wire } = await dialog();
+  await userEvent.type(screen.getByLabelText("제목"), "Fix");
+  await userEvent.clear(branchField());
+  await userEvent.type(branchField(), "my-fix");
+  await userEvent.click(screen.getByLabelText("작업 폴더 만들기"));
+  expect(screen.queryByLabelText("브랜치 이름")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "시작" }));
+  await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+  expect(wire.request("agents.create").params).toMatchObject({ worktree: false });
+  expect(wire.request("agents.create").params).not.toHaveProperty("branch");
 });

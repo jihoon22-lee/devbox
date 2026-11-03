@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 export type ActivityChanged = { rev: string, };
-export type ActivityError = { "code": "activity.invalid_rules", "detail": { problems: Array<InvalidRule>, } } | { "code": "activity.invalid_range" } | { "code": "activity.invalid_input" } | { "code": "activity.config_unavailable" };
+export type ActivityError = { "code": "activity.invalid_rules", "detail": { problems: Array<InvalidRule>, } } | { "code": "activity.invalid_range" } | { "code": "activity.invalid_input" } | { "code": "activity.config_unavailable" } | { "code": "activity.config_invalid", "detail": { file: string, } };
 export type ActivityStatus = { rev: string, state: StorageState, 
 /**
  * Closed sessions waiting to be written.
@@ -28,12 +28,22 @@ export type AgentRebaseStatus = { owned: boolean, files: Array<string>, };
 export type AgentResource = { id: string, cpuPercent: number | null, memoryBytes: number | null, };
 export type AgentResources = { items: Array<AgentResource>, };
 export type AgentState = "preparing" | "running" | "waiting" | "idle" | "failed" | "review" | "closed";
-export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, cleanupError: string | null, };
+export type AgentTask = { id: string, projectId: string, title: string, profile: string, baseBranch: string, branch: string | null, worktreePath: string | null, workdir: string, sessionId: string | null, terminalId: string | null, toolExited: boolean, state: AgentState, reason: string | null, attention: Attention | null, port: number, prompt: string, followUps: Array<FollowUp>, tokens: Tokens | null, tokensTruncated: boolean, activitySeq: number, prUrl: string | null, closedHow: CloseHow | null, createdMs: number, updatedMs: number, closedMs: number | null, closedCommits: number | null, closedHeadOid: string | null, 
+/**
+ * The commit a merge close made on the base branch: the merge or squash commit, or the rebased
+ * head. Recorded with the close itself; tasks merged before it was recorded have none.
+ */
+closedMergeOid: string | null, cleanupError: string | null, 
+/**
+ * When the current launch started, until its tool says it reads its input. Only pi says so,
+ * through devbox's extension, so other tools never have it.
+ */
+startingSinceMs: number | null, };
 export type AgentTest = { runId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
-export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.delivery_unknown" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } };
+export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.control_characters" } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.teardown_failed", "detail": { index: number, exit_code: number | null, } } | { "code": "agents.worktree_has_submodules", "detail": { path: string, } } | { "code": "agents.delivery_unknown" } | { "code": "agents.awaiting_input" } | { "code": "agents.tool_starting" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } } | { "code": "agents.tool_missing", "detail": { command: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
 export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.redaction_failed", "detail": { reason: string, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.response_export_failed", "detail": { reason: string, } } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
 export type AppMs = { app: string, ms: number, };
@@ -75,7 +85,19 @@ export type Claimed = { key: DocKey, leaseId: string | null, rev: DiskRev | null
 export type CleanupAgents = { projectId: string, worktrees: Array<string>, branches: Array<string>, };
 export type CleanupCandidate = { path: string | null, branch: string, oid: string, };
 export type CleanupCandidates = { projectId: string, };
-export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, };
+export type CleanupOptions = { worktrees: Array<string>, branches: Array<string>, 
+/**
+ * The listed work folders and branches of tasks that closed by squash or PR and whose
+ * automatic cleanup failed: the branch's own commits are not on the base branch, though what
+ * they changed is there or in the PR. Listed only while the rest of the rule holds (Ruling 60).
+ */
+offBase?: Array<string>, 
+/**
+ * Work folders of closed tasks that pass every other check but hold initialized submodules.
+ * Git removes such a folder only with force, which devbox never uses, so neither it nor its
+ * branch is offered: the list names it with how to remove it.
+ */
+submodules?: Array<string>, };
 export type CloneProject = { url: string, dir: string | null, };
 export type CloseHow = "merged" | "pullRequest" | "discarded";
 export type CloseSession = { id: string, };
@@ -116,7 +138,13 @@ export type ContainersResult = { available: boolean, reason?: ContainerUnavailab
 export type CookieInfo = { name: string, value: string, domain: string, path: string, secure: boolean, httpOnly: boolean, expiresMs: number | null, };
 export type CookieJarRef = { jar: string, };
 export type CookieList = { cookies: Array<CookieInfo>, };
-export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, };
+export type CreateAgentTask = { projectId: string, title: string, profile: string, baseBranch: string | null, worktree: boolean, prompt: string, 
+/**
+ * The name of the new branch without its `agent/` prefix. Left out, the name comes from the
+ * title and gets a number when it is taken. Given, it is used exactly or refused with
+ * `agents.branch_exists`; only a task with a work folder has a branch to name.
+ */
+branch?: string, };
 export type CreateNote = { 
 /**
  * Vault-relative folder, `""` for the vault root.
@@ -128,7 +156,11 @@ folder: string, title: string,
 template: string | null, };
 export type CreateSession = { projectId: string | null, cwd: string | null, title: string | null, command: string | null, attachZellij: string | null, };
 export type CreatedNote = { path: string, rev: DiskRev, };
-export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, };
+export type DaemonInfo = { version: string, instance: string, pid: number, startedMs: number, dataDir: string, configPath: string, hostname?: string, 
+/**
+ * What runs on defaults or is off since this daemon started; absent when nothing is.
+ */
+startupProblems?: Array<StartupProblem>, };
 export type DailyNote = { path: string, created: boolean, };
 export type DailyParams = { 
 /**
@@ -170,7 +202,12 @@ export type Diagnostic = "missing" | "ambiguous" | "limitExceeded" | "invalid" |
 export type DiffSnapshot = { path: string, oldPath: string | null, staged: boolean, patch: string, hunks: Array<Hunk>, fileOnly: boolean, expect: FileExpect, };
 export type Direction = "sent" | "received";
 export type DiscardAgent = { id: string, expect: ReviewExpect & { unmergedCommits: number }, };
-export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, };
+export type DiscardCheck = { unmergedCommits: number, dirtyFiles: number, headOid: string, fingerprint: string | null, 
+/**
+ * The work folder has initialized submodules, or the check had no answer: the discard's forced
+ * removal also takes their store, with any commits not pushed. Part of the fingerprint.
+ */
+hasSubmodules: boolean, };
 export type DiskDocument = { key: DocKey, rev: DiskRev | null, text: string | null, readOnly: ReadOnly | null, };
 export type DiskRev = { hash: string, size: number, mtimeNs: string, ino: string, };
 export type DocKey = { root: string, path: string, };
@@ -281,8 +318,8 @@ export type HistoryPage = { items: Array<HistorySummary>, next: string | null, }
 export type HistoryQuery = { before: string | null, limit: number, origin: RequestOrigin | null, };
 export type HistoryResponse = { status: number, reason: string, httpVersion: string, headers: Array<Pair>, redirects: Array<Redirect>, elapsedMs: number, sizeBytes: number, binary: boolean, };
 export type HistorySummary = { id: string, sentAtMs: number, method: string, url: string, status: number | null, elapsedMs: number, sizeBytes: number, outcome: HistoryOutcome, runId: string | null, origin: RequestOrigin | null, };
-export type HookSource = "claude" | "codex" | "setup" | "exit";
-export type Hooks = "claude" | "codex" | "none";
+export type HookSource = "claude" | "codex" | "setup" | "exit" | "opencode" | "pi";
+export type Hooks = "claude" | "codex" | "opencode" | "pi" | "none";
 export type HourMs = { 
 /**
  * Local hour `0..=23`.
@@ -378,7 +415,7 @@ export type NoteHits = { rev: string, items: Array<NoteHit>, truncated: boolean,
 export type NotePath = { path: string, };
 export type NoteTree = { rev: string, items: Array<TreeItem>, nextCursor: string | null, truncated: boolean, };
 export type NotesChanged = { rev: string, paths: Array<string>, };
-export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.response_unavailable", "detail": { reason: string, } } | { "code": "notes.response_target_changed" } | { "code": "notes.append_uncertain" } | { "code": "notes.append_operation_mismatch" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" };
+export type NotesError = { "code": "notes.not_found" } | { "code": "notes.exists" } | { "code": "notes.out_of_vault" } | { "code": "notes.invalid_name" } | { "code": "notes.invalid_template", "detail": { problem: TemplateProblem, } } | { "code": "notes.invalid_image", "detail": { problem: ImageProblem, } } | { "code": "notes.invalid_input" } | { "code": "notes.response_unavailable", "detail": { reason: string, } } | { "code": "notes.response_target_changed" } | { "code": "notes.append_uncertain" } | { "code": "notes.append_operation_mismatch" } | { "code": "notes.busy" } | { "code": "notes.target_unsaved" } | { "code": "notes.stale_cursor" } | { "code": "notes.too_large", "detail": { limit: number, } } | { "code": "notes.open_unsaved" } | { "code": "notes.summary_broken" } | { "code": "notes.conflict" } | { "code": "notes.disabled" };
 export type NotesQuery = { text: string, 
 /**
  * `1..=50`.
@@ -454,7 +491,7 @@ export type ProjectSummary = { id: string, branch?: string, dirty: boolean | nul
 export type ProjectSummaryIssue = { message: string, };
 export type ProjectSummaryList = { items: Array<ProjectSummary>, };
 export type ProjectsChanged = { rev: string, };
-export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
+export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_tool_missing", "detail": { command: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
 export type RangeActivity = { rev: string, days: Array<DayTotal>, apps: Array<AppMs>, projects: Array<ProjectMs>, };
@@ -542,7 +579,12 @@ export type RewriteRequest = { opId: string, key: DocKey, leaseId: string, journ
 export type RuleField = "excludedProcesses" | "excludedTitlePatterns" | "redactTitlePatterns";
 export type RuleProblem = "empty" | "too_long" | "too_many" | "syntax";
 export type RulesRev = { rev: string, };
-export type RulesView = { rev: string, rules: PrivacyRules, idleThresholdMs: number, };
+export type RulesView = { rev: string, rules: PrivacyRules, idleThresholdMs: number, 
+/**
+ * `false`: the stored `[activity]` did not parse, so `rules` are not the user's and
+ * mask every title. A save is refused until that file is fixed by hand.
+ */
+readable: boolean, };
 export type Run = { id: string, projectId: string, defId: string, kind: RunKind, state: RunState, exit: ExitRecord | null, startedMs: number, endedMs: number | null, restarts: number, unit: string, ready: boolean, pid: number | null, port: number | null, attemptId: string | null, windows?: WindowsRun, };
 export type RunDef = { "kind": "task" } & TaskDef | { "kind": "service" } & ServiceDef | { "kind": "schedule" } & ScheduleDef;
 export type RunDetail = { rev: string, run: Run, };
@@ -555,7 +597,7 @@ export type RunTarget = "linux" | "windows";
 export type RunsQuery = { projectId: string | null, limit: number, };
 export type RunsResult = { rev: string, items: Array<Run>, };
 export type RuntimeChange = { rev: string, projectId: string, };
-export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "runtime.windows_copy_busy" } | { "code": "runtime.windows_copy_unavailable" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } };
+export type RuntimeError = { "code": "runtime.def_invalid", "detail": { id: string, reason: string, } } | { "code": "runtime.project_not_found", "detail": { id: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "runtime.project_config_invalid", "detail": { message: string, } } | { "code": "runtime.run_not_found", "detail": { id: string, } } | { "code": "runtime.not_ready", "detail": { id: string, } } | { "code": "runtime.dependency_failed", "detail": { id: string, } } | { "code": "runtime.detect_parse", "detail": { file: string, message: string, } } | { "code": "runtime.detect_limit", "detail": { subject: string, limit: number, } } | { "code": "runtime.detect_io", "detail": { file: string, message: string, } } | { "code": "runtime.invalid_cursor" } | { "code": "runtime.windows_copy_busy" } | { "code": "runtime.windows_copy_unavailable" } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "runtime.secret_missing", "detail": { names: Array<string>, } } | { "code": "windows.config_invalid", "detail": { message: string, } } | { "code": "windows.observer_unavailable" };
 export type SaveDocument = { leaseId: string, seq: number, baseRev: DiskRev | null, expect: Expect, text: string, };
 export type SaveSearch = { name: string, query: SearchQuery, };
 export type SaveTo = "project" | "thisPc";
@@ -588,7 +630,7 @@ done: boolean,
  */
 truncated: boolean, };
 export type SearchCursor = { sources: Array<SourceCursor>, };
-export type SearchError = { "code": "search.invalid_regex", "detail": { position: number, } } | { "code": "search.invalid_input" } | { "code": "search.project_not_found" } | { "code": "search.not_found" } | { "code": "search.stream_unsupported" };
+export type SearchError = { "code": "search.invalid_regex", "detail": { position: number, } } | { "code": "search.invalid_input" } | { "code": "search.project_not_found" } | { "code": "search.not_found" } | { "code": "search.stream_unsupported" } | { "code": "search.disabled" };
 export type SearchHit = { root: string, path: string, 
 /**
  * Note title (notes scope).
@@ -622,7 +664,8 @@ projectIds: Array<string> | null, regex: boolean, caseSensitive: boolean,
 limit: number, };
 export type SearchResult = { items: Array<LogLine>, nextCursor: SearchCursor | null, };
 export type SecretInfo = { name: string, hasValue: boolean, };
-export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" };
+export type SecretsError = { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "secrets.invalid_input" } | { "code": "secrets.missing", "detail": { names: Array<string>, } } | { "code": "secrets.unavailable" } | { "code": "secrets.config_invalid", "detail": { file: string, } };
+export type SectionEffect = "disabled" | "ignored";
 export type SelectResponseNote = { target: ResponseNoteTarget, };
 export type SendEvent = { "type": "started", historyId: string, sentAtMs: number, } | { "type": "authorize", url: string, } | { "type": "head", status: number, reason: string, httpVersion: string, headers: Array<Pair>, elapsedMs: number, redirects: Array<Redirect>, } | { "type": "body", dataBase64: string, } | { "type": "end", sizeBytes: number, elapsedMs: number, binary: boolean, historyTruncated: boolean, } | { "type": "failed", error: WireError, };
 export type SendRequest = { sourceRoot?: CollectionRoot, snapshot: RequestSnapshot, env: EnvSnapshot, runId: string | null, origin: RequestOrigin | null, cookieJar: string | null, };
@@ -663,6 +706,7 @@ url: string, headers: Array<HeaderRow>, tls: TlsOptions, env: EnvSnapshot,
 lastEventId: string | null, origin: RequestOrigin | null, };
 export type StartLimit = { burst: number, intervalSec: number, };
 export type StartRun = { projectId: string, id: string, worktree: string | null, };
+export type StartupProblem = { "kind": "configFile", file: string, message: string, } | { "kind": "configSection", file: string, section: string, message: string, effect: SectionEffect, } | { "kind": "agentsReconcile", message: string, } | { "kind": "activityRules", file: string, message: string, local: boolean, };
 export type StashEntry = { oid: string, reference: string, subject: string, };
 export type Status = "ok" | "warn" | "fail";
 export type StatusSummary = { branch: string | null, ahead: number, behind: number, staged: number, unstaged: number, untracked: number, conflicted: Array<string>, clean: boolean, };
@@ -688,7 +732,13 @@ export type TaskDef = { id: string, command: string, cwd: string | null, env: { 
 export type TemplateItem = { name: string, path: string, };
 export type TemplateProblem = "not_found" | "unknown_placeholder" | "invalid_content" | "invalid_target" | "invalid_title" | "invalid_date" | "invalid_time" | "output_too_large";
 export type Templates = { items: Array<TemplateItem>, };
-export type TerminalAttached = { streamId: number, cols: number, rows: number, };
+export type TerminalAttached = { streamId: number, cols: number, rows: number, 
+/**
+ * The instance's running tmux server, asked on this attach, is 3.5 or newer, so the app may
+ * send Shift+Enter as an extended key: a program that did not ask for extended keys still
+ * gets Enter. Older tmux drops it there, so the app then leaves Shift+Enter as plain Enter.
+ */
+extendedKeys: boolean, };
 export type TerminalChanged = { rev: string, };
 export type TerminalError = { "code": "terminal.command_too_long", "detail": { limit_bytes: number, } } | { "code": "terminal.command_invalid" } | { "code": "terminal.invalid_cursor" } | { "code": "terminal.list_changed" } | { "code": "terminal.title_too_long", "detail": { limit: number, } } | { "code": "terminal.invalid_size", "detail": { cols: number, rows: number, } } | { "code": "terminal.stream_unavailable", "detail": Record<symbol, never> } | { "code": "terminal.not_found", "detail": { id: string, } } | { "code": "terminal.project_not_found", "detail": { id: string, } } | { "code": "terminal.cwd_invalid", "detail": { path: string, } } | { "code": "terminal.agent_owned" };
 export type TerminalProfile = { name: string, command: string, };
@@ -1159,15 +1209,18 @@ export const METHOD_INFO = {
 } as const;
 
 export const RPC_ERROR_CODES = [
+  "activity.config_invalid",
   "activity.config_unavailable",
   "activity.invalid_input",
   "activity.invalid_range",
   "activity.invalid_rules",
+  "agents.awaiting_input",
   "agents.bad_state",
   "agents.base_dirty",
   "agents.base_not_checked_out",
   "agents.branch_exists",
   "agents.conflict",
+  "agents.control_characters",
   "agents.delivery_unknown",
   "agents.discard_snapshot_unavailable",
   "agents.gh_missing",
@@ -1190,11 +1243,15 @@ export const RPC_ERROR_CODES = [
   "agents.state_changed",
   "agents.teardown_command_invalid",
   "agents.teardown_command_too_long",
+  "agents.teardown_failed",
   "agents.title_invalid",
+  "agents.tool_missing",
+  "agents.tool_starting",
   "agents.unmerged_commits",
   "agents.unsafe_worktree",
   "agents.worktree_add_partial",
   "agents.worktree_dirty",
+  "agents.worktree_has_submodules",
   "api.collection_conflict",
   "api.collection_not_found",
   "api.collection_path_invalid",
@@ -1283,6 +1340,7 @@ export const RPC_ERROR_CODES = [
   "notes.append_uncertain",
   "notes.busy",
   "notes.conflict",
+  "notes.disabled",
   "notes.exists",
   "notes.invalid_image",
   "notes.invalid_input",
@@ -1316,6 +1374,7 @@ export const RPC_ERROR_CODES = [
   "projects.in_use",
   "projects.launch_failed",
   "projects.launch_profile_not_found",
+  "projects.launch_tool_missing",
   "projects.not_directory",
   "projects.not_found",
   "projects.path_invalid",
@@ -1345,11 +1404,13 @@ export const RPC_ERROR_CODES = [
   "runtime.secret_missing",
   "runtime.windows_copy_busy",
   "runtime.windows_copy_unavailable",
+  "search.disabled",
   "search.invalid_input",
   "search.invalid_regex",
   "search.not_found",
   "search.project_not_found",
   "search.stream_unsupported",
+  "secrets.config_invalid",
   "secrets.invalid_input",
   "secrets.key_mismatch",
   "secrets.missing",
@@ -1376,5 +1437,7 @@ export const RPC_ERROR_CODES = [
   "webhooks.limit_reached",
   "webhooks.not_found",
   "webhooks.storage",
+  "windows.config_invalid",
+  "windows.observer_unavailable",
 ] as const;
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number];

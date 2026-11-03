@@ -1,6 +1,7 @@
 mod support;
 use devbox_protocol::system::PingParams;
 use devbox_terminal::*;
+use std::time::{Duration, Instant};
 use support::{TestDaemon, bounded};
 struct Fixture(TestDaemon);
 impl Fixture {
@@ -31,6 +32,53 @@ impl Drop for Fixture {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
+    }
+}
+/// The socket file tmux leaves behind once the fixture's server is killed.
+struct SocketFile(std::path::PathBuf);
+impl SocketFile {
+    fn of(daemon: &TestDaemon) -> Self {
+        use std::os::unix::fs::MetadataExt;
+        let uid = std::fs::metadata(daemon.home.path())
+            .expect("fixture owner")
+            .uid();
+        Self(format!("/tmp/tmux-{uid}/devbox-{}", daemon.instance).into())
+    }
+}
+impl Drop for SocketFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+#[tokio::test]
+async fn daemon_start_gives_a_running_tmux_server_extended_keys() {
+    let daemon = TestDaemon::fixture();
+    daemon.paths.ensure_dirs().expect("fixture directories");
+    // Declared before the fixture, so it is dropped once the fixture has killed the server.
+    let _socket = SocketFile::of(&daemon);
+    let tmux = tmux::Tmux::for_paths(&daemon.paths);
+    let mut fixture = Fixture(daemon);
+    // A server that outlived an update was started from a config without the options.
+    let before: String = (TMUX_CONF.lines())
+        .filter(|line| !line.contains("extended-keys"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    std::fs::write(tmux.conf(), before).expect("config before the update");
+    tmux.start_direct().await.expect("start the old server");
+    std::fs::write(tmux.conf(), TMUX_CONF).expect("config after the update");
+    let shown = || async {
+        let shown = tmux.run(&["show", "-s", "extended-keys"]).await;
+        shown.expect("show extended-keys").trim().to_owned()
+    };
+    assert_eq!(shown().await, "extended-keys off");
+    fixture.0.launch();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while shown().await != "extended-keys on" {
+        assert!(
+            Instant::now() < deadline,
+            "daemon start applied the options"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
 #[tokio::test]

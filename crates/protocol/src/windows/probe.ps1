@@ -6,6 +6,13 @@ try {
         $state=@{state=$s.State}
         if($s.State -ceq 'active') { $state.count=$s.Count }
         @{type='observation';state=$state} | ConvertTo-Json -Compress -Depth 4
+    } elseif($r.type -ceq 'holder') {
+        $h=$r.holder
+        # Process identity only (DevboxObservation.Holder): never a job lookup or session gate.
+        $s=[DevboxObservation]::Holder([uint32]$h.pid,[string]$h.creationTime,[string]$h.sid,[uint32]$h.sessionId,[bool]$r.crossSession)
+        $state=@{state=$s.State}
+        if($s.State -ceq 'active') { $state.count=$s.Count }
+        @{type='observation';state=$state} | ConvertTo-Json -Compress -Depth 4
     } elseif($r.type -ceq 'paths') {
         $state='safe'
         foreach($path in $r.paths) { if(![DevboxObservation]::SafePath([string]$path)) { $state='unsafe'; break } }

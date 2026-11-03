@@ -84,6 +84,9 @@ pub struct RulesView {
     pub rev: String,
     pub rules: PrivacyRules,
     pub idle_threshold_ms: i64,
+    /// `false`: the stored `[activity]` did not parse, so `rules` are not the user's and
+    /// mask every title. A save is refused until that file is fixed by hand.
+    pub readable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -198,11 +201,14 @@ pub struct ActivityChanged {
 }
 
 // `config_unavailable`: `config.toml` is a symlink, not a regular file or not TOML.
+// `config_invalid`: the `[activity]` in `file` (absolute) does not parse; saving over it would
+// replace what the user wrote there.
 domain_error! {
     pub enum ActivityError {
         InvalidRules { problems: Vec<InvalidRule> } = "activity.invalid_rules",
         InvalidRange = "activity.invalid_range",
         InvalidInput = "activity.invalid_input",
         ConfigUnavailable = "activity.config_unavailable",
+        ConfigInvalid { file: String } = "activity.config_invalid",
     }
 }

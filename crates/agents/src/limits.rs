@@ -19,6 +19,19 @@ pub fn input(text: &str) -> Result<()> {
     }
     Ok(())
 }
+/// A send is pasted into the agent's terminal, where a control character acts as a key: Ctrl-U
+/// erases the prompt box, and ESC [201~ ends the bracketed paste, so what follows it is typed.
+/// Tab and line breaks stay text. A task's first prompt is not pasted and has `input` alone.
+pub(crate) fn pasted(text: &str) -> Result<()> {
+    // `is_control` is exactly C0, DEL and C1.
+    if text
+        .chars()
+        .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))
+    {
+        return Err(AgentsError::ControlCharacters.into());
+    }
+    Ok(())
+}
 // PR titles are independently editable argv values, not task-title slugs.
 pub(crate) fn pr_title(title: &str) -> Result<()> {
     if title.len() > INPUT_BYTES {
@@ -136,5 +149,27 @@ mod tests {
         assert!(input(&"가".repeat(INPUT_BYTES / 3 + 1)).is_err());
         assert!(input("\0").is_ok(), "agent input only checks length");
         assert!(serialized(&"\u{0}".repeat(10), 20).is_err());
+    }
+    #[test]
+    fn a_send_refuses_every_control_character_but_tab_and_line_breaks() {
+        // C0, DEL and C1, anywhere in the text: keys that end a paste or erase, then the edges.
+        let keys = ["\x1b[201~", "\x15", "\x7f", "\x08", "\u{9b}"];
+        for control in keys
+            .into_iter()
+            .chain(["\0", "\x1f", "\u{80}", "\u{85}", "\u{9f}"])
+        {
+            assert!(
+                matches!(
+                    pasted(&format!("fix it{control}!ls")),
+                    Err(Fail::Domain(AgentsError::ControlCharacters))
+                ),
+                "{control:?}"
+            );
+        }
+        for text in [
+            "\t", "\n", "\r", "\r\n", "가😀", "\u{a0}", "\u{feff}", "\u{2028}", "",
+        ] {
+            assert!(pasted(&format!("fix it{text}")).is_ok(), "{text:?}");
+        }
     }
 }

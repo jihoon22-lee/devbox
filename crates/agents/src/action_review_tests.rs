@@ -2,16 +2,28 @@ use super::*;
 use crate::tracker::{Binding, Resources};
 use devbox_protocol::Fail;
 
+#[path = "cleanup_left_tests.rs"]
+mod cleanup_left_tests;
 #[path = "close_review_tests.rs"]
 mod close_review_tests;
 #[path = "discard_cas_tests.rs"]
 mod discard_cas_tests;
 #[path = "discard_persistence_tests.rs"]
 mod discard_persistence_tests;
+#[path = "discard_snapshot_tests.rs"]
+mod discard_snapshot_tests;
 #[path = "manual_cleanup_tests.rs"]
 mod manual_cleanup_tests;
 #[path = "merge_retry_tests.rs"]
 mod merge_retry_tests;
+#[path = "squash_cleanup_tests.rs"]
+mod squash_cleanup_tests;
+#[path = "teardown_harness.rs"]
+mod teardown_harness;
+#[path = "teardown_submodule_tests.rs"]
+mod teardown_submodule_tests;
+#[path = "teardown_undo_tests.rs"]
+mod teardown_undo_tests;
 
 async fn action_fixture() -> (Fixture, AgentTask, PathBuf) {
     let mut fixture = Fixture::new().await;
@@ -252,8 +264,9 @@ async fn child_cleanup(mode: &str) {
         .svc
         .close_record(
             &task.id,
-            crate::state::CloseHow::PullRequest,
-            Some("https://example.invalid/pr/1".into()),
+            crate::closed_review::Closure::PullRequest {
+                url: "https://example.invalid/pr/1".into(),
+            },
             confirmed.head_oid.clone(),
             fixture.svc.closure_usage(&task.id).await,
             review,

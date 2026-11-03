@@ -213,7 +213,8 @@ export function AgentActions({
                   충돌 해결
                 </Button>
                 <Button
-                  disabled={blocked || !sessionAlive || task.toolExited}
+                  // Text sent while the agent waits could answer its approval prompt, as in the composer.
+                  disabled={blocked || !sessionAlive || task.toolExited || task.state === "waiting"}
                   onClick={() =>
                     void run(async () => {
                       apply(

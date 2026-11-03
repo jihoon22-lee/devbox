@@ -14,6 +14,9 @@ mod resume_review_tests;
 #[path = "action_review_tests.rs"]
 mod action_review_tests;
 
+#[path = "lookup_lock_tests.rs"]
+mod lookup_lock_tests;
+
 #[tokio::test]
 async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
     let fixture = Fixture::new().await;
@@ -71,6 +74,9 @@ async fn list_pages_count_escaped_json_bytes_and_return_every_task() {
 
 #[path = "base_ref_tests.rs"]
 mod base_ref_tests;
+
+#[path = "branch_name_tests.rs"]
+mod branch_name_tests;
 
 struct TestEnv(PathBuf);
 #[tokio::test]
@@ -165,6 +171,14 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
+        Self::with_shell(|shell| shell).await
+    }
+    /// `wrap` receives the fixture shell, which answers every lookup with an owned CLI.
+    async fn with_shell(
+        wrap: impl FnOnce(
+            Arc<dyn crate::command_path::ShellProbe>,
+        ) -> Arc<dyn crate::command_path::ShellProbe>,
+    ) -> Self {
         let root = tempfile::tempdir().expect("owned fixture");
         let paths = Paths::resolve(
             Instance::parse(&format!(
@@ -197,6 +211,7 @@ impl Fixture {
             projects.clone(),
             devbox_core::config::TerminalConfig::default(),
         ));
+        let shell = wrap(crate::command_path::fixture_shell(&paths.home));
         let svc = Arc::new(AgentsService::new(
             db,
             hub,
@@ -208,6 +223,9 @@ impl Fixture {
                 devbox_bin: "/owned/devbox".into(),
                 use_scope: false,
                 cleanup_after_close: false,
+                shell,
+                // Its own lookups: no other test's CLI or clock reaches this fixture.
+                lookups: Arc::new(crate::command_path::LookupCache::stopped()),
             },
         ));
         let repo = root.path().join("project");
@@ -253,6 +271,7 @@ impl Fixture {
             base_branch: Some("main".into()),
             worktree: true,
             prompt: String::new(),
+            branch: None,
         }
     }
     async fn drain(&self) {
@@ -511,6 +530,9 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
 
 #[path = "prepare_binding_tests.rs"]
 mod prepare_binding_tests;
+
+#[path = "prepare_reconcile_tests.rs"]
+mod prepare_reconcile_tests;
 
 #[path = "run_worktree_tests.rs"]
 mod run_worktree_tests;

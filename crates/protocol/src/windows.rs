@@ -61,9 +61,12 @@ pub enum WindowsOutput {
 }
 // Both adapters use a fixed bootstrap. All user input (including secret env) is stdin JSON.
 // The child emits UTF-8 so the Linux wrapper's byte redactor sees the original secret bytes.
+// The job holder's script is a literal here-string that the bootstrap starts as its own process.
 pub const POWERSHELL_BOOTSTRAP: &str = concat!(
     include_str!("windows/native.ps1"),
-    "\n",
+    "\n$devboxHolder=@'\n",
+    include_str!("windows/holder.ps1"),
+    "\n'@\n",
     include_str!("windows/bootstrap.ps1")
 );
 pub const POWERSHELL_OBSERVATION_PROBE: &str = concat!(

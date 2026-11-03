@@ -265,10 +265,24 @@ pub(crate) async fn execute(
     execute_input(command, timeout, None).await
 }
 pub(crate) async fn execute_input(
-    mut command: Command,
+    command: Command,
     timeout: Duration,
     input: Option<&[u8]>,
 ) -> Result<(i32, String, String), GitError> {
+    let (code, out, err) = execute_bytes(command, timeout, input, MAX_OUTPUT).await?;
+    Ok((
+        code,
+        String::from_utf8(out).map_err(|_| GitError::InvalidEncoding)?,
+        String::from_utf8(err).map_err(|_| GitError::InvalidEncoding)?,
+    ))
+}
+/// Reads at most `cap` bytes of stdout and [`MAX_OUTPUT`] of stderr; either limit stops reading.
+async fn execute_bytes(
+    mut command: Command,
+    timeout: Duration,
+    input: Option<&[u8]>,
+    cap: usize,
+) -> Result<(i32, Vec<u8>, Vec<u8>), GitError> {
     if input.is_some() {
         command.stdin(Stdio::piped());
     }
@@ -284,7 +298,7 @@ pub(crate) async fn execute_input(
         .stdout
         .take()
         .ok_or(GitError::Internal)?
-        .take((MAX_OUTPUT + 1) as u64);
+        .take(cap.saturating_add(1) as u64);
     let mut stderr = child
         .stderr
         .take()
@@ -295,8 +309,8 @@ pub(crate) async fn execute_input(
     let mut err = Vec::new();
     let read = async {
         tokio::try_join!(
-            read_bounded(&mut stdout, &mut out),
-            read_bounded(&mut stderr, &mut err),
+            read_bounded(&mut stdout, &mut out, cap),
+            read_bounded(&mut stderr, &mut err, MAX_OUTPUT),
             async {
                 if let (Some(stdin), Some(input)) = (stdin.as_mut(), input) {
                     stdin
@@ -330,11 +344,7 @@ pub(crate) async fn execute_input(
             return Err(error);
         }
     };
-    Ok((
-        code,
-        String::from_utf8(out).map_err(|_| GitError::InvalidEncoding)?,
-        String::from_utf8(err).map_err(|_| GitError::InvalidEncoding)?,
-    ))
+    Ok((code, out, err))
 }
 // Killing a command's private group also covers helpers that inherited its pipes.
 // The guard runs on timeout, output failure, and future cancellation.
@@ -357,13 +367,25 @@ pub async fn git(dir: &Path, args: &[&str]) -> Result<String, GitError> {
     if code == 0 {
         return Ok(out);
     }
-    if err.contains("not a git repository") {
-        return Err(GitError::NotRepo);
+    Err(failure(args, &err))
+}
+/// Stdout as raw bytes, for listings whose paths need not be UTF-8. Reading stops once it
+/// passes `cap` bytes (`LimitExceeded`); stderr only describes a failure and is read lossily.
+pub async fn git_bytes(dir: &Path, args: &[&str], cap: usize) -> Result<Vec<u8>, GitError> {
+    let (code, out, err) = execute_bytes(command(dir, args), TIMEOUT, None, cap).await?;
+    if code == 0 {
+        return Ok(out);
     }
-    Err(GitError::Failed {
+    Err(failure(args, &String::from_utf8_lossy(&err)))
+}
+fn failure(args: &[&str], stderr: &str) -> GitError {
+    if stderr.contains("not a git repository") {
+        return GitError::NotRepo;
+    }
+    GitError::Failed {
         op: args.first().unwrap_or(&"git").to_string(),
-        stderr: err.trim().to_string(),
-    })
+        stderr: stderr.trim().to_string(),
+    }
 }
 pub async fn resolve(dir: &Path, reference: &str) -> Result<String, GitError> {
     if reference.is_empty() || reference.starts_with('-') || reference.contains('\0') {
@@ -390,6 +412,26 @@ pub async fn merge_base(dir: &Path, base: &str) -> Result<String, GitError> {
     let head = resolve(dir, "HEAD").await?;
     Ok(git(dir, &["merge-base", &base, &head]).await?.trim().into())
 }
+/// Whether `commit` is in the history of `reference` (`git merge-base --is-ancestor`). A commit the
+/// repository no longer has, for example one collected after a reset, is not.
+pub async fn is_ancestor(dir: &Path, commit: &str, reference: &str) -> Result<bool, GitError> {
+    if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(GitError::InvalidInput);
+    }
+    let tip = resolve(dir, reference).await?;
+    let (code, _, stderr) = output(dir, &["cat-file", "-e", commit]).await?;
+    match code {
+        0 => (),
+        1 => return Ok(false),
+        _ => return Err(failure(&["cat-file"], &stderr)),
+    }
+    let (code, _, stderr) = output(dir, &["merge-base", "--is-ancestor", commit, &tip]).await?;
+    match code {
+        0 => Ok(true),
+        1 => Ok(false),
+        _ => Err(failure(&["merge-base"], &stderr)),
+    }
+}
 pub(crate) fn number(s: &str) -> Result<u32, GitError> {
     s.parse().map_err(|_| GitError::InvalidOutput)
 }
@@ -397,12 +439,13 @@ pub(crate) fn number(s: &str) -> Result<u32, GitError> {
 async fn read_bounded(
     reader: &mut (impl tokio::io::AsyncRead + Unpin),
     data: &mut Vec<u8>,
+    cap: usize,
 ) -> Result<(), GitError> {
     reader
         .read_to_end(data)
         .await
         .map_err(|error| internal(error, "read Git output"))?;
-    if data.len() > MAX_OUTPUT {
+    if data.len() > cap {
         Err(GitError::LimitExceeded)
     } else {
         Ok(())

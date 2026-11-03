@@ -1,0 +1,30 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/warnings_view_render.rs가 그리는 시작 경고(warnings) 화면이다. 붙여 넣은 글은 버려지고 Enter는 무시된다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/app/snapshots/codex_tui__app__warnings_tests__warnings_page.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 빈 줄 하나와 footer 끝의 · ↓ scroll만 다르다. 그리는 소스(warnings_view_render.rs)의 keep & next·dismiss & close 문구는 세 태그에서 같다(grep). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+Earlier transcript row 12
+Earlier transcript row 13
+Earlier transcript row 14
+Earlier transcript row 15
+Earlier transcript row 16
+Earlier transcript row 17
+Earlier transcript row 18
+Earlier transcript row 19
+Earlier transcript row 20
+Earlier transcript row 21
+
+
+  Warnings · 1 of 1 · Warning
+
+  Example warning
+  Full diagnostic with remediation.
+
+
+
+
+
+
+
+  k keep & next · esc dismiss & close · ⌃o copy · ←/→ warning

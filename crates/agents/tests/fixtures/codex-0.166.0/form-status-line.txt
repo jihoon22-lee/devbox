@@ -1,0 +1,22 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/status_line_setup.rs, codex-rs/tui/src/bottom_pane/multi_select_picker.rs가 그리는 상태 줄 항목 고르기(/statusline, MultiSelectPicker) 화면이다. Enter는 고른 항목을 설정에 저장한다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__status_line_setup_popup_mixed.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 그리는 소스 중 status_line_setup.rs는 다른 곳만 바뀌어 힌트 줄 문구가 세 태그에서 같다(diff). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+  Configure Status Line
+  Select which items to display in the status line.
+
+  Type to search
+
+› [x] Use theme colors      Apply colors from the active /theme
+  ───────────────────────
+  [x] project-name          Project name (omitted when unavailable)
+  [x] git-branch            Current Git branch (omitted when unavailable)
+  [x] thread-title          Current thread title, or thread identifier when unnamed
+  [x] daybreak              Whether Daybreak is enabled for this thread
+  [ ] model                 Current model name
+  [ ] model-with-reasoning  Current model name with reasoning level
+↓
+  my-project · feature/mixed-preview · Mixed preview thread · Daybreak on
+  space toggle · ←/→ reorder · enter save · esc cancel

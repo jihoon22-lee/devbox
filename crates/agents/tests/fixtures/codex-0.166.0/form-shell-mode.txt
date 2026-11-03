@@ -1,0 +1,15 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/chat_composer.rs가 그리는 입력창의 셸 모드(Shell mode) 화면이다. 입력창 글이 `!`로 시작하면 셸 모드가 되고, 붙여 넣은 글은 그 뒤에 붙으며 Enter는 그것을 프롬프트로 보내지 않고 셸 명령으로 실행한다(chatwidget/input_submission.rs).
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/snapshots/codex_tui__bottom_pane__chat_composer__tests__footer_mode_shell_command_absorbs_bang.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 그리는 소스 중 chat_composer.rs는 다른 곳만 바뀌어 셸 모드 표시를 그리는 부분이 세 태그에서 같다(diff). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+! git status
+
+
+
+
+
+
+  gpt-5.4 high fast · ~/code/codex-1 · Context 0% used                                  Shell mode

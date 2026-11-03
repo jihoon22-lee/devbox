@@ -1,6 +1,8 @@
 //! App-owned lifetime tracking survives transport ACKs, reconnects and adapter cancellation.
 use crate::core::native_activity::{Ledger, Observation, observe};
-use devbox_protocol::windows::{ObservationControl, RunIdentity, RunWindows};
+use devbox_protocol::windows::{
+    OBSERVATION_ASSIGNMENT_DEADLINE_MS, ObservationControl, RunIdentity, RunWindows,
+};
 use native::{ChildProof, JobProof};
 use std::{
     collections::BTreeMap,
@@ -96,7 +98,9 @@ impl Tracking {
         // Independent of bridge cancellation. One bounded blocking read at a time; a stuck filesystem
         // query leaves Unknown and never starts replacement queries or releases the attempt.
         tauri::async_runtime::spawn(async move {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+            // `assigned` comes only once the job holder is ready: the daemon's deadline (M-1).
+            let deadline = tokio::time::Instant::now()
+                + Duration::from_millis(OBSERVATION_ASSIGNMENT_DEADLINE_MS);
             loop {
                 let (query_child, query_run, query_control) =
                     (child.clone(), run.clone(), control.clone());

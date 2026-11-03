@@ -1,5 +1,6 @@
 import type { RpcClient } from "../../../rpc/client";
 import type { LogLine, SearchCursor } from "../../../rpc/gen/rpc";
+import { ansiToText } from "../../runs/model";
 
 const MAX_BYTES = 64 * 1024;
 const encode = (text: string) => new TextEncoder().encode(text).length;
@@ -10,13 +11,16 @@ export function quoteFailureLogs(runId: string, newest: LogLine[]): string {
   const rows: string[] = [];
   let truncated = newest.length > 200;
   for (const row of newest.slice(0, 200)) {
-    const text = `> ${row.text.replaceAll("\0", "�").replaceAll("\n", "\n> ")}\n`;
+    // The quote is pasted into the agent's terminal, where a color code or other control code in
+    // a program's output would act as a key. Plain text also keeps each line behind its "> ".
+    const plain = ansiToText(row.text);
+    const text = `> ${plain.replaceAll("\n", "\n> ")}\n`;
     if (encode(text) > left) {
       truncated = true;
       if (!rows.length) {
         const tail: string[] = [];
         left -= encode("> ") + 1;
-        for (const character of Array.from(row.text.replaceAll("\0", "�").replaceAll("\n", " ")).reverse()) {
+        for (const character of Array.from(plain.replaceAll("\n", " ")).reverse()) {
           const bytes = encode(character);
           if (bytes > left) break;
           tail.push(character);

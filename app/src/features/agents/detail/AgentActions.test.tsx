@@ -43,6 +43,54 @@ test("discard freezes displayed head/count and cancel receives focus", async () 
     expect: { headOid: "h1", unmergedCommits: 3, discardFingerprint: "snapshot1" },
   });
 });
+const SUBMODULES = "하위 모듈이 있습니다. 하위 모듈 안의 push하지 않은 커밋도 함께 사라집니다.";
+test.each([true, false])(
+  "a discard's confirmation warns of submodules only when the folder has them (%s)",
+  async (hasSubmodules) => {
+    const wire = await setup();
+    await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "폐기" }));
+    await waitFor(() => expect(wire.requests("agents.discard_check")).toHaveLength(1));
+    await act(async () =>
+      wire.reply("agents.discard_check", {
+        headOid: "h1",
+        unmergedCommits: 0,
+        dirtyFiles: 0,
+        fingerprint: "snapshot1",
+        hasSubmodules,
+      }),
+    );
+    const confirm = await screen.findByRole("button", { name: "작업 폴더와 브랜치 삭제" });
+    // The forced removal takes the submodules' store too; the discard stays allowed.
+    expect(document.body.textContent?.includes(SUBMODULES)).toBe(hasSubmodules);
+    expect(confirm).toBeEnabled();
+  },
+);
+test("a discard stopped by its failed teardown says to fix the command and discard again, never the cleanup list", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "폐기" }));
+  await waitFor(() => expect(wire.requests("agents.discard_check")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("agents.discard_check", { headOid: "h1", unmergedCommits: 3, dirtyFiles: 1, fingerprint: "snapshot1" }),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "작업 폴더와 브랜치 삭제" }));
+  await waitFor(() => expect(wire.requests("agents.discard")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("agents.discard").id,
+      error: { code: "agents.teardown_failed", detail: { index: 2, exit_code: 3 } },
+    }),
+  );
+  // The task is still open, so it is not in the cleanup list: the discard is what to try again.
+  const notice = await screen.findByText(/정리 명령이 실패했습니다\(종료 코드 3\)/);
+  expect(notice).toHaveTextContent(
+    "정리 명령이 실패했습니다(종료 코드 3). .devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 다시 폐기하세요.",
+  );
+  expect(document.body).not.toHaveTextContent("정리 후보");
+  expect(wire.requests("agents.discard")).toHaveLength(1);
+});
 test("state_changed refetches the snapshot but requires a second explicit confirmation", async () => {
   const wire = await setup();
   await userEvent.click(screen.getByRole("button", { name: "병합" }));
@@ -218,4 +266,24 @@ test("trust denial discards old Git confirmation and explicitly rechecks trust b
   expect(wire.request("agents.merge", -1).params).toMatchObject({
     expect: { headOid: "fresh-head", baseOid: "fresh-base" },
   });
+});
+
+test("the resolution instruction is held while the agent waits for a choice in its terminal", async () => {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  const node = (state: ReturnType<typeof task>["state"]) => (
+    <RpcProvider client={wire.client}>
+      <TooltipProvider>
+        <AgentActions task={task("a1", state)} sessionAlive onInstruct={vi.fn()} />
+      </TooltipProvider>
+    </RpcProvider>
+  );
+  const view = render(node("waiting"));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+  await act(async () => wire.reply("agents.rebase_status", { owned: true, files: ["a.txt"] }));
+  // Text sent now could answer the approval prompt, as in the composer. The other choices stay open.
+  expect(await screen.findByRole("button", { name: "해결 지시 보내기" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "되돌리기" })).toBeEnabled();
+  expect(wire.requests("agents.send")).toHaveLength(0);
+  view.rerender(node("idle"));
+  await waitFor(() => expect(screen.getByRole("button", { name: "해결 지시 보내기" })).toBeEnabled());
 });

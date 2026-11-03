@@ -55,6 +55,15 @@ test("agent settings filter tool checks, copy actual config path and refresh onl
   await act(async () => wire.reply("system.refresh_env", { restarting: true }));
   expect(await screen.findByText(/데몬을 다시 시작합니다/)).toBeInTheDocument();
 });
+test("profile edits point to [다시 설정], since starting the app keeps an unchanged daemon running", async () => {
+  await setup();
+  expect(
+    screen.getByText(
+      "사용자 정의 도구 프로필은 config.toml에서 편집합니다. 변경한 뒤 설정 → 앱 진단 → [다시 설정]을 눌러 주세요.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/데몬을 다시 시작하세요/)).toBeNull();
+});
 test("foreground refresh explains that current environment is unchanged", async () => {
   const { wire } = await setup();
   await userEvent.click(screen.getByRole("button", { name: "셸 환경 다시 읽기" }));

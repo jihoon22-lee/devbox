@@ -1,0 +1,19 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/model_migration.rs가 그리는 시작 때 새 모델 전환 선택 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/snapshots/codex_tui__model_migration__tests__model_migration_prompt.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 두 파일 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Codex just got an upgrade. Introducing
+  gpt-5.1-codex-max.
+
+  Upgrade to gpt-5.2-codex for the latest and greatest
+  agentic coding model.
+
+  You can continue using gpt-5.1-codex-mini if you prefer.
+
+› 1. Try new model
+  2. Use existing model
+
+  enter/esc confirm · ⌃c quit

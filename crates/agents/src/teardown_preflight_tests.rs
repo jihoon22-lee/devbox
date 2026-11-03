@@ -20,6 +20,31 @@ fn teardown_lists_preflight_runner_and_entire_cleanup_selection() {
         "teardown-runner-nul-fails",
     ]);
 }
+/// What a discard's own teardown writes into the work folder goes with the folder: a lock file
+/// made and removed again, a tracked edit or a new file.
+#[test]
+fn discard_drops_what_its_own_teardown_wrote() {
+    cases(&[
+        "teardown-discard-scratch",
+        "teardown-discard-edited",
+        "teardown-discard-wrote",
+    ]);
+}
+/// A change made after the user confirmed the discard and before its teardown runs (here, while
+/// the agent stops) is still refused, before the teardown: an edit, a commit that changes no file
+/// and so leaves the folder's listing and stamp as they were, or a submodule store made outside
+/// the folder, which the confirmation warned of or not. So is a teardown that moves HEAD, or the
+/// base branch, which the UI's confirmation pins only through the snapshot.
+#[test]
+fn discard_still_refuses_a_change_before_its_teardown_and_a_moved_head() {
+    cases(&[
+        "teardown-discard-late-dirty",
+        "teardown-discard-late-commit",
+        "teardown-discard-late-submodules",
+        "teardown-discard-moved",
+        "teardown-discard-base-moved",
+    ]);
+}
 #[test]
 fn teardown_bounds_preserve_snapshot_bytes_and_unused_paths() {
     cases(&[
@@ -44,6 +69,38 @@ pub(super) async fn case(mode: &str) {
     );
     let command = if mode.ends_with("nul-fails") {
         "true\0bad".into()
+    } else if [
+        "scratch",
+        "edited",
+        "wrote",
+        "late-dirty",
+        "late-commit",
+        "late-submodules",
+        "moved",
+    ]
+    .iter()
+    .any(|end| mode.ends_with(end))
+    {
+        // Teardown runs in the worktree: a lock file made and removed again, a tracked edit, a new
+        // file, nothing (the change is made while the agent stops), a commit on the base branch
+        // with the same files, or a commit.
+        let change = if mode.ends_with("scratch") {
+            "touch teardown.lock && rm teardown.lock"
+        } else if mode.ends_with("edited") {
+            "printf edited > tracked"
+        } else if mode.ends_with("wrote") {
+            "printf x > teardown.log"
+        } else if mode.contains("-late-") {
+            "true"
+        } else if mode.ends_with("base-moved") {
+            "git update-ref refs/heads/main \"$(git commit-tree -p main -m moved 'main^{tree}')\""
+        } else {
+            "git commit --allow-empty -qm moved"
+        };
+        format!(
+            "{change} && printf second > {}",
+            crate::plan::sh_quote(second.to_str().expect("owned marker"))
+        )
     } else if mode.ends_with("ascii") || mode.ends_with("unicode") {
         let prefix = format!(
             "printf second > {}; #",
@@ -111,11 +168,13 @@ pub(super) async fn case(mode: &str) {
             .await
             .expect("review");
         git(&f.repo, &["merge", "--no-ff", "--no-edit", "agent/review"]);
+        let merged = devbox_git::run::resolve(&f.repo, "main")
+            .await
+            .expect("merge commit");
         f.svc
             .close_record(
                 &task.id,
-                crate::state::CloseHow::Merged,
-                None,
+                crate::closed_review::Closure::Merged { result: merged },
                 confirmed.head_oid,
                 f.svc.closure_usage(&task.id).await,
                 review,
@@ -151,6 +210,11 @@ pub(super) async fn case(mode: &str) {
             .await
             .expect("earlier branch-only resource");
     }
+    fs::write(
+        std::env::var_os("DEVBOX_CLOSE_WORKTREE_RECEIPT").expect("worktree receipt"),
+        wt.to_str().expect("owned worktree"),
+    )
+    .expect("owned worktree receipt");
     fs::write(
         f.svc.paths.instance_config_dir.join("tmux.conf"),
         devbox_terminal::TMUX_CONF,
@@ -237,7 +301,12 @@ pub(super) async fn case(mode: &str) {
                 id: task.id.clone(),
                 expect: ReviewExpect {
                     head_oid: check.head_oid,
-                    base_oid: confirmation.base_oid,
+                    // As the UI's discard confirmation sends it: no base.
+                    base_oid: if mode.ends_with("base-moved") {
+                        None
+                    } else {
+                        confirmation.base_oid
+                    },
                     unmerged_commits: Some(check.unmerged_commits),
                     discard_fingerprint: check.fingerprint,
                 },
@@ -265,6 +334,30 @@ pub(super) async fn case(mode: &str) {
             .await
             .map(|_| ())
     };
+    if mode.starts_with("teardown-discard-late-") || mode.ends_with("moved") {
+        assert!(
+            matches!(result, Err(Fail::Domain(AgentsError::StateChanged { .. }))),
+            "{result:?}"
+        );
+        assert!(wt.exists());
+        assert_ne!(
+            f.svc.get(&task.id).await.expect("task").state,
+            AgentState::Closed
+        );
+        if mode.starts_with("teardown-discard-late-") {
+            // Refused right after the agent stopped: the teardown never ran.
+            assert!(!first.exists() && !second.exists());
+        } else {
+            assert!(first.exists() && second.exists());
+        }
+        if mode.ends_with("late-dirty") {
+            assert_eq!(
+                fs::read(wt.join("tracked")).expect("kept edit"),
+                b"late uncommitted edit\n"
+            );
+        }
+        return;
+    }
     if mode.ends_with("fails") {
         assert!(
             !first.exists(),

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { appPreferences, isNative, setAutostart } from "../features/settings/nativePreferences";
+import { appPreferences, isNative, markAutostartAsked, setAutostart } from "../features/settings/nativePreferences";
 import { Button, ConfirmDialog } from "../ui";
 import { FirstRun } from "./FirstRun";
 import { useNativeRuntime } from "./nativeRuntime";
@@ -124,7 +124,14 @@ export function NativeMainController({ ready }: { ready: boolean }) {
       )}
       {firstRun && quit === undefined && (
         <FirstRun
-          onCancel={() => setFirstRun(false)}
+          onCancel={() => {
+            setFirstRun(false);
+            void markAutostartAsked().catch(() => {
+              // Nothing was saved, so [다시 시도] reads the settings again and asks again.
+              firstRunChecked.current = false;
+              setError("첫 실행 선택을 저장하지 못했습니다. [다시 시도]를 누르면 선택 창을 다시 엽니다.");
+            });
+          }}
           onDone={async ({ autostart }) => {
             await setAutostart(autostart, true);
             setFirstRun(false);

@@ -1,0 +1,55 @@
+# 실제 녹화. codex-cli 0.164.0 (~/.local/bin/codex), 신뢰하지 않은 새 git 폴더에서 처음 뜨는 "Folder access" 화면.
+# 녹화: 전용 tmux socket, 200x50, 시작 5초 뒤 capture-pane -p -J. 아무것도 고르지 않았고 보낸 키는 마지막 Ctrl+C 하나뿐이다.
+# 정리: 폴더 이름의 난수를 지웠다. 홈 경로·계정·이메일·토큰은 화면에 없었다. 줄 끝 공백은 capture 그대로다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+ 
+  Folder access             
+  /tmp/devbox-codex-fixture                                                                                                                                                                  
+ 
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings can run code automatically, even without a model request. Continue only if you
+  trust these files. Your trust decision will be saved.
+ 
+› 1. Trust and continue                                                                                                                                                                                 
+  2. Back to Agent Command Center
+ 
+  enter continue · esc back
+ 
+ 
+ 
+ 
+ 
+                                                                                                     
+                                                                                                              
+                                                                                                                
+                                                                                                                 
+                                                                                                                  
+                                                                                                                  
+                                                                                                                   
+                                                                                                                    
+                                                                                                                    
+                                                                                                                     
+                                                                                                                    
+                                                                                                                    
+                                                                                                                   
+                                                                                                                 
+                                                                                                              
+                                                                                                             
+                                                                                                           
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+                          
+ 
+ 
+                 

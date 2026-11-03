@@ -1,13 +1,13 @@
 //! `config.toml [activity]`: privacy rules and the idle threshold. Core keeps the
-//! table opaque; it is read here. Anything unreadable fails closed (no titles)
-//! instead of stopping the daemon. Writes take the shared config lock (also taken
-//! by `devbox_secrets` `save_name`) and keep comments and other sections.
+//! table opaque; it is read here. Anything unreadable fails closed (nothing is
+//! recorded) instead of stopping the daemon. Writes take the shared config lock
+//! (also taken by `devbox_secrets` `save_name`) and keep comments and other sections.
 use crate::model::idle::{DEFAULT_IDLE_THRESHOLD_MS, MAX_IDLE_THRESHOLD_MS, MIN_IDLE_THRESHOLD_MS};
-use crate::model::privacy::{CompiledRules, PrivacyRules};
+use crate::model::privacy::{CompiledRules, InvalidRule, PrivacyRules};
 use serde::Deserialize;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Empty file in the config folder; every `config.toml` writer holds it exclusively.
 pub const LOCK_FILE: &str = ".config.toml.lock";
@@ -16,7 +16,8 @@ pub const LOCK_FILE: &str = ".config.toml.lock";
 pub struct ActivitySettings {
     pub rules: PrivacyRules,
     pub idle_threshold_ms: i64,
-    /// `false`: the table did not parse; `rules` then masks every title.
+    /// `false`: the table did not parse, so nothing is recorded; `rules`, which the
+    /// app is shown, then masks every title.
     pub readable: bool,
 }
 
@@ -46,40 +47,58 @@ pub fn valid_idle(ms: i64) -> bool {
 }
 
 impl ActivitySettings {
-    /// Never fails: a table that does not parse becomes "mask all titles".
+    /// Never fails: a table that does not parse becomes [`Self::unreadable`].
     pub fn from_table(table: &toml::Table) -> Self {
-        match toml::Value::Table(table.clone()).try_into::<Raw>() {
-            Ok(raw) => Self {
-                rules: PrivacyRules {
-                    excluded_processes: raw.excluded_processes,
-                    excluded_title_patterns: raw.excluded_title_patterns,
-                    redact_title_patterns: raw.redact_title_patterns,
-                    mask_all_titles: raw.mask_all_titles,
-                },
-                idle_threshold_ms: if valid_idle(raw.idle_threshold_ms) {
-                    raw.idle_threshold_ms
-                } else {
-                    DEFAULT_IDLE_THRESHOLD_MS
-                },
-                readable: true,
+        Self::try_from_table(table).unwrap_or_else(|_| Self::unreadable())
+    }
+
+    /// The settings, or why the table does not parse (the daemon reports it).
+    pub fn try_from_table(table: &toml::Table) -> Result<Self, toml::de::Error> {
+        let raw = toml::Value::Table(table.clone()).try_into::<Raw>()?;
+        Ok(Self {
+            rules: PrivacyRules {
+                excluded_processes: raw.excluded_processes,
+                excluded_title_patterns: raw.excluded_title_patterns,
+                redact_title_patterns: raw.redact_title_patterns,
+                mask_all_titles: raw.mask_all_titles,
             },
-            Err(_) => Self {
-                rules: PrivacyRules {
-                    mask_all_titles: true,
-                    ..PrivacyRules::default()
-                },
-                idle_threshold_ms: DEFAULT_IDLE_THRESHOLD_MS,
-                readable: false,
+            idle_threshold_ms: if valid_idle(raw.idle_threshold_ms) {
+                raw.idle_threshold_ms
+            } else {
+                DEFAULT_IDLE_THRESHOLD_MS
             },
+            readable: true,
+        })
+    }
+
+    /// `[activity]` did not load: record nothing until it does or new rules are saved.
+    pub fn unreadable() -> Self {
+        Self {
+            rules: PrivacyRules {
+                mask_all_titles: true,
+                ..PrivacyRules::default()
+            },
+            idle_threshold_ms: DEFAULT_IDLE_THRESHOLD_MS,
+            readable: false,
         }
     }
 
-    /// The rules the daemon applies; anything not compilable stores no titles.
+    /// The rules the daemon applies; anything not compilable records nothing.
     pub fn compiled(&self) -> CompiledRules {
         if !self.readable {
             return CompiledRules::fail_closed();
         }
         CompiledRules::compile(&self.rules).unwrap_or_else(|_| CompiledRules::fail_closed())
+    }
+
+    /// Why rules that parsed do not compile; empty when they compile or did not parse.
+    pub fn invalid_rules(&self) -> Vec<InvalidRule> {
+        if !self.readable {
+            return Vec::new();
+        }
+        CompiledRules::compile(&self.rules)
+            .err()
+            .unwrap_or_default()
     }
 }
 
@@ -87,8 +106,26 @@ impl ActivitySettings {
 pub(crate) enum WriteError {
     #[error("config.toml is not a regular TOML file")]
     Unavailable,
+    /// This file's `[activity]` does not parse.
+    #[error("[activity] in {} does not parse", .0.display())]
+    Invalid(PathBuf),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+}
+
+/// Whether `text`'s `[activity]` parses as the daemon reads each file's copy at start. A file
+/// without one does; rules that parse but do not compile do too.
+fn activity_parses(text: &str) -> bool {
+    match text
+        .parse::<toml::Table>()
+        .map(|mut table| table.remove("activity"))
+    {
+        Ok(None) => true,
+        Ok(Some(toml::Value::Table(activity))) => {
+            ActivitySettings::try_from_table(&activity).is_ok()
+        }
+        _ => false,
+    }
 }
 
 /// Opens (creating) the lock file without following a symlink and waits for the
@@ -127,7 +164,8 @@ fn set(section: &mut dyn toml_edit::TableLike, key: &str, value: toml_edit::Valu
 }
 
 /// Blocking: lock → read `config.toml` (missing is empty; symlink or not a regular
-/// file is refused) → edit `[activity]` → same-folder temp file, fsync, rename.
+/// file is refused) → refuse while its or `config.local.toml`'s `[activity]` does not
+/// parse → edit `[activity]` → same-folder temp file, fsync, rename.
 pub(crate) fn write(dir: &Path, rules: &PrivacyRules, idle: i64) -> Result<(), WriteError> {
     std::fs::create_dir_all(dir)?;
     let _lock = lock(dir)?;
@@ -146,6 +184,17 @@ pub(crate) fn write(dir: &Path, rules: &PrivacyRules, idle: i64) -> Result<(), W
     let mut document = text
         .parse::<toml_edit::DocumentMut>()
         .map_err(|_| WriteError::Unavailable)?;
+    // The editor was shown `unreadable()` lists then, not what the user wrote. Both files are
+    // read now, under the lock: one broken by hand since the daemon started counts too.
+    if !activity_parses(&text) {
+        return Err(WriteError::Invalid(path));
+    }
+    let local = dir.join("config.local.toml");
+    match std::fs::read_to_string(&local) {
+        Ok(text) if activity_parses(&text) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return Err(WriteError::Invalid(local)),
+    }
     let section = document
         .as_table_mut()
         .entry("activity")

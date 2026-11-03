@@ -19,15 +19,51 @@ pub(super) fn configure(
         Box::pin(async move {
             let observed =
                 crate::windows_exec::observe(&executable, &assigned, cancel.clone()).await;
+            // A missing job proves nothing without the holder's receipt, which the runtime
+            // checks, so it is re-asked natively too.
             if !matches!(
                 observed,
-                ObservationState::Unavailable | ObservationState::IdentityMismatch
+                ObservationState::Unavailable
+                    | ObservationState::IdentityMismatch
+                    | ObservationState::NotFound
             ) || cancel.is_cancelled()
             {
                 return observed;
             }
-            match native
+            let native = match native
                 .probe(WindowsProbe::Observation { assigned }, cancel)
+                .await
+            {
+                Ok(WindowsProbeResult::Observation { state }) => Some(state),
+                _ => None,
+            };
+            retried(observed, native)
+        })
+    });
+    let executable = execution.windows_interop.clone();
+    let native = broker.clone();
+    let stopping = cancel.clone();
+    execution.windows_holder = Arc::new(move |holder, cross_session| {
+        let executable = executable.clone();
+        let native = native.clone();
+        let cancel = stopping.child_token();
+        Box::pin(async move {
+            let direct =
+                crate::windows_exec::holder(&executable, &holder, cross_session, cancel.clone())
+                    .await;
+            // Only an unavailable direct path is retried in the native session. A mismatch is
+            // the check's own SID or session answer, never a reason to ask another session.
+            if direct != ObservationState::Unavailable || cancel.is_cancelled() {
+                return direct;
+            }
+            match native
+                .probe(
+                    WindowsProbe::Holder {
+                        holder,
+                        cross_session,
+                    },
+                    cancel,
+                )
                 .await
             {
                 Ok(WindowsProbeResult::Observation { state }) => state,
@@ -80,6 +116,31 @@ pub(super) fn configure(
             }
         })
     });
+}
+
+/// The native answer replaces the direct one. A direct NotFound already describes the job, so
+/// it is replaced only by another answer about the job; it stands when the native side cannot
+/// tell, so the holder's receipt can still release the reader without the Windows app. A direct
+/// IdentityMismatch (another session after sign-out or a reboot) likewise stands when the native
+/// side cannot tell, so the runtime's holder check can decide; reconcile is the only consumer,
+/// and there an unresolved mismatch keeps the reader exactly as Unavailable does.
+fn retried(direct: ObservationState, native: Option<ObservationState>) -> ObservationState {
+    match (direct, native) {
+        (
+            ObservationState::NotFound,
+            Some(
+                state @ (ObservationState::Active { .. }
+                | ObservationState::Empty
+                | ObservationState::NotFound),
+            ),
+        ) => state,
+        (ObservationState::NotFound, _) => ObservationState::NotFound,
+        (ObservationState::IdentityMismatch, None | Some(ObservationState::Unavailable)) => {
+            ObservationState::IdentityMismatch
+        }
+        (_, Some(state)) => state,
+        (_, None) => ObservationState::Unavailable,
+    }
 }
 
 #[cfg(test)]

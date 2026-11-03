@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { RpcError } from "../../rpc/client";
 import type { RenderedNote } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcSession } from "../../rpc/RpcProvider";
 
 import { RenderedPreview } from "./RenderedPreview";
@@ -36,7 +36,7 @@ export function Preview({ path, text, onOpenNote }: { path: string; text: string
         (failure) => {
           if (!live) return;
           const e = failure instanceof RpcError ? failure : new RpcError("internal");
-          setError(messageFor(e.code, e.detail).title);
+          setError(messageText(e.code, e.detail, e.diagnosticId));
         },
       );
     }, DEBOUNCE_MS);

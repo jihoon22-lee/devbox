@@ -30,10 +30,20 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
   const sessions = useSessions(task?.projectId ?? null, { enabled: !!task });
   const [tab, setTab] = useState("terminal");
   const [focus, setFocus] = useState<number>();
+  // Asked for by the buttons that point to the terminal; a tab picked by hand carries no request.
+  const [terminalFocus, setTerminalFocus] = useState<number>();
   const sessionAlive =
     !!task?.terminalId && sessions.items.some((session) => session.id === task.terminalId && session.alive);
   if (!task) return detail.error ? <QueryError query={detail} /> : <EmptyState title="에이전트 작업을 불러오는 중…" />;
   const instruct = () => setFocus((previous) => (previous ?? 0) + 1);
+  const showTerminal = () => {
+    setTab("terminal");
+    setTerminalFocus((previous) => (previous ?? 0) + 1);
+  };
+  const selectTab = (next: string) => {
+    setTab(next);
+    setTerminalFocus(undefined);
+  };
   return (
     <article className={s.detail} aria-label="에이전트 작업 상세">
       <AgentHeader
@@ -53,7 +63,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         sessionAlive={sessionAlive}
         sessionKnown={!!sessions.data}
         onInstruct={instruct}
-        onResume={() => setTab("terminal")}
+        onResume={showTerminal}
         onTest={(runId) => {
           useAgentRuns.getState().set(id, runId);
           setTab("run");
@@ -62,7 +72,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
       <Tabs
         items={tabs}
         active={tab}
-        onSelect={setTab}
+        onSelect={selectTab}
         actions={
           <Button
             size="sm"
@@ -80,7 +90,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         {tab === "terminal" &&
           (task.terminalId ? (
             <div className={s.terminal}>
-              <TerminalView id={task.terminalId} readOnly={task.state === "closed"} />
+              <TerminalView id={task.terminalId} readOnly={task.state === "closed"} focusRequest={terminalFocus} />
             </div>
           ) : (
             <EmptyState
@@ -93,7 +103,13 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         {tab === "run" && <RunTab task={task} />}
       </div>
       {task.state !== "closed" && (
-        <Compose agentId={id} disabled={!sessionAlive || task.toolExited} focusRequest={focus} />
+        <Compose
+          agentId={id}
+          agentState={task.state}
+          disabled={!sessionAlive || task.toolExited}
+          focusRequest={focus}
+          onShowTerminal={showTerminal}
+        />
       )}
     </article>
   );

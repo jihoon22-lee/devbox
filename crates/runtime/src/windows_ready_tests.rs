@@ -125,6 +125,43 @@ async fn ready(c: &Case) -> bool {
 }
 
 #[tokio::test]
+async fn an_rc1_shaped_committed_attempt_is_still_observed_for_readiness() {
+    let c = case(Phase::Committed, |calls| {
+        answering(ListenerObservation::Owned, calls)
+    })
+    .await;
+    // Rewrite the row as rc.1 stored it: no holder fields in the control.
+    let nonce = c.attempt.control.nonce.clone();
+    c._owned
+        .f
+        .db
+        .write(move |tx| {
+            let body: String = tx.query_row(
+                "SELECT body FROM runtime_windows_attempts WHERE nonce=?1",
+                [&nonce],
+                |row| row.get(0),
+            )?;
+            let mut row: serde_json::Value = serde_json::from_str(&body).expect("attempt row");
+            let control = row["control"].as_object_mut().expect("stored control");
+            control.remove("holderReadyPath").expect("holder field");
+            control.remove("emptiedPath").expect("holder field");
+            tx.execute(
+                "UPDATE runtime_windows_attempts SET body=?1 WHERE nonce=?2",
+                [row.to_string(), nonce.clone()],
+            )?;
+            Ok(())
+        })
+        .await
+        .expect("rc.1 row");
+    assert_eq!(
+        c.svc.windows_ready_gate(&c.id).await.expect("gate"),
+        WindowsReadiness::Ready
+    );
+    assert_eq!(c.calls.lock().expect("calls").len(), 1);
+    c.svc.shutdown().await;
+}
+
+#[tokio::test]
 async fn unrelated_listener_on_the_port_never_marks_the_windows_service_ready() {
     let c = case(Phase::Committed, |calls| {
         answering(ListenerObservation::NotOwned, calls)

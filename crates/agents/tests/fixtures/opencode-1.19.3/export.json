@@ -1,0 +1,172 @@
+{
+  "info": {
+    "id": "ses_taskroot",
+    "slug": "fixture",
+    "projectID": "fixture-project",
+    "directory": "/tmp/devbox-opencode-fixture/repo",
+    "path": "",
+    "title": "Fixture session",
+    "agent": "build",
+    "model": {
+      "id": "scripted",
+      "providerID": "devboxfixture"
+    },
+    "version": "1.19.3",
+    "summary": {
+      "additions": 0,
+      "deletions": 0,
+      "files": 0
+    },
+    "cost": 0.00801,
+    "tokens": {
+      "input": 2500,
+      "output": 24,
+      "reasoning": 0,
+      "cache": {
+        "read": 500,
+        "write": 0
+      }
+    },
+    "time": {
+      "created": 1793148170085,
+      "updated": 1793148175163
+    }
+  },
+  "messages": [
+    {
+      "info": {
+        "role": "user",
+        "time": {
+          "created": 1793148170396
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "devboxfixture",
+          "modelID": "scripted"
+        },
+        "summary": {
+          "diffs": []
+        },
+        "id": "msg_fixture1",
+        "sessionID": "ses_taskroot"
+      },
+      "parts": [
+        {
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_fixture1",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/tmp/devbox-opencode-fixture/repo",
+          "root": "/tmp/devbox-opencode-fixture/repo"
+        },
+        "cost": 0.003717,
+        "tokens": {
+          "total": 1411,
+          "input": 1160,
+          "output": 11,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 240
+          }
+        },
+        "modelID": "scripted",
+        "providerID": "devboxfixture",
+        "time": {
+          "created": 1793148170459,
+          "completed": 1793148174972
+        },
+        "finish": "tool-calls",
+        "id": "msg_fixture2",
+        "sessionID": "ses_taskroot"
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "tool",
+          "tool": "task",
+          "state": {
+            "status": "completed"
+          }
+        },
+        {
+          "type": "step-finish",
+          "tokens": {
+            "total": 1411,
+            "input": 1160,
+            "output": 11,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 240
+            }
+          },
+          "cost": 0.003717
+        }
+      ]
+    },
+    {
+      "info": {
+        "parentID": "msg_fixture1",
+        "role": "assistant",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/tmp/devbox-opencode-fixture/repo",
+          "root": "/tmp/devbox-opencode-fixture/repo"
+        },
+        "cost": 0.004293,
+        "tokens": {
+          "total": 1613,
+          "input": 1340,
+          "output": 13,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 260
+          }
+        },
+        "modelID": "scripted",
+        "providerID": "devboxfixture",
+        "time": {
+          "created": 1793148174978,
+          "completed": 1793148175156
+        },
+        "finish": "stop",
+        "id": "msg_fixture3",
+        "sessionID": "ses_taskroot"
+      },
+      "parts": [
+        {
+          "type": "step-start"
+        },
+        {
+          "type": "text"
+        },
+        {
+          "type": "step-finish",
+          "tokens": {
+            "total": 1613,
+            "input": 1340,
+            "output": 13,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 260
+            }
+          },
+          "cost": 0.004293
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/async_questions/render.rs, codex-rs/tui/src/bottom_pane/async_questions/input.rs가 그리는 모델이 일하는 동안 묻는 질문(async question) 화면이다. 붙여 넣은 글은 답 칸에 들어가고 Enter는 그것을 질문의 답으로 보낸다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/async_questions/snapshots/codex_tui__bottom_pane__async_questions__tests__question_multiline.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 그리는 소스 중 render.rs, input.rs는 다른 곳만 바뀌어 힌트 줄 문구가 세 태그에서 같다(diff). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치와 힌트 줄은 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  1 of 2
+
+  Run this command:
+
+  printf '診 断 '
+
+  Then review the diagnostics
+  (https://example.com/diagnostics?view=full)?
+
+  Type your answer
+
+  enter submit   ⌃] skip   ⇧→ main prompt
+  ⇧← next question

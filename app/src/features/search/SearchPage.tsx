@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { Scope, SearchHit, SearchQuery } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { Button } from "../../ui";
 import { CodePreview } from "./CodePreview";
 import { SavedSearches } from "./SavedSearches";
@@ -107,7 +107,9 @@ export function SearchPage({
       {result.refreshing && <p role="status">검색 중… 이전 결과를 유지합니다.</p>}
       {result.error && (
         <p role="alert">
-          {messageFor(result.error.code, result.error.detail).title} <Button onClick={result.retry}>다시 시도</Button>
+          {messageText(result.error.code, result.error.detail, result.error.diagnosticId)}{" "}
+          {/* While search is off, the daemon answers every call with this until it restarts. */}
+          {result.error.code !== "search.disabled" && <Button onClick={result.retry}>다시 시도</Button>}
         </p>
       )}
       {query && !result.refreshing && !result.error && !Object.values(result.groups).some((items) => items.length) && (

@@ -40,7 +40,7 @@ fn input(paths: &Paths) -> BundleInput {
     let vault = paths.home.join("notes");
     std::fs::create_dir_all(&vault).expect("explicit owned default vault");
     BundleInput {
-        notes_vault: VaultSnapshot::capture(&vault).expect("vault snapshot"),
+        notes_vault: Some(VaultSnapshot::capture(&vault).expect("vault snapshot")),
         paths: paths.clone(),
         doctor: DoctorReport {
             checks: vec![Check {
@@ -174,6 +174,34 @@ async fn support_bundle_omits_logs_when_secrets_are_locked() {
     assert!(!files.values().any(|text| text.contains("private-fixture")));
 }
 #[tokio::test]
+async fn support_bundle_without_a_notes_vault_omits_logs_and_still_masks_home() {
+    let (_temp, _db, paths, secrets) = fixture().await;
+    std::fs::write(paths.log_dir.join("daemon.today.log"), "notes-off-log").expect("log");
+    std::fs::write(paths.log_dir.join("crash-1.log"), "notes-off-crash").expect("crash");
+    let mut data = input(&paths);
+    // Notes are off: there is no vault to mask note paths with, not even the default one.
+    data.notes_vault = None;
+    data.doctor.checks[0].message = format!("home={}", paths.home.display());
+    let bundle = create_bundle(data, &secrets)
+        .await
+        .expect("bundle without a vault");
+    assert_eq!(bundle.logs_omitted.as_deref(), Some("notes_disabled"));
+    let files = entries(&bundle.path);
+    assert!(
+        !files
+            .keys()
+            .any(|name| name.starts_with("logs/") || name.starts_with("crashes/"))
+    );
+    assert!(files["manifest.json"].contains("notes_disabled"));
+    assert!(!files.values().any(|text| text.contains("notes-off")));
+    assert!(files["doctor.json"].contains("home=~"));
+    assert!(
+        files
+            .values()
+            .all(|text| !text.contains(paths.home.to_str().expect("home")))
+    );
+}
+#[tokio::test]
 async fn support_bundle_scrubs_home_and_note_paths() {
     let (_temp, _db, paths, secrets) = fixture().await;
     std::fs::write(
@@ -201,8 +229,17 @@ async fn support_bundle_scrubs_home_and_note_paths() {
     );
 }
 #[tokio::test]
-async fn support_bundle_omits_unavailable_secrets_and_never_follows_log_symlinks() {
+async fn support_bundle_masks_stored_secrets_with_invalid_names_and_never_follows_log_symlinks() {
     let (_temp, _db, paths, secrets) = fixture().await;
+    secrets
+        .set(SetSecret {
+            name: "TOKEN".into(),
+            value: "private-fixture".into(),
+        })
+        .await
+        .expect("secret");
+    // A `[secrets]` that does not load falls back to no configured names, but the names
+    // with values come from the store: every stored value is still masked, logs stay in.
     std::fs::write(
         paths.config_dir.join("config.toml"),
         "[secrets]\nnames='invalid'",
@@ -211,8 +248,15 @@ async fn support_bundle_omits_unavailable_secrets_and_never_follows_log_symlinks
     std::fs::write(paths.log_dir.join("daemon.today.log"), "private-fixture").expect("log");
     let bundle = create_bundle(input(&paths), &secrets)
         .await
-        .expect("safe unavailable bundle");
-    assert_eq!(bundle.logs_omitted.as_deref(), Some("secrets_locked"));
+        .expect("bundle with invalid secret names");
+    assert_eq!(bundle.logs_omitted, None);
+    let files = entries(&bundle.path);
+    assert!(
+        files
+            .iter()
+            .any(|(name, text)| name.starts_with("logs/") && text.contains("[REDACTED]"))
+    );
+    assert!(!files.values().any(|text| text.contains("private-fixture")));
     #[cfg(unix)]
     {
         std::fs::write(paths.config_dir.join("config.toml"), "").expect("valid fixture config");
@@ -401,7 +445,7 @@ async fn support_bundle_masks_the_configured_vault_outside_home() {
     )
     .expect("owned log");
     let mut data = input(&paths);
-    data.notes_vault = VaultSnapshot::capture(&vault).expect("configured vault snapshot");
+    data.notes_vault = Some(VaultSnapshot::capture(&vault).expect("configured vault snapshot"));
     let bundle = create_bundle(data, &secrets).await.expect("bundle");
     let files = entries(&bundle.path);
     let log = files

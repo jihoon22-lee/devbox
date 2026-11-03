@@ -1,5 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ErrorCode } from "../../rpc/client";
+import { messageFor } from "../../rpc/messages";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useToasts } from "../../ui";
 import { ToastHost } from "../../ui/Toast";
@@ -62,6 +64,20 @@ test("start_with_stale_trust_shows_preview_then_retries_once with visible contro
   expect(wire.requests("runtime.start")).toHaveLength(2);
   expect(wire.requests("projects.trust_preview")).toHaveLength(1);
 });
+test.each([
+  ["runtime.windows_copy_busy", "dotnet build-server shutdown"],
+  ["windows.config_invalid", "설정 → 앱 진단 → [다시 설정]을 눌러 주세요."],
+])("a failed start shows the title and the next action of its code (%s)", async (code, action) => {
+  const wire = new RunWire();
+  wire.runs = [];
+  show(wire);
+  await userEvent.click(await screen.findByRole("button", { name: "web 시작" }));
+  await waitFor(() => expect(wire.requests("runtime.start")).toHaveLength(1));
+  act(() => wire.reject("runtime.start", code));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(messageFor(code as ErrorCode).title);
+  expect(alert).toHaveTextContent(action);
+});
 test("this PC start avoids approval and service stop undo restarts the same run with current trust", async () => {
   const wire = new RunWire();
   show(wire);
@@ -83,6 +99,32 @@ test("this PC start avoids approval and service stop undo restarts the same run 
   await waitFor(() => expect(wire.requests("runtime.restart")).toHaveLength(2));
   act(() => wire.reply("runtime.restart", runFixture));
   expect(await screen.findByText("web 다시 시작됨")).toBeVisible();
+});
+test("a service that undo cannot restart shows what to do next in its toast", async () => {
+  const wire = new RunWire();
+  show(wire);
+  await screen.findByText("PID 111");
+  await userEvent.click(screen.getByRole("button", { name: "web 중지" }));
+  await waitFor(() => expect(wire.requests("runtime.stop")).toHaveLength(1));
+  wire.selected = { ...runFixture, state: "stopped", pid: null };
+  act(() => wire.reply("runtime.stop", wire.selected));
+  await userEvent.click(await screen.findByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(wire.requests("runtime.restart")).toHaveLength(1));
+  act(() => wire.reject("runtime.restart", "runtime.windows_copy_busy"));
+  expect(await screen.findByText(/dotnet build-server shutdown/)).toBeVisible();
+});
+test("a service that undo failed to restart unexpectedly shows the diagnostic ID in its toast", async () => {
+  const wire = new RunWire();
+  show(wire);
+  await screen.findByText("PID 111");
+  await userEvent.click(screen.getByRole("button", { name: "web 중지" }));
+  await waitFor(() => expect(wire.requests("runtime.stop")).toHaveLength(1));
+  wire.selected = { ...runFixture, state: "stopped", pid: null };
+  act(() => wire.reply("runtime.stop", wire.selected));
+  await userEvent.click(await screen.findByRole("button", { name: "되돌리기" }));
+  await waitFor(() => expect(wire.requests("runtime.restart")).toHaveLength(1));
+  act(() => wire.reject("runtime.restart", "internal", "diag-5"));
+  expect(await screen.findByText("진단 ID를 복사해 두면 원인을 찾을 수 있습니다. · 진단 diag-5")).toBeVisible();
 });
 test("container stop uses server undo only and restart never creates an undo", async () => {
   const wire = new RunWire();

@@ -83,6 +83,62 @@ async fn moved_branch_and_checked_out_branch_are_preserved() {
     );
 }
 
+/// Whether the commit a squash close made is still on the base branch: cleanup offers the squash's
+/// source branch only while it is.
+#[tokio::test]
+async fn ancestry_follows_the_base_branch_through_a_reset() {
+    let (root, head) = fixture().await;
+    let dir = root.path();
+    let base = run::resolve(dir, "main").await.expect("base OID");
+    assert!(
+        run::is_ancestor(dir, &base, "main")
+            .await
+            .expect("ancestry")
+    );
+    assert!(
+        !run::is_ancestor(dir, &head, "main")
+            .await
+            .expect("ancestry")
+    );
+    git(dir, &["commit", "--allow-empty", "-m", "squash"]);
+    let squash = run::resolve(dir, "main").await.expect("squash OID");
+    assert!(
+        run::is_ancestor(dir, &squash, "main")
+            .await
+            .expect("ancestry")
+    );
+    git(dir, &["reset", "-q", "--keep", &base]);
+    assert!(
+        !run::is_ancestor(dir, &squash, "main")
+            .await
+            .expect("ancestry")
+    );
+    // A commit the repository does not have is not on the branch either.
+    let missing = "0123456789abcdef0123456789abcdef01234567";
+    assert!(
+        !run::is_ancestor(dir, missing, "main")
+            .await
+            .expect("ancestry")
+    );
+    // An object that is not a commit has no answer.
+    let tree = run::git(dir, &["rev-parse", "main^{tree}"])
+        .await
+        .expect("tree OID");
+    assert!(matches!(
+        run::is_ancestor(dir, tree.trim(), "main").await,
+        Err(GitError::Failed { .. })
+    ));
+    for commit in ["main", "-p", "", &squash[..12]] {
+        assert!(
+            matches!(
+                run::is_ancestor(dir, commit, "main").await,
+                Err(GitError::InvalidInput)
+            ),
+            "{commit}"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn atomic_delete_ref_rechecks_expected_oid_at_the_git_mutation() {

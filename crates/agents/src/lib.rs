@@ -1,6 +1,8 @@
+pub mod command_path;
 pub mod hooks;
 pub mod model;
 pub mod plan;
+pub mod plugin_event;
 pub mod profile;
 pub mod service;
 pub mod start;
@@ -10,6 +12,7 @@ pub mod tracker;
 pub use actions::AgentTestSpec;
 use devbox_core::Migration;
 use devbox_protocol::{Exporter, method, topic};
+pub use lifecycle::KnownTasks;
 pub use limits::input as validate_input;
 pub use model::*;
 pub use service::{AgentRuntime, AgentsService};
@@ -85,9 +88,12 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.topic::<AgentsAttentionTopic>();
 }
 
+mod approvals;
+mod artifacts;
 mod create;
 mod events;
 mod prepare;
+mod ready;
 mod tool_lifecycle;
 
 mod lifecycle;
@@ -95,13 +101,18 @@ mod lifecycle;
 mod action_cleanup;
 mod actions;
 mod cleanup;
+mod cleanup_safety;
 mod queries;
 mod resume;
 
 mod usage;
+mod usage_plugins;
+
+mod bounded;
 
 mod closed_review;
 mod discard_snapshot;
+mod family_patterns;
 mod limits;
 mod listing;
 mod metrics;

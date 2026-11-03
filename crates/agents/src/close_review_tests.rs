@@ -281,6 +281,10 @@ case "$2" in
       git -C "$wt" update-ref refs/heads/main refs/heads/agent/review;;
     *late-dirty) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
       printf 'late uncommitted edit\n' > "$wt/tracked";;
+    *late-commit) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
+      git -C "$wt" commit -q --allow-empty -m late;;
+    *late-submodules) wt=$(cat "$DEVBOX_CLOSE_WORKTREE_RECEIPT")
+      mkdir "$(git -C "$wt" rev-parse --path-format=absolute --git-path modules)";;
    esac;;
  show) case "$DEVBOX_CLOSE_CASE" in *ended) printf 'not-found\n';; *) printf 'loaded\n';; esac;;
  *) exit 24;;
@@ -356,6 +360,10 @@ os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
             "teardown_preflight_tests::teardown_lists_preflight_runner_and_entire_cleanup_selection"
         } else if modes[0].ends_with("fails") {
             "teardown_preflight_tests::teardown_lists_reject_before_discard_merge_or_pr_side_effects"
+        } else if modes[0].ends_with("scratch") {
+            "teardown_preflight_tests::discard_drops_what_its_own_teardown_wrote"
+        } else if modes[0].ends_with("late-dirty") {
+            "teardown_preflight_tests::discard_still_refuses_a_change_before_its_teardown_and_a_moved_head"
         } else {
             "teardown_preflight_tests::teardown_bounds_preserve_snapshot_bytes_and_unused_paths"
         }

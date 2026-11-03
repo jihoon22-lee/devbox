@@ -52,6 +52,12 @@ export function SupportBundle() {
           {bundle.logsOmitted === "secrets_locked" && (
             <p role="status">비밀 저장소가 잠겨 있어 로그를 넣지 않았습니다</p>
           )}
+          {bundle.logsOmitted === "notes_disabled" && (
+            <p role="status">
+              노트 설정을 읽지 못해 로그를 넣지 않았습니다. config.toml·config.local.toml의 [notes] 항목이나 설정 파일
+              형식을 고친 뒤 [다시 설정]을 누르고 지원 번들을 다시 만들어 주세요.
+            </p>
+          )}
           <Button onClick={() => void open()}>폴더 열기</Button>
         </>
       )}

@@ -28,9 +28,11 @@ fn command(home: &Path) -> Command {
         &stub_dir.join("bash"),
         "#!/bin/sh\nprintf 'PATH=/usr/bin\\0LANG=C\\0'\n",
     );
+    // `show` reports the setup process that runs this stub as the unit's main process: a
+    // daemon that runs the very executable setup runs from.
     executable(
         &stub_dir.join("systemctl"),
-        "#!/bin/sh\nprintf '%s ' \"$@\" >> \"$HOME/systemctl-calls\"\nprintf '\\n' >> \"$HOME/systemctl-calls\"\n",
+        "#!/bin/sh\nprintf '%s ' \"$@\" >> \"$HOME/systemctl-calls\"\nprintf '\\n' >> \"$HOME/systemctl-calls\"\nif [ \"$2\" = show ]; then printf 'ActiveState=active\\nMainPID=%s\\n' \"$PPID\"; fi\n",
     );
     let mut command = Command::new(env!("CARGO_BIN_EXE_devbox"));
     command
@@ -103,6 +105,52 @@ fn accept_setup_leaves_prod_binary_and_template_untouched() {
         calls,
         "--user daemon-reload \n--user enable --now devbox-accept@accept.socket devbox-accept@accept.service devbox-accept-tmux@accept.service \n--user restart devbox-accept@accept.service \n"
     );
+}
+
+#[test]
+fn accept_setup_restarts_the_daemon_only_when_its_install_changed_or_when_asked() {
+    let fixture = tempfile::tempdir().expect("fixture result");
+    let home = fixture.path();
+    let calls = home.join("systemctl-calls");
+    let setup = |args: &[&str]| {
+        let _ = std::fs::remove_file(&calls);
+        let output = command(home).args(args).output().expect("fixture result");
+        assert!(
+            output.status.success(),
+            "{} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("setup report");
+        let restart = report["steps"][4].clone();
+        assert_eq!(restart["id"], "restart");
+        (
+            std::fs::read_to_string(&calls).expect("fixture result"),
+            restart,
+        )
+    };
+    let restart = "--user restart devbox-accept@accept.service \n";
+    let (first, step) = setup(&["setup", "--json"]);
+    assert!(first.ends_with(restart), "{first}");
+    assert_eq!(step["message"], "");
+    // Same binary, units and env, and the unit runs this executable: no restart.
+    let (second, step) = setup(&["setup", "--json"]);
+    assert!(
+        second.ends_with(
+            "--user show --property=ActiveState,MainPID -- devbox-accept@accept.service \n"
+        ),
+        "{second}"
+    );
+    assert!(!second.contains("--user restart"), "{second}");
+    assert_eq!(step["ok"], true);
+    assert_eq!(step["message"], "건너뜀(변경 없음)");
+    // [다시 설정] and [다시 시도] pass --restart: restarted after the reload, without asking.
+    let (third, step) = setup(&["setup", "--json", "--restart"]);
+    assert!(third.starts_with("--user daemon-reload \n"), "{third}");
+    assert!(third.ends_with(restart), "{third}");
+    assert!(!third.contains("--user show"), "{third}");
+    assert_eq!(step["message"], "");
 }
 
 #[test]

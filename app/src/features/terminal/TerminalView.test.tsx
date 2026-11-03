@@ -47,6 +47,7 @@ vi.mock("./useSessions", () => {
 vi.mock("./link", () => ({
   TerminalLink: class {
     open = vi.fn(async () => this.options.onState("live"));
+    extendedKeys = true;
     input = vi.fn();
     resize = vi.fn();
     dispose = vi.fn();
@@ -83,6 +84,7 @@ vi.mock("@xterm/xterm", () => ({
     write = vi.fn();
     reset = vi.fn();
     paste = vi.fn();
+    input = vi.fn((data: string) => this.events.data?.(data));
     resize = vi.fn((c: number, r: number) => {
       this.cols = c;
       this.rows = r;
@@ -350,6 +352,47 @@ test("late clipboard paste never reaches an unmounted view and rejected clipboar
   await flush();
   expect(term.paste).not.toHaveBeenCalled();
   expect(writeText).toHaveBeenCalledWith("selection");
+});
+test("shift_enter_sends_csi_u_and_other_enters_are_unchanged", async () => {
+  render(<TerminalView id="t1" />);
+  await flush();
+  const term = mock.terms[0],
+    link = mock.links[0];
+  const press = (target: any, init: KeyboardEventInit, type = "keydown") => {
+    const event = new KeyboardEvent(type, { key: "Enter", code: "Enter", cancelable: true, ...init });
+    const stop = vi.spyOn(event, "stopPropagation");
+    return {
+      handled: target.events.key(event) === false,
+      prevented: event.defaultPrevented,
+      stopped: stop.mock.calls.length > 0,
+    };
+  };
+  // Only Shift+Enter is taken over: default action and bubbling are stopped so the browser sends no \r too.
+  expect(press(term, { shiftKey: true })).toEqual({ handled: true, prevented: true, stopped: true });
+  expect(term.input).toHaveBeenCalledExactlyOnceWith("\x1b[13;2u", true);
+  expect(link.input).toHaveBeenCalledExactlyOnceWith("\x1b[13;2u");
+  for (const init of [
+    {},
+    { ctrlKey: true },
+    { altKey: true },
+    { ctrlKey: true, shiftKey: true },
+    { metaKey: true, shiftKey: true },
+    { shiftKey: true, isComposing: true },
+    { shiftKey: true, keyCode: 229 },
+  ])
+    expect(press(term, init)).toEqual({ handled: false, prevented: false, stopped: false });
+  expect(press(term, { shiftKey: true }, "keyup")).toEqual({ handled: false, prevented: false, stopped: false });
+  // The link's attach result says tmux is older than 3.5: Shift+Enter stays xterm's Enter.
+  link.extendedKeys = false;
+  expect(press(term, { shiftKey: true })).toEqual({ handled: false, prevented: false, stopped: false });
+  expect(term.input).toHaveBeenCalledOnce();
+  expect(link.input).toHaveBeenCalledOnce();
+  // A preview never sends input.
+  render(<TerminalView id="t2" readOnly />);
+  await flush();
+  expect(press(mock.terms[1], { shiftKey: true })).toEqual({ handled: false, prevented: false, stopped: false });
+  expect(mock.terms[1].input).not.toHaveBeenCalled();
+  expect(mock.links[1].input).not.toHaveBeenCalled();
 });
 test("scale changes preserve one renderer/link and WebGL context loss disposes its addon", async () => {
   const view = render(<TerminalView id="t1" readOnly scale={0.5} />);

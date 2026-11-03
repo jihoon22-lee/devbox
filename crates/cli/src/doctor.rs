@@ -1,11 +1,26 @@
+mod agent_cli;
 mod os;
 mod runner;
 use devbox_protocol::system::{DoctorReport, Status};
-pub use devbox_tools::doctor::{Probe, checks};
+pub use devbox_tools::doctor::{Probe, Scope, checks, checks_for};
 
 pub struct OsProbe {
     pub env_file: std::path::PathBuf,
     pub hook_binary: std::path::PathBuf,
+    /// This check's look at the agent CLIs, made once, on first use.
+    agents: std::sync::OnceLock<
+        devbox_tools::doctor::Probed<Vec<Option<devbox_tools::doctor::AgentCommand>>>,
+    >,
+}
+impl OsProbe {
+    /// A probe for one check: each check looks at the agent CLIs afresh.
+    pub fn new(env_file: std::path::PathBuf, hook_binary: std::path::PathBuf) -> Self {
+        Self {
+            env_file,
+            hook_binary,
+            agents: std::sync::OnceLock::new(),
+        }
+    }
 }
 #[allow(unsafe_code)]
 fn executable(path: &std::path::Path) -> bool {
@@ -20,13 +35,15 @@ fn executable(path: &std::path::Path) -> bool {
     // this read-only syscall. AT_EACCESS checks effective credentials and ACLs.
     unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
-pub async fn run(json: bool) -> anyhow::Result<()> {
-    let probe = OsProbe {
-        env_file: crate::paths()?.instance_config_dir.join("env"),
-        hook_binary: crate::paths()?.bin_dir.join("devbox"),
-    };
+/// `startup` is the app's check after each setup: see [`Scope::Startup`].
+pub async fn run(json: bool, startup: bool) -> anyhow::Result<()> {
+    let probe = OsProbe::new(
+        crate::paths()?.instance_config_dir.join("env"),
+        crate::paths()?.bin_dir.join("devbox"),
+    );
+    let scope = if startup { Scope::Startup } else { Scope::Full };
     let report = DoctorReport {
-        checks: tokio::task::spawn_blocking(move || checks(&probe)).await?,
+        checks: tokio::task::spawn_blocking(move || checks_for(&probe, scope)).await?,
     };
     if json {
         println!("{}", serde_json::to_string(&report)?);
@@ -52,6 +69,24 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
+mod scope_tests {
+    /// Only the app's start-up call (`devbox doctor --startup`) leaves the agent CLI rows out.
+    /// 환경 점검, 에이전트 settings and support bundles read these two routes, which keep them.
+    #[test]
+    fn the_rpc_doctor_and_the_support_bundle_keep_the_agent_rows() {
+        for source in [
+            include_str!("daemon/routes.rs"),
+            include_str!("daemon/tools_routes.rs"),
+        ] {
+            let flat = source.split_whitespace().collect::<String>();
+            assert!(flat.contains("crate::doctor::checks(&probe)"));
+            assert!(!flat.contains("checks_for"));
+            assert!(!flat.contains("Scope::Startup"));
+        }
+    }
+}
+
+#[cfg(test)]
 mod probe_tests {
     use super::*;
 
@@ -63,10 +98,7 @@ mod probe_tests {
         std::fs::write(&tool, "fixture").expect("write fixture file");
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o600))
             .expect("set fixture permissions");
-        let probe = OsProbe {
-            env_file: temp.path().join("env"),
-            hook_binary: tool.clone(),
-        };
+        let probe = OsProbe::new(temp.path().join("env"), tool.clone());
         assert!(
             !probe
                 .which("fixture-tool", &temp.path().display().to_string())
@@ -107,10 +139,7 @@ mod probe_tests {
     #[test]
     fn env_path_valid_preserves_the_saved_environment_fixtures() {
         let temp = tempfile::tempdir().expect("create fixture directory");
-        let probe = OsProbe {
-            env_file: temp.path().join("env"),
-            hook_binary: temp.path().join("unused-hook"),
-        };
+        let probe = OsProbe::new(temp.path().join("env"), temp.path().join("unused-hook"));
         assert!(!probe.env_path_valid().expect("probe fixture"));
         for text in [
             "LANG=\"C\"",

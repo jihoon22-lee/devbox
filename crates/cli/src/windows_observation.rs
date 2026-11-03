@@ -25,6 +25,27 @@ pub(crate) async fn observe(
         _ => ObservationState::Unavailable,
     }
 }
+/// The holder liveness check (process identity only), answered as an observation state.
+pub(crate) async fn holder(
+    executable: &Path,
+    holder: &HolderIdentity,
+    cross_session: bool,
+    cancel: CancellationToken,
+) -> ObservationState {
+    match query(
+        executable,
+        WindowsProbe::Holder {
+            holder: holder.clone(),
+            cross_session,
+        },
+        cancel,
+    )
+    .await
+    {
+        WindowsProbeResult::Observation { state } => state,
+        _ => ObservationState::Unavailable,
+    }
+}
 pub(crate) async fn check_paths(
     executable: &Path,
     paths: &[String],

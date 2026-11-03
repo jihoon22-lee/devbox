@@ -1,12 +1,25 @@
+mod notices;
 mod ts;
 use anyhow::{Context, Result, bail};
 use std::path::Path;
 
-const USAGE: &str = "usage: cargo run -p xtask -- gen-ts [--check]";
+const USAGE: &str = "usage: cargo run -p xtask -- gen-ts [--check] | notices";
+
+#[derive(Debug, PartialEq, Eq)]
+enum Command {
+    GenTs { check: bool },
+    Notices,
+}
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let check = parse_args(&args)?;
+    match parse_args(&args)? {
+        Command::GenTs { check } => gen_ts(check),
+        Command::Notices => notices::run(),
+    }
+}
+
+fn gen_ts(check: bool) -> Result<()> {
     let mut exporter = ts::TsExporter::new();
     devbox_protocol::system::export(&mut exporter);
     devbox_protocol::debug::export(&mut exporter);
@@ -56,15 +69,16 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_args(args: &[String]) -> Result<bool> {
+fn parse_args(args: &[String]) -> Result<Command> {
     match args
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>()
         .as_slice()
     {
-        ["gen-ts"] => Ok(false),
-        ["gen-ts", "--check"] => Ok(true),
+        ["gen-ts"] => Ok(Command::GenTs { check: false }),
+        ["gen-ts", "--check"] => Ok(Command::GenTs { check: true }),
+        ["notices"] => Ok(Command::Notices),
         _ => bail!(USAGE),
     }
 }
@@ -93,13 +107,25 @@ mod tests {
     #[test]
     fn validates_the_complete_command_line() {
         let args = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(!parse_args(&args(&["gen-ts"])).expect("gen-ts parses"));
-        assert!(parse_args(&args(&["gen-ts", "--check"])).expect("gen-ts check parses"));
+        assert_eq!(
+            parse_args(&args(&["gen-ts"])).expect("gen-ts parses"),
+            Command::GenTs { check: false }
+        );
+        assert_eq!(
+            parse_args(&args(&["gen-ts", "--check"])).expect("gen-ts check parses"),
+            Command::GenTs { check: true }
+        );
+        assert_eq!(
+            parse_args(&args(&["notices"])).expect("notices parses"),
+            Command::Notices
+        );
         for invalid in [
             vec![],
             vec!["other"],
             vec!["gen-ts", "--unknown"],
             vec!["gen-ts", "--check", "--check"],
+            vec!["notices", "--check"],
+            vec!["notices", "notices"],
         ] {
             assert_eq!(
                 parse_args(&args(&invalid))

@@ -1,0 +1,13 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/chatwidget/misalignment_policy.rs가 그리는 예방 조치로 대화를 멈추고 여는 선택(입력란도 잠긴다) 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__misalignment_policy_violation.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 스냅샷은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 소스 파일은 다른 곳이 바뀌었지만 이 화면의 제목·선택지 문구는 세 태그에서 같다(grep). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+  Chat stopped as a precaution
+  We couldn’t confirm the agent was acting safely and following your
+  instructions. To continue working, start or resume another chat.
+
+
+› 1. New chat
+  2. Resume another chat

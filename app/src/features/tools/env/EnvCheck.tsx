@@ -46,29 +46,32 @@ export function EnvCheck() {
   const diagnostics = useRpcQuery("tools.diagnostics", {});
   const failed = doctor.error ? doctor : info.error ? info : diagnostics;
   return (
-    <QueryResult
-      pending={doctor.isPending || info.isPending || diagnostics.isPending}
-      error={failed.error}
-      retry={() => void failed.refetch()}
-    >
-      {doctor.data && info.data && diagnostics.data && (
-        <>
-          <section aria-label="데몬 상태">
-            <h3>데몬 상태</h3>
-            <p>
-              {info.data.version} · {info.data.instance} · PID {info.data.pid}
-            </p>
-            <p>
-              로그 위치: <code>{diagnostics.data.logDir}</code>
-            </p>
-          </section>
-          <DoctorList checks={doctor.data.checks} />
-          <Button onClick={() => void doctor.refetch()}>점검 새로고침</Button>{" "}
-          <RefreshEnvironment refetch={() => void doctor.refetch()} />
-          <SupportBundle />
-          <NativeMaintenance />
-        </>
-      )}
-    </QueryResult>
+    <>
+      <QueryResult
+        pending={doctor.isPending || info.isPending || diagnostics.isPending}
+        error={failed.error}
+        retry={() => void failed.refetch()}
+      >
+        {doctor.data && info.data && diagnostics.data && (
+          <>
+            <section aria-label="데몬 상태">
+              <h3>데몬 상태</h3>
+              <p>
+                {info.data.version} · {info.data.instance} · PID {info.data.pid}
+              </p>
+              <p>
+                로그 위치: <code>{diagnostics.data.logDir}</code>
+              </p>
+            </section>
+            <DoctorList checks={doctor.data.checks} />
+            <Button onClick={() => void doctor.refetch()}>점검 새로고침</Button>{" "}
+            <RefreshEnvironment refetch={() => void doctor.refetch()} />
+            <SupportBundle />
+          </>
+        )}
+      </QueryResult>
+      {/* Native only: a daemon that does not answer can still be redeployed and restarted. */}
+      <NativeMaintenance />
+    </>
   );
 }

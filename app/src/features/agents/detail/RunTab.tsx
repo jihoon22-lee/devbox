@@ -69,7 +69,7 @@ export function RunTab({ task }: { task: AgentTask }) {
     }
   };
   const sendLogs = async () => {
-    if (!id || task.state === "closed" || sending.current || sent === id) return;
+    if (!id || task.state === "closed" || task.state === "waiting" || sending.current || sent === id) return;
     const controller = new AbortController();
     sending.current = controller;
     setBusy(true);
@@ -126,7 +126,10 @@ export function RunTab({ task }: { task: AgentTask }) {
           {button}
           {detail.data?.run.state === "failed" && task.state !== "closed" && (
             <Button
-              disabled={state !== "ready" || busy || send.isPending || test.isPending || sent === id}
+              // Text sent while the agent waits could answer its approval prompt, as in the composer.
+              disabled={
+                state !== "ready" || busy || send.isPending || test.isPending || sent === id || task.state === "waiting"
+              }
               onClick={() => void sendLogs()}
             >
               에이전트에게 실패 로그 보내기

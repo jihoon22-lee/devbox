@@ -16,40 +16,52 @@ const mock = vi.hoisted(() => ({
     command: "sudo apt install tmux",
     shellCommand: "bash -lc 'sudo apt install tmux; exec bash -l'",
   } as Record<string, string>,
+  /** A query that fails (`error`) or never answers (`pending`), as while the daemon hangs. */
+  unanswered: null as null | { method: string; state: "error" | "pending" },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mock.invoke }));
 vi.mock("../../terminal/popout", () => ({ openPopout: mock.popout }));
 vi.mock("../../../rpc/query", () => ({
-  useRpcQuery: (method: string) => ({
-    isPending: false,
-    error: null,
-    refetch: vi.fn(),
-    data:
-      method === "system.doctor"
-        ? {
-            checks: [
-              {
-                id: mock.plan.kind === "windows" ? "tool.docker" : "tool.tmux",
-                status: "warn",
-                message: "도구 설치 필요",
-                fix: null,
-              },
-            ],
-          }
-        : method === "system.info"
+  useRpcQuery: (method: string) => {
+    const unanswered = mock.unanswered?.method === method ? mock.unanswered.state : null;
+    if (unanswered)
+      return {
+        isPending: unanswered === "pending",
+        error: unanswered === "error" ? { code: "internal", diagnosticId: "fixture" } : null,
+        refetch: vi.fn(),
+        data: undefined,
+      };
+    return {
+      isPending: false,
+      error: null,
+      refetch: vi.fn(),
+      data:
+        method === "system.doctor"
           ? {
-              version: "fixture",
-              instance: "accept",
-              pid: 123,
-              dataDir: "/fixture/data",
-              configPath: "/fixture/config.toml",
+              checks: [
+                {
+                  id: mock.plan.kind === "windows" ? "tool.docker" : "tool.tmux",
+                  status: "warn",
+                  message: "도구 설치 필요",
+                  fix: null,
+                },
+              ],
             }
-          : method === "tools.diagnostics"
-            ? { logDir: "/fixture/logs" }
-            : method === "tools.install_command"
-              ? mock.plan
-              : undefined,
-  }),
+          : method === "system.info"
+            ? {
+                version: "fixture",
+                instance: "accept",
+                pid: 123,
+                dataDir: "/fixture/data",
+                configPath: "/fixture/config.toml",
+              }
+            : method === "tools.diagnostics"
+              ? { logDir: "/fixture/logs" }
+              : method === "tools.install_command"
+                ? mock.plan
+                : undefined,
+    };
+  },
   useRpcMutation: (method: string) => ({
     isPending: false,
     mutateAsync:
@@ -64,6 +76,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ path: "/fixture/data/support/bundle.zip", sizeBytes: 123, logsOmitted: "secrets_locked" });
   mock.refresh.mockReset().mockResolvedValue({ restarting: false });
+  mock.unanswered = null;
   mock.plan = {
     kind: "wsl",
     title: "tmux 설치",
@@ -129,6 +142,41 @@ it("native_redeploy_and_cleanup_always_require_separate_confirmation", async () 
     await waitFor(() => expect(mock.invoke).toHaveBeenCalledWith(command));
   }
 });
+it("redeploy_is_offered_while_the_daemon_does_not_answer", async () => {
+  // [다시 설정] needs only the native gate, so a failed or unanswered environment check keeps it.
+  for (const state of ["error", "pending"] as const) {
+    mock.unanswered = { method: "system.doctor", state };
+    const view = setup();
+    expect(
+      screen.getByText(state === "error" ? "진단 정보를 불러오지 못했습니다" : "연결 후 진단 정보를 불러옵니다"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "다시 설정" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "실행" }));
+    await waitFor(() => expect(mock.invoke).toHaveBeenCalledWith("redeploy_wsl"));
+    mock.invoke.mockClear();
+    view.unmount();
+  }
+});
+it("a_failed_redeploy_shows_the_failed_step_under_the_fixed_notice", async () => {
+  const step = "서비스 다시 시작 실패: command failed: systemctl";
+  mock.invoke.mockRejectedValueOnce({ message: "WSL 다시 설정을 완료하지 못했습니다", detail: step });
+  setup();
+  const redeploy = async () => {
+    await userEvent.click(screen.getByRole("button", { name: "다시 설정" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "실행" }));
+  };
+  await redeploy();
+  expect(
+    await screen.findByText("작업을 완료하지 못했습니다. 연결 상태와 설치 환경을 확인해 주세요."),
+  ).toBeInTheDocument();
+  expect(screen.getByText(step)).toBeInTheDocument();
+  // The next run's result replaces it.
+  await redeploy();
+  expect(
+    await screen.findByText("WSL 다시 설정을 완료했습니다. 다시 연결되면 상태를 새로 읽습니다."),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(step)).not.toBeInTheDocument();
+});
 it("support_bundle_shows_log_omission_and_opens_its_parent_folder", async () => {
   setup();
   await userEvent.click(screen.getByRole("button", { name: "지원 번들" }));
@@ -136,6 +184,19 @@ it("support_bundle_shows_log_omission_and_opens_its_parent_folder", async () => 
   expect(screen.getByText("/fixture/data/support/bundle.zip")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "폴더 열기" }));
   expect(mock.invoke).toHaveBeenCalledWith("open_external", { kind: "explorer", path: "/fixture/data/support" });
+});
+it("support_bundle_says_when_notes_settings_kept_the_logs_out", async () => {
+  mock.bundle.mockResolvedValueOnce({
+    path: "/fixture/data/support/bundle.zip",
+    sizeBytes: 123,
+    logsOmitted: "notes_disabled",
+  });
+  setup();
+  await userEvent.click(screen.getByRole("button", { name: "지원 번들" }));
+  expect(await screen.findByText(/^노트 설정을 읽지 못해 로그를 넣지 않았습니다\./)).toHaveTextContent(
+    "[notes] 항목이나 설정 파일 형식을 고친 뒤 [다시 설정]을 누르고 지원 번들을 다시 만들어 주세요.",
+  );
+  expect(screen.queryByText("비밀 저장소가 잠겨 있어 로그를 넣지 않았습니다")).not.toBeInTheDocument();
 });
 it("a double confirmation cannot launch two immediate installations", async () => {
   let finish!: (value: { id: string }) => void;

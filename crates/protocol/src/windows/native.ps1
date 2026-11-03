@@ -22,6 +22,14 @@ public static class DevboxObservation {
         public long User, Kernel, PeriodUser, PeriodKernel;
         public uint Faults, Total, Active, Terminated;
     }
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct StartupInfo {
+        public int Size; public string Reserved, Desktop, Title;
+        public int X, Y, Width, Height, Columns, Rows, Fill, Flags;
+        public short Show, Reserved2; public IntPtr Reserved3, Input, Output, Error;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process, Thread; public uint Pid, Tid; }
+    [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+    static extern bool CreateProcess(string application, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment, string directory, ref StartupInfo startup, out ProcessInfo info);
     [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
     static extern IntPtr CreateJobObject(IntPtr attributes, string name);
     [DllImport("kernel32.dll", SetLastError=true)]
@@ -56,16 +64,34 @@ public static class DevboxObservation {
         if(!ProcessIdToSessionId(GetCurrentProcessId(),out session)) throw new IOException();
         return session;
     }
-    public static IntPtr AssociateFresh(string name) {
+    public static IntPtr CreateFresh(string name) {
         SetLastError(0);
         IntPtr job=CreateJobObject(IntPtr.Zero,name);
         int error=Marshal.GetLastWin32Error();
         if(job==IntPtr.Zero) throw new IOException();
-        if(error==183 || !AssignProcessToJobObject(job,GetCurrentProcess())) {
-            CloseHandle(job); throw new IOException();
-        }
+        if(error==183) { CloseHandle(job); throw new IOException(); }
         // Fresh job defaults: no breakaway and no KILL_ON_JOB_CLOSE or termination call.
         return job;
+    }
+    public static void AssociateFresh(IntPtr job) {
+        if(!AssignProcessToJobObject(job,GetCurrentProcess())) throw new IOException();
+    }
+    // Called before AssociateFresh, so the holder runs outside the job. bInheritHandles=false
+    // and CREATE_NO_WINDOW: an inherited stdio or WSL interop pipe would hold the caller's EOF
+    // open for the holder's lifetime. Values arrive as base64 literals, never as script text.
+    public static bool StartHolder(string script,string job,string nonce,string ready,string receipt) {
+        string[] values={job,nonce,ready,receipt};
+        for(int i=0;i<values.Length;i++)
+            values[i]="'"+Convert.ToBase64String(new UTF8Encoding(false).GetBytes(values[i]))+"'";
+        string text="$devboxInput="+String.Join(",",values)+"\n"+script;
+        string shell=Path.Combine(Environment.SystemDirectory,"WindowsPowerShell\\v1.0\\powershell.exe");
+        var command=new StringBuilder("\""+shell+"\" -NoProfile -NonInteractive -EncodedCommand "+Convert.ToBase64String(Encoding.Unicode.GetBytes(text)));
+        var startup=new StartupInfo();
+        startup.Size=Marshal.SizeOf(typeof(StartupInfo));
+        ProcessInfo started;
+        if(!CreateProcess(shell,command,IntPtr.Zero,IntPtr.Zero,false,0x08000000,IntPtr.Zero,Environment.SystemDirectory,ref startup,out started)) return false;
+        CloseHandle(started.Thread); CloseHandle(started.Process);
+        return true;
     }
     public static DevboxJobState Observe(string name,uint pid,string creation,string sid,uint session) {
         IntPtr process=IntPtr.Zero,job=IntPtr.Zero;
@@ -101,6 +127,28 @@ public static class DevboxObservation {
             return account.Active==0 ? new DevboxJobState("empty") : new DevboxJobState("active",account.Active);
         } catch { return new DevboxJobState("unavailable"); }
         finally { if(job!=IntPtr.Zero) CloseHandle(job); if(process!=IntPtr.Zero) CloseHandle(process); }
+    }
+    // Holder liveness from the holder's PID, creation time and SID alone. No job lookup and no
+    // session gate: Local\ job names are per session, but a PID with its creation time names one
+    // process in every session. Mapped onto the existing states: gone (no such PID, a reused PID
+    // or an exit code) is notFound, alive (STILL_ACTIVE, 259) is active with count 1, any other
+    // failure (access denied included) is unavailable, and another SID is identityMismatch. For
+    // a job judged identityMismatch (crossSession), only an observer outside the holder's
+    // session answers, so only a session-caused mismatch is resolved.
+    public static DevboxJobState Holder(uint pid,string creation,string sid,uint session,bool crossSession) {
+        IntPtr process=IntPtr.Zero;
+        try {
+            if(!String.Equals(Sid(),sid,StringComparison.Ordinal)) return new DevboxJobState("identityMismatch");
+            if(crossSession && Session()==session) return new DevboxJobState("identityMismatch");
+            process=OpenProcess(0x1000,false,pid);
+            if(process==IntPtr.Zero)
+                return new DevboxJobState(Marshal.GetLastWin32Error()==87 ? "notFound" : "unavailable");
+            if(!String.Equals(Creation(process),creation,StringComparison.Ordinal)) return new DevboxJobState("notFound");
+            uint code;
+            if(!GetExitCodeProcess(process,out code)) return new DevboxJobState("unavailable");
+            return code==259 ? new DevboxJobState("active",1) : new DevboxJobState("notFound");
+        } catch { return new DevboxJobState("unavailable"); }
+        finally { if(process!=IntPtr.Zero) CloseHandle(process); }
     }
     public static bool Exists(string path) {
         try { File.GetAttributes(path); return true; }

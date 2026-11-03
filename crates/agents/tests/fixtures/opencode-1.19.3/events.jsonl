@@ -1,0 +1,90 @@
+# 실제 녹화. opencode 1.19.3(~/.opencode/bin/opencode), 2026-10-28, 소유 임시 git 저장소와 전용 tmux socket.
+# 녹화용 플러그인을 OPENCODE_CONFIG_CONTENT로만 넣었고 플러그인 event hook이 받은 이벤트를 받은 순서 그대로 남겼다. ~/.config/opencode는 바꾸지 않았다(전후 SHA-256 같음).
+# 첫 실행(run 1)은 사용자 설정 provider로 실행했다. 그 API 키가 만료되어(401) 모델 답 없이 오류로 끝났다.
+# 나머지 실행(run 2-4, run 6)과 export.json은 127.0.0.1의 스크립트 모델(OpenAI 호환 endpoint, 정해진 답·도구 호출·usage)로 실행했다.
+#   이벤트·export의 형태와 순서는 실제 opencode 1.19.3이 만든 것이고 모델 답만 스크립트다. run 4의 권한 요청은 실제 대화상자에서 Allow once로 답했다.
+#   이 실행들은 XDG_STATE_HOME·XDG_DATA_HOME을 소유 임시 폴더로 돌려 사용자 opencode 기록에 세션을 남기지 않았다.
+# 남긴 이벤트: session.created·session.updated·session.status·session.idle·permission.asked·permission.replied·question.asked·question.replied. 그 밖의 이벤트(message.* 본문, session.diff 등)는 버렸다.
+# 남긴 필드: sessionID, info.id, info.parentID, status.type, permission의 id·permission·patterns·always, requestID·reply, question의 id·questions[].question. question.replied의 answers와 question의 header·options·tool은 버렸다. 세션·권한·질문 id는 자리표시자로 바꿨다.
+# export.json: run 3 루트 세션의 `opencode export --pure` 출력(--pure 없이도 같은 바이트). 경로·id를 자리표시자로 바꾸고 parts는 type·tool·step-finish 수치만 남겼다.
+#   자식(subagent) 세션의 토큰은 루트 export에 들어 있지 않다(자식 export: input 1250, output 12, cache.read 250).
+# 질문 실행(run 6)은 수정 1차에 같은 방식으로 따로 녹화했다. 같은 실행에 devbox 플러그인도 넣어 가짜 devbox가 받은 보고(working·needsInput(question)·inputResolved·idle)를 확인했다.
+#   run 5는 커밋한 플러그인의 실기 확인(Reply with OK.)이라 이 파일에 줄이 없다.
+# 타입 기반(1.19.3 타입, 녹화 아님): question.rejected {sessionID, requestID}와 중단된 질문(이벤트 없이 지워지고 그 세션의 session.status idle만 온다)은 녹화하지 않았다. 이 파일에 줄이 없고, opencodePlugin.test.ts의 그 경우는 타입으로 만든 이벤트다.
+# run 1: 사용자 설정 provider. "Reply with OK." API 키 만료(401)로 오류가 난 턴이다.
+{"type":"session.created","properties":{"sessionID":"ses_errorturn","info":{"id":"ses_errorturn"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_errorturn","info":{"id":"ses_errorturn"}}}
+{"type":"session.status","properties":{"sessionID":"ses_errorturn","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_errorturn","info":{"id":"ses_errorturn"}}}
+{"type":"session.status","properties":{"sessionID":"ses_errorturn","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_errorturn","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_errorturn"}}
+{"type":"session.status","properties":{"sessionID":"ses_errorturn","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_errorturn"}}
+# run 2: 스크립트 모델. "Reply with OK."
+{"type":"session.created","properties":{"sessionID":"ses_replyok","info":{"id":"ses_replyok"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_replyok","info":{"id":"ses_replyok"}}}
+{"type":"session.status","properties":{"sessionID":"ses_replyok","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_replyok","info":{"id":"ses_replyok"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_replyok","info":{"id":"ses_replyok"}}}
+{"type":"session.status","properties":{"sessionID":"ses_replyok","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_replyok","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_replyok","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_replyok"}}
+{"type":"session.updated","properties":{"sessionID":"ses_replyok","info":{"id":"ses_replyok"}}}
+# run 3: 스크립트 모델. "Use the task tool to ask a subagent to reply OK, then reply OK."
+{"type":"session.created","properties":{"sessionID":"ses_taskroot","info":{"id":"ses_taskroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskroot","info":{"id":"ses_taskroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskroot","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskroot","info":{"id":"ses_taskroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskroot","info":{"id":"ses_taskroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskroot","status":{"type":"busy"}}}
+{"type":"session.created","properties":{"sessionID":"ses_taskchild","info":{"id":"ses_taskchild","parentID":"ses_taskroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskchild","info":{"id":"ses_taskchild","parentID":"ses_taskroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskchild","info":{"id":"ses_taskchild","parentID":"ses_taskroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskchild","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskchild","info":{"id":"ses_taskchild","parentID":"ses_taskroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskchild","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskchild","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskchild","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_taskchild"}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskchild","info":{"id":"ses_taskchild","parentID":"ses_taskroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskroot","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskroot","info":{"id":"ses_taskroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskroot","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskroot","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_taskroot","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_taskroot"}}
+{"type":"session.updated","properties":{"sessionID":"ses_taskroot","info":{"id":"ses_taskroot"}}}
+# run 4: 스크립트 모델, permission {"bash":"ask"}. "Run the shell command `echo devbox-fixture` with the bash tool, then reply OK." 대화상자에서 Allow once.
+{"type":"session.created","properties":{"sessionID":"ses_bashroot","info":{"id":"ses_bashroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_bashroot","info":{"id":"ses_bashroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_bashroot","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_bashroot","info":{"id":"ses_bashroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_bashroot","info":{"id":"ses_bashroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_bashroot","status":{"type":"busy"}}}
+{"type":"permission.asked","properties":{"id":"per_bashonce","sessionID":"ses_bashroot","permission":"bash","patterns":["echo devbox-fixture"],"always":["echo *"]}}
+{"type":"permission.replied","properties":{"sessionID":"ses_bashroot","requestID":"per_bashonce","reply":"once"}}
+{"type":"session.status","properties":{"sessionID":"ses_bashroot","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_bashroot","info":{"id":"ses_bashroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_bashroot","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_bashroot","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_bashroot","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_bashroot"}}
+{"type":"session.updated","properties":{"sessionID":"ses_bashroot","info":{"id":"ses_bashroot"}}}
+# run 6: 스크립트 모델. "Ask me which option the fixture should use with the question tool, then reply OK." 질문 대화상자에서 첫 선택지(Alpha)를 골라 답했다.
+{"type":"session.created","properties":{"sessionID":"ses_questionroot","info":{"id":"ses_questionroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_questionroot","info":{"id":"ses_questionroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_questionroot","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_questionroot","info":{"id":"ses_questionroot"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_questionroot","info":{"id":"ses_questionroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_questionroot","status":{"type":"busy"}}}
+{"type":"question.asked","properties":{"id":"que_fixture","sessionID":"ses_questionroot","questions":[{"question":"Which option should the fixture use?"}]}}
+{"type":"question.replied","properties":{"sessionID":"ses_questionroot","requestID":"que_fixture"}}
+{"type":"session.status","properties":{"sessionID":"ses_questionroot","status":{"type":"busy"}}}
+{"type":"session.updated","properties":{"sessionID":"ses_questionroot","info":{"id":"ses_questionroot"}}}
+{"type":"session.status","properties":{"sessionID":"ses_questionroot","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_questionroot","status":{"type":"busy"}}}
+{"type":"session.status","properties":{"sessionID":"ses_questionroot","status":{"type":"idle"}}}
+{"type":"session.idle","properties":{"sessionID":"ses_questionroot"}}
+{"type":"session.updated","properties":{"sessionID":"ses_questionroot","info":{"id":"ses_questionroot"}}}

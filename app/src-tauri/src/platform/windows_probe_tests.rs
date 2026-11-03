@@ -250,3 +250,15 @@ async fn windows_listener_probe_passes_receipt_and_ports_with_typed_bounded_resu
     }
     assert!(!marker.exists(), "invalid listener probes never spawn");
 }
+#[test]
+fn the_probe_starts_powershell_without_a_console_window() {
+    // Reconcile can ask the app's probe again and again while a Windows copy is held, so it
+    // sets CREATE_NO_WINDOW as external.rs and wsl.rs do. The flag is Windows-only code: the
+    // MSVC check compiles it, and this pins it.
+    let source = include_str!("windows_probe.rs");
+    let start = source
+        .find("Command::new(executable)")
+        .expect("the probe's spawn");
+    let end = start + source[start..].find(".spawn()").expect("the probe's spawn");
+    assert!(source[start..end].contains(".creation_flags(0x0800_0000)"));
+}

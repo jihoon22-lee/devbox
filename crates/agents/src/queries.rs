@@ -207,10 +207,13 @@ impl AgentsService {
         .await
         .map_err(git_failure)?;
         let dirty_files = dirty_count(&out)?;
-        let fingerprint = if task.worktree_path.is_some() {
-            Some(self.discard_fingerprint(&dir, &head_oid, &base).await?)
+        // An inline task's discard removes no folder.
+        let (fingerprint, has_submodules) = if task.worktree_path.is_some() {
+            let (fingerprint, submodules) =
+                self.discard_fingerprint(&dir, &head_oid, &base).await?;
+            (Some(fingerprint), submodules)
         } else {
-            None
+            (None, false)
         };
         query_snapshot(&dir, &task.base_branch, &head_oid, &base).await?;
         Ok(DiscardCheck {
@@ -218,6 +221,7 @@ impl AgentsService {
             unmerged_commits,
             dirty_files,
             fingerprint,
+            has_submodules,
         })
     }
 }

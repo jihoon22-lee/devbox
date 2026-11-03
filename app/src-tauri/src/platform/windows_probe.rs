@@ -52,7 +52,8 @@ async fn query_with_timeout(
     let owned = cancel.child_token();
     let _guard = owned.clone().drop_guard();
     let result = tokio::spawn(async move {
-        let mut child = match Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -62,9 +63,12 @@ async fn query_with_timeout(
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-        {
+            .kill_on_drop(true);
+        // CREATE_NO_WINDOW, as external.rs and wsl.rs set it: reconcile may ask again and again
+        // while a Windows copy is held, and each probe would otherwise open a console window.
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
+        let mut child = match command.spawn() {
             Ok(child) => child,
             Err(_) => return request.unavailable(),
         };

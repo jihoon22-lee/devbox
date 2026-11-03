@@ -32,6 +32,7 @@ read -r answer
 printf 'change\n' > agent.txt
 git add agent.txt
 git commit -qm 'agent change'
+send '{"hook_event_name":"PostToolUse","tool_name":"Bash"}'
 send '{"hook_event_name":"Stop","last_assistant_message":"done"}'
 while read -r answer; do send '{"hook_event_name":"Stop","last_assistant_message":"done"}'; done
 `;

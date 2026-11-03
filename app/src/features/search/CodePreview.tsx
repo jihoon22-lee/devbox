@@ -1,11 +1,12 @@
 import type { SearchHit } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcQuery } from "../../rpc/query";
 import { Button } from "../../ui";
 import { CodeView } from "../../ui/code/CodeView";
 export function CodePreview({ hit, onOpen }: { hit: SearchHit; onOpen?: (hit: SearchHit) => void }) {
   const query = useRpcQuery("documents.read", { key: { root: hit.root, path: hit.path }, policy: { kind: "code" } });
-  if (query.error) return <p role="alert">{messageFor(query.error.code, query.error.detail).title}</p>;
+  if (query.error)
+    return <p role="alert">{messageText(query.error.code, query.error.detail, query.error.diagnosticId)}</p>;
   if (!query.data) return <p role="status">파일을 불러오는 중…</p>;
   return (
     <section aria-label="코드 미리보기">

@@ -151,6 +151,31 @@ fn local_false_overrides_shared_write_true() {
     );
     m.finish();
 }
+/// An invalid `[mcp]` in either file keeps write tools off; the server still starts.
+#[test]
+fn invalid_config_starts_read_only_even_with_shared_write_true() {
+    let d = TestDaemon::fixture();
+    d.write_config("[mcp]\nwrite=true\n[[agents.profiles]]\nid='typo'\nlable='Typo'\n");
+    std::fs::write(
+        d.paths.config_dir.join("config.local.toml"),
+        "[mcp]\nwrite='yes'\n",
+    )
+    .expect("owned fixture");
+    let mut m = Mcp::start(&d);
+    assert_eq!(
+        names(&m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))),
+        [
+            "devbox_projects",
+            "devbox_agents",
+            "devbox_runs",
+            "devbox_logs",
+            "devbox_problems",
+            "devbox_notes_search",
+            "devbox_note_read"
+        ]
+    );
+    m.finish();
+}
 fn agent_fixture(write: bool) -> TestDaemon {
     let d = TestDaemon::fixture();
     d.paths.ensure_dirs().expect("owned fixture");
@@ -254,6 +279,16 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
     let id = d.create_agent(&c, &project, "owned-fake", false).await;
     d.wait_for(&c, &id, "waiting", Duration::from_secs(10))
         .await;
+    // The fixture starts at a permission prompt; its PostToolUse lets sends through.
+    let hook = r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#;
+    c.raw_call(
+        "agents.event",
+        json!({"agentId":id,"launchId":d.agent_launch(&id).await,"source":"claude","payload":hook}),
+        None,
+    )
+    .await
+    .expect("owned fixture");
+    d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
     let mut m = Mcp::start(&d);
     let tools = m.call(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}));
     assert_eq!(
@@ -308,6 +343,131 @@ async fn enabled_send_reaches_only_owned_fake_agent_once_and_maps_rpc_errors() {
     assert_eq!(
         error["result"]["content"][0]["text"],
         "에이전트 작업을 찾을 수 없습니다."
+    );
+    m.finish();
+}
+#[tokio::test]
+async fn agent_send_reports_awaiting_input() {
+    let mut d = agent_fixture(true);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let c = d.client().await;
+    let project = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &project, "owned-fake", false).await;
+    let waiting = d
+        .wait_for(&c, &id, "waiting", Duration::from_secs(10))
+        .await;
+    let mut m = Mcp::start(&d);
+    let text = "owned-mcp-instruction";
+    let refused = m.tool("devbox_agent_send", json!({"id":id,"text":text}));
+    assert_eq!(refused["result"]["isError"], true);
+    assert_eq!(
+        refused["result"]["content"][0]["text"],
+        "에이전트가 선택을 기다리고 있습니다. 터미널에서 승인이나 선택을 마친 뒤 다시 보내세요."
+    );
+    let after = d.wait_for(&c, &id, "waiting", Duration::from_secs(2)).await;
+    for field in ["attention", "followUps", "activitySeq"] {
+        assert_eq!(after[field], waiting[field], "{field}");
+    }
+    let pane = format!("={}:", after["terminalId"].as_str().expect("terminal"));
+    assert!(
+        !d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane])
+            .contains(text)
+    );
+    assert!(
+        !d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"])
+            .contains(text)
+    );
+    m.finish();
+}
+
+/// What `devbox_agent_send` says when a tool could run the text as a command.
+const RUNS_AS_COMMAND: &str = "보낼 글이 `!`나 `/`로 시작하면 도구가 셸 명령이나 도구 명령으로 실행할 수 있어 보내지 않았습니다. 앞에 다른 말을 붙여 다시 보내세요.";
+/// What it says when the daemon refuses a control character, which the pane would take as a key.
+const CONTROL_CHARACTERS: &str = "보낼 글에 제어 문자가 있어 보내지 않았습니다. 제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요.";
+#[tokio::test]
+async fn agent_send_refuses_text_a_tool_would_run_as_a_command() {
+    let mut d = agent_fixture(true);
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let c = d.client().await;
+    let project = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &project, "owned-fake", false).await;
+    d.wait_for(&c, &id, "waiting", Duration::from_secs(10))
+        .await;
+    // The fixture starts at a permission prompt; its PostToolUse lets sends through.
+    let hook = r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#;
+    c.raw_call(
+        "agents.event",
+        json!({"agentId":id,"launchId":d.agent_launch(&id).await,"source":"claude","payload":hook}),
+        None,
+    )
+    .await
+    .expect("owned fixture");
+    let running = d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
+    let mut m = Mcp::start(&d);
+    // Codex, Claude Code and pi run a leading "!" as a shell command, and each tool runs a
+    // leading "/" as its own command, whatever blanks or line breaks come first.
+    for text in ["!ls", "  /clear", "\n!x", "\u{feff}!ls"] {
+        let refused = m.tool("devbox_agent_send", json!({"id":id,"text":text}));
+        assert_eq!(refused["result"]["isError"], true, "{text:?}");
+        assert_eq!(
+            refused["result"]["content"][0]["text"], RUNS_AS_COMMAND,
+            "{text:?}"
+        );
+    }
+    // Ctrl-U would erase "owned" in the prompt box and leave "!ls" to run. The daemon refuses
+    // the send, for MCP as for the app.
+    let keys = m.tool(
+        "devbox_agent_send",
+        json!({"id":id,"text":"owned\u{15}!ls"}),
+    );
+    assert_eq!(keys["result"]["isError"], true);
+    assert_eq!(keys["result"]["content"][0]["text"], CONTROL_CHARACTERS);
+    let after = d.wait_for(&c, &id, "running", Duration::from_secs(2)).await;
+    for field in ["attention", "followUps", "activitySeq"] {
+        assert_eq!(after[field], running[field], "{field}");
+    }
+    let pane = format!("={}:", after["terminalId"].as_str().expect("terminal"));
+    let shown = d.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-t", &pane]);
+    let buffers = d.tmux(&["list-buffers", "-F", "#{buffer_name} #{buffer_sample}"]);
+    for text in ["!ls", "/clear", "!x"] {
+        assert!(!shown.contains(text), "{text}");
+        assert!(!buffers.contains(text), "{text}");
+    }
+    // The same characters later in the text are sent as before.
+    for (sent_before, text) in ["hello !ls", "fix /tmp/x"].into_iter().enumerate() {
+        let sent = body(&m.tool("devbox_agent_send", json!({"id":id,"text":text})));
+        let follow_ups = sent["followUps"].as_array().expect("owned fixture");
+        assert_eq!(follow_ups.len(), sent_before + 1, "{text}");
+        assert_eq!(follow_ups[sent_before]["text"], text);
+    }
+    m.finish();
+}
+#[test]
+fn agent_send_refuses_such_text_before_any_daemon_call() {
+    let d = TestDaemon::fixture();
+    d.write_config("[mcp]\nwrite=true\n");
+    let mut m = Mcp::start(&d);
+    // JavaScript's trimStart, which Claude Code, opencode and pi may use, also drops U+FEFF.
+    for text in ["!ls", "\u{feff}!ls"] {
+        let refused = m.tool("devbox_agent_send", json!({"id":"owned","text":text}));
+        assert_eq!(
+            refused["result"]["content"][0]["text"], RUNS_AS_COMMAND,
+            "{text:?}"
+        );
+    }
+    // Any other text goes to the daemon, which this fixture does not run.
+    let unreachable = m.tool(
+        "devbox_agent_send",
+        json!({"id":"owned","text":"hello !ls"}),
+    );
+    assert_eq!(unreachable["result"]["isError"], true);
+    assert!(
+        unreachable["result"]["content"][0]["text"]
+            .as_str()
+            .expect("owned fixture")
+            .contains("데몬")
     );
     m.finish();
 }

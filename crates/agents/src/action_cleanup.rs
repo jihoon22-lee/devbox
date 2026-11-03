@@ -40,8 +40,25 @@ impl AgentsService {
             return Err(AgentsError::UnsafeWorktree.into());
         }
         crate::limits::teardown_commands(&config.config().agent.teardown)?;
-        for command in &config.config().agent.teardown {
-            bounded_command("bash", &["-lc", command], Some(Path::new(&task.workdir))).await?;
+        for (position, command) in config.config().agent.teardown.iter().enumerate() {
+            let ended = bounded_command_for(
+                "bash",
+                &["-lc", command],
+                Some(Path::new(&task.workdir)),
+                COMMAND_TIMEOUT,
+            )
+            .await?;
+            let exit_code = match ended {
+                Ended::Success => continue,
+                Ended::Exit(status) => status.code(),
+                Ended::TimedOut => None,
+            };
+            let index = u32::try_from(position + 1)
+                .map_err(|_| Fail::Internal("teardown position overflow".into()))?;
+            // The command's text can name paths or secrets: the log has where it is and how it
+            // ended, as the error does.
+            tracing::warn!(agent = %task.id, index, ?ended, "teardown command failed");
+            return Err(AgentsError::TeardownFailed { index, exit_code }.into());
         }
         Ok(())
     }
@@ -68,7 +85,15 @@ impl AgentsService {
         Ok(snapshot)
     }
     pub(crate) async fn record_cleanup_error(&self, id: &str, error: &Fail<AgentsError>) {
-        tracing::error!(?error, agent = id, "closed task cleanup retained resources");
+        // A domain error's detail can name files or the folder: the log has its code only.
+        match error {
+            Fail::Domain(code) => {
+                tracing::error!(%code, agent = id, "closed task cleanup retained resources")
+            }
+            Fail::Internal(_) => {
+                tracing::error!(?error, agent = id, "closed task cleanup retained resources")
+            }
+        }
         // Domain errors contain safe details; process causes remain in diagnostics/logs.
         let message = match error {
             Fail::Domain(error) => {
@@ -103,14 +128,24 @@ impl AgentsService {
     ) -> Result<()> {
         let task = self.get(id).await?;
         let (project, wt, branch) = self.owned_worktree(&task).await?;
+        let repo = Path::new(&project.path);
         if snapshot.as_ref().is_some_and(|s| {
             s.project_id() != task.project_id || s.canonical_path() != project.path
         }) {
             return Err(AgentsError::UnsafeWorktree.into());
         }
         // Do not stop a second time; only optional teardown and Git removal remain.
-        self.teardown_commands(&task, snapshot).await?;
+        let undo = self.undoable(&task, &wt, snapshot).await;
+        if let Err(failure) = self.teardown_commands(&task, snapshot).await {
+            if undo {
+                self.undo_failed_teardown(&task, repo, &wt, &branch).await;
+            }
+            return Err(failure);
+        }
         self.owned_worktree(&task).await?;
+        if undo {
+            self.pins_held(&task, repo, &wt, &branch).await?;
+        }
         if task.closed_head_oid.as_deref()
             != Some(
                 devbox_git::run::resolve(&wt, "HEAD")
@@ -129,12 +164,17 @@ impl AgentsService {
         {
             return Err(AgentsError::UnsafeWorktree.into());
         }
-        // Automatic cleanup never removes dirty files, even for a successful merge/PR.
-        devbox_git::mutate::worktree_remove(Path::new(&project.path), &wt, false)
+        self.refuse_submodules(&wt, undo).await?;
+        // Automatic cleanup never removes changes it cannot account for, even after a successful
+        // merge/PR: only what changed during cleanup in a folder that was clean before is undone.
+        if undo {
+            self.undo_teardown(&task, &wt).await?;
+        }
+        devbox_git::mutate::worktree_remove(repo, &wt, false)
             .await
             .map_err(git_failure)?;
         devbox_git::mutate::delete_branch_at(
-            Path::new(&project.path),
+            repo,
             &branch,
             task.closed_head_oid
                 .as_deref()
@@ -142,6 +182,13 @@ impl AgentsService {
         )
         .await
         .map_err(git_failure)?;
+        self.record_cleaned(id).await
+    }
+    /// A closed task's last resource is gone: release its reservation and drop the note of what
+    /// cleanup left behind. Automatic cleanup and the cleanup list both end here, for that one
+    /// task. Callers reach it only after the work folder and the branch are removed, so a failed
+    /// or partial cleanup keeps the note.
+    pub(crate) async fn record_cleaned(&self, id: &str) -> Result<()> {
         self.record_resources(id, crate::tracker::Resources::Planned)
             .await?;
         self.update(id, |task| {
@@ -176,9 +223,21 @@ async fn scope_absent(unit: &str) -> Result<bool> {
     Ok(matches!(output.status.code(), Some(0 | 1)) && output.stdout == b"not-found\n")
 }
 
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
+/// How a command devbox ran for an owned task ended, once it ran.
+#[derive(Debug, Clone, Copy)]
+enum Ended {
+    Success,
+    Exit(std::process::ExitStatus),
+    TimedOut,
+}
 /// Commands run only for an explicitly owned task. Timeout kills and reaps our process group.
 async fn bounded_command(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<()> {
-    bounded_command_for(program, args, cwd, Duration::from_secs(60)).await
+    match bounded_command_for(program, args, cwd, COMMAND_TIMEOUT).await? {
+        Ended::Success => Ok(()),
+        Ended::Exit(status) => Err(Fail::Internal(format!("agent cleanup exit: {status}"))),
+        Ended::TimedOut => Err(Fail::Internal("agent cleanup timed out".into())),
+    }
 }
 #[cfg(unix)]
 struct OwnedGroup(u32);
@@ -196,7 +255,7 @@ async fn bounded_command_for(
     args: &[&str],
     cwd: Option<&Path>,
     timeout: Duration,
-) -> Result<()> {
+) -> Result<Ended> {
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)
@@ -214,8 +273,8 @@ async fn bounded_command_for(
     let _group = child.id().map(OwnedGroup);
     let result = tokio::time::timeout(timeout, child.wait()).await;
     match result {
-        Ok(Ok(status)) if status.success() => Ok(()),
-        Ok(Ok(status)) => Err(Fail::Internal(format!("agent cleanup exit: {status}"))),
+        Ok(Ok(status)) if status.success() => Ok(Ended::Success),
+        Ok(Ok(status)) => Ok(Ended::Exit(status)),
         Ok(Err(error)) => Err(Fail::Internal(format!("agent cleanup wait: {error}"))),
         Err(_) => {
             #[cfg(unix)]
@@ -236,7 +295,7 @@ async fn bounded_command_for(
                 .wait()
                 .await
                 .internal("reap timed out cleanup child")?;
-            Err(Fail::Internal("agent cleanup timed out".into()))
+            Ok(Ended::TimedOut)
         }
     }
 }
@@ -244,6 +303,12 @@ async fn bounded_command_for(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    #[test]
+    fn the_teardown_limit_is_the_one_the_app_names() {
+        // `teardownFailed` in app/src/rpc/agentMessages.ts says a teardown without an exit code was
+        // stopped at this limit or killed: change both together.
+        assert_eq!(COMMAND_TIMEOUT, Duration::from_secs(60));
+    }
     #[tokio::test]
     async fn teardown_timeout_kills_owned_descendants_and_reaps_the_shell() {
         let root = tempfile::tempdir().expect("owned fixture");
@@ -254,7 +319,7 @@ mod tests {
             Duration::from_millis(30),
         )
         .await;
-        assert!(matches!(result, Err(Fail::Internal(_))));
+        assert!(matches!(result, Ok(Ended::TimedOut)), "{result:?}");
         tokio::time::sleep(Duration::from_millis(250)).await;
         assert!(!root.path().join("sentinel").exists());
     }

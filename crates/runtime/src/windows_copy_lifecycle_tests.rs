@@ -295,6 +295,9 @@ async fn terminal_reader_is_polled_and_late_exact_observation_allows_project_rem
             .is_err()
     );
     live.store(0, Ordering::SeqCst);
+    // The run has ended, so the held attempt is probed again only once a window passed (M-3).
+    svc.probe_cadence
+        .backdate(crate::windows_probe_cadence::HELD_PROBE_INTERVAL);
     svc.reconcile_windows_copies()
         .await
         .expect("late final child exit");
@@ -488,3 +491,5 @@ async fn first_windows_copy_captures_inputs_created_after_graph_preparation_by_w
 
 #[path = "windows_copy_lifecycle_isolation_tests.rs"]
 mod isolation;
+#[path = "windows_copy_lifecycle_receipt_tests.rs"]
+mod receipt;

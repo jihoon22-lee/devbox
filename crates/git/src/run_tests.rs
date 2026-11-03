@@ -206,3 +206,74 @@ async fn stdin_is_written_while_both_outputs_are_drained() {
     assert_eq!(out.len(), 262144);
     assert_eq!(err.len(), 262144);
 }
+#[cfg(unix)]
+#[tokio::test]
+async fn byte_output_keeps_raw_names_and_reads_failures_lossily() {
+    let fixture = tempfile::tempdir().expect("owned fixture");
+    // Owned shell aliases stand in for a listing and a failure that name non-UTF-8 paths.
+    let listed = git_bytes(
+        fixture.path(),
+        &[
+            "-c",
+            r"alias.fixture-list=!printf 'a\377\0b/\0'",
+            "fixture-list",
+        ],
+        6,
+    )
+    .await
+    .expect("raw listing");
+    assert_eq!(listed, b"a\xff\0b/\0");
+    let failed = git_bytes(
+        fixture.path(),
+        &[
+            "-c",
+            r"alias.fixture-fail=!printf 'bad \377 name\n' >&2; exit 3",
+            "fixture-fail",
+        ],
+        6,
+    )
+    .await;
+    assert!(
+        matches!(&failed, Err(GitError::Failed { stderr, .. }) if stderr == "bad \u{fffd} name"),
+        "{failed:?}"
+    );
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn byte_output_stops_at_its_cap_while_reading() {
+    let fixture = tempfile::tempdir().expect("owned fixture");
+    let eight = [
+        "-c",
+        "alias.fixture-eight=!printf 12345678",
+        "fixture-eight",
+    ];
+    assert_eq!(
+        git_bytes(fixture.path(), &eight, 8)
+            .await
+            .expect("at the cap"),
+        b"12345678"
+    );
+    assert!(matches!(
+        git_bytes(fixture.path(), &eight, 7).await,
+        Err(GitError::LimitExceeded)
+    ));
+    // The cap is the caller's, not the 8 MiB text limit.
+    let nine = [
+        "-c",
+        "alias.fixture-nine=!head -c 9437184 /dev/zero",
+        "fixture-nine",
+    ];
+    let listed = git_bytes(fixture.path(), &nine, 16 * 1024 * 1024).await;
+    assert_eq!(listed.map(|bytes| bytes.len()).ok(), Some(9437184));
+    // Output that never ends is cut off at the cap, not read until the command times out.
+    let endless = ["-c", "alias.fixture-endless=!yes", "fixture-endless"];
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        git_bytes(fixture.path(), &endless, 1024),
+    )
+    .await;
+    assert!(
+        matches!(result, Ok(Err(GitError::LimitExceeded))),
+        "{result:?}"
+    );
+}

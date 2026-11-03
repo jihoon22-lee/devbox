@@ -1,4 +1,5 @@
 use crate::{
+    cleanup_safety::Release,
     model::*,
     service::{AgentsService, Result},
     state::AgentState,
@@ -94,7 +95,7 @@ impl AgentsService {
     async fn owned_absent_branch(
         &self,
         task: &AgentTask,
-    ) -> Result<(devbox_projects::Project, String)> {
+    ) -> Result<(devbox_projects::Project, String, Release)> {
         if task.state != AgentState::Closed {
             return Err(AgentsError::UnsafeWorktree.into());
         }
@@ -161,14 +162,14 @@ impl AgentsService {
                 .await
                 .map_err(git_failure)?
                 .contains(branch)
-            || devbox_git::mutate::unmerged_count(repo, branch, &task.base_branch)
-                .await
-                .map_err(git_failure)?
-                != 0
         {
             return Err(AgentsError::UnsafeWorktree.into());
         }
-        Ok((project, branch.clone()))
+        let release = self
+            .release(repo, task, branch)
+            .await?
+            .ok_or(AgentsError::UnsafeWorktree)?;
+        Ok((project, branch.clone(), release))
     }
 
     async fn cleanup_tasks(&self, project_id: &str) -> Result<Vec<AgentTask>> {
@@ -188,10 +189,15 @@ impl AgentsService {
         let tasks = self.cleanup_tasks(&p.project_id).await?;
         let mut worktrees = Vec::new();
         let mut branches = Vec::new();
+        let mut off_base = Vec::new();
+        let mut submodules = Vec::new();
         for task in tasks.iter().filter(|t| t.state == AgentState::Closed) {
             // A matching path name is never ownership evidence. Keep unknown/partial resources.
             let Ok((project, path, branch)) = self.owned_worktree(task).await else {
-                if let Ok((_, branch)) = self.owned_absent_branch(task).await {
+                if let Ok((_, branch, release)) = self.owned_absent_branch(task).await {
+                    if release == Release::OffBase {
+                        off_base.push(branch.clone());
+                    }
                     branches.push(branch);
                 }
                 continue;
@@ -219,27 +225,50 @@ impl AgentsService {
                 != Some(&branch)
                 || cleanup_in_progress(&path).await?
                 || !devbox_git::status(&path).await.map_err(git_failure)?.clean
-                || devbox_git::mutate::unmerged_count(
-                    Path::new(&project.path),
-                    &branch,
-                    &task.base_branch,
-                )
-                .await
-                .map_err(git_failure)?
-                    != 0
             {
                 continue;
             }
-            worktrees.push(path.to_string_lossy().into_owned());
+            let Some(release) = self
+                .release(Path::new(&project.path), task, &branch)
+                .await?
+            else {
+                continue;
+            };
+            // Only now, with every other rule held: Git removes a folder with initialized
+            // submodules only with force, so it is named apart and neither it nor its branch is
+            // offered. Without an answer it is not offered either.
+            match devbox_git::mutate::has_submodules(&path).await {
+                Ok(false) => (),
+                Ok(true) => {
+                    submodules.push(path.to_string_lossy().into_owned());
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(agent = %task.id, %error, "submodule check failed; work folder not offered");
+                    continue;
+                }
+            }
+            let path = path.to_string_lossy().into_owned();
+            if release == Release::OffBase {
+                off_base.extend([path.clone(), branch.clone()]);
+            }
+            worktrees.push(path);
             branches.push(branch);
         }
-        worktrees.sort();
-        worktrees.dedup();
-        branches.sort();
-        branches.dedup();
+        for list in [
+            &mut worktrees,
+            &mut branches,
+            &mut off_base,
+            &mut submodules,
+        ] {
+            list.sort();
+            list.dedup();
+        }
         Ok(CleanupOptions {
             worktrees,
             branches,
+            off_base,
+            submodules,
         })
     }
 
@@ -252,15 +281,29 @@ impl AgentsService {
             .await?;
         let selected_paths: HashSet<_> = p.worktrees.iter().collect();
         let selected_branches: HashSet<_> = p.branches.iter().collect();
+        let tasks = self.cleanup_tasks(&p.project_id).await?;
+        // A folder the list names for its submodules is still taken, with its branch when the
+        // folder is selected too: its teardown runs, then it is refused with the code that says
+        // how to remove it. Its branch alone is not taken.
+        let held: HashSet<_> = tasks
+            .iter()
+            .filter(|t| {
+                t.worktree_path.as_ref().is_some_and(|v| {
+                    candidates.submodules.contains(v) && selected_paths.contains(v)
+                })
+            })
+            .filter_map(|t| t.branch.as_ref())
+            .collect();
         if p.worktrees
             .iter()
-            .any(|v| !candidates.worktrees.contains(v))
-            || p.branches.iter().any(|v| !candidates.branches.contains(v))
+            .any(|v| !candidates.worktrees.contains(v) && !candidates.submodules.contains(v))
+            || p.branches
+                .iter()
+                .any(|v| !candidates.branches.contains(v) && !held.contains(v))
         {
             return Err(AgentsError::UnsafeWorktree.into());
         }
         // Validate the entire request before removing any resource; checked-out branches require their own selected worktree.
-        let tasks = self.cleanup_tasks(&p.project_id).await?;
         let selected: Vec<_> = tasks
             .into_iter()
             .filter(|t| {
@@ -322,7 +365,7 @@ impl AgentsService {
                 .is_some_and(|v| selected_paths.contains(v))
             {
                 let current = self.get(&task.id).await?;
-                let (project, branch) = self.owned_absent_branch(&current).await?;
+                let (project, branch, _) = self.owned_absent_branch(&current).await?;
                 devbox_git::mutate::delete_branch_at(
                     Path::new(&project.path),
                     &branch,
@@ -333,15 +376,27 @@ impl AgentsService {
                 )
                 .await
                 .map_err(git_failure)?;
-                self.record_resources(&task.id, Resources::Planned).await?;
+                self.record_cleaned(&task.id).await?;
                 continue;
             }
             // Stop only the closed task's resources before removing its working directory.
             let (project, path, branch) = self.owned_worktree(&task).await?;
             self.quiesce(&task).await?;
-            self.teardown_commands(&task, &snapshot).await?;
+            let undo = self.undoable(&task, &path, &snapshot).await;
+            if let Err(failure) = self.teardown_commands(&task, &snapshot).await {
+                if undo {
+                    self.undo_failed_teardown(&task, Path::new(&project.path), &path, &branch)
+                        .await;
+                }
+                return Err(failure);
+            }
             self.owned_worktree(&task).await?;
-            if self.get(&task.id).await?.state != AgentState::Closed {
+            if undo {
+                self.pins_held(&task, Path::new(&project.path), &path, &branch)
+                    .await?;
+            }
+            let current = self.get(&task.id).await?;
+            if current.state != AgentState::Closed {
                 return Err(AgentsError::StateChanged {
                     head: devbox_git::run::resolve(&path, "HEAD")
                         .await
@@ -355,14 +410,10 @@ impl AgentsService {
                 }
                 .into());
             }
-            if devbox_git::mutate::unmerged_count(
-                Path::new(&project.path),
-                &branch,
-                &task.base_branch,
-            )
-            .await
-            .map_err(git_failure)?
-                != 0
+            if self
+                .release(Path::new(&project.path), &current, &branch)
+                .await?
+                .is_none()
             {
                 return Err(AgentsError::UnsafeWorktree.into());
             }
@@ -387,6 +438,19 @@ impl AgentsService {
             {
                 return Err(AgentsError::UnsafeWorktree.into());
             }
+            if let Err(error) = self.refuse_submodules(&path, undo).await {
+                // The folder stays until the user removes it: the task's notice says how.
+                if matches!(
+                    error,
+                    Fail::Domain(AgentsError::WorktreeHasSubmodules { .. })
+                ) {
+                    self.record_cleanup_error(&task.id, &error).await;
+                }
+                return Err(error);
+            }
+            if undo {
+                self.undo_teardown(&task, &path).await?;
+            }
             devbox_git::mutate::worktree_remove(Path::new(&project.path), &path, false)
                 .await
                 .map_err(git_failure)?;
@@ -400,7 +464,7 @@ impl AgentsService {
                 )
                 .await
                 .map_err(git_failure)?;
-                self.record_resources(&task.id, Resources::Planned).await?;
+                self.record_cleaned(&task.id).await?;
             }
         }
         Ok(Done {
@@ -409,7 +473,7 @@ impl AgentsService {
     }
 }
 
-async fn cleanup_in_progress(path: &Path) -> Result<bool> {
+pub(crate) async fn cleanup_in_progress(path: &Path) -> Result<bool> {
     for marker in [
         "MERGE_HEAD",
         "rebase-merge",

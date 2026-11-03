@@ -1,0 +1,17 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/request_user_input/mod.rs가 그리는 답하지 않은 질문을 두고 제출할지 묻는 확인 화면이다.
+# 행은 그 저장소의 스냅샷 시험 결과 codex-rs/tui/src/bottom_pane/request_user_input/snapshots/codex_tui__bottom_pane__request_user_input__tests__request_user_input_unanswered_confirmation.snap에서 옮겼다(Codex 시험이 그 코드로 그린 화면).
+# 두 파일 모두 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0.
+# 줄 끝 채움 공백만 지웠고 줄 배치·번호·› 표시·footer는 스냅샷 그대로다. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  Submit with unanswered questions?
+  2 unanswered questions
+
+  › 1. Proceed  Submit with 2 unanswered questions
+    2. Go back  Return to the first unanswered question
+
+
+
+
+  Press enter to confirm or esc to go back

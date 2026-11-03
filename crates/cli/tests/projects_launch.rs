@@ -441,3 +441,47 @@ async fn launch_rejects_missing_inline_base_before_creating_configured_terminal(
     assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
     assert!(!d.paths.data_dir.join("agents").exists());
 }
+
+#[tokio::test]
+async fn launch_with_a_missing_agent_cli_starts_nothing_and_names_the_tool() {
+    let (mut d, repo) = fixture(
+        "[launch]\nterminals=[{name='must not start',command='sleep 600'}]\nagents=[{tool='fake',worktree=true},{tool='missing',worktree=true}]\n",
+    );
+    let missing = "devbox-owned-missing-launch-tool";
+    d.write_config(&format!(
+        "[[agents.profiles]]\nid='fake'\nlabel='Fake'\ncommand='sleep 600'\nhooks='none'\n\
+         [[agents.profiles]]\nid='missing'\nlabel='Missing'\ncommand='{missing} --flag'\nhooks='none'\n"
+    ));
+    d.launch();
+    let c = d.client().await;
+    let p = d.add_project(&c, &repo).await;
+    d.approve_project(&c, &p).await;
+    let before = call(&c, "terminal.list", json!({})).await;
+    let error = c
+        .raw_call("projects.launch", json!({"id":p}), None)
+        .await
+        .expect_err("a missing agent CLI ends the launch");
+    let devbox_cli::client::ClientError::Rpc {
+        code,
+        detail: Some(detail),
+        ..
+    } = error
+    else {
+        panic!("expected a typed launch error")
+    };
+    assert_eq!(code, "projects.launch_tool_missing");
+    let detail: Value = serde_json::from_str(detail.get()).expect("launch detail");
+    assert_eq!(detail["command"], missing);
+    // Checked before anything starts: no terminal, no task, no branch and no worktree.
+    assert_eq!(call(&c, "terminal.list", json!({})).await, before);
+    assert_eq!(call(&c, "agents.list", json!({})).await["items"], json!([]));
+    let branches = d
+        .environment("git")
+        .args(["-C", &repo, "branch", "--list", "agent/*"])
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .expect("fixture git");
+    assert!(branches.status.success());
+    assert!(branches.stdout.is_empty(), "no agent branch");
+    assert!(!Path::new(&format!("{repo}-agents")).exists());
+}

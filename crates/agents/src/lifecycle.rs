@@ -11,6 +11,11 @@ use std::{
     sync::Arc,
     time::Instant,
 };
+/// Agent tasks as they were before the daemon served requests (see
+/// [`AgentsService::initialize_known`]).
+#[derive(Debug, Clone, Default)]
+pub struct KnownTasks(HashMap<String, AgentTask>);
+
 impl AgentsService {
     pub(crate) async fn refresh_binding(&self, task: &AgentTask, retry: bool) -> Result<Binding> {
         // Completion candidates and resume must always verify current metadata;
@@ -138,6 +143,22 @@ impl AgentsService {
         Err(AgentsError::SessionMetadata { diagnostic: last }.into())
     }
     pub async fn reconcile(&self) -> Result<()> {
+        self.reconcile_known(None).await
+    }
+    /// Agent tasks before the daemon serves requests, for [`Self::initialize_known`].
+    pub async fn known_tasks(&self) -> Result<KnownTasks> {
+        let tasks = self.all_tasks(None).await?;
+        Ok(KnownTasks(
+            tasks
+                .into_iter()
+                .map(|task| (task.id.clone(), task))
+                .collect(),
+        ))
+    }
+    /// `known`: only reconcile tasks unchanged since then. A retry after the daemon began
+    /// serving must skip tasks created or relaunched meanwhile: their terminal may not
+    /// exist yet, and a `Preparing` one would lose the worktree `prepare` is building.
+    pub(crate) async fn reconcile_known(&self, known: Option<&KnownTasks>) -> Result<()> {
         let sessions = self
             .terminal
             .tmux()
@@ -145,6 +166,9 @@ impl AgentsService {
             .await
             .map_err(|e| Fail::Internal(format!("agent reconcile tmux: {e}")))?;
         for task in self.all_tasks(None).await? {
+            if known.is_some_and(|known| known.0.get(&task.id) != Some(&task)) {
+                continue;
+            }
             if self.recover_tool_exit(&task.id).await? {
                 continue;
             }
@@ -162,8 +186,12 @@ impl AgentsService {
                 if task.state == AgentState::Preparing {
                     self.reconcile_resources(&task).await?;
                 }
-                self.update(&task.id, |t| {
-                    apply_event(t, &AgentEvent::SessionLost, now_ms())
+                let (state, terminal) = (task.state, task.terminal_id);
+                // A launch or close since the read above keeps its own terminal and state.
+                self.update(&task.id, move |t| {
+                    t.state == state
+                        && t.terminal_id == terminal
+                        && apply_event(t, &AgentEvent::SessionLost, now_ms())
                 })
                 .await?;
             }
@@ -171,7 +199,14 @@ impl AgentsService {
         Ok(())
     }
     pub async fn initialize(self: &Arc<Self>) -> Result<()> {
-        self.reconcile().await?;
+        self.initialize_with(None).await
+    }
+    /// [`Self::initialize`] retried after the daemon began serving requests.
+    pub async fn initialize_known(self: &Arc<Self>, known: &KnownTasks) -> Result<()> {
+        self.initialize_with(Some(known)).await
+    }
+    async fn initialize_with(self: &Arc<Self>, known: Option<&KnownTasks>) -> Result<()> {
+        self.reconcile_known(known).await?;
         crate::watch::spawn(self).internal("compile output waiting patterns")?;
         let svc = self.clone();
         self.background.spawn(async move {

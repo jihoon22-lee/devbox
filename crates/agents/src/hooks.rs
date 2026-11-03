@@ -1,3 +1,4 @@
+use crate::approvals::{Approval, ApprovalKey, key};
 use crate::plan::sh_quote;
 use crate::state::AgentEvent;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,8 @@ pub enum HookSource {
     Codex,
     Setup,
     Exit,
+    Opencode,
+    Pi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -21,6 +24,8 @@ impl std::str::FromStr for HookSource {
         match s {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
+            "opencode" => Ok(Self::Opencode),
+            "pi" => Ok(Self::Pi),
             "setup" => Ok(Self::Setup),
             "exit" => Ok(Self::Exit),
             _ => Err(InvalidHookSource),
@@ -59,7 +64,12 @@ pub fn parse_codex_candidate(payload: &str) -> Option<CodexCompletionCandidate> 
 pub fn claude_settings(devbox: &str) -> String {
     let command = format!("{} agent event --from claude", sh_quote(devbox));
     let hook = serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": command }] }]);
-    serde_json::json!({ "hooks": { "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook, "Notification": hook, "Stop": hook } }).to_string()
+    serde_json::json!({ "hooks": {
+        "SessionStart": hook, "UserPromptSubmit": hook, "PermissionRequest": hook,
+        "PostToolUse": hook, "PostToolUseFailure": hook, "PermissionDenied": hook,
+        "Notification": hook, "Stop": hook,
+    } })
+    .to_string()
 }
 pub fn codex_notify_arg(devbox: &str) -> String {
     format!(
@@ -82,6 +92,9 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
             code: code.unwrap_or(-1),
         }],
         HookSource::Codex => vec![],
+        HookSource::Opencode | HookSource::Pi => {
+            crate::plugin_event::parse_plugin_event(source, payload)
+        }
         HookSource::Claude => {
             #[derive(Deserialize)]
             struct Payload {
@@ -109,13 +122,14 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
                         p.tool_name.unwrap_or_else(|| "도구".into())
                     ),
                 }],
+                // The service applies this only when it ends the wait's last approval
+                // (see `approval`). Tool input, output and errors are never read here.
+                event if ends_tool_call(event) => vec![AgentEvent::OutputResumed],
                 "Notification" => match p.notification_type.as_deref() {
                     Some("idle_prompt") => vec![AgentEvent::TurnComplete { message: None }],
-                    Some("permission_prompt" | "agent_needs_input") => {
-                        vec![AgentEvent::NeedsInput {
-                            message: p.message.unwrap_or_default(),
-                        }]
-                    }
+                    Some(kind) if asks_user(kind) => vec![AgentEvent::NeedsInput {
+                        message: p.message.unwrap_or_default(),
+                    }],
                     _ => vec![],
                 },
                 "Stop" => vec![AgentEvent::TurnComplete {
@@ -125,6 +139,74 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
             }
         }
     }
+}
+
+/// Notifications that ask the user something: an approval's own permission prompt, or
+/// a background agent or teammate that is blocked ("<label> needs your input").
+fn asks_user(kind: &str) -> bool {
+    matches!(kind, "permission_prompt" | "agent_needs_input")
+}
+
+/// Claude's hook event name. The rest of the payload, tool input and output included, is
+/// skipped without being built.
+pub(crate) fn claude_event(payload: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Event {
+        hook_event_name: String,
+    }
+    serde_json::from_str::<Event>(payload)
+        .ok()
+        .map(|event| event.hook_event_name)
+}
+
+/// Claude sends one of these for every tool call that ends.
+pub(crate) fn ends_tool_call(event: &str) -> bool {
+    matches!(
+        event,
+        "PostToolUse" | "PostToolUseFailure" | "PermissionDenied"
+    )
+}
+
+/// Pairs Claude's approval request with the end of that tool call. Only a digest of
+/// (`agent_id`, `tool_name`, `tool_input`) leaves here; `tool_response` is never read.
+pub(crate) fn approval(payload: &str) -> Option<Approval> {
+    match claude_event(payload)?.as_str() {
+        // A request that cannot be keyed (e.g. input deeper than serde_json's recursion
+        // limit) still opens a dialog.
+        "PermissionRequest" => {
+            Some(call_key(payload).map_or(Approval::Untracked, Approval::Requested))
+        }
+        // An ending that cannot be keyed ends nothing.
+        event if ends_tool_call(event) => call_key(payload).map(Approval::Finished),
+        "Notification" => {
+            #[derive(Deserialize)]
+            struct Notice {
+                notification_type: Option<String>,
+            }
+            let kind = serde_json::from_str::<Notice>(payload)
+                .ok()?
+                .notification_type?;
+            // Someone other than the recorded approvals is waiting for the user.
+            (asks_user(&kind) && kind != "permission_prompt").then_some(Approval::Untracked)
+        }
+        _ => None,
+    }
+}
+
+fn call_key(payload: &str) -> Option<ApprovalKey> {
+    #[derive(Deserialize)]
+    struct Call {
+        agent_id: Option<String>,
+        tool_name: Option<String>,
+        #[serde(default)]
+        tool_input: serde_json::Value,
+    }
+    let call: Call = serde_json::from_str(payload).ok()?;
+    Some(key(
+        call.agent_id.as_deref().unwrap_or_default(),
+        call.tool_name.as_deref().unwrap_or_default(),
+        &call.tool_input,
+    ))
 }
 
 #[cfg(test)]
@@ -235,6 +317,9 @@ mod tests {
             "SessionStart",
             "UserPromptSubmit",
             "PermissionRequest",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionDenied",
             "Notification",
             "Stop",
         ] {
@@ -248,5 +333,63 @@ mod tests {
             serde_json::from_str(notify.strip_prefix("notify=").expect("owned fixture"))
                 .expect("owned fixture");
         assert_eq!(args[0], "/b/\"quoted\\path");
+    }
+    #[test]
+    fn opencode_and_pi_sources_parse_from_cli_names() {
+        for (name, source) in [("opencode", HookSource::Opencode), ("pi", HookSource::Pi)] {
+            assert_eq!(name.parse::<HookSource>(), Ok(source));
+            let wire: HookSource =
+                serde_json::from_str(&format!("\"{name}\"")).expect("RPC source name");
+            assert_eq!(wire, source);
+        }
+        for name in ["claude", "codex", "setup", "exit"] {
+            assert!(name.parse::<HookSource>().is_ok(), "{name}");
+        }
+        assert_eq!("Opencode".parse::<HookSource>(), Err(InvalidHookSource));
+        // A plugin's report goes to the plugin parser, never Claude's.
+        let working = r#"{"v":1,"event":"working"}"#;
+        for source in [HookSource::Opencode, HookSource::Pi] {
+            assert_eq!(parse(source, working, None), vec![E::PromptSubmitted]);
+        }
+        assert!(parse(HookSource::Claude, working, None).is_empty());
+    }
+    #[test]
+    fn claude_settings_include_post_tool_use() {
+        let settings: serde_json::Value =
+            serde_json::from_str(&claude_settings("/b/devbox")).expect("owned fixture");
+        // Every way the approved tool call can end, for every tool like the other hooks.
+        for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            assert_eq!(
+                settings["hooks"][event],
+                serde_json::json!([{ "matcher": "", "hooks": [{ "type": "command", "command": "'/b/devbox' agent event --from claude" }] }]),
+                "{event}"
+            );
+        }
+    }
+    #[test]
+    fn post_tool_use_maps_to_output_resumed() {
+        // Tool input, output and errors can hold file contents or command output. Only a
+        // digest of the call leaves the parser, and the event itself carries nothing.
+        let secret = "OWNED_SECRET_MARKER=sk-live-0123456789";
+        let input = serde_json::json!({ "command": format!("echo {secret}") });
+        let request = serde_json::json!({ "hook_event_name": "PermissionRequest", "agent_id": "s1", "tool_name": "Bash", "tool_input": input, "permission_suggestions": [] });
+        let Some(Approval::Requested(requested)) = approval(&request.to_string()) else {
+            panic!("approval request");
+        };
+        for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+            let payload = serde_json::json!({
+                "hook_event_name": event, "session_id": "sess-1", "agent_id": "s1",
+                "tool_name": "Bash", "tool_input": input, "tool_use_id": "toolu_1",
+                "tool_response": { "stdout": secret, "stderr": "" },
+                "error": secret, "reason": secret, "duration_ms": 1,
+            })
+            .to_string();
+            let events = parse(HookSource::Claude, &payload, None);
+            assert_eq!(events, vec![E::OutputResumed], "{event}");
+            let ended = approval(&payload);
+            assert_eq!(ended, Some(Approval::Finished(requested)), "{event}");
+            let shown = format!("{events:?} {ended:?}");
+            assert!(!shown.contains("OWNED_SECRET_MARKER") && !shown.contains("toolu_1"));
+        }
     }
 }

@@ -79,8 +79,16 @@ pub struct AgentTask {
     pub closed_commits: Option<u32>,
     #[serde(default)]
     pub closed_head_oid: Option<String>,
+    /// The commit a merge close made on the base branch: the merge or squash commit, or the rebased
+    /// head. Recorded with the close itself; tasks merged before it was recorded have none.
+    #[serde(default)]
+    pub closed_merge_oid: Option<String>,
     #[serde(default)]
     pub cleanup_error: Option<String>,
+    /// When the current launch started, until its tool says it reads its input. Only pi says so,
+    /// through devbox's extension, so other tools never have it.
+    #[serde(default)]
+    pub starting_since_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -92,6 +100,12 @@ pub struct CreateAgentTask {
     pub base_branch: Option<String>,
     pub worktree: bool,
     pub prompt: String,
+    /// The name of the new branch without its `agent/` prefix. Left out, the name comes from the
+    /// title and gets a number when it is taken. Given, it is used exactly or refused with
+    /// `agents.branch_exists`; only a task with a work folder has a branch to name.
+    #[serde(default)]
+    #[ts(optional)]
+    pub branch: Option<String>,
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -229,9 +243,20 @@ pub struct CleanupAgents {
     pub branches: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct CleanupOptions {
     pub worktrees: Vec<String>,
     pub branches: Vec<String>,
+    /// The listed work folders and branches of tasks that closed by squash or PR and whose
+    /// automatic cleanup failed: the branch's own commits are not on the base branch, though what
+    /// they changed is there or in the PR. Listed only while the rest of the rule holds (Ruling 60).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub off_base: Vec<String>,
+    /// Work folders of closed tasks that pass every other check but hold initialized submodules.
+    /// Git removes such a folder only with force, which devbox never uses, so neither it nor its
+    /// branch is offered: the list names it with how to remove it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub submodules: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -259,6 +284,9 @@ pub struct DiscardCheck {
     pub dirty_files: u32,
     pub head_oid: String,
     pub fingerprint: Option<String>,
+    /// The work folder has initialized submodules, or the check had no answer: the discard's forced
+    /// removal also takes their store, with any commits not pushed. Part of the fingerprint.
+    pub has_submodules: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -312,16 +340,26 @@ domain_error! {
         SessionMissing = "agents.session_missing",
         SessionMetadata { diagnostic: crate::tracker::Diagnostic } = "agents.session_metadata",
         InputTooLarge { limit_bytes: u32 } = "agents.input_too_large",
+        ControlCharacters = "agents.control_characters",
         PrTitleTooLong { limit_bytes: u32 } = "agents.pr_title_too_long",
         SquashMessageTooLong { limit_bytes: u32 } = "agents.squash_message_too_long",
         TeardownCommandTooLong { limit_bytes: u32 } = "agents.teardown_command_too_long",
         TeardownCommandInvalid = "agents.teardown_command_invalid",
+        // Which `[agent] teardown` command failed (1-based) and its exit code, `None` when it was
+        // killed or timed out. Its text stays out; the user reads it in the file.
+        TeardownFailed { index: u32, exit_code: Option<i32> } = "agents.teardown_failed",
+        // A work folder with initialized submodules: Git removes it only with force, which devbox
+        // never uses. `path` is the folder, for the command that removes it.
+        WorktreeHasSubmodules { path: String } = "agents.worktree_has_submodules",
         DeliveryUnknown = "agents.delivery_unknown",
+        AwaitingInput = "agents.awaiting_input",
+        ToolStarting = "agents.tool_starting",
         ResumeUnavailable = "agents.resume_unavailable",
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",
         ListChanged = "agents.list_changed",
         ProjectTrustRequired { id: String } = "agents.project_trust_required",
+        ToolMissing { command: String } = "agents.tool_missing",
     }
 }
 

@@ -14,6 +14,14 @@ pub(crate) struct ClosedReview {
     pub changes: AgentChanges,
     pub commits: Vec<devbox_git::Commit>,
 }
+/// How a task closes, with what that close made: a merge's commit on the base branch, or a PR's
+/// address. Both are written in the same update as the close.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Closure {
+    Merged { result: String },
+    PullRequest { url: String },
+    Discarded,
+}
 impl AgentsService {
     pub(crate) async fn capture_review(
         &self,
@@ -56,14 +64,19 @@ impl AgentsService {
     pub(crate) async fn close_record(
         &self,
         id: &str,
-        how: CloseHow,
-        url: Option<String>,
+        closure: Closure,
         cleanup_head: String,
         usage: AgentUsage,
         review: ClosedReview,
     ) -> Result<()> {
+        let (how, url, merge) = match closure {
+            Closure::Merged { result } => (CloseHow::Merged, None, Some(result)),
+            Closure::PullRequest { url } => (CloseHow::PullRequest, Some(url), None),
+            Closure::Discarded => (CloseHow::Discarded, None, None),
+        };
         let id = id.to_owned();
         let hub = self.hub.clone();
+        let approvals = self.approvals.clone();
         let count = u32::try_from(review.commits.len())
             .map_err(|_| Fail::Internal("closed commit count overflow".into()))?;
         self.db
@@ -86,8 +99,12 @@ impl AgentsService {
                     // Rebase can rewrite the source. Cleanup tracks its actual final head,
                     // while the immutable review retains the exact pair the user confirmed.
                     task.closed_head_oid = Some(cleanup_head);
+                    // Cleanup offers a squash's source branch only while this commit is on the
+                    // base branch, so it is part of the close, not a later write.
+                    task.closed_merge_oid = merge;
                     task.pr_url = url;
                     apply_event(&mut task, &AgentEvent::Closed { how }, now_ms());
+                    approvals.forget(&id);
                     store::put_closed_review(tx, &id, &review)?;
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous)))

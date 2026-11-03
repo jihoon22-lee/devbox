@@ -138,6 +138,167 @@ fn integer_started_at_uses_precise_envelope_launch_boundary() {
     assert_eq!(current.turn_started_ms, utc_ms("2026-10-13T00:00:02Z"));
 }
 
+const MIB: usize = 1024 * 1024;
+/// An owned primary `session_meta` line whose instructions make it `pad` bytes longer.
+fn session_meta(pad: usize) -> String {
+    format!(
+        "{{\"timestamp\":\"2026-10-13T00:00:01.000Z\",\"type\":\"session_meta\",\"payload\":{{\"id\":\"primary\",\"timestamp\":\"2026-10-13T00:00:01.000Z\",\"cwd\":\"/owned/work\",\"source\":\"cli\",\"thread_source\":\"user\",\"base_instructions\":{{\"text\":\"{}\"}}}}}}\n",
+        "i".repeat(pad)
+    )
+}
+/// A `task_started` line padded to `len` bytes including its newline (0: unpadded).
+fn turn(id: &str, at: &str, len: usize) -> String {
+    let line = |pad: usize| {
+        format!(
+            "{{\"timestamp\":\"{at}\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_started\",\"turn_id\":\"{id}\",\"pad\":\"{}\"}}}}\n",
+            " ".repeat(pad)
+        )
+    };
+    let short = line(0);
+    line(len.saturating_sub(short.len()))
+}
+/// Records the tracker does not read, `len` bytes in all, in lines of 50 000–100 000 bytes
+/// (one shorter line when `len` is under 100 000).
+fn filler(mut len: usize) -> String {
+    let (head, tail) = (
+        "{\"timestamp\":\"2026-10-13T00:00:02.500Z\",\"type\":\"response_item\",\"payload\":{\"text\":\"",
+        "\"}}\n",
+    );
+    let mut text = String::new();
+    while len > 0 {
+        let line = if len > 200_000 {
+            100_000
+        } else if len > 100_000 {
+            len / 2
+        } else {
+            len
+        };
+        text += &format!("{head}{}{tail}", "x".repeat(line - head.len() - tail.len()));
+        len -= line;
+    }
+    text
+}
+fn rollout(root: &Path, text: &str) -> PathBuf {
+    let dir = root.join("2026/10/13");
+    fs::create_dir_all(&dir).expect("owned fixture");
+    let path = dir.join("rollout-primary.jsonl");
+    fs::write(&path, text).expect("owned fixture");
+    path
+}
+fn launch() -> Binding {
+    Binding::new(utc_ms("2026-10-13T00:00:00Z").expect("owned fixture"))
+}
+
+#[test]
+fn large_rollout_finds_the_latest_turn_in_the_tail() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    let mut text = session_meta(0) + &turn("early", "2026-10-13T00:00:02.000Z", 0);
+    text += &filler(9 * MIB);
+    text += &turn("latest", "2026-10-13T00:00:03.000Z", 0);
+    text += &filler(4096);
+    // The 8 MiB window starts inside a record: that partial line is dropped, not parsed.
+    assert_ne!(text.as_bytes()[text.len() - 8 * MIB - 1], b'\n');
+    rollout(t.path(), &text);
+    let found = refresh(t.path(), "/owned/work", &launch()).expect("long rollout");
+    assert!(found.matches("primary", "latest"));
+    assert_eq!(found.turn_started_ms, utc_ms("2026-10-13T00:00:03Z"));
+    let known = refresh(t.path(), "/owned/work", &found).expect("known long rollout");
+    assert!(known.matches("primary", "latest"));
+}
+
+#[test]
+fn tail_window_is_the_last_eight_mebibytes() {
+    for (shift, kept) in [(0, true), (1, false)] {
+        let t = tempfile::tempdir().expect("owned fixture");
+        let boundary = turn("boundary", "2026-10-13T00:00:03.000Z", 0);
+        let mut text = session_meta(0) + &turn("early", "2026-10-13T00:00:02.000Z", 0);
+        text += &filler(64 * 1024);
+        let at = text.len();
+        text += &boundary;
+        text += &filler(8 * MIB - boundary.len() + shift);
+        assert_eq!(text.len() - 8 * MIB, at + shift);
+        rollout(t.path(), &text);
+        let found = refresh(t.path(), "/owned/work", &launch());
+        if kept {
+            // A line that starts exactly at the window is whole and is read.
+            assert!(found.expect("boundary turn").matches("primary", "boundary"));
+        } else {
+            // One byte later it is the window's partial first line; the head is never read.
+            assert_eq!(
+                found.expect_err("no turn in the window"),
+                Diagnostic::Missing
+            );
+        }
+    }
+}
+
+#[test]
+fn oversized_line_is_skipped_not_fatal() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    let mut text = session_meta(0) + &turn("one", "2026-10-13T00:00:02.000Z", 0);
+    text += &format!(
+        "{{\"type\":\"response_item\",\"payload\":\"{}\"}}\n",
+        "o".repeat(300 * 1024)
+    );
+    text += &turn("at-limit", "2026-10-13T00:00:03.000Z", 128 * 1024);
+    text += &turn("over-limit", "2026-10-13T00:00:04.000Z", 128 * 1024 + 1);
+    // Codex may still be writing a long line: over the limit, it is skipped either way.
+    text += &format!(
+        "{{\"type\":\"response_item\",\"payload\":\"{}",
+        "p".repeat(200 * 1024)
+    );
+    let path = rollout(t.path(), &text);
+    let found = refresh(t.path(), "/owned/work", &launch()).expect("oversized lines skipped");
+    assert!(found.matches("primary", "at-limit"));
+    let (mut budget, mut skipped) = (u64::MAX, 0);
+    let direct = read(&path, "/owned/work", &launch(), &mut budget, &mut skipped)
+        .expect("oversized lines skipped")
+        .expect("primary rollout");
+    assert!(direct.matches("primary", "at-limit"));
+    // The 300 KiB record, the turn one byte over the limit and the unfinished last line.
+    assert_eq!(skipped, 3);
+}
+
+#[test]
+fn session_meta_over_128k_is_read() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    // Codex writes its instructions into session_meta, so its line has its own limit.
+    let meta = session_meta(300 * 1024);
+    assert!(meta.len() > 128 * 1024);
+    rollout(
+        t.path(),
+        &(meta + &turn("turn", "2026-10-13T00:00:02.000Z", 0)),
+    );
+    let found = refresh(t.path(), "/owned/work", &launch()).expect("long session_meta");
+    assert!(found.matches("primary", "turn"));
+}
+
+#[test]
+fn session_meta_line_limit_is_one_mebibyte() {
+    for (len, allowed) in [(MIB, true), (MIB + 1, false)] {
+        let t = tempfile::tempdir().expect("owned fixture");
+        let meta = session_meta(len - session_meta(0).len());
+        assert_eq!(meta.len(), len);
+        rollout(
+            t.path(),
+            &(meta + &turn("turn", "2026-10-13T00:00:02.000Z", 0)),
+        );
+        let found = refresh(t.path(), "/owned/work", &launch());
+        if allowed {
+            assert!(
+                found
+                    .expect("first line at the limit")
+                    .matches("primary", "turn")
+            );
+        } else {
+            assert_eq!(
+                found.expect_err("over the limit"),
+                Diagnostic::LimitExceeded
+            );
+        }
+    }
+}
+
 #[test]
 fn non_primary_source_objects_are_skipped_before_strict_primary_metadata() {
     let temp = tempfile::tempdir().expect("owned fixture");

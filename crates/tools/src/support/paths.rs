@@ -45,13 +45,13 @@ fn after(text: &str, at: usize) -> bool {
     }
 }
 impl Paths {
-    pub fn new(home: &Path, vault: &VaultSnapshot) -> R<Self> {
+    /// Without a vault (notes off) only the home directory is masked.
+    pub fn new(home: &Path, vault: Option<&VaultSnapshot>) -> R<Self> {
         let mut forms = Vec::new();
-        for (path, kind) in [
-            (vault.configured.as_path(), 2),
-            (vault.canonical.as_path(), 2),
-            (home, 1),
-        ] {
+        let vault = vault
+            .into_iter()
+            .flat_map(|vault| [vault.configured.as_path(), vault.canonical.as_path()]);
+        for (path, kind) in vault.map(|path| (path, 2)).chain([(home, 1)]) {
             let raw = path
                 .to_str()
                 .ok_or_else(|| super::failed("non UTF8 path"))?;
@@ -118,7 +118,7 @@ mod tests {
             configured: "/".into(),
             canonical: "/".into(),
         };
-        let paths = Paths::new(Path::new("/home/person"), &root).expect("paths");
+        let paths = Paths::new(Path::new("/home/person"), Some(&root)).expect("paths");
         assert!(
             paths
                 .spans("note=/private.md")
@@ -129,7 +129,7 @@ mod tests {
             configured: "/alias/".into(),
             canonical: "/actual".into(),
         };
-        let paths = Paths::new(Path::new("/home/person"), &alias).expect("paths");
+        let paths = Paths::new(Path::new("/home/person"), Some(&alias)).expect("paths");
         assert!(
             paths
                 .spans("note=/alias/private.md")
@@ -144,7 +144,7 @@ mod tests {
             configured: "/mnt/d/vault".into(),
             canonical: "/mnt/d/vault".into(),
         };
-        let paths = Paths::new(Path::new("/home/person"), &vault).expect("paths");
+        let paths = Paths::new(Path::new("/home/person"), Some(&vault)).expect("paths");
         let kinds = |text: &str| -> Vec<(usize, usize, u8)> {
             paths
                 .spans(text)

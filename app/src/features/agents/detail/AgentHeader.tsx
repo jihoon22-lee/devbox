@@ -4,6 +4,7 @@ import { Button, StatusDot } from "../../../ui";
 import type { AgentTask } from "../model";
 import { failureLabel, STATE_LABEL } from "../model";
 import { TokenMetrics } from "../TokenMetrics";
+import { CleanupNotice } from "./CleanupNotice";
 import s from "./Detail.module.css";
 import { openAgentPr } from "./links";
 export function AgentHeader({
@@ -69,7 +70,7 @@ export function AgentHeader({
           )}
         </p>
       )}
-      {task.cleanupError && <p role="alert">정리하지 못한 항목이 있습니다. {task.cleanupError}</p>}
+      {task.cleanupError && <CleanupNotice error={task.cleanupError} />}
     </header>
   );
 }

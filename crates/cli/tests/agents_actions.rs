@@ -352,14 +352,25 @@ async fn rebase_conflicts_are_owned_and_abort_restores_the_agent_branch() {
     );
 }
 
+/// The work folder was clean at the closed head before the teardown, so what the teardown left
+/// there is cleanup's own: it is undone and the folder and branch go (Ruling 61). The closed
+/// result stays.
 #[tokio::test]
-async fn automatic_cleanup_preserves_teardown_changes_and_closed_result() {
+async fn automatic_cleanup_undoes_what_the_teardown_left_and_keeps_closed_result() {
     let mut d = fixture(true);
     let repo = d.git_repo("projects/retain");
+    let ran = d.home.path().join("teardown-ran");
     std::fs::create_dir_all(std::path::Path::new(&repo).join(".devbox")).expect("owned fixture");
     std::fs::write(
         std::path::Path::new(&repo).join(".devbox/devbox.toml"),
-        "[agent]\nteardown=['printf retained > retained.txt']\n",
+        format!(
+            "[agent]\nteardown=['printf x > teardown.log',{}]\n",
+            serde_json::to_string(&format!(
+                "touch {}",
+                devbox_core::sh_quote(ran.to_str().expect("owned fixture"))
+            ))
+            .expect("owned fixture")
+        ),
     )
     .expect("owned fixture");
     d.git(std::path::Path::new(&repo), &["add", ".devbox/devbox.toml"]);
@@ -380,19 +391,19 @@ async fn automatic_cleanup_preserves_teardown_changes_and_closed_result() {
     )
     .await;
     assert_eq!(closed["closedHow"], "merged");
-    assert!(
-        closed["cleanupError"]
-            .as_str()
-            .expect("owned fixture")
-            .contains("agents.worktree_dirty")
-    );
+    assert_eq!(closed["closedCommits"], 1);
+    assert!(closed["cleanupError"].is_null(), "{closed}");
+    assert!(ran.exists(), "the teardown ran");
+    assert!(!std::path::Path::new(idle["worktreePath"].as_str().expect("owned fixture")).exists());
+    let branches = d
+        .environment("git")
+        .args(["-C", &repo, "branch", "--list", "agent/*"])
+        .stdout(std::process::Stdio::piped())
+        .output()
+        .expect("owned fixture");
     assert_eq!(
-        std::fs::read_to_string(
-            std::path::Path::new(idle["worktreePath"].as_str().expect("owned fixture"))
-                .join("retained.txt")
-        )
-        .expect("owned fixture"),
-        "retained"
+        String::from_utf8(branches.stdout).expect("owned fixture"),
+        ""
     );
 }
 

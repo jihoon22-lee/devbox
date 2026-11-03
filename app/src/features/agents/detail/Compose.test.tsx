@@ -1,15 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { messageFor } from "../../../rpc/messages";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { ProjectWire } from "../../projects/test-wire";
 import { task } from "../test-fixtures";
 import { Compose, useDrafts } from "./Compose";
 
 beforeEach(() => useDrafts.setState({ text: {} }));
-async function setup() {
+async function setup(props: Partial<ComponentProps<typeof Compose>> = {}) {
   const wire = new ProjectWire();
   const view = render(
     <RpcProvider client={wire.client}>
-      <Compose agentId="a1" />
+      <Compose agentId="a1" {...props} />
     </RpcProvider>,
   );
   await waitFor(() => expect(wire.client.state).toBe("ready"));
@@ -90,4 +92,71 @@ test("proven send failure keeps the original draft for normal retry", async () =
   await waitFor(() => expect(wire.requests("agents.send")).toHaveLength(1));
   await act(async () => wire.fail("agents.send"));
   expect(box).toHaveValue("전송 안 된 지시");
+});
+const WAITING = "에이전트가 터미널에서 선택을 기다리는 동안에는 보낼 수 없습니다.";
+test("waiting agent keeps the draft but sends nothing and points to its terminal", async () => {
+  const onShowTerminal = vi.fn();
+  const { wire, box } = await setup({ agentState: "waiting", onShowTerminal });
+  fireEvent.change(box, { target: { value: "승인 화면에 들어가면 안 되는 지시" } });
+  expect(box).toBeEnabled();
+  expect(screen.getByRole("button", { name: /^보내기/ })).toBeDisabled();
+  fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
+  fireEvent.keyUp(box, { key: "Enter", ctrlKey: true });
+  fireEvent.submit(box.closest("form")!);
+  fireEvent.compositionStart(box);
+  fireEvent.keyDown(box, { key: "Enter", ctrlKey: true, isComposing: true });
+  fireEvent.compositionEnd(box, { target: { value: "승인 화면에 들어가면 안 되는 지시" }, data: "시" });
+  await act(async () => {});
+  expect(wire.requests("agents.send")).toHaveLength(0);
+  expect(box).toHaveValue("승인 화면에 들어가면 안 되는 지시");
+  expect(screen.getByRole("status")).toHaveTextContent(WAITING);
+  fireEvent.click(screen.getByRole("button", { name: "터미널 보기" }));
+  expect(onShowTerminal).toHaveBeenCalledTimes(1);
+});
+test.each(["idle", "running"] as const)(
+  "%s agent sends with Ctrl+Enter and shows no waiting notice",
+  async (agentState) => {
+    const { wire, box } = await setup({ agentState, onShowTerminal: vi.fn() });
+    expect(screen.queryByText(WAITING)).toBeNull();
+    expect(screen.queryByRole("button", { name: "터미널 보기" })).toBeNull();
+    fireEvent.change(box, { target: { value: "다음 지시" } });
+    expect(screen.getByRole("button", { name: /^보내기/ })).toBeEnabled();
+    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(wire.requests("agents.send")).toHaveLength(1));
+    expect(wire.request("agents.send").params).toEqual({ id: "a1", text: "다음 지시" });
+  },
+);
+
+async function refused(code: string, props: Partial<ComponentProps<typeof Compose>>) {
+  const { wire, box, view } = await setup(props);
+  fireEvent.change(box, { target: { value: "다음 지시" } });
+  fireEvent.submit(box.closest("form")!);
+  await waitFor(() => expect(wire.requests("agents.send")).toHaveLength(1));
+  await act(async () => wire.deliver({ type: "response", id: wire.request("agents.send").id, error: { code } }));
+  return { wire, view, alert: await screen.findByRole("alert") };
+}
+test.each(["agents.awaiting_input", "agents.tool_starting"] as const)(
+  "a send refused with %s before the state says so still points to the terminal",
+  async (code) => {
+    const onShowTerminal = vi.fn();
+    const { alert } = await refused(code, { agentState: "running", onShowTerminal });
+    expect(alert).toHaveTextContent(messageFor(code).title);
+    fireEvent.click(within(alert).getByRole("button", { name: "터미널 보기" }));
+    expect(onShowTerminal).toHaveBeenCalledTimes(1);
+  },
+);
+test("another refusal does not point to the terminal, and the waiting notice never doubles the button", async () => {
+  const other = await refused("agents.delivery_unknown", { agentState: "running", onShowTerminal: vi.fn() });
+  expect(screen.queryByRole("button", { name: "터미널 보기" })).toBeNull();
+  other.view.unmount();
+  cleanup();
+  const early = await refused("agents.awaiting_input", { agentState: "running", onShowTerminal: vi.fn() });
+  expect(within(early.alert).getByRole("button", { name: "터미널 보기" })).toBeInTheDocument();
+  // The state catches up: the notice has the button now, and the error does not repeat it.
+  early.view.rerender(
+    <RpcProvider client={early.wire.client}>
+      <Compose agentId="a1" agentState="waiting" onShowTerminal={vi.fn()} />
+    </RpcProvider>,
+  );
+  expect(screen.getAllByRole("button", { name: "터미널 보기" })).toHaveLength(1);
 });

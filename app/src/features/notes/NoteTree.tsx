@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronRight, Ellipsis, FileText, Folder } from "lucide-react";
 import { type DragEvent, useMemo, useState } from "react";
 import { useRpcSession } from "../../rpc/RpcProvider";
-import { Button, EmptyState, ErrorState, Menu } from "../../ui";
+import { Button, EmptyState, Menu } from "../../ui";
 import { VirtualList } from "../../ui/VirtualList";
 import { useDocuments } from "../documents/store";
+import { NotesErrorState } from "./NotesErrorState";
 import { fileName, folderOf, joinPath, noteKey } from "./notePaths";
 import s from "./notes.module.css";
 import { openNotePopout } from "./openNoteWindow";
@@ -117,13 +118,7 @@ export function NoteTree() {
     if ((await moveToTrash(client, path)) && useNoteSelection.getState().path === path) select(undefined);
   };
 
-  if (tree.isError)
-    return (
-      <ErrorState
-        title="노트 목록을 읽지 못했습니다"
-        action={<Button onClick={() => void tree.refetch()}>다시 시도</Button>}
-      />
-    );
+  if (tree.error) return <NotesErrorState error={tree.error} retry={() => void tree.refetch()} />;
   if (tree.data && !rows.length)
     return <EmptyState title="노트가 없습니다" body="새 노트를 만들거나 일일 기록을 열어 시작하세요." />;
   return (

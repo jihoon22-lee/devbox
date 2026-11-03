@@ -15,18 +15,65 @@ use std::{
     time::{Duration, Instant},
 };
 const QUIET: Duration = Duration::from_secs(2);
+/// Rows of pane history captured per read, by the watcher and by a send alike. The capture also
+/// holds every visible row: `capture_tail` reads from that far above the screen to its bottom.
+const TAIL_ROWS: u32 = 15;
 
-pub fn matches_waiting(patterns: &[Regex], tail: &str) -> bool {
-    let mut last = tail
+/// The compiled waiting patterns of one profile.
+#[derive(Debug, Clone, Default)]
+pub struct WaitingPatterns {
+    /// Read over the last 6 non-empty rows, where a tool draws its prompts.
+    pub(crate) tail: Vec<Regex>,
+    /// Read over the whole capture: dialogs a tool draws in the middle of the screen, above the
+    /// rows `tail` reads.
+    pub(crate) screen: Vec<Regex>,
+}
+impl WaitingPatterns {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.tail.is_empty() && self.screen.is_empty()
+    }
+}
+
+/// Whether `capture`, the pane as `capture_tail` reads it (the screen and up to 15 rows above
+/// it), shows a prompt.
+pub fn matches_waiting(patterns: &WaitingPatterns, capture: &str) -> bool {
+    let mut last = capture
         .lines()
         .rev()
         .filter(|line| !line.trim().is_empty())
         .take(6)
         .collect::<Vec<_>>();
     last.reverse();
-    patterns
-        .iter()
-        .any(|pattern| pattern.is_match(&last.join("\n")))
+    let last = last.join("\n");
+    patterns.tail.iter().any(|pattern| pattern.is_match(&last))
+        || patterns
+            .screen
+            .iter()
+            .any(|pattern| pattern.is_match(capture))
+}
+impl AgentsService {
+    /// Whether the pane of `session` shows, right now, a prompt the watcher would report as
+    /// waiting. A send asks this itself: the watcher reports a prompt only after 2 to about 6 s
+    /// of unchanged output, and the Enter of a send in that gap would answer the prompt. Without
+    /// published patterns (no watcher) or patterns for the profile, there is nothing to match
+    /// and the pane is not read.
+    pub(crate) async fn pane_is_waiting(&self, task: &AgentTask, session: &str) -> Result<bool> {
+        let Some(patterns) = self
+            .waiting_patterns
+            .get()
+            .and_then(|all| all.get(&task.profile))
+            .filter(|patterns| !patterns.is_empty())
+        else {
+            return Ok(false);
+        };
+        let tail = self
+            .terminal
+            .tmux()
+            .capture_tail(session, TAIL_ROWS)
+            .await
+            .internal("capture agent pane before send")?;
+        Ok(matches_waiting(patterns, &tail))
+    }
 }
 #[derive(Clone)]
 pub(crate) struct Snapshot {
@@ -121,7 +168,9 @@ impl AgentsService {
     }
 }
 pub(crate) fn spawn(service: &Arc<AgentsService>) -> std::result::Result<(), ProfileError> {
-    let patterns = profile::compiled(&service.profiles())?;
+    let compiled = Arc::new(profile::compiled(&service.profiles())?);
+    // Profiles do not change while the service lives, so the first publication stays valid.
+    let patterns = service.waiting_patterns.get_or_init(|| compiled).clone();
     let svc = service.clone();
     svc.background.clone().spawn(async move {
         let mut observations: HashMap<String, Observation> = HashMap::new();
@@ -136,7 +185,7 @@ pub(crate) fn spawn(service: &Arc<AgentsService>) -> std::result::Result<(), Pro
                 let id = task.id.clone();
                 let binding = match svc.db.read(move |tx| store::binding(tx, &id)).await { Ok(b) => b, Err(_) => continue };
                 let session = task.terminal_id.as_deref().expect("eligible terminal");
-                let tail = tokio::select! { _ = svc.stop.cancelled() => return, tail = svc.terminal.tmux().capture_tail(session, 15) => tail };
+                let tail = tokio::select! { _ = svc.stop.cancelled() => return, tail = svc.terminal.tmux().capture_tail(session, TAIL_ROWS) => tail };
                 let Ok(tail) = tail else { observations.remove(&task.id); continue };
                 let snapshot = Snapshot { task, binding };
                 let now = Instant::now();

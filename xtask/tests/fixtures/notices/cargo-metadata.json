@@ -1,0 +1,439 @@
+{
+  "packages": [
+    {
+      "name": "cc",
+      "version": "1.8.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#cc@1.8.0",
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/cc-1.8.0/Cargo.toml"
+    },
+    {
+      "name": "devbox-cli",
+      "version": "1.0.0-rc.1",
+      "id": "path+file://@ROOT@/crates/cli#devbox-cli@1.0.0-rc.1",
+      "license": "MIT",
+      "license_file": null,
+      "source": null,
+      "manifest_path": "@ROOT@/crates/cli/Cargo.toml"
+    },
+    {
+      "name": "devbox-core",
+      "version": "1.0.0-rc.1",
+      "id": "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+      "license": "MIT",
+      "license_file": null,
+      "source": null,
+      "manifest_path": "@ROOT@/crates/core/Cargo.toml"
+    },
+    {
+      "name": "fastrand",
+      "version": "2.5.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#fastrand@2.5.0",
+      "license": "Apache-2.0 OR MIT",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/fastrand-2.5.0/Cargo.toml"
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/itoa-1.0.18/Cargo.toml"
+    },
+    {
+      "name": "libmimalloc-sys",
+      "version": "0.1.49",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#libmimalloc-sys@0.1.49",
+      "license": "MIT",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/libmimalloc-sys-0.1.49/Cargo.toml"
+    },
+    {
+      "name": "memchr",
+      "version": "2.8.3",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#memchr@2.8.3",
+      "license": "Unlicense OR MIT",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/memchr-2.8.3/Cargo.toml"
+    },
+    {
+      "name": "mimalloc",
+      "version": "0.1.52",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#mimalloc@0.1.52",
+      "license": "MIT",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/mimalloc-0.1.52/Cargo.toml"
+    },
+    {
+      "name": "serde_json",
+      "version": "1.0.154",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/serde_json-1.0.154/Cargo.toml"
+    },
+    {
+      "name": "socket2",
+      "version": "0.6.5",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5",
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/socket2-0.6.5/Cargo.toml"
+    },
+    {
+      "name": "tempfile",
+      "version": "3.27.0",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0",
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/tempfile-3.27.0/Cargo.toml"
+    },
+    {
+      "name": "tokio",
+      "version": "1.53.2",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
+      "license": "MIT",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/tokio-1.53.2/Cargo.toml"
+    },
+    {
+      "name": "ts-rs",
+      "version": "12.0.1",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#ts-rs@12.0.1",
+      "license": "MIT",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/ts-rs-12.0.1/Cargo.toml"
+    },
+    {
+      "name": "windows-sys",
+      "version": "0.61.2",
+      "id": "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
+      "license": "MIT OR Apache-2.0",
+      "license_file": null,
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "manifest_path": "@ROOT@/registry/windows-sys-0.61.2/Cargo.toml"
+    },
+    {
+      "name": "xtask",
+      "version": "1.0.0-rc.1",
+      "id": "path+file://@ROOT@/xtask#1.0.0-rc.1",
+      "license": "MIT",
+      "license_file": null,
+      "source": null,
+      "manifest_path": "@ROOT@/xtask/Cargo.toml"
+    }
+  ],
+  "workspace_members": [
+    "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+    "path+file://@ROOT@/crates/cli#devbox-cli@1.0.0-rc.1",
+    "path+file://@ROOT@/xtask#1.0.0-rc.1"
+  ],
+  "resolve": {
+    "nodes": [
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#cc@1.8.0",
+        "dependencies": [],
+        "deps": [],
+        "features": []
+      },
+      {
+        "id": "path+file://@ROOT@/crates/cli#devbox-cli@1.0.0-rc.1",
+        "dependencies": [
+          "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+          "registry+https://github.com/rust-lang/crates.io-index#mimalloc@0.1.52",
+          "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
+          "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0"
+        ],
+        "deps": [
+          {
+            "name": "devbox_core",
+            "pkg": "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "mimalloc",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#mimalloc@0.1.52",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "tokio",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              },
+              {
+                "kind": "dev",
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "tempfile",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0",
+            "dep_kinds": [
+              {
+                "kind": "dev",
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154"
+        ],
+        "deps": [
+          {
+            "name": "serde_json",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#fastrand@2.5.0",
+        "dependencies": [],
+        "deps": [],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
+        "dependencies": [],
+        "deps": [],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#libmimalloc-sys@0.1.49",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#cc@1.8.0"
+        ],
+        "deps": [
+          {
+            "name": "cc",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#cc@1.8.0",
+            "dep_kinds": [
+              {
+                "kind": "build",
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#memchr@2.8.3",
+        "dependencies": [],
+        "deps": [],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#mimalloc@0.1.52",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#libmimalloc-sys@0.1.49"
+        ],
+        "deps": [
+          {
+            "name": "libmimalloc_sys",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#libmimalloc-sys@0.1.49",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
+          "registry+https://github.com/rust-lang/crates.io-index#memchr@2.8.3"
+        ],
+        "deps": [
+          {
+            "name": "itoa",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "memchr",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#memchr@2.8.3",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2"
+        ],
+        "deps": [
+          {
+            "name": "windows_sys",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": "cfg(windows)"
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#fastrand@2.5.0",
+          "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2"
+        ],
+        "deps": [
+          {
+            "name": "fastrand",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#fastrand@2.5.0",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "windows_sys",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": "cfg(windows)"
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
+        "dependencies": [
+          "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5"
+        ],
+        "deps": [
+          {
+            "name": "socket2",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": "cfg(any(not(target_family = \"wasm\"), all(target_os = \"wasi\", not(target_env = \"p1\"))))"
+              }
+            ]
+          }
+        ],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#ts-rs@12.0.1",
+        "dependencies": [],
+        "deps": [],
+        "features": []
+      },
+      {
+        "id": "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
+        "dependencies": [],
+        "deps": [],
+        "features": []
+      },
+      {
+        "id": "path+file://@ROOT@/xtask#1.0.0-rc.1",
+        "dependencies": [
+          "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+          "registry+https://github.com/rust-lang/crates.io-index#ts-rs@12.0.1",
+          "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0"
+        ],
+        "deps": [
+          {
+            "name": "devbox_core",
+            "pkg": "path+file://@ROOT@/crates/core#devbox-core@1.0.0-rc.1",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "ts_rs",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#ts-rs@12.0.1",
+            "dep_kinds": [
+              {
+                "kind": null,
+                "target": null
+              }
+            ]
+          },
+          {
+            "name": "tempfile",
+            "pkg": "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0",
+            "dep_kinds": [
+              {
+                "kind": "dev",
+                "target": null
+              }
+            ]
+          }
+        ],
+        "features": []
+      }
+    ],
+    "root": null
+  },
+  "workspace_root": "@ROOT@",
+  "version": 1
+}

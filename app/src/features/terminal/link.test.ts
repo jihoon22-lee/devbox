@@ -18,6 +18,7 @@ function fixture(state: ClientState = "ready") {
   const stateCallbacks = new Set<(state: ClientState) => void>();
   const opened: { handlers: StreamHandlers; stream: Opened; pending: ReturnType<typeof deferred<Opened>> }[] = [];
   let automatic = true;
+  let extendedKeys = true;
   let early: ((handlers: StreamHandlers) => void) | undefined;
   const client = {
     state,
@@ -37,7 +38,7 @@ function fixture(state: ClientState = "ready") {
         const id = opened.length + 1;
         const stream: Opened = {
           streamId: id,
-          result: { streamId: id, cols: 132, rows: 43 },
+          result: { streamId: id, cols: 132, rows: 43, extendedKeys },
           write: vi.fn(),
           end: vi.fn(() => handlers.onEnd()),
         };
@@ -78,6 +79,10 @@ function fixture(state: ClientState = "ready") {
     make,
     manual: () => {
       automatic = false;
+    },
+    /** What the next attach results say about the daemon's tmux. */
+    extended: (on: boolean) => {
+      extendedKeys = on;
     },
     early: (callback: (handlers: StreamHandlers) => void) => {
       early = callback;
@@ -120,6 +125,31 @@ test("attaches, credits only after rendering, writes text/raw bytes and coalesce
   await vi.advanceTimersByTimeAsync(100);
   expect(f.client.call).toHaveBeenCalledExactlyOnceWith("terminal.resize", { streamId: 1, cols: 120, rows: 40 });
   link.dispose();
+});
+test("the extended-keys flag is the live attachment's own result", async () => {
+  const f = fixture();
+  const link = f.make();
+  expect(link.extendedKeys).toBe(false);
+  f.manual();
+  const opening = link.open(80, 24);
+  // Known from onOpened, but no key can reach tmux before the attachment is live.
+  expect(link.extendedKeys).toBe(false);
+  f.opened[0]!.pending.resolve(f.opened[0]!.stream);
+  await opening;
+  expect(f.states.at(-1)).toBe("live");
+  expect(link.extendedKeys).toBe(true);
+  // While reconnecting there is no tmux to ask, and the next daemon may run another tmux.
+  f.state("reconnecting");
+  expect(link.extendedKeys).toBe(false);
+  f.extended(false);
+  f.state("ready");
+  await flush();
+  f.opened[1]!.pending.resolve(f.opened[1]!.stream);
+  await flush();
+  expect(f.states.at(-1)).toBe("live");
+  expect(link.extendedKeys).toBe(false);
+  link.dispose();
+  expect(link.extendedKeys).toBe(false);
 });
 test("initial open waits for ready with no immediate onState callback", async () => {
   const f = fixture("connecting");

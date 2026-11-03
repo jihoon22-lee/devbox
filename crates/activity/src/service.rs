@@ -312,12 +312,19 @@ impl ActivityService {
         Ok(self.writer.status())
     }
 
+    /// The rules in force store nothing: the stored ones could not be read or compiled, and
+    /// no rules that compile have been saved since.
+    pub fn records_nothing(&self) -> bool {
+        self.rules.read().expect("activity rules").compiled.closed()
+    }
+
     pub async fn rules(&self, _p: NoParams) -> R<RulesView> {
         let rules = self.rules.read().expect("activity rules");
         Ok(RulesView {
             rev: self.rules_rev.load(Ordering::Acquire).to_string(),
             rules: rules.settings.rules.clone(),
             idle_threshold_ms: rules.settings.idle_threshold_ms,
+            readable: rules.settings.readable,
         })
     }
 
@@ -339,6 +346,10 @@ impl ActivityService {
         {
             Ok(()) => {}
             Err(WriteError::Unavailable) => return Err(ActivityError::ConfigUnavailable.into()),
+            Err(WriteError::Invalid(file)) => {
+                let file = file.display().to_string();
+                return Err(ActivityError::ConfigInvalid { file }.into());
+            }
             Err(WriteError::Io(e)) => {
                 return Err(Fail::Internal(format!("write activity rules: {e}")));
             }

@@ -62,19 +62,19 @@ class WorkflowScope(unittest.TestCase):
         return subprocess.check_output(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", *args], cwd=root).decode().strip()
 
     def test_rename_classification_uses_actual_workflow(self):
-        for source, target, expected in [("scripts/check.sh", "docs/check.md", "true"), ("docs/old.md", "docs/new.md", "false")]:
+        for source, target, expected in [("scripts/check.sh", "docs/check.md", "true"), ("docs/old.md", "docs/new.md", "false"), *[(doc, doc, "true" if doc in ("docs/config.md", "THIRD_PARTY_NOTICES.md") else "false") for doc in ("docs/config.md", "docs/guide/config.md", "THIRD_PARTY_NOTICES.md", "docs/THIRD_PARTY_NOTICES.md", "README.md", "SECURITY.md", "docs/ui-terms.md", "docs/adr/0016-personal-security-scope.md", "docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md")]]:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 self.git(root, "init", "-q")
                 old = root / source
-                old.parent.mkdir(parents=True)
+                old.parent.mkdir(parents=True, exist_ok=True)
                 old.write_text("fixture\n")
                 self.git(root, "add", ".")
                 self.git(root, "commit", "-qm", "fixture")
                 base = self.git(root, "rev-parse", "HEAD")
                 new = root / target
                 new.parent.mkdir(parents=True, exist_ok=True)
-                old.rename(new)
+                old.rename(new) if new != old else old.write_text("edited\n")
                 self.git(root, "add", "-A")
                 self.git(root, "commit", "-qm", "rename")
                 result, output = self.run_scope(root, base)

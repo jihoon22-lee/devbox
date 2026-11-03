@@ -22,6 +22,8 @@ struct Reservation {
 impl AgentsService {
     pub async fn send(&self, p: SendToAgent) -> Result<AgentTask> {
         crate::limits::input(&p.text)?;
+        // Before the task, its pane or tmux is touched: the app and MCP alike.
+        crate::limits::pasted(&p.text)?;
         let _guard = self.actions.lock().await;
         let task = self.get(&p.id).await?;
         open(&task)?;
@@ -36,6 +38,9 @@ impl AgentsService {
             }
             .into());
         }
+        // Until pi reads its input, Enter could answer its folder-trust question, which is not
+        // on screen yet for the pane check below to see.
+        self.check_ready(&task, now_ms()).await?;
         let session = task
             .terminal_id
             .as_deref()
@@ -50,6 +55,12 @@ impl AgentsService {
             .any(|s| s.name == session)
         {
             return Err(AgentsError::SessionMissing.into());
+        }
+        // The stored state below only turns to Waiting once the watcher has seen the prompt sit
+        // still. Read the pane now, so Enter cannot answer a prompt that is up but not yet
+        // reported (Codex's trust prompt rests on "Trust and continue"). Nothing is reserved yet.
+        if self.pane_is_waiting(&task, session).await? {
+            return Err(AgentsError::AwaitingInput.into());
         }
         let reservation = self.reserve_instruction(&p, &task).await?;
         match self
@@ -114,6 +125,11 @@ impl AgentsService {
                         return Ok(Err(AgentsError::BadState {
                             state: "changed".into(),
                         }));
+                    }
+                    // The last state read before the paste, in the single writer: pasted
+                    // text and Enter never answer an approval or question committed first.
+                    if task.state == AgentState::Waiting {
+                        return Ok(Err(AgentsError::AwaitingInput));
                     }
                     let launch = store::binding(tx, &id)?.and_then(|binding| binding.launch_id);
                     let before = task.clone();

@@ -163,6 +163,7 @@ domain_error! {
         InUse { id: String } = "projects.in_use",
         ConfigurationInvalid { message: String } = "projects.configuration_invalid",
         LaunchProfileNotFound { id: String } = "projects.launch_profile_not_found",
+        LaunchToolMissing { command: String } = "projects.launch_tool_missing",
         LaunchFailed { terminals: u32, agents: u32, services: u32, run_ids: Vec<String>, message: String } = "projects.launch_failed",
         CloneInvalidUrl = "projects.clone_invalid_url",
         CloneTargetExists { path: String } = "projects.clone_target_exists",

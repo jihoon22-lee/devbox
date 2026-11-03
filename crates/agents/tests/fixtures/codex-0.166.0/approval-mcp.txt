@@ -1,0 +1,19 @@
+# 소스 기반(source-derived, not a real capture). openai/codex 태그 rust-v0.166.0의 codex-rs/tui/src/bottom_pane/approval_overlay.rs가 그리는 MCP 서버 승인 요청(승인 overlay) 화면이다.
+# 스냅샷이 없어 소스에서 직접 짰다: 제목은 build_options의 "{server} needs your approval.", 머리는 build_header의 McpElicitation 갈래, 선택지는 elicitation_options,
+# 단축키 표시는 codex-rs/tui/src/keymap.rs 기본값(y, n, esc), 빈 줄 배치는 같은 overlay의 다른 스냅샷(network_exec_prompt.snap)을 따랐다. 서버 이름과 메시지는 지어낸 값이다.
+# 이 파일들은 rust-v0.164.0·rust-v0.165.0에서 바이트 단위로 같다(cmp). 설치본은 codex-cli 0.166.0. 실제 화면 확인은 S7-14에서 한다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+  docs needs your approval.
+
+  Server: docs
+
+  Allow the docs server to read the project README?
+
+
+› 1. Yes, provide the requested info (y)
+  2. No, but continue without it (n)
+  3. Cancel this request (esc)
+
+  Press enter to confirm or esc to cancel

@@ -14,3 +14,10 @@ export function terminalKey(e: KeyboardEvent, hasSelection: boolean): TerminalKe
   if (e.code === "Backquote") return "bottom";
   return null;
 }
+/** CSI u for Enter (13) with Shift (2): the newline key of programs that asked tmux for extended keys. */
+export const SHIFT_ENTER = "\x1b[13;2u";
+/** Shift+Enter alone, outside IME composition (the guard `terminalKey` applies too). */
+export function isShiftEnter(e: KeyboardEvent): boolean {
+  if (e.isComposing || e.keyCode === 229) return false;
+  return e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+}

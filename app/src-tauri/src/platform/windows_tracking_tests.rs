@@ -22,6 +22,8 @@ fn request() -> RunWindows {
             assigned_path: "C:\\owned\\assigned.json".into(),
             grant_path: "C:\\owned\\grant.json".into(),
             closed_path: "C:\\owned\\closed.json".into(),
+            holder_ready_path: Some("C:\\owned\\holder-ready".into()),
+            emptied_path: Some("C:\\owned\\emptied.json".into()),
         },
     }
 }

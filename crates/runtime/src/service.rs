@@ -26,6 +26,8 @@ pub struct RuntimeService {
     pub(crate) watcher: AsyncMutex<Option<crate::watch::WatchHandle>>,
     pub(crate) copy_tasks: tokio_util::task::TaskTracker,
     pub(crate) stopping: tokio_util::sync::CancellationToken,
+    /// When each Windows copy attempt was last probed; held attempts are probed less often.
+    pub(crate) probe_cadence: crate::windows_probe_cadence::ProbeCadence,
 }
 
 impl RuntimeService {
@@ -45,6 +47,7 @@ impl RuntimeService {
             run_watcher: AsyncMutex::default(),
             copy_tasks: tokio_util::task::TaskTracker::new(),
             stopping: tokio_util::sync::CancellationToken::new(),
+            probe_cadence: Default::default(),
         }
     }
 

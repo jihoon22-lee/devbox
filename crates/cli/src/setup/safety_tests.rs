@@ -236,7 +236,7 @@ async fn setup_orders_commands_and_stops_after_each_failure() {
             calls: Default::default(),
             fail,
         };
-        let report = install(&paths, &runner).await;
+        let report = install(&paths, &runner, false).await;
         let expected = match fail {
             None => 5,
             Some("daemon-reload") => 3,
@@ -285,7 +285,7 @@ async fn invalid_env_or_foreign_unit_prevents_reload() {
             calls: Default::default(),
             fail: None,
         };
-        let report = install(&paths, &runner).await;
+        let report = install(&paths, &runner, false).await;
         assert_eq!(report.steps.len(), if invalid_env { 1 } else { 2 });
         assert!(!report.steps.last().expect("report contains a step").ok);
         assert_eq!(runner.calls.lock().expect("lock fixture state").len(), 1);
@@ -329,7 +329,7 @@ async fn tmux_config_refuses_foreign_files_and_symlinks_before_manager_changes()
             calls: Default::default(),
             fail: None,
         };
-        let report = install(&paths, &runner).await;
+        let report = install(&paths, &runner, false).await;
         assert!(!report.steps.last().expect("report").ok);
         assert_eq!(runner.calls.lock().expect("calls").len(), 1);
         assert_eq!(

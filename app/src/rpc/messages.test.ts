@@ -1,5 +1,5 @@
 import { RPC_ERROR_CODES } from "./gen/rpc";
-import { messageFor } from "./messages";
+import { messageFor, messageText } from "./messages";
 
 test("all generated codes have Korean messages and uncertain results stay explicit", () => {
   for (const code of RPC_ERROR_CODES) expect(messageFor(code).title).toMatch(/[가-힣]/);
@@ -14,6 +14,118 @@ test("agent errors use actual generated file details and terminal codes", () => 
   expect(messageFor("agents.conflict", { files: [1, null] }).action).not.toContain("null");
   expect(messageFor("terminal.cwd_invalid").action).toContain("WSL");
   expect(messageFor("terminal.title_too_long", { limit: 256 }).action).toContain("256");
+  // A send that came before the agent reads its input says when to send it again.
+  expect(messageFor("agents.tool_starting")).toEqual({
+    title: "에이전트가 시작하는 중입니다.",
+    action: "터미널에 에이전트 화면이 나타나면 다시 보내세요.",
+  });
+  // A send with a control character, which the agent's terminal would take as a key, says what
+  // to remove. MCP joins the same two sentences.
+  expect(messageFor("agents.control_characters")).toEqual({
+    title: "보낼 글에 제어 문자가 있어 보내지 않았습니다.",
+    action:
+      "제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요.",
+  });
+  for (const code of ["agents.tool_missing", "projects.launch_tool_missing"] as const) {
+    expect(messageFor(code, { command: "pi" })).toEqual({
+      title: "pi 명령을 찾을 수 없습니다.",
+      action: "설정 → 앱 진단 → 환경 점검에서 설치 방법을 확인하세요.",
+    });
+  }
+});
+
+test("a failed teardown names which command of [agent] teardown to run in the work folder, and how it ended", () => {
+  // The index is 1-based, as the daemon sends it. The command's text is not in the error.
+  expect(messageFor("agents.teardown_failed", { index: 2, exit_code: 3 })).toEqual({
+    title: "정리 명령이 실패했습니다(종료 코드 3).",
+    action:
+      ".devbox/devbox.toml의 [agent] teardown 2번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
+  });
+  // No exit code: devbox stopped it at its 60-second limit, or it was killed.
+  expect(messageFor("agents.teardown_failed", { index: 1, exit_code: null })).toEqual({
+    title: "정리 명령이 60초 제한 시간을 넘겨 중단됐거나 강제로 종료됐습니다.",
+    action:
+      ".devbox/devbox.toml의 [agent] teardown 1번째 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
+  });
+  // Without a usable detail the sentences say neither the number nor how it ended.
+  expect(messageFor("agents.teardown_failed")).toEqual({
+    title: "정리 명령이 실패했습니다.",
+    action:
+      ".devbox/devbox.toml의 [agent] teardown 명령을 작업 폴더에서 직접 실행해 원인을 고친 뒤 설정 → 에이전트 → 정리 후보에서 다시 정리하세요.",
+  });
+});
+
+test("a work folder with submodules says devbox keeps it and gives the command that removes it, the folder quoted", () => {
+  expect(messageFor("agents.worktree_has_submodules", { path: "/home/me/app/.devbox/worktrees/fix" })).toEqual({
+    title: "하위 모듈이 있는 작업 폴더는 devbox가 지우지 않습니다.",
+    action:
+      "하위 모듈의 변경은 커밋하고 커밋은 push한 뒤 프로젝트 폴더의 터미널에서 git worktree remove --force '/home/me/app/.devbox/worktrees/fix'로 직접 지우세요.",
+  });
+  // A space or a quote in the path stays inside the one word the shell reads.
+  const quoted = messageFor("agents.worktree_has_submodules", { path: "/home/me/my app/it's" }).action;
+  expect(quoted).toContain(String.raw`git worktree remove --force '/home/me/my app/it'\''s'로`);
+  // Deleting the folder by hand would leave it registered, and its branch never listed again.
+  expect(quoted).not.toMatch(/rm -rf/);
+});
+
+test("an unready Windows job holder says to run again and where to look", () => {
+  // The bootstrap refuses before it writes its assignment receipt, which comes before any
+  // command, so "run again" is safe and the copy says the command did not run.
+  expect(messageFor("windows.observer_unavailable")).toEqual({
+    title: "Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다).",
+    action: "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.",
+  });
+});
+
+test("a busy Windows copy names a live run and leftover build servers, and how to end them", () => {
+  const busy = messageFor("runtime.windows_copy_busy");
+  // A toast headline shows the title alone, so the title names both causes by itself.
+  expect(busy).toEqual({
+    title: "Windows 사본을 쓰는 실행이나 그 실행이 남긴 프로세스(빌드 서버 등)가 아직 끝나지 않았습니다.",
+    action:
+      "끝날 때까지 기다린 뒤 다시 실행하세요. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)는 한동안 쓰이지 않아야 스스로 끝나므로, 바로 끝내려면 Windows 터미널에서 dotnet build-server shutdown이나 gradle --stop(Gradle Wrapper 프로젝트는 .\\gradlew --stop)을 실행하거나 작업 관리자에서 끝내세요. 모두 끝났는데도 1분 넘게 계속되면 Windows 앱 연결을 확인해 주세요.",
+  });
+  // PowerShell, Windows Terminal's default shell, runs a script of the current folder only with a
+  // path: `.\gradlew`, which cmd also takes. The backslash must reach the screen (a literal "\g"
+  // in a TS string would not).
+  expect(busy.action).toContain(String.raw`.\gradlew --stop`);
+  // From WSL these commands reach only the Linux servers. A release that needs a probe can take
+  // about a minute, so the connection hint waits that long.
+  // "Gradle daemon" stays a build server: 데몬 is the devbox daemon on diagnostics screens only.
+  expect(`${busy.title} ${busy.action}`).not.toMatch(/데몬|영수증|receipt/);
+});
+
+test("a plain error line gives what happened, then what to do when the table says", () => {
+  expect(messageText("notes.disabled")).toBe(
+    `${messageFor("notes.disabled").title} ${messageFor("notes.disabled").action}`,
+  );
+  expect(messageText("notes.disabled")).toContain("설정 → 앱 진단 → [다시 설정]");
+  // A code without a next action is its title alone, with no trailing space or "undefined".
+  expect(messageFor("cancelled").action).toBeUndefined();
+  expect(messageText("cancelled")).toBe(messageFor("cancelled").title);
+  expect(messageText("agents.base_dirty", { files: ["a.rs"] })).toContain("a.rs");
+});
+
+test("a plain error line ends with the error's diagnostic ID when it has one", () => {
+  expect(messageText("internal", undefined, "diag-1")).toBe(
+    "예상하지 못한 문제가 생겼습니다. 진단 ID를 복사해 두면 원인을 찾을 수 있습니다. · 진단 diag-1",
+  );
+  expect(messageText("cancelled", undefined, "diag-2")).toBe("요청이 취소되었습니다. · 진단 diag-2");
+  expect(messageText("internal")).not.toContain("· 진단");
+});
+
+test("a taken branch name names the branch and says a work folder can be the cause too", () => {
+  expect(messageFor("agents.branch_exists", { branch: "agent/fix-login" })).toEqual({
+    title: "같은 이름의 브랜치나 작업 폴더가 이미 있습니다: agent/fix-login",
+    action: "브랜치 이름을 바꿔 다시 시작해 주세요.",
+  });
+  // Without a usable branch in the detail, the sentence stands without the name.
+  for (const detail of [undefined, {}, { branch: "" }, { branch: 7 }])
+    expect(messageFor("agents.branch_exists", detail).title).toBe("같은 이름의 브랜치나 작업 폴더가 이미 있습니다.");
+  expect(messageFor("agents.slug_exhausted")).toEqual({
+    title: "같은 이름의 에이전트 작업이 너무 많습니다.",
+    action: "다른 제목을 입력하거나 브랜치 이름을 직접 입력해 주세요.",
+  });
 });
 
 test("redaction failure actions distinguish capacity and rejected server input", () => {
@@ -29,4 +141,21 @@ test("response export distinguishes pending history from unavailable provenance 
   expect(messageFor("notes.response_unavailable", { reason: "pending" }).title).toContain("저장");
   expect(messageFor("notes.response_unavailable", { reason: "provenance" }).action).toContain("이전 세션");
   expect(messageFor("notes.append_uncertain").action).toContain("같은 작업");
+});
+
+test("no message attaches the wrong particle to 파일", () => {
+  const detail = { file: "/f/config.toml", path: "/p", files: ["a.rs"], names: ["N"], message: "m", index: 0 };
+  for (const code of [...RPC_ERROR_CODES, "connection_lost"] as const)
+    for (const message of [messageFor(code), messageFor(code, detail)])
+      expect(`${code}: ${message.title} ${message.action ?? ""}`).not.toMatch(/파일를|파일가/);
+});
+
+test("settings-file errors name the file and where to recover", () => {
+  expect(messageFor("secrets.config_invalid", { file: "/home/me/.config/devbox/config.toml" }).action).toContain(
+    "/home/me/.config/devbox/config.toml",
+  );
+  for (const code of ["notes.disabled", "search.disabled", "windows.config_invalid"] as const) {
+    expect(messageFor(code).action).toContain("설정 파일 형식");
+    expect(messageFor(code).action).toContain("설정 → 앱 진단 → [다시 설정]");
+  }
 });

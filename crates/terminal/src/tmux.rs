@@ -26,6 +26,18 @@ pub struct PasteFailure {
     pub error: TmuxError,
     pub delivery: PasteDelivery,
 }
+/// Whether a version names tmux 3.5 or newer, as the server's `#{version}` (`3.5a`) or
+/// `tmux -V` (`tmux 3.5a`) prints it. From 3.5, Shift+Enter sent as an extended key (CSI u)
+/// reaches a program that never asked for extended keys as Enter; 3.2–3.4 drop it. `next-3.5`
+/// comes before 3.5, and an unknown version counts as older, so Shift+Enter stays plain Enter.
+pub fn supports_extended_keys(version: &str) -> bool {
+    let version = version.trim();
+    let version = version.strip_prefix("tmux ").unwrap_or(version);
+    devbox_core::tmux_version(version).is_some_and(|(major, minor, next)| match next {
+        true => (major, minor) > (3, 5),
+        false => (major, minor) >= (3, 5),
+    })
+}
 impl TmuxError {
     fn missing(&self) -> bool {
         matches!(self, Self::Failed { stderr, .. } if stderr.contains("no server running") || stderr.contains("no sessions") || stderr.contains("can't find session") || (stderr.contains("error connecting to") && stderr.contains("No such file or directory")))
@@ -110,6 +122,41 @@ impl Tmux {
         self.run(&["start-server", ";", "set", "-g", "exit-empty", "off"])
             .await
             .map(|_| ())
+    }
+    /// Applies the two key options `tmux.conf` sets for Shift+Enter to a server that is already
+    /// running. One that outlived an update was started from the old file and never reads it
+    /// again, and sourcing the whole file twice would append to its list options. Without a
+    /// server this is a no-op and starts none.
+    pub async fn apply_extended_keys(&self) -> Result<(), TmuxError> {
+        let applied = self
+            .run(&[
+                "set",
+                "-s",
+                "extended-keys",
+                "on",
+                ";",
+                "set",
+                "-sq",
+                "extended-keys-format",
+                "csi-u",
+            ])
+            .await;
+        match applied {
+            Err(error) if error.missing() => Ok(()),
+            other => other.map(drop),
+        }
+    }
+    /// Whether the running server carries Shift+Enter as an extended key, by its `#{version}`
+    /// and [`supports_extended_keys`]. Not `tmux -V`: that names the binary on PATH, and the
+    /// server can be older after an upgrade or a PATH change. It starts no server, and any
+    /// failure is false. `name` only gives the query a target, as `capture_history` does.
+    pub async fn extended_keys(&self, name: &str) -> bool {
+        let Ok(target) = Self::target(name) else {
+            return false;
+        };
+        self.run(&["display-message", "-p", "-t", &target, "#{version}"])
+            .await
+            .is_ok_and(|version| supports_extended_keys(&version))
     }
     async fn wait_ready(&self, deadline: Duration) -> Result<(), TmuxError> {
         tokio::time::timeout(deadline, async {
@@ -245,6 +292,23 @@ impl Tmux {
             Err(error) => Err(error),
         }
     }
+    /// Sets, or with `None` removes, a variable of the server's global environment. Sessions
+    /// created afterwards start with it; panes already running keep what they started with.
+    pub async fn set_global_env(&self, key: &str, value: Option<&str>) -> Result<(), TmuxError> {
+        match value {
+            Some(value) => {
+                // tmux reads an argument ending in `;` as the end of a command unless escaped.
+                let value = match value.strip_suffix(';') {
+                    Some(rest) => format!("{rest}\\;"),
+                    None => value.to_owned(),
+                };
+                self.run(&["set-environment", "-g", "--", key, &value])
+                    .await
+            }
+            None => self.run(&["set-environment", "-gu", "--", key]).await,
+        }
+        .map(|_| ())
+    }
     pub async fn kill_server(&self) {
         let _ = self.run(&["kill-server"]).await;
     }
@@ -370,6 +434,106 @@ impl Tmux {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// An owned server on its own socket; killed and its socket file removed even on failure.
+    struct Owned {
+        tmux: Tmux,
+        home: tempfile::TempDir,
+    }
+    impl Owned {
+        fn new() -> Self {
+            let home = tempfile::tempdir().expect("fixture directory");
+            let conf = home.path().join("tmux.conf");
+            std::fs::write(&conf, crate::TMUX_CONF).expect("fixture config");
+            let socket = format!("devbox-test-{}", uuid::Uuid::new_v4().simple());
+            Self {
+                tmux: Tmux::with(socket, conf),
+                home,
+            }
+        }
+        /// A session whose shell writes what it sees of the variable, now and every 50 ms.
+        async fn session(&self, name: &str) {
+            let file = self.home.path().join(name);
+            let record = format!(
+                "while :; do printf '%s' \"${{DEVBOX_S76_FIXTURE-unset}}\" > {0}.tmp && mv {0}.tmp {0}; sleep 0.05; done",
+                devbox_core::sh_quote(&file.to_string_lossy())
+            );
+            self.tmux
+                .new_session(name, self.home.path(), Some(&record), &[])
+                .await
+                .expect("owned fixture session");
+        }
+        async fn seen(&self, name: &str) -> String {
+            let file = self.home.path().join(name);
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Ok(text) = std::fs::read_to_string(&file) {
+                        return text;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("owned session wrote its environment")
+        }
+    }
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            let socket = std::process::Command::new("tmux")
+                .args([
+                    "-L",
+                    self.tmux.socket(),
+                    "display-message",
+                    "-p",
+                    "#{socket_path}",
+                ])
+                .env_remove("TMUX")
+                .env_remove("TMUX_TMPDIR")
+                .output()
+                .ok()
+                .and_then(|out| String::from_utf8(out.stdout).ok())
+                .map(|path| path.trim().to_owned());
+            let _ = std::process::Command::new("tmux")
+                .args(["-L", self.tmux.socket(), "kill-server"])
+                .env_remove("TMUX")
+                .env_remove("TMUX_TMPDIR")
+                .status();
+            // tmux leaves the socket file behind; this test created it.
+            if let Some(socket) = socket.filter(|path| path.ends_with(self.tmux.socket())) {
+                let _ = std::fs::remove_file(socket);
+            }
+        }
+    }
+    #[tokio::test]
+    async fn set_global_env_reaches_new_sessions_only() {
+        let owned = Owned::new();
+        owned
+            .tmux
+            .start_direct()
+            .await
+            .expect("start owned fixture server");
+        owned.session("before").await;
+        assert_eq!(owned.seen("before").await, "unset");
+        // A trailing `;` would end a tmux command; quotes and spaces are plain text.
+        let value = "/new bin:it's \"quoted\";";
+        owned
+            .tmux
+            .set_global_env("DEVBOX_S76_FIXTURE", Some(value))
+            .await
+            .expect("set owned global variable");
+        owned.session("after").await;
+        assert_eq!(owned.seen("after").await, value);
+        // The pane that was already running keeps the environment it started with.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(owned.seen("before").await, "unset");
+        owned
+            .tmux
+            .set_global_env("DEVBOX_S76_FIXTURE", None)
+            .await
+            .expect("unset owned global variable");
+        owned.session("removed").await;
+        assert_eq!(owned.seen("removed").await, "unset");
+        assert_eq!(owned.seen("after").await, value);
+    }
     #[tokio::test]
     async fn managed_server_readiness_waits_for_the_socket_without_spawning_a_second_server() {
         let home = tempfile::tempdir().expect("fixture directory");

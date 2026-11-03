@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { RpcError } from "../../rpc/client";
+import { restart } from "../../rpc/messageDetail";
 import { messageFor } from "../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { Button, StatusDot } from "../../ui";
@@ -58,7 +59,8 @@ export function AgentsSettings() {
             ))}
           </ul>
         </QueryResult>
-        <p>사용자 정의 도구 프로필은 config.toml에서 편집합니다. 변경한 뒤 데몬을 다시 시작하세요.</p>
+        {/* Profiles load when the daemon starts; an app start keeps an unchanged daemon, [다시 설정] restarts it. */}
+        <p>사용자 정의 도구 프로필은 config.toml에서 편집합니다. 변경한 뒤 {restart}</p>
         <QueryResult pending={info.isPending} error={info.error} retry={() => void info.refetch()}>
           <p>
             <code>{info.data?.configPath}</code>

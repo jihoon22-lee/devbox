@@ -49,6 +49,20 @@ impl AgentsService {
     ) -> Result<AgentTask> {
         crate::limits::input(&p.prompt)?;
         let title = crate::plan::checked_title(&p.title)?.to_owned();
+        // A branch name the client gave is checked like the title, before anything is looked up or
+        // reserved. It names the branch of a work folder, so a task without one has nothing to name.
+        let given = match p.branch.as_deref() {
+            Some(_) if !p.worktree => return Err(AgentsError::InvalidInput.into()),
+            Some(name) => Some(crate::plan::explicit_slug(name)?.to_owned()),
+            None => None,
+        };
+        // The CLI is looked up before the reservation lock, so a slow shell does not hold up
+        // other starts. Its result is checked below, in its usual place.
+        let profile = crate::profile::resolve(&self.profiles, &p.profile);
+        let tool = match &profile {
+            Some(profile) => self.resolve_tool(profile).await,
+            None => Ok(None),
+        };
         let _reservation = self.reservations.lock().await;
         let project = self
             .projects
@@ -58,11 +72,11 @@ impl AgentsService {
             .ok_or_else(|| AgentsError::ProjectNotFound {
                 id: p.project_id.clone(),
             })?;
-        let profile = crate::profile::resolve(&self.profiles, &p.profile).ok_or_else(|| {
-            AgentsError::ProfileNotFound {
-                id: p.profile.clone(),
-            }
+        let profile = profile.ok_or_else(|| AgentsError::ProfileNotFound {
+            id: p.profile.clone(),
         })?;
+        // A missing CLI ends the start here, before any task, branch or worktree exists.
+        let tool = tool?;
         if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
             return Err(AgentsError::UnsafeWorktree.into());
         }
@@ -79,14 +93,23 @@ impl AgentsService {
                 devbox_git::GitError::Failed { .. } => AgentsError::InvalidInput.into(),
                 other => git_failure(other),
             })?;
+        // A branch `agent/a/b` takes `a` as well: Git cannot make `agent/a` while `agent/a/…` exists.
         let mut taken: HashSet<String> = devbox_git::branches(Path::new(&project.path))
             .await
             .map_err(git_failure)?
             .into_iter()
-            .filter_map(|b| b.strip_prefix("agent/").map(str::to_owned))
+            .filter_map(|b| {
+                b.strip_prefix("agent/")?
+                    .split('/')
+                    .next()
+                    .map(str::to_owned)
+            })
             .collect();
         let now = now_ms();
         let id = format!("a{}", uuid::Uuid::new_v4().simple());
+        // pi starts the session devbox names, so the task has it before anything is launched.
+        let session_id = (profile.hooks == crate::profile::Hooks::Pi)
+            .then(|| uuid::Uuid::new_v4().hyphenated().to_string());
         let repo = std::path::PathBuf::from(&project.path);
         let svc = self.clone();
         let hub = self.hub.clone();
@@ -115,28 +138,22 @@ impl AgentsService {
                         }
                     }
                     let (branch, worktree) = if p.worktree {
-                        let base_slug = crate::plan::slug(&title, now as u64);
-                        let selected = loop {
-                            let slug = match crate::plan::unique_slug(&base_slug, &taken) {
-                                Ok(v) => v,
-                                Err(e) => return Ok(Err(e)),
-                            };
-                            let path = match crate::plan::worktree_dir(&repo, &slug) {
-                                Ok(v) => v,
-                                Err(e) => return Ok(Err(e)),
-                            };
-                            if std::fs::symlink_metadata(&path).is_ok() {
-                                taken.insert(slug);
-                                continue;
-                            }
-                            break (slug, path);
+                        let (slug, path) = match crate::plan::choose(
+                            &repo,
+                            &title,
+                            now as u64,
+                            given.as_deref(),
+                            &mut taken,
+                        ) {
+                            Ok(chosen) => chosen,
+                            Err(e) => return Ok(Err(e)),
                         };
                         (
                             Some(
-                                crate::plan::branch_for(&selected.0)
+                                crate::plan::branch_for(&slug)
                                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                             ),
-                            Some(selected.1.to_string_lossy().into_owned()),
+                            Some(path.to_string_lossy().into_owned()),
                         )
                     } else {
                         (None, None)
@@ -154,7 +171,7 @@ impl AgentsService {
                         branch,
                         worktree_path: worktree.clone(),
                         workdir: worktree.unwrap_or(project.path),
-                        session_id: None,
+                        session_id,
                         terminal_id: None,
                         tool_exited: false,
                         state: AgentState::Preparing,
@@ -171,9 +188,13 @@ impl AgentsService {
                         closed_ms: None,
                         closed_commits: None,
                         closed_head_oid: None,
+                        closed_merge_oid: None,
                         cleanup_error: None,
                         tokens_truncated: false,
                         activity_seq: 0,
+                        // The launch below starts now; pi says when it reads its input.
+                        starting_since_ms: (profile.hooks == crate::profile::Hooks::Pi)
+                            .then_some(now),
                     };
                     if let Err(error) = crate::limits::serialized(&task, crate::limits::TASK_BYTES)
                     {
@@ -197,8 +218,9 @@ impl AgentsService {
                     let svc = svc.clone();
                     let _entered = handle.enter();
                     background.spawn(async move {
-                        if let Err(error) =
-                            svc.prepare(&task, &profile, &prep_project, &snapshot).await
+                        if let Err(error) = svc
+                            .prepare(&task, &profile, tool.as_ref(), &prep_project, &snapshot)
+                            .await
                         {
                             tracing::error!(?error,agent=%task.id,"agent preparation failed");
                             let _ = svc.preparation_failed(&task.id, &error).await;

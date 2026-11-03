@@ -24,7 +24,7 @@ fn run() -> serde_json::Value {
         "command": "Write-Output $env:TEST_SECRET",
         "ports": [18432, 18433],
         "env": {"TEST_SECRET": "fixture-secret"},
-        "observation": {"schema":1,"launchId":"owned-launch","nonce":"0123456789abcdef0123456789abcdef","jobName":"Local\\Devbox.Observe.0123456789abcdef0123456789abcdef","assignedPath":"C:\\owned\\control\\assigned.json","grantPath":"C:\\owned\\control\\grant.json","closedPath":"C:\\owned\\control\\closed.json"}
+        "observation": {"schema":1,"launchId":"owned-launch","nonce":"0123456789abcdef0123456789abcdef","jobName":"Local\\Devbox.Observe.0123456789abcdef0123456789abcdef","assignedPath":"C:\\owned\\control\\assigned.json","grantPath":"C:\\owned\\control\\grant.json","closedPath":"C:\\owned\\control\\closed.json","holderReadyPath":"C:\\owned\\control\\holder-ready","emptiedPath":"C:\\owned\\control\\emptied.json"}
     })
 }
 

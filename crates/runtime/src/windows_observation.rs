@@ -3,20 +3,44 @@ use crate::{
     R, RuntimeError, RuntimeService,
     windows_copy_service::{owner_alive, process_owner},
     windows_copy_store::{self as store, Attempt, AttemptPhase, CopyRef, ReaderState},
+    windows_probe_cadence::{AttemptRun, ProbeCadence},
 };
 use devbox_protocol::{
     Fail, Internal,
-    windows::{ObservationAssigned, ObservationControl, ObservationState, RunIdentity},
+    windows::{
+        ControlShape, HolderIdentity, OBSERVATION_ASSIGNMENT_DEADLINE_MS, ObservationAssigned,
+        ObservationControl, ObservationState, RunIdentity,
+    },
 };
 use std::{
     fs::{self, File, OpenOptions},
+    future::Future,
     io::Write,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
 
+/// Holder liveness for a vanished or session-hidden job (Rulings 34/35): the holder's recorded
+/// identity, and whether the job was judged `IdentityMismatch`. Only `NotFound` proves it gone.
+pub type WindowsHolder = Arc<
+    dyn Fn(HolderIdentity, bool) -> Pin<Box<dyn Future<Output = ObservationState> + Send>>
+        + Send
+        + Sync,
+>;
+/// How long the daemon waits for `assigned` after `windows.prepare` before it revokes the attempt
+/// (and the commit's own deadline check): the bootstrap's start after its whole holder wait, the
+/// deadline the app's native-run tracker shares (M-1). A revoke inside the holder wait would end
+/// a slow but working start as a generic failure instead of the bootstrap's own fixed code.
+const ASSIGNMENT_DEADLINE: Duration = Duration::from_millis(OBSERVATION_ASSIGNMENT_DEADLINE_MS);
+pub(crate) fn unavailable_holder() -> WindowsHolder {
+    Arc::new(|_, _| Box::pin(async { ObservationState::Unavailable }))
+}
+pub(crate) fn unavailable_observation() -> crate::WindowsObservation {
+    Arc::new(|_| Box::pin(async { ObservationState::Unavailable }))
+}
 fn unavailable() -> Fail<RuntimeError> {
     RuntimeError::WindowsCopyUnavailable.into()
 }
@@ -27,14 +51,25 @@ struct PrivatePaths {
     assigned: PathBuf,
     grant: PathBuf,
     closed: PathBuf,
+    /// The holder's ready marker and emptied receipt; an rc.1 control has neither.
+    holder: Option<HolderPaths>,
 }
+struct HolderPaths {
+    ready: PathBuf,
+    emptied: PathBuf,
+}
+/// The private files of a stored control of either shape, derived from its copy and nonce.
 fn paths(copy: &store::CopyRecord, control: &ObservationControl) -> R<PrivatePaths> {
     let dir = copy.identity.control_directory();
     let nonce = &control.nonce;
-    if !control.valid()
-        || control.assigned_path != format!("{dir}\\{nonce}.assigned.json")
+    let shape = control.shape().ok_or_else(unavailable)?;
+    let holder = shape == ControlShape::Holder;
+    if control.assigned_path != format!("{dir}\\{nonce}.assigned.json")
         || control.grant_path != format!("{dir}\\{nonce}.grant.json")
         || control.closed_path != format!("{dir}\\{nonce}.closed.json")
+        || (holder
+            && (control.holder_ready_path != Some(format!("{dir}\\{nonce}.holder-ready"))
+                || control.emptied_path != Some(format!("{dir}\\{nonce}.emptied.json"))))
     {
         return Err(unavailable());
     }
@@ -44,25 +79,113 @@ fn paths(copy: &store::CopyRecord, control: &ObservationControl) -> R<PrivatePat
         assigned: local.join(format!("{nonce}.assigned.json")),
         grant: local.join(format!("{nonce}.grant.json")),
         closed: local.join(format!("{nonce}.closed.json")),
+        holder: holder.then(|| HolderPaths {
+            ready: local.join(format!("{nonce}.holder-ready")),
+            emptied: local.join(format!("{nonce}.emptied.json")),
+        }),
     };
-    for path in [&result.assigned, &result.grant, &result.closed] {
+    let mut owned = vec![&result.assigned, &result.grant, &result.closed];
+    if let Some(holder) = &result.holder {
+        owned.extend([&holder.ready, &holder.emptied]);
+    }
+    for path in owned {
         crate::windows::reject_links(path).map_err(io_fail)?;
     }
     Ok(result)
 }
-fn read_assigned(path: &Path) -> R<Option<ObservationAssigned>> {
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path, limit: u64) -> R<Option<T>> {
     crate::windows::reject_links(path).map_err(io_fail)?;
     let meta = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(io_fail(e)),
     };
-    if !meta.is_file() || meta.len() > 16 * 1024 {
+    if !meta.is_file() || meta.len() > limit {
         return Err(unavailable());
     }
     serde_json::from_slice(&fs::read(path).map_err(io_fail)?)
         .map(Some)
         .map_err(io_fail)
+}
+fn read_assigned(path: &Path) -> R<Option<ObservationAssigned>> {
+    read_json(path, 16 * 1024)
+}
+/// The Windows holder's `{"nonce":…}` receipt that the job emptied after a process ran in it.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Emptied {
+    nonce: String,
+}
+/// Only this attempt's own receipt, at the path derived from its stored control, is proof.
+/// Missing, linked, oversized, malformed or another nonce's receipt is no proof.
+fn emptied(copy: &store::CopyRecord, control: &ObservationControl) -> bool {
+    let Some(holder) = paths(copy, control).ok().and_then(|private| private.holder) else {
+        return false;
+    };
+    read_json::<Emptied>(&holder.emptied, 1024)
+        .is_ok_and(|receipt| receipt.is_some_and(|r| r.nonce == control.nonce))
+}
+/// The identity this attempt's own holder recorded in its ready marker, read like the receipt
+/// (derived path, no link, bounded, exact shape). Another nonce, user or session is none.
+fn holder_identity(
+    copy: &store::CopyRecord,
+    control: &ObservationControl,
+    assigned: &ObservationAssigned,
+) -> Option<HolderIdentity> {
+    let holder = paths(copy, control).ok()?.holder?;
+    read_json::<HolderIdentity>(&holder.ready, 1024)
+        .ok()
+        .flatten()
+        .filter(|identity| identity.belongs_to(assigned))
+}
+/// The bootstrap's own process from its assigned receipt, which `observes` validated.
+fn bootstrap_identity(assigned: &ObservationAssigned) -> HolderIdentity {
+    HolderIdentity {
+        nonce: assigned.nonce.clone(),
+        pid: assigned.pid,
+        creation_time: assigned.creation_time.clone(),
+        sid: assigned.sid.clone(),
+        session_id: assigned.session_id,
+    }
+}
+/// I1 under Rulings 34-36 for a holder control. The receipt alone closes, before any probe.
+/// Otherwise `Empty` closes; a vanished job (`NotFound`) or one hidden by another session
+/// (`IdentityMismatch`) closes only once this attempt's own holder is provably gone, and for
+/// another session the bootstrap too. The receipt is read on every pass; once the attempt's
+/// `run` ended, Windows is probed only as often as [`ProbeCadence`] allows.
+async fn holder_attempt_ended(
+    execution: &crate::ExecutionConfig,
+    cadence: &ProbeCadence,
+    run: AttemptRun,
+    copy: &store::CopyRecord,
+    control: &ObservationControl,
+    assigned: &ObservationAssigned,
+) -> bool {
+    if emptied(copy, control) {
+        return true;
+    }
+    if !cadence.claim(&control.nonce, run) {
+        return false;
+    }
+    let cross_session = match (execution.windows_observation)(assigned.clone()).await {
+        ObservationState::Empty => return true,
+        ObservationState::NotFound => false,
+        ObservationState::IdentityMismatch => true,
+        _ => return false,
+    };
+    // Without a recorded holder there is nothing to prove gone: the reader stays held.
+    let Some(holder) = holder_identity(copy, control, assigned) else {
+        return false;
+    };
+    if (execution.windows_holder)(holder, cross_session).await != ObservationState::NotFound {
+        return false;
+    }
+    // In the same session Observe's NotFound already proved the bootstrap gone. Another
+    // session's Observe stopped at its session gate, so the bootstrap is proven gone the same
+    // way: its command may still run there if the holder alone died.
+    !cross_session
+        || (execution.windows_holder)(bootstrap_identity(assigned), true).await
+            == ObservationState::NotFound
 }
 /// Publish immutable complete JSON without replacing another attempt's evidence.
 fn publish_once(path: &Path, value: &impl serde::Serialize) -> R<()> {
@@ -120,16 +243,12 @@ impl RuntimeService {
             .internal("read Windows copy identity")?
             .ok_or_else(unavailable)?;
         let nonce = uuid::Uuid::new_v4().simple().to_string();
-        let dir = copy.identity.control_directory();
-        let control = ObservationControl {
-            schema: 1,
-            launch_id: launch,
-            job_name: format!("Local\\Devbox.Observe.{nonce}"),
-            assigned_path: format!("{dir}\\{nonce}.assigned.json"),
-            grant_path: format!("{dir}\\{nonce}.grant.json"),
-            closed_path: format!("{dir}\\{nonce}.closed.json"),
-            nonce,
-        };
+        // Only the constructor builds a new control, so it always carries the holder paths;
+        // the rc.1 rule stays reachable only for rows stored before them.
+        let control = ObservationControl::new(launch, nonce, &copy.identity.control_directory());
+        if !control.valid() {
+            return Err(unavailable());
+        }
         paths(&copy, &control)?;
         let value = Attempt {
             run_id: id.run_id.clone(),
@@ -212,7 +331,7 @@ impl RuntimeService {
                 return Err(error);
             }
         };
-        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        let deadline = std::time::Instant::now() + ASSIGNMENT_DEADLINE;
         loop {
             if cancel.is_cancelled()
                 || self.stopping.is_cancelled()
@@ -321,9 +440,16 @@ impl RuntimeService {
             }
             let launch = reader.copy.launch_id.clone();
             let key = reader.copy.key.clone();
-            let (copy, attempts) = self
+            let (copy, attempts, newest) = self
                 .db
-                .read(move |tx| Ok((store::copy(tx, &key)?, store::attempts(tx, &launch)?)))
+                .read(move |tx| {
+                    let newest = store::newest_attempt(tx, &launch)?;
+                    Ok((
+                        store::copy(tx, &key)?,
+                        store::attempts(tx, &launch)?,
+                        newest,
+                    ))
+                })
                 .await
                 .internal("read Windows consumer proofs")?;
             let Some(copy) = copy else {
@@ -347,18 +473,39 @@ impl RuntimeService {
                         let Some(assigned) = attempt.assigned.as_ref() else {
                             continue;
                         };
-                        if !attempt.control.accepts(
-                            &RunIdentity {
-                                run_id: attempt.run_id.clone(),
-                                attempt_id: attempt.attempt_id.clone(),
-                            },
-                            assigned,
-                        ) {
-                            continue;
-                        }
-                        let state = (execution.windows_observation)(assigned.clone()).await;
-                        if matches!(state, ObservationState::Empty | ObservationState::NotFound) {
+                        let run = RunIdentity {
+                            run_id: attempt.run_id.clone(),
+                            attempt_id: attempt.attempt_id.clone(),
+                        };
+                        let ended = match attempt.control.observes(&run, assigned) {
+                            // The name vanishes with the last handle even while orphaned
+                            // descendants run (I1): the holder and its receipt decide.
+                            // Held once its run ended (sealed or replaced), the job not yet
+                            // empty (M-3).
+                            Some(ControlShape::Holder) => {
+                                let (cadence, control) = (&self.probe_cadence, &attempt.control);
+                                let attempt_run =
+                                    AttemptRun::of(reader.state, newest.as_deref(), &control.nonce);
+                                holder_attempt_ended(
+                                    execution,
+                                    cadence,
+                                    attempt_run,
+                                    &copy,
+                                    control,
+                                    assigned,
+                                )
+                                .await
+                            }
+                            // rc.1 rule for an rc.1 row: no holder ever ran for it.
+                            Some(ControlShape::Legacy) => matches!(
+                                (execution.windows_observation)(assigned.clone()).await,
+                                ObservationState::Empty | ObservationState::NotFound
+                            ),
+                            None => continue,
+                        };
+                        if ended {
                             let nonce = attempt.control.nonce.clone();
+                            self.probe_cadence.forget(&nonce);
                             let assigned = assigned.clone();
                             self.db
                                 .write_checked(move |tx| {

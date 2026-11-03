@@ -219,6 +219,8 @@ domain_error! {
         OpenUnsaved = "notes.open_unsaved",
         SummaryBroken = "notes.summary_broken",
         Conflict = "notes.conflict",
+        // `[notes]` did not load, so there is no vault (no default is assumed).
+        Disabled = "notes.disabled",
     }
 }
 

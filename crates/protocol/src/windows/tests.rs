@@ -8,6 +8,8 @@ fn control() -> ObservationControl {
         assigned_path: "C:\\owned\\control\\assigned.json".into(),
         grant_path: "C:\\owned\\control\\grant.json".into(),
         closed_path: "C:\\owned\\control\\closed.json".into(),
+        holder_ready_path: Some("C:\\owned\\control\\holder-ready".into()),
+        emptied_path: Some("C:\\owned\\control\\emptied.json".into()),
     }
 }
 fn assigned() -> ObservationAssigned {
@@ -284,3 +286,5 @@ fn windows_listener_check_compiles_only_in_the_probe_branch_never_the_bootstrap(
     assert!(probe.contains("again.Contains(pair)"));
     assert!(!probe[compile..].contains("TerminateJobObject("));
 }
+#[path = "holder_tests.rs"]
+mod holder;

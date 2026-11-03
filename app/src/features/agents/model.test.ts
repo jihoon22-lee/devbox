@@ -1,11 +1,13 @@
 import {
   attentionCount,
+  branchNameProblem,
   failureLabel,
   fillTemplate,
   groupByUrgency,
   hookMissing,
   nextWaiting,
   previewBranch,
+  titleSlug,
 } from "./model";
 import { profiles, task } from "./test-fixtures";
 
@@ -39,14 +41,48 @@ test("urgency sorts waiting oldest first, others newest and excludes closed afte
   expect(nextWaiting(groupByUrgency([task("r", "running", 1)], now))).toBeUndefined();
 });
 
-test("counts attention and detects only Claude missing hooks after 90 seconds", () => {
+test("counts attention and detects missing hooks of every hooked profile after 90 seconds", () => {
   expect(
     attentionCount([task("w", "waiting", 1), task("i", "idle", 1), task("f", "failed", 1), task("r", "running", 1)]),
   ).toBe(3);
-  const missing = { ...task("r", "running", 0), sessionId: null };
+  const missing = { ...task("r", "running", 0), sessionId: null, prompt: "fix it" };
   expect(hookMissing([missing], profiles, 90_000)).toBe(false);
   expect(hookMissing([missing], profiles, 90_001)).toBe(true);
-  expect(hookMissing([{ ...missing, profile: "codex" }], profiles, 91_000)).toBe(false);
+  const hooked = [
+    ...profiles,
+    { id: "opencode", label: "opencode", command: "opencode", hooks: "opencode" as const, waitingPatterns: [] },
+    { id: "plain", label: "Plain", command: "plain", hooks: "none" as const, waitingPatterns: [] },
+  ];
+  for (const profile of ["codex", "opencode"]) {
+    expect(hookMissing([{ ...missing, profile }], hooked, 91_000)).toBe(true);
+  }
+  // A profile without hooks never reports a session, and a reported session is enough.
+  expect(hookMissing([{ ...missing, profile: "plain" }], hooked, 91_000)).toBe(false);
+  expect(hookMissing([{ ...missing, profile: "opencode", sessionId: "ses_1" }], hooked, 91_000)).toBe(false);
+  // Only Claude reports a session before a prompt: the others wait for the first one.
+  for (const prompt of ["", " \n"]) {
+    for (const profile of ["codex", "opencode"]) {
+      expect(hookMissing([{ ...missing, profile, prompt }], hooked, 91_000)).toBe(false);
+    }
+    expect(hookMissing([{ ...missing, prompt }], hooked, 91_000)).toBe(true);
+  }
+});
+
+test("a pi launch that has not said it is ready after 90 seconds is missing its extension", () => {
+  const hooked = [...profiles, { id: "pi", label: "pi", command: "pi", hooks: "pi" as const, waitingPatterns: [] }];
+  // pi has its session from the start, and says it is ready once per launch, prompt or not.
+  const starting = { ...task("p", "running", 0), profile: "pi", prompt: "", startingSinceMs: 0 };
+  expect(hookMissing([starting], hooked, 90_000)).toBe(false);
+  expect(hookMissing([starting], hooked, 90_001)).toBe(true);
+  expect(hookMissing([{ ...starting, prompt: "fix it" }], hooked, 90_001)).toBe(true);
+  // It said so.
+  expect(hookMissing([{ ...starting, startingSinceMs: null }], hooked, 91_000)).toBe(false);
+  // pi asks about trust before it is ready: that is a question, not a missing extension.
+  expect(hookMissing([{ ...starting, state: "waiting" }], hooked, 91_000)).toBe(false);
+  // A resumed task is timed from its launch, not from when it was created.
+  const resumed = { ...starting, createdMs: 0, startingSinceMs: 500_000 };
+  expect(hookMissing([resumed], hooked, 590_000)).toBe(false);
+  expect(hookMissing([resumed], hooked, 590_001)).toBe(true);
 });
 
 test("template only substitutes known variables and branch preview follows backend ASCII slug", () => {
@@ -60,6 +96,27 @@ test("template only substitutes known variables and branch preview follows backe
   expect(previewBranch("Fix login bug!", 0)).toBe("agent/fix-login-bug");
   expect(previewBranch("한글만", 1700000000000)).toBe("agent/task-1700000000");
   expect(previewBranch("x".repeat(100), 0)).toHaveLength(46);
+});
+
+test("the title slug and the branch name rule are the daemon's plan::slug and checked_slug", () => {
+  expect(titleSlug("Fix login bug!")).toBe("fix-login-bug");
+  expect(titleSlug("  --Fix__login  ")).toBe("fix-login");
+  expect(titleSlug("한글만")).toBe("");
+  expect(titleSlug("한글 and 영어")).toBe("and");
+  expect(titleSlug("x".repeat(100))).toHaveLength(40);
+  // A cut that lands on a hyphen drops it.
+  expect(titleSlug(`${"x".repeat(39)} y`)).toBe("x".repeat(39));
+  for (const ok of ["fix", "fix-login", "v2", "0", "a-b-c", "x".repeat(40)]) expect(branchNameProblem(ok)).toBeNull();
+  for (const bad of ["", "Fix", "fix login", "fix--login", "-fix", "fix-", "fix_login", "fix/login", "agent/fix"])
+    expect(branchNameProblem(bad), bad).toContain("영문 소문자");
+  for (const bad of ["fix.lock", "../escape", "가나다", "fix\n"]) expect(branchNameProblem(bad), bad).not.toBeNull();
+  expect(branchNameProblem("x".repeat(41))).toContain("40자");
+  // The hyphen rule is said in full: not at either end, and not twice in a row.
+  for (const bad of ["-fix", "fix-", "fix--login"])
+    expect(branchNameProblem(bad), bad).toContain("하이픈은 처음이나 끝에 쓸 수 없고 연달아 쓸 수도 없습니다.");
+  // What the dialog fills in from a title always passes the rule the daemon applies again.
+  for (const title of ["Fix login", "A  B", "a-b", "--x--", "αβγ x", `${"x".repeat(60)} y`, "Ünïcode Fix", "1"])
+    expect(branchNameProblem(titleSlug(title)), title).toBeNull();
 });
 
 test("failure reasons display session loss, external kill, exit and setup", () => {

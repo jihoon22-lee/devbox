@@ -1,9 +1,11 @@
-//! Hash every byte force removal can delete, including ignored files, without following links.
+//! Fingerprint everything force removal can delete, without following links. Files are hashed
+//! by content, except that Git-ignored ones are compared by size, mtime, mode and inode and never
+//! read. Hashing runs outside the lifecycle lock; under it, a discard only compares metadata.
 use crate::{
     model::*,
     service::{AgentsService, Result},
 };
-use devbox_protocol::Internal;
+use devbox_protocol::{Fail, Internal};
 use sha2::{Digest, Sha256};
 #[cfg(unix)]
 use std::os::{
@@ -11,6 +13,7 @@ use std::os::{
     unix::fs::{MetadataExt, OpenOptionsExt},
 };
 use std::{
+    collections::HashSet,
     fs::{self, File, Metadata, OpenOptions},
     io::Read,
     path::{Path, PathBuf},
@@ -31,12 +34,16 @@ const LIMITS: Limits = Limits {
     depth: 256,
     deadline: Duration::from_secs(120),
 };
+/// Git's path listings are read as bytes, up to this many.
+const MAX_LISTING: usize = 64 * 1024 * 1024;
 struct Budget {
     limits: Limits,
     started: Instant,
     bytes: u64,
     entries: usize,
     buffer: Vec<u8>,
+    #[cfg(test)]
+    root: PathBuf,
 }
 type ScanResult<T> = std::result::Result<T, &'static str>;
 impl Budget {
@@ -105,19 +112,98 @@ fn open(path: &Path, directory: bool) -> ScanResult<File> {
     }
     Ok(file)
 }
+/// What `git ls-files --others --ignored --exclude-standard --directory` lists: ignored files,
+/// and directories ignored with everything below them.
+#[derive(Default)]
+struct Ignored {
+    files: HashSet<PathBuf>,
+    directories: HashSet<PathBuf>,
+}
+impl Ignored {
+    fn parse(listing: &[u8]) -> Self {
+        let mut ignored = Self::default();
+        for path in listing
+            .split(|&byte| byte == 0)
+            .filter(|path| !path.is_empty())
+        {
+            match path.strip_suffix(b"/") {
+                Some(directory) => ignored.directories.insert(listed(directory)),
+                None => ignored.files.insert(listed(path)),
+            };
+        }
+        ignored
+    }
+}
+/// A listed name as the walk sees it, byte for byte: names need not be UTF-8.
+fn listed(bytes: &[u8]) -> PathBuf {
+    #[cfg(unix)]
+    {
+        <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(bytes).into()
+    }
+    #[cfg(not(unix))]
+    {
+        // A name that does not match is hashed by content.
+        String::from_utf8_lossy(bytes).into_owned().into()
+    }
+}
+/// One walk of a worktree.
+struct Walk<'a> {
+    budget: Budget,
+    /// The fingerprint the user confirms.
+    hash: Sha256,
+    /// Every entry's metadata, compared again under the lifecycle lock.
+    stamp: Sha256,
+    /// `false` compares metadata only: no fingerprint, and no file is opened.
+    read: bool,
+    ignored: &'a Ignored,
+}
+struct Walked {
+    fingerprint: String,
+    stamp: String,
+}
+/// Metadata that changes whenever an entry's bytes, mode, name or identity change. A directory
+/// keeps only its name, mode and identity, its size and times zeroed: a scratch file made and
+/// removed again moves its times, and on ext4 can grow its size, though nothing is left. Each of
+/// its entries is stamped too, so one added, removed or renamed still changes the stamp.
+fn stamp(stamp: &mut Sha256, relative: &Path, meta: &Metadata) {
+    let whole = !meta.is_dir();
+    field(stamp, relative.as_os_str().as_encoded_bytes());
+    stamp.update(if whole { meta.len() } else { 0 }.to_le_bytes());
+    stamp.update(mode(meta).to_le_bytes());
+    #[cfg(unix)]
+    for value in [
+        meta.mtime(),
+        meta.mtime_nsec(),
+        meta.ctime(),
+        meta.ctime_nsec(),
+    ] {
+        stamp.update(if whole { value } else { 0 }.to_le_bytes());
+    }
+    #[cfg(unix)]
+    for value in [meta.dev(), meta.ino()] {
+        stamp.update(value.to_le_bytes());
+    }
+    #[cfg(not(unix))]
+    let modified = whole.then(|| meta.modified().ok()).flatten();
+    #[cfg(not(unix))]
+    field(stamp, format!("{modified:?}").as_bytes());
+}
 fn tree(
     path: &Path,
     relative: &Path,
-    hash: &mut Sha256,
-    budget: &mut Budget,
+    walk: &mut Walk,
     depth: usize,
+    ignored: bool,
 ) -> ScanResult<()> {
-    budget.entry(depth)?;
+    walk.budget.entry(depth)?;
     let directory = open(path, true)?;
     let before = directory.metadata().map_err(|_| "unreadable")?;
-    field(hash, relative.as_os_str().as_encoded_bytes());
-    field(hash, b"directory");
-    hash.update(mode(&before).to_le_bytes());
+    stamp(&mut walk.stamp, relative, &before);
+    if walk.read {
+        field(&mut walk.hash, relative.as_os_str().as_encoded_bytes());
+        field(&mut walk.hash, b"directory");
+        walk.hash.update(mode(&before).to_le_bytes());
+    }
     // Pin each parent directory while opening children. A replaced ancestor cannot redirect reads.
     #[cfg(unix)]
     let scan = PathBuf::from(format!("/proc/self/fd/{}", directory.as_raw_fd()));
@@ -125,19 +211,23 @@ fn tree(
     let scan = path.to_owned();
     let mut entries = Vec::new();
     for entry in fs::read_dir(&scan).map_err(|_| "unreadable")? {
-        budget.check()?;
+        walk.budget.check()?;
         let entry = entry.map_err(|_| "unreadable")?;
         if depth == 0 && entry.file_name() == ".git" {
+            // Git's own entry is neither walked nor read, only stamped: the worktree folder's
+            // times are not, so its replacement, removal or arrival must change the stamp.
+            let meta = entry.metadata().map_err(|_| "unreadable_or_changed")?;
+            stamp(&mut walk.stamp, Path::new(".git"), &meta);
             continue;
         }
-        if entries.len() + budget.entries >= budget.limits.entries {
+        if entries.len() + walk.budget.entries >= walk.budget.limits.entries {
             return Err("entries_or_depth");
         }
         entries.push(entry.file_name());
     }
     entries.sort();
     for name in entries {
-        budget.check()?;
+        walk.budget.check()?;
         let child = scan.join(&name);
         let rel = relative.join(&name);
         let meta = fs::symlink_metadata(&child).map_err(|_| "unreadable_or_changed")?;
@@ -146,13 +236,34 @@ fn tree(
             return Err("mounted_entry");
         }
         if meta.is_dir() {
-            tree(&child, &rel, hash, budget, depth + 1)?;
+            let ignored = ignored || walk.ignored.directories.contains(&rel);
+            tree(&child, &rel, walk, depth + 1, ignored)?;
             continue;
         }
-        budget.entry(depth + 1)?;
+        walk.budget.entry(depth + 1)?;
+        if !meta.is_file() && !meta.is_symlink() {
+            return Err("special_file");
+        }
+        stamp(&mut walk.stamp, &rel, &meta);
+        if !walk.read {
+            continue;
+        }
+        let hash = &mut walk.hash;
         field(hash, rel.as_os_str().as_encoded_bytes());
         hash.update(mode(&meta).to_le_bytes());
-        if meta.is_symlink() {
+        if ignored || walk.ignored.files.contains(&rel) {
+            // Build output, dependencies and the like: compared by metadata, never opened.
+            field(hash, b"ignored");
+            hash.update(meta.len().to_le_bytes());
+            #[cfg(unix)]
+            for value in [meta.mtime(), meta.mtime_nsec()] {
+                hash.update(value.to_le_bytes());
+            }
+            #[cfg(unix)]
+            hash.update(meta.ino().to_le_bytes());
+            #[cfg(not(unix))]
+            field(hash, format!("{:?}", meta.modified().ok()).as_bytes());
+        } else if meta.is_symlink() {
             field(hash, b"symlink");
             let target = fs::read_link(&child).map_err(|_| "unreadable_or_changed")?;
             field(hash, target.as_os_str().as_encoded_bytes());
@@ -160,13 +271,16 @@ fn tree(
             if !same(&meta, &after) {
                 return Err("changed");
             }
-        } else if meta.is_file() {
+        } else {
+            let budget = &mut walk.budget;
             if meta.len() > budget.limits.file {
                 return Err("file_bytes");
             }
             if budget.bytes.saturating_add(meta.len()) > budget.limits.total {
                 return Err("total_bytes");
             }
+            #[cfg(test)]
+            probe::read(&budget.root, &rel);
             let mut file = open(&child, false)?;
             let opened = file.metadata().map_err(|_| "unreadable")?;
             if !same(&meta, &opened) {
@@ -195,193 +309,248 @@ fn tree(
             {
                 return Err("changed");
             }
-        } else {
-            return Err("special_file");
         }
     }
     if !same(&before, &directory.metadata().map_err(|_| "unreadable")?) {
         return Err("changed");
     }
-    budget.check()
+    walk.budget.check()
 }
-fn scan(dir: &Path, seed: &[u8], limits: Limits) -> ScanResult<String> {
-    let mut hash = Sha256::new();
-    field(&mut hash, b"devbox-discard-v1");
-    field(&mut hash, seed);
-    let mut budget = Budget {
-        limits,
-        started: Instant::now(),
-        bytes: 0,
-        entries: 0,
-        buffer: vec![0_u8; 64 * 1024],
+fn walk(
+    dir: &Path,
+    seed: &[u8],
+    ignored: &Ignored,
+    read: bool,
+    limits: Limits,
+) -> ScanResult<Walked> {
+    let mut walk = Walk {
+        budget: Budget {
+            limits,
+            started: Instant::now(),
+            bytes: 0,
+            entries: 0,
+            buffer: vec![0_u8; if read { 64 * 1024 } else { 0 }],
+            #[cfg(test)]
+            root: dir.to_owned(),
+        },
+        hash: Sha256::new(),
+        stamp: Sha256::new(),
+        read,
+        ignored,
     };
-    tree(dir, Path::new(""), &mut hash, &mut budget, 0)?;
-    Ok(format!("{:x}", hash.finalize()))
+    field(&mut walk.hash, b"devbox-discard-v2");
+    field(&mut walk.hash, seed);
+    tree(dir, Path::new(""), &mut walk, 0, false)?;
+    Ok(Walked {
+        fingerprint: format!("{:x}", walk.hash.finalize()),
+        stamp: format!("{:x}", walk.stamp.finalize()),
+    })
+}
+/// The fingerprint and metadata stamp of `dir`. Reads every file Git does not ignore.
+fn hash(dir: &Path, seed: &[u8], ignored: &Ignored, limits: Limits) -> ScanResult<Walked> {
+    walk(dir, seed, ignored, true, limits)
+}
+/// The metadata stamp of `dir` alone: opens its directories, never a file.
+fn metadata_stamp(dir: &Path, limits: Limits) -> ScanResult<String> {
+    walk(dir, b"", &Ignored::default(), false, limits).map(|walked| walked.stamp)
+}
+/// A discard's hash, made before it took the lifecycle lock.
+pub(crate) struct DiscardSnapshot {
+    dir: PathBuf,
+    head: String,
+    /// The base branch's commit the user confirmed the discard against.
+    pub(crate) base: String,
+    index: Vec<u8>,
+    fingerprint: String,
+    stamp: String,
+    /// What [`submodules`] said, part of the fingerprint: the confirmation warns of it.
+    submodules: bool,
+}
+/// Whether the discard's forced removal would also take initialized submodules, and with them
+/// their store under `.git/worktrees/<name>/modules`, unpushed commits included. Without an answer
+/// (a Git failure, or an index past the check's cap) it may: the confirmation then warns all the
+/// same, and the discard stays allowed.
+async fn submodules(dir: &Path) -> bool {
+    devbox_git::mutate::has_submodules(dir)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "submodule check failed; the discard warns of submodules");
+            true
+        })
+}
+fn unavailable(reason: &str) -> Fail<AgentsError> {
+    AgentsError::DiscardSnapshotUnavailable {
+        reason: reason.into(),
+    }
+    .into()
+}
+/// The user confirms again: the worktree, its index, head or base changed.
+async fn changed(dir: &Path, head: &str, base: &str) -> Fail<AgentsError> {
+    match devbox_git::mutate::unmerged_count(dir, head, base).await {
+        Ok(unmerged) => AgentsError::StateChanged {
+            head: head.into(),
+            base: base.into(),
+            unmerged,
+        }
+        .into(),
+        Err(error) => git_failure(error),
+    }
+}
+/// A Git listing of paths in `dir`, as bytes. Past [`MAX_LISTING`] the snapshot is unavailable.
+async fn listing(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    #[cfg(test)]
+    let cap = probe::listing_cap(dir).unwrap_or(MAX_LISTING);
+    #[cfg(not(test))]
+    let cap = MAX_LISTING;
+    match devbox_git::run::git_bytes(dir, args, cap).await {
+        Err(devbox_git::GitError::LimitExceeded) => Err(unavailable("listing_bytes")),
+        listed => listed.map_err(git_failure),
+    }
+}
+async fn index(dir: &Path) -> Result<Vec<u8>> {
+    listing(dir, &["ls-files", "--stage", "-z"]).await
+}
+/// Before the lock, a domain refusal (a missing, closed or unowned task) is state that the
+/// locked checks see again: `None`. Git, database and I/O failures are reported as they are.
+fn settled<T>(result: Result<T>) -> Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(Fail::Domain(_)) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 impl AgentsService {
+    async fn snapshot(&self, dir: &Path, head: &str, base: &str) -> Result<DiscardSnapshot> {
+        let index_before = index(dir).await?;
+        let ignored = listing(
+            dir,
+            &[
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--directory",
+                "-z",
+            ],
+        )
+        .await?;
+        let submodules = submodules(dir).await;
+        let mut seed = format!("{head}\0{base}\0{submodules}\0").into_bytes();
+        seed.extend_from_slice(&index_before);
+        let directory = dir.to_owned();
+        let walked = tokio::task::spawn_blocking(move || {
+            hash(&directory, &seed, &Ignored::parse(&ignored), LIMITS)
+        })
+        .await
+        .internal("hash discard snapshot")?
+        .map_err(unavailable)?;
+        if index(dir).await? != index_before {
+            return Err(unavailable("index_changed"));
+        }
+        Ok(DiscardSnapshot {
+            dir: dir.to_owned(),
+            head: head.into(),
+            base: base.into(),
+            index: index_before,
+            fingerprint: walked.fingerprint,
+            stamp: walked.stamp,
+            submodules,
+        })
+    }
+    /// The fingerprint the user confirms a discard with, and whether it would take submodules.
     pub(crate) async fn discard_fingerprint(
         &self,
         dir: &Path,
         head: &str,
         base: &str,
-    ) -> Result<String> {
-        let index = devbox_git::run::git(dir, &["ls-files", "--stage", "-z"])
-            .await
-            .map_err(git_failure)?;
-        let mut seed = format!("{head}\0{base}\0").into_bytes();
-        seed.extend_from_slice(index.as_bytes());
-        let directory = dir.to_owned();
-        let fingerprint = tokio::task::spawn_blocking(move || scan(&directory, &seed, LIMITS))
-            .await
-            .internal("hash discard snapshot")?
-            .map_err(|reason| AgentsError::DiscardSnapshotUnavailable {
-                reason: reason.into(),
-            })?;
-        let after = devbox_git::run::git(dir, &["ls-files", "--stage", "-z"])
-            .await
-            .map_err(git_failure)?;
-        if after != index {
-            return Err(AgentsError::DiscardSnapshotUnavailable {
-                reason: "index_changed".into(),
-            }
-            .into());
-        }
-        Ok(fingerprint)
+    ) -> Result<(String, bool)> {
+        let snapshot = self.snapshot(dir, head, base).await?;
+        Ok((snapshot.fingerprint, snapshot.submodules))
     }
-    pub(crate) async fn check_discard_fingerprint(
+    /// Hashes the worktree a discard would remove, before the lifecycle lock. `None` when there
+    /// is nothing to hash: no confirmed fingerprint, or a task the locked checks will refuse or
+    /// find changed. A failure waits for its usual place under the lock, after those checks.
+    pub(crate) async fn hash_for_discard(
         &self,
+        p: &DiscardAgent,
+    ) -> Result<Option<DiscardSnapshot>> {
+        if p.expect.discard_fingerprint.is_none() {
+            return Ok(None);
+        }
+        let Some(task) = settled(self.get(&p.id).await)? else {
+            return Ok(None);
+        };
+        if crate::actions::open(&task).is_err() {
+            return Ok(None);
+        }
+        let Some((project, dir, _)) = settled(self.owned_worktree(&task).await)? else {
+            return Ok(None);
+        };
+        let base = devbox_git::run::resolve(Path::new(&project.path), &task.base_branch)
+            .await
+            .map_err(git_failure)?;
+        self.snapshot(&dir, &p.expect.head_oid, &base)
+            .await
+            .map(Some)
+    }
+    /// Under the lifecycle lock, in place of hashing: the hash made before the lock matches
+    /// what the user confirmed, and the worktree has not changed since it was made.
+    pub(crate) async fn confirm_discard_snapshot(
+        &self,
+        hashed: Result<Option<DiscardSnapshot>>,
         dir: &Path,
         head: &str,
         base: &str,
         expect: &ReviewExpect,
-    ) -> Result<()> {
+    ) -> Result<DiscardSnapshot> {
         let expected = expect
             .discard_fingerprint
             .as_ref()
             .ok_or(AgentsError::InvalidInput)?;
-        let actual = self.discard_fingerprint(dir, head, base).await?;
-        if expected != &actual {
-            let unmerged = devbox_git::mutate::unmerged_count(dir, head, base)
-                .await
-                .map_err(git_failure)?;
-            return Err(AgentsError::StateChanged {
-                head: head.into(),
-                base: base.into(),
-                unmerged,
-            }
-            .into());
+        // A failed hash is reported as it is. No hash: the task changed while the request
+        // waited for the lock.
+        let Some(snapshot) = hashed? else {
+            return Err(changed(dir, head, base).await);
+        };
+        if &snapshot.fingerprint != expected {
+            return Err(changed(dir, head, base).await);
+        }
+        self.verify_discard_snapshot(&snapshot, dir, head, base)
+            .await?;
+        Ok(snapshot)
+    }
+    /// Under the lifecycle lock: the worktree, index, head, base and submodules are still the hashed
+    /// ones. Compares metadata only and never opens a file, so any change since refuses the discard.
+    pub(crate) async fn verify_discard_snapshot(
+        &self,
+        snapshot: &DiscardSnapshot,
+        dir: &Path,
+        head: &str,
+        base: &str,
+    ) -> Result<()> {
+        if snapshot.dir != dir
+            || snapshot.head != head
+            || snapshot.base != base
+            || index(dir).await? != snapshot.index
+            || submodules(dir).await != snapshot.submodules
+        {
+            return Err(changed(dir, head, base).await);
+        }
+        let directory = dir.to_owned();
+        let stamp = tokio::task::spawn_blocking(move || metadata_stamp(&directory, LIMITS))
+            .await
+            .internal("verify discard snapshot")?
+            .map_err(unavailable)?;
+        if stamp != snapshot.stamp {
+            return Err(changed(dir, head, base).await);
         }
         Ok(())
     }
 }
+/// Test observation of each file whose bytes a discard hash reads.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[cfg(unix)]
-    #[test]
-    fn deep_tree_keeps_streaming_buffer_off_the_recursive_stack() {
-        const CHILD: &str = "DEVBOX_TEST_DEEP_HASH_CHILD";
-        if let Some(path) = std::env::var_os(CHILD) {
-            scan(Path::new(&path), b"index", LIMITS).expect("deep tree hash");
-            return;
-        }
-        let root = tempfile::tempdir().expect("fixture");
-        let mut directory = root.path().to_owned();
-        for _ in 0..40 {
-            directory = directory.join("d");
-            fs::create_dir(&directory).expect("owned directory");
-        }
-        fs::write(directory.join("file"), "owned bytes").expect("file");
-        // Disable only the owned child's core dump; a failing regression must leave no host artifact.
-        let status = std::process::Command::new("bash")
-            .args(["-c", "ulimit -c 0\nexec \"$@\"", "--"])
-            .arg(std::env::current_exe().expect("test executable"))
-            .args([
-                "--exact",
-                "discard_snapshot::tests::deep_tree_keeps_streaming_buffer_off_the_recursive_stack",
-                "--nocapture",
-            ])
-            .env(CHILD, root.path())
-            .status()
-            .expect("owned child");
-        assert!(
-            status.success(),
-            "a small deep tree must not exhaust the scanner's stack: {status}"
-        );
-    }
-    #[cfg(unix)]
-    #[test]
-    fn fifo_replacement_cannot_block_the_open_before_deadline_checks() {
-        const CHILD: &str = "DEVBOX_TEST_FIFO_OPEN_CHILD";
-        if let Some(path) = std::env::var_os(CHILD) {
-            assert!(
-                open(Path::new(&path), false).is_err(),
-                "fstat must reject a FIFO after nonblocking open"
-            );
-            return;
-        }
-        let root = tempfile::tempdir().expect("fixture");
-        let path = root.path().join("replacement");
-        assert!(
-            std::process::Command::new("mkfifo")
-                .arg(&path)
-                .status()
-                .expect("owned FIFO")
-                .success()
-        );
-        struct OwnedChild(std::process::Child);
-        impl Drop for OwnedChild {
-            fn drop(&mut self) {
-                let _ = self.0.kill();
-                let _ = self.0.wait();
-            }
-        }
-        let mut child = OwnedChild(std::process::Command::new(std::env::current_exe().expect("test executable"))
-            .args(["--exact", "discard_snapshot::tests::fifo_replacement_cannot_block_the_open_before_deadline_checks", "--nocapture"])
-            .env(CHILD, &path).spawn().expect("owned child"));
-        let started = Instant::now();
-        loop {
-            if let Some(status) = child.0.try_wait().expect("child state") {
-                assert!(status.success());
-                break;
-            }
-            assert!(
-                started.elapsed() < Duration::from_secs(2),
-                "regular-file open blocked on a raced FIFO before any deadline check"
-            );
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-    #[test]
-    fn fingerprint_reads_bytes_modes_links_and_fails_closed_on_limits() {
-        let root = tempfile::tempdir().expect("fixture");
-        fs::write(root.path().join("file"), "one").expect("file");
-        let first = scan(root.path(), b"index", LIMITS).expect("hash");
-        fs::write(root.path().join("file"), "two").expect("file");
-        assert_ne!(first, scan(root.path(), b"index", LIMITS).expect("hash"));
-        assert_ne!(
-            first,
-            scan(root.path(), b"different-index", LIMITS).expect("hash")
-        );
-        let mut small = LIMITS;
-        small.file = 2;
-        assert_eq!(scan(root.path(), b"", small), Err("file_bytes"));
-        small = LIMITS;
-        small.deadline = Duration::ZERO;
-        assert_eq!(scan(root.path(), b"", small), Err("deadline"));
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let before = scan(root.path(), b"index", LIMITS).expect("hash");
-            fs::set_permissions(root.path().join("file"), fs::Permissions::from_mode(0o700))
-                .expect("mode");
-            assert_ne!(before, scan(root.path(), b"index", LIMITS).expect("hash"));
-            std::os::unix::fs::symlink("/unreadable-external-target", root.path().join("link"))
-                .expect("link");
-            assert!(
-                scan(root.path(), b"index", LIMITS).is_ok(),
-                "link target must never be opened"
-            );
-        }
-    }
-}
+#[path = "discard_probe.rs"]
+pub(crate) mod probe;
+#[cfg(test)]
+#[path = "discard_scan_tests.rs"]
+mod tests;

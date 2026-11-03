@@ -74,6 +74,16 @@ pub(crate) fn env_path(text: &str) -> Option<String> {
         .lines()
         .filter_map(|l| l.strip_prefix("PATH="))
         .next_back()?;
+    let out = unquote(value)?;
+    if !out
+        .split(':')
+        .any(|s| !s.is_empty() && Path::new(s).is_absolute())
+    {
+        return None;
+    }
+    Some(out)
+}
+fn unquote(value: &str) -> Option<String> {
     let quoted = value.strip_prefix('"')?.strip_suffix('"')?;
     let mut out = String::new();
     let mut chars = quoted.chars();
@@ -90,14 +100,31 @@ pub(crate) fn env_path(text: &str) -> Option<String> {
             _ => out.push(c),
         }
     }
-    if out.chars().any(char::is_control)
-        || !out
-            .split(':')
-            .any(|s| !s.is_empty() && Path::new(s).is_absolute())
-    {
-        return None;
+    (!out.chars().any(char::is_control)).then_some(out)
+}
+/// The allowlisted variables of an env file, decoded; the last line for a key wins.
+fn env_entries(text: &str) -> std::collections::BTreeMap<&str, String> {
+    text.lines()
+        .filter_map(|line| line.split_once('='))
+        .filter(|(key, _)| ALLOWED.contains(key) || key.starts_with("LC_"))
+        .filter_map(|(key, value)| Some((key, unquote(value)?)))
+        .collect()
+}
+/// What changed between two env files: a new value to set, or `None` for a removed key.
+pub(crate) fn env_changes(before: &str, after: &str) -> Vec<(String, Option<String>)> {
+    let (before, after) = (env_entries(before), env_entries(after));
+    let mut changes: std::collections::BTreeMap<&str, Option<String>> = after
+        .iter()
+        .filter(|(key, value)| before.get(*key) != Some(*value))
+        .map(|(key, value)| (*key, Some(value.clone())))
+        .collect();
+    for key in before.keys().filter(|key| !after.contains_key(*key)) {
+        changes.insert(*key, None);
     }
-    Some(out)
+    changes
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect()
 }
 pub fn render_units(channel: devbox_protocol::channel::AppChannel) -> Vec<(String, String)> {
     let config = channel.config();
@@ -223,8 +250,10 @@ fn safe_dir(path: &Path) -> std::io::Result<()> {
         Err(e) => Err(e),
     }
 }
-fn publish(path: &Path, body: &str, managed: bool) -> std::io::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
+/// Publishes `body` as a private file and returns whether it changed. A private file that
+/// already holds exactly `body` is left as it is.
+fn publish(path: &Path, body: &str, managed: bool) -> std::io::Result<bool> {
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     safe_dir(
         path.parent()
             .ok_or_else(|| std::io::Error::other("missing parent"))?,
@@ -236,6 +265,12 @@ fn publish(path: &Path, body: &str, managed: bool) -> std::io::Result<()> {
                 || (managed && !std::fs::read_to_string(path)?.starts_with(MARKER))
             {
                 return Err(std::io::Error::other("refusing foreign file or symlink"));
+            }
+            if m.permissions().mode() & 0o777 == 0o600
+                && m.len() == body.len() as u64
+                && std::fs::read(path)? == body.as_bytes()
+            {
+                return Ok(false);
             }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -253,34 +288,106 @@ fn publish(path: &Path, body: &str, managed: bool) -> std::io::Result<()> {
         std::fs::rename(&temp, path)
     })();
     let _ = std::fs::remove_file(temp);
-    result
+    result.map(|()| true)
 }
 pub(crate) async fn command(cmd: &str, args: &[&str]) -> Result<std::process::Output, String> {
     devbox_core::systemd::command(cmd, args)
         .await
         .map_err(|error| error.to_string())
 }
-trait Runner {
+pub(crate) trait Runner {
     async fn run(&self, cmd: &str, args: &[&str]) -> Result<Vec<u8>, String>;
+    /// Where the running daemon's executable is read: `<proc>/<MainPID>/exe`.
+    fn proc(&self) -> &Path {
+        Path::new("/proc")
+    }
 }
-struct OsRunner;
+pub(crate) struct OsRunner;
 impl Runner for OsRunner {
     async fn run(&self, cmd: &str, args: &[&str]) -> Result<Vec<u8>, String> {
         command(cmd, args).await.map(|out| out.stdout)
     }
 }
-pub(crate) async fn refresh_env(paths: &devbox_core::Paths) -> Result<(), String> {
-    refresh_with(paths, &OsRunner).await
+/// Captures the login shell's environment again and returns what changed in the env file.
+pub(crate) async fn refresh_env_changes(
+    paths: &devbox_core::Paths,
+    runner: &impl Runner,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    // A missing or unreadable old file means every captured key is new.
+    let before = std::fs::read_to_string(paths.instance_config_dir.join("env")).unwrap_or_default();
+    let (after, _) = refresh_with(paths, runner).await?;
+    Ok(env_changes(&before, &after))
 }
-async fn refresh_with(paths: &devbox_core::Paths, runner: &impl Runner) -> Result<(), String> {
+/// Captures the login environment into the env file; returns its text and whether it changed.
+async fn refresh_with(
+    paths: &devbox_core::Paths,
+    runner: &impl Runner,
+) -> Result<(String, bool), String> {
     let raw = runner.run("bash", &["-lc", "env -0"]).await?;
     let text = capture_env(&raw);
     if env_path(&text).is_none() {
         return Err("captured PATH has no absolute entry".into());
     }
-    publish(&paths.instance_config_dir.join("env"), &text, false).map_err(|e| e.to_string())
+    let changed =
+        publish(&paths.instance_config_dir.join("env"), &text, false).map_err(|e| e.to_string())?;
+    Ok((text, changed))
 }
-async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> SetupReport {
+/// The restart step's note when the daemon unit already runs this install.
+const SKIPPED: &str = "건너뜀(변경 없음)";
+/// Whether the daemon unit already runs this install: active, with a main process that executes
+/// the very file setup runs from. Anything unknown (no answer, no MainPID, an unreadable `exe`)
+/// counts as no, so the daemon is restarted.
+async fn runs_this_install(runner: &impl Runner, service: &str) -> bool {
+    let Ok(state) = runner
+        .run(
+            "systemctl",
+            &[
+                "--user",
+                "show",
+                "--property=ActiveState,MainPID",
+                "--",
+                service,
+            ],
+        )
+        .await
+    else {
+        return false;
+    };
+    let state = String::from_utf8_lossy(&state);
+    let value = |key: &str| {
+        state
+            .lines()
+            .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+    };
+    let pid = value("MainPID")
+        .and_then(|pid| pid.parse::<u32>().ok())
+        .filter(|pid| *pid != 0);
+    value("ActiveState") == Some("active")
+        && pid.is_some_and(|pid| executes(&runner.proc().join(pid.to_string()).join("exe")))
+}
+/// Whether `exe`, a `/proc/<pid>/exe` link, names the file this process runs. A deleted or
+/// replaced file shows as `<path> (deleted)`: another file, even at the same path.
+fn executes(exe: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(running) = std::fs::read_link(exe) else {
+        return false;
+    };
+    !running.as_os_str().as_bytes().ends_with(b" (deleted)")
+        && matches!(
+            (
+                std::fs::canonicalize(&running),
+                std::env::current_exe().and_then(std::fs::canonicalize),
+            ),
+            (Ok(running), Ok(own)) if running == own
+        )
+}
+/// `force` (`setup --restart`, the user's [다시 설정] and [다시 시도]) restarts the daemon unit
+/// even when nothing changed.
+async fn install(
+    paths: &devbox_core::paths::Paths,
+    runner: &impl Runner,
+    force: bool,
+) -> SetupReport {
     let mut report = SetupReport { steps: vec![] };
     let channel = paths.instance.channel().config();
     let daemon = channel.daemon_unit;
@@ -293,31 +400,39 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
         });
         return report;
     }
+    let service = format!("{daemon}@{}.service", paths.instance.as_str());
+    // Whether this run rewrote anything the daemon reads when it starts.
+    let mut changed = false;
     for id in ["env", "units", "reload", "enable", "restart"] {
-        let result: Result<(), String> = match id {
-            "env" => refresh_with(paths, runner).await,
+        let result: Result<&str, String> = match id {
+            "env" => refresh_with(paths, runner).await.map(|(_, env)| {
+                changed |= env;
+                ""
+            }),
             "units" => instance_units(paths).and_then(|units| {
-                publish(
+                let conf = publish(
                     &paths.instance_config_dir.join("tmux.conf"),
                     devbox_terminal::TMUX_CONF,
                     true,
                 )
                 .map_err(|error| error.to_string())?;
-                units
+                changed |= units
                     .iter()
-                    .try_for_each(|(name, body)| {
+                    .try_fold(conf, |any, (name, body)| {
                         publish(
                             &paths.xdg_config_home.join("systemd/user").join(name),
                             body,
                             true,
                         )
+                        .map(|unit| unit || any)
                     })
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                Ok("")
             }),
             "reload" => runner
                 .run("systemctl", &["--user", "daemon-reload"])
                 .await
-                .map(|_| ()),
+                .map(|_| ""),
             "enable" => runner
                 .run(
                     "systemctl",
@@ -331,24 +446,19 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
                     ],
                 )
                 .await
-                .map(|_| ()),
+                .map(|_| ""),
+            // After reload and enable: the state read now is the one a restart would replace.
+            _ if !force && !changed && runs_this_install(runner, &service).await => Ok(SKIPPED),
             _ => runner
-                .run(
-                    "systemctl",
-                    &[
-                        "--user",
-                        "restart",
-                        &format!("{daemon}@{}.service", paths.instance.as_str()),
-                    ],
-                )
+                .run("systemctl", &["--user", "restart", &service])
                 .await
-                .map(|_| ()),
+                .map(|_| ""),
         };
         let ok = result.is_ok();
         report.steps.push(Step {
             id,
             ok,
-            message: result.err().unwrap_or_default(),
+            message: result.map_or_else(|error| error, str::to_owned),
         });
         if !ok {
             break;
@@ -356,8 +466,8 @@ async fn install(paths: &devbox_core::paths::Paths, runner: &impl Runner) -> Set
     }
     report
 }
-pub async fn run(json: bool) -> anyhow::Result<()> {
-    let report = install(&crate::paths()?, &OsRunner).await;
+pub async fn run(json: bool, restart: bool) -> anyhow::Result<()> {
+    let report = install(&crate::paths()?, &OsRunner, restart).await;
     if json {
         println!("{}", serde_json::to_string(&report)?);
     } else {
@@ -377,6 +487,9 @@ pub async fn run(json: bool) -> anyhow::Result<()> {
     }
 }
 
+#[cfg(test)]
+#[path = "setup/restart_tests.rs"]
+mod restart_tests;
 #[cfg(test)]
 #[path = "setup/safety_tests.rs"]
 mod safety_tests;

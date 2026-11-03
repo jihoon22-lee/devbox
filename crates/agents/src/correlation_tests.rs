@@ -70,6 +70,7 @@ impl Fixture {
             projects.clone(),
             devbox_core::config::TerminalConfig::default(),
         ));
+        let shell = crate::command_path::fixture_shell(&paths.home);
         Arc::new(AgentsService::new(
             db,
             hub,
@@ -81,6 +82,8 @@ impl Fixture {
                 devbox_bin: "/owned/devbox".into(),
                 use_scope: false,
                 cleanup_after_close: false,
+                shell,
+                lookups: Arc::new(crate::command_path::LookupCache::stopped()),
             },
         ))
     }
@@ -111,9 +114,11 @@ impl Fixture {
             closed_ms: None,
             closed_commits: None,
             closed_head_oid: None,
+            closed_merge_oid: None,
             cleanup_error: None,
             tokens_truncated: false,
             activity_seq: 0,
+            starting_since_ms: None,
         };
         self.svc
             .db
@@ -147,6 +152,16 @@ impl Fixture {
     }
     async fn state(&self) -> AgentState {
         self.svc.get("a").await.expect("owned fixture").state
+    }
+    /// The launch task `id` is bound to, which a report from its pane names.
+    async fn current_launch(&self, id: &str) -> Option<String> {
+        let id = id.to_owned();
+        self.svc
+            .db
+            .read(move |tx| store::binding(tx, &id))
+            .await
+            .expect("owned fixture")
+            .and_then(|binding| binding.launch_id)
     }
     async fn expect_diagnostic(&self, expected: Diagnostic) {
         let before = self.svc.get("a").await.expect("owned fixture");
@@ -319,12 +334,12 @@ async fn truncated_and_overlarge_matching_rollouts_fail_closed() {
         "one",
         "2026-10-13T00:00:02Z",
     );
-    fs::OpenOptions::new()
-        .write(true)
-        .open(&path)
-        .expect("owned fixture")
-        .set_len(8 * 1024 * 1024 + 1)
-        .expect("owned fixture");
+    // Rollouts over 8 MiB are read by their tail; a session_meta line over 1 MiB still fails.
+    let text = fs::read_to_string(&path).expect("owned fixture");
+    let (meta, events) = text.split_once('\n').expect("owned fixture");
+    let mut meta: serde_json::Value = serde_json::from_str(meta).expect("owned fixture");
+    meta["payload"]["base_instructions"] = "x".repeat(1024 * 1024).into();
+    fs::write(&path, format!("{meta}\n{events}")).expect("owned fixture");
     f.expect_diagnostic(Diagnostic::LimitExceeded).await;
 }
 
@@ -508,10 +523,18 @@ async fn terminal_observation_transaction_rejects_newer_activity_and_launch() {
     );
 }
 
+#[path = "approval_wait_tests.rs"]
+mod approval_wait_tests;
 #[path = "hook_launch_tests.rs"]
 mod hook_launch_tests;
 #[path = "hook_limits_tests.rs"]
 mod hook_limits_tests;
+#[path = "pi_service_tests.rs"]
+mod pi_service_tests;
+#[path = "plugin_launch_tests.rs"]
+mod plugin_launch_tests;
+#[path = "plugin_service_tests.rs"]
+mod plugin_service_tests;
 
 #[cfg(unix)]
 #[path = "resume_rollback_tests.rs"]

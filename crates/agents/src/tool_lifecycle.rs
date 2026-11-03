@@ -38,6 +38,13 @@ impl AgentsService {
                 {
                     return Ok(false);
                 }
+                // The tool starts now, often before the setup event lands: pi's wait to say
+                // it is ready counts from here.
+                if self.says_ready(&task)
+                    && let Some(launch) = self.launch_binding(id).await?.launch_id
+                {
+                    self.launches.tool_started(id, &launch, now_ms());
+                }
                 AgentEvent::SetupOk
             }
             _ => return Ok(false),

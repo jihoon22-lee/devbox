@@ -3,7 +3,9 @@ use super::streams::Streams;
 use super::{dedupe::Dedupe, routes, state::Services};
 use devbox_core::HubMessage;
 use devbox_protocol::frame::{FrameCodec, FrameKind};
-use devbox_protocol::message::{ClientMessage, Control, ServerMessage, json_frame, parse_json};
+use devbox_protocol::message::{
+    ClientKind, ClientMessage, Control, ServerMessage, json_frame, parse_json,
+};
 use devbox_protocol::stream::{FLAG_FIN, parse_stream};
 use devbox_protocol::{CommonError, Ctx, DispatchError, PROTOCOL_VERSION, Router};
 use futures::{SinkExt, StreamExt};
@@ -65,14 +67,13 @@ pub async fn serve(
         .initialize()
         .await
         .map_err(|_| io::Error::other("initialize secrets"))?;
-    services
-        .agents
-        .initialize()
-        .await
-        .map_err(|error| io::Error::other(format!("initialize agents: {error:?}")))?;
+    // A tmux that cannot list sessions yet must not keep the daemon down.
+    let agents_pending = super::startup::initialize_agents(&services).await;
     services.runs.initialize().await.map_err(|error| {
         io::Error::other(format!("initialize execution definitions: {error:?}"))
     })?;
+    let agents_retry = agents_pending
+        .map(|known| super::startup::retry_agents(services.clone(), known, shutdown.clone()));
     let daemon = Arc::new(Daemon {
         router: routes::router(services.clone()),
         topics: routes::declared().topics.into_iter().collect(),
@@ -98,6 +99,9 @@ pub async fn serve(
     while connections.join_next().await.is_some() {}
     daemon.dedupe.tracker.close();
     daemon.dedupe.tracker.wait().await;
+    if let Some(retry) = agents_retry {
+        let _ = retry.await;
+    }
     daemon.services.agents.shutdown().await;
     daemon.services.runs.shutdown().await;
     daemon.services.observe.shutdown().await;
@@ -106,6 +110,19 @@ pub async fn serve(
 
 fn invalid(reason: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, reason)
+}
+
+/// Hooks and MCP servers of sessions started before an update keep running their older
+/// binary, so CLI and MCP clients only need the same protocol. The app (which redeploys
+/// on a version change) and development/test clients still need the same build.
+pub(crate) fn hello_accepts(
+    client: ClientKind,
+    version: &str,
+    protocol: u32,
+    daemon_version: &str,
+) -> bool {
+    protocol == PROTOCOL_VERSION
+        && (version == daemon_version || matches!(client, ClientKind::Cli | ClientKind::Mcp))
 }
 
 async fn connection(
@@ -239,12 +256,19 @@ async fn handle(
             if state.hello || instance != d.services.paths.instance.as_str() {
                 return Err(invalid("duplicate hello or instance mismatch"));
             }
+            let accepted = hello_accepts(client, &version, protocol, d.services.version);
             let welcome = ServerMessage::Welcome {
-                version: d.services.version.into(),
+                // `Client::connect` (rc.1 included) needs Welcome to repeat its own version,
+                // so an accepted older CLI/MCP binary gets it back; a rejection reports ours.
+                version: if accepted {
+                    version
+                } else {
+                    d.services.version.into()
+                },
                 protocol: PROTOCOL_VERSION,
                 daemon_id: d.services.daemon_id.clone(),
             };
-            if version != d.services.version || protocol != PROTOCOL_VERSION {
+            if !accepted {
                 // Wait for the writer: connection teardown cancels this generation and
                 // aborts the writer, so enqueueing alone can silently discard Welcome.
                 let (flushed, received) = oneshot::channel();
@@ -285,7 +309,6 @@ async fn handle(
             params,
             client_request_id,
         } => {
-            use devbox_protocol::message::ClientKind;
             let windows = super::windows_routes::internal(&method);
             let native =
                 super::secret_routes::native(&method) || super::windows_routes::native(&method);

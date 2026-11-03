@@ -23,6 +23,7 @@ test("storage_failure_shows_banner_tray_and_one_notice", async () => {
   wire.handlers["activity.rules"] = () => ({
     rev: "1",
     idleThresholdMs: 300000,
+    readable: true,
     rules: { maskAllTitles: false, excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [] },
   });
   render(

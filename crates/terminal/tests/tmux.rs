@@ -1,4 +1,4 @@
-use devbox_terminal::tmux::Tmux;
+use devbox_terminal::tmux::{Tmux, TmuxError, supports_extended_keys};
 use std::time::Duration;
 struct Fixture {
     home: tempfile::TempDir,
@@ -6,23 +6,50 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::with_conf(devbox_terminal::TMUX_CONF)
+    }
+    fn with_conf(config: &str) -> Self {
         let home = tempfile::tempdir().expect("fixture home");
         let conf = home.path().join("tmux.conf");
-        std::fs::write(&conf, include_str!("../assets/tmux.conf")).expect("fixture config");
+        std::fs::write(&conf, config).expect("fixture config");
         let socket = format!("devbox-test-{}", uuid::Uuid::new_v4().simple());
         Self {
             home,
             tmux: Tmux::with(socket, conf),
         }
     }
+    async fn extended_keys(&self) -> String {
+        let shown = self.tmux.run(&["show", "-s", "extended-keys"]).await;
+        shown.expect("show extended-keys").trim().to_owned()
+    }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
+        let socket = std::process::Command::new("tmux")
+            .args([
+                "-L",
+                self.tmux.socket(),
+                "display-message",
+                "-p",
+                "#{socket_path}",
+            ])
+            .env_remove("TMUX_TMPDIR")
+            .env_remove("TMUX")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .map(|path| path.trim().to_owned());
         let _ = std::process::Command::new("tmux")
             .args(["-L", self.tmux.socket(), "kill-server"])
             .env_remove("TMUX_TMPDIR")
             .env_remove("TMUX")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
+        // tmux leaves the socket file of a stopped server behind; this fixture created it.
+        if let Some(socket) = socket.filter(|path| path.ends_with(self.tmux.socket())) {
+            let _ = std::fs::remove_file(socket);
+        }
     }
 }
 #[tokio::test]
@@ -101,4 +128,180 @@ async fn creates_lists_captures_pastes_and_kills_only_owned_sessions() {
     );
     t.kill_session("s10").await.expect("close sibling");
     assert!(t.list().await.expect("empty server").is_empty());
+}
+#[test]
+fn tmux_conf_enables_extended_keys_quietly() {
+    let conf = devbox_terminal::TMUX_CONF;
+    let lines: Vec<&str> = conf
+        .lines()
+        .filter(|l| l.contains("extended-keys"))
+        .collect();
+    // `-q` lets tmux 3.2-3.4, which lack the format option, skip it without an error.
+    assert_eq!(
+        lines,
+        [
+            "set -s extended-keys on",
+            "set -sq extended-keys-format csi-u"
+        ]
+    );
+    // `always` would hand extended keys to programs that never asked for them.
+    assert!(!conf.contains("always"));
+}
+#[tokio::test]
+async fn server_started_from_the_shipped_conf_has_extended_keys_on() {
+    let fixture = Fixture::new();
+    fixture
+        .tmux
+        .start_direct()
+        .await
+        .expect("start fixture tmux");
+    assert_eq!(fixture.extended_keys().await, "extended-keys on");
+}
+#[tokio::test]
+async fn applying_extended_keys_reaches_a_server_started_without_them() {
+    // A server that outlived an update was started from a config without the two lines
+    // and never reads it again.
+    let old: String = (devbox_terminal::TMUX_CONF.lines())
+        .filter(|line| !line.contains("extended-keys"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let fixture = Fixture::with_conf(&old);
+    fixture
+        .tmux
+        .start_direct()
+        .await
+        .expect("start fixture tmux");
+    assert_eq!(fixture.extended_keys().await, "extended-keys off");
+    fixture
+        .tmux
+        .apply_extended_keys()
+        .await
+        .expect("apply to the running server");
+    assert_eq!(fixture.extended_keys().await, "extended-keys on");
+    // Every daemon start applies them again.
+    fixture
+        .tmux
+        .apply_extended_keys()
+        .await
+        .expect("apply again");
+    assert_eq!(fixture.extended_keys().await, "extended-keys on");
+}
+#[tokio::test]
+async fn applying_extended_keys_without_a_server_starts_nothing() {
+    let fixture = Fixture::new();
+    // tmux reports `No such file or directory` only while its socket file does not exist.
+    let socket_missing = || async {
+        let probe = fixture.tmux.run(&["list-sessions"]).await;
+        matches!(probe, Err(TmuxError::Failed { stderr, .. }) if stderr.contains("No such file or directory"))
+    };
+    assert!(socket_missing().await);
+    fixture
+        .tmux
+        .apply_extended_keys()
+        .await
+        .expect("no server is not an error");
+    assert!(socket_missing().await, "no server or socket was created");
+}
+#[test]
+fn only_tmux_3_5_or_newer_carries_extended_keys() {
+    // `tmux -V` prints `tmux 3.6` and a newline; the server's `#{version}` a bare `3.6`.
+    for version in [
+        "tmux 3.5",
+        "tmux 3.5a",
+        "tmux 3.6",
+        "tmux 3.6\n",
+        "tmux next-3.6",
+        "tmux 4.0",
+        "tmux 10.1",
+        "3.5",
+        "3.5a",
+        "3.6",
+        "3.6\n",
+        "next-3.6",
+        "4.0",
+    ] {
+        assert!(supports_extended_keys(version), "{version:?}");
+    }
+    // Unknown counts as older: Shift+Enter then stays a plain Enter. `next-3.5` is a build
+    // on the way to 3.5, so it is older than 3.5.
+    for version in [
+        "tmux 3.4",
+        "tmux 3.4\n",
+        "tmux 3.3a",
+        "tmux 3.2",
+        "tmux next-3.4",
+        "tmux next-3.5",
+        "tmux master",
+        "tmux 3.5-rc",
+        "tmux openbsd-7.6",
+        "3.4",
+        "3.4\n",
+        "3.3a",
+        "next-3.5",
+        "master",
+        "3.5-rc",
+        "garbage 9.9",
+        "",
+    ] {
+        assert!(!supports_extended_keys(version), "{version:?}");
+    }
+}
+/// The one place tmux decides what Shift+Enter becomes for a program that never asked for
+/// extended keys. From 3.5, which is when the app sends Shift+Enter as an extended key, that
+/// program gets Enter. Below 3.5 the app sends a plain Enter. tmux 3.4 parses `S-Enter` but
+/// drops Shift+Enter for a program that never asked for extended keys (the drop
+/// `supports_extended_keys` documents), so `send-keys` falls back to typing the name as text
+/// and the test does not apply there.
+#[tokio::test]
+async fn shift_enter_reaches_a_program_that_did_not_ask_for_extended_keys_as_enter() {
+    let fixture = Fixture::new();
+    let t = &fixture.tmux;
+    t.start_direct().await.expect("start fixture tmux");
+    // One hex line per byte the program reads, without line editing or echo.
+    let dump = "sh -c 'stty -icanon -icrnl -echo min 1 time 0; echo ready; while :; do dd bs=1 count=1 2>/dev/null | od -An -tx1; done'";
+    t.new_session("keys", fixture.home.path(), Some(dump), &[])
+        .await
+        .expect("byte dump session");
+    let read = || async {
+        let screen = t.capture_tail("keys", 50).await.expect("capture");
+        let (_, after) = screen.split_once("ready")?;
+        Some(
+            after
+                .split_whitespace()
+                .map(str::to_owned)
+                .collect::<Vec<_>>(),
+        )
+    };
+    let until = async |done: &dyn Fn(&[String]) -> bool| {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match read().await {
+                    Some(bytes) if done(&bytes) => return bytes,
+                    _ => tokio::time::sleep(Duration::from_millis(20)).await,
+                }
+            }
+        })
+        .await
+        .expect("byte dump deadline")
+    };
+    until(&|_| true).await;
+    let version = t
+        .run(&["display-message", "-p", "#{version}"])
+        .await
+        .expect("server version");
+    // The app sends no extended Shift+Enter on this tmux; tmux 3.4 would type `S-Enter` as text.
+    if !supports_extended_keys(&version) {
+        return;
+    }
+    let sent = t.run(&["send-keys", "-t", "=keys:", "S-Enter"]).await;
+    // `x` marks the end of whatever tmux wrote for Shift+Enter.
+    t.run(&["send-keys", "-t", "=keys:", "-l", "x"])
+        .await
+        .expect("send marker");
+    let bytes = until(&|bytes| bytes.iter().any(|byte| byte == "78")).await;
+    assert!(
+        t.extended_keys("keys").await,
+        "extended_keys is false on tmux {version}: {bytes:?}"
+    );
+    assert_eq!(bytes, ["0d", "78"], "{version} {sent:?}");
 }

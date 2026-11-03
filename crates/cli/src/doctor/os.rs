@@ -1,6 +1,6 @@
 use super::{OsProbe, runner};
 use devbox_tools::doctor::{
-    AgentAuth, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions,
+    AgentAuth, AgentCommand, AgentTool, DockerProbe, Probe, ProbeIssue, Probed, RustVersions,
 };
 use std::path::{Path, PathBuf};
 const GH_AUTH_ARGS: &[&str] = &["auth", "status", "--no-refresh"];
@@ -11,6 +11,8 @@ fn config_root(agent: AgentTool) -> Probed<PathBuf> {
     let (key, default) = match agent {
         AgentTool::Claude => ("CLAUDE_CONFIG_DIR", ".claude"),
         AgentTool::Codex => ("CODEX_HOME", ".codex"),
+        // Their sign-in files are not checked.
+        AgentTool::Opencode | AgentTool::Pi => return Err(ProbeIssue::Unavailable),
     };
     config_root_from(&home, std::env::var_os(key).map(PathBuf::from), default)
 }
@@ -122,27 +124,21 @@ impl Probe for OsProbe {
         let root = config_root(agent)?;
         let file = root.join(match agent {
             AgentTool::Claude => ".credentials.json",
-            AgentTool::Codex => "auth.json",
+            _ => "auth.json",
         });
+        // The version of the CLI a task runs, from this check's look at it.
+        let version = self
+            .agent_cli(agent, &self.daemon_path())?
+            .and_then(|found| found.version);
         runner::run(async {
             Ok(AgentAuth {
-                version: runner::version(agent.binary(), &["--version"]).await?,
+                version,
                 file_present: runner::file_exists(file).await?,
             })
         })
     }
-    fn agent_hook(&self, agent: AgentTool) -> Probed<bool> {
-        let file = config_root(agent)?.join(match agent {
-            AgentTool::Claude => "settings.json",
-            AgentTool::Codex => "config.toml",
-        });
-        runner::run(async {
-            match runner::read_text(file).await {
-                Ok(text) => devbox_tools::doctor::hook_present(agent, &text),
-                Err(ProbeIssue::Missing) => Ok(false),
-                Err(issue) => Err(issue),
-            }
-        })
+    fn agent_command(&self, agent: AgentTool, path: &str) -> Probed<Option<AgentCommand>> {
+        self.agent_cli(agent, path)
     }
 }
 #[cfg(test)]

@@ -1,4 +1,5 @@
 //! Runs inside the existing exec wrapper. Only failure to spawn permits native delegation.
+use crate::client::{Client, ClientError};
 use devbox_protocol::{message::ClientKind, windows::*};
 use std::{
     os::unix::process::ExitStatusExt,
@@ -10,7 +11,7 @@ use tokio::{io::AsyncWriteExt, process::Command};
 use zeroize::Zeroizing;
 #[path = "windows_observation.rs"]
 mod observation;
-pub(crate) use observation::{check_paths, listeners, observe};
+pub(crate) use observation::{check_paths, holder, listeners, observe};
 
 #[cfg(test)]
 #[path = "windows_exec_probe_tests.rs"]
@@ -106,12 +107,57 @@ where
         tokio::select! {_=tokio::time::sleep(next)=>{},_=hint.notified()=>{}}
     }
 }
-async fn accepted(client: &crate::client::Client, id: &RunIdentity) -> bool {
-    let reply = client.raw_call("windows.ready", id, None).await;
-    matches!(
-        reply.ok().map(|text| serde_json::from_str(&text)),
-        Some(Ok(WindowsReadiness::Ready))
-    )
+/// One readiness question. `Ok(false)` is a not-ready reply, a refusal by the daemon included;
+/// `Err` means the connection itself failed.
+async fn accepted(client: &Client, id: &RunIdentity) -> Result<bool, ClientError> {
+    match client.raw_call("windows.ready", id, None).await {
+        Ok(reply) => Ok(serde_json::from_str::<WindowsReadiness>(&reply)
+            .is_ok_and(|ready| ready == WindowsReadiness::Ready)),
+        Err(ClientError::Rpc { .. } | ClientError::Decode(_)) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+/// The run's daemon connection for readiness questions. A daemon restart closes it; the next
+/// question then reconnects with a new Hello, 250 ms after the loss and doubling up to 5 s
+/// between tries, and asks again. Only `windows.ready` is ever asked again: the gate answers it
+/// idempotently, and nothing that was in flight is re-sent. The ready poll owns this loop, so
+/// it ends with the run.
+struct Gate<C> {
+    client: tokio::sync::Mutex<Option<Client>>,
+    connect: C,
+}
+impl<C, F> Gate<C>
+where
+    C: Fn() -> F,
+    F: std::future::Future<Output = Result<Client, ClientError>>,
+{
+    fn new(client: Option<Client>, connect: C) -> Self {
+        Self {
+            client: tokio::sync::Mutex::new(client),
+            connect,
+        }
+    }
+    async fn ask(&self, id: &RunIdentity) -> bool {
+        let mut client = self.client.lock().await;
+        let mut delay = None;
+        loop {
+            if let Some(connected) = client.as_ref() {
+                match accepted(connected, id).await {
+                    Ok(ready) => return ready,
+                    Err(_) => *client = None,
+                }
+            }
+            let next = delay.map_or(Duration::from_millis(250), |previous: Duration| {
+                (previous * 2).min(Duration::from_secs(5))
+            });
+            delay = Some(next);
+            tokio::time::sleep(next).await;
+            *client = (self.connect)().await.ok();
+        }
+    }
+    fn into_client(self) -> Option<Client> {
+        self.client.into_inner()
+    }
 }
 /// Never completes; the wrapper never asks the gate for a no-port service.
 async fn readiness<F, P>(ports: &[u16], accept: F, hint: &tokio::sync::Notify, cadence: Cadence)
@@ -129,9 +175,8 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
         .map_err(|_| anyhow::anyhow!("Windows attempt is unavailable"))?;
     let id = RunIdentity { run_id, attempt_id };
     let paths = crate::paths()?;
-    let client =
-        crate::client::Client::connect(&paths.socket, ClientKind::Cli, paths.instance.as_str())
-            .await?;
+    let connect = || Client::connect(&paths.socket, ClientKind::Cli, paths.instance.as_str());
+    let client = connect().await?;
     let input = client.raw_call("windows.prepare", &id, None).await?;
     let mut prepared: PreparedWindows = serde_json::from_str(&input)?;
     for key in &prepared.injected {
@@ -146,9 +191,10 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     let direct = direct(&request, &interop, started);
     tokio::pin!(direct);
     let hint = tokio::sync::Notify::new();
+    let gate = Gate::new(Some(client), connect);
     let ready = async {
         if began.await.is_ok() {
-            let accept = || accepted(&client, &id);
+            let accept = || gate.ask(&id);
             readiness(&request.ports, accept, &hint, cadence).await;
         }
         std::future::pending::<()>().await;
@@ -157,10 +203,19 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     let code = match result {
         Direct::Finished(code) => Some(code),
         Direct::Failed => None,
-        // Unknown completion must not trigger systemd service auto-restart.
-        Direct::Unavailable => delegated(&client, &id, &request, cadence).await.ok(),
+        // Unknown completion must not trigger systemd service auto-restart. A spawn failure
+        // never started the ready poll, so this is still the first connection.
+        Direct::Unavailable => match gate.into_client() {
+            Some(client) => delegated(&client, &id, &request, cadence).await.ok(),
+            None => None,
+        },
     };
     if let Some(code) = code {
+        let assigned =
+            devbox_runtime::windows::windows_to_wsl(&request.observation.assigned_path).ok();
+        if let Some(error) = bootstrap_error(code, assigned.as_deref()) {
+            eprintln!("{}", observer_unavailable_line(&error));
+        }
         devbox_runtime::exit_record::ExitStore::new(&paths.data_dir.join("runs"), &id.run_id)?
             .record_windows_exit(&id.attempt_id, code)?;
         Ok(known_exit(code))
@@ -169,7 +224,7 @@ pub async fn run(run_id: String) -> anyhow::Result<ExitStatus> {
     }
 }
 async fn delegated(
-    client: &crate::client::Client,
+    client: &Client,
     id: &RunIdentity,
     request: &RunWindows,
     cadence: Cadence,
@@ -184,7 +239,8 @@ async fn delegated(
     .await
     .map_err(|_| anyhow::anyhow!("Windows execution result is unknown"))??;
     let read = || async { stream.read_chunk().await.map_err(anyhow::Error::from) };
-    let accept = || accepted(client, id);
+    // The stream dies with this connection, so a lost one only ends the run as unknown.
+    let accept = || async { accepted(client, id).await.unwrap_or(false) };
     relay(read, id, &request.ports, accept, cadence).await
 }
 /// Reads native events while polling the daemon gate concurrently. A not-ready reply never
@@ -241,6 +297,28 @@ where
     anyhow::bail!("Windows execution result is unknown; no retry was attempted")
 }
 
+/// The run-log copy for `windows.observer_unavailable`: the screen table's exact text.
+const OBSERVER_UNAVAILABLE_TITLE: &str =
+    "Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다).";
+const OBSERVER_UNAVAILABLE_ACTION: &str = "다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요.";
+/// The bootstrap exits 75 for itself only when its job holder was not ready, which is before
+/// the `assigned` receipt is written. So 75 is the fixed code only with proof that no receipt
+/// exists; with a receipt (or no proof either way) it is the user command's own exit code.
+/// No output text is parsed.
+fn bootstrap_error(code: i32, assigned: Option<&Path>) -> Option<devbox_runtime::RuntimeError> {
+    if code != OBSERVER_UNAVAILABLE_EXIT {
+        return None;
+    }
+    match std::fs::symlink_metadata(assigned?) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Some(devbox_runtime::RuntimeError::WindowsObserverUnavailable)
+        }
+        _ => None,
+    }
+}
+fn observer_unavailable_line(error: &devbox_runtime::RuntimeError) -> String {
+    format!("{error}: {OBSERVER_UNAVAILABLE_TITLE} {OBSERVER_UNAVAILABLE_ACTION}")
+}
 fn known_exit(code: i32) -> ExitStatus {
     ExitStatus::from_raw((if code == 0 { 0 } else { (code & 255).max(1) }) << 8)
 }
@@ -273,6 +351,8 @@ mod tests {
                 assigned_path: "C:\\owned\\control\\assigned.json".into(),
                 grant_path: "C:\\owned\\control\\grant.json".into(),
                 closed_path: "C:\\owned\\control\\closed.json".into(),
+                holder_ready_path: Some("C:\\owned\\control\\holder-ready".into()),
+                emptied_path: Some("C:\\owned\\control\\emptied.json".into()),
             },
         }
     }
@@ -321,6 +401,45 @@ mod tests {
             direct(&request(), &path, started).await,
             Direct::Finished(9) | Direct::Failed
         ));
+    }
+    #[test]
+    fn exit_75_is_observer_unavailable_only_without_an_assigned_receipt() {
+        let temp = tempfile::tempdir().expect("owned control directory");
+        let receipt = temp.path().join("assigned.json");
+        // No receipt: the bootstrap stopped at the holder wait, before any command ran.
+        let error = bootstrap_error(OBSERVER_UNAVAILABLE_EXIT, Some(&receipt))
+            .expect("fixed bootstrap failure");
+        assert_eq!(error.to_string(), "windows.observer_unavailable");
+        assert!(matches!(
+            error,
+            devbox_runtime::RuntimeError::WindowsObserverUnavailable
+        ));
+        // Success, the generic bootstrap failure and ordinary command results stay results.
+        for code in [0, 1, 9, 78, 255, -1] {
+            assert!(bootstrap_error(code, Some(&receipt)).is_none(), "{code}");
+        }
+        // With the receipt, 75 is the user command's own exit code.
+        std::fs::write(&receipt, "{}").expect("owned receipt");
+        assert!(bootstrap_error(OBSERVER_UNAVAILABLE_EXIT, Some(&receipt)).is_none());
+        // A path that cannot be mapped proves nothing either way.
+        assert!(bootstrap_error(OBSERVER_UNAVAILABLE_EXIT, None).is_none());
+    }
+    #[test]
+    fn the_run_log_line_carries_the_screen_copy_next_to_the_code() {
+        let line =
+            observer_unavailable_line(&devbox_runtime::RuntimeError::WindowsObserverUnavailable);
+        assert_eq!(
+            line,
+            "windows.observer_unavailable: Windows 작업을 시작하지 못했습니다(명령은 실행하지 않았습니다). 다시 실행하세요. 계속되면 설정 → 앱 진단을 확인하세요."
+        );
+        // The same strings as the screen's message table, so the two cannot drift.
+        let table = include_str!("../../../app/src/rpc/systemMessages.ts");
+        let start = table
+            .find("\"windows.observer_unavailable\": {")
+            .expect("screen entry");
+        let entry = &table[start..start + table[start..].find("},").expect("entry end")];
+        assert!(entry.contains(&format!("title: \"{OBSERVER_UNAVAILABLE_TITLE}\"")));
+        assert!(entry.contains(&format!("action: \"{OBSERVER_UNAVAILABLE_ACTION}\"")));
     }
     #[test]
     fn windows_unknown_signal_is_distinct_from_known_exit_78() {

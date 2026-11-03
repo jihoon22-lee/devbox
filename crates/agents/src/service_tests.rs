@@ -99,6 +99,50 @@ fn output_attention_has_provenance_and_hook_promotes_same_state() {
     assert!(apply_event(&mut t, &AgentEvent::NeedsInput { message }, 2));
     assert_eq!(t.attention.as_ref().expect("owned fixture").kind, "input");
     assert!(!apply_event(&mut t, &AgentEvent::OutputWaiting, 3));
-    assert!(!apply_event(&mut t, &AgentEvent::OutputResumed, 3));
     assert_eq!(t.state, AgentState::Waiting);
+    // Output observation never sees hook attention (`watch::eligible`); a hook
+    // resumption such as Claude's PostToolUse ends the wait.
+    assert!(apply_event(&mut t, &AgentEvent::OutputResumed, 4));
+    assert_eq!(t.state, AgentState::Running);
+    assert!(t.attention.is_none());
+}
+#[test]
+fn output_resumed_leaves_every_non_waiting_task_state_byte_identical() {
+    // PostToolUse follows every tool call. Outside Waiting it must not touch the
+    // activity sequence or timestamp, so the row is never rewritten.
+    for (state, attention) in [
+        (AgentState::Preparing, None),
+        (AgentState::Running, None),
+        (AgentState::Idle, Some("idle")),
+        (AgentState::Failed, Some("failed")),
+        (AgentState::Review, None),
+        (AgentState::Closed, None),
+    ] {
+        let mut t = task();
+        t.state = state;
+        t.attention = attention.map(|kind| Attention {
+            kind: kind.into(),
+            message: "kept".into(),
+            at_ms: 1,
+        });
+        let before = serde_json::to_string(&t).expect("owned fixture");
+        assert!(
+            !apply_event(&mut t, &AgentEvent::OutputResumed, 2),
+            "{state:?}"
+        );
+        assert_eq!(serde_json::to_string(&t).expect("owned fixture"), before);
+    }
+    for kind in ["input", "output"] {
+        let mut t = task();
+        t.state = AgentState::Waiting;
+        t.attention = Some(Attention {
+            kind: kind.into(),
+            message: "approve".into(),
+            at_ms: 1,
+        });
+        assert!(apply_event(&mut t, &AgentEvent::OutputResumed, 2), "{kind}");
+        assert_eq!(t.state, AgentState::Running);
+        assert!(t.attention.is_none());
+        assert_eq!((t.activity_seq, t.updated_ms), (1, 2));
+    }
 }
