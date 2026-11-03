@@ -8,4 +8,4 @@
 
 결과: ADR 0001·0002·0003·0004·0007·0009·0010·0011·0012·0014·0015를 대체한다. 0005·0006·0008·0013·0016은 01 §13의 형태로 유지한다. Windows 설치본 수용, SC3·SC10 전체 경로 및 세션 tracker 회귀는 후속 단계의 gate이며 이 초안의 측정 PASS로 대체하지 않는다.
 
-근거: [S0a 측정과 제한](../superpowers/plans/2026-10-08-devbox-v1/09-s0a-results.md), [설계](../superpowers/plans/2026-10-08-devbox-v1/01-design.md).
+근거: [S0a 측정과 제한](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/09-s0a-results.md), [설계](../superpowers/plans/2026-10-08-devbox-v1/01-design.md).

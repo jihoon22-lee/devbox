@@ -2,7 +2,7 @@
 
 이 문서는 공통 규약의 원장이다. v1은 Windows 11의 단일 Tauri v2 앱과 WSL Rust 데몬이다.
 설계는 [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md),
-실행 계획은 [00-roadmap](docs/superpowers/plans/2026-10-08-devbox-v1/00-roadmap.md)·[10-s7-s8-release](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md),
+실행 계획은 [10-s7-s8-release](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md)(끝난 계획은 [docs/history.md](docs/history.md)),
 진행 상태의 유일한 원장은 같은 폴더의 PROGRESS.md다. 계획 예제와 충돌하면 사용자 지시와 이 규약을 우선한다.
 
 ## 1. 환경
@@ -127,7 +127,7 @@ PROGRESS.md가 진행 상태의 유일한 원장이다. 결정·검증·미실�
 1. 실패하는 시험을 먼저 썼고, 그 시험과 바꾼 crate·화면의 시험이 통과한다.
 2. 이름·시그니처가 과제의 Interfaces → Produces와 같다(다르면 PROGRESS §5에 적었는가).
 3. 계획 문서의 Global Constraints와 01-design §5.3(오류·`Result<T, String>` 허용 범위)·§8.6(정합성 규칙)을 지킨다.
-4. 바꾼 도메인의 01-design §9.1 회귀 조건과 00 §7 추적표의 시험이 이 과제에 걸려 있으면 들어 있다.
+4. 바꾼 도메인의 01-design §9.1 회귀 조건과 §9.4 추적표의 시험이 이 과제에 걸려 있으면 들어 있다.
 5. 과제 범위를 넘는 기능·리팩터링·방어 장치가 없다. 파일 600줄·컴포넌트 300줄을 넘지 않는다.
 6. 비밀·문서 내용·경로가 로그에 나가지 않는다. 사용자의 기존 tmux·unit·Docker를 건드리지 않는다.
 

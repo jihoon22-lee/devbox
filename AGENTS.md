@@ -3,7 +3,7 @@
 Devbox는 Windows 11 + WSL의 개인 개발 허브다. Rust 데몬이 상태·작업을 소유하고 단일 Windows Tauri 앱이 화면·트레이·단축키·알림을 맡는다.
 
 - 공통 규약의 원장은 [CONVENTIONS.md](CONVENTIONS.md)다. 변경 전 §1·3·5·8·9·11과 대상 디렉터리 지침을 읽는다.
-- 규칙 [CONVENTIONS.md](CONVENTIONS.md) · 현재 [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)(진행 유일 원장) · 실행 [10-s7-s8-release](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md). 설계는 [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md).
+- 규칙 [CONVENTIONS.md](CONVENTIONS.md) · 현재 [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)(진행 유일 원장) · 실행 [10-s7-s8-release](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md)(끝난 계획은 [docs/history.md](docs/history.md)). 설계는 [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md).
 - 사용자 지시와 승인된 미완료 계획만 구현한다. 실행 하네스가 제공하는 하위 에이전트를 사용한다(과제마다 구현 → 별도 검토). 하위 에이전트가 없는 하네스는 같은 순서(구현 → 새 맥락에서 검토 → 커밋)를 직접 지킨다. 특정 모델만 쓰라는 규칙은 없다(사용자 결정 2026-10-13, 2026-10-14 재확인).
 - pnpm 9, Rust 사용 전 `source ~/.cargo/env`; 실제 Windows 앱 실행·배포 빌드는 Windows에서만 한다.
 - 과제는 좁은 실패 테스트부터 검증한다. 전체 check·clippy·build·E2E는 PR 끝에 한 번, 완료 커밋·push 전 Biome CI를 실행한다.
