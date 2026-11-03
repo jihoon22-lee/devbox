@@ -161,6 +161,16 @@ fn public_updater_is_disabled_for_nonprod_or_nonstable_without_io() {
     }
 }
 #[test]
+fn stable_version_enables_updates() {
+    let service = Service::new(AppChannel::Prod, "1.0.0", None, |_| {
+        panic!("enabled updater must not publish before a check")
+    });
+    let snapshot = service.snapshot();
+    assert!(snapshot.enabled);
+    assert_eq!(snapshot.disabled_reason, None);
+    assert_eq!(snapshot.next_action, Action::Check);
+}
+#[test]
 fn fixture_source_hash_channel_and_actual_installer_are_checked_and_prod_never_accepts_fixture() {
     let (temp, _service) = setup(Duration::ZERO);
     assert!(
