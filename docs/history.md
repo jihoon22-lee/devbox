@@ -33,7 +33,7 @@ v1 재구축의 끝난 계획 문서와 줄이기 전 진행 원장 전문을 �
 S8-2가 [PROGRESS](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)를 200줄 이하로 줄였다(사용자 결정 4). 이전 전문은 아래에 있다.
 
 - S0–S7-13: S7 머지 `842fa82e`. [고정 링크](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) · `git show 842fa82e:docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md`
-- S7-14–S7-16과 S8 착수(S8-0이 이 브랜치에 기록): (다음 커밋이 이 커밋의 SHA로 채운다)
+- S7-14–S7-16과 S8 착수(S8-0이 이 브랜치에 기록): S8-2a 첫 커밋 `71b42eb4`(전문을 담은 마지막 PROGRESS). [고정 링크](https://github.com/jihoon22-lee/devbox/blob/71b42eb44b663e193d32f49f5759d27771a05e25/docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) · `git show 71b42eb4:docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md`. S8 PR은 squash로 머지하므로 이 커밋은 PR에만 남는다. S8 PR의 영구 링크는 S8-6에서 더한다.
 
 ## v0.9 기록
 
@@ -41,4 +41,4 @@ S8-2가 [PROGRESS](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)를 200줄
 
 ## 이 PC에만 있는 근거
 
-- 기록이 가리키는 `devbox-verification/…`(Git common-dir `.git/devbox-verification/`)과 그 압축 보관(`.git/devbox-archive/`), 과제 기록 `.superpowers/sdd/`는 작성자의 PC에만 있다. 저장소와 GitHub에는 없다. 위치와 보관 해시는 [PROGRESS](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)에 있다.
+- 기록이 가리키는 `devbox-verification/…`(Git common-dir `.git/devbox-verification/`)과 그 압축 보관(`.git/devbox-archive/`), 과제 기록 `.superpowers/sdd/`는 작성자의 PC에만 있다. 저장소와 GitHub에는 없다. 위치와 보관 해시는 [PROGRESS §6](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md#6-근거-보관)에 있다.

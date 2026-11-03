@@ -317,7 +317,7 @@ PR 리뷰(사용자 결정 2026-10-27):
 | `[agents]` | 닫은 작업의 자동 정리를 끈다(`cleanup_after_close = false`). 도구 프로필은 아래 줄대로 확인한다 |
 | `[[agents.profiles]]` | 잘못된 항목·중복 id만 건너뛴다 |
 | `[mcp]` | `write = false` |
-| `[activity]` | 지금처럼 제목을 가린다 |
+| `[activity]` | 활동을 기록하지 않는다 |
 | 그 밖의 영역 | 기본값 |
 
 **설정 파일 쓰기:** `secrets`·`activity`의 toml_edit 쓰기는 원문 파싱이 실패하면 거절하고, 다른 영역의 바이트는 보존한다. 이 동작을 시험으로 고정한다(검토 초점 2).
