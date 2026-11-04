@@ -1,5 +1,5 @@
 //! Where the notices come from: the Cargo crates and npm packages that ship, the fonts bundled with the app,
-//! and their license files.
+//! the code the toolchain and an SDK link into the binaries, and their license files.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
@@ -15,6 +15,18 @@ pub enum Ecosystem {
     Npm,
     /// A font file kept in this repository (`bundled.rs`), in no lock file.
     Font,
+    /// Code the toolchain or an SDK links into these binaries (`linked.rs`), in no lock file.
+    Linked(Binaries),
+}
+
+/// The shipped binaries a linked component is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Binaries {
+    /// `devbox-linux`, the WSL `devbox` command (`x86_64-unknown-linux-musl`).
+    Linux,
+    /// `Devbox.exe`, the Windows app (`x86_64-pc-windows-msvc`).
+    Windows,
+    Both,
 }
 
 impl Ecosystem {
@@ -23,6 +35,9 @@ impl Ecosystem {
             Ecosystem::Cargo => "Rust",
             Ecosystem::Npm => "npm",
             Ecosystem::Font => "font",
+            Ecosystem::Linked(Binaries::Linux) => "linked into devbox-linux",
+            Ecosystem::Linked(Binaries::Windows) => "linked into Devbox.exe",
+            Ecosystem::Linked(Binaries::Both) => "linked into devbox-linux and Devbox.exe",
         }
     }
 }
@@ -37,8 +52,8 @@ pub struct Component {
     pub license: String,
     /// Package root, where its license files live.
     pub dir: PathBuf,
-    /// The one file that holds the license text, when the package is not scanned for license files.
-    pub license_file: Option<PathBuf>,
+    /// The files that hold its license texts. Empty: `dir` is scanned for license files instead.
+    pub license_files: Vec<PathBuf>,
 }
 
 impl Component {
@@ -232,7 +247,7 @@ pub fn cargo_components(
                 .parent()
                 .with_context(|| format!("{}의 manifest 경로가 비어 있습니다.", package.name))?
                 .to_path_buf(),
-            license_file: None,
+            license_files: Vec::new(),
         });
     }
     components.sort_by_key(Component::sort_key);
@@ -269,7 +284,7 @@ pub fn npm_components(json: &str) -> Result<Vec<Component>> {
                 version: version.clone(),
                 license: declared(Some(&package.license)),
                 dir: dir.clone(),
-                license_file: None,
+                license_files: Vec::new(),
             });
         }
     }

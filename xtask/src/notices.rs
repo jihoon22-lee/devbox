@@ -1,17 +1,19 @@
 //! `cargo run -p xtask -- notices`: writes THIRD_PARTY_NOTICES.md, the license texts of the third-party
 //! software that ships in the installer: the crates of the WSL `devbox` command, the crates of the
-//! Windows app, the production npm packages of its UI and the fonts kept in this repository (`bundled`).
+//! Windows app, the production npm packages of its UI, the fonts kept in this repository (`bundled`) and
+//! the code the toolchain and the WebView2 SDK link into the two binaries (`linked`).
 //!
 //! The first line fingerprints the inputs the notices were made from: the lock files, the manifests and
-//! the license texts of the bundled fonts. `notices_inputs_are_current` recomputes it (hashing only: no
-//! cargo, no pnpm, no network), so an input change that is committed without regenerating this file
-//! fails `cargo test --workspace`.
+//! the license texts of the bundled fonts and the linked code. `notices_inputs_are_current` recomputes it
+//! (hashing only: no cargo, no pnpm, no network), so an input change that is committed without
+//! regenerating this file fails `cargo test --workspace`.
 
 mod bundled;
 mod fingerprint;
 #[cfg(test)]
 mod fixture;
 mod license_files;
+mod linked;
 mod sources;
 
 use anyhow::{Context, Result};
@@ -21,7 +23,7 @@ use sha2::{Digest, Sha256};
 use sources::{Component, cargo_components, cargo_metadata, npm_components, pnpm_licenses};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const NOTICES_FILE: &str = "THIRD_PARTY_NOTICES.md";
 /// The Windows app ships for this target only (`windows.yml` builds it on a Windows x64 runner).
@@ -63,11 +65,15 @@ pub fn run() -> Result<()> {
     let app_crates = cargo_components(&app, &["devbox-app"], &repo)?;
     let npm_packages = npm_components(&pnpm_licenses(&repo)?)?;
     let fonts = bundled::components(&repo)?;
+    let linked_linux = linked::components(&repo, sources::Binaries::Linux);
+    let linked_windows = linked::components(&repo, sources::Binaries::Windows);
     let counts = (
         command_crates.len(),
         app_crates.len(),
         npm_packages.len(),
         fonts.len(),
+        linked_linux.len(),
+        linked_windows.len(),
     );
     let sources = [
         (
@@ -86,6 +92,16 @@ pub fn run() -> Result<()> {
             "Fonts bundled with the app UI (`app/src/assets/fonts`, listed in `xtask/src/notices/bundled.rs`)",
             fonts,
         ),
+        (
+            "Code the Rust toolchain links into the WSL `devbox` command (`devbox-linux`, \
+             `x86_64-unknown-linux-musl`, listed in `xtask/src/notices/linked.rs`)",
+            linked_linux,
+        ),
+        (
+            "Code the Rust toolchain and the WebView2 SDK link into the Windows app (`Devbox.exe`, \
+             `x86_64-pc-windows-msvc`, listed in `xtask/src/notices/linked.rs`)",
+            linked_windows,
+        ),
     ];
     let notices = generate(&sources, &input_fingerprint(&repo)?)?;
     fs::write(repo.join(NOTICES_FILE), &notices)
@@ -93,12 +109,15 @@ pub fn run() -> Result<()> {
     // The check `notices_inputs_are_current` makes, so a generator that disagrees with it fails here.
     ensure_current(&repo)?;
     println!(
-        "notices: wrote {NOTICES_FILE} ({} bytes; packages: Rust command {}, Rust app {}, npm {}, bundled fonts {})",
+        "notices: wrote {NOTICES_FILE} ({} bytes; packages: Rust command {}, Rust app {}, npm {}, bundled fonts {}, \
+         linked into devbox-linux {}, linked into Devbox.exe {})",
         notices.len(),
         counts.0,
         counts.1,
         counts.2,
-        counts.3
+        counts.3,
+        counts.4,
+        counts.5
     );
     Ok(())
 }
@@ -109,14 +128,18 @@ fn scan<'a>(components: impl IntoIterator<Item = &'a Component>) -> Result<Vec<E
     unique
         .into_values()
         .map(|component| {
-            let texts = match &component.license_file {
-                Some(file) => read_license_file(file).map(|text| vec![text]),
-                None => read_license_texts(&component.dir),
+            let texts = if component.license_files.is_empty() {
+                read_license_texts(&component.dir)
+            } else {
+                read_named_files(&component.license_files)
             }
             .with_context(|| {
                 let hint = match component.ecosystem {
                     sources::Ecosystem::Font => {
                         "글꼴 라이선스 파일이 저장소에 있는지 확인하세요(`xtask/src/notices/bundled.rs`)."
+                    }
+                    sources::Ecosystem::Linked(_) => {
+                        "라이선스 파일이 `xtask/notices/linked/`에 있는지 확인하세요(`xtask/src/notices/linked.rs`)."
                     }
                     _ => {
                         "Rust는 `cargo fetch --locked`, npm은 `pnpm install --frozen-lockfile`로 \
@@ -135,6 +158,18 @@ fn scan<'a>(components: impl IntoIterator<Item = &'a Component>) -> Result<Vec<E
             })
         })
         .collect()
+}
+
+/// The texts of the named files in order, a repeated text once: every file must exist and hold text.
+fn read_named_files(files: &[PathBuf]) -> Result<Vec<String>> {
+    let mut texts: Vec<String> = Vec::new();
+    for file in files {
+        let text = read_license_file(file)?;
+        if !texts.contains(&text) {
+            texts.push(text);
+        }
+    }
+    Ok(texts)
 }
 
 fn digest(text: &str) -> String {
@@ -201,7 +236,8 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
         "Devbox is licensed under the MIT License (see `LICENSE`). This file lists the third-party \
          software that ships with it, with the license text each package provides. It is generated \
          by `cargo run -p xtask -- notices` from the inputs fingerprinted in its first line (the lock \
-         files, the manifests and the license text of each bundled font); do not edit it by hand.\n\n\
+         files, the manifests and the license texts of the bundled fonts and the linked code); do not \
+         edit it by hand.\n\n\
          Packages by source:\n\n",
     );
     for (source, components) in sources {
@@ -211,7 +247,8 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
         "\n{total} distinct packages in total: a package that two sources share counts once. \
          Packages that ship the same license text are listed together under one copy of it, and a \
          package with several license files, for example the license of code it vendors, is listed \
-         under each.\n\n## License texts\n\n"
+         under each.\n\n{}\n\n## License texts\n\n",
+        linked::WITHOUT_ENTRY
     ));
     for group in &groups.texts {
         out.push_str(&format!(
@@ -417,7 +454,7 @@ fn a_bundled_font_is_listed_under_the_text_of_its_license() {
         version: "1.4.0".into(),
         license: "OFL-1.1".into(),
         dir: dir.path().to_path_buf(),
-        license_file: Some(license),
+        license_files: vec![license],
     };
     let notices =
         generate(&[("Fonts bundled with the app", vec![font])], FINGERPRINT).expect("generate");
@@ -433,7 +470,7 @@ fn a_bundled_font_is_listed_under_the_text_of_its_license() {
         version: "1".into(),
         license: "OFL-1.1".into(),
         dir: dir.path().to_path_buf(),
-        license_file: Some(dir.path().join("missing.txt")),
+        license_files: vec![dir.path().join("missing.txt")],
     };
     assert!(generate(&[("Fonts", vec![missing])], FINGERPRINT).is_err());
 }

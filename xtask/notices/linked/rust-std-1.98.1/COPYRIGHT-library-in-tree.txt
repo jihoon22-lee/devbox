@@ -1,0 +1,48 @@
+Copyright notices for The Rust Standard Library
+
+Short version for non-lawyers
+
+The Rust Standard Library is dual-licensed under Apache 2.0 and MIT terms.
+
+Longer version
+
+Copyrights in the Rust Standard Library are retained by their contributors. No copyright assignment is required to contribute to the Rust project.
+
+Some files include explicit copyright notices and/or license notices. For full authorship information, see the version control history or https://thanks.rust-lang.org.
+
+Except as otherwise noted (below and/or in individual files), the Rust Standard Library is licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0) or the MIT (http://opensource.org/licenses/MIT) license, at your option.
+
+This file describes the copyright and licensing information for the source code within The Rust Project git tree related to the Rust Standard Library, and the third-party dependencies used when building the Rust Standard Library.
+
+In-tree files
+
+The following licenses cover the in-tree source files that were used in this release:
+
+File/Directory: .
+License: Apache-2.0 OR MIT
+Copyright: The Rust Project Developers (see https://thanks.rust-lang.org)
+Exceptions:
+
+    File/Directory: library/core/src/unicode
+    License: Unicode-3.0
+    Copyright: 1991-2024 Unicode, Inc
+    Exceptions:
+
+        File/Directory: mod.rs
+        License: Apache-2.0 OR MIT
+        Copyright: The Rust Project Developers (see https://thanks.rust-lang.org)
+
+    File/Directory: library/backtrace
+    License: Apache-2.0 OR MIT
+    Copyright: 2014 Alex Crichton
+    Copyright: The Rust Project Developers (see https://thanks.rust-lang.org)
+
+    File/Directory: library/std/src/sync/mpmc
+    License: Apache-2.0 OR MIT
+    Copyright: 2019 The Crossbeam Project Developers
+    Copyright: The Rust Project Developers (see https://thanks.rust-lang.org)
+
+    File/Directory: library/std/src/sys/sync/mutex/fuchsia.rs
+    License: BSD-2-Clause AND (Apache-2.0 OR MIT)
+    Copyright: 2016 The Fuchsia Authors
+    Copyright: The Rust Project Developers (see https://thanks.rust-lang.org)

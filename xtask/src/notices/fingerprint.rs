@@ -2,23 +2,26 @@
 
 use super::NOTICES_FILE;
 use super::bundled::FONTS;
+use super::linked::LINKED;
+use super::sources::Ecosystem;
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
-const STALE: &str = "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요.";
+const STALE: &str = "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴과 링크되는 코드의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요.";
 const LOCK_FILES: [&str; 3] = ["Cargo.lock", "app/src-tauri/Cargo.lock", "pnpm-lock.yaml"];
 /// Manifests besides the workspace members': the workspace root, the app crate (outside the workspace)
 /// and the app package.
 const OTHER_MANIFESTS: [&str; 3] = ["Cargo.toml", "app/src-tauri/Cargo.toml", "app/package.json"];
 
-/// `Cargo.lock=<sha256> app/src-tauri/Cargo.lock=<sha256> pnpm-lock.yaml=<sha256> manifests=<sha256> bundled=<sha256>`.
+/// `Cargo.lock=<sha256> app/src-tauri/Cargo.lock=<sha256> pnpm-lock.yaml=<sha256> manifests=<sha256> bundled=<sha256> linked=<sha256>`.
 ///
 /// The lock files do not record everything that decides what ships. A dependency can move from
 /// `[dev-dependencies]` to `[dependencies]`, and a feature or a target table can pull in a crate that is
 /// already locked, with no change to a lock file. So the manifests are in it (the workspace root, every
-/// member, the app crate and the app package), and so are the licenses of the fonts that no lock file lists.
+/// member, the app crate and the app package), and so are the licenses of what no lock file lists: the
+/// bundled fonts and the code the toolchain and the WebView2 SDK link in (with each row as it is printed).
 pub fn input_fingerprint(repo: &Path) -> Result<String> {
     let mut parts = Vec::new();
     for name in LOCK_FILES {
@@ -41,6 +44,20 @@ pub fn input_fingerprint(repo: &Path) -> Result<String> {
         ));
     }
     parts.push(format!("bundled={}", digest(&bundled)));
+    let mut linked = String::new();
+    for row in &LINKED {
+        for file in row.license_files() {
+            linked.push_str(&format!(
+                "{}@{} {} {} {file}={}\n",
+                row.name,
+                row.version,
+                row.license,
+                Ecosystem::Linked(row.binaries).label(),
+                sha256_lf(&read(repo, &file)?)
+            ));
+        }
+    }
+    parts.push(format!("linked={}", digest(&linked)));
     Ok(parts.join(" "))
 }
 
@@ -142,9 +159,10 @@ pub fn ensure_current(repo: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::notices::bundled::FONTS;
+    use crate::notices::linked::{LINKED, Linked};
 
     /// Typed out on purpose: the sentence is a contract, not something to derive from `STALE`.
-    const STALE_SENTENCE: &str = "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요.";
+    const STALE_SENTENCE: &str = "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴과 링크되는 코드의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요.";
 
     /// Every file the fingerprint reads, with the given line ends.
     const INPUTS: [(&str, &str); 9] = [
@@ -177,6 +195,14 @@ mod tests {
             };
             put(dir, path, &text.replace('\n', line_end));
         }
+        // Every license text of the linked code, each a text of its own.
+        for file in LINKED.iter().flat_map(Linked::license_files) {
+            put(
+                dir,
+                &file,
+                &format!("license text\nof {file}\n").replace('\n', line_end),
+            );
+        }
     }
 
     #[test]
@@ -192,7 +218,7 @@ mod tests {
             input_fingerprint(crlf.path()).expect("crlf fingerprint")
         );
         let parts: Vec<_> = fingerprint.split(' ').collect();
-        assert_eq!(parts.len(), 5);
+        assert_eq!(parts.len(), 6);
         assert!(parts[0].starts_with("Cargo.lock="));
         assert_eq!(
             parts[1],
@@ -201,6 +227,7 @@ mod tests {
         assert!(parts[2].starts_with("pnpm-lock.yaml="));
         assert!(parts[3].starts_with("manifests="));
         assert!(parts[4].starts_with("bundled="));
+        assert!(parts[5].starts_with("linked="));
     }
 
     #[test]
@@ -233,7 +260,13 @@ mod tests {
     #[test]
     fn a_change_to_any_input_the_lock_files_do_not_record_makes_the_notices_stale() {
         // A dependency moved from `[dev-dependencies]` to `[dependencies]`, a feature or a target table
-        // changes what ships and leaves Cargo.lock as it is; so does another font license text.
+        // changes what ships and leaves Cargo.lock as it is; so does another font license text, and so does
+        // another license text of any linked component.
+        let linked_files: Vec<String> = LINKED.iter().flat_map(Linked::license_files).collect();
+        assert!(!linked_files.is_empty());
+        let linked = linked_files
+            .iter()
+            .map(|file| (file.as_str(), "Another license\n"));
         for (path, text) in [
             (
                 "Cargo.toml",
@@ -256,7 +289,10 @@ mod tests {
                 "{\"name\":\"app\",\"dependencies\":{\"x\":\"1\"}}\n",
             ),
             (FONTS[0].license_file, "Another license\n"),
-        ] {
+        ]
+        .into_iter()
+        .chain(linked)
+        {
             let dir = tempfile::tempdir().expect("create folder");
             write_inputs(dir.path(), "\n");
             let fingerprint = input_fingerprint(dir.path()).expect("fingerprint");
