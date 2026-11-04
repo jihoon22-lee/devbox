@@ -522,7 +522,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 
 ## 7. 데이터와 설정
 
-설정 파일 네 개(`~/.config/devbox/config.toml`·`config.local.toml`, 프로젝트의 `.devbox/devbox.toml`, Windows 앱의 `settings.json`)의 위치·키·병합 규칙은 [설정 파일 안내](../../../config.md)가 원장이다. 아래 표는 설정 파일이 아닌 데이터·상태 위치와 설정 파일 밖의 폴더다.
+설정 파일 네 개(`~/.config/devbox/config.toml`·`config.local.toml`, 프로젝트의 `.devbox/devbox.toml`, Windows 앱의 `settings.json`)의 위치·키·병합 규칙은 [설정 파일 안내](../../../config.md)를 따른다. 아래 표는 설정 파일이 아닌 데이터·상태 위치와 설정 파일 밖의 폴더다.
 
 | 위치 | 내용 | 공유 |
 |---|---|---|
@@ -537,40 +537,9 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 - 설정은 파일이 원장이다. 화면에서 바꾸면 해당 파일에 쓴다. DB에는 화면 상태처럼 파일로 둘 필요가 없는 것만 둔다.
 - 앱에서 작업을 만들면 "프로젝트 파일에 저장"(기본)과 "이 PC에만 저장" 중 고른다. 같은 ID가 둘 다에 있으면 프로젝트 파일이 우선하고, 화면에 출처를 표시한다.
 
-`.devbox/devbox.toml` 예:
+`.devbox/devbox.toml`의 키와 예시는 [설정 파일 안내의 `.devbox/devbox.toml`](../../../config.md#devboxdevboxtoml)를 따른다.
 
-```toml
-[[task]]
-id = "test"
-command = "pnpm test"
-
-[[task]]
-id = "win-build"
-target = "windows"
-command = "pnpm tauri build"     # windows_dir은 [windows] root 아래 owner/project/worktree 소유 namespace의 files (S6-1a.3)
-
-[[service]]
-id = "web"
-command = "pnpm dev --port $DEVBOX_PORT"
-restart = "on-failure"
-
-[[schedule]]
-id = "weekday-test"                 # 필수(S7-11 정정)
-task = "test"
-cron = "0 9 * * 1-5"
-missed = "skip"                   # 또는 "run-once"
-
-[agent]
-copy = [".env", ".env.local"]
-setup = ["pnpm install --frozen-lockfile"]
-teardown = []
-
-[launch]
-services = ["web"]
-terminals = [{ name = "shell" }]
-agents = [{ tool = "claude", worktree = false }]
-```
-
+Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.devbox-v1\`까지만 있다. 그 아래는 소유자 해시·프로젝트 id·`main` 또는 `worktree-<해시>`를 거쳐 `files` 폴더다(S6-1a.3, `crates/runtime/src/windows_copy.rs`).
 
 **저장소 명령 신뢰 확인(2026-10-13 S1 추가 승인)**
 

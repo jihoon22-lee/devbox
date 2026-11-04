@@ -132,6 +132,7 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
   - 고지 지문 밖의 입력 둘(생성기 코드 `xtask/src/notices*`, 글꼴 파일 자체): 바꾸면 `cargo run -p xtask -- notices`를 직접 돌린다.
   - 옛 README.md:153의 "성공 기준 SC2·SC6·SC10"(사용자 문서에 남은 내부 ID, Ruling 72)은 S8-2b가 개발 절을 옮겨 지금 [app/README.md](../../../../app/README.md) "Devbox 화면"에 있다. README·guide·config·SECURITY에는 SC ID가 없으니 닫을 후보다.
   - 옛 원장 절을 가리키는 코드 속 표시 두 곳(`app/src/features/tools/api/lib/storage.test.ts:439` 시험 이름의 "PROGRESS S5-3a·3b 후속", `crates/lsp/src/servers.rs:13` 주석의 "PROGRESS S4-3")은 1.0 뒤 첫 코드 PR에서 [docs/history.md](../../../history.md)를 가리키게 고친다. 제품 코드라 S8에서는 그대로 둔다.
+  - `crates/cli/src/daemon/summary.rs:4` 머리 주석(활동 합계 합류 예정)은 실제와 다르다 — 1.0 뒤 첫 코드 PR에서 고친다.
 - **성능·CI·릴리스**
   - SC2: 공개 전 반복 cold/warm 측정과 시작 경로 비용 분해 뒤 수정하거나 명시적 미달·다음 patch 계획을 정한다(S6-6b A2 raw만 있다).
   - SC7: Windows job 시간 분해와 ci-docs M4(musl release 시험이 모든 PR의 `linux-bin` → `Rust (Windows)` 임계 경로에 있다, 미계측). 필요하면 tag/dispatch에만 돌린다.

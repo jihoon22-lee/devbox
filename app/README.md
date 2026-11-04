@@ -26,13 +26,8 @@ CI의 `e2e-diagnostics` 산출물에서도 확인한다.
 다른 worktree의 검증이 진행 중이면 exit 75로 종료한다.
 자원 사용 근거는 Git common-dir의 `devbox-verification/latest.json`에 남는다.
 
-실제 앱 실행·설치 파일 빌드는 Windows에서 한다. PowerShell의 `scripts/win-dev.ps1`(dev 채널)·`scripts/win-build.ps1`(prod 채널)은
-WSL 바이너리를 빌드하고 소유한 Windows 작업 폴더에서 Tauri를 실행한다. 로컬 Windows 도구가 없으면
-push한 브랜치의 Windows CI 설치 파일을 `bash scripts/dogfood.sh [브랜치] [--channel accept]`로 받는다. 정확한 원격 커밋·실행·채널·파일 해시를 확인하고
-Windows Downloads 아래 새 폴더에 저장하며, 설치는 자동 실행하지 않는다.
-성공 기준 SC2·SC6·SC10 측정 절차는 [수용 계측 안내](acceptance/README.md)를 따른다.
-
-Windows에서 직접 확인할 설치 파일은 WSL에서 다음 명령으로 받는다. 원격에 push된 브랜치를 지정하며,
+실제 앱 실행·설치 파일 빌드는 Windows에서 한다. 로컬 Windows 도구가 없으면 push한 브랜치의 Windows CI 설치 파일을
+WSL에서 다음 명령으로 받아 Windows에서 직접 확인한다. 원격에 push된 브랜치를 지정하며,
 생략하면 현재 브랜치를 쓴다. 채널 기본값은 prod이고 수용용 설치본은 `--channel accept`로 받는다.
 
 ```bash
@@ -42,9 +37,11 @@ bash scripts/dogfood.sh <push한 브랜치> [--channel accept]
 GitHub CLI 인증이 필요하다. 그 브랜치의 정확한 원격 SHA에 대한 `windows.yml` 실행(PR·수동 실행, prod는 push 실행도)을 먼저 찾고,
 없으면 기본 브랜치에 워크플로가 있는지 확인한 뒤 수동 실행한다. accept 설치본은 PR·수동 실행에서만 만든다. 실패한 실행은 다운로드하지 않는다.
 실제 Windows Downloads 위치에 SHA·run ID·고유 접미사가 있는 새 폴더를 만들며 기존 자료는 보존한다.
-설치 파일의 SHA256과 `receipt.json`의 원본 SHA·run ID·저장소·워크플로·채널을 검사하고 경로를 출력한다.
+설치 파일의 SHA256과 `receipt.json`의 원본 SHA·run ID·저장소·워크플로·채널을 검사하고 경로를 출력한다. 설치는 자동 실행하지 않는다.
 Windows 쪽 Rust·MSVC·pnpm 없이 이 NSIS 설치 파일을 사용할 수 있다. public RC나 Release는 만들지 않는다.
 최종 변경의 필수 CI 성공 근거를 확인한 뒤 PR을 squash 머지한다. 실사용은 사용자가 원할 때 하며 개발·머지의 대기 조건이 아니다.
+
+성공 기준 SC2·SC6·SC10 측정 절차는 [수용 계측 안내](acceptance/README.md)를 따른다.
 
 Windows 개발 도구가 이미 준비된 환경에서는 WSL 저장소의 스크립트를 PowerShell에서 호출한다.
 Node 24·pnpm 9·Rust 1.98.1·MSVC 및 Windows SDK가 필요하며 스크립트가 전역 도구를 설치하지 않는다.

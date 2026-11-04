@@ -2,12 +2,11 @@
 
 Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·돌리고·지켜보고·기록하는 개인 개발 허브.
 
-- 상태: 현재 버전은 정식 1.0.0이다. 공개 상태와 설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)에서 확인한다. 릴리스 후보(`-rc.N`)는 prerelease로 올리고 앱 업데이트가 꺼져 있으므로, 후보에서 정식 버전으로 올릴 때는 설치 파일을 받아 직접 설치한다. 릴리스와 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
+- 상태: 정식 버전 단계다(첫 정식 버전은 1.0.0). 공개된 버전과 설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)에서 확인한다. 릴리스 후보(`-rc.N`)는 prerelease로 올리고 앱 업데이트가 꺼져 있으므로, 후보에서 정식 버전으로 올릴 때는 설치 파일을 받아 직접 설치한다. 릴리스와 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
 - 이전 소스: [v0.9.0 태그](https://github.com/jihoon22-lee/devbox/tree/v0.9.0). 공개 상태는 GitHub Release에서 확인한다.
 - 설계: [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md)
 - 진행 원장: [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)
-- 공통 규약: [CONVENTIONS](CONVENTIONS.md)
-- 설정 파일: [docs/config.md](docs/config.md) · 보안: [SECURITY.md](SECURITY.md)
+- 사용 안내: [docs/guide.md](docs/guide.md). 문서 전체는 아래 [문서](#문서)에 있다.
 - 라이선스: MIT([LICENSE](LICENSE)). 함께 배포하는 서드파티 소프트웨어의 고지는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다. 두 파일은 설치 폴더에도 들어간다.
 
 ## 요구 사항
