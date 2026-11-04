@@ -244,7 +244,8 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
         out.push_str(&format!("- {source}: {}\n", components.len()));
     }
     out.push_str(&format!(
-        "\n{total} distinct packages in total: a package that two sources share counts once. \
+        "\n{total} distinct packages in total: a package that two sources share counts once; a crate \
+         that the standard library links in is counted apart from the same crate in a lock file. \
          Packages that ship the same license text are listed together under one copy of it, and a \
          package with several license files, for example the license of code it vendors, is listed \
          under each.\n\n{}\n\n## License texts\n\n",
