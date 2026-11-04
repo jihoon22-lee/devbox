@@ -1,8 +1,10 @@
 # 0006 콘텐츠 파일 identity와 링크
 
-상태: 채택 · 0017에서 형태 조정(01-design §13)
+상태: 대체됨(0017)
 
 기록일: 2026-09-25
+
+대체 이유: v1은 이 결정의 Windows 파일 ID·reparse 규칙을 Linux 형태로 줄였다. 파일 쓰기·삭제는 등록한 프로젝트·vault·devbox 데이터 폴더 안에서 `realpath` 확인과 `O_NOFOLLOW`로 지킨다(01-design §12·§13).
 
 ## 맥락
 
