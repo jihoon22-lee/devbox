@@ -5,6 +5,7 @@ devbox의 진행 상태를 적는 **유일한 원장**이다. 계획 문서의 �
 ## 0. 읽는 법
 
 - 이 파일은 지금 상태만 적고 **200줄을 넘기지 않는다**(사용자 결정 4, S8-2). 줄이기 전 전문(S0–S8-0의 결정 표·과제 기록·계획 대비 편차·세션 기록)과 끝난 계획은 [docs/history.md](../../../history.md)의 고정 링크로 본다. 지난 결과·근거 경로·Ruling은 거기서 찾는다.
+- 구성: 0 읽는 법 · 1 현재 위치 · 2 열린 결정 · 3 1.0.0 공개 게이트 · 4 열린 후속 · 5 유효한 결정 · 6 근거 보관 · 7 최근 세션.
 - 이 파일은 PR과 함께 main에 들어간다. 작업 중인 브랜치가 있으면 **그 브랜치의 이 파일이 더 최신**이다(CONVENTIONS §11 세션 시작 2).
 - 판정은 PASS·FAIL·NOT_RUN이다. 실행하지 않은 확인은 PASS로 쓰지 않는다. 결과는 그 결과를 낸 source SHA의 것이다.
 - 날짜는 `YYYY-MM-DD`, 시각은 KST다. 근거 경로 `devbox-verification/…`은 이 PC에만 있다(§6).
@@ -13,9 +14,10 @@ devbox의 진행 상태를 적는 **유일한 원장**이다. 계획 문서의 �
 ## 1. 현재 위치
 
 - **2026-11-04 · S8(1.0.0) 작업 중.** 브랜치 `v1/s8-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s8-release`, 계획 [10-s7-s8-release](10-s7-s8-release.md#s8--100). 2026-11-03 origin/main `842fa82e`에서 만들었고 push·PR·태그 전이다.
-- 이 브랜치의 커밋: S8-1 `a6f75a68`(버전 `1.0.0`), S8-1b `eb08e39b`(Dependabot 경고 7건: zip 9.0.5·seroval 1.7.7, Ruling 99), S8-0 `cfa89f0a`(S7-14–S7-16 결과 기록), S8-2a `71b42eb4`(끝난 계획 보관과 [docs/history.md](../../../history.md))와 이 원장 재구성.
+- 이 브랜치의 커밋: S8-1 `a6f75a68`(버전 `1.0.0`), S8-1b `eb08e39b`(Dependabot 경고 7건: zip 9.0.5·seroval 1.7.7, Ruling 99), S8-0 `cfa89f0a`(S7-14–S7-16 결과 기록), S8-2 문서 통폐합 `71b42eb4`(끝난 계획 보관과 [docs/history.md](../../../history.md))·`6246d039`(이 원장 재구성)·`20465dd7`(사용 안내 `docs/guide.md`와 개발 문서 합치기)·`17586ea2`(ADR 상태)·이 커밋(빠진 규칙 복원과 1.0 이후 작업 모델 마무리). S8-2는 끝났다.
+- 이 브랜치는 `71b42eb4` 아래로 rebase·amend하지 않는다(docs/history.md가 그 SHA를 가리킨다). main을 받아야 하면 `git merge origin/main`을 쓴다(lock은 CONVENTIONS §8 "lock·생성 파일 병합").
 - S7(rc.2 보강)은 끝났다. PR #651을 2026-11-03 12:45 KST에 squash 머지했고(`842fa82e`, 검증한 head `400a737f`와 tree 동일) main CI가 SUCCESS다. main `842fa82e`의 주석 태그 `v1.0.0-rc.2`로 prerelease를 공개했다(release run `41604456654`, 17:57 KST, asset SHA-256 `c0545772…`). `releases/latest`는 `v0.9.0`이고 공식 `v1.0.0` 태그·Release는 없다.
-- 다음: S8-2b(guide·개발 문서 합치기·ADR 상태) → S8-3 검사·후보(`pnpm check` 한 번, 1.0.0 후보 accept 설치 스모크, 릴리스 노트 초안. Windows 행은 interop 고장과 Q1 때문에 S8-3에서 판정한다. CI에서 `linux-bin`의 `Compiling zip v9.0.5`와 `nix 0.31.3` 없음, clippy·`support_bundle` 15·고지 시험을 본다) → S8-4 PR·리뷰·머지(Dependabot PR #652는 닫는다) → S8-5 1.0.0 공개(**별도 명시 승인**, §3을 제시) → S8-6 공개 기록.
+- 다음: S8-3 검사·후보(`pnpm check` 한 번, 1.0.0 후보 accept 설치 스모크, 릴리스 노트 초안. Windows 행은 interop 고장과 Q1 때문에 S8-3에서 판정한다. CI에서 `linux-bin`의 `Compiling zip v9.0.5`와 `nix 0.31.3` 없음, clippy·`support_bundle` 15·고지 시험을 본다) → S8-4 PR·리뷰·머지(Dependabot PR #652는 닫는다) → S8-5 1.0.0 공개(**별도 명시 승인**, §3을 제시) → S8-6 공개 기록.
 - S7 worktree·브랜치·`/tmp` 근거는 정리했다. 공유 target `~/.cache/targets/devbox`는 2026-11-03에 151G → 107G다(`cargo sweep --time 3` 뒤 `debug/incremental/` 47G를 비움, CONVENTIONS §5).
 
 ## 2. 열린 결정
@@ -24,7 +26,7 @@ devbox의 진행 상태를 적는 **유일한 원장**이다. 계획 문서의 �
 
 - **① WSL→Windows interop 고장(W1):** `cmd.exe /c ver`가 `UtilAcceptVsock:273: accept4 failed 110`으로 실패한다(VM 전체, 2026-10-21 S2 설치 수용 때와 같은 증상). 마지막 확인은 2026-11-03 18:39 KST이고 WSL boot는 2026-10-22 22:54 그대로다. 사용자 지시(2026-11-02): WSL 재시작을 요청하지 않는다(Q0 철회). Windows 실기는 WSL이 스스로 다시 시작된 뒤에만 한다. 그래서 Windows 행이 NOT_RUN이고 I1은 공개 승인 때 미검증으로 알린다(§3). W1 자료가 나오면 Fix C의 "사용자 확인 뒤 남은 프로세스 끝내기"를 사용자가 정한다.
 - **② S7-14 Q1·Q2:** claude·codex의 폴더 신뢰 수락을 승인하지 않았다. 수락하면 `~/.claude.json`·`~/.codex/config.toml`에 항목이 남고 정리가 지우지 않는다. 두 도구의 turn·승인·재개 행이 NOT_RUN이다.
-- **③ S7-14 Q6:** opencode는 "This API key has expired…", pi는 모델 "Muse Spark 1.3 Free"의 "Model is unavailable"로 멈췄다(도구 자신의 인증·모델 오류). 에이전트 작업은 셸의 API 키 변수를 받지 않는다(README.md:44). 사용자가 본인 터미널에서 같은 프롬프트로 재현하는지 확인하기 전에는 원인을 단정하지 않는다(Ruling 87 보정).
+- **③ S7-14 Q6:** opencode는 "This API key has expired…", pi는 모델 "Muse Spark 1.3 Free"의 "Model is unavailable"로 멈췄다(도구 자신의 인증·모델 오류). 에이전트 작업은 셸의 API 키 변수를 받지 않는다([README "에이전트 도구"](../../../../README.md#에이전트-도구)). 사용자가 본인 터미널에서 같은 프롬프트로 재현하는지 확인하기 전에는 원인을 단정하지 않는다(Ruling 87 보정).
 - **S5 수용 3·6(2026-10-21, S5-9 수용에만 걸림):** 외부 서비스의 웹훅 수신(LAN 노출·포트 전달·방화벽)과 빠진 도구의 실제 설치(`sudo apt`·`npm -g`·`winget`). 기본안만 확인하고 실제 실행은 사용자 승인 뒤에만 한다(07b).
 - **다가오는 결정 · S8-5 `v1.0.0` 공개:** 그 시점의 별도 명시 승인 뒤에만 태그를 push하고 Release를 낸다. 2026-11-03의 rc.2 공개 승인과 S8 의존성 포함 승인은 공식 `v1.0.0` 승인이 아니다.
 
@@ -48,13 +50,13 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 | 12 방해 금지 알림 센터 기록·해제 뒤 popup/taskbar | NOT_RUN | 사용자 몫(5와 같다) |
 | 13 비내부 WSL 배포판 2개 이상 선택 화면 | NOT_RUN | S7-14 DS1을 interop 고장으로 실행하지 못했다. 배포판이 하나뿐이면 해당 없음(07c) |
 | I1 Windows 사본 reader가 고아 자손을 놓침 **[차단]** | NOT_RUN | 결함은 S6-6b G1(`19cff21e`)이 실제 Windows에서 CONFIRMED했다. S7-10이 고쳤다(`681a7b82`·`64d14394`·`68bb9e82`, S7-13 Fix C 보강). 실제 Windows 확인 W1은 S7-14 NOT_RUN(§2 ①). 결정 2: 확인하지 못하면 1.0.0 공개를 막는다. 공개 승인 때 미검증으로 알린다(Ruling 90). rc.2는 이 상태로 공개했다. 남은 위험: 같은 로그온 세션에서 holder만 강제 종료되고 bootstrap도 끝났는데 고아가 돌면 reader가 일찍 닫힌다 |
-| SC1 흔적 없는 전용 Windows 계정에서 setup → 첫 데이터 | NOT_RUN | 전용 계정·독립 환경이 없다(S6-6b `19cff21e-d2254acc` `acceptance.json` notRun). 기존 사용자 자료를 지워 흉내 내지 않는다 |
+| SC1 흔적 없는 전용 Windows 계정에서 setup → 첫 데이터, 사용자 행동은 배포판 확인 1번 이하 | NOT_RUN | 전용 계정·독립 환경이 없다(S6-6b `19cff21e-d2254acc` `acceptance.json` notRun). 기존 사용자 자료를 지워 흉내 내지 않는다 |
 | SC2 단축키 → palette ≤300 ms, cold → 첫 데이터 WSL running ≤3 s·stopped ≤10 s | FAIL(미달) | cold → 첫 데이터 raw 9036 ms(`19cff21e-85014e8e`)·6093 ms(`19cff21e-d2254acc`): 각 1표본, WSL running, 설치 뒤 첫 데몬 시작 포함, gated 측정 아님. 단축키 → palette(A3)·stopped·S7-14 R 재측정은 NOT_RUN |
-| SC3 실제 hook waiting/turn-end → 목록·Windows 알림 ≤2 s | NOT_RUN | 실제 hook 측정이 없다. S7-14 hook 행(H1–H4 턴 종료, P1)은 Q1·Q2·Q6로 NOT_RUN. H1X/H2X-TRUST PASS는 신뢰 화면 행(기준 7.0 s)이다. S1의 fixture·E2E 시간은 대신하지 않는다(07c §14) |
+| SC3 제목+도구+시작 1번으로 작업 준비·실행, 실제 hook waiting/turn-end → 목록·Windows 알림 ≤2 s | NOT_RUN | 실제 hook 측정이 없다. S7-14 hook 행(H1–H4 턴 종료, P1)은 Q1·Q2·Q6로 NOT_RUN. H1X/H2X-TRUST PASS는 신뢰 화면 행(기준 7.0 s)이다. S1의 fixture·E2E 시간은 대신하지 않는다(07c §14) |
 | SC4 창 닫기·데몬 재시작·업데이트 뒤 WSL 작업 유지 | NOT_RUN | S6-6b NOT_RUN(사유 `19cff21e-d2254acc` `acceptance.json` notRun). 그 뒤 SC4 측정 기록이 없다. 이전 source: S1 수용 "업데이트 뒤 세션 유지" PASS(`c28e4cab`) |
 | SC5 생성된 오류 코드 전수의 문구 = 원인 + 다음 행동(internal은 진단 ID) | NOT_RUN | S6-6b 설치 수용 범위 밖이라 실행하지 않았다. 알려진 빈 곳은 §4(`[agent] copy`, Fix D §6 화면, RunTab "undefined") |
 | SC6 UI 변경 → browser ≤2 s, 데몬 변경 → 재연결 ≤15 s | NOT_RUN | 계측만 있다(S6-4b `496b1c78`·`7d638599`). 실측은 S6-6b 범위 밖이었다 |
-| SC7 PR CI ≤15분, 로컬 전체 ≤10분, release ≤40분, `.github`+`scripts` ≤2,000줄·workflow ≤3 | FAIL(미달) | PR CI의 Rust (Windows) job이 #648 27m24s·#649 17m47s·#651 첫 head `40d97a83` 34m57s로 15분을 넘었다. #651 최종 head `400a737f` 14m50s·main `842fa82e` 21m57s(job별 raw, 판정 아님). 로컬 전체·release ≤40분은 판정하지 않았다(S7-13 `pnpm check` 1,508.6 s, rc.2 release run `41604456654` job별 11s·13m30s·7m21s·14s). 1,982/2,000줄·workflow 2는 한도 안 |
+| SC7 PR CI ≤15분, 로컬 전체 ≤10분, release ≤40분, `.github`+`scripts` ≤2,000줄·workflow ≤3 | FAIL(미달) | PR CI의 Rust (Windows) job이 #648 27m24s·#649 17m47s·#651 첫 head `40d97a83` 34m57s로 15분을 넘었다. #651 최종 head `400a737f` 14m50s·main `842fa82e` 21m57s(job별 raw, 판정 아님). Rust (Windows)는 linux-bin 뒤에 시작하므로(최종 head linux-bin 11m05s) 최종 head의 windows run은 약 26분이다. 로컬 전체·release ≤40분은 판정하지 않았다(S7-13 `pnpm check` 1,508.6 s는 10분의 2.5배, 판정 아님. rc.2 release run `41604456654` job별 11s·13m30s·7m21s·14s). 1,982/2,000줄·workflow 2는 한도 안 |
 | SC8 제품 코드 ≤20만 줄(`bash scripts/loc.sh 200000`, 관찰 트리거) | NOT_RUN | S6-6b 설치 수용 범위 밖이라 재지 않았다. 이전 기록: S2 #642 2회차 규모 52,258줄 |
 | SC9 작업 없는 데몬 RSS ≤60 MB·CPU ≤0.5% | NOT_RUN | S6-6b: idle 데몬 표본이 harness 밖. 이전 source: S2 Task16 PASS(CPU 0.233331%, peak RSS 39,899,136 B, 61표본 60 s) |
 | SC10 bridge → daemon → PTY → tmux echo p50 ≤10 ms·p95 ≤25 ms, 100 MB 출력 중 ping p95 ≤100 ms, 종료 뒤 입력 ≤1 s | NOT_RUN | S6-6b: terminal probe build를 옮기지 않았다. 이전 source: S1 설치본 수용 PASS(100 MB 출력 5.2 s, 1 byte 왕복 p95 2.5 ms, `c28e4cab`) |
@@ -69,7 +71,7 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 
 ## 4. 열린 후속
 
-리뷰 상한 뒤 지적과 과제가 미룬 항목 가운데 고치지 않고 남긴 것이다. **[차단]**이 없으면 1.0.0을 막지 않는다. 출처·근거 경로·검토 판정은 이전 전문 §8([docs/history.md](../../../history.md))에 있고 ID로 찾는다. 닫으면 여기서 지우고 PR 본문에 근거를 적는다.
+리뷰 상한 뒤 지적과 과제가 미룬 항목 가운데 고치지 않고 남긴 것이다. **[차단]**이 없으면 1.0.0을 막지 않는다. 출처·근거 경로·검토 판정은 이전 전문 §8([docs/history.md](../../../history.md))에 있고 ID로 찾는다. S1–S6 과제 기록(이전 전문 §5)의 "후속(비차단)" 메모는 옮기지 않았으니 같은 곳에서 찾는다. 닫으면 여기서 지우고 PR 본문에 근거를 적는다.
 
 - **에이전트·하네스**
   - Codex 보내기(S7-5): tmux·pane 캡처 실패가 다음 행동 없는 internal 오류로 끝난다.
@@ -85,8 +87,8 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
   - 재개: session id가 없는 Claude·Codex·opencode 작업은 원래 지시로 새로 시작한다(S1부터). 최종 검토에서 다시 본다.
   - 브랜치: 이름이 정확히 `agent`인 브랜치가 있으면 모든 `agent/…`가 막힌다(준비 단계 실패, 손실 없음) · 기본값과 같은 입력을 '고침'으로 보는 것을 고정하는 시험 없음 · 칸을 비웠을 때 설명 없음.
   - 준비: `[agent] copy` 실패가 다음 행동 없는 internal 오류로 끝난다(S7-11, SC5).
-  - 환경(S7-14): 셸에만 있는 API 키는 에이전트 작업에 넘어가지 않는다(설계, README.md:44, `crates/cli/src/setup.rs` `ALLOWED`). 후속: 환경 점검이 셸에만 있는 `*_API_KEY` 이름을 알리고 각 CLI 로그인을 안내한다(값은 다루지 않는다).
-  - 경로 찾기(S7-15 M-1): 조회 셸 `bash -lic`가 `~/.profile`·`/etc/profile.d`를 조회마다 실행해 로그인 파일이 띄우는 데몬(예: `ssh-agent`)이 조회마다 남을 수 있다(이 PC 미확인). 후속: README "도구 경로 찾기" 옆에 문서화한다(rc.2 릴리스 본문에는 적었다).
+  - 환경(S7-14): 셸에만 있는 API 키는 에이전트 작업에 넘어가지 않는다(설계, [README "에이전트 도구"](../../../../README.md#에이전트-도구), `crates/cli/src/setup.rs` `ALLOWED`). 후속: 환경 점검이 셸에만 있는 `*_API_KEY` 이름을 알리고 각 CLI 로그인을 안내한다(값은 다루지 않는다).
+  - 경로 찾기(S7-15 M-1): 조회 셸 `bash -lic`가 `~/.profile`·`/etc/profile.d`를 조회마다 실행해 로그인 파일이 띄우는 데몬(예: `ssh-agent`)이 조회마다 남을 수 있다(이 PC 미확인). 후속: [README "도구 경로 찾기"](../../../../README.md#도구-경로-찾기) 옆에 문서화한다(rc.2 릴리스 본문에는 적었다).
 - **폐기·정리(O5, Fix D)**
   - **버리기는 작업 폴더 자신의 하위 모듈 사본(`.git/worktrees/<이름>/modules`)에만 있는, push하지 않은 커밋을 지운다.** Fix D 3차의 확인 창 경고는 막지 않는다. 후보: `has_submodules`로 버리기를 거절한다.
   - (기존) git이 숨기는 변경(assume-unchanged·skip-worktree)만 있는 작업 폴더는 그 변경째 지워진다(Fix D 2차).
@@ -105,7 +107,7 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
   - S6-6b native M1–M8: Unknown attempt가 세션 내내 설치 차단 · `update_install_*`에 `main_only` 없음 · 30초 timer가 `Cancelled` · 남은 취소 stage를 `InstallFailed`로 분류 · `disarm` 무한 대기 · `Prepared::commit` 재해시가 UI thread·락 안 · 다운로드 300초 고정 · 소문자 "devbox" 창 제목.
   - `19cff21e` 검토 minor: 순서 assert가 문자열 일치뿐 · 사용자 명령이 exit 259로 끝나면 identityMismatch가 이어지는 모호함.
   - 수용 harness: A6은 uninstall 등록 key 제거를 bounded 대기한 뒤 판정 · A5는 vault 경로가 bundle 입력에 닿는 fixture와 검토된 UI helper 뒤 실행 · A3는 단축키 등록 증명 helper를 검토받은 뒤에만 실행.
-  - 수용 보고: 사용자의 v0.6 `wsl-desktop.exe`가 `%LOCALAPPDATA%\Devbox\integration\**`에 계속 쓴다. v0.x 제거 전까지 "v1 prod unchanged; legacy v0.x external writer changed N file"로 보고한다.
+  - 수용 보고: 사용자의 v0.6 `wsl-desktop.exe`가 `%LOCALAPPDATA%\Devbox\integration\**`에 계속 쓴다. v0.x 제거 전까지 "v1 prod unchanged; legacy v0.x external writer changed N file"로 보고한다. 그 밖의 prod 차이는 FAIL이다.
 - **앱·설정**
   - setup이 파일을 쓴 뒤 재시작 전에 끊기면 다음 자동 시작이 재시작을 생략한다([다시 설정]으로 복구).
   - `api.redaction_failed`(matcher)의 다음 행동이 약함 · 새 설치에서 [나중에]가 `autostart:true`를 기록(무해) · `redactKnownTokenPatterns`의 `sk_`·`sk-`에 왼쪽 경계 없음(데몬과 함께 고친다) · 노트가 꺼진 동안 search.notes 색인이 낡음 · `SupportBundle`의 `notes_disabled`에 다음 행동 없음.
@@ -128,7 +130,8 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
   - **[1.0.0 전에 판단]** 내장 `D2Coding.woff2`가 NAVER 공식 배포본인지 변환본인지 확인한 사람이 없다(OFL Reserved Font Name). 출처를 찾고, 변환본이면 이름을 바꾸거나 배포본에서 직접 만든 woff2로 바꾼다.
   - 고지에 라이선스 파일이 없는 패키지 21개(`@tauri-apps/plugin-opener`는 `LICENSE.spdx`만) · `COPYRIGHT`·`UNLICENSE`·`LICENSES/`는 이름 규칙 밖이라 읽지 않는다.
   - 고지 지문 밖의 입력 둘(생성기 코드 `xtask/src/notices*`, 글꼴 파일 자체): 바꾸면 `cargo run -p xtask -- notices`를 직접 돌린다.
-  - README.md:153의 "성공 기준 SC2·SC6·SC10"은 사용자 문서에 남은 내부 ID다(Ruling 72, S8-2b).
+  - 옛 README.md:153의 "성공 기준 SC2·SC6·SC10"(사용자 문서에 남은 내부 ID, Ruling 72)은 S8-2b가 개발 절을 옮겨 지금 [app/README.md](../../../../app/README.md) "Devbox 화면"에 있다. README·guide·config·SECURITY에는 SC ID가 없으니 닫을 후보다.
+  - 옛 원장 절을 가리키는 코드 속 표시 두 곳(`app/src/features/tools/api/lib/storage.test.ts:439` 시험 이름의 "PROGRESS S5-3a·3b 후속", `crates/lsp/src/servers.rs:13` 주석의 "PROGRESS S4-3")은 1.0 뒤 첫 코드 PR에서 [docs/history.md](../../../history.md)를 가리키게 고친다. 제품 코드라 S8에서는 그대로 둔다.
 - **성능·CI·릴리스**
   - SC2: 공개 전 반복 cold/warm 측정과 시작 경로 비용 분해 뒤 수정하거나 명시적 미달·다음 patch 계획을 정한다(S6-6b A2 raw만 있다).
   - SC7: Windows job 시간 분해와 ci-docs M4(musl release 시험이 모든 PR의 `linux-bin` → `Rust (Windows)` 임계 경로에 있다, 미계측). 필요하면 tag/dispatch에만 돌린다.
@@ -144,10 +147,11 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
   - W1 추가: 빌드 서버가 사본을 붙잡는 시간과 문구, `#[ignore]` bootstrap 시험, busy 없는 정지·수정·재시작, 콘솔 창 없음, cold 시작 35초, 느린 holder 뒤 업데이트 설치(W1 (다)는 Q4 미승인). readiness의 direct/native 동등성(S6-4a `313a6095`).
   - 연결·설정: STOP한 데몬에서 앱 안 회복, 강제·빠른 재시작의 MainPID, [나중에], [자세히], `settings.json` 깨짐, 느린 정상 시작의 [다시 시도]. O1a·O1b: Windows 실제 재시작·연결 유지. O6b: `mark_autostart_asked`.
   - 정리·버리기: 실제 정리 명령, 스쿼시로 닫은 작업의 실패한 정리, 하위 모듈 작업 폴더(CL3 부분, CL4–CL6).
-  - Windows 절반: CS3·C1·M4(WSL 절반은 통과), N1 accept 설치 폴더의 고지 파일, S6 묶음 G1·G2·A1·A2·A4·A6 재실행.
+  - Windows 절반: CS3·C1·M4(WSL 절반은 통과), CS5(부분 a 통과, hook 절반은 Q1), N1 accept 설치 폴더의 고지 파일, S6 묶음 G1·G2·A1·A2·A4·A6 재실행.
   - S7-11 문서의 확인 대기 자리: 서명 없는 설치 파일의 Windows 경고(SmartScreen), 앱 제거 뒤 남는 항목(NSIS 제조사 key 포함, 대화형 제거 미확인), MCP 등록 명령의 설치본 재확인.
+  - S8-1b(zip 9.0.5): 설치본에서 지원 번들을 쓰는 것을 포함한 Windows 실행은 NOT_RUN이다(이전 전문 §5 "Dependabot 보안 경고 7건과 S8 의존성 갱신").
 - **운영**
-  - 2026-10-22 WSL 재시작 뒤 `user@1000.service` 실패로 메모리 cgroup이 걸리지 않았다(`memory_enforced:false`). 그 뒤 검증은 자식 환경에만 `XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 줘 `memory_enforced=true`를 확인하고 돈다(호스트 서비스는 바꾸지 않는다). 걸리지 않으면 실행 결과에 미적용을 적는다.
+  - 2026-10-22 WSL 재시작 뒤 `user@1000.service` 실패로 메모리 cgroup이 걸리지 않았다(`memory_enforced:false`). 그 뒤 검증은 자식 환경에만 `XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 줘 `memory_enforced=true`를 확인하고 돈다(호스트 서비스는 바꾸지 않는다). 걸리지 않으면 available 메모리가 2 GiB 아래일 때 무거운 빌드를 멈추고 실행 결과에 미적용을 적는다([CONVENTIONS §5](../../../../CONVENTIONS.md#5-검증), 사용자 결정 2026-10-22).
 
 ## 5. 유효한 결정
 

@@ -31,6 +31,7 @@ tracing 로그·TanStack 등 v1 설계가 승인한 스택은 해당 단계에�
 
 로컬 검증은 Cargo jobs 2·Vitest workers 2·Rust test threads 2, CPU 4개·nice +10으로 제한한다.
 사용 가능한 cgroup에서 memory high 6GiB/max 8GiB·swap max 1GiB를 적용한다.
+cgroup이 걸리지 않으면 available 메모리가 2 GiB 아래일 때 무거운 빌드를 멈추고, 실행 결과에 미적용을 적는다(사용자 결정 2026-10-22).
 무거운 검증은 `python3 scripts/verify-resources.py [--wait] [--lock <이름>] -- <명령>`으로 실행한다.
 Git common-dir의 공유 잠금을 비차단으로 획득하고 경합 시 exit 75로 종료한다. 무거운 검증은 worktree 전체에서 하나만 실행한다. 여러 작업을 동시에 진행할 때의 전체 검사·E2E는 `--wait`(최대 60분)를 쓴다. 기한 초과 exit 75는 검사 대기 초과로 보고하고 재시도한다. 작업별 좁은 검사는 잠금 없이 위 자원 제한을 지킨다.
 
@@ -47,7 +48,7 @@ Docker 설치/시작/중지/container/network 조작이나 iptables/nftables·�
 미실행 실기·수동 유보는 PASS와 구분한다.
 
 Windows 수용(사용자 결정 2026-10-13·2026-10-14):
-- PR마다 PR 전에 에이전트가 WSL에서 PowerShell을 절대 경로(`/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`)로 불러 CI 설치본을 설치·실행·제거한다. 최종 소스 SHA의 `windows.yml` 산출물만 쓴다: `bash scripts/dogfood.sh <브랜치> --channel accept`가 저장소·workflow·run·source SHA·SHA256을 확인한다(절차와 안전 경계는 01 §11).
+- PR 전체 변경을 `scripts/ci-scope.sh`가 `code=true`로 판정하는 PR마다 PR 전에 에이전트가 WSL에서 PowerShell을 절대 경로(`/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`)로 불러 CI 설치본을 설치·실행·제거한다. 최종 소스 SHA의 `windows.yml` 산출물만 쓴다: `bash scripts/dogfood.sh <브랜치> --channel accept`가 저장소·workflow·run·source SHA·SHA256을 확인한다(절차와 안전 경계는 01 §11). 문서만 바꿔 `code=false`인 PR은 설치본이 생기지 않으므로 수용을 건너뛴다(#641·#643·#647·#650 선례). 그 PR 본문에는 "Windows 수용: NOT_RUN(문서 전용)"으로 적고 PASS로 쓰지 않는다.
 - 설치본은 prod와 겹치지 않는 `accept` 채널(별도 identifier·설치 폴더·앱 데이터·프로토콜·자동 시작 이름, WSL `devbox@accept` 인스턴스와 채널 전용 바이너리·unit 템플릿)만 쓴다. prod 설치본과 `devbox@prod`는 사용자의 실사용 자원이라 수용 검증이 바꾸지 않으며(불변 확인용 읽기 전용 해시·상태 비교만 한다), 있다고 멈추지 않는다. `accept` 채널 자원이 소유 표식 없이 이미 있을 때만 멈춰 묻는다.
 - 수용은 한 번에 하나만 한다(Windows 데스크톱·UI 자동화·`accept` 채널이 하나라서). 설치→검증→제거·소유 자원 정리 전체 동안 `windows-acceptance` 잠금(`scripts/verify-resources.py --wait --lock windows-acceptance`)을 잡는다.
 - 이번 수용이 만든 설치 경로·데이터·WSL unit·소켓만 제거한다. v0.9.0(`com.devbox.*`, DevboxSuite)과 기존 devbox 데이터는 보존한다. UAC·재부팅·사용자 클릭이 필요하면 멈추고 보고한다.
@@ -56,14 +57,19 @@ Windows 수용(사용자 결정 2026-10-13·2026-10-14):
 ## 8. Git
 
 시작 시 status/worktree·원격 작업 인증 상태를 확인한다. 원본 main의 사용자 커밋은 보존한다.
-작업 하나 = 브랜치 하나 = PR 하나다. 브랜치는 `feat/<이름>`·`fix/<이름>`·`docs/<이름>`·`release/<이름>` 가운데 하나이고 전용 worktree 하나(`../devbox-wt/<브랜치 이름의 /를 -로>`, 원본 체크아웃 `/home/jihoon/projects/devbox` 기준)를 쓰며 `origin/main`에서 만든다. 예: `fix/<이름>` → `/home/jihoon/projects/devbox-wt/fix-<이름>`. 1.0.0 전(S0–S8)은 하위 프로젝트마다 `v1/<s>-<name>`을 썼고 S8(`v1/s8-release`)은 계획 10대로 그 방식으로 끝낸다.
+작업 하나 = 브랜치 하나 = PR 하나다. 브랜치는 `feat/<이름>`·`fix/<이름>`·`docs/<이름>`·`release/<이름>` 가운데 하나이고 전용 worktree 하나(`../devbox-wt/<브랜치 이름의 /를 -로>`, 원본 체크아웃 `/home/jihoon/projects/devbox` 기준)를 쓰며 `origin/main`에서 만든다. 예: `fix/<이름>` → `/home/jihoon/projects/devbox-wt/fix-<이름>`. 1.0.0 전(S0–S7)은 하위 프로젝트마다 `v1/<s>-<name>`을 썼다. 1.0.0 공개(S8)까지는 진행 중인 `v1/s8-release`와 [계획 10](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md)으로 끝내고, 그 뒤 작업부터 이 모델을 따른다.
 그 작업의 모든 과제와 하위 에이전트는 이 브랜치·worktree에서 차례로 일한다. 원본 체크아웃은 `main`으로 두고 직접 작업하지 않는다(다른 세션이 동시에 일할 수 있다). 오타·계획 문서 같은 사소한 수정은 진행 중인 브랜치에 함께 넣고 따로 PR을 만들지 않는다.
 영어 Conventional Commits로 과제마다 커밋하며 작성자는 noreply 주소를 쓴다: `git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply.github.com commit`(GitHub 이메일 비공개 설정 때문이며 저장소 설정은 바꾸지 않는다).
 작업 중간에는 push하지 않고 상세 최종 검증 뒤 push·PR을 한 번 한다. CI·리뷰 수정 뒤 필요한 push와 Windows 산출물을 만들기 위한 백업 push·workflow 실행만 예외다. 백업으로 push한 브랜치도 그 작업의 마무리 과제 전에는 PR을 열지 않는다(리뷰 회차는 PR을 연 뒤의 push마다 센다). 하네스가 push 뒤 PR 생성을 기본으로 안내해도 이 규칙이 우선한다.
 main은 squash만 사용한다. PR 최종 변경의 `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` CI 성공이 필수다.
-작업의 마지막 과제가 끝나면 브랜치 전체 검토·최종 로컬 검사·Biome CI 뒤 최종 소스 SHA를 push한다. `windows.yml`을 그 SHA의 브랜치에서 수동 실행해 검증된 설치본으로 스모크(§5 Windows 수용)를 수행한 뒤 PR을 한 번 연다.
+작업의 마지막 과제가 끝나면 브랜치 전체 검토·최종 로컬 검사·Biome CI 뒤 최종 소스 SHA를 push한다. `windows.yml`을 그 SHA의 브랜치에서 수동 실행해 검증된 설치본으로 스모크(§5 Windows 수용)를 수행한 뒤 PR을 한 번 연다. 문서 전용 PR(`code=false`)은 수동 실행·스모크 없이 연다(§5 Windows 수용).
 브랜치 전체 검토는 PR 전에 별도로 수행하고 결과를 PROGRESS에 남긴다. 과제별 검토로 대신하지 않으며, 기록이 없으면 수행하지 않은 것으로 본다.
 최종 SHA 원칙: 실패 수정으로 SHA가 바뀌면 새 SHA 산출물로 필요한 스모크를 다시 수행한다. 문서만 바뀌어도 이 원칙을 유지한다. 최종 스모크 결과는 PR 본문과 PROGRESS 작업 사본에 기록하고, 결과 기록만 담은 PROGRESS 변경은 다음 작업 브랜치의 문서 커밋으로 인계하여 검증한 소스 SHA를 바꾸지 않는다. 검증 뒤 현재 브랜치에 추가 커밋을 만들면 그 SHA의 설치본을 다시 확인한다.
+
+lock·생성 파일 병합(00 §3.3·§3.6에서 옮김):
+- clone마다 한 번 `git config merge.lockfile.driver true && git config rerere.enabled true`를 한다. `.gitattributes`가 `Cargo.lock`(루트와 `app/src-tauri`)·`pnpm-lock.yaml`·`app/src/rpc/gen/rpc.ts`를 `merge=lockfile`로 둔다. `rerere`는 반복 충돌 해결에 활용한다.
+- 이 파일들은 손으로 합치지 않는다. 양쪽이 모두 바꾼 파일은 병합 드라이버가 현재 쪽 판을 남긴다: rebase에서는 main 쪽 판이고, 브랜치에서 `git merge origin/main`을 하면 브랜치 판이다. merge라면 main 판을 받는다(`git checkout origin/main -- <파일>`).
+- 그 뒤 다시 만든다: `rpc.ts`는 `pnpm gen`, Cargo lock은 `cargo metadata --format-version 1 >/dev/null`(빠진 의존성만 더함, 앱 lock은 `--manifest-path app/src-tauri/Cargo.toml`), `pnpm-lock.yaml`은 `pnpm install`. 재생성은 lock만 바꾼 갱신(전이 의존성의 보안 갱신 등)을 되살리지 않으므로 브랜치의 그런 갱신은 다시 적용한다. CI가 `--locked`·`--frozen-lockfile`로 확인한다.
 
 PR 리뷰(사용자 결정 2026-10-27):
 - 판정: PR을 연 뒤 10분 안에 `chatgpt-codex-connector[bot]`이 `codex-pull-request-review-summary` 댓글을 남기고, 그것이 사용량 한도 안내가 아니면 "자동 리뷰 켜짐"이다. 아니면 "꺼짐"이다. (#638–#645의 첫 반응은 PR 생성 0.1–0.3분 뒤, #646 이후는 반응 없음.)

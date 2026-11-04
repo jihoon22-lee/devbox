@@ -1,6 +1,6 @@
 # Devbox v1 설계 (설계 원장)
 
-- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md)) · S0b–S6 머지, `v1.0.0-rc.1` prerelease 공개 · S7(rc.2 보강) 진행 중이며 구현과 달라진 설명은 S7-11(2026-10-29)에서 정정 · 진행 상태의 원장은 [PROGRESS](PROGRESS.md)
+- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md)) · S0b–S7 머지, `v1.0.0-rc.1`·`v1.0.0-rc.2` prerelease 공개 · S8(1.0.0 공개) 진행 중 · 구현과 달라진 설명은 S7-11(2026-10-29)에서 정정 · 진행 상태의 원장은 [PROGRESS](PROGRESS.md)
 - 작성: 2026-10-07 · 기준 원격 `main@72ff50c7`(v0.9.0 공개본). 이 PC의 로컬 main은 그 위에 원격에 없는 커밋 2개(끝난 계획 정리·의존성 보안 업데이트)가 더 있다
 - 입력:
   - 본질 기준 전면 리뷰(2026-10-07). 결론은 이 문서 §0·§2·§3에 흡수했고, 원본 보고서(`~/projects/devbox-review-2026-10-07/`)는 2026-10-08에 지웠다.
@@ -418,7 +418,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
   - `secrets_locked`, `secrets.key_mismatch`
   - 클라이언트 전용 `connection_lost`(결과 불명)
 - **커밋 뒤 부분 실패:** Err로 돌려주지 않는다. `Ok({ value, warnings: Warning[] })`로 돌려준다(예: 저장은 됐고 색인은 미뤄짐).
-- **잘린 결과:** 상한에 걸려 잘렸으면 `truncated: { reason }`을 붙인다(ADR 0005 유지).
+- **잘린 결과:** 상한에 걸려 잘렸으면 결과의 bool 표시(`truncated`, 부분별로는 `bodyTruncated`·`historyTruncated`·`previewTruncated`·`tokensTruncated`)를 `true`로 둔다. 잘린 이유는 싣지 않는다(ADR 0005 유지).
 - **멱등성:** 생성형 mutation(`agents.create`, `runtime.start` 등)은 `clientRequestId`로 멱등 처리한다. 데몬은 10분간 결과를 기억한다. 재시작 뒤에는 기억이 없으므로 화면은 "결과 확인 필요" 후 상태를 다시 읽는다.
 - **문구:** `app/src/rpc/messages.ts`는 `{ [C in RpcErrorCode]: Message | ((detail) => Message) }` 객체 리터럴이다. 빠진 키와 남는 키가 모두 컴파일 오류가 된다.
 
@@ -1036,9 +1036,9 @@ CV·AR이 확정한 v0.9.0 결함을 새 구조에서 어떻게 막는지 적는
 ## 13. 기존 ADR 처리
 
 - 새 ADR은 **0017 "재구축: 단일 앱 + WSL 데몬"** 하나다. 이 설계(01-design)를 원장으로 가리킨다.
-- 옛 ADR은 상태 줄만 갱신한다.
-  - 대체됨(0017): 0001, 0002, 0003, 0004, 0007, 0009, 0010, 0011, 0012, 0014, 0015
-  - 유지: 0005, 0006(Linux 형태로 축소), 0008(DPAPI 키 형태로 변경), 0013(모든 이전 데이터로 확대), 0016
+- 옛 ADR은 상태 줄만 갱신한다(형태가 바뀐 0006·0008·0013은 대체 이유 한 줄을 더했다).
+  - 대체됨(0017): 0001, 0002, 0003, 0004, 0006(Linux 형태로 축소), 0007, 0008(DPAPI 키 형태로 변경), 0009, 0010, 0011, 0012, 0013(모든 이전 데이터로 확대), 0014, 0015. 0006·0008·0013은 v1에서 형태가 바뀌어 대체로 본다(계획 10 S8-2 ADR).
+  - 채택 · 0017에서 형태 조정: 0005, 0016. v1 형태는 ADR 0017 결과에 적었다.
 
 ## 14. 위험과 대응
 

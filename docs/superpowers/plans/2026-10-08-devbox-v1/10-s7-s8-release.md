@@ -1117,9 +1117,9 @@ S7 머지와 rc.2 공개 뒤, `v1/s8-release`를 origin/main에서 만든다. �
 
 ### S8-1 버전 `1.0.0` (B5)
 
-- [ ] S7-13 2단계와 같은 방식으로 한다.
-- [ ] 시험 `update::service::stable_version_enables_updates`: `1.0.0`이고 prod면 업데이트가 켜진다(`app/src-tauri/src/core/update/service.rs:57` 경로). 같은 뜻의 시험이 이미 있으면 그것을 확인만 한다.
-- [ ] 커밋: `chore(release): set version to 1.0.0`.
+- [x] S7-13 2단계와 같은 방식으로 한다.
+- [x] 시험 `update::service::stable_version_enables_updates`: `1.0.0`이고 prod면 업데이트가 켜진다(`app/src-tauri/src/core/update/service.rs:57` 경로). 같은 뜻의 시험이 이미 있으면 그것을 확인만 한다.
+- [x] 커밋: `chore(release): set version to 1.0.0`.
 
 ### S8-2 문서 통폐합 (결정 4)
 
@@ -1193,7 +1193,7 @@ S7-15와 같다.
   3. asset SHA-256을 확인한다.
   4. `gh api repos/jihoon22-lee/devbox/releases/latest`가 `v1.0.0`인지 확인한다.
 - [ ] 3. 사용자가 prod rc.2 위에 1.0.0을 직접 설치한다.
-  - 설정 → 정보 → 앱 업데이트 [새 버전 확인]이 "최신 버전"을 보이는지 확인한다. stable 경로의 첫 실제 실행이다(§8 ci-docs M2).
+  - 설정 → 정보 → 앱 업데이트 [새 버전 확인]이 "최신 버전"을 보이는지 확인한다. stable 경로의 첫 실제 실행이다(PROGRESS §4 ci-docs M2).
   - 공개 버전 사이의 실제 업데이트는 다음 patch 때까지 NOT_RUN이다.
 
 ### S8-6 공개 기록
