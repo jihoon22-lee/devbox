@@ -2,7 +2,7 @@
 
 Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·돌리고·지켜보고·기록하는 개인 개발 허브.
 
-- 상태: 정식 1.0.0 준비 중이다. 릴리스 후보는 `v1.0.0-rc.2`이고 GitHub Release에 prerelease로 올린다. 릴리스 후보에서는 앱 업데이트가 꺼져 있으므로 다음 버전은 설치 파일을 받아 직접 설치한다. 정식 `v1.0.0` 릴리스와 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
+- 상태: 현재 버전은 정식 1.0.0이다. 공개 상태와 설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)에서 확인한다. 릴리스 후보(`-rc.N`)는 prerelease로 올리고 앱 업데이트가 꺼져 있으므로, 후보에서 정식 버전으로 올릴 때는 설치 파일을 받아 직접 설치한다. 릴리스와 태그는 사용자의 별도 명시 승인 뒤에만 만든다. 실제 Windows 설치본 수용·성공 기준 측정을 포함한 검증 결과는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)을 따른다.
 - 이전 소스: [v0.9.0 태그](https://github.com/jihoon22-lee/devbox/tree/v0.9.0). 공개 상태는 GitHub Release에서 확인한다.
 - 설계: [01-design](docs/superpowers/plans/2026-10-08-devbox-v1/01-design.md)
 - 진행 원장: [PROGRESS](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)
@@ -132,24 +132,16 @@ v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동
 - 진단 ID: 예상하지 못한 오류 화면의 [진단 복사]로 `devbox 진단 ID: …`를 복사한다. 같은 ID가 데몬 로그에 남는다.
 - 지원 번들: 앱 진단의 [지원 번들]이 최근 7일 데몬 로그·crash 로그·점검 결과를 로컬 ZIP(`~/.local/share/devbox/prod/support/`)으로 만든다. 알려진 비밀과 홈·노트 경로를 가리고 자동으로 전송하지 않는다. 비밀 저장소가 잠겨 있으면 로그를 넣지 않는다.
 
+## 문서
+
+- [사용 안내](docs/guide.md): 화면별 흐름, 단축키, 명령줄.
+- [설정 파일 안내](docs/config.md): 설정 파일 네 개의 위치와 키.
+- [SECURITY](SECURITY.md): 보안 범위와 취약점 신고.
+- [끝난 계획과 이전 기록](docs/history.md): 줄이기 전 진행 원장, v1 계획 문서, v0.9 기록.
+- [CONVENTIONS](CONVENTIONS.md): 개발 규약.
+
 ## 개발
 
 WSL에서 Node 24·pnpm 9·Rust 1.98.1을 사용한다.
-
-```bash
-source ~/.cargo/env
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-화면은 `http://localhost:1450`에서 연다. `pnpm dev`는 기존 dev 데몬에 연결하거나 이번 실행 소유 데몬을 시작한다.
-`pnpm gen`은 RPC 타입을 생성한다. 전체 검사는 모든 변경을 마친 뒤 `pnpm check`로 한 번 실행하며,
-E2E 브라우저는 `pnpm --filter app exec playwright install chromium`으로 준비한다.
-
-실제 앱 실행·설치 파일 빌드는 Windows에서 한다. PowerShell의 `scripts/win-dev.ps1`(dev 채널)·`scripts/win-build.ps1`(prod 채널)은
-WSL 바이너리를 빌드하고 소유한 Windows 작업 폴더에서 Tauri를 실행한다. 로컬 Windows 도구가 없으면
-push한 브랜치의 Windows CI 설치 파일을 `bash scripts/dogfood.sh [브랜치] [--channel accept]`로 받는다. 정확한 원격 커밋·실행·채널·파일 해시를 확인하고
-Windows Downloads 아래 새 폴더에 저장하며, 설치는 자동 실행하지 않는다.
-성공 기준 SC2·SC6·SC10 측정 절차는 [수용 계측 안내](app/acceptance/README.md)를 따른다.
-
+저장소 루트에서 `pnpm dev`를 실행하고 `http://localhost:1450`에서 화면을 연다.
 필수 도구·상세 명령·검증 범위는 [앱 개발 안내](app/README.md)를 따른다.

@@ -1,9 +1,19 @@
 # Devbox 화면
 
+WSL에서 Node 24·pnpm 9·Rust 1.98.1을 사용한다.
+
+```bash
+source ~/.cargo/env
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
 저장소 루트에서 `pnpm dev`를 실행한다. Rust 빌드만 공유 자원 제한·잠금 아래 실행하며,
 그 뒤 dev 데몬에 Hello로 연결하거나 소유 포그라운드 데몬을 시작한다.
 화면은 `http://localhost:1450`, gateway는 1451이다. 기존 서비스는 변경하지 않는다.
 종료 시 이번 실행이 시작한 자식 프로세스만 정리한다.
+
+`pnpm gen`은 RPC 타입을 생성한다.
 
 `pnpm --filter app e2e`는 같은 supervisor 아래 Chromium 시나리오를 실행한다.
 먼저 `pnpm --filter app exec playwright install chromium`으로 브라우저를 준비한다.
@@ -15,6 +25,12 @@ CI의 `e2e-diagnostics` 산출물에서도 확인한다.
 독립 검사의 실패를 모으며 내부 E2E는 잠금을 다시 획득하지 않는다.
 다른 worktree의 검증이 진행 중이면 exit 75로 종료한다.
 자원 사용 근거는 Git common-dir의 `devbox-verification/latest.json`에 남는다.
+
+실제 앱 실행·설치 파일 빌드는 Windows에서 한다. PowerShell의 `scripts/win-dev.ps1`(dev 채널)·`scripts/win-build.ps1`(prod 채널)은
+WSL 바이너리를 빌드하고 소유한 Windows 작업 폴더에서 Tauri를 실행한다. 로컬 Windows 도구가 없으면
+push한 브랜치의 Windows CI 설치 파일을 `bash scripts/dogfood.sh [브랜치] [--channel accept]`로 받는다. 정확한 원격 커밋·실행·채널·파일 해시를 확인하고
+Windows Downloads 아래 새 폴더에 저장하며, 설치는 자동 실행하지 않는다.
+성공 기준 SC2·SC6·SC10 측정 절차는 [수용 계측 안내](acceptance/README.md)를 따른다.
 
 Windows에서 직접 확인할 설치 파일은 WSL에서 다음 명령으로 받는다. 원격에 push된 브랜치를 지정하며,
 생략하면 현재 브랜치를 쓴다. 채널 기본값은 prod이고 수용용 설치본은 `--channel accept`로 받는다.

@@ -522,19 +522,17 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 
 ## 7. 데이터와 설정
 
+설정 파일 네 개(`~/.config/devbox/config.toml`·`config.local.toml`, 프로젝트의 `.devbox/devbox.toml`, Windows 앱의 `settings.json`)의 위치·키·병합 규칙은 [설정 파일 안내](../../../config.md)가 원장이다. 아래 표는 설정 파일이 아닌 데이터·상태 위치와 설정 파일 밖의 폴더다.
+
 | 위치 | 내용 | 공유 |
 |---|---|---|
 | `~/.local/share/devbox/<i>/devbox.db`, `index.db` | §4.4 | PC별 |
 | `~/.local/share/devbox/<i>/runs/`, `api-history/`, `webhooks/`, `backups/`, `keys/` | 실행 로그, 본문, 백업, 봉인 키 | PC별 |
 | `~/.local/state/devbox/<i>/logs/` | 데몬 로그 | PC별 |
-| `~/.config/devbox/config.toml` | 공유할 설정: 프로젝트 폴더, 터미널·에이전트 도구 프로필, MCP 쓰기, 비밀 이름 목록, 노트·검색, 활동 기록 개인정보 규칙([설정 파일 안내](../../../config.md)) | dotfiles로 공유 |
-| `~/.config/devbox/config.local.toml` | PC별 설정: Windows 사본 폴더(`[windows]`는 이 파일에만), PC 이름 등 `config.toml` 값을 이 PC에서만 바꾸는 키 | PC별 |
 | `~/.config/devbox/api/` | 개인 API 컬렉션·환경(비밀은 참조만) | dotfiles로 공유 |
-| `<프로젝트>/.devbox/devbox.toml` | 작업·서비스·예약·시작 구성·에이전트 준비 | Git |
 | `<프로젝트>/.devbox/api/`, `.devbox/prompts/` | 프로젝트 API 컬렉션, 지시문 템플릿 | Git |
 | `~/notes`(설정 가능) | 노트 vault | Git |
 | `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\` | 창 상태, 앱 로그(7일) | PC별 |
-| `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\settings.json` | Windows 앱 설정: 배포판, 전역 단축키, 자동 시작, 활동 기록 동의·일시중지 | PC별 |
 
 - 설정은 파일이 원장이다. 화면에서 바꾸면 해당 파일에 쓴다. DB에는 화면 상태처럼 파일로 둘 필요가 없는 것만 둔다.
 - 앱에서 작업을 만들면 "프로젝트 파일에 저장"(기본)과 "이 PC에만 저장" 중 고른다. 같은 ID가 둘 다에 있으면 프로젝트 파일이 우선하고, 화면에 출처를 표시한다.
