@@ -126,7 +126,7 @@
 |---|---|---|
 | 노트: vault 폴더(WSL, 기본 `~/notes`, Git 동기화 권장), Markdown, 폴더 트리, 태그, 위키링크·백링크, 템플릿, 이미지 붙여넣기, Mermaid, 살균된 미리보기 | 유지 | `knowledge-vault-engine`, `markdown` |
 | 자동 저장(1초 멈춤) + 복구 저널 + 외부 변경 비교 | 유지 | 문서 모델(§8.4) |
-| 일일 기록 + "오늘 한 일" 요약 삽입(활동·커밋·닫힌 에이전트 작업·실행 결과). 요약은 PC 이름 소제목 아래에 넣는다 | 단순화 | 두 PC 동시 기록 충돌 방지 |
+| 일일 기록 + "오늘 한 일" 요약 삽입(활동·커밋·닫힌 에이전트 작업·실행 결과) (1.0.0에는 활동 합계가 없다 — PROGRESS §4). 요약은 PC 이름 소제목 아래에 넣는다 | 단순화 | 두 PC 동시 기록 충돌 방지 |
 | 빠른 캡처: 전역 단축키 → 작은 창 → inbox | 유지 | |
 | 노트에서 에이전트 작업 만들기(선택한 내용을 초기 지시문으로) | 신규 | S3 선택 과제 |
 | 활동 기록: Windows 전면 창(앱·제목) 수집, 동의·일시중지, 개인정보 규칙(fail-closed), idle 세션화, 프로젝트 귀속, 일·주 보기, 내보내기 | 유지 | `activity-engine` |
@@ -537,7 +537,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 - 설정은 파일이 원장이다. 화면에서 바꾸면 해당 파일에 쓴다. DB에는 화면 상태처럼 파일로 둘 필요가 없는 것만 둔다.
 - 앱에서 작업을 만들면 "프로젝트 파일에 저장"(기본)과 "이 PC에만 저장" 중 고른다. 같은 ID가 둘 다에 있으면 프로젝트 파일이 우선하고, 화면에 출처를 표시한다.
 
-`.devbox/devbox.toml`의 키와 예시는 [설정 파일 안내의 `.devbox/devbox.toml`](../../../config.md#devboxdevboxtoml)를 따른다.
+`.devbox/devbox.toml`의 키와 예시는 [설정 파일 안내](../../../config.md#devboxdevboxtoml)를 따른다.
 
 Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.devbox-v1\`까지만 있다. 그 아래는 소유자 해시·프로젝트 id·`main` 또는 `worktree-<해시>`를 거쳐 `files` 폴더다(S6-1a.3, `crates/runtime/src/windows_copy.rs`).
 

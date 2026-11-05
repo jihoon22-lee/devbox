@@ -13,18 +13,19 @@ devbox의 진행 상태를 적는 **유일한 원장**이다. 계획 문서의 �
 
 ## 1. 현재 위치
 
-- **2026-11-04 · S8(1.0.0) 작업 중.** 브랜치 `v1/s8-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s8-release`, 계획 [10-s7-s8-release](10-s7-s8-release.md#s8--100). 2026-11-03 origin/main `842fa82e`에서 만들었고 push·PR·태그 전이다.
-- 이 브랜치의 커밋: S8-1 `a6f75a68`(버전 `1.0.0`), S8-1b `eb08e39b`(Dependabot 경고 7건: zip 9.0.5·seroval 1.7.7, Ruling 99), S8-0 `cfa89f0a`(S7-14–S7-16 결과 기록), S8-2 문서 통폐합 `71b42eb4`(끝난 계획 보관과 [docs/history.md](../../../history.md))·`6246d039`(이 원장 재구성)·`20465dd7`(사용 안내 `docs/guide.md`와 개발 문서 합치기)·`17586ea2`(ADR 상태)·이 커밋(빠진 규칙 복원과 1.0 이후 작업 모델 마무리). S8-2는 끝났다.
-- 이 브랜치는 `71b42eb4` 아래로 rebase·amend하지 않는다(docs/history.md가 그 SHA를 가리킨다). main을 받아야 하면 `git merge origin/main`을 쓴다(lock은 CONVENTIONS §8 "lock·생성 파일 병합").
+- **2026-11-05 · S8(1.0.0) 작업 중.** 브랜치 `v1/s8-release`, worktree `/home/jihoon/projects/devbox-wt/v1-s8-release`, 계획 [10-s7-s8-release](10-s7-s8-release.md#s8--100). 2026-11-03 origin/main `842fa82e`에서 만들었고 push·PR·태그 전이다.
+- 이 브랜치의 커밋: S8-1 `a6f75a68`(버전 `1.0.0`), S8-1b `eb08e39b`(Dependabot 경고 7건: zip 9.0.5·seroval 1.7.7, Ruling 99), S8-0 `cfa89f0a`(S7-14–S7-16 결과 기록), S8-2 문서 통폐합 `71b42eb4`(끝난 계획 보관과 [docs/history.md](../../../history.md))·`6246d039`(이 원장 재구성)·`20465dd7`(사용 안내 `docs/guide.md`와 개발 문서 합치기)·`17586ea2`(ADR 상태)·`70cd633f`(빠진 규칙 복원과 1.0 이후 작업 모델 마무리)·`82b48ea4`(사용 안내를 코드와 맞춤), S8-2c 고지 `9c2bf391`(Rust 표준 라이브러리·musl·WebView2 로더 라이선스)·`04f7d54f`(`compiler_builtins` 추가, 정적 VC 런타임 사실), 이 커밋(S8-3 기록과 마지막 문서 정정). S8-2와 S8-2c는 끝났다.
+- 이 브랜치는 `71b42eb4`와 그 아래 커밋을 rebase·amend하지 않는다(docs/history.md가 그 SHA를 가리킨다). main을 받아야 하면 `git merge origin/main`을 쓴다(lock은 CONVENTIONS §8 "lock·생성 파일 병합").
 - S7(rc.2 보강)은 끝났다. PR #651을 2026-11-03 12:45 KST에 squash 머지했고(`842fa82e`, 검증한 head `400a737f`와 tree 동일) main CI가 SUCCESS다. main `842fa82e`의 주석 태그 `v1.0.0-rc.2`로 prerelease를 공개했다(release run `41604456654`, 17:57 KST, asset SHA-256 `c0545772…`). `releases/latest`는 `v0.9.0`이고 공식 `v1.0.0` 태그·Release는 없다.
-- 다음: S8-3 검사·후보(`pnpm check` 한 번, 1.0.0 후보 accept 설치 스모크, 릴리스 노트 초안. Windows 행은 interop 고장과 Q1 때문에 S8-3에서 판정한다. CI에서 `linux-bin`의 `Compiling zip v9.0.5`와 `nix 0.31.3` 없음, clippy·`support_bundle` 15·고지 시험을 본다) → S8-4 PR·리뷰·머지(Dependabot PR #652는 닫는다) → S8-5 1.0.0 공개(**별도 명시 승인**, §3을 제시) → S8-6 공개 기록.
+- **S8-3 검사·후보(이 커밋이 기록):** `pnpm check` `70cd633f` PASS(exit 0, 1,267.4 s, 2026-11-04 12:26–12:47 KST, `memory_enforced=true` high 6 GiB·max 8 GiB·swap 1 GiB, cgroup 메모리 peak 6,444,679,168 B, Vitest 311 파일·1,862 시험, Playwright 23 통과, cargo test `test result: ok` 181줄·FAILED 0, Biome 882 파일). 최종 코드 head `04f7d54f`의 전체 `pnpm check`는 **FAIL**이다(tmux 버그, §3). 1.0.0 후보 accept 설치 스모크(첫 화면·버전 표시·H1·N1)는 **NOT_RUN**이다(interop 고장 §2 ①, H1은 Q1도 필요, §3 1·2). 1.0.0 태그 노트 초안은 이 PC의 SDD 폴더 `s8-3-tag-notes-draft.md`에 있고 저장소에는 없다(S8-5에서 사용자에게 보인다). 로그는 SDD 폴더(§6)의 `s8-3-check-70cd633f.log`·`s8-3-check-04f7d54f.log`·`s8-3-e2e-04f7d54f.log`다.
+- 다음: **S8-4** push → PR(생성 뒤 10분 자동 리뷰 확인, 꺼짐이면 독립 검토 1회) → 필수 CI → squash 머지 → Dependabot PR #652 닫기. PR CI에서 `linux-bin`의 `Compiling zip v9.0.5`와 `nix 0.31.3` 없음, clippy·`support_bundle` 15·고지 시험, 설치 영수증의 버전 1.0.0(prod·accept), N1 prod 쪽(prod 로그의 `win-package.ps1 -Verify`)을 보고, 1.0.0 후보의 `devbox-linux`를 `nm`으로 봐 musl 파일별 BSD 원문 파일이 링크되지 않았는지 다시 확인한다(결과는 S8-6 기록에 담는다) → S8-5 1.0.0 공개(**별도 명시 승인** 뒤에만, §3을 제시) → S8-6 공개 기록.
 - S7 worktree·브랜치·`/tmp` 근거는 정리했다. 공유 target `~/.cache/targets/devbox`는 2026-11-03에 151G → 107G다(`cargo sweep --time 3` 뒤 `debug/incremental/` 47G를 비움, CONVENTIONS §5).
 
 ## 2. 열린 결정
 
 사용자만 정할 수 있는 것이다. 답이 오면 여기서 지우고 §3·§4에 반영한다. 승인 원문과 닫힌 결정은 이전 전문 §2([docs/history.md](../../../history.md))에 있다.
 
-- **① WSL→Windows interop 고장(W1):** `cmd.exe /c ver`가 `UtilAcceptVsock:273: accept4 failed 110`으로 실패한다(VM 전체, 2026-10-21 S2 설치 수용 때와 같은 증상). 마지막 확인은 2026-11-03 18:39 KST이고 WSL boot는 2026-10-22 22:54 그대로다. 사용자 지시(2026-11-02): WSL 재시작을 요청하지 않는다(Q0 철회). Windows 실기는 WSL이 스스로 다시 시작된 뒤에만 한다. 그래서 Windows 행이 NOT_RUN이고 I1은 공개 승인 때 미검증으로 알린다(§3). W1 자료가 나오면 Fix C의 "사용자 확인 뒤 남은 프로세스 끝내기"를 사용자가 정한다.
+- **① WSL→Windows interop 고장(W1):** `cmd.exe /c ver`가 `UtilAcceptVsock:273: accept4 failed 110`으로 실패한다(VM 전체, 2026-10-21 S2 설치 수용 때와 같은 증상). 마지막 확인은 2026-11-05 07:32 KST(그 전 2026-11-04 12:06 KST)이고 WSL boot는 2026-10-22 22:54 그대로다. 사용자 지시(2026-11-02): WSL 재시작을 요청하지 않는다(Q0 철회). Windows 실기는 WSL이 스스로 다시 시작된 뒤에만 한다. 그래서 Windows 행이 NOT_RUN이고 I1은 공개 승인 때 미검증으로 알린다(§3). W1 자료가 나오면 Fix C의 "사용자 확인 뒤 남은 프로세스 끝내기"를 사용자가 정한다.
 - **② S7-14 Q1·Q2:** claude·codex의 폴더 신뢰 수락을 승인하지 않았다. 수락하면 `~/.claude.json`·`~/.codex/config.toml`에 항목이 남고 정리가 지우지 않는다. 두 도구의 turn·승인·재개 행이 NOT_RUN이다.
 - **③ S7-14 Q6:** opencode는 "This API key has expired…", pi는 모델 "Muse Spark 1.3 Free"의 "Model is unavailable"로 멈췄다(도구 자신의 인증·모델 오류). 에이전트 작업은 셸의 API 키 변수를 받지 않는다([README "에이전트 도구"](../../../../README.md#에이전트-도구)). 사용자가 본인 터미널에서 같은 프롬프트로 재현하는지 확인하기 전에는 원인을 단정하지 않는다(Ruling 87 보정).
 - **S5 수용 3·6(2026-10-21, S5-9 수용에만 걸림):** 외부 서비스의 웹훅 수신(LAN 노출·포트 전달·방화벽)과 빠진 도구의 실제 설치(`sudo apt`·`npm -g`·`winget`). 기본안만 확인하고 실제 실행은 사용자 승인 뒤에만 한다(07b).
@@ -36,8 +37,8 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 
 | 항목 | 판정 | 근거 또는 이유 |
 |---|---|---|
-| 1 새 설치 첫 화면 | NOT_RUN | S7-14의 S6 묶음 A2를 interop 고장으로 실행하지 못했다(§2 ①). 이전 source: S6-6b A2 PASS(launch, `19cff21e-d2254acc`) |
-| 2 agent 전 과정 | NOT_RUN | S7-14 H1–H4: claude·codex는 Q1·Q2 미승인, opencode·pi는 도구 자신의 오류(Q6). 실행 `40d97a83-a4e9f78c` |
+| 1 새 설치 첫 화면 | NOT_RUN | S7-14의 S6 묶음 A2를 interop 고장으로 실행하지 못했다(§2 ①). S8-3의 1.0.0 후보 accept 설치 스모크(첫 화면·버전 표시 1.0.0)도 같은 이유로 NOT_RUN이다. 이전 source: S6-6b A2 PASS(launch, `19cff21e-d2254acc`) |
+| 2 agent 전 과정 | NOT_RUN | S7-14 H1–H4: claude·codex는 Q1·Q2 미승인, opencode·pi는 도구 자신의 오류(Q6). 실행 `40d97a83-a4e9f78c`. S8-3의 H1(에이전트 작업 전 과정 하나)도 interop 고장과 Q1 때문에 NOT_RUN이다. WSL harness를 H1X-TRUST 재실행에 맞추지 않았다(S8의 제품 변경은 버전·zip(지원 번들 쓰기)·seroval(UI 라우터)뿐, Ruling 106). 마지막 H1X-TRUST PASS는 `400a737f` 3.972 s |
 | 3 service/log | PASS | S7-14 SV1(`[[service]]` 시작 → 로그 → 정지, 데몬 RPC): `40d97a83-a4e9f78c`, 최종 head 재확인 `400a737f-11d1bb99`. rc.2 source의 WSL accept 결과이고 Windows 화면 확인은 아니다 |
 | 4 note 작성 | PASS | S7-14 NT1(`devbox note add` → 검색): 같은 두 실행. 범위는 3과 같다 |
 | 5 v0.9 제거 뒤 정상 | NOT_RUN | 사용자 몫. S7-16에 부탁했고 S8-0 기록 때까지 받은 결과가 없다. S8-5 전에 오면 기록하고 결함이면 S8에서 고친다(07c, Ruling 97) |
@@ -56,7 +57,7 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 | SC4 창 닫기·데몬 재시작·업데이트 뒤 WSL 작업 유지 | NOT_RUN | S6-6b NOT_RUN(사유 `19cff21e-d2254acc` `acceptance.json` notRun). 그 뒤 SC4 측정 기록이 없다. 이전 source: S1 수용 "업데이트 뒤 세션 유지" PASS(`c28e4cab`) |
 | SC5 생성된 오류 코드 전수의 문구 = 원인 + 다음 행동(internal은 진단 ID) | NOT_RUN | S6-6b 설치 수용 범위 밖이라 실행하지 않았다. 알려진 빈 곳은 §4(`[agent] copy`, Fix D §6 화면, RunTab "undefined") |
 | SC6 UI 변경 → browser ≤2 s, 데몬 변경 → 재연결 ≤15 s | NOT_RUN | 계측만 있다(S6-4b `496b1c78`·`7d638599`). 실측은 S6-6b 범위 밖이었다 |
-| SC7 PR CI ≤15분, 로컬 전체 ≤10분, release ≤40분, `.github`+`scripts` ≤2,000줄·workflow ≤3 | FAIL(미달) | PR CI의 Rust (Windows) job이 #648 27m24s·#649 17m47s·#651 첫 head `40d97a83` 34m57s로 15분을 넘었다. #651 최종 head `400a737f` 14m50s·main `842fa82e` 21m57s(job별 raw, 판정 아님). Rust (Windows)는 linux-bin 뒤에 시작하므로(최종 head linux-bin 11m05s) 최종 head의 windows run은 약 26분이다. 로컬 전체·release ≤40분은 판정하지 않았다(S7-13 `pnpm check` 1,508.6 s는 10분의 2.5배, 판정 아님. rc.2 release run `41604456654` job별 11s·13m30s·7m21s·14s). 1,982/2,000줄·workflow 2는 한도 안 |
+| SC7 PR CI ≤15분, 로컬 전체 ≤10분, release ≤40분, `.github`+`scripts` ≤2,000줄·workflow ≤3 | FAIL(미달) | PR CI의 Rust (Windows) job이 #648 27m24s·#649 17m47s·#651 첫 head `40d97a83` 34m57s로 15분을 넘었다. #651 최종 head `400a737f` 14m50s·main `842fa82e` 21m57s(job별 raw, 판정 아님). Rust (Windows)는 linux-bin 뒤에 시작하므로(최종 head linux-bin 11m05s) 최종 head의 windows run은 약 26분이다. 로컬 전체·release ≤40분은 판정하지 않았다(`pnpm check`: S7-13 1,508.6 s는 10분의 2.5배, S8-3 `70cd633f` PASS 1,267.4 s는 2.1배, 둘 다 10분 초과이고 판정 아님. rc.2 release run `41604456654` job별 11s·13m30s·7m21s·14s). 1,982/2,000줄·workflow 2는 한도 안 |
 | SC8 제품 코드 ≤20만 줄(`bash scripts/loc.sh 200000`, 관찰 트리거) | NOT_RUN | S6-6b 설치 수용 범위 밖이라 재지 않았다. 이전 기록: S2 #642 2회차 규모 52,258줄 |
 | SC9 작업 없는 데몬 RSS ≤60 MB·CPU ≤0.5% | NOT_RUN | S6-6b: idle 데몬 표본이 harness 밖. 이전 source: S2 Task16 PASS(CPU 0.233331%, peak RSS 39,899,136 B, 61표본 60 s) |
 | SC10 bridge → daemon → PTY → tmux echo p50 ≤10 ms·p95 ≤25 ms, 100 MB 출력 중 ping p95 ≤100 ms, 종료 뒤 입력 ≤1 s | NOT_RUN | S6-6b: terminal probe build를 옮기지 않았다. 이전 source: S1 설치본 수용 PASS(100 MB 출력 5.2 s, 1 byte 왕복 p95 2.5 ms, `c28e4cab`) |
@@ -66,12 +67,13 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 - S2–S5 설치 수용의 과거 결과(S2 1–11 NOT_RUN·12 FAIL·prod NOT_PROVEN, S3 4/6/7/8·autosave 1초, S4 실제 LSP 2/3/4/7, S5 5/6·외부 LAN·실제 도구 설치 NOT_RUN)는 S6-6b가 다시 실행하지 못해 그대로다. S6 최종 source 확인 중 HTTP → 노트·editor handoff·OAuth 승인·다중 worktree 복사 분리·dependent/sibling·updater all-window도 NOT_RUN이다(`19cff21e-d2254acc` `acceptance.json` notRun, 07c §14).
 - RC1·rc.2의 Windows 설치·실행 수용은 NOT_RUN이고 RC → 1.0.0 수동 설치는 시험하지 않았다.
 - release publisher의 stable 경로는 실제 GitHub에서 실행된 적이 없다(rc.1·rc.2는 prerelease 경로). 첫 실행은 S8-5다(§4 ci-docs M2).
-- main은 S8 PR이 머지되기 전까지 `1.0.0-rc.2`라 updater가 꺼져 있다(RC M4, 버전은 S8-1 `a6f75a68`).
-- **[1.0.0 전에 판단]** 고지 두 건(§4 문서·고지). 공개 버전 사이의 실제 업데이트는 다음 patch 때까지 NOT_RUN이다(07c).
+- main은 S8 PR이 머지되기 전까지 `1.0.0-rc.2`라 updater가 꺼져 있다(RC M4, 버전은 S8-1 `a6f75a68`). 공개 버전 사이의 실제 업데이트는 다음 patch 때까지 NOT_RUN이다(07c).
+- 고지의 [1.0.0 전에 판단] 두 건은 닫혔다. 글꼴: `app/src/assets/fonts/D2Coding.woff2`(git blob `2f38577f23892226f450ead99fca0432f881e11a`, 1,490,832 B)는 저작권자 저장소 `naver/d2codingfont`의 커밋 `b0dc372e`("Release 1.4.0", `fonts.css`가 가리키는 커밋)에 든 `site/fonts/D2Coding-Regular.woff2`와 바이트가 같고, `LICENSE-D2Coding.txt`(blob `50a6c23e…`)는 그 커밋의 `OFL.txt`와 같다(`gh api repos/naver/d2codingfont/git/trees/b0dc372e…?recursive=1`, 2026-11-04). 저작권자의 자체 배포본이라 OFL Reserved Font Name 조건 3은 걸리지 않는다. 링크되는 코드: S8-2c(`9c2bf391`, 보강 `04f7d54f`)가 Rust 표준 라이브러리 1.98.1, std가 `x86_64-unknown-linux-musl`·`x86_64-pc-windows-msvc`에 링크하는 crate(in-tree `compiler_builtins` 0.1.160 포함), musl 1.2.5 `COPYRIGHT`, Microsoft WebView2 로더(SDK 1.0.3800.47, `.lib`는 NuGet 패키지와 바이트 동일)의 라이선스를 고지에 더했다. 원문은 출처와 바이트가 같고(S8-2c 과제 검토 `a09401a4…`) 사용자가 2026-11-04에 "예, S8에 포함"으로 승인했다. 정적 Visual C++ 런타임의 Microsoft 조건은 확인하지 못했다(§4 문서·고지).
+- S8-3 최종 코드 head `04f7d54f`의 전체 `pnpm check`는 **FAIL**이다(exit 1, 826.4 s, 2026-11-05 07:31–07:45 KST). Playwright만 1개 실패·22개 통과했고 나머지 단계는 모두 통과했다. 실패한 시험은 `e2e/terminal.spec.ts:51` "split panes persist and closing a pane keeps its session available"로, Devbox가 둘째 칸을 붙이는 동안 fixture의 tmux 서버가 비정상 종료했다. 원인은 tmux 버그 LP #2169164(제어 모드 클라이언트가 연결되는 중 `control_write()`에서 서버 SIGSEGV)이고 이 PC의 tmux `3.6a-2ubuntu0.1`이 해당 판이다. Devbox 회귀가 아니다: `70cd633f`는 같은 tmux로 23/23이었고 그 뒤에는 xtask·고지·Markdown만 바뀌었다. 같은 SHA의 E2E 재실행(`bash scripts/verify-entry.sh e2e`, 132.6 s, `memory_enforced=true`)은 23/23 PASS지만 전체 검사를 PASS로 바꾸지 않는다. 826.4 s는 실패한 실행이라 SC7 측정이 아니다. 이 뒤의 커밋은 어느 검사 단계도 읽지 않는 Markdown만 바꾼다(Ruling 107). README 요구 사항에 고친 tmux 판(3.7 이상, Ubuntu 22.04 `3.2a-4ubuntu0.3`·24.04 `3.4-1ubuntu0.2`·26.04 `3.6a-2ubuntu0.2` 이상)을 적었다.
 
 ## 4. 열린 후속
 
-리뷰 상한 뒤 지적과 과제가 미룬 항목 가운데 고치지 않고 남긴 것이다. **[차단]**이 없으면 1.0.0을 막지 않는다. 출처·근거 경로·검토 판정은 이전 전문 §8([docs/history.md](../../../history.md))에 있고 ID로 찾는다. S1–S6 과제 기록(이전 전문 §5)의 "후속(비차단)" 메모는 옮기지 않았으니 같은 곳에서 찾는다. 닫으면 여기서 지우고 PR 본문에 근거를 적는다.
+리뷰 상한 뒤 지적과 과제가 미룬 항목 가운데 고치지 않고 남긴 것이다. **[차단]**이 없으면 1.0.0을 막지 않는다. 출처·근거 경로·검토 판정은 이전 전문 §8([docs/history.md](../../../history.md))에 있고 ID로 찾는다. S1–S6 과제 기록(이전 전문 §5)의 "후속(비차단)" 메모는 옮기지 않았으니 docs/history.md의 같은 전문에서 찾는다. 닫으면 여기서 지우고 PR 본문에 근거를 적는다.
 
 - **에이전트·하네스**
   - Codex 보내기(S7-5): tmux·pane 캡처 실패가 다음 행동 없는 internal 오류로 끝난다.
@@ -120,14 +122,16 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 - **API·노트**
   - S6-6b api M3: 장시간 MCP-HTTP/SSE 세션이 Set-Cookie seed를 쌓아 약 1,000건 뒤 `api.redaction_failed`로 끝날 수 있다. M4: 잘못된 Basic credential의 디코딩된 비밀번호는 seed되지 않는다.
   - S6-6b docs M1–M6: 영수증 파일 미정리 · holder 거절 뒤 Attempted 잔류 · `notes.select_response_target`이 query인데 상태를 바꿈 · 취소·stale rename 캡처 무응답 · 캡처 BFS가 `target/`·`node_modules/`·`.git/`을 건너뛰지 않음 · 끝나지 않은 proof가 다음 rename을 30초 막음.
+  - 오늘 한 일 요약([오늘 한 일 넣기])에 활동 합계가 없다(01-design §2.2와 다름, `summary.rs:202–226`) — 1.0 뒤 기능 또는 설계 정정
 - **시험·크기**
   - 시험이 `/tmp/tmux-<uid>`에 socket을 남긴다 · tmux.conf와 `apply_extended_keys`의 옵션 중복, format 줄 시험 없음.
   - 거의 꽉 찬 파일(2026-11-02 `wc -l`): `execution.rs` 600/600, `TerminalView.test.tsx` 592, `cli/tests/agents.rs` 591, `config/lenient.rs` 590, `windows_observation.rs` 573, `terminal/src/tmux.rs` 572, `prepare.rs` 567, `discard_snapshot.rs` 556, `command_path.rs` 542. 다음 추가에는 나눈다.
   - T1b: ignored systemd wrapper 시험 4개(`runtime_secrets.rs` 등)는 owned-copy 시험 seam이 없어 실행해도 통과할 수 없다(NOT_RUN). ignore 사유도 실제 원인을 가린다.
   - CI E2E의 tmux 3.4 서버 비정상 종료(S1 `c68c923e`, 재실행 통과): 원인 미확정. 재발하면 원인을 고치고 재시도 래퍼는 쓰지 않는다.
 - **문서·고지**
-  - **[1.0.0 전에 판단]** 고지가 싣지 않은 코드: toolchain이 링크하는 musl·Rust 표준 라이브러리와 `webview2-com-sys@0.39.1`이 정적으로 링크하는 WebView2 로더(`WebView2LoaderStatic.lib`, 라이선스 파일 없음). 고정 절을 생성기에 더하거나 하지 않기로 한 결정을 적는다.
-  - **[1.0.0 전에 판단]** 내장 `D2Coding.woff2`가 NAVER 공식 배포본인지 변환본인지 확인한 사람이 없다(OFL Reserved Font Name). 출처를 찾고, 변환본이면 이름을 바꾸거나 배포본에서 직접 만든 woff2로 바꾼다.
+  - 정적으로 링크된 Microsoft Visual C++ 런타임(Tauri 기본 `staticVCRuntime`, UCRT는 동적)에 Microsoft 빌드 도구 조건이 붙는지 확인하지 못했다. 고지에는 사실만 적었다(`04f7d54f`). S8-5 승인 때 알린다
+  - musl 파일별 BSD 원문: rc.2의 `devbox-linux`는 `libc.a` member 1,332개 중 351개를 링크하고, 그 가운데 파일별 라이선스가 붙은 musl 소스(22·56·14개 목록)는 없다. 링크되는 member가 바뀌면 다시 본다(S8-4에서 1.0.0 후보 `nm`으로 확인)
+  - xtask 주석 두 곳(`xtask/src/notices/linked.rs:16-19` in-tree 행 조건, `:36-38` '사용자 질문' 문구)은 1.0 뒤 첫 코드 PR에서 다듬는다(S8-2c 재검토 Minor)
   - 고지에 라이선스 파일이 없는 패키지 21개(`@tauri-apps/plugin-opener`는 `LICENSE.spdx`만) · `COPYRIGHT`·`UNLICENSE`·`LICENSES/`는 이름 규칙 밖이라 읽지 않는다.
   - 고지 지문 밖의 입력 둘(생성기 코드 `xtask/src/notices*`, 글꼴 파일 자체): 바꾸면 `cargo run -p xtask -- notices`를 직접 돌린다.
   - 옛 README.md:153의 "성공 기준 SC2·SC6·SC10"(사용자 문서에 남은 내부 ID, Ruling 72)은 S8-2b가 개발 절을 옮겨 지금 [app/README.md](../../../../app/README.md) "Devbox 화면"에 있다. README·guide·config·SECURITY에는 SC ID가 없으니 닫을 후보다.
@@ -153,6 +157,7 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
   - S8-1b(zip 9.0.5): 설치본에서 지원 번들을 쓰는 것을 포함한 Windows 실행은 NOT_RUN이다(이전 전문 §5 "Dependabot 보안 경고 7건과 S8 의존성 갱신").
 - **운영**
   - 2026-10-22 WSL 재시작 뒤 `user@1000.service` 실패로 메모리 cgroup이 걸리지 않았다(`memory_enforced:false`). 그 뒤 검증은 자식 환경에만 `XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus`를 줘 `memory_enforced=true`를 확인하고 돈다(호스트 서비스는 바꾸지 않는다). 걸리지 않으면 available 메모리가 2 GiB 아래일 때 무거운 빌드를 멈추고 실행 결과에 미적용을 적는다([CONVENTIONS §5](../../../../CONVENTIONS.md#5-검증), 사용자 결정 2026-10-22).
+  - tmux 3.7 전 판의 제어 모드 연결 중 서버 SIGSEGV(LP #2169164): 2026-11-05 이 PC(tmux 3.6a-2ubuntu0.1)의 E2E에서 한 번 일어났다(@04f7d54f). Devbox 쪽 완화(환경 점검 경고, 연결 중 알림을 만드는 명령 줄이기)는 1.0 뒤 첫 patch 후보다
 
 ## 5. 유효한 결정
 
@@ -182,7 +187,6 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 
 | 날짜 | 하네스 | 한 일 | 남긴 상태(브랜치·커밋·다음 단계) |
 |---|---|---|---|
-| 2026-10-21 | Codex 하네스 구현·IndexDb/CodeView 분담 | Task15b 공용 색인 DB·코드 보기·검사 대기/독립 잠금·tmux 진단, 고유73개·타입/생성·직접 영향 검사 PASS | 독립 최종 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품29/문서2/artifact77 해시 일치, scripts1497줄/2 workflows, 다음 Task15c. 전체 검사·Windows·push/PR Task16. 근거 `devbox-verification/s2-task15b/{summary,source-freeze,test-names,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 구현·WSL/패키징 분담 | Task15c 단일 채널 표·Windows/WSL 설치 격리·receipt 검증 구현, 고유79개·MSVC 좁은 compile·PowerShell 모의2 suite PASS | 독립 검토 PASS·미해결0·Biome344 PASS, 로컬 완료 커밋. 제품30/문서2/artifact81 해시 일치, scripts1500줄/2 workflows, 다음 Task16. 실제 Windows 설치·전체 검사·push/PR 미실행. 근거 `devbox-verification/s2-task15c/{summary,source-freeze,test-names,parent-commands,artifact-hashes}.json` |
 | 2026-10-21 | Codex 하네스 관찰 UI 구현 | Task16 승인 설계 누락 보완: 프로세스 우선 목록·종료 확인, 포트 브라우저·소유자 종료. RED Rust1/UI3→직접 고유33개(프런트21·Rust12) PASS | `PortInfo.startTimeMs`는 fd 스캔 전후 시작 tick 일치에서 생성, 미확인/container는 종료 불가. 확인 snapshot 고정·stale 오류 후 갱신 완료까지 잠금/새 확인 회귀 PASS. 생성/타입·독립 검토·완료 Biome350 PASS, 미해결0. 제품21/문서2/artifact54 해시 일치, Biome0.896초·cgroup122,421,248B·swap0. 완료 커밋·문서 해시는 root-completion.json. 전체 검사·SC9·Windows·CI·PR 미실행. 근거 `devbox-verification/s2-task16/observe-ui/{summary,source-freeze,test-names,commands}.json` |
 | 2026-10-21 | Codex 하네스 통합 수정·별도 브랜치 검토 | Task16 첫 전체 검사 실패 보존→직접140개·strict Clippy·E2E3 수정 PASS, SC9 CPU0.233331%/RSS39,899,136B PASS | 제품75개 동결·독립 검토 PASS·미해결0, 규모52,174줄·scripts1,500줄. 완료 Biome/커밋 뒤 최초 push·동일SHA Windows accept 수용·단일PR. 현재 설치 수용·CI·리뷰 미실행, S2 수용 완료 아님. 근거 `devbox-verification/s2-task16/` |
@@ -192,3 +196,4 @@ S8-5에서 사용자에게 제시한다(계획 10 S8-5). 기록된 판정만 옮
 | 2026-10-21 | Codex 하네스 S2 머지·인계 | #642 → squash1e82e649, 최종f703 CI3/E2E PASS·리뷰3회 처리. 최종 설치 사전 검사 errno110 FAIL·실기 미실행 보존 | 검증tree동일. 사용자 후속 요청으로 결과 문서 PR·근거 압축 보관·로컬 정리 진행, 다음 세션은 깨끗한 main에서 시작하도록 인계 변경. 상한 이후 Windows 준비 지적1건 §8 이월, S3/S5 제품 미착수. 정리 완료 여부는 실제 Git/PR·manifest로 확인 |
 | 2026-11-02 | Claude Code(Paseo) 컨트롤러·하위 에이전트 | S7-13 마무리(영역 6 재검토 Ready, 버전 `1.0.0-rc.2` `22731033`, `pnpm check` PASS 1,508.6 s)와 S7-14: Windows 후보 `22731033`(run `41374497823` FAIL) → `240430cc`(run `41377466587`) → P-DEF-1 수정 `40d97a83`(run `41423905881` SUCCESS), harness 검토 6건·수정 4회차, WSL 수용 실행 4개(최종 `40d97a83-a4e9f78c` PASS 7행·FAIL 0, 업그레이드 `40d97a83-f6fd79ec`)와 NOT_RUN 이유(Ruling 90). 23:08에 세션이 다시 떴으나 WSL은 재시작되지 않았고(interop 여전히 `accept4 failed 110`) 사용자 지시로 WSL 재시작 요청(Q0)을 철회하고 남은 행을 NOT_RUN으로 두고 진행하기로 했다. 결과 기록은 patch(`s7-14-docs.patch`)로 만들어 S8-0으로 인계했다(Ruling 91). 23:55 KST에 PR #651을 열었다 | `v1/s7-rc2` `40d97a83` push, PR #651 열림(자동 리뷰 꺼짐 판정 창 10분). 다음: 독립 검토 1회·CI·머지. 근거 Git common-dir `devbox-verification/s7/` |
 | 2026-11-03 | Claude Code(Paseo) 컨트롤러·하위 에이전트 | S7-15: 독립 PR 검토(CHANGES REQUIRED, Critical 0·Important 2·Minor 1)와 수정 두 건(`4c95c932` tmux 3.4 시험, `400a737f` I-2 `[agents]` 실패 정책, Ruling 93·95), 최종 head `400a737f`의 CI·수동 Windows run `41536487871`·재확인 실행 `400a737f-11d1bb99`(binding 검토 7 REFUSE → 31 case APPROVE, Ruling 96), PR #651 squash 머지(12:45 KST → `842fa82e`), tree 대조·main CI·S7 worktree/브랜치/`/tmp` 정리. S7-16: 사용자 승인 뒤 `v1.0.0-rc.2` 태그·prerelease 공개(17:35–17:57 KST, release run `41604456654`, asset SHA-256 세 곳 일치, `releases/latest` `v0.9.0`). 머지 뒤 Dependabot 경고 7건 → 사용자 승인으로 S8에 포함. S8 착수(Ruling 97: 사용자 확인 결과를 기다리지 않는다): worktree `v1/s8-release`, S8-1 `a6f75a68`(버전 `1.0.0`)·S8-1b `eb08e39b`(zip 9.0.5·seroval 1.7.7)·S8-0 `cfa89f0a`(S7 결과 기록) | `v1/s8-release` `eb08e39b` 위에 S8-0 문서 커밋, push·PR 전. 다음: S8-2 문서 통폐합 → S8-3 검사·후보 → S8-4 PR → S8-5 공개(별도 승인). 근거 Git common-dir `devbox-verification/s7/`, 작업 원장은 이 PC의 `.superpowers/sdd/10-s7-s8-release/` |
+| 2026-11-04 | Claude Code(Paseo) 컨트롤러·하위 에이전트 | S8-2 문서 통폐합 끝: 과제 검토와 수정·재검토 회차(S8-2a 수정 `70cd633f`, S8-2b 수정 `82b48ea4`)를 마쳤다. 고지 두 건 사실 확인 뒤 사용자 답: 링크되는 코드(Rust 표준 라이브러리·musl·WebView2 로더)는 "예, S8에 포함", 글꼴은 NAVER 공식 파일과 바이트 동일이라 변경 없음. S8-2c 고지 `9c2bf391`·보강 `04f7d54f`(과제 검토 Needs fixes → 수정 → 재검토 Approved). S8-3: `pnpm check` `70cd633f` PASS 1,267.4 s, 최종 코드 head `04f7d54f` FAIL(tmux 버그 LP #2169164로 Playwright 1개 실패, 같은 SHA의 E2E 재실행 23/23 PASS). Windows 행(accept 설치 스모크·H1)은 interop 고장(`accept4 failed 110`, 2026-11-05 07:32 KST 재확인)과 Q1로 NOT_RUN | `v1/s8-release` `04f7d54f` 위에 S8-3 기록 커밋(Markdown만), push·PR 전. 다음: S8-4 PR·리뷰·머지 → S8-5 1.0.0 공개(별도 명시 승인) → S8-6 공개 기록. 근거 이 PC의 `.superpowers/sdd/10-s7-s8-release/`(`s8-3-*`)와 Git common-dir `devbox-verification/s7/` |

@@ -84,7 +84,7 @@
 
 **크기와 타입**
 - `PROTOCOL_VERSION`은 S7·S8 동안 1로 둔다. S7-1의 Hello 완화는 이 값이 같다는 것을 전제로 한다. 바꿔야 하면 멈추고 사용자에게 묻는다.
-- S7-12 뒤 고지의 입력이 바뀌는 커밋은 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. 입력은 lock 파일 셋(`Cargo.lock`, `app/src-tauri/Cargo.lock`, `pnpm-lock.yaml`), manifest(작업 공간 root와 모든 멤버, 앱 crate, 앱 package), 함께 싣는 글꼴의 라이선스 본문이다(`xtask/src/notices/fingerprint.rs`). 버전 변경(S7-13, S8-1)도 여기에 해당한다.
+- S7-12 뒤 고지의 입력이 바뀌는 커밋은 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. 입력은 lock 파일 셋(`Cargo.lock`, `app/src-tauri/Cargo.lock`, `pnpm-lock.yaml`), manifest(작업 공간 root와 모든 멤버, 앱 crate, 앱 package), 함께 싣는 글꼴의 라이선스 본문, 링크되는 코드(Rust 표준 라이브러리와 std가 링크하는 crate, musl, WebView2 로더)의 라이선스 본문(`xtask/notices/linked/`, S8-2c 뒤)이다(`xtask/src/notices/fingerprint.rs`). 버전 변경(S7-13, S8-1)도 여기에 해당한다.
 - 파일 600줄, 컴포넌트 300줄 이하.
 - `.github`+`scripts`는 1,982/2,000줄, workflow 2개다. 이 계획은 두 곳에 줄을 더하지 않는다. 생성기와 검사는 xtask와 기존 `cargo test --workspace`에 둔다.
 - 경계 타입에 `Result<T,String>`과 `serde_json::Value`를 쓰지 않는다. 생성 파일은 `pnpm gen`으로만 바꾼다.
@@ -931,11 +931,11 @@ fixture의 실제 필드 이름이 다르면 이 표를 고치고 검토에 알�
 - Rust 쪽은 `cargo metadata --format-version 1 --locked --offline`을 루트와 `app/src-tauri` 두 manifest에 돌린다. normal 의존성만 넣는다(dev·build 제외).
 - npm 쪽은 `pnpm --filter app licenses list --prod --json`이다.
 - 패키지마다 원본 폴더의 `LICENSE*`·`COPYING*`·`NOTICE*` 본문을 넣는다. 같은 본문은 하나로 묶고 패키지 목록을 붙인다. 파일이 없으면 SPDX 식을 적는다.
-- 머리에 입력 지문을 둔다: `<!-- inputs: Cargo.lock=<sha256> app/src-tauri/Cargo.lock=<sha256> pnpm-lock.yaml=<sha256> -->`. S7-13 영역 6 뒤에는 `manifests=<sha256>`(작업 공간 root와 모든 멤버, 앱 crate, 앱 package의 manifest)와 `bundled=<sha256>`(함께 싣는 글꼴의 라이선스 본문)도 든다. 앱에 내장된 D2Coding 글꼴은 어느 lock 파일에도 없어 `xtask/src/notices/bundled.rs`의 표로 고지에 더한다.
+- 머리에 입력 지문을 둔다: `<!-- inputs: Cargo.lock=<sha256> app/src-tauri/Cargo.lock=<sha256> pnpm-lock.yaml=<sha256> -->`. S7-13 영역 6 뒤에는 `manifests=<sha256>`(작업 공간 root와 모든 멤버, 앱 crate, 앱 package의 manifest)와 `bundled=<sha256>`(함께 싣는 글꼴의 라이선스 본문)도 들고, S8-2c 뒤에는 `linked=<sha256>`(링크되는 코드의 라이선스 본문과 표의 각 행)도 든다. 앱에 내장된 D2Coding 글꼴은 어느 lock 파일에도 없어 `xtask/src/notices/bundled.rs`의 표로 고지에 더한다. toolchain과 SDK가 링크하는 코드도 어느 lock 파일에도 없어(S8-2c 뒤) `xtask/src/notices/linked.rs`의 표(`LINKED`)와 `xtask/notices/linked/`의 본문으로 더한다.
 - 신선도 시험은 `xtask/src/notices.rs`의 `#[test] notices_inputs_are_current`다.
-  - 세 lock 파일의 SHA-256을 다시 계산해 지문과 비교한다(영역 6 뒤에는 manifest와 글꼴 라이선스도). 네트워크는 쓰지 않는다.
+  - 세 lock 파일의 SHA-256을 다시 계산해 지문과 비교한다(영역 6 뒤에는 manifest와 글꼴 라이선스도, S8-2c 뒤에는 링크되는 코드의 라이선스도). 네트워크는 쓰지 않는다.
   - CI의 `cargo test --workspace`가 돌리므로 `.github` 줄을 늘리지 않는다.
-  - 실패 문구: "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요."(S7-13 영역 6 뒤. 처음에는 "lock 파일과 다릅니다"였다)
+  - 실패 문구: "THIRD_PARTY_NOTICES.md가 입력(lock 파일, manifest, 함께 싣는 글꼴과 링크되는 코드의 라이선스)과 다릅니다. `cargo run -p xtask -- notices`로 다시 만드세요."(S8-2c 뒤. S7-13 영역 6 뒤에는 "입력(lock 파일, manifest, 함께 싣는 글꼴의 라이선스)"였고, 처음에는 "lock 파일과 다릅니다"였다)
 
 **단계**
 - [ ] 1. 실패 시험을 쓴다.
@@ -1176,9 +1176,9 @@ S7 머지와 rc.2 공개 뒤, `v1/s8-release`를 origin/main에서 만든다. �
 
 ### S8-3 검사·후보
 
-- [ ] `pnpm check`를 한 번 돌린다. 버전이 바뀌었기 때문이다.
+- [x] `pnpm check`를 한 번 돌린다. 버전이 바뀌었기 때문이다.
 - [ ] 1.0.0 후보로 accept 설치 스모크를 한다: 첫 화면, 버전 표시 1.0.0, H1 하나, N1.
-- [ ] 1.0.0 릴리스 노트(태그 메시지) 초안을 쓴다. 담을 것: 새 구조, v0.9.0 수동 제거 순서, RC→1.0 수동 설치, 알려진 제한·NOT_RUN.
+- [x] 1.0.0 릴리스 노트(태그 메시지) 초안을 쓴다. 담을 것: 새 구조, v0.9.0 수동 제거 순서, RC→1.0 수동 설치, 알려진 제한·NOT_RUN.
 
 ### S8-4 PR·리뷰·머지
 
@@ -1201,4 +1201,5 @@ S7-15와 같다.
 - [ ] 문서 전용 PR(`docs/v1.0.0-record`, #650 선례)에 담을 것:
   - PROGRESS 공개 결과
   - 이 문서(10)의 보관과 `docs/history.md` 링크
+  - 계획 10을 가리키는 상대 링크(README·CONVENTIONS·AGENTS·docs/history.md·PROGRESS, 2026-11-04 기준 9곳)를 고정 링크로 바꾸고 링크 검사 0건을 확인한다
 - [ ] 정리: S8 worktree·브랜치를 정리한다. archive·cache·사용자 자료는 보존한다.

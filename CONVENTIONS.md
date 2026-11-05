@@ -68,8 +68,8 @@ main은 squash만 사용한다. PR 최종 변경의 `Frontend (pnpm)`, `Rust (Ca
 
 lock·생성 파일 병합(00 §3.3·§3.6에서 옮김):
 - clone마다 한 번 `git config merge.lockfile.driver true && git config rerere.enabled true`를 한다. `.gitattributes`가 `Cargo.lock`(루트와 `app/src-tauri`)·`pnpm-lock.yaml`·`app/src/rpc/gen/rpc.ts`를 `merge=lockfile`로 둔다. `rerere`는 반복 충돌 해결에 활용한다.
-- 이 파일들은 손으로 합치지 않는다. 양쪽이 모두 바꾼 파일은 병합 드라이버가 현재 쪽 판을 남긴다: rebase에서는 main 쪽 판이고, 브랜치에서 `git merge origin/main`을 하면 브랜치 판이다. merge라면 main 판을 받는다(`git checkout origin/main -- <파일>`).
-- 그 뒤 다시 만든다: `rpc.ts`는 `pnpm gen`, Cargo lock은 `cargo metadata --format-version 1 >/dev/null`(빠진 의존성만 더함, 앱 lock은 `--manifest-path app/src-tauri/Cargo.toml`), `pnpm-lock.yaml`은 `pnpm install`. 재생성은 lock만 바꾼 갱신(전이 의존성의 보안 갱신 등)을 되살리지 않으므로 브랜치의 그런 갱신은 다시 적용한다. CI가 `--locked`·`--frozen-lockfile`로 확인한다.
+- 이 파일들은 손으로 합치지 않는다. 양쪽이 모두 바꾼 파일은 병합 드라이버가 현재 쪽 판을 남긴다: rebase에서는 main 쪽 판이고, 브랜치에서 `git merge origin/main`을 하면 브랜치 판이다. merge라면 병합 뒤 `git checkout origin/main -- <파일>`(별도 커밋)로 main 판을 받는다.
+- 그 뒤 다시 만든다: `rpc.ts`는 `pnpm gen`, Cargo lock은 `cargo metadata --format-version 1 >/dev/null`(빠진 의존성만 더함, 앱 lock은 `--manifest-path app/src-tauri/Cargo.toml`), `pnpm-lock.yaml`은 `pnpm install`. 재생성은 lock만 바꾼 갱신(전이 의존성의 보안 갱신 등. 예: manifest 변경 없이 `pnpm-lock.yaml`만 바꾼 seroval 1.7.7)을 되살리지 않으므로 브랜치의 그런 갱신은 다시 적용한다. CI가 `--locked`·`--frozen-lockfile`로 확인한다.
 
 PR 리뷰(사용자 결정 2026-10-27):
 - 판정: PR을 연 뒤 10분 안에 `chatgpt-codex-connector[bot]`이 `codex-pull-request-review-summary` 댓글을 남기고, 그것이 사용량 한도 안내가 아니면 "자동 리뷰 켜짐"이다. 아니면 "꺼짐"이다. (#638–#645의 첫 반응은 PR 생성 0.1–0.3분 뒤, #646 이후는 반응 없음.)
