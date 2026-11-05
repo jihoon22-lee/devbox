@@ -1,12 +1,13 @@
 //! `cargo run -p xtask -- notices`: writes THIRD_PARTY_NOTICES.md, the license texts of the third-party
 //! software that ships in the installer: the crates of the WSL `devbox` command, the crates of the
-//! Windows app, the production npm packages of its UI, the fonts kept in this repository (`bundled`) and
-//! the code the toolchain and the WebView2 SDK link into the two binaries (`linked`).
+//! Windows app, the production npm packages of its UI, the fonts kept in this repository (`bundled`), the
+//! code the toolchain and the WebView2 SDK link into the two binaries and the code Tauri's bundler puts
+//! into the installer itself (`linked`).
 //!
 //! The first line fingerprints the inputs the notices were made from: the lock files, the manifests and
-//! the license texts of the bundled fonts and the linked code. `notices_inputs_are_current` recomputes it
-//! (hashing only: no cargo, no pnpm, no network), so an input change that is committed without
-//! regenerating this file fails `cargo test --workspace`.
+//! the license texts of the bundled fonts, the linked code and the installer's code (both in `linked`'s
+//! table). `notices_inputs_are_current` recomputes it (hashing only: no cargo, no pnpm, no network), so an
+//! input change that is committed without regenerating this file fails `cargo test --workspace`.
 
 mod bundled;
 mod fingerprint;
@@ -67,6 +68,7 @@ pub fn run() -> Result<()> {
     let fonts = bundled::components(&repo)?;
     let linked_linux = linked::components(&repo, sources::Binaries::Linux);
     let linked_windows = linked::components(&repo, sources::Binaries::Windows);
+    let installer = linked::components(&repo, sources::Binaries::Installer);
     let counts = (
         command_crates.len(),
         app_crates.len(),
@@ -74,6 +76,7 @@ pub fn run() -> Result<()> {
         fonts.len(),
         linked_linux.len(),
         linked_windows.len(),
+        installer.len(),
     );
     let sources = [
         (
@@ -102,6 +105,12 @@ pub fn run() -> Result<()> {
              `x86_64-pc-windows-msvc`, listed in `xtask/src/notices/linked.rs`)",
             linked_windows,
         ),
+        (
+            "Code Tauri's bundler puts into the installer (`devbox-<version>-setup.exe` and the \
+             `uninstall.exe` it writes, pinned to `@tauri-apps/cli` in `pnpm-lock.yaml`, listed in \
+             `xtask/src/notices/linked.rs`)",
+            installer,
+        ),
     ];
     let notices = generate(&sources, &input_fingerprint(&repo)?)?;
     fs::write(repo.join(NOTICES_FILE), &notices)
@@ -110,14 +119,15 @@ pub fn run() -> Result<()> {
     ensure_current(&repo)?;
     println!(
         "notices: wrote {NOTICES_FILE} ({} bytes; packages: Rust command {}, Rust app {}, npm {}, bundled fonts {}, \
-         linked into devbox-linux {}, linked into Devbox.exe {})",
+         linked into devbox-linux {}, linked into Devbox.exe {}, in the installer {})",
         notices.len(),
         counts.0,
         counts.1,
         counts.2,
         counts.3,
         counts.4,
-        counts.5
+        counts.5,
+        counts.6
     );
     Ok(())
 }
@@ -236,8 +246,8 @@ fn generate(sources: &[(&str, Vec<Component>)], fingerprint: &str) -> Result<Str
         "Devbox is licensed under the MIT License (see `LICENSE`). This file lists the third-party \
          software that ships with it, with the license text each package provides. It is generated \
          by `cargo run -p xtask -- notices` from the inputs fingerprinted in its first line (the lock \
-         files, the manifests and the license texts of the bundled fonts and the linked code); do not \
-         edit it by hand.\n\n\
+         files, the manifests and the license texts of the bundled fonts, the linked code and the \
+         installer's code); do not edit it by hand.\n\n\
          Packages by source:\n\n",
     );
     for (source, components) in sources {

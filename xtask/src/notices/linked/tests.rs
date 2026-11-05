@@ -47,8 +47,9 @@ fn toolchain_mismatches(toolchain: &str) -> Vec<String> {
 
 /// One message per row of `rows` whose texts are not in the folder its name and version give. A crate that
 /// std links in is below the folder of the standard library, `rust-std-<toolchain>/<name>-<version>`; every
-/// other component (the standard library itself, musl and the WebView2 SDK) is at the top, `<name>-<version>`,
-/// which for the standard library is `rust-std-<toolchain>` because its version is the toolchain's.
+/// other component (the standard library itself, musl, the WebView2 SDK and the installer's NSIS and
+/// nsis_tauri_utils) is at the top, `<name>-<version>`, which for the standard library is
+/// `rust-std-<toolchain>` because its version is the toolchain's.
 fn misplaced(rows: &[Linked]) -> Vec<String> {
     rows.iter()
         .filter_map(|row| {
@@ -113,6 +114,75 @@ fn crate_mismatches(app_lock: &str) -> Vec<String> {
         .collect()
 }
 
+/// The versions `lock` (the text of `pnpm-lock.yaml`) has of the npm package `name`: those of its
+/// `'<name>@<version>':` keys, of which a snapshot key may add peer versions in parentheses.
+fn locked_npm_versions<'a>(lock: &'a str, name: &str) -> Vec<&'a str> {
+    let mut versions: Vec<&str> = lock
+        .lines()
+        .filter_map(|line| {
+            let key = line.strip_prefix("  ")?.strip_suffix(':')?;
+            let key = key
+                .strip_prefix('\'')
+                .and_then(|key| key.strip_suffix('\''))
+                .unwrap_or(key);
+            let version = key.strip_prefix(name)?.strip_prefix('@')?;
+            version.split('(').next()
+        })
+        .collect();
+    versions.sort_unstable();
+    versions.dedup();
+    versions
+}
+
+/// One message per npm package that rows are pinned to and that `pnpm_lock` (the text of
+/// `pnpm-lock.yaml`) does not lock at the pinned version, naming those rows and what to take again.
+fn npm_mismatches(pnpm_lock: &str) -> Vec<String> {
+    let mut pins: Vec<(&str, &str, Vec<String>)> = Vec::new();
+    for row in &LINKED {
+        let Pin::Npm(package, pinned) = row.pin else {
+            continue;
+        };
+        let label = format!("`{}@{}`", row.name, row.version);
+        match pins
+            .iter_mut()
+            .find(|(other, version, _)| *other == package && *version == pinned)
+        {
+            Some((_, _, rows)) => rows.push(label),
+            None => pins.push((package, pinned, vec![label])),
+        }
+    }
+    pins.into_iter()
+        .filter_map(|(package, pinned, rows)| {
+            let locked = locked_npm_versions(pnpm_lock, package);
+            let (are, them) = if rows.len() == 1 {
+                ("is", "it")
+            } else {
+                ("are", "them")
+            };
+            (!locked.contains(&pinned)).then(|| {
+                format!(
+                    "pnpm-lock.yaml locks {package} {}, but {} in LINKED (xtask/src/notices/linked.rs) {are} \
+                     pinned to {package} {pinned}: take {them} again for the locked {package}. At its tag of \
+                     tauri-apps/tauri, crates/tauri-bundler/src/bundle/windows/nsis/mod.rs names the NSIS zip \
+                     (NSIS_URL, NSIS_SHA1) and nsis_tauri_utils.dll (NSIS_TAURI_UTILS_URL, \
+                     NSIS_TAURI_UTILS_SHA1) that the bundler downloads: download both again, check their SHA-1, \
+                     compare the zip's COPYING with COPYING at that NSIS tag and read the DLL's machine and \
+                     imports; put that COPYING and LICENSE_MIT and LICENSE_APACHE-2.0 of \
+                     tauri-apps/nsis-tauri-utils at the DLL's tag in xtask/notices/linked/, update the rows, \
+                     TAURI_CLI and WITHOUT_ENTRY (the bundler's version and license, the default compression) \
+                     and run `cargo run -p xtask -- notices`",
+                    if locked.is_empty() {
+                        "at no version".to_string()
+                    } else {
+                        locked.join(" and ")
+                    },
+                    rows.join(" and ")
+                )
+            })
+        })
+        .collect()
+}
+
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
@@ -130,13 +200,16 @@ fn files_below(dir: &Path, found: &mut Vec<PathBuf>) {
 
 #[test]
 fn the_committed_notices_list_every_linked_component_with_its_license_texts() {
-    // The three components the notices must cover (user decision 2026-11-04), and the in-tree
-    // compiler_builtins, whose own license the std statement folds into `.` (fix round 1).
+    // The three components the notices must cover (user decision 2026-11-04), the in-tree
+    // compiler_builtins, whose own license the std statement folds into `.` (fix round 1), and the
+    // installer's NSIS and nsis_tauri_utils (branch review I-1, Ruling 114).
     for name in [
         RUST_STD,
         "compiler_builtins",
         "musl",
         "Microsoft.Web.WebView2",
+        "nsis",
+        "nsis_tauri_utils",
     ] {
         assert!(
             LINKED.iter().any(|row| row.name == name),
@@ -168,16 +241,59 @@ fn the_committed_notices_list_every_linked_component_with_its_license_texts() {
     }
     assert!(notices.contains(&format!("\n\n{WITHOUT_ENTRY}\n\n")));
     // Without an entry: the compiler-rt C builtins, not the whole compiler_builtins crate (it has an
-    // entry), and the Visual C++ runtime that Tauri links into Devbox.exe, stated as a fact only.
+    // entry), and the Visual C++ runtime that Tauri links into Devbox.exe, stated as a fact only. Then
+    // the installer's facts (branch review I-1): the bundler and the templates its script comes from,
+    // the compression, what nsis_tauri_utils.dll holds (no std, no C runtime) and where NSIS's source is.
+    let nsis = LINKED
+        .iter()
+        .find(|row| row.name == "nsis")
+        .expect("an nsis row");
     for named in [
         "the compiler-rt C builtins compiled into `compiler_builtins`",
         "the Microsoft Visual C++ runtime (libcmt and libvcruntime)",
         "Tauri links statically by default (`staticVCRuntime`)",
         "the Universal C Runtime that Windows provides",
+        &format!(
+            "Tauri's bundler in `{TAURI_CLI_PACKAGE}` {TAURI_CLI} with NSIS {}",
+            nsis.version
+        ),
+        "NSIS's LZMA compression, Tauri's default (Devbox sets none)",
+        "generated from the bundler's NSIS templates",
+        "tauri-bundler 2.10.2 is Apache-2.0 OR MIT",
+        "name the Cargo-Bundle developers and the Tauri Apps Contributors",
+        "`nsis_tauri_utils.dll` is a Rust DLL built without `std` (`#![no_std]`)",
+        "Rust's `core` and `alloc` libraries and the `semver` crate",
+        "links no C runtime",
+        &format!(
+            "https://github.com/nsis-dev/nsis/tree/v{}",
+            nsis.version.replace('.', "")
+        ),
+        "https://nsis.sourceforge.io",
     ] {
         assert!(WITHOUT_ENTRY.contains(named), "{named}: {WITHOUT_ENTRY}");
     }
+    // "whose MIT text is that of the `tauri` crates below": the tauri crate is listed under that text.
+    let tauri_mit =
+        "\n```text\nMIT License\n\nCopyright (c) 2017 - Present Tauri Apps Contributors\n";
+    assert!(WITHOUT_ENTRY.contains("whose MIT text is that of the `tauri` crates below"));
+    assert!(
+        notices
+            .split("\n### License text ")
+            .any(|group| group.contains("\n- `tauri@") && group.contains(tauri_mit)),
+        "no group lists the tauri crate under the Tauri Apps Contributors' MIT text"
+    );
     assert!(!WITHOUT_ENTRY.contains("builtins `compiler_builtins` may add"));
+    // Not what the checks refuted: the DLL has no std and no C runtime, and the bundler's own license
+    // files differ from the `tauri` crates' texts (they add the Cargo-Bundle developers).
+    for refuted in [
+        "contains the Rust standard library",
+        "the same holder and text",
+    ] {
+        assert!(
+            !WITHOUT_ENTRY.contains(refuted),
+            "{refuted}: {WITHOUT_ENTRY}"
+        );
+    }
 }
 
 #[test]
@@ -201,6 +317,93 @@ fn every_row_keeps_its_texts_in_the_folder_its_name_and_version_give() {
             && found[0].contains(&format!("rust-std-{TOOLCHAIN}/libc-0.2.185")),
         "{}",
         found[0]
+    );
+    // A row of the installer is at the top, `<name>-<version>`, like musl and the WebView2 SDK: one put
+    // below the standard library, as if std linked it, is caught too.
+    let nsis = LINKED
+        .iter()
+        .position(|row| row.name == "nsis")
+        .expect("an nsis row");
+    let mut copy = LINKED;
+    copy[nsis] = Linked {
+        dir: "rust-std-1.98.1/nsis-3.11",
+        ..LINKED[nsis]
+    };
+    let found = misplaced(&copy);
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(
+        found[0].contains("`nsis@3.11`") && found[0].contains("give nsis-3.11:"),
+        "{}",
+        found[0]
+    );
+}
+
+#[test]
+fn the_installer_source_lists_the_installer_rows_only() {
+    let names = |binary| -> Vec<String> {
+        components(&repo(), binary)
+            .into_iter()
+            .map(|component| component.name)
+            .collect()
+    };
+    assert_eq!(names(Binaries::Installer), ["nsis", "nsis_tauri_utils"]);
+    for binary in [Binaries::Linux, Binaries::Windows] {
+        let listed = names(binary);
+        assert!(listed.contains(&RUST_STD.to_string()), "{listed:?}");
+        assert!(
+            !listed.iter().any(|name| name.starts_with("nsis")),
+            "{listed:?}"
+        );
+    }
+}
+
+#[test]
+fn the_installer_rows_are_pinned_to_the_locked_tauri_cli() {
+    let pinned: Vec<&str> = LINKED
+        .iter()
+        .filter(|row| matches!(row.pin, Pin::Npm(TAURI_CLI_PACKAGE, _)))
+        .map(|row| row.name)
+        .collect();
+    assert_eq!(pinned, ["nsis", "nsis_tauri_utils"]);
+    let lock = fs::read_to_string(repo().join("pnpm-lock.yaml")).expect("read pnpm-lock.yaml");
+    assert_eq!(locked_npm_versions(&lock, TAURI_CLI_PACKAGE), [TAURI_CLI]);
+    let stale = npm_mismatches(&lock);
+    assert!(stale.is_empty(), "{}", stale.join("\n"));
+}
+
+#[test]
+fn a_new_tauri_cli_names_both_installer_rows_and_the_downloads_to_take_again() {
+    // A copy of the real lock with the Tauri CLI at another version.
+    let lock = fs::read_to_string(repo().join("pnpm-lock.yaml")).expect("read pnpm-lock.yaml");
+    let key = format!("'{TAURI_CLI_PACKAGE}@{TAURI_CLI}':");
+    assert!(lock.contains(&key), "pnpm-lock.yaml has no {key}");
+    let bumped = lock.replace(&key, &format!("'{TAURI_CLI_PACKAGE}@2.99.0':"));
+    let stale = npm_mismatches(&bumped);
+    assert_eq!(stale.len(), 1, "{stale:#?}");
+    for named in [
+        "pnpm-lock.yaml locks @tauri-apps/cli 2.99.0",
+        "`nsis@3.11` and `nsis_tauri_utils@0.5.3`",
+        &format!("pinned to @tauri-apps/cli {TAURI_CLI}"),
+        "crates/tauri-bundler/src/bundle/windows/nsis/mod.rs",
+        "NSIS_URL",
+        "NSIS_TAURI_UTILS_URL",
+        "SHA-1",
+        "COPYING",
+        "LICENSE_MIT",
+        "LICENSE_APACHE-2.0",
+        "WITHOUT_ENTRY",
+        "cargo run -p xtask -- notices",
+    ] {
+        assert!(stale[0].contains(named), "{named}: {}", stale[0]);
+    }
+    assert!(npm_mismatches("")[0].contains("locks @tauri-apps/cli at no version"));
+    // The platform packages of the CLI share its name as a prefix but are other packages.
+    assert_eq!(
+        locked_npm_versions(
+            "  '@tauri-apps/cli-win32-x64-msvc@2.99.0':\n  '@tauri-apps/cli@2.12.2(x@1)':\n",
+            TAURI_CLI_PACKAGE
+        ),
+        ["2.12.2"]
     );
 }
 

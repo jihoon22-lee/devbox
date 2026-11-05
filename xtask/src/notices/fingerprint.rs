@@ -21,7 +21,8 @@ const OTHER_MANIFESTS: [&str; 3] = ["Cargo.toml", "app/src-tauri/Cargo.toml", "a
 /// `[dev-dependencies]` to `[dependencies]`, and a feature or a target table can pull in a crate that is
 /// already locked, with no change to a lock file. So the manifests are in it (the workspace root, every
 /// member, the app crate and the app package), and so are the licenses of what no lock file lists: the
-/// bundled fonts and the code the toolchain and the WebView2 SDK link in (with each row as it is printed).
+/// bundled fonts, the code the toolchain and the WebView2 SDK link in and the code Tauri's bundler puts into
+/// the installer (with each row as it is printed).
 pub fn input_fingerprint(repo: &Path) -> Result<String> {
     let mut parts = Vec::new();
     for name in LOCK_FILES {

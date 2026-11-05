@@ -15,7 +15,8 @@ pub enum Ecosystem {
     Npm,
     /// A font file kept in this repository (`bundled.rs`), in no lock file.
     Font,
-    /// Code the toolchain or an SDK links into these binaries (`linked.rs`), in no lock file.
+    /// Code the toolchain or an SDK links into these binaries, or that Tauri's bundler puts into the
+    /// installer (`linked.rs`), in no lock file.
     Linked(Binaries),
 }
 
@@ -26,7 +27,18 @@ pub enum Binaries {
     Linux,
     /// `Devbox.exe`, the Windows app (`x86_64-pc-windows-msvc`).
     Windows,
+    /// `devbox-linux` and `Devbox.exe`, not the installer.
     Both,
+    /// The NSIS installer `devbox-<version>-setup.exe` and the `uninstall.exe` it writes into the install
+    /// folder, which Tauri's bundler builds.
+    Installer,
+}
+
+impl Binaries {
+    /// Whether a component listed for `self` is in `binary` (`Linux`, `Windows` or `Installer`).
+    pub fn includes(self, binary: Binaries) -> bool {
+        self == binary || (self == Binaries::Both && binary != Binaries::Installer)
+    }
 }
 
 impl Ecosystem {
@@ -38,6 +50,10 @@ impl Ecosystem {
             Ecosystem::Linked(Binaries::Linux) => "linked into devbox-linux",
             Ecosystem::Linked(Binaries::Windows) => "linked into Devbox.exe",
             Ecosystem::Linked(Binaries::Both) => "linked into devbox-linux and Devbox.exe",
+            Ecosystem::Linked(Binaries::Installer) => {
+                "in the installer `devbox-<version>-setup.exe` and the `uninstall.exe` it writes into the \
+                 install folder"
+            }
         }
     }
 }
