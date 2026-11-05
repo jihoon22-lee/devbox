@@ -17,6 +17,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 ts-rs.workspace = true
 bytes.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
