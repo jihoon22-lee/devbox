@@ -283,6 +283,14 @@ impl RuntimeService {
         for (index, def) in prepared.nodes.iter().enumerate() {
             self.check_starting()?;
             let final_node = index + 1 == count;
+            let identity = self.service_start_lock(&prepared, def).await;
+            self.check_starting()?;
+            if !final_node && let Some(run) = self.running_dependency(&prepared, def).await? {
+                // Reused as it is, even from an older definition; `started` lists only launches.
+                drop(identity);
+                last = Some(self.settle(run, def, final_node).await?);
+                continue;
+            }
             let existing = replacement.as_ref().filter(|_| final_node);
             let id = existing
                 .map(|v| v.run.id.clone())
@@ -405,34 +413,9 @@ impl RuntimeService {
                 kind,
             });
             drop(guard);
-            let mut run = self.reconcile_one(&id).await?;
-            if let RunDef::Service(service) = def {
-                run = self.wait_ready(run, service).await?;
-                if !final_node && (!run.state.is_live() || !run.ready) {
-                    return Err(RuntimeError::DependencyFailed {
-                        id: def.id().into(),
-                    }
-                    .into());
-                }
-            } else if !final_node {
-                loop {
-                    if !run.state.is_live() {
-                        break;
-                    }
-                    self.coordinate(tokio::time::sleep(Duration::from_millis(50)))
-                        .await?;
-                    run = self.reconcile_one(&id).await?;
-                }
-                if run.state != RunState::Exited
-                    || run.exit.as_ref().and_then(|e| e.code) != Some(0)
-                {
-                    return Err(RuntimeError::DependencyFailed {
-                        id: def.id().into(),
-                    }
-                    .into());
-                }
-            }
-            last = Some(run);
+            drop(identity);
+            let run = self.reconcile_one(&id).await?;
+            last = Some(self.settle(run, def, final_node).await?);
         }
         Ok(last.expect("preflight requires requested definition"))
     }
@@ -444,7 +427,7 @@ impl RuntimeService {
         }
         Ok(())
     }
-    async fn coordinate<T>(&self, wait: impl Future<Output = T>) -> R<T> {
+    pub(crate) async fn coordinate<T>(&self, wait: impl Future<Output = T>) -> R<T> {
         tokio::select! {
             biased;
             _ = self.stopping.cancelled() => {
@@ -454,7 +437,7 @@ impl RuntimeService {
             result = wait => Ok(result),
         }
     }
-    async fn wait_ready(&self, mut run: Run, service: &ServiceDef) -> R<Run> {
+    pub(crate) async fn wait_ready(&self, mut run: Run, service: &ServiceDef) -> R<Run> {
         let execution = self.execution()?;
         let until =
             tokio::time::Instant::now() + Duration::from_secs(service.ready_timeout_sec.into());

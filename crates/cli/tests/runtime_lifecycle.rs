@@ -399,6 +399,9 @@ async fn depends_on_stops_after_failure() {
     );
 }
 
+#[path = "runtime_lifecycle_cases/dependencies.rs"]
+mod dependencies;
+
 #[tokio::test]
 #[ignore = "needs systemd user"]
 async fn start_requires_current_trust_and_creates_no_unit_when_stale() {

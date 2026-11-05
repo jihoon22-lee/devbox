@@ -5,6 +5,9 @@ pub use container_model::*;
 pub use containers::DockerContainers;
 pub mod cron;
 mod defs;
+mod dependency;
+#[cfg(test)]
+mod dependency_tests;
 pub mod detect;
 pub use detect::{DefinitionKind, DetectRuns, Suggestion, SuggestionSource};
 mod agent_test;
