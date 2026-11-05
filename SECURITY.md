@@ -55,7 +55,7 @@ GitHub 비공개 취약점 신고(Private vulnerability reporting)를 쓴다. �
 
 - 설치 파일 `devbox-<버전>-setup.exe`에는 코드 서명(Authenticode)이 없고, 앱 업데이트도 서명을 쓰지 않는다(ADR 0016).
 - 앱 업데이트는 받은 파일의 크기와 SHA-256을 GitHub Release 자산의 값과 비교한 뒤에만 설치 준비를 마친다. 직접 받은 설치 파일은 PowerShell `Get-FileHash`로 SHA-256을 확인한다.
-- 서명이 없는 설치 파일에 Windows가 보이는 경고와 그 문구는 1.0.0 공개 전 Windows 확인에서 본다.
+- 서명이 없는 설치 파일에 Windows가 보이는 경고와 그 문구는 아직 확인하지 않았다([진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §4).
 
 ## WSL 쪽 연결
 
