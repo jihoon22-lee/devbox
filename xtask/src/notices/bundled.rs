@@ -49,7 +49,7 @@ pub fn components(repo: &Path) -> Result<Vec<Component>> {
                 dir: file
                     .parent()
                     .map_or_else(|| repo.to_path_buf(), Path::to_path_buf),
-                license_file: Some(repo.join(font.license_file)),
+                license_files: vec![repo.join(font.license_file)],
             })
         })
         .collect()

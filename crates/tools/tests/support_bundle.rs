@@ -60,7 +60,7 @@ fn entries(path: &str) -> BTreeMap<String, String> {
             let mut entry = zip.by_index(index).expect("entry");
             let mut text = String::new();
             entry.read_to_string(&mut text).expect("text entry");
-            (entry.name().to_owned(), text)
+            (entry.name().expect("entry name").into_owned(), text)
         })
         .collect()
 }

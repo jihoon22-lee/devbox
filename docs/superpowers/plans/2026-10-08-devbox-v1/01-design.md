@@ -1,13 +1,13 @@
 # Devbox v1 설계 (설계 원장)
 
-- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](08-review-record.md)) · S0b–S6 머지, `v1.0.0-rc.1` prerelease 공개 · S7(rc.2 보강) 진행 중이며 구현과 달라진 설명은 S7-11(2026-10-29)에서 정정 · 진행 상태의 원장은 [PROGRESS](PROGRESS.md)
+- 상태: v3 확정 · 교차 검증 반영 · 권장안 확정(2026-10-08, 00-roadmap §5) · 세 계획 통합·검수 반영(2026-10-08, [08 §8·§9](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md)) · S0b–S7 머지, `v1.0.0-rc.1`·`v1.0.0-rc.2` prerelease 공개 · S8(1.0.0 공개) 진행 중 · 구현과 달라진 설명은 S7-11(2026-10-29)에서 정정 · 진행 상태의 원장은 [PROGRESS](PROGRESS.md)
 - 작성: 2026-10-07 · 기준 원격 `main@72ff50c7`(v0.9.0 공개본). 이 PC의 로컬 main은 그 위에 원격에 없는 커밋 2개(끝난 계획 정리·의존성 보안 업데이트)가 더 있다
 - 입력:
   - 본질 기준 전면 리뷰(2026-10-07). 결론은 이 문서 §0·§2·§3에 흡수했고, 원본 보고서(`~/projects/devbox-review-2026-10-07/`)는 2026-10-08에 지웠다.
   - 아래 §0의 사용자 결정
-  - [교차 검증 기록](08-review-record.md)
-  - 다른 세션의 v0.9.0 리뷰 교차 검증 두 건(CV·AR, 2026-10-07). 결론·결함·재현 입력값은 08 §8과 00-roadmap §4·§7에 옮겼고, 원본 폴더는 통합 뒤 지웠다(08 §9)
-- 이 문서는 하위 프로젝트 S0a–S6 전체가 따르는 공통 설계다. 실행 순서와 작업은 [00-roadmap](00-roadmap.md)과 각 계획 문서가 정한다.
+  - [교차 검증 기록](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md)
+  - 다른 세션의 v0.9.0 리뷰 교차 검증 두 건(CV·AR, 2026-10-07). 결론·결함·재현 입력값은 08 §8, 00-roadmap §4와 이 문서 §9.4(옛 00-roadmap §7)에 옮겼고, 원본 폴더는 통합 뒤 지웠다(08 §9)
+- 이 문서는 하위 프로젝트 S0a–S6 전체가 따르는 공통 설계다. 실행 순서와 작업은 [00-roadmap](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/00-roadmap.md)과 각 계획 문서가 정한다(끝난 계획은 [docs/history.md](../../../history.md)).
 - 외부 검토 번호는 출처를 앞에 붙인다: `RV-`(본질 리뷰), `CV-`, `AR-`, `AU-`(10-03 감사: `docs/superpowers/plans/2026-10-03-product-readiness/08-traceability.md`(v0.9.0 공개본 커밋 `72ff50c7`에 있음: `git show 72ff50c7:<경로>`)의 S·W·AS·AX·K·C 번호에 `AU-`를 붙임), 교차 검증 소견 `UX-`·`FS-`·`SE-`·`PD-`·`PL-`.
 
 ## 0. 결정 요약
@@ -48,10 +48,10 @@
 측정(2026-10-08, 08 §8.2)으로는 이 계층의 전용 코드와 각 엔진의 Windows·WSL 이중 경로 파일이 전체 약 49.7만 줄의 약 25%(파일 단위 하한)이고, `.github`·`scripts`가 5.6만 줄이다. 더 큰 이유는 본질의 중심인 에이전트 기능(앱을 닫아도 유지되는 세션, hook 상태 감지, 알림, 재개)이 현 구조에 없고, 두 검토가 확정한 결함 약 20건 중 에이전트·터미널 결함은 0건이라는 점이다. 결함을 고쳐도 사용 빈도 1위 영역은 나아지지 않는다. 그래서 재구축을 택한다. 다만 그 의견에서 다음은 받아들인다.
 
 1. **구조 확인 실험:** S0a에서 새 구조의 핵심 가정을 측정한다. 브리지·PTY 지연과 hook 획득을 측정하고, 에이전트 반영·터미널 전체 경로는 S1 SC3·SC10 절대 기준으로 판정한다. v0.9.0 시작 시간 비교는 02 Task 7에 따라 생략한다. 구조 변경이 필요한 실패는 대체 경로를 검토한다.
-2. **확정 결함은 회귀 조건으로:** 두 검토가 확정한 결함 전부(CV-F01–F09, AR-F01·F02·F04·F06–F10·F12·F13·F15·F16·D01, 재시작 backoff 정책 AR-F14)를 새 구조의 회귀 조건으로 넣는다(§9.1). 결함별 시험 위치와 입력값은 [00-roadmap §7](00-roadmap.md) 추적표에 있다.
+2. **확정 결함은 회귀 조건으로:** 두 검토가 확정한 결함 전부(CV-F01–F09, AR-F01·F02·F04·F06–F10·F12·F13·F15·F16·D01, 재시작 backoff 정책 AR-F14)를 새 구조의 회귀 조건으로 넣는다(§9.1). 결함별 시험 위치와 입력값은 §9.4 추적표에 있다.
 3. **근본 원인은 설계 규칙으로:** 결함들의 공통 원인(본 것과 실행하는 것의 분리, 성공한 변경 뒤 조회 실패, 관찰 신호와 데이터 변경의 혼동, 화면 수명과 작업 수명의 혼동, 전환 때 초안 버림)을 §8.6 정합성 규칙으로 둔다.
 4. **기존 보호를 다시 만들지 않기:** 검증된 로직은 테스트와 함께 그대로 옮긴다(§9.3 이식 표).
-5. **v0.9.0 사용 중 회피:** 재구축 기간 동안 v0.9.0에서 피할 동작 목록을 [00-roadmap §4](00-roadmap.md)에 둔다.
+5. **v0.9.0 사용 중 회피:** 재구축 기간 동안 v0.9.0에서 피할 동작 목록을 [00-roadmap §4](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/00-roadmap.md)에 둔다.
 
 ## 1. 목표와 성공 기준
 
@@ -126,7 +126,7 @@
 |---|---|---|
 | 노트: vault 폴더(WSL, 기본 `~/notes`, Git 동기화 권장), Markdown, 폴더 트리, 태그, 위키링크·백링크, 템플릿, 이미지 붙여넣기, Mermaid, 살균된 미리보기 | 유지 | `knowledge-vault-engine`, `markdown` |
 | 자동 저장(1초 멈춤) + 복구 저널 + 외부 변경 비교 | 유지 | 문서 모델(§8.4) |
-| 일일 기록 + "오늘 한 일" 요약 삽입(활동·커밋·닫힌 에이전트 작업·실행 결과). 요약은 PC 이름 소제목 아래에 넣는다 | 단순화 | 두 PC 동시 기록 충돌 방지 |
+| 일일 기록 + "오늘 한 일" 요약 삽입(활동·커밋·닫힌 에이전트 작업·실행 결과) (1.0.0에는 활동 합계가 없다 — PROGRESS §4). 요약은 PC 이름 소제목 아래에 넣는다 | 단순화 | 두 PC 동시 기록 충돌 방지 |
 | 빠른 캡처: 전역 단축키 → 작은 창 → inbox | 유지 | |
 | 노트에서 에이전트 작업 만들기(선택한 내용을 초기 지시문으로) | 신규 | S3 선택 과제 |
 | 활동 기록: Windows 전면 창(앱·제목) 수집, 동의·일시중지, 개인정보 규칙(fail-closed), idle 세션화, 프로젝트 귀속, 일·주 보기, 내보내기 | 유지 | `activity-engine` |
@@ -418,7 +418,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
   - `secrets_locked`, `secrets.key_mismatch`
   - 클라이언트 전용 `connection_lost`(결과 불명)
 - **커밋 뒤 부분 실패:** Err로 돌려주지 않는다. `Ok({ value, warnings: Warning[] })`로 돌려준다(예: 저장은 됐고 색인은 미뤄짐).
-- **잘린 결과:** 상한에 걸려 잘렸으면 `truncated: { reason }`을 붙인다(ADR 0005 유지).
+- **잘린 결과:** 상한에 걸려 잘렸으면 결과의 bool 표시(`truncated`, 부분별로는 `bodyTruncated`·`historyTruncated`·`previewTruncated`·`tokensTruncated`)를 `true`로 둔다. 잘린 이유는 싣지 않는다(ADR 0005 유지).
 - **멱등성:** 생성형 mutation(`agents.create`, `runtime.start` 등)은 `clientRequestId`로 멱등 처리한다. 데몬은 10분간 결과를 기억한다. 재시작 뒤에는 기억이 없으므로 화면은 "결과 확인 필요" 후 상태를 다시 읽는다.
 - **문구:** `app/src/rpc/messages.ts`는 `{ [C in RpcErrorCode]: Message | ((detail) => Message) }` 객체 리터럴이다. 빠진 키와 남는 키가 모두 컴파일 오류가 된다.
 
@@ -522,57 +522,24 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 
 ## 7. 데이터와 설정
 
+설정 파일 네 개(`~/.config/devbox/config.toml`·`config.local.toml`, 프로젝트의 `.devbox/devbox.toml`, Windows 앱의 `settings.json`)의 위치·키·병합 규칙은 [설정 파일 안내](../../../config.md)를 따른다. 아래 표는 설정 파일이 아닌 데이터·상태 위치와 설정 파일 밖의 폴더다.
+
 | 위치 | 내용 | 공유 |
 |---|---|---|
 | `~/.local/share/devbox/<i>/devbox.db`, `index.db` | §4.4 | PC별 |
 | `~/.local/share/devbox/<i>/runs/`, `api-history/`, `webhooks/`, `backups/`, `keys/` | 실행 로그, 본문, 백업, 봉인 키 | PC별 |
 | `~/.local/state/devbox/<i>/logs/` | 데몬 로그 | PC별 |
-| `~/.config/devbox/config.toml` | 공유할 설정: 프로젝트 폴더, 터미널·에이전트 도구 프로필, MCP 쓰기, 비밀 이름 목록, 노트·검색, 활동 기록 개인정보 규칙([설정 파일 안내](../../../config.md)) | dotfiles로 공유 |
-| `~/.config/devbox/config.local.toml` | PC별 설정: Windows 사본 폴더(`[windows]`는 이 파일에만), PC 이름 등 `config.toml` 값을 이 PC에서만 바꾸는 키 | PC별 |
 | `~/.config/devbox/api/` | 개인 API 컬렉션·환경(비밀은 참조만) | dotfiles로 공유 |
-| `<프로젝트>/.devbox/devbox.toml` | 작업·서비스·예약·시작 구성·에이전트 준비 | Git |
 | `<프로젝트>/.devbox/api/`, `.devbox/prompts/` | 프로젝트 API 컬렉션, 지시문 템플릿 | Git |
 | `~/notes`(설정 가능) | 노트 vault | Git |
 | `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\` | 창 상태, 앱 로그(7일) | PC별 |
-| `%LOCALAPPDATA%\io.github.jihoon22lee.devbox\settings.json` | Windows 앱 설정: 배포판, 전역 단축키, 자동 시작, 활동 기록 동의·일시중지 | PC별 |
 
 - 설정은 파일이 원장이다. 화면에서 바꾸면 해당 파일에 쓴다. DB에는 화면 상태처럼 파일로 둘 필요가 없는 것만 둔다.
 - 앱에서 작업을 만들면 "프로젝트 파일에 저장"(기본)과 "이 PC에만 저장" 중 고른다. 같은 ID가 둘 다에 있으면 프로젝트 파일이 우선하고, 화면에 출처를 표시한다.
 
-`.devbox/devbox.toml` 예:
+`.devbox/devbox.toml`의 키와 예시는 [설정 파일 안내](../../../config.md#devboxdevboxtoml)를 따른다.
 
-```toml
-[[task]]
-id = "test"
-command = "pnpm test"
-
-[[task]]
-id = "win-build"
-target = "windows"
-command = "pnpm tauri build"     # windows_dir은 [windows] root 아래 owner/project/worktree 소유 namespace의 files (S6-1a.3)
-
-[[service]]
-id = "web"
-command = "pnpm dev --port $DEVBOX_PORT"
-restart = "on-failure"
-
-[[schedule]]
-id = "weekday-test"                 # 필수(S7-11 정정)
-task = "test"
-cron = "0 9 * * 1-5"
-missed = "skip"                   # 또는 "run-once"
-
-[agent]
-copy = [".env", ".env.local"]
-setup = ["pnpm install --frozen-lockfile"]
-teardown = []
-
-[launch]
-services = ["web"]
-terminals = [{ name = "shell" }]
-agents = [{ tool = "claude", worktree = false }]
-```
-
+Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.devbox-v1\`까지만 있다. 그 아래는 소유자 해시·프로젝트 id·`main` 또는 `worktree-<해시>`를 거쳐 `files` 폴더다(S6-1a.3, `crates/runtime/src/windows_copy.rs`).
 
 **저장소 명령 신뢰 확인(2026-10-13 S1 추가 승인)**
 
@@ -718,7 +685,7 @@ agents = [{ tool = "claude", worktree = false }]
 | 모든 상태 | lease 빼앗김 | — | ReadOnly |
 | Dirty | close | 저장 / 버림(저널 삭제, CAS) / 초안 유지(저널 보존) 중 선택 | Closed |
 
-- 저널을 지우는 모든 행은 "그 문서의 저널이 다음 시작에 복구 후보로 다시 나오지 않는다"를 시험으로 고정한다(00-roadmap §7, CV-F03·AR-F13).
+- 저널을 지우는 모든 행은 "그 문서의 저널이 다음 시작에 복구 후보로 다시 나오지 않는다"를 시험으로 고정한다(§9.4, CV-F03·AR-F13).
 
 ### 8.5 키보드
 
@@ -915,6 +882,34 @@ agents = [{ tool = "claude", worktree = false }]
 | `crates/agent-protocol`의 프레임 디코더(부분 수신·poisoning) | `protocol::frame` | 참고 + 테스트 이식 |
 | `crates/markdown`(ammonia 설정) | `notes::render` | 그대로 이식 |
 
+### 9.4 검토 결함 추적표 (CV·AR → 새 구조)
+
+CV·AR이 확정한 v0.9.0 결함을 새 구조에서 어떻게 막는지 적는다([08 §8](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md)). "구조로 제거"도 시험 하나는 둔다. 구조가 막는다는 주장을 시험으로 고정하기 위해서다. 입력값은 AR이 실행으로 재현한 값이다.
+
+- 이 표는 00-roadmap §7에 있던 것을 S8-2(2026-11-03)에 옮겼다. 시험 위치의 S·Task 번호는 [끝난 계획](../../../history.md)의 과제다.
+
+| 출처 | v0.9.0 결함 | 새 구조에서 | 설계 | 시험 위치와 입력 |
+|---|---|---|---|---|
+| CV-F01 | Git 충돌 미리보기 뒤 외부 편집을 오래된 해결안으로 덮어씀 | 회귀 시험 | §9.1-1 | S4-6: 미리보기 → 외부 수정 → 적용 → 적용 거부, 작성 중 해결안 보존, stage 변화 0 |
+| CV-F02 | 복구 CAS 오류 코드를 문자열 정규식으로 분류해 재시도가 반복됨 | 구조로 제거: 오류는 생성된 코드 타입으로만 분류 | §5.3, §9.1-2 | S3 Task 3: `documents.conflict`를 두 번 연속 받아도 같은 문서 버퍼·저널을 덮지 않음 |
+| CV-F03·AR-F13 | dirty 파일 rename·다시 읽기·디스크 것 선택 뒤 옛 복구본이 다음 시작에 다시 나옴 | 회귀 시험 | §8.4 표(rename·Conflict·Recovering 행) | S3 Task 2·3: dirty → rename → 저장 → 다시 열기에서 옛 경로 저널 0개. Conflict → [디스크 것] → 다시 열기에서 Recovering 아님 |
+| CV-F04·AR-F03 | 건너뛰기·취소된 생산 요청의 이전 캡처 값을 다음 요청이 사용 | 회귀 시험 | §9.1-4 | S5-3: 이전 토큰이 있는 세션에서 생산 요청을 비밀 재검토 skip·파일 누락 skip·취소 → 소비 요청 송신 0회, `stopOnFailure` 참·거짓 모두. 정상 토큰 갱신은 이전 값을 입력으로 쓸 수 있음 |
+| CV-F05 | 문법이 틀린 활성 헤더를 조용히 빼고 전송 | 회귀 시험 | §9.1-4 | S5-2: 이름 `X API Key`, 값에 개행 → 전송 전 `api.invalid_header{index}`, 네트워크 송신 0회 |
+| CV-F06 | 내부 복구 파일이 노트 색인·위키링크·rename 재작성 대상 | 구조로 제거: 저널은 데이터 폴더. 같은 폴더 임시 파일·`.trash/`는 제외 규칙 | §9 `documents`, §9.1-2 | S3 Task 4·7: `.devbox-tmp-*`·`.trash/` 아래 노트가 트리·검색·백링크·링크 재작성에 나오지 않음 |
+| CV-F07·AR-F11 | 내용 변화 없는 WSL heartbeat가 검색을 다시 실행하고 선택·메뉴를 닫음 | 구조로 제거: 관찰 시각만 바뀐 상태는 rev를 올리지 않음 | §5.5 R8, §9.1-5 | S3 Task 7: 색인 상태의 관찰 시각만 바뀐 이벤트 3회 → `search.query` 추가 호출 0, 선택 유지 |
+| CV-F08·AR-F05 | 활동 저장 실패 시 확정 세션 유실, 화면은 정상 수집 표시 | 회귀 시험 | §9.1-6 | S3 Task 8: 3세션 중 두 번째 INSERT 실패 주입 → "저장 중단" 표시 → 회복 뒤 3건 모두, 중복 0 |
+| CV-F09·AR-F16 | 업데이트 다운로드 중 화면 이동 뒤 진행·취소를 잃음 | 구조로 제거: 진행은 Windows 앱이 소유 | §9.1-7 | S6-3: 다운로드 중 창 닫기·다시 열기 → 같은 진행·취소 |
+| CV-F10 | 위키링크 rebuild helper | 해당 없음(CV가 결함 아님으로 판정) | — | — |
+| AR-F01 | 승인 뒤 외부 checkout이 일어나면 승인하지 않은 브랜치를 push | 회귀 시험 | §5.2 `expect`, §9.1-12 | S1 Task 6·9(병합·PR·폐기), S4-5(push·pull): A 상태 확인 → 외부에서 B checkout → 승인 → `git.state_changed`, 원격 ref 변화 0. 변화 없는 A는 정상 |
+| AR-F02a·b·c | `localhost` health 실패, "재시작 안 함"인데 health 실패로 재시작, 시작 유예 미적용 | 구조로 제거: health로 재시작하지 않음 | §9.1-17 | S2 Task 4·8: `restart = "no"` 서비스가 `exit 1` → 재시작 0회. `127.0.0.1`·`::1`·`0.0.0.0`에서 수신하면 모두 "준비됨" |
+| AR-F04·AR-F15 | 생성 성공 뒤 목록 조회 실패 → 다시 저장하면 중복 생성. 서비스 상세가 처음 읽은 값에 고정 | 구조로 제거: `clientRequestId` 멱등, 생성 응답으로 화면 확정, rev 규칙 | §9.1-13 | S2 Task 13: 생성 성공 + `runtime.list` 실패 주입 → 편집기는 생성된 ID의 수정 모드, 다시 저장해도 생성 1회. 시작·재시작 뒤 열린 상세의 PID·실행 ID가 최신 |
+| AR-F06·F07·F08 | 본문 종류 전환·gRPC 필터 전환으로 초안 소실, 늦은 gRPC 응답이 다른 메서드 화면 아래 출처 없이 표시 | 회귀 시험 | §9.1-14 | S5-3: GraphQL → 없음 → GraphQL에서 세 필드 보존, JSON → GraphQL 편집 → JSON에서 본문 보존(송신·저장은 활성 종류만). S5-5: 메서드 A 초안 → 필터로 B → A에서 초안 보존. A 대기 중 B 선택 → A 응답은 "A의 결과"로 표시 |
+| AR-F09 | 정규식 위치를 Rust byte로 주고 화면은 UTF-16으로 자름 | 구조로 제거: 변환 도구는 TS에서 실행 | §9.1-15 | S5-7: `가a나`에서 `a` → 1..2, `😀a`에서 `a` → 2..3, 조각을 이으면 원문과 같음 |
+| AR-F10 | 기본 템플릿의 빈 title 때문에 새 노트가 파일 이름으로 검색되지 않음 | 회귀 시험 | §9.1-16 | S3 Task 4·7: `title: ""`·`title: "  "`·title 없음 → 색인 제목은 파일 이름(`idea`), 이름 검색 1건 |
+| AR-F12 | 늦게 끝난 Timeline 조회가 최신 수집 제어 표시를 덮음 | 구조로 제거: 조회마다 별도 query + R5 | §5.5, §9.1-5 | S3 Task 11: `activity.day` 응답을 늦게 풀어도 `activity.status`의 "수집 중" 표시 유지 |
+| AR-F14 | 빠른 반복 종료에도 재시작 간격이 1초로 고정 | 정책 결정: systemd 단계 증가 | §4.3, §9.1-10 | S2 Task 4: `unit_args`에 `RestartSteps=5`·`RestartMaxDelaySec=30s` 포함, 한도 초과 → `failed` 알림 1회, 수동 재시작은 한도 초기화 |
+| AR-D01 | 여러 노트 링크 재작성 도중 프로세스 종료 시 참조·대상 불일치 | 회귀 시험 | §9.1-3 | S3 Task 5: 대상 이동 직후·첫 참조 재작성 뒤 두 지점에서 서비스 종료 → 다음 시작에 진행 저널로 나머지를 처리하거나 목록으로 보여 줌 |
+
 ## 10. 설치·업데이트·릴리스
 
 - **빌드:**
@@ -1010,9 +1005,9 @@ agents = [{ tool = "claude", worktree = false }]
 ## 13. 기존 ADR 처리
 
 - 새 ADR은 **0017 "재구축: 단일 앱 + WSL 데몬"** 하나다. 이 설계(01-design)를 원장으로 가리킨다.
-- 옛 ADR은 상태 줄만 갱신한다.
-  - 대체됨(0017): 0001, 0002, 0003, 0004, 0007, 0009, 0010, 0011, 0012, 0014, 0015
-  - 유지: 0005, 0006(Linux 형태로 축소), 0008(DPAPI 키 형태로 변경), 0013(모든 이전 데이터로 확대), 0016
+- 옛 ADR은 상태 줄만 갱신한다(형태가 바뀐 0006·0008·0013은 대체 이유 한 줄을 더했다).
+  - 대체됨(0017): 0001, 0002, 0003, 0004, 0006(Linux 형태로 축소), 0007, 0008(DPAPI 키 형태로 변경), 0009, 0010, 0011, 0012, 0013(모든 이전 데이터로 확대), 0014, 0015. 0006·0008·0013은 v1에서 형태가 바뀌어 대체로 본다(계획 10 S8-2 ADR).
+  - 채택 · 0017에서 형태 조정: 0005, 0016. v1 형태는 ADR 0017 결과에 적었다.
 
 ## 14. 위험과 대응
 
