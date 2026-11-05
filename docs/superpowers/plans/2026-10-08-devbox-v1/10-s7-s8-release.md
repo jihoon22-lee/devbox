@@ -84,7 +84,7 @@
 
 **크기와 타입**
 - `PROTOCOL_VERSION`은 S7·S8 동안 1로 둔다. S7-1의 Hello 완화는 이 값이 같다는 것을 전제로 한다. 바꿔야 하면 멈추고 사용자에게 묻는다.
-- S7-12 뒤 고지의 입력이 바뀌는 커밋은 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. 입력은 lock 파일 셋(`Cargo.lock`, `app/src-tauri/Cargo.lock`, `pnpm-lock.yaml`), manifest(작업 공간 root와 모든 멤버, 앱 crate, 앱 package), 함께 싣는 글꼴의 라이선스 본문, 링크되는 코드(Rust 표준 라이브러리와 std가 링크하는 crate, musl, WebView2 로더)의 라이선스 본문(`xtask/notices/linked/`, S8-2c 뒤)이다(`xtask/src/notices/fingerprint.rs`). 버전 변경(S7-13, S8-1)도 여기에 해당한다.
+- S7-12 뒤 고지의 입력이 바뀌는 커밋은 같은 커밋에서 `cargo run -p xtask -- notices`로 고지를 다시 만든다. 입력은 lock 파일 셋(`Cargo.lock`, `app/src-tauri/Cargo.lock`, `pnpm-lock.yaml`), manifest(작업 공간 root와 모든 멤버, 앱 crate, 앱 package), 함께 싣는 글꼴의 라이선스 본문, 링크되는 코드(Rust 표준 라이브러리와 std가 링크하는 crate, musl, WebView2 로더)의 라이선스 본문(`xtask/notices/linked/`, S8-2c 뒤), 설치 파일에 드는 코드(NSIS, `nsis_tauri_utils`)의 라이선스 본문(같은 폴더, S8-4 준비 뒤)이다(`xtask/src/notices/fingerprint.rs`). 버전 변경(S7-13, S8-1)도 여기에 해당한다.
 - 파일 600줄, 컴포넌트 300줄 이하.
 - `.github`+`scripts`는 1,982/2,000줄, workflow 2개다. 이 계획은 두 곳에 줄을 더하지 않는다. 생성기와 검사는 xtask와 기존 `cargo test --workspace`에 둔다.
 - 경계 타입에 `Result<T,String>`과 `serde_json::Value`를 쓰지 않는다. 생성 파일은 `pnpm gen`으로만 바꾼다.

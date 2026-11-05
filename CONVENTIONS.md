@@ -57,7 +57,7 @@ Windows 수용(사용자 결정 2026-10-13·2026-10-14):
 ## 8. Git
 
 시작 시 status/worktree·원격 작업 인증 상태를 확인한다. 원본 main의 사용자 커밋은 보존한다.
-작업 하나 = 브랜치 하나 = PR 하나다. 브랜치는 `feat/<이름>`·`fix/<이름>`·`docs/<이름>`·`release/<이름>` 가운데 하나이고 전용 worktree 하나(`../devbox-wt/<브랜치 이름의 /를 -로>`, 원본 체크아웃 `/home/jihoon/projects/devbox` 기준)를 쓰며 `origin/main`에서 만든다. 예: `fix/<이름>` → `/home/jihoon/projects/devbox-wt/fix-<이름>`. 1.0.0 전(S0–S7)은 하위 프로젝트마다 `v1/<s>-<name>`을 썼다. 1.0.0 공개(S8)까지는 진행 중인 `v1/s8-release`와 [계획 10](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md)으로 끝내고, 그 뒤 작업부터 이 모델을 따른다.
+작업 하나 = 브랜치 하나 = PR 하나다. 브랜치는 `feat/<이름>`·`fix/<이름>`·`docs/<이름>`·`release/<이름>` 가운데 하나이고 전용 worktree 하나(`../devbox-wt/<브랜치 이름의 /를 -로>`, 원본 체크아웃 `/home/jihoon/projects/devbox` 기준)를 쓰며 `origin/main`에서 만든다. 예: `fix/<이름>` → `/home/jihoon/projects/devbox-wt/fix-<이름>`. 1.0.0 전(S0–S7)은 하위 프로젝트마다 `v1/<s>-<name>`을 썼다. 1.0.0 공개(S8)의 버전·문서 변경은 `v1/s8-release`와 [계획 10](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md)으로 하고, S8-6 기록 PR(`docs/v1.0.0-record`)과 그 뒤 작업은 이 모델을 따른다.
 그 작업의 모든 과제와 하위 에이전트는 이 브랜치·worktree에서 차례로 일한다. 원본 체크아웃은 `main`으로 두고 직접 작업하지 않는다(다른 세션이 동시에 일할 수 있다). 오타·계획 문서 같은 사소한 수정은 진행 중인 브랜치에 함께 넣고 따로 PR을 만들지 않는다.
 영어 Conventional Commits로 과제마다 커밋하며 작성자는 noreply 주소를 쓴다: `git -c user.name=jihoon22-lee -c user.email=188744452+jihoon22-lee@users.noreply.github.com commit`(GitHub 이메일 비공개 설정 때문이며 저장소 설정은 바꾸지 않는다).
 작업 중간에는 push하지 않고 상세 최종 검증 뒤 push·PR을 한 번 한다. CI·리뷰 수정 뒤 필요한 push와 Windows 산출물을 만들기 위한 백업 push·workflow 실행만 예외다. 백업으로 push한 브랜치도 그 작업의 마무리 과제 전에는 PR을 열지 않는다(리뷰 회차는 PR을 연 뒤의 push마다 센다). 하네스가 push 뒤 PR 생성을 기본으로 안내해도 이 규칙이 우선한다.

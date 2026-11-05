@@ -14,7 +14,7 @@ Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·
 - Windows 11과 systemd가 켜진 WSL2 배포판.
 - WSL의 tmux 3.2 이상. 더 낮으면 환경 점검이 실패로 표시한다. 프로그램이 Shift+Enter를 Enter와 다른 키로 받으려면(pi의 줄바꿈) tmux 3.5 이상이 필요하다. 3.2–3.4에서는 Shift+Enter도 Enter로 동작하므로 pi에서도 줄을 바꾸지 않고 보낸다(Ubuntu 24.04의 tmux는 3.4다). devbox는 자기 tmux 서버(`tmux -L devbox-prod`)에만 확장 키 옵션을 켜고, 사용자의 다른 tmux는 건드리지 않는다. 이 옵션은 WSL 쪽 devbox가 시작할 때 적용하므로, 그 전에 확장 키를 요청한 프로그램은 다시 시작할 때까지 Shift+Enter를 Enter로 받는다. devbox는 터미널을 열 때마다 이미 떠 있는 devbox tmux 서버의 버전을 물어 Shift+Enter를 확장 키로 보낼지 정하므로, tmux를 3.4 이하에서 3.5 이상으로 올려도 이미 떠 있는 devbox tmux 서버가 다시 시작될 때까지는 Shift+Enter가 Enter로 동작한다. tmux 3.7 전 판에는 제어 모드 클라이언트가 연결되는 동안 tmux 서버가 비정상 종료(SIGSEGV)하는 버그가 있다([Ubuntu LP #2169164](https://bugs.launchpad.net/bugs/2169164), upstream `e5a2a25`). devbox는 터미널마다 제어 모드 클라이언트를 붙이므로, 이 버그가 나면 그 tmux 서버의 devbox 터미널·에이전트 작업 세션이 모두 끝난다. 고친 판을 쓴다: tmux 3.7 이상, 또는 Ubuntu 22.04 `3.2a-4ubuntu0.3`·24.04 `3.4-1ubuntu0.2`·26.04 `3.6a-2ubuntu0.2` 이상(2026-10-21 updates, `sudo apt install --only-upgrade tmux`). 이미 떠 있는 tmux 서버는 다시 시작될 때까지 옛 코드로 돈다.
 - WSL의 git. PR 만들기에는 WSL의 GitHub CLI(`gh`) 로그인이 필요하다.
-- 쓸 에이전트 CLI(`claude`·`codex`·`opencode`·`pi`)를 WSL에 설치하고 각 CLI에서 로그인한다. 환경 점검은 devbox가 연결을 확인한 가장 낮은 버전보다 낮으면 경고한다: Claude Code 2.1.300, opencode 1.19.3, pi 1.3.0. Codex는 기준 버전이 없다.
+- 쓸 에이전트 CLI(`claude`·`codex`·`opencode`·`pi`)를 WSL에 설치하고 각 CLI에서 로그인한다. 환경 점검은 devbox가 연결 형식(hook·플러그인·확장)을 맞춰 본 가장 낮은 버전보다 낮으면 경고한다: Claude Code 2.1.300, opencode 1.19.3, pi 1.3.0. Codex는 기준 버전이 없다. 실제 도구로 에이전트 작업 전 과정을 확인한 것은 아니다([진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §3 2).
 
 ## 설치와 첫 실행
 
@@ -41,7 +41,7 @@ prod 채널 기준 WSL 쪽 데이터는 `~/.local/share/devbox/prod`, 설정은 
 - 토큰 합계는 입력·출력·캐시 읽기·캐시 쓰기 토큰이다. 비용은 어느 도구도 더하지 않는다.
 - 재개할 때 도구의 세션 id를 모르면 pi는 지시문 없이 새 pi 세션을 연다. Claude Code·Codex·opencode는 처음 지시문으로 새로 시작한다.
 - 에이전트 작업은 로그인 셸 환경 가운데 허용 목록(`PATH`·`LANG`·`LC_*`·`NVM_DIR`·`CARGO_HOME`·`PNPM_HOME`·`TZ` 등)만 받는다. 셸에서 설정한 `ANTHROPIC_API_KEY`·`OPENAI_API_KEY` 같은 API 키와 `CODEX_HOME`·`CLAUDE_CONFIG_DIR`·`OPENCODE_CONFIG_DIR`·`PI_CODING_AGENT_DIR` 같은 설정 위치 변수는 넘기지 않으므로, 도구는 각 CLI의 로그인과 기본 설정 위치를 쓴다. `HOME`과 `XDG_CONFIG_HOME` 같은 XDG 폴더 변수는 devbox 서비스 설정이 정한 값이다. 앱이 WSL 쪽을 설정할 때는 셸 설정 파일을 읽지 않으므로 보통 기본 위치(`~/.config` 등)다.
-- rc.1에서 시작한 Claude Code 작업은 rc.2를 설치한 뒤에도 rc.1의 hook 설정을 쓴다. 이 설정에는 PostToolUse·PostToolUseFailure·PermissionDenied hook이 없어, 터미널에서 승인한 뒤에도 그 턴이 끝날 때까지 보내기가 "에이전트가 선택을 기다리고 있습니다."로 막힌다. 작업을 재개하면 새 hook 설정으로 다시 시작한다.
+- rc.1에서 시작한 Claude Code 작업은 그 뒤 판(rc.2나 1.0.0)을 설치한 뒤에도 rc.1의 hook 설정을 쓴다. 이 설정에는 PostToolUse·PostToolUseFailure·PermissionDenied hook이 없어, 터미널에서 승인한 뒤에도 그 턴이 끝날 때까지 보내기가 "에이전트가 선택을 기다리고 있습니다."로 막힌다. 작업을 재개하면 새 hook 설정으로 다시 시작한다.
 
 ### 도구 경로 찾기
 
@@ -120,7 +120,7 @@ v0.9.0 데이터는 자동으로 옮기지 않는다. 순서는 **새 앱 수동
 - Windows 실행이 남긴 프로세스가 도는 동안은 실행이 끝났어도 Windows 사본을 쓰는 중으로 본다. 빌드 서버(dotnet build의 VBCSCompiler·MSBuild, Gradle 등)처럼 빌드가 끝난 뒤에도 남는 프로세스도 그렇다. 그동안 바뀐 내용으로 하는 다음 실행은 시작하지 않으므로(`runtime.windows_copy_busy`), 그 프로세스가 스스로 끝나기를 기다리거나, Windows 터미널에서 `dotnet build-server shutdown`·`gradle --stop`(Gradle Wrapper 프로젝트는 `.\gradlew --stop`)을 실행하거나 작업 관리자에서 끝낸 뒤 다시 실행한다. WSL에서 실행한 `dotnet`·`gradle`은 Linux 쪽 빌드 서버만 끝낸다. 모두 끝났는데도 1분 넘게 계속되면 Windows 앱 연결을 확인한다.
 - 앱 자동 시작 때 설정이 파일을 쓴 뒤 다시 시작하기 전에 끊기면 다음 자동 시작도 다시 시작하지 않는다. [다시 설정]으로 복구한다.
 - Codex는 rollout 기록의 끝 8 MiB만 읽는다. 한 턴의 기록이 8 MiB를 넘으면 그 턴의 시작이 읽는 범위 밖에 있어 다음 턴까지 추적하지 못한다.
-- 확인 상태: 실행하지 않은 확인은 PASS로 적지 않으며, 원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §3·§4에 있다(줄이기 전 전문은 [docs/history.md](docs/history.md)). 위 첫 두 항목(첫 시작 시간, PR CI 시간)은 목표를 넘어 미달이다. Windows 실기 확인은 대부분 실행하지 않았다(NOT_RUN). 전체 목록과 결과는 진행 원장 §3·§4와 [계획의 S7-14 표](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md#s7-14-windows-후보accept-수용)에 있고, 주요 분류는 다음과 같다: Windows 사본 보호(위 알려진 제한), rc.1에서 rc.2로 올린 뒤의 동작, 도구 화면 알아보기(승인·폴더 신뢰·셸 모드·Shift+Enter, 실제 Claude Code·Codex·opencode·pi 화면과 연결), 연결 배너·재시작·연결 유지(Windows 실제 동작)와 [나중에]·깨진 설정 파일 안내, 에이전트 작업의 작업 폴더 정리와 폐기, 서비스·노트·배포판 선택, 설치 폴더의 고지 파일, 설치 경고 문구, 제거 뒤 남는 항목, MCP 등록 명령의 설치본 확인. 지난 수용에서는 전역 단축키로 명령 팔레트를 여는 시간(300ms 목표)과 설치본 지원 번들의 가림(시도했으나 판정하지 못함), accept 업데이트 화면을 확인하지 않았다. rc.1·rc.2의 Windows 설치·실행 수용과 릴리스 후보에서 1.0.0으로 올리는 수동 설치는 확인하지 않았다. accept 조용한 제거 직후의 제거 등록 확인은 FAIL이다. WSL 유휴 유지와 `wsl --shutdown` 뒤 복귀는 사용자 확인으로 남아 있다.
+- 확인 상태: 실행하지 않은 확인은 PASS로 적지 않으며, 원본 결과와 근거는 [진행 원장](docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §3·§4에 있다(줄이기 전 전문은 [docs/history.md](docs/history.md)). 위 첫 두 항목(첫 시작 시간, PR CI 시간)은 목표를 넘어 미달이다. Windows 실기 확인은 대부분 실행하지 않았다(NOT_RUN). 전체 목록과 결과는 진행 원장 §3·§4와 [계획의 S7-14 표](docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md#s7-14-windows-후보accept-수용)에 있고, 주요 분류는 다음과 같다: Windows 사본 보호(위 알려진 제한), rc.1에서 rc.2로 올린 뒤의 동작, 도구 화면 알아보기(승인·폴더 신뢰·셸 모드·Shift+Enter, 실제 Claude Code·Codex·opencode·pi 화면과 연결), 연결 배너·재시작·연결 유지(Windows 실제 동작)와 [나중에]·깨진 설정 파일 안내, 에이전트 작업의 작업 폴더 정리와 폐기, 서비스·노트·배포판 선택, 설치 폴더의 고지 파일, 설치 경고 문구, 제거 뒤 남는 항목, MCP 등록 명령의 설치본 확인. 지난 수용에서는 전역 단축키로 명령 팔레트를 여는 시간(300ms 목표)과 설치본 지원 번들의 가림(시도했으나 판정하지 못함), accept 업데이트 화면을 확인하지 않았다. rc.1·rc.2의 Windows 설치·실행 수용과 릴리스 후보에서 1.0.0으로 올리는 수동 설치는 확인하지 않았다. accept 조용한 제거 직후의 제거 등록 확인은 FAIL이다. WSL 유휴 유지(30분)는 사용자 확인으로 남아 있고, `wsl --shutdown` 뒤 복귀는 WSL 재시작을 요청하지 않기로 해 확인하지 않았다.
 
 ## 문제 해결
 
