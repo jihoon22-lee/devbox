@@ -1,3 +1,5 @@
+#[path = "mcp_cases/support.rs"]
+mod mcp_support;
 #[path = "../../../app/src-tauri/src/core/secrets.rs"]
 mod native_secrets;
 mod support;
@@ -187,6 +189,100 @@ async fn run_with_secret_hides_value_from_argv_unit_properties_logs_and_rpc() {
         checked >= 3,
         "helper, exec, and user child command lines checked"
     );
+    drop(app);
+    server.stop().await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs owned systemd user fixture"]
+async fn run_output_hides_json_escaped_secret() {
+    const RAW_SECRET: &str = "own\"ed-fixture";
+    let mut f = RuntimeFixture::new();
+    f.daemon.stop();
+    let server = Server::start(&f).await;
+    negotiate_native(&f).await;
+    let app = native(&f).await;
+    app.call::<devbox_secrets::Set>(&devbox_secrets::SetSecret {
+        name: "TOKEN".into(),
+        value: RAW_SECRET.into(),
+    })
+    .await
+    .expect("fixture secret");
+    let escaped = serde_json::to_string(RAW_SECRET).expect("json");
+    let escaped = &escaped[1..escaped.len() - 1];
+    let client = f.daemon.client().await;
+    let project = f.project(&client).await;
+    let mut def = support::runtime::task(
+        "escaped",
+        &format!(
+            "test \"$TOKEN\" = {} || exit 99; printf 'pre-%s-post\\n' {}",
+            devbox_core::sh_quote(RAW_SECRET),
+            devbox_core::sh_quote(escaped)
+        ),
+    );
+    if let RunDef::Task(def) = &mut def {
+        def.secrets = vec!["TOKEN".into()];
+    }
+    f.define(&client, &project, def, SaveTo::ThisPc).await;
+    let started = f.start(&client, &project, "escaped").await;
+    let run = f
+        .wait(
+            &client,
+            &project,
+            &started.id,
+            RunState::Exited,
+            Duration::from_secs(10),
+        )
+        .await;
+    let log = std::fs::read_to_string(
+        devbox_runtime::exit_record::ExitStore::new(&f.daemon.paths.data_dir.join("runs"), &run.id)
+            .expect("run log")
+            .log_path(),
+    )
+    .expect("run log exists");
+    assert!(
+        !log.contains(escaped),
+        "escaped form leaked to the log file"
+    );
+    assert!(
+        !log.contains("ed-fixture"),
+        "secret fragment leaked to the log file"
+    );
+    assert!(log.contains("[REDACTED]"));
+    let page = bounded(
+        client.call::<devbox_observe::LogsSearch>(&devbox_observe::SearchLogs {
+            sources: vec![devbox_observe::LogSource::Run {
+                run_id: run.id.clone(),
+            }],
+            query: "-post".into(),
+            regex: false,
+            before: None,
+            limit: 256,
+        }),
+    )
+    .await
+    .expect("run logs");
+    let rpc = serde_json::to_string(&page.items.iter().map(|l| &l.text).collect::<Vec<_>>())
+        .expect("rows");
+    assert!(
+        !rpc.contains("ed-fixture"),
+        "escaped form leaked to logs RPC"
+    );
+    assert!(rpc.contains("[REDACTED]"));
+    let mut m = mcp_support::Mcp::start(&f.daemon);
+    let response = m.tool(
+        "devbox_logs",
+        serde_json::json!({"runId": run.id, "lines": 500}),
+    );
+    assert!(
+        !response.to_string().contains("ed-fixture"),
+        "secret leaked to MCP devbox_logs"
+    );
+    assert!(
+        mcp_support::body(&response)
+            .to_string()
+            .contains("[REDACTED]")
+    );
+    m.finish();
     drop(app);
     server.stop().await;
 }
