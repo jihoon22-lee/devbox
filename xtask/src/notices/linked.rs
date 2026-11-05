@@ -3,6 +3,12 @@
 //! license texts kept in `xtask/notices/linked/`: next to the generator that reads them, outside `app/` so
 //! that nothing bundles them, and outside `tests/fixtures` because they are real inputs. The texts are
 //! copies of the sources below (the std statement converted to plain text, NSIS's `COPYING` with LF ends).
+//! One is re-encoded: NSIS's `Contrib/Modern UI 2/License.txt` has a Latin-1 `©` (0xA9), which the
+//! notices would read as U+FFFD, so `nsis-3.11/Modern-UI-2-License.txt` is that blob converted to UTF-8
+//! (it has LF ends already). To take it again, fetch the raw blob with
+//! `gh api repos/nsis-dev/nsis/git/blobs/<sha> --jq .content | base64 -d`, check that its
+//! `git hash-object` is the tag's blob id (the contents API serves the file already converted to UTF-8),
+//! and check that `iconv -f latin1 -t utf-8` of it is byte-identical to the stored file.
 //!
 //! Where the rows come from. When `rust-toolchain.toml`, webview2-com-sys or `@tauri-apps/cli` changes, the
 //! tests in `linked/tests.rs` fail until the rows, their folders and texts are taken again from the same
@@ -27,7 +33,11 @@
 //! - The installer: what the bundler of the locked `@tauri-apps/cli` downloads, as named at the CLI's tag
 //!   of tauri-apps/tauri in `crates/tauri-bundler/src/bundle/windows/nsis/mod.rs`. `NSIS_URL` is the NSIS
 //!   zip (checked with `NSIS_SHA1`), whose `COPYING` is the text; it equals `COPYING` at that NSIS tag of
-//!   nsis-dev/nsis (`v311`) but for line ends. `NSIS_TAURI_UTILS_URL` is `nsis_tauri_utils.dll` (checked with
+//!   nsis-dev/nsis (`v311`) but for line ends. Two parts the template uses have a license text of their
+//!   own, taken from that tag (the zip has them in `Docs/`, with CRLF ends): `Modern-UI-2-License.txt` is
+//!   `Contrib/Modern UI 2/License.txt` (blob `fb65df36…`, re-encoded as above), for the Modern UI 2 pages,
+//!   and `NSISdl-License.txt` is `Contrib/NSISdl/License.txt` (blob `642304fa…`, unchanged), for
+//!   `NSISdl::download`. `NSIS_TAURI_UTILS_URL` is `nsis_tauri_utils.dll` (checked with
 //!   `NSIS_TAURI_UTILS_SHA1`), whose texts are `LICENSE_MIT` and `LICENSE_APACHE-2.0` of
 //!   tauri-apps/nsis-tauri-utils at the DLL's tag (`nsis_tauri_utils-v0.5.3`).
 
@@ -65,10 +75,12 @@ pub const WITHOUT_ENTRY: &str = "Linked code without an entry of its own: the LL
     built by Tauri's bundler in `@tauri-apps/cli` 2.12.2 with NSIS 3.11, using NSIS's LZMA compression, \
     Tauri's default (Devbox sets none). Their script is generated from the bundler's NSIS templates: \
     tauri-bundler 2.10.2 is Apache-2.0 OR MIT, and its license files name the Cargo-Bundle developers and the \
-    Tauri Apps Contributors, whose MIT text is that of the `tauri` crates below. `nsis_tauri_utils.dll` is a \
-    Rust DLL built without `std` (`#![no_std]`): it contains Rust's `core` and `alloc` libraries and the \
-    `semver` crate, and links no C runtime. NSIS 3.11's source is at \
-    https://github.com/nsis-dev/nsis/tree/v311, which mirrors the NSIS project at https://nsis.sourceforge.io.";
+    Tauri Apps Contributors; the MIT text of the Tauri Apps Contributors is that of the `tauri` crates below. \
+    `LicenseRef-NSIS-Modern-UI-2` is the license text of NSIS's Modern UI 2 (Joost Verburg's, below), whose \
+    pages both programs show. `nsis_tauri_utils.dll` is a Rust DLL built without `std` (`#![no_std]`): it \
+    contains Rust's `core` and `alloc` libraries and the `semver` crate, and links no C runtime. NSIS 3.11's \
+    source is at https://github.com/nsis-dev/nsis/tree/v311, which mirrors the NSIS project at \
+    https://nsis.sourceforge.io.";
 
 /// What fixes the version of a row, so that a test can tell when the row is stale.
 #[derive(Clone, Copy)]
@@ -252,16 +264,18 @@ pub const LINKED: [Linked; 16] = [
         files: &["LICENSE.txt"],
     },
     // NSIS 3.11 (`NSIS_URL`), which builds the installer and its `uninstall.exe`: its installer code, its
-    // LZMA decompressor and the plug-ins the script calls. The SPDX ids are those whose templates its
-    // `COPYING` matches: the zlib/libpng, bzip2 and CPL-1.0 texts and the LZMA exception.
+    // LZMA decompressor, the Modern UI 2 pages and the plug-ins the script calls, NSISdl among them. The
+    // SPDX ids are those whose templates the texts match: `COPYING` the zlib/libpng, bzip2 and CPL-1.0 texts
+    // and the LZMA exception, NSISdl's `License.txt` Zlib. Modern UI 2's `License.txt` is a zlib text with
+    // "Altered versions" and "any distribution", which matches no template, hence the `LicenseRef-`.
     Linked {
         name: "nsis",
         version: "3.11",
-        license: "Zlib AND bzip2-1.0.6 AND CPL-1.0 WITH LZMA-exception",
+        license: "Zlib AND bzip2-1.0.6 AND CPL-1.0 WITH LZMA-exception AND LicenseRef-NSIS-Modern-UI-2",
         binaries: Binaries::Installer,
         pin: Pin::Npm(TAURI_CLI_PACKAGE, TAURI_CLI),
         dir: "nsis-3.11",
-        files: &["COPYING"],
+        files: &["COPYING", "Modern-UI-2-License.txt", "NSISdl-License.txt"],
     },
     // The NSIS plug-in of tauri-apps (`NSIS_TAURI_UTILS_URL`) that the installer and uninstaller call. It
     // declares `MIT or Apache-2.0`, written here in SPDX's case.

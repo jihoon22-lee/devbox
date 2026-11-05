@@ -272,10 +272,28 @@ fn the_committed_notices_list_every_linked_component_with_its_license_texts() {
     ] {
         assert!(WITHOUT_ENTRY.contains(named), "{named}: {WITHOUT_ENTRY}");
     }
-    // "whose MIT text is that of the `tauri` crates below": the tauri crate is listed under that text.
+    // A row's `LicenseRef-` id is declared: the notices say whose text it is.
+    for row in &LINKED {
+        for id in row
+            .license
+            .split(' ')
+            .filter(|term| term.starts_with("LicenseRef-"))
+        {
+            let declared = format!("`{id}` is the license text of");
+            assert!(
+                WITHOUT_ENTRY.contains(&declared),
+                "{} uses {id}, which no sentence declares",
+                row.name
+            );
+        }
+    }
+    // "the MIT text of the Tauri Apps Contributors is that of the `tauri` crates below": the tauri crate is
+    // listed under that text.
     let tauri_mit =
         "\n```text\nMIT License\n\nCopyright (c) 2017 - Present Tauri Apps Contributors\n";
-    assert!(WITHOUT_ENTRY.contains("whose MIT text is that of the `tauri` crates below"));
+    assert!(WITHOUT_ENTRY.contains(
+        "; the MIT text of the Tauri Apps Contributors is that of the `tauri` crates below."
+    ));
     assert!(
         notices
             .split("\n### License text ")
@@ -366,9 +384,13 @@ fn the_installer_rows_are_pinned_to_the_locked_tauri_cli() {
         .collect();
     assert_eq!(pinned, ["nsis", "nsis_tauri_utils"]);
     let lock = fs::read_to_string(repo().join("pnpm-lock.yaml")).expect("read pnpm-lock.yaml");
-    assert_eq!(locked_npm_versions(&lock, TAURI_CLI_PACKAGE), [TAURI_CLI]);
     let stale = npm_mismatches(&lock);
     assert!(stale.is_empty(), "{}", stale.join("\n"));
+    assert_eq!(
+        locked_npm_versions(&lock, TAURI_CLI_PACKAGE),
+        [TAURI_CLI],
+        "pnpm-lock.yaml locks another @tauri-apps/cli besides the pinned one"
+    );
 }
 
 #[test]
