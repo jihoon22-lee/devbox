@@ -5,10 +5,11 @@ import { RpcError } from "../../rpc/client";
 import type { FileEntry, Project } from "../../rpc/gen/rpc";
 import { messageFor } from "../../rpc/messages";
 import { useRpc } from "../../rpc/RpcProvider";
-import { Button, Dialog, EmptyState, useToasts } from "../../ui";
+import { Button, Dialog, useToasts } from "../../ui";
 import { chooseDocumentClose } from "../documents/closePrompt";
 import { keyId } from "../documents/offlineJournal";
 import { needsCloseChoice, useDocuments } from "../documents/store";
+import { NoProjectState } from "../projects/AddProjectAction";
 import { useProjectData } from "../projects/ProjectData";
 import { useCurrentProject } from "../projects/store";
 import { openTab, projectKey, useTerminalLayout } from "../terminal/store";
@@ -52,7 +53,7 @@ export function SourcePage() {
   return project ? (
     <ProjectSource key={project.id} project={project} />
   ) : (
-    <EmptyState title="프로젝트를 선택하세요" body="프로젝트의 파일을 열어 편집할 수 있습니다." />
+    <NoProjectState body="프로젝트의 파일을 열어 편집할 수 있습니다." />
   );
 }
 function ProjectSource({ project }: { project: Project }) {

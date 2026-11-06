@@ -11,6 +11,8 @@ export interface EnvVariable {
   name: string;
   value: string;
   secret?: boolean;
+  /** 꺼진 변수만 `false`로 적는다. 없으면 켜진 변수다. */
+  enabled?: false;
 }
 export interface EnvFile {
   version: 1;
@@ -39,9 +41,13 @@ export function parseEnvFile(text: string): EnvFile {
   if (value!.variables!.length > MAX_VARIABLES) invalid();
   const variables = value!.variables!.map((item): EnvVariable => {
     if (!item || typeof item.name !== "string" || !NAME.test(item.name) || typeof item.value !== "string") invalid();
-    return item.secret === true
-      ? { name: item.name, value: item.value, secret: true }
-      : { name: item.name, value: item.value };
+    if (item.enabled !== undefined && item.enabled !== false) invalid();
+    return {
+      name: item.name,
+      value: item.value,
+      ...(item.secret === true && { secret: true }),
+      ...(item.enabled === false && { enabled: false as const }),
+    };
   });
   return { version: 1, name: value!.name!, variables };
 }
@@ -55,13 +61,14 @@ export function serializeEnvFile(file: EnvFile): { text: string; cleared: string
   const cleared: string[] = [];
   const variables = file.variables.map((variable) => {
     if (!NAME.test(variable.name)) invalid();
+    const off = variable.enabled === false ? { enabled: false as const } : {};
     if (literalSecret(variable)) {
       cleared.push(variable.name);
-      return { name: variable.name, value: "", secret: true };
+      return { name: variable.name, value: "", secret: true, ...off };
     }
     return variable.secret
-      ? { name: variable.name, value: variable.value, secret: true }
-      : { name: variable.name, value: variable.value };
+      ? { name: variable.name, value: variable.value, secret: true, ...off }
+      : { name: variable.name, value: variable.value, ...off };
   });
   return { text: `${JSON.stringify({ version: 1, name: file.name, variables }, null, 2)}\n`, cleared };
 }

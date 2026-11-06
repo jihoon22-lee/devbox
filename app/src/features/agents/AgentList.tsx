@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { messageFor } from "../../rpc/messages";
 import { useFirstDataPaint } from "../../shell/paintTrace";
 import { Button, EmptyState, ErrorState } from "../../ui";
+import { AddProjectAction, useNoRegisteredProjects } from "../projects/AddProjectAction";
 import { useProjectData } from "../projects/ProjectData";
 import { AgentRow } from "./AgentRow";
 import s from "./Agents.module.css";
@@ -20,6 +21,7 @@ export function AgentList({
   banner?: ReactNode;
 }) {
   const projects = useProjectData();
+  const noProjects = useNoRegisteredProjects();
   const names = new Map((projects.data?.items ?? []).map((p) => [p.id, p.name]));
   const error = data.list.error && messageFor(data.list.error.code, data.list.error.detail);
   const metricsError = data.statsError ?? data.resourcesError;
@@ -47,7 +49,11 @@ export function AgentList({
         </p>
       )}
       {data.list.data && !error && data.groups.length === 0 && (
-        <EmptyState title="에이전트 작업이 없습니다" body="새 작업으로 도구와 지시문을 선택하세요." />
+        <EmptyState
+          title={noProjects ? "등록된 프로젝트가 없습니다" : "에이전트 작업이 없습니다"}
+          body="새 작업으로 도구와 지시문을 선택하세요."
+          action={noProjects ? <AddProjectAction /> : undefined}
+        />
       )}
       {data.groups.map((group) => (
         <section key={group.key} aria-label={group.label} className={s.group}>

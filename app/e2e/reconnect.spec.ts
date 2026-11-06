@@ -24,7 +24,10 @@ test("new daemon identity resets subscriptions and queries while retaining proje
   await page.goto("/");
   await expect(page.getByText("데몬 연결됨")).toBeVisible();
   await page.keyboard.press("Control+Shift+O");
-  await page.getByRole("button", { name: "프로젝트 추가", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "프로젝트", exact: true })
+    .getByRole("button", { name: "프로젝트 추가", exact: true })
+    .click();
   await page.getByRole("dialog", { name: "프로젝트 추가", exact: true }).getByRole("button", { name: /alpha/ }).click();
   await expect(page.getByRole("dialog", { name: "프로젝트 추가", exact: true })).toBeHidden();
   await page.keyboard.press("Escape");

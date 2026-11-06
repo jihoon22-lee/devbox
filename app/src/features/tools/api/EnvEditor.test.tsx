@@ -15,8 +15,9 @@ afterEach(() => {
   resetEnvDrafts();
   useApiTabs.getState().reset();
 });
-function setup() {
+function setup(seed?: (backend: FakeBackend) => void) {
   const backend = new FakeBackend();
+  seed?.(backend);
   backend.seed(personal, "env/dev.json", env("dev", "dev.test"));
   backend.seed(personal, "env/prod.json", env("prod", "prod.test"));
   const view = (
@@ -89,4 +90,25 @@ it("environment_saves_do_not_overlap", async () => {
   await waitFor(() => expect(screen.getByText("환경을 저장했습니다.")).toBeInTheDocument());
   expect(backend.write).toHaveBeenCalledOnce();
   expect(dirty()).toHaveLength(0);
+});
+
+it("unchecked_row_stays_unchecked_after_save_and_reopen", async () => {
+  const user = userEvent.setup();
+  const variables = [
+    { name: "host", value: "prod.test" },
+    { name: "host", value: "dev.test" },
+  ];
+  setup((backend) => backend.seed(personal, "env/dup.json", JSON.stringify({ version: 1, name: "dup", variables })));
+  await screen.findByRole("option", { name: "dup" });
+  await user.selectOptions(screen.getByLabelText("환경"), "env/dup.json");
+  await waitFor(() => expect(screen.getByLabelText("변수 1 값")).toHaveValue("prod.test"));
+  await user.click(screen.getByLabelText("변수 1 사용"));
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(screen.getByText("환경을 저장했습니다.")).toBeInTheDocument());
+  await user.selectOptions(screen.getByLabelText("환경"), "");
+  await user.selectOptions(screen.getByLabelText("환경"), "env/dup.json");
+  await waitFor(() => expect(screen.getByLabelText("변수 1 값")).toHaveValue("prod.test"));
+  expect(screen.getByLabelText("변수 1 사용")).not.toBeChecked();
+  expect(screen.getByLabelText("변수 2 사용")).toBeChecked();
+  expect(useApiTabs.getState().environment?.variables).toEqual([{ name: "host", value: "dev.test" }]);
 });

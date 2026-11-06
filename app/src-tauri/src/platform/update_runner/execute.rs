@@ -4,14 +4,15 @@ use crate::core::{
     self_check,
     update::runner::{
         Gate, ProcessIdentity, Result, RunnerError,
-        files::{self, EXE_LIMIT, Manifest, Outcome, RECORD_LIMIT},
+        files::{self, EXE_LIMIT, KeepCommand, Manifest, Outcome, RECORD_LIMIT},
     },
 };
 use std::{
     ffi::OsString,
     fs::File,
+    io::Write,
     os::windows::{io::OwnedHandle, process::CommandExt},
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
@@ -19,6 +20,49 @@ use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
 const AUTHORITY_TIME: Duration = Duration::from_secs(60);
 const INSTALL_TIME: Duration = Duration::from_secs(20 * 60);
+const _: () = assert!(files::NO_WINDOW == CREATE_NO_WINDOW.0);
+
+/// Keeps the distro running while the old app is closed. Dropping it before `release` ends the
+/// connection; after `release` it outlives this runner and ends with its own `sleep 900`.
+struct KeepConnection(Option<Child>);
+impl KeepConnection {
+    fn start(distro: Option<&str>) -> Self {
+        // Not an update error: without it the update installs as before.
+        Self(distro.and_then(
+            |distro| match spawn_detached(&files::keep_command(distro)) {
+                Ok(child) => Some(child),
+                Err(error) => {
+                    let _ = writeln!(std::io::stderr(), "Cannot keep WSL running: {error}");
+                    None
+                }
+            },
+        ))
+    }
+    /// The old app has committed to the update and is leaving: this is now the only connection
+    /// until the new app connects.
+    fn release(&mut self) {
+        // Dropping a `Child` closes its handle and leaves the process running.
+        self.0 = None;
+    }
+}
+impl Drop for KeepConnection {
+    fn drop(&mut self) {
+        // The old app still holds its own connection. Never wait: it gives this runner 2 s to exit.
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+        }
+    }
+}
+/// Like the installer spawn: no shell, null stdio and no window. Outside any job, like this runner.
+fn spawn_detached(command: &KeepCommand) -> std::io::Result<Child> {
+    Command::new(&command.program)
+        .args(&command.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(command.creation_flags)
+        .spawn()
+}
 
 pub fn run(arguments: &[OsString]) -> Result<()> {
     let [parent, installer, payload, commit, disarm, armed]: [OwnedHandle; 6] =
@@ -31,6 +75,10 @@ pub fn run(arguments: &[OsString]) -> Result<()> {
     let current = native::current_process()?;
     let runner = native::identity(native::raw(&current))?;
     validate(&manifest, &installer, &payload, &parent, runner)?;
+    // The six received handles are already non-inheritable, so the child inherits none of them.
+    // A failure before the old app commits drops this and ends the connection; after the commit
+    // it is kept and expires by itself (at most 15 minutes).
+    let mut keep = KeepConnection::start(manifest.keep_distro.as_deref());
     let mut gate = Gate::new(manifest.binding.clone(), manifest.parent)?;
     gate.arm(&manifest.binding, native::identity(native::raw(&parent))?)?;
     files::record(&manifest, runner, Outcome::Armed, None, None)?;
@@ -44,7 +92,12 @@ pub fn run(arguments: &[OsString]) -> Result<()> {
             ],
             AUTHORITY_TIME,
         )? {
-            Some(1) => gate.commit()?,
+            Some(1) => {
+                gate.commit()?;
+                // The old app is leaving now and does not wait for this runner: from here on
+                // this is the only connection, so it must outlive any later failure.
+                keep.release();
+            }
             Some(_) => {
                 gate.disarm();
                 return Err(RunnerError::Cancelled);
@@ -85,6 +138,8 @@ pub fn run(arguments: &[OsString]) -> Result<()> {
         gate.finish()?;
         Ok(())
     })();
+    // Kill before the error record, so a slow write cannot outlast the old app's 2 s wait.
+    drop(keep);
     if let Err(error) = result {
         // install() preserves its precise Running/Unknown/result record. Preparation errors have no installer.
         if matches!(
@@ -288,6 +343,47 @@ fn verify_relaunch(manifest: &Manifest) -> Result<File> {
             } else {
                 Err(RunnerError::Unknown)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{os::windows::io::IntoRawHandle, path::PathBuf};
+    use windows::Win32::{
+        Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT},
+        System::Threading::{EVENT_MODIFY_STATE, PROCESS_SYNCHRONIZE},
+    };
+    #[test]
+    fn keep_connection_inherits_no_runner_handle() {
+        let event = native::event().unwrap();
+        let values: Vec<OsString> = (0..6)
+            .map(|_| {
+                let inherited = native::duplicate(
+                    native::raw(&event),
+                    PROCESS_SYNCHRONIZE.0 | EVENT_MODIFY_STATE.0,
+                    true,
+                )
+                .unwrap();
+                // receive_handles takes ownership of each value, so this copy gives it up.
+                OsString::from((inherited.into_raw_handle() as usize).to_string())
+            })
+            .collect();
+        let handles = native::receive_handles(&values).unwrap();
+        // The runner's own spawn path, with a short harmless program in place of wsl.exe.
+        let mut command = files::keep_command("Ubuntu-24.04");
+        command.program = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32")
+            .join("cmd.exe");
+        command.args = ["/c", "exit", "0"].map(String::from).into();
+        let mut child = spawn_detached(&command).unwrap();
+        let status = native::bounded_child(&mut child, Duration::from_secs(30)).unwrap();
+        assert!(status.is_some_and(|status| status.success()));
+        for handle in &handles {
+            let mut flags = 0;
+            unsafe { GetHandleInformation(native::raw(handle), &mut flags) }.unwrap();
+            assert_eq!(flags & HANDLE_FLAG_INHERIT.0, 0);
         }
     }
 }

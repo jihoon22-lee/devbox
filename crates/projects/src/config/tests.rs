@@ -224,3 +224,31 @@ fn rejects_symlink_files_and_ancestors_on_both_sides() {
         .is_err()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn config_loads_through_an_execute_only_ancestor() {
+    use std::os::unix::fs::PermissionsExt;
+    struct Restore(std::path::PathBuf);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+    let root = tempfile::tempdir().expect("owned fixture");
+    let project = root.path().join("outer/project");
+    std::fs::create_dir_all(project.join(".devbox")).expect("owned fixture");
+    std::fs::write(
+        project.join(".devbox/devbox.toml"),
+        "[[task]]\nid='a'\ncommand='true'\n",
+    )
+    .expect("owned fixture");
+    let outer = root.path().join("outer");
+    std::fs::set_permissions(&outer, std::fs::Permissions::from_mode(0o111)).expect("restrict");
+    let _restore = Restore(outer.clone());
+    if std::fs::read_dir(&outer).is_ok() {
+        eprintln!("skipped: mode bits are not enforced here (root or similar)");
+        return;
+    }
+    assert_eq!(load(&project).expect("load").raw_tasks.len(), 1);
+}

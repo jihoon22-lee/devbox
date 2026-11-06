@@ -3,17 +3,14 @@ import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
 import { useRpc } from "../../rpc/RpcProvider";
 import { openFileLocation } from "../../shell/fileLocation";
 import { Button, EmptyState, ErrorState } from "../../ui";
+import { NoProjectState } from "../projects/AddProjectAction";
 import { useCurrentProject } from "../projects/store";
 import { LogView } from "./LogView";
 import { usePinnedLogSources } from "./pinnedSources";
 
 export function BottomLogs() {
   const projectId = useCurrentProject((state) => state.id);
-  return projectId ? (
-    <ProjectBottomLogs key={projectId} projectId={projectId} />
-  ) : (
-    <EmptyState title="프로젝트를 선택하세요" />
-  );
+  return projectId ? <ProjectBottomLogs key={projectId} projectId={projectId} /> : <NoProjectState />;
 }
 function ProjectBottomLogs({ projectId }: { projectId: string }) {
   const client = useRpc();

@@ -211,6 +211,52 @@ async fn watch_reloads_on_external_edit() {
 }
 
 #[tokio::test]
+async fn watcher_creation_failure_retries_and_then_watches() {
+    static FAILED_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let f = Fixture::new().await;
+    f.define("a", "echo initial", SaveTo::Project).await;
+    f.runs
+        .initialize_with(
+            |send, interesting| {
+                if FAILED_ONCE.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    crate::watch::create_watcher(send, interesting)
+                } else {
+                    Err("test".into())
+                }
+            },
+            std::time::Duration::from_millis(50),
+        )
+        .await
+        .expect("daemon starts without a watcher");
+    let mut events = f.hub.subscribe("runtime.changed");
+    // The edit lands while nothing may be watching; the retry's refresh must publish it.
+    f.write("[[task]]\nid='a'\ncommand='echo changed'\n");
+    tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+        .await
+        .expect("changed event after the retry");
+    f.runs.shutdown().await;
+}
+
+#[tokio::test]
+async fn watcher_creation_failure_keeps_polling_definitions() {
+    let f = Fixture::new().await;
+    f.define("a", "echo initial", SaveTo::Project).await;
+    f.runs
+        .initialize_with(
+            |_send, _interesting| Err("test".into()),
+            std::time::Duration::from_millis(50),
+        )
+        .await
+        .expect("daemon starts without a watcher");
+    let mut events = f.hub.subscribe("runtime.changed");
+    f.write("[[task]]\nid='a'\ncommand='echo changed'\n");
+    tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+        .await
+        .expect("changed event from the polling fallback");
+    f.runs.shutdown().await;
+}
+
+#[tokio::test]
 async fn watch_observes_new_config_and_atomic_replacement_without_recursive_project_watch() {
     let f = Fixture::new().await;
     f.runs.initialize().await.expect("watcher");

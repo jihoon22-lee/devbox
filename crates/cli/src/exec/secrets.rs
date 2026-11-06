@@ -1,6 +1,6 @@
 //! Secret input never enters argv, diagnostic text, or files. Mask bytes before line splitting.
 use aho_corasick::{AhoCorasick, MatchKind};
-use std::{collections::BTreeMap, ffi::OsString, os::unix::ffi::OsStringExt};
+use std::{collections::BTreeMap, ffi::OsString, fmt::Write as _, os::unix::ffi::OsStringExt};
 use tokio::io::AsyncReadExt;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -77,13 +77,33 @@ impl Secrets {
             .map(|(key, value)| (key.as_str(), OsString::from_vec(value.to_vec())))
     }
     pub fn redactor(&self) -> Result<Redactor, SecretError> {
-        let patterns: Vec<&[u8]> = self
+        let mut patterns: Vec<Zeroizing<Vec<u8>>> = Vec::new();
+        for value in self
             .values
             .values()
             .chain(self.masks.iter())
             .filter(|v| !v.is_empty())
-            .map(|v| v.as_slice())
-            .collect();
+        {
+            patterns.push(Zeroizing::new(value.to_vec()));
+            // Serializers escape quotes, backslashes and control characters; mask those
+            // interiors too (outer quotes stay visible in the log).
+            let Ok(text) = std::str::from_utf8(value) else {
+                continue;
+            };
+            // Pre-size to the worst case (6 bytes per input byte plus quotes) so the
+            // buffers never regrow and no freed chunk keeps a copy of the secret.
+            let capacity = text.len().saturating_mul(6).saturating_add(2);
+            let mut json = Zeroizing::new(Vec::with_capacity(capacity));
+            serde_json::to_writer(&mut *json, text).map_err(|_| SecretError::Matcher)?;
+            let mut debug = Zeroizing::new(String::with_capacity(capacity));
+            write!(&mut *debug, "{text:?}").map_err(|_| SecretError::Matcher)?;
+            for escaped in [json.as_slice(), debug.as_bytes()] {
+                let inner = &escaped[1..escaped.len() - 1];
+                if inner != value.as_slice() {
+                    patterns.push(Zeroizing::new(inner.to_vec()));
+                }
+            }
+        }
         let longest = patterns.iter().map(|p| p.len()).max().unwrap_or(0);
         let matcher = if patterns.is_empty() {
             None
@@ -91,7 +111,7 @@ impl Secrets {
             Some(
                 AhoCorasick::builder()
                     .match_kind(MatchKind::LeftmostLongest)
-                    .build(patterns)
+                    .build(patterns.iter().map(|p| p.as_slice()))
                     .map_err(|_| SecretError::Matcher)?,
             )
         };
@@ -189,5 +209,39 @@ mod tests {
                 "split {split}"
             );
         }
+    }
+    fn escaped_secret_inputs() -> (Secrets, String, String) {
+        let raw = "ow\"n\\ed\nx\u{1}";
+        let mut record = b"@=".to_vec();
+        record.extend_from_slice(raw.as_bytes());
+        record.push(0);
+        let json = serde_json::to_string(raw).expect("json");
+        let debug = format!("{raw:?}");
+        assert_ne!(json, debug);
+        (
+            Secrets::parse(&record).expect("secrets"),
+            json[1..json.len() - 1].to_owned(),
+            debug[1..debug.len() - 1].to_owned(),
+        )
+    }
+    fn assert_masked_at_every_split(secrets: &Secrets, input: &[u8], expected: &[u8]) {
+        for split in 0..=input.len() {
+            let mut redactor = secrets.redactor().expect("redactor");
+            let mut out = redactor.push(&input[..split], false);
+            out.extend(redactor.push(&input[split..], true));
+            assert_eq!(out, expected, "split {split}");
+        }
+    }
+    #[test]
+    fn json_escaped_secret_is_masked_at_every_split() {
+        let (secrets, json, _) = escaped_secret_inputs();
+        let input = format!("{{\"t\":\"{json}\"}}");
+        assert_masked_at_every_split(&secrets, input.as_bytes(), br#"{"t":"[REDACTED]"}"#);
+    }
+    #[test]
+    fn debug_escaped_secret_is_masked_at_every_split() {
+        let (secrets, _, debug) = escaped_secret_inputs();
+        let input = format!("t=Some(\"{debug}\")");
+        assert_masked_at_every_split(&secrets, input.as_bytes(), br#"t=Some("[REDACTED]")"#);
     }
 }

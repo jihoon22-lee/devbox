@@ -1,11 +1,15 @@
 //! Native installation orchestration; irreversible authorization stays under Rust locks.
 use super::{
+    connection::Connection,
     native_activity::Activity,
     quit::{self, QuitState},
     update::Updates,
     update_runner::{self, Prepared},
 };
-use crate::core::update::{InstallSummary, Snapshot, UpdateError, runner::Binding};
+use crate::core::update::{
+    InstallSummary, Snapshot, UpdateError,
+    runner::{Binding, files::valid_keep_distro},
+};
 use tauri::{AppHandle, Manager, State};
 #[tauri::command]
 pub fn update_install_summary(
@@ -66,7 +70,17 @@ pub fn update_install_confirm(
             target_version: work.version,
             fixture_install: work.fixture_install,
         };
-        let preparation = update_runner::prepare(&app, binding, source, work.token.clone());
+        // The runner holds this distro's WSL connection while the app is closed. Without a
+        // ready connection or with an odd name it holds none; the update still runs.
+        let keep_distro = app
+            .state::<Connection>()
+            .state()
+            .ready_distro()
+            .ok()
+            .filter(|name| valid_keep_distro(name))
+            .map(str::to_owned);
+        let preparation =
+            update_runner::prepare(&app, binding, keep_distro, source, work.token.clone());
         tokio::pin!(preparation);
         let result = tokio::select! {
             result = &mut preparation => result,

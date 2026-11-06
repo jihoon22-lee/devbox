@@ -73,6 +73,14 @@ pub enum Diagnostic {
     #[error("Codex metadata cannot be read")]
     Unavailable,
 }
+/// What a rollout must show besides being the task's primary session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Need {
+    /// A turn started since the binding's launch: completion reports and idle detection.
+    Turn,
+    /// Nothing more: a resume only needs to know which session is the task's.
+    Session,
+}
 #[derive(Deserialize)]
 struct Record {
     timestamp: Option<String>,
@@ -218,10 +226,13 @@ fn files(
 }
 /// The primary binding in the rollout at `path`: `session_meta` from its first line, the
 /// current turn from its last [`TAIL_BYTES`]. `skipped` counts lines over [`MAX_LINE_BYTES`].
+/// For [`Need::Session`] only the first line is read and charged to `budget`, and the binding
+/// has no turn.
 fn read(
     path: &Path,
     workdir: &str,
     binding: &Binding,
+    need: Need,
     budget: &mut u64,
     skipped: &mut usize,
 ) -> Result<Option<Binding>, Diagnostic> {
@@ -265,6 +276,18 @@ fn read(
         return Ok(None);
     }
     identity(&meta.id)?;
+    let mut current = binding.clone();
+    current.thread_id = Some(meta.id);
+    current.rollout = Some(path.into());
+    current.turn_id = None;
+    current.turn_started_ms = None;
+    if need == Need::Session {
+        if first > *budget {
+            return Err(Diagnostic::LimitExceeded);
+        }
+        *budget -= first;
+        return Ok(Some(current));
+    }
     // The window starts after the first line at the earliest. Reading from the byte before it
     // drops the line the window cuts and keeps one that starts exactly at the window.
     let start = first.max(size.saturating_sub(TAIL_BYTES));
@@ -278,11 +301,6 @@ fn read(
     let mut tail = BufReader::new(file.take(window + 1));
     tail.skip_until(b'\n')
         .map_err(|_| Diagnostic::Unavailable)?;
-    let mut current = binding.clone();
-    current.thread_id = Some(meta.id);
-    current.rollout = Some(path.into());
-    current.turn_id = None;
-    current.turn_started_ms = None;
     let mut context = None;
     loop {
         line.clear();
@@ -348,16 +366,29 @@ pub(crate) fn refresh(
     binding: &Binding,
 ) -> Result<Binding, Diagnostic> {
     let mut skipped = 0;
-    let found = find(root, workdir, binding, &mut skipped);
+    let found = find(root, workdir, binding, Need::Turn, &mut skipped);
     if skipped > 0 {
         tracing::debug!(skipped, "skipped Codex rollout lines over the line limit");
     }
     found
 }
+/// The thread a resume continues: the binding's known thread, while its rollout still opens
+/// with this task's primary CLI `session_meta`, checked as [`refresh`] checks it. Unlike
+/// [`refresh`], no turn since the binding's launch is needed: a launch can end before the user
+/// sends anything. Without a known thread there is no session to check.
+pub(crate) fn session(root: &Path, workdir: &str, binding: &Binding) -> Result<String, Diagnostic> {
+    if binding.thread_id.is_none() {
+        return Err(Diagnostic::Missing);
+    }
+    find(root, workdir, binding, Need::Session, &mut 0)?
+        .thread_id
+        .ok_or(Diagnostic::Missing)
+}
 fn find(
     root: &Path,
     workdir: &str,
     binding: &Binding,
+    need: Need,
     skipped: &mut usize,
 ) -> Result<Binding, Diagnostic> {
     safe_path(root)?;
@@ -366,7 +397,8 @@ fn find(
             return Err(Diagnostic::UnsafePath);
         }
         let mut budget = MAX_TOTAL_BYTES;
-        return read(path, workdir, binding, &mut budget, skipped)?.ok_or(Diagnostic::Missing);
+        return read(path, workdir, binding, need, &mut budget, skipped)?
+            .ok_or(Diagnostic::Missing);
     }
     let mut candidates = Vec::new();
     files(
@@ -381,7 +413,7 @@ fn find(
     let mut budget = MAX_TOTAL_BYTES;
     let mut matches = Vec::new();
     for path in candidates {
-        if let Some(bound) = read(&path, workdir, binding, &mut budget, skipped)? {
+        if let Some(bound) = read(&path, workdir, binding, need, &mut budget, skipped)? {
             matches.push(bound)
         }
     }

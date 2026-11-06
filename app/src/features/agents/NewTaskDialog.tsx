@@ -4,6 +4,7 @@ import { messageFor } from "../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Button, Dialog, Select, TextArea } from "../../ui";
+import { AddProjectAction, useNoRegisteredProjects } from "../projects/AddProjectAction";
 import { isRegisteredProject, ProjectDataBoundary, useProjectData } from "../projects/ProjectData";
 import { useCurrentProject } from "../projects/store";
 import { useProjectTrust } from "../projects/useProjectTrust";
@@ -30,6 +31,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const uid = useId();
   const session = useRpcSession();
   const projects = useProjectData();
+  const noProjects = useNoRegisteredProjects();
   const profiles = useRpcQuery("agents.profiles", {});
   const current = useCurrentProject((state) => state.id);
   const [projectId, setProjectId] = useState(current ?? "");
@@ -176,7 +178,12 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             disabled={create.isPending}
             options={(projects.data?.items ?? []).map((p) => ({ value: p.id, label: p.name }))}
           />
-          {projects.data?.items.length === 0 && <p>에이전트 작업을 만들 프로젝트를 등록해 주세요.</p>}
+          {noProjects && (
+            <>
+              <p>에이전트 작업을 만들 프로젝트를 등록해 주세요.</p>
+              <AddProjectAction onAdded={setProjectId} />
+            </>
+          )}
           {projects.data && !project && projects.data.items.length > 0 && (
             <p>에이전트 작업을 만들 프로젝트를 선택해 주세요.</p>
           )}

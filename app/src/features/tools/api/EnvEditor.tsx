@@ -48,6 +48,9 @@ export const resetEnvDrafts = () => useEnvDrafts.setState({ byRoot: {} });
 const snapshot = (name: string, rows: Row[]) => JSON.stringify([name, rows.map((r) => [r.enabled, r.name, r.value])]);
 const isDirtyEnv = (editing: Editing | undefined) =>
   !!editing && snapshot(editing.name, editing.rows) !== editing.baseline;
+/** 저장하지 않은 환경 초안 수(루트마다 하나). 앱 종료 확인(`quitGuard`)이 센다. */
+export const dirtyEnvDraftCount = () =>
+  Object.values(useEnvDrafts.getState().byRoot).filter((draft) => isDirtyEnv(draft.editing)).length;
 const pairs = (rows: Row[]) => rows.filter((r) => r.enabled && r.name).map((r) => ({ name: r.name, value: r.value }));
 /**
  * What a finished save says. When the editor no longer shows the environment that was written, the
@@ -123,7 +126,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       const read = await backend.read(root, path);
       if (!ownsRead()) return;
       const file = parseEnvFile(read.text);
-      const rows = file.variables.map((v) => row(v.name, v.value));
+      const rows = file.variables.map((v) => row(v.name, v.value, v.enabled !== false));
       const unreviewed = root.kind === "project" && !read.reviewed;
       apply({
         draft: newDraft(),
@@ -170,7 +173,11 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
     const file: EnvFile = {
       version: 1,
       name: target.name,
-      variables: target.rows.map((r) => ({ name: r.name, value: r.value })),
+      variables: target.rows.map((r) => ({
+        name: r.name,
+        value: r.value,
+        ...(r.enabled ? {} : { enabled: false as const }),
+      })),
     };
     try {
       const { text, cleared } = serializeEnvFile(file);

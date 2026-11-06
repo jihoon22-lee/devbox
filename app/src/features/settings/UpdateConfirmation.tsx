@@ -140,7 +140,7 @@ export function UpdateConfirmation({
     <Dialog
       open
       title="업데이트 설치"
-      description="앱을 닫고 업데이트를 설치한 뒤 다시 시작합니다. WSL의 에이전트 작업과 서비스는 계속 실행됩니다."
+      description="앱을 닫고 업데이트를 설치한 뒤 다시 시작합니다. 설치하는 동안에도 WSL 연결을 유지하므로 WSL의 에이전트 작업과 서비스는 계속 실행됩니다."
       onOpenChange={(open) => {
         if (!open && !busy && !confirming.current) onCancel();
       }}

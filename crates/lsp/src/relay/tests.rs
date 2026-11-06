@@ -424,6 +424,140 @@ async fn review_cancelled_or_disconnected_late_reply_has_no_authority_side_effec
     }
 }
 
+fn project_only() -> DocumentAccess {
+    Arc::new(|uri, lease_id| {
+        Box::pin(async move {
+            if !uri.starts_with("file:///owned/") {
+                return Err(LspError::OutsideProject);
+            }
+            Ok(DocumentGrant {
+                uri,
+                disk_text: "disk".into(),
+                disk_rev: None,
+                lease_id,
+            })
+        })
+    })
+}
+async fn with_open_document() -> Relay {
+    let mut r = initialized().await;
+    let open=RelayMessage{json:json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///owned/a.rs","languageId":"rust","version":1,"text":"x"}}}).to_string(),lease_id:Some("L".into())};
+    r.client(1, open, &access()).await.expect("open");
+    r
+}
+#[tokio::test]
+async fn diagnostics_keep_the_session_and_drop_only_outside_related_locations() {
+    let mut r = with_open_document().await;
+    let range = json!({"start":{"line":0,"character":0},"end":{"line":0,"character":1}});
+    let message = json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///owned/a.rs","version":1,"diagnostics":[{"range":range,"message":"m","relatedInformation":[
+        {"location":{"uri":"file:///owned/b.rs","range":range},"message":"inside"},
+        {"location":{"uri":"file:///dependency/lib.rs","range":range},"message":"outside"}]}]}});
+    let out = r
+        .server(&message.to_string(), &project_only())
+        .await
+        .expect("session survives");
+    assert_eq!(out.clients.len(), 1);
+    assert_eq!(out.clients[0].0, 1);
+    assert!(out.server.is_empty());
+    assert_eq!(
+        parse(&out.clients[0].1),
+        json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///owned/a.rs","version":1,"diagnostics":[{"range":range,"message":"m","relatedInformation":[
+            {"location":{"uri":"file:///owned/b.rs","range":range},"message":"inside"}]}]}})
+    );
+    assert_eq!(out.diagnostics.len(), 1);
+    assert!(r.ready());
+}
+#[tokio::test]
+async fn diagnostics_for_an_outside_document_are_dropped_and_the_session_stays_ready() {
+    let mut r = with_open_document().await;
+    let message = json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///dependency/lib.rs","diagnostics":[]}});
+    let out = r
+        .server(&message.to_string(), &project_only())
+        .await
+        .expect("dropped");
+    assert!(out.clients.is_empty() && out.server.is_empty() && out.diagnostics.is_empty());
+    assert!(r.ready());
+}
+#[tokio::test]
+async fn server_request_with_an_outside_uri_gets_an_error_reply_and_is_not_forwarded() {
+    let mut r = initialized().await;
+    for id in [json!("show-1"), json!(7)] {
+        let message = json!({"jsonrpc":"2.0","id":id,"method":"window/showDocument","params":{"uri":"file:///dependency/lib.rs"}});
+        let out = r
+            .server(&message.to_string(), &project_only())
+            .await
+            .expect("refused");
+        assert!(out.clients.is_empty());
+        assert_eq!(out.server.len(), 1);
+        assert_eq!(
+            parse(&out.server[0]),
+            json!({"jsonrpc":"2.0","id":id,"error":{"code":-32602,"message":"Outside project"}})
+        );
+    }
+    assert_eq!(r.pending_count(), 0);
+    assert!(r.ready());
+}
+#[tokio::test]
+async fn notification_with_an_outside_uri_is_dropped_and_the_session_stays_ready() {
+    let mut r = initialized().await;
+    let message = json!({"jsonrpc":"2.0","method":"custom/notice","params":{"uri":"file:///dependency/lib.rs"}});
+    let out = r
+        .server(&message.to_string(), &project_only())
+        .await
+        .expect("dropped");
+    assert!(out.clients.is_empty() && out.server.is_empty() && out.diagnostics.is_empty());
+    assert!(r.ready());
+}
+
+#[tokio::test]
+async fn diagnostics_drop_only_the_diagnostic_whose_data_points_outside() {
+    let mut r = with_open_document().await;
+    let range = json!({"start":{"line":0,"character":0},"end":{"line":0,"character":1}});
+    let keep = json!({"range":range,"message":"keep"});
+    let message = json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///owned/a.rs","version":1,"diagnostics":[
+        {"range":range,"message":"drop","data":{"uri":"file:///dependency/lib.rs"}}, keep]}});
+    let out = r
+        .server(&message.to_string(), &project_only())
+        .await
+        .expect("session survives");
+    assert_eq!(out.clients.len(), 1);
+    assert_eq!(out.clients[0].0, 1);
+    assert_eq!(
+        parse(&out.clients[0].1),
+        json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///owned/a.rs","version":1,"diagnostics":[keep]}})
+    );
+    assert_eq!(out.diagnostics.len(), 1);
+    assert_eq!(out.diagnostics[0].items.len(), 1);
+    assert!(r.ready());
+}
+#[tokio::test]
+async fn non_outside_access_errors_still_fail_the_session() {
+    let broken: DocumentAccess = Arc::new(|uri, lease_id| {
+        Box::pin(async move {
+            if uri.starts_with("file:///broken/") {
+                return Err(LspError::InvalidInput);
+            }
+            Ok(DocumentGrant {
+                uri,
+                disk_text: "disk".into(),
+                disk_rev: None,
+                lease_id,
+            })
+        })
+    });
+    let mut r = with_open_document().await;
+    let range = json!({"start":{"line":0,"character":0},"end":{"line":0,"character":1}});
+    let messages = [
+        json!({"jsonrpc":"2.0","method":"custom/notice","params":{"uri":"file:///broken/x.rs"}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"window/showDocument","params":{"uri":"file:///broken/x.rs"}}),
+        json!({"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///owned/a.rs","version":1,"diagnostics":[{"range":range,"message":"m","relatedInformation":[
+            {"location":{"uri":"file:///broken/x.rs","range":range},"message":"r"}]}]}}),
+    ];
+    for message in messages {
+        assert!(r.server(&message.to_string(), &broken).await.is_err());
+    }
+}
+
 #[path = "version_tests.rs"]
 mod versions;
 

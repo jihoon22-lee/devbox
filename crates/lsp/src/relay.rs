@@ -324,11 +324,36 @@ impl Relay {
                 return Ok(out);
             }
         }
-        if let Err(error) = crate::uri::normalize(&mut value, access, 0).await {
-            if !apply {
+        if value.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+            && !diagnostics_inside(&mut value, access).await?
+        {
+            tracing::debug!("dropped diagnostics for a document outside the project");
+            return Ok(out);
+        }
+        let publish =
+            value.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics");
+        let backup = publish.then(|| value.clone());
+        let mut normalized = crate::uri::normalize(&mut value, access, 0).await;
+        if let (Err(LspError::OutsideProject), Some(mut original)) = (&normalized, backup) {
+            // Keep the publish: drop only the diagnostics that point outside.
+            drop_outside_diagnostics(&mut original, access).await?;
+            value = original;
+            normalized = crate::uri::normalize(&mut value, access, 0).await;
+        }
+        if let Err(error) = normalized {
+            if apply {
+                out.server.push(json!({"jsonrpc":"2.0","id":request_id(&value)?,"result":{"applied":false,"failureReason":"Document authority changed"}}).to_string());
+                return Ok(out);
+            }
+            if !matches!(error, LspError::OutsideProject) {
                 return Err(error);
             }
-            out.server.push(json!({"jsonrpc":"2.0","id":request_id(&value)?,"result":{"applied":false,"failureReason":"Document authority changed"}}).to_string());
+            // A location outside the project must not fail the shared session.
+            if value.get("id").is_some() {
+                out.server.push(json!({"jsonrpc":"2.0","id":request_id(&value)?,"error":{"code":-32602,"message":"Outside project"}}).to_string());
+            } else {
+                tracing::debug!("dropped server notification pointing outside the project");
+            }
             return Ok(out);
         }
         if value.get("method").and_then(Value::as_str) == Some("$/cancelRequest") {
@@ -496,6 +521,73 @@ fn request_id(value: &Value) -> Result<Value, LspError> {
     } else {
         Err(LspError::Protocol)
     }
+}
+/// Drops `relatedInformation` entries outside the project. Returns `false` when the
+/// diagnostics' own document is outside, so the whole notification is dropped.
+async fn diagnostics_inside(value: &mut Value, access: &DocumentAccess) -> Result<bool, LspError> {
+    let Some(uri) = value.pointer("/params/uri").and_then(Value::as_str) else {
+        return Ok(true);
+    };
+    match access(uri.into(), None).await {
+        Ok(_) => {}
+        Err(LspError::OutsideProject) => return Ok(false),
+        Err(error) => return Err(error),
+    }
+    let Some(diagnostics) = value
+        .pointer_mut("/params/diagnostics")
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(true);
+    };
+    for diagnostic in diagnostics {
+        let Some(related) = diagnostic
+            .get_mut("relatedInformation")
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        let mut kept = Vec::with_capacity(related.len());
+        for entry in related.drain(..) {
+            let inside = match entry.pointer("/location/uri").and_then(Value::as_str) {
+                Some(uri) => match access(uri.into(), None).await {
+                    Ok(_) => true,
+                    Err(LspError::OutsideProject) => false,
+                    Err(error) => return Err(error),
+                },
+                None => true,
+            };
+            if inside {
+                kept.push(entry);
+            }
+        }
+        *related = kept;
+    }
+    Ok(true)
+}
+/// Removes diagnostics that fail authority with `OutsideProject`, keeping the others in order.
+async fn drop_outside_diagnostics(
+    value: &mut Value,
+    access: &DocumentAccess,
+) -> Result<(), LspError> {
+    let Some(diagnostics) = value
+        .pointer_mut("/params/diagnostics")
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(());
+    };
+    let mut kept = Vec::with_capacity(diagnostics.len());
+    for diagnostic in diagnostics.drain(..) {
+        let mut probe = diagnostic.clone();
+        match crate::uri::normalize(&mut probe, access, 0).await {
+            Ok(()) => kept.push(diagnostic),
+            Err(LspError::OutsideProject) => {
+                tracing::debug!("dropped a diagnostic pointing outside the project");
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    *diagnostics = kept;
+    Ok(())
 }
 #[cfg(test)]
 mod tests;

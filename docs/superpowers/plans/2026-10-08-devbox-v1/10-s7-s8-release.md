@@ -5,6 +5,7 @@
 - 작업 위치
   - S7: `v1/s7-rc2`, `/home/jihoon/projects/devbox-wt/v1-s7-rc2`. origin/main에서 갈라진다.
   - S8: `v1/s8-release`, `/home/jihoon/projects/devbox-wt/v1-s8-release`. S7 머지 뒤 origin/main에서 갈라진다.
+  - S8-4b: `fix/v1-final-review`, `/home/jihoon/projects/devbox-wt/fix-v1-final-review`. S8-4 머지 뒤 origin/main `08dffcd3`에서 갈라진다(사용자 결정 2026-11-06).
 - 실행 방식: 하네스의 과제별 구현 → 다른 에이전트 검토(CONVENTIONS §11). 별도 스킬이나 특정 모델을 요구하지 않는다. 하위 에이전트가 없는 하네스는 같은 순서(구현 → 새 맥락에서 검토 → 커밋)를 직접 지킨다.
 - 진행 원장: [PROGRESS](PROGRESS.md). 이 문서의 체크박스는 보조다.
 - 입력
@@ -1177,12 +1178,476 @@ S7 머지와 rc.2 공개 뒤, `v1/s8-release`를 origin/main에서 만든다. �
 ### S8-3 검사·후보
 
 - [x] `pnpm check`를 한 번 돌린다. 버전이 바뀌었기 때문이다.
-- [ ] 1.0.0 후보로 accept 설치 스모크를 한다: 첫 화면, 버전 표시 1.0.0, H1 하나, N1.
+- [ ] 1.0.0 후보로 accept 설치 스모크를 한다: 첫 화면, 버전 표시 1.0.0, H1 하나, N1 (S8-4b squash SHA로).
 - [x] 1.0.0 릴리스 노트(태그 메시지) 초안을 쓴다. 담을 것: 새 구조, v0.9.0 수동 제거 순서, RC→1.0 수동 설치, 알려진 제한·NOT_RUN.
 
 ### S8-4 PR·리뷰·머지
 
 S7-15와 같다.
+
+### S8-4b 최종 교차 검토 수정 — 사용자 결정 2026-11-06
+
+- **입력:** S8-4 머지 뒤 출시 전 최종 교차 검토의 통합 보고(Git common-dir `devbox-verification/s8/final-review/final-report.md`).
+  - 검토자 5명: Claude Opus 5.5 max 2명, Codex GPT-6-Astra max 3명.
+  - 방식: 1차는 영역별 독립 검토, 2차는 다른 계열이 교차 검증. 컨트롤러가 Critical·Important를 코드로 확인했다.
+  - 결과: 52건 → Critical 0, Important 21, Minor 31.
+- **사용자 결정(원문, AskUserQuestion):**
+  - 범위: "11건+문서 고친 뒤 공개 (권장)" — 통합 보고 §3의 A 11건과 §5의 문서. §4 B 7건은 넣지 않는다.
+  - CA-01: "자동 시작 유지, 문서만" — 언어 서버의 자동 시작을 바꾸지 않는다. 위험은 SECURITY.md·README에 적는다(S8-4b-11).
+  - 계획 승인(원문): "한글 제목 변경(9)은 빼고 진행" — S8-4b-9(CB-02)는 하지 않고 1.0.x 후속으로 옮긴다. 한글만 있는 제목은 지금처럼 브랜치 이름을 직접 입력해야 한다.
+  - 그래서 코드 과제는 9개다.
+- **작업 위치:** `fix/v1-final-review`, `/home/jihoon/projects/devbox-wt/fix-v1-final-review`. origin/main `08dffcd3`에서 갈라진다.
+  - main을 고정하던 Ruling 123은 이 PR로 끝난다.
+  - 1.0.0 태그 후보는 이 PR의 squash SHA다. S8-3의 accept 스모크도 그 SHA로 한다.
+- **범위 밖(1.0.x):** 통합 보고 §4 B와 §6 D. S8-4b-11에서 PROGRESS §4로 옮긴다. 범위를 더하거나 빼야 하면 멈추고 묻는다.
+- **공통 규칙:** §3 그대로다.
+  - `PROTOCOL_VERSION`은 1로 둔다.
+  - RPC 타입이 바뀌면 `pnpm gen`을 돌린다.
+  - 고지 입력(lock·manifest)이 바뀌면 같은 커밋에서 `cargo run -p xtask -- notices`를 돌린다.
+- **시험 실행:** 시험 이름은 필터 문자열이다. Rust는 `cargo test -p <crate> [--test <file>] <이름> -- --test-threads=2`, 화면은 `pnpm --filter app exec vitest run <path>`이고, 둘 다 `scripts/verify-resources.py` 안에서 돌린다.
+
+**검토 초점(S8-4b).** 시험이 놓치기 쉬운 실제 조건이다.
+
+1. **비밀 값의 이스케이프 표기.** 비밀 값에 따옴표·역슬래시·줄바꿈이 있고, 실행한 프로그램이 그 값을 JSON이나 Rust Debug로 찍는다. 기대: 그 표기가 실행 로그 파일·`logs.search`·MCP `devbox_logs` 어디에도 남지 않는다. — S8-4b-1
+2. **프로젝트 밖을 가리키는 진단.** Rust 저장 검사의 진단이 `~/.cargo/registry` 안의 관련 위치를 가리킨다. 기대: 세션이 끊기지 않고, 프로젝트 안 진단은 그대로 온다. — S8-4b-2
+3. **공유 의존 서비스.** db(고정 포트)에 기대는 api·worker가 있고, api를 [재시작]한다. 기대: db 실행이 하나로 남고 재시작이 성공한다. — S8-4b-3
+4. **긴 업데이트 설치.** 설치가 15초보다 오래 걸리고, 다른 WSL 창이 없다. 기대: 배포판이 멈추지 않는다. 실제 Windows 확인은 S8-5에서 한다. — S8-4b-10
+5. **처음 쓰는 사용자.** 프로젝트가 0개다. 기대: 빈 화면에서 바로 프로젝트를 추가하고 첫 작업까지 간다. — S8-4b-8
+
+**순서**(과제당 커밋 하나, 차례로)
+
+| 과제 | 내용 | 커밋 |
+|---|---|---|
+| S8-4b-0 | 이 절 채택 | `docs: plan the 1.0.0 final review fixes` |
+| S8-4b-1 | X1-01 비밀 이스케이프 표기 가림 | `fix(cli): mask JSON and debug escaped secret values in run output` |
+| S8-4b-2 | CB-2-01 LSP 알림의 밖 경로 | `fix(lsp): keep the session when a server message points outside the project` |
+| S8-4b-3 | X1-02 의존 서비스 재사용 | `fix(runtime): reuse a running dependency service instead of starting another` |
+| S8-4b-4 | CA-02 감시 실패로 데몬이 멈추지 않게 | `fix(runtime): start the daemon when execution config cannot be watched` |
+| S8-4b-5 | X2-02 Codex 재개 | `fix(agents): resume a Codex task again without a new turn` |
+| S8-4b-6 | X3-01 종료 전 API 변경 확인 | `fix(app): ask before quitting with unsaved API changes` |
+| S8-4b-7 | X3-05 환경 변수 사용 체크 저장 | `fix(app): keep disabled API environment variables disabled after saving` |
+| S8-4b-8 | CB-01 빈 화면의 [프로젝트 추가] | `fix(app): offer adding a project from empty screens` |
+| S8-4b-9 | CB-02 한글 제목 — **제외**(계획 승인 2026-11-06) | — |
+| S8-4b-10 | X3-02 업데이트 중 WSL 유지 | `fix(app): keep WSL running while an update installs` |
+| S8-4b-11 | 문서 | `docs: document final review limits, language server risk and Codex resume` |
+| S8-4b-12 | 브랜치 전체 검토·전체 검사 | 고칠 것이 있으면 그 수정 커밋 |
+| S8-4b-13 | push·PR·리뷰·머지 | — (S8-4와 같다) |
+
+#### S8-4b-0 채택
+
+- [x] 이 절을 계획 10에 넣고 커밋한다. 다른 파일은 바꾸지 않는다. 링크 검사와 Biome을 돌린다.
+
+#### S8-4b-1 X1-01 — 비밀 값의 JSON·Debug 표기도 가린다
+
+**문제.** 래퍼의 가림(`crates/cli/src/exec/secrets.rs:79-95` `Secrets::redactor`)은 원문 바이트만 찾는다. 그래서 따옴표·역슬래시·줄바꿈·제어 문자가 든 비밀을 프로그램이 JSON이나 Rust Debug로 찍으면, 그 표기가 실행 로그와 MCP `devbox_logs`에 남는다. 지원 번들은 이미 같은 표기를 가린다(`crates/tools/src/support/redact.rs:24-44`).
+
+**파일**
+- 수정: `crates/cli/src/exec/secrets.rs`(`redactor`). 시험은 같은 파일의 시험 모듈에 둔다.
+- 통합 시험: `crates/cli/tests/runtime_secrets.rs`.
+
+**동작**
+- 패턴은 값(`values`)과 mask(`masks`)마다 원문을 넣는다.
+- 그 바이트가 UTF-8이면 두 표기를 더 넣는다. 원문과 같으면 넣지 않는다.
+  - `serde_json::to_string(text)`의 바깥 따옴표를 뺀 안쪽
+  - `format!("{text:?}")`의 바깥 따옴표를 뺀 안쪽
+- 표기는 지원 번들과 같다. 새 패턴 버퍼는 `Zeroizing`이고, 함수 시그니처는 그대로다.
+- 이미 저장된 로그는 다시 가리지 않는다(S8-4b-11의 SECURITY.md 문장).
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `json_escaped_secret_is_masked_at_every_split`
+    - 비밀 원문: `ow"n\ed` + 줄바꿈 + `x` + U+0001.
+    - 입력: JSON 표기를 담은 `{"t":"<JSON 안쪽>"}`.
+    - 기대: 모든 분할 위치에서 출력이 `{"t":"[REDACTED]"}`다.
+  - `debug_escaped_secret_is_masked_at_every_split`
+    - 같은 비밀의 Debug 표기 `t=Some("<Debug 안쪽>")`.
+    - 기대: 출력이 `t=Some("[REDACTED]")`다. U+0001이 JSON은 `\u0001`, Debug는 `\u{1}`이라 두 표기가 다르다.
+  - `run_output_hides_json_escaped_secret`(통합)
+    - 따옴표가 든 비밀을 쓰는 작업이 `printf`로 JSON 이스케이프 표기를 찍는다.
+    - 기대: 그 표기가 로그 파일과 `logs.search` 응답에 없고, `[REDACTED]`가 있다.
+    - MCP `devbox_logs`도 같은 로그를 읽는다. `crates/cli/tests/mcp_runs.rs`의 helper로 함께 확인할 수 있으면 같은 시험에 넣는다.
+- [x] 2. 시험이 실패하는 것을 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `crates/cli/src/exec/secrets.rs` 시험 모듈, `--test runtime_secrets`가 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-2 CB-2-01 — 서버 메시지의 밖 경로로 LSP 세션을 끊지 않는다
+
+**문제.** 서버 알림이나 서버 요청 안의 `uri`가 프로젝트 밖이면, 다음 순서로 세션이 멈춘다.
+1. `Relay::server`가 `Err`를 돌려준다(`crates/lsp/src/relay.rs:327-331`).
+2. actor가 세션을 실패로 보고 서버를 다시 띄운다(`actor.rs:406-411`).
+3. 5분 안에 세 번이면 "실행 실패"로 고정된다.
+
+응답은 같은 경우에 그 요청만 거절한다(`relay.rs:285-292`, 시험 있음).
+
+**파일**
+- 수정: `crates/lsp/src/relay.rs`(`server`의 method 분기).
+- 시험: `crates/lsp/src/relay/tests.rs`.
+
+**동작**
+- `textDocument/publishDiagnostics`
+  - `params.uri`가 밖이면 그 알림만 버린다.
+  - 안이면, 각 진단의 `relatedInformation` 중 `location.uri`가 밖인 항목만 뺀다. 나머지는 지금처럼 정규화·버전 확인·전달·문제 패널 처리를 한다.
+- id가 있는 서버 요청(예: `window/showDocument`)에 밖 경로가 있을 때
+  - 클라이언트에 보내지 않는다.
+  - 서버에 `{"jsonrpc":"2.0","id":<같은 id>,"error":{"code":-32602,"message":"Outside project"}}`로 답한다.
+  - `workspace/applyEdit`의 기존 `applied:false` 처리는 그대로다.
+- 그 밖의 알림에 밖 경로가 있으면 그 알림만 버린다. 기록은 `tracing::debug!`로 하고 경로는 쓰지 않는다.
+- 위 경우는 모두 `Ok`로 끝나 세션이 유지된다. 깨진 JSON 같은 `LspError::Protocol`은 지금처럼 실패다.
+- (구현 반영, Ruling 131) 진단의 다른 위치(`uri`·`targetUri` 등, `data` 안 포함)가 밖이면 그 진단만 빼고 나머지를 보낸다. 그래도 밖 경로가 남으면 마지막 수단으로 그 알림 전체를 버린다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다. 기존 시험의 밖 경로 `file:///dependency/lib.rs`를 쓴다.
+  - `diagnostics_keep_the_session_and_drop_only_outside_related_locations`
+    - 열린 문서의 진단에 관련 위치가 둘 있다(안 하나, 밖 하나).
+    - 기대: 클라이언트 메시지에 안쪽 하나만 남고, `ready()`가 true다.
+  - `diagnostics_for_an_outside_document_are_dropped_and_the_session_stays_ready`
+  - `server_request_with_an_outside_uri_gets_an_error_reply_and_is_not_forwarded`
+    - 기대: `server`에 같은 id의 오류 응답이 있고, `clients`는 비어 있다.
+  - `notification_with_an_outside_uri_is_dropped_and_the_session_stays_ready`
+- [x] 2. 실패를 본다. 지금은 `Err`가 난다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 기존 "ordinary outside target refusal preserves shared generation" 시험, `cargo test -p devbox-lsp`가 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-3 X1-02 — 실행 중인 의존 서비스를 다시 띄우지 않는다
+
+**문제.** `start_graph`(`crates/runtime/src/execution.rs:281-289`)는 마지막 노드만 기존 실행을 대체한다. 의존하는 서비스는 실행 중이어도 새 UUID로 다시 띄운다. 그래서 고정 포트 db에 기대는 api를 시작하거나 [재시작]하면 db 단계에서 실패한다. 설계 01 :112·:836은 "앞 서비스의 준비됨을 기다린다"고 정했다.
+
+**파일**
+- 수정: `crates/runtime/src/execution.rs`. 필요하면 `crates/runtime/src/run_store.rs`에 조회 함수를 더한다.
+- 시험: `crates/cli/tests/runtime_lifecycle.rs`.
+- (구현 반영) 재사용 판단은 새 모듈 `crates/runtime/src/dependency.rs`에 두었다. systemd 시험은 `crates/cli/tests/runtime_lifecycle_cases/dependencies.rs`(`#[ignore]`, `runtime_lifecycle.rs`가 부른다)에, CI에서 도는 시험은 `crates/runtime/src/dependency_tests.rs`에 있다.
+
+**동작**
+- 그래프에서 마지막이 아닌 서비스 노드는, 같은 프로젝트·worktree·정의 id의 실행 중 서비스(`state.is_live()`)가 있으면 새로 띄우지 않는다.
+  - 대신 그 실행의 준비됨을 기다린다(`wait_ready`, 기존 60초).
+  - (구현 반영) 살아 있지만 준비 시한 안에 준비되지 않으면 `wait_ready`의 `runtime.not_ready`이고(이 과제 전과 같다), 더 이상 살아 있지 않을 때만 `runtime.dependency_failed`다.
+  - (구현 반영) 재사용하기 전에 systemd로 그 실행이 아직 살아 있는지 맞춰 보고(`reconcile_one`, 사라졌으면 새로 띄운다), 후보가 여럿이면 준비된 실행을 먼저 고른다(`run_store::live_services`).
+  - 재사용한 실행은 이 시작이 띄운 실행 목록(`started`)에 넣지 않는다. 호출자는 이 목록을 시작 결과 보고에만 쓴다(`crates/cli/src/daemon/launch.rs:158-167`의 서비스 수·run id, `crates/runtime/src/scheduler.rs:30-39`의 실패 보고).
+  - 재사용할 실행이 예전 정의로 떠 있어도 그대로 재사용한다. 설계 01 :552 "설정이 바뀌면 실행 중인 것은 그대로 둔다"와 같다.
+- 마지막 노드(사용자가 고른 정의)는 지금 그대로다. [시작]은 새 실행, [재시작]은 그 실행의 대체다.
+- 작업(task) 의존은 일회성이라 지금처럼 매번 실행한다.
+- 같은 정의 식별(프로젝트·worktree·정의 id)의 서비스 시작은 직렬화한다. 동시에 두 번 시작해도 하나만 뜬다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - db: 시험이 실행 중에 고른 빈 포트를 `ports_hint`로 쓰는 서비스다. 잘 알려진 포트는 쓰지 않는다(기존 서비스를 건드리지 않는다).
+  - api·worker: `depends_on = ["db"]`인 서비스다.
+  - `restarting_a_service_keeps_its_running_dependency`
+    - api 시작 → 실행 2개 → api 재시작.
+    - 기대: 성공하고, db의 run id·unit이 그대로이며, db 실행은 하나다.
+  - `starting_a_service_reuses_a_dependency_started_on_its_own`
+    - db 시작 → api 시작.
+    - 기대: db 실행이 하나다.
+  - `two_services_share_one_running_dependency`
+    - api 시작 → worker 시작.
+    - 기대: db 실행이 하나다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `depends_on_runs_in_order`·`depends_on_stops_after_failure`·`manual_restart_resets_the_start_limit`, `cargo test -p devbox-runtime`이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-4 CA-02 — 실행 정의 감시가 실패해도 데몬은 뜬다
+
+**문제.** 감시기 생성 실패나 디렉터리 `watch` 실패가 `?`로 올라간다(`crates/runtime/src/watch.rs:60`·`:172-174`). 그러면 `serve()`가 접속을 받기 전에 끝나고(`crates/cli/src/daemon/server.rs:72-74`), systemd가 재시작을 되풀이한다. 원인은 inotify 한도 소진(설계 R14)이나 읽을 수 없는 디렉터리다. 같은 데몬의 문서·문제 감시기는 이런 실패를 경고만 한다.
+
+**파일**
+- 수정: `crates/runtime/src/watch.rs`.
+- 시험: `crates/cli/tests/daemon.rs`(또는 runtime의 기존 감시 시험 모듈).
+- (구현 반영) 시험은 `crates/cli/tests/runtime_definitions.rs`에 두었다. 정의 읽기도 고쳤다: `crates/projects/src/config/copy.rs`가 중간 폴더를 `O_PATH`로 연다(아래 "실행 비트만" 전제가 틀렸다).
+
+**동작**
+- 디렉터리별 `watch` 실패
+  - 그 디렉터리만 감시 목록에서 빼고 경고를 남긴다. 경로 대신 프로젝트 id를 쓴다.
+  - 정의는 지금처럼 읽는다.
+  - 다음 refresh(`projects.changed`, 기존 주기 갱신)에서 다시 감시를 붙인다.
+  - (구현 반영) 주기 갱신은 없었다. 그래서 감시가 하나라도 빠져 있는 동안 30초마다 refresh를 다시 돌린다(정의도 다시 읽는다).
+- 감시기 생성 실패
+  - 감시 없이 정의를 한 번 읽어 쓴다.
+  - 30초마다 생성을 다시 시도하고, 붙으면 지금처럼 동작한다.
+- 정의 읽기와 DB의 실패는 지금 처리 그대로다. 감시와 관련된 실패만 시작을 막지 않는다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `daemon_starts_when_a_project_config_directory_cannot_be_watched`
+    - 프로젝트 A를 담은 상위 폴더를 `chmod 111`(실행 비트만)로 만든다.
+      - 감시 대상은 프로젝트의 상위 폴더·root·`.devbox`다(`crates/runtime/src/watch.rs:146-158`).
+      - 실행 비트만 있으면 `is_dir()`와 정의 읽기는 되지만 `inotify_add_watch`는 EACCES다.
+      - (구현 반영) 이 전제는 틀렸다. 중간 폴더를 `O_RDONLY`로 열어 정의 읽기도 EACCES였고, 위 `copy.rs` 수정 뒤에 읽힌다.
+      - 시험이 실패해도 권한을 되돌리는 guard를 둔다. root로 돌면 이 시험은 건너뛴다.
+    - 시험 데몬을 띄운다.
+    - 기대: `system.ping`이 성공하고, 다른 프로젝트 B의 실행 정의 목록이 정상이다.
+    - 권한을 되돌리고 프로젝트를 하나 더 등록해 `projects.changed`를 일으킨다.
+    - 기대: A의 `.devbox/devbox.toml` 변경이 목록에 반영된다.
+- [x] 2. 실패를 본다. 지금은 데몬이 뜨지 않는다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `cargo test -p devbox-runtime`, `--test daemon`이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-5 X2-02 — 새 턴 없이 끝난 Codex 작업도 다시 재개한다
+
+**문제.**
+- Codex 재개는 `refresh_binding(&task, true)`를 거친다(`crates/agents/src/resume.rs:99`).
+- 첫 재개가 binding의 `launch_ms`를 바꾸고 `turn_id`를 비운다(`:177-179`).
+- tracker는 그 launch 뒤의 턴만 인정한다.
+- 그래서 재개한 뒤 새 지시 없이 끝낸 작업은 다음 재개가 `agents.session_metadata`로 막힌다.
+
+**파일**
+- 수정: `crates/agents/src/resume.rs`, `crates/agents/src/lifecycle.rs`, `crates/agents/src/tracker.rs`.
+- 시험: 기존 재개 시험 파일(`crates/agents/src/resume_*tests.rs`)과 tracker 시험.
+
+**동작**
+- 재개 때는 "이 작업의 세션이 무엇인가"만 확인한다.
+  - 저장된 binding에 전에 검증한 thread id가 있으면 그 id를 쓴다. 단 그 rollout 파일이 있고 세션 메타데이터(`source=cli`, 작업의 workdir)가 맞아야 한다. 마지막 launch 뒤의 턴은 요구하지 않는다.
+  - (구현 반영) 저장된 thread로 재개할 때는 rollout의 첫 `session_meta` 줄만 한 번 확인하고(재시도 없음) binding을 DB에 다시 쓰지 않는다(`tracker::session`).
+  - 저장된 id가 없으면 지금처럼 `refresh_binding`으로 찾는다. 못 찾으면 `agents.session_metadata`다.
+- 턴 상관 검증(완료 보고·idle 판정)은 지금 그대로다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `codex_task_resumed_without_a_new_turn_resumes_again_with_the_same_thread`
+    - fixture rollout(턴 1개)로 시작한다 → 재개 1회(새 턴 없음) → 도구 종료 → 재개 2회.
+    - 기대: 두 번째 시작 스크립트에 `resume <같은 thread id>`가 있다.
+  - `codex_resume_refuses_a_stored_thread_whose_rollout_names_another_workdir`
+    - 기대: `agents.session_metadata`.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 기존 재개 rollback 시험, `cargo test -p devbox-agents`가 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-6 X3-01 — 종료·업데이트 전에 저장하지 않은 API 변경을 묻는다
+
+**문제.**
+- 종료 준비(`app/src/shell/NativeQuitPreparation.tsx:21`)는 문서 저장소만 확인한다.
+- API 요청 탭(`app/src/features/tools/api/store.ts:115`)과 환경 편집 초안(`EnvEditor.tsx`의 `useEnvDrafts`)은 메모리 전용이다.
+- 그래서 트레이 [종료]와 업데이트 [설치하고 다시 시작]이 묻지 않고 버린다.
+- 업데이트의 종료 준비는 설치된 판의 화면이 하므로, 1.0.0에 넣어야 첫 업데이트를 보호한다.
+
+**파일**
+- 수정: `app/src/shell/NativeQuitPreparation.tsx`, `app/src/shell/quitPreparation.ts`.
+- 수정: `app/src/features/tools/api/store.ts`(저장하지 않은 요청 수), `EnvEditor.tsx`(저장하지 않은 환경 초안 수를 내보내는 함수).
+- 새 파일: `app/src/features/tools/api/quitGuard.tsx`(확인 창).
+- 시험: `app/src/shell/quitPreparation.test.ts`, 새 `quitGuard.test.tsx`.
+
+**동작**
+- main 창의 종료 준비는 문서 확인 전에 API 변경을 본다. 저장하지 않은 요청 탭(`isDirty`)과 환경 초안이 대상이다.
+- 하나라도 있으면 확인 창을 띄운다.
+  - 제목: "저장하지 않은 API 변경이 있습니다"
+  - 본문: "요청 {n}개와 환경 {m}개의 변경을 저장하지 않았습니다. 종료하면 이 변경은 사라집니다." 0개인 쪽은 빼고 쓴다. 예: "요청 2개의 변경을…".
+  - 버튼: [변경 버리고 종료]·[취소]
+- [취소]
+  - 종료 준비가 `safe=false`로 끝나 종료를 취소한다. 업데이트도 설치하지 않는다.
+  - 기존 차단 안내(`blocked`)는 띄우지 않는다.
+  - (구현 반영, Ruling 136) main 창은 `blocked`를 띄우지 않지만, native ACK에 거절 이유가 없어 트레이는 "종료하지 못했습니다…", 업데이트는 `quitRejected` 문구, 열린 팝아웃은 일반 `blocked()` 안내를 보인다. 1.0.x 후속이고, 1.0.0에서 처음 업데이트할 때도 이 문구가 나온다.
+- [변경 버리고 종료]: 문서 확인으로 넘어간다.
+- 저장 버튼은 두지 않는다. 새 요청은 파일 경로가 없을 수 있다.
+- 초안을 디스크에 자동 저장하지 않는다. 비밀이 있을 수 있다.
+- 노트·코드 팝아웃 창은 API 탭이 없으므로 지금 그대로다.
+- 확인 창은 주 창에 띄운다. 트레이 [종료]는 확인 전에 주 창을 앞으로 가져오고(`app/src-tauri/src/platform/tray.rs:68-70`), 업데이트는 주 창 안의 확인 창에서 시작한다.
+- 종료 준비의 30초 시한(`app/src-tauri/src/platform/quit.rs:166`)은 문서 확인과 똑같이 적용된다. 넘기면 종료를 취소한다(안전 쪽). 시한은 바꾸지 않는다.
+- [변경 버리고 종료]는 API 저장소를 비우지 않는다. 이어지는 문서 확인에서 취소하면 초안이 그대로 남는다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `api_changes_cancelled_quit_acks_unsafe_without_asking_documents`
+  - `api_changes_discarded_continue_to_documents`
+  - `no_api_changes_go_straight_to_documents`
+  - `api_discard_keeps_drafts_when_documents_cancel`
+  - `quit_guard_names_only_the_kinds_with_changes`
+  - `quit_guard_cancel_resolves_false_and_discard_resolves_true`
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `app/src/shell`·`app/src/features/tools/api` 시험이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-7 X3-05 — 끈 환경 변수는 저장 뒤에도 꺼져 있다
+
+**문제.**
+- 환경 파일 형식(`app/src/features/tools/api/model/envFile.ts:10-14`)에 사용 여부가 없다.
+- 저장(`EnvEditor.tsx:173`)은 모든 행을 켠 것으로 쓴다.
+- 그래서 다시 열면 끈 행이 켜진다. 같은 이름의 행이 있으면 꺼 둔 값(예: 운영 주소)으로 요청이 나갈 수 있다.
+
+**파일**
+- 수정: `envFile.ts`, `EnvEditor.tsx`.
+- 시험: `envFile`·`EnvEditor` 시험 파일.
+
+**동작**
+- `EnvVariable`에 선택 필드 `enabled?: false`를 둔다.
+  - 쓸 때는 끈 행에만 `"enabled": false`를 적는다.
+  - 읽을 때 없으면 켬이다. `enabled`가 있는데 `false`가 아니면 형식 오류다.
+- 편집기
+  - 읽을 때 `enabled: variable.enabled !== false`로 둔다.
+  - 저장할 때 행의 체크를 옮긴다.
+  - 활성 환경(`pairs`)은 지금처럼 켠 행만이다.
+- 바뀌는 점
+  - 끈 행이 있는 환경 파일에는 `"enabled": false`가 더해진다. 프로젝트 컬렉션에 커밋된 환경 파일이라면 diff가 생긴다.
+  - 이 판보다 앞선 판은 이 필드를 무시해 끈 행을 켠 것으로 읽는다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `disabled_variable_round_trips_as_enabled_false`
+  - `enabled_other_than_false_is_rejected`
+  - `files_without_enabled_stay_enabled`
+  - `unchecked_row_stays_unchecked_after_save_and_reopen`
+    - 같은 이름 두 행 중 하나를 끄고 저장한 뒤 다시 연다.
+    - 기대: 그 행은 꺼져 있고, 활성 환경 값은 켠 행의 값이다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `app/src/features/tools/api` 시험이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-8 CB-01 — 프로젝트가 없는 빈 화면에 [프로젝트 추가]
+
+**문제.**
+- 프로젝트가 0개일 때 빈 화면과 새 작업 대화상자는 안내만 있고 동작이 없다.
+- [프로젝트 추가]는 제목 표시줄 전환기(`ProjectSwitcher.tsx:284`)에서만 열린다.
+- 설계 01 :637은 빈 상태에 주 동작 하나를 둔다고 정했다.
+
+**파일**
+- 새 파일: `app/src/features/projects/AddProjectAction.tsx`. 버튼과 `AddProjectDialog`를 묶는다.
+- 쓰는 곳 6곳:
+  - `app/src/features/agents/AgentList.tsx:50`
+  - `app/src/features/agents/NewTaskDialog.tsx:179`
+  - `app/src/features/runs/RunsPage.tsx:46`
+  - `app/src/features/source/SourcePage.tsx:55`
+  - `app/src/features/problems/ProblemsPanel.tsx:18`
+  - `app/src/features/runs/BottomLogs.tsx:15`
+- 시험: 새 `AddProjectAction.test.tsx`와 위 화면들의 시험 파일.
+
+**동작**
+- 등록된 프로젝트가 0개일 때만 [프로젝트 추가] 버튼(`variant="primary"`)을 보인다. 누르면 `AddProjectDialog`가 열린다.
+  - 빈 상태: `EmptyState`의 `action`에 넣고, 제목은 "등록된 프로젝트가 없습니다"로 바꾼다. 본문은 화면별 설명 그대로다.
+  - 새 작업 대화상자: "에이전트 작업을 만들 프로젝트를 등록해 주세요." 줄 옆에 버튼을 둔다. 등록이 끝나면 그 프로젝트를 고른 상태가 된다. 지금 목록 갱신으로 그렇게 되는지 시험으로 확인하고, 안 되면 그렇게 만든다.
+- 프로젝트가 있으면 지금 그대로다.
+- 바꾼 문구를 e2e·문서에서 찾아(`rg -n '프로젝트를 선택하세요' -g '!node_modules'`) 같은 과제에서 고친다.
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `add_project_action_opens_the_add_dialog`
+  - 각 화면: `shows_add_project_when_no_project_is_registered`, `hides_add_project_when_projects_exist`
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 바꾼 화면들의 시험이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
+
+#### S8-4b-9 CB-02 — 제외
+
+- 사용자가 계획 승인에서 뺐다("한글 제목 변경(9)은 빼고 진행", 2026-11-06). 화면은 지금처럼 브랜치 이름 입력을 요구한다. S8-4b-11에서 PROGRESS §4 후속에 적는다.
+
+#### S8-4b-10 X3-02 — 업데이트를 설치하는 동안 WSL 연결을 유지한다
+
+**문제.**
+- 업데이트 설치 동안 앱은 WSL 브리지(`wsl.exe`)를 닫는다.
+- 설치는 설치된 앱의 복사본 `runner.exe`가 맡는데(`app/src-tauri/src/core/update/runner_files.rs:265-271`), 이 runner는 연결을 이어받지 않는다.
+- 다른 WSL 창이 없고 `instanceIdleTimeout`이 기본(15초, 설계 01 :255)이면, 설치가 그보다 길 때 배포판이 멈춘다. 그러면 에이전트·터미널·서비스가 끝난다.
+- 확인 창(`app/src/features/settings/UpdateConfirmation.tsx:143`)은 "계속 실행됩니다"라고 한다.
+- runner는 설치된 판의 코드이므로, 1.0.0에 넣어야 1.0.0 → 다음 판 업데이트에 적용된다.
+
+**파일**
+- 수정: `runner_files.rs`. `Manifest`에 `keep_distro: Option<String>`을 `#[serde(default)]`로 더하고, schema는 1로 둔다.
+- 수정: 인계를 만드는 곳(`app/src-tauri/src/platform/update_install.rs`·`update_runner` 준비 경로). 지금 연결한 배포판 이름을 넣는다.
+- 수정: `app/src-tauri/src/platform/update_runner/execute.rs`(유지 연결). 창 없는 자식 생성이 필요하면 `native.rs`도 고친다.
+- 수정: `UpdateConfirmation.tsx`(문구).
+- 시험: runner·manifest 시험 모듈(`runner_files_tests.rs` 등)과 `UpdateConfirmation` 시험.
+
+**동작**
+- runner는 인계 검증 직후, 이전 앱이 끝나기를 기다리기 전에 유지 연결을 띄운다.
+  - 명령: `wsl.exe -d <keep_distro> --exec sleep 900`
+  - 창 없이(`CREATE_NO_WINDOW`) 띄운다.
+- 끝내는 때
+  - 새 앱을 띄운 뒤에는 그대로 두어 스스로 끝나게 한다(최대 15분). 그 안에 새 앱이 연결한다.
+  - 설치하지 않고 끝나는 경로(취소·검증 실패·시간 초과)에서는 바로 끝낸다.
+  - (구현 반영, Ruling 126·138·142) 바로 끝내는 것은 이전 앱이 설치를 확정(commit)하기 전의 실패(취소·권한 대기 시간 초과·arm·기록·신호 실패·그 구간의 신원 오류)뿐이고, 오류 기록보다 먼저 끝낸다. 확정한 뒤의 실패(확정 기록 실패·이전 앱 종료 대기의 실패나 시간 초과·확정 뒤 취소·설치 프로그램 검증·설치 실패·Unknown·재시작 실패)와 성공에서는 그대로 두어 스스로 끝나게 한다(최대 15분).
+- 핸들과 job
+  - runner가 받은 핸들 6개는 받자마자 상속 불가로 바뀐다(`app/src-tauri/src/platform/update_runner/native.rs:316-319`). 유지 연결은 그 뒤에 띄운다.
+  - 설치 프로그램 실행(`execute.rs:175-181`)과 같은 방식으로 띄운다: `Command`, null stdio, `CREATE_NO_WINDOW`.
+  - 유지 연결을 kill-on-close job에 넣지 않는다. runner는 앱의 job에서 벗어나 있으므로(`native.rs:281` `CREATE_BREAKAWAY_FROM_JOB`), runner가 끝나도 유지 연결은 남았다가 스스로 끝난다.
+- 예외
+  - 유지 연결을 띄우지 못해도 업데이트는 진행하고 기록만 남긴다.
+  - `keep_distro`가 없으면(이전 형식의 인계) 아무것도 하지 않는다.
+  - (구현 반영, Ruling 127) 기록은 stderr 한 줄이다(`Record`·`Outcome`은 그대로). `keep_distro`는 빈 값·128바이트 초과·제어 문자·`-` 시작만 거절하고(`valid_keep_distro`), 만드는 쪽도 같은 검사를 써서 연결이 준비되지 않았거나 통과하지 못하면 `None`으로 넘긴다(업데이트는 진행한다).
+  - (구현 반영, Ruling 138) `owner.json`은 다음 판이 시작할 때 다시 읽으므로 `keepDistro` 키 이름과 관대한 검사를 주석과 시험으로 고정했다. `wsl.exe`를 runner 폴더보다 System32에서 먼저 찾는 일(M2)은 1.0.x 후속이다(PROGRESS §4).
+- 확인 창 문구: "앱을 닫고 업데이트를 설치한 뒤 다시 시작합니다. 설치하는 동안에도 WSL 연결을 유지하므로 WSL의 에이전트 작업과 서비스는 계속 실행됩니다."
+
+**단계**
+- [x] 1. 실패 시험을 쓴다.
+  - `keep_connection_command_targets_the_bound_distro_without_a_window`
+    - 기대: program이 `wsl.exe`, 인자가 `-d <distro> --exec sleep 900`, 창 없음 플래그.
+  - `keep_connection_inherits_no_runner_handle`
+    - 기대: 유지 연결을 띄운 뒤에도 runner 핸들 6개의 `HANDLE_FLAG_INHERIT`가 0이다.
+  - `manifest_without_keep_distro_still_validates`
+  - `manifest_round_trips_keep_distro`
+  - `update_confirmation_says_wsl_stays_connected`
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `app/src-tauri` 업데이트 시험이 PASS. Windows 전용 코드는 `Rust (Windows)` CI에서 돈다.
+  - (구현 반영, Ruling 128) 시험은 위 다섯과 `manifest_rejects_an_unsafe_keep_distro`다. `keep_connection_inherits_no_runner_handle`은 Windows 전용이라 `Rust (Windows)` CI에서만 돈다. 이 PC에서는 gnu target 대신 설치된 MSVC target clippy로 컴파일만 확인했다(`ring` 빌드에 `AR_x86_64_pc_windows_msvc` 대체가 필요했다).
+- [x] 5. 검토 뒤 커밋한다.
+- **Windows 확인:** S8-5 앞의 Windows 확인에 더한다. accept 채널에서 tmux 작업이 도는 동안 fixture 업데이트를 실행한다. fixture 업데이트도 같은 runner 경로를 지난다(`execute.rs:155-168`).
+  - 확인: 배포판이 멈추지 않는지(tmux 세션 유지), 그리고 연결 공백 시간.
+  - interop이 돌아올 때까지 NOT_RUN이다.
+
+#### S8-4b-11 문서
+
+공개 문서와 원장을 이 PR의 코드에 맞춘다. 각 문장은 아래 그대로 쓰되 ui-terms를 따른다.
+
+**README.md**
+- :44를 고친다: "재개할 때 도구의 세션 id를 모르면 pi는 지시문 없이 새 pi 세션을 연다. Claude Code·opencode는 처음 지시문으로 새로 시작한다. Codex는 rollout 기록으로 그 작업의 세션을 확인하지 못하면 재개하지 않고 오류를 보인다."
+- "에이전트 도구" 절, :34 근처: "Codex 작업은 devbox의 `notify`를 `-c`로 붙여 시작하므로, 그 작업에서는 사용자 config.toml의 `notify`가 쓰이지 않는다. 다른 Codex 실행에는 영향이 없다."
+- "도구 경로 찾기" 절: "WSL 쪽 기본 터미널·도구 경로 찾기·환경 기록은 bash 로그인 셸 기준이다. zsh·fish 설정 파일에만 둔 PATH는 읽지 않으므로, 도구 경로는 bash도 읽는 `~/.profile`에 둔다. zsh 터미널은 `[[terminal.profiles]]`로 더할 수 있다(설정 문서 `docs/config.md`로 링크)."
+- "알려진 제한"에 더한다.
+  - "언어 서버: 코드 파일을 열면 그 프로젝트 폴더에서 언어 서버가 자동으로 시작된다. 프로젝트 실행 승인과 상관없다. 언어 서버와 그 서버가 부르는 도구는 저장소의 빌드 스크립트·proc macro·설정처럼 저장소 안의 코드를 실행할 수 있으므로, 믿지 않는 저장소는 프로젝트로 등록하지 않는다(보안 정책 `SECURITY.md`로 링크)."
+  - "Windows 사본은 WSL에서 지우거나 이름을 바꾼 파일을 지우지 않는다. 그 파일이 Windows 빌드·시험에 남을 수 있다."
+  - "vault 안의 폴더를 앱 밖에서(파일 탐색기·`mv`·`git pull` 등) 옮기거나 이름을 바꾸면, 그 폴더 안 노트가 새 경로로 색인되지 않아 노트 목록·검색·태그·백링크에서 빠질 수 있다. 파일은 그대로이고, 데몬이 다시 시작할 때 전체를 다시 색인한다."
+
+**SECURITY.md**
+- "비밀" 절: "실행 로그와 MCP 로그 응답에서는 저장된 비밀 값의 원문·JSON 이스케이프·디버그 표기를 가린다. 그 밖의 방식으로 바꾼 값(base64·URL 인코딩 등)은 가리지 못한다. 이 판 전에 저장된 실행 로그는 다시 가리지 않는다."
+- 새 절 "언어 서버": "코드 파일을 열면 devbox가 그 프로젝트 폴더에서 언어 서버(rust-analyzer·typescript-language-server 등)를 자동으로 띄운다. 이것은 `.devbox/devbox.toml` 실행 승인과 상관없다. 언어 서버와 그 서버가 부르는 도구(cargo 등)는 저장소의 설정과 코드(빌드 스크립트·proc macro 등)를 실행할 수 있다. 그래서 언어 서버가 설치돼 있으면 파일을 여는 것만으로 저장소 안의 코드가 실행될 수 있다. 믿지 않는 저장소는 프로젝트로 등록하지 않는다. 1.0.0은 자동 시작을 유지한다(사용자 결정 2026-11-06)."
+
+**docs/guide.md :84:** "| 노트 | 노트 위치를 바꾸는 방법(`[notes] vault`)과 템플릿 목록 |"
+
+**PROGRESS.md**(200줄 이하 유지, 지금 199줄)
+- S8-4 결과: PR #653 → main `08dffcd3`, #652 닫음.
+- S8-5 보류: 사용자 결정 2026-11-05 "보류: Windows 확인 뒤".
+- 최종 교차 검토 결과와 이 PR, 근거 폴더 위치.
+- §4 :90의 Codex 문장을 고친다.
+- §4에 1.0.x 후속을 옮긴다: 통합 보고 §4 B 7건, §6 D, 그리고 계획에서 뺀 CB-02(한글 제목). ID와 짧은 이름만 묶어 몇 줄로 적고, 줄 수가 모자라면 끝난 S8-4 기록을 줄인다.
+- 근거 폴더 이동은 Ruling 91·CONVENTIONS §8 최종 SHA 원칙의 인계다.
+
+**이 계획(10)**
+- S8-4b 체크박스를 고친다.
+- S8-3의 accept 스모크 항목에 "S8-4b squash SHA로"를 붙인다.
+
+(구현 반영) 코드와 다른 문장은 뜻을 지키고 고쳤다(근거는 SDD 폴더 `task-S8-4b-11-report.md`): bash 로그인 파일은 `~/.bash_profile`·`~/.bash_login`·`~/.profile` 가운데 먼저 있는 것, 언어 서버는 설치된 것만 시작, 비밀 가림은 그 실행에 넘긴 값이고 로그 파일과 그것을 읽는 앱 화면·`logs.search`·MCP `devbox_logs`에 적용, Codex 설정은 "사용자의 Codex `config.toml`". README 설치·앱 업데이트 절과 guide에 S8-4b-6·S8-4b-10 내용을 더했다.
+
+**단계**
+- [x] 1. 위 문서를 고친다.
+- [x] 2. 링크 검사와 Biome을 돌린다. 문서가 읽는 시험(`docs/config.md`·`THIRD_PARTY_NOTICES.md`)이 영향을 받으면 그 시험도 돌린다.
+- [x] 3. 검토 뒤 커밋한다.
+
+#### S8-4b-12 브랜치 전체 검토·전체 검사
+
+- [x] 1. 다른 에이전트가 `08dffcd3..HEAD` 전체를 검토한다. 과제별 검토로 대신하지 않는다. 결과는 PROGRESS 작업 사본에 남긴다.
+- [x] 2. 고칠 것이 있으면 그 과제와 같은 방식(실패 시험 → 구현 → 검토 → 커밋)으로 고친다.
+- [x] 3. `pnpm check`를 한 번 돌린다(clippy·build·E2E 포함, `--wait`).
+- [x] 4. Biome CI를 돌린다.
+- [x] 5. 태그 노트 초안(Git common-dir `devbox-verification/s8/sdd-10-s7-s8-release/s8-3-tag-notes-draft.md`)에 이 PR의 수정과 새 알려진 제한(언어 서버)을 더한다.
+
+#### S8-4b-13 push·PR·리뷰·머지
+
+- S8-4와 같다:
+  - 최종 소스 SHA를 push한다.
+  - 그 SHA의 브랜치에서 `windows.yml`을 수동으로 실행하고, 산출물을 대조한다(receipt·sha256·source_sha·N1 `-Verify`).
+  - PR을 한 번 연다.
+  - CONVENTIONS §8의 자동 리뷰 판정을 따른다. 켜짐이면 최대 3회, 꺼짐이면 독립 검토 1회다.
+  - 필수 CI 3개가 통과한 뒤 squash 머지한다.
+- Windows 수용 스모크는 interop이 돌아올 때까지 NOT_RUN이다(Ruling 106).
+- 머지 뒤 S8-5는 새 main SHA로 진행한다.
+  1. interop을 한 번 확인한다. 반복 감시는 하지 않는다.
+  2. accept 설치 스모크, I1 W1, S8-4b-10 업데이트 확인을 한다.
+  3. 결과로 노트·PROGRESS·README 문장을 참으로 고칠 계획을 세운다.
+  4. v1.0.0 공개 승인을 다시 묻는다.
 
 ### S8-5 1.0.0 공개 — 별도 승인
 

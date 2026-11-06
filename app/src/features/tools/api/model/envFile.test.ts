@@ -49,4 +49,41 @@ describe("environment files", () => {
       { name: "API_KEY", value: "", secret: true },
     ]);
   });
+
+  it("disabled_variable_round_trips_as_enabled_false", () => {
+    const { text } = serializeEnvFile({
+      version: 1,
+      name: "dev",
+      variables: [
+        { name: "host", value: "prod.test", enabled: false },
+        { name: "host", value: "dev.test" },
+        { name: "API_TOKEN", value: "{{secret:T}}", secret: true, enabled: false },
+        { name: "PASSWORD", value: "raw-value", enabled: false },
+      ],
+    });
+    const stored = JSON.parse(text).variables;
+    expect(stored[0]).toEqual({ name: "host", value: "prod.test", enabled: false });
+    expect(stored[1]).toEqual({ name: "host", value: "dev.test" });
+    expect(stored[3]).toEqual({ name: "PASSWORD", value: "", secret: true, enabled: false });
+    expect(parseEnvFile(text).variables).toEqual([
+      { name: "host", value: "prod.test", enabled: false },
+      { name: "host", value: "dev.test" },
+      { name: "API_TOKEN", value: "{{secret:T}}", secret: true, enabled: false },
+      { name: "PASSWORD", value: "", secret: true, enabled: false },
+    ]);
+  });
+
+  it("enabled_other_than_false_is_rejected", () => {
+    for (const enabled of [true, "no", 0, null]) {
+      expect(() =>
+        parseEnvFile(JSON.stringify({ version: 1, name: "x", variables: [{ name: "a", value: "", enabled }] })),
+      ).toThrow("환경 파일 형식이 올바르지 않습니다");
+    }
+  });
+
+  it("files_without_enabled_stay_enabled", () => {
+    const file = parseEnvFile(JSON.stringify({ version: 1, name: "x", variables: [{ name: "a", value: "1" }] }));
+    expect(file.variables).toEqual([{ name: "a", value: "1" }]);
+    expect(file.variables[0]).not.toHaveProperty("enabled");
+  });
 });

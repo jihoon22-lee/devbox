@@ -6,11 +6,17 @@ import { CloneProjectForm } from "./CloneProjectForm";
 import { ProjectError } from "./ProjectError";
 import s from "./Projects.module.css";
 import { useCurrentProject } from "./store";
-export function AddProjectDialog(props: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  // Each opening starts with an empty path and no stale mutation error.
-  return props.open ? <AddProjectContent onOpenChange={props.onOpenChange} /> : null;
+
+interface Props {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdded?: (projectId: string) => void;
 }
-function AddProjectContent({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
+export function AddProjectDialog(props: Props) {
+  // Each opening starts with an empty path and no stale mutation error.
+  return props.open ? <AddProjectContent onOpenChange={props.onOpenChange} onAdded={props.onAdded} /> : null;
+}
+function AddProjectContent({ onOpenChange, onAdded }: Pick<Props, "onOpenChange" | "onAdded">) {
   const scan = useRpcQuery("projects.scan", {});
   const add = useRpcMutation("projects.add");
   const clone = useRpcMutation("projects.clone");
@@ -28,6 +34,7 @@ function AddProjectContent({ onOpenChange }: { onOpenChange: (open: boolean) => 
       });
     }
     useCurrentProject.getState().set(project.id);
+    onAdded?.(project.id);
     // Successful registration never becomes a retryable mutation due to refresh failure.
     void qc.invalidateQueries({ queryKey: ["projects.list"] });
     void qc.invalidateQueries({ queryKey: ["projects.scan"] });

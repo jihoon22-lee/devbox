@@ -18,8 +18,9 @@ pub struct KnownTasks(HashMap<String, AgentTask>);
 
 impl AgentsService {
     pub(crate) async fn refresh_binding(&self, task: &AgentTask, retry: bool) -> Result<Binding> {
-        // Completion candidates and resume must always verify current metadata;
-        // only the background lifecycle fallback supplies polling state.
+        // Completion candidates, and a resume with no stored thread (see
+        // [`Self::resume_thread`]), must always verify current metadata; only the background
+        // lifecycle fallback supplies polling state.
         self.refresh_binding_inner(task, retry, None)
             .await?
             .ok_or_else(|| {
@@ -28,6 +29,35 @@ impl AgentsService {
                 }
                 .into()
             })
+    }
+
+    /// The Codex thread a resume continues. A thread verified before is used while its rollout
+    /// still names this task's session, without a turn since the last launch: that launch may
+    /// have ended before the user sent anything. Without one, the thread is found as a
+    /// completion report finds it. A session that cannot be verified is an error, never a
+    /// fresh start.
+    pub(crate) async fn resume_thread(&self, task: &AgentTask) -> Result<String> {
+        let binding = self.launch_binding(&task.id).await?;
+        if binding.thread_id.is_none() {
+            return self
+                .refresh_binding(task, true)
+                .await?
+                .thread_id
+                .ok_or_else(|| {
+                    AgentsError::SessionMetadata {
+                        diagnostic: tracker::Diagnostic::Missing,
+                    }
+                    .into()
+                });
+        }
+        let (root, workdir) = (
+            self.paths.home.join(".codex/sessions"),
+            task.workdir.clone(),
+        );
+        tokio::task::spawn_blocking(move || tracker::session(&root, &workdir, &binding))
+            .await
+            .internal("read Codex metadata")?
+            .map_err(|diagnostic| AgentsError::SessionMetadata { diagnostic }.into())
     }
 
     async fn refresh_binding_inner(

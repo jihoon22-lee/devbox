@@ -73,6 +73,19 @@ pub(crate) fn problem_history(
         .query_map([project],|r|decode(r.get(0)?))?.collect()
 }
 
+/// Live service runs of one definition identity, ready first, then newest.
+/// `IS` also matches the NULL worktree of a start that named none.
+pub(crate) fn live_services(
+    tx: &Transaction<'_>,
+    project: &str,
+    worktree: Option<&str>,
+    definition: &str,
+) -> rusqlite::Result<Vec<StoredRun>> {
+    tx.prepare("SELECT body FROM runtime_runs WHERE project_id=?1 AND json_extract(body,'$.run.defId')=?2 AND json_extract(body,'$.worktree') IS ?3 AND json_extract(body,'$.run.kind')='service' AND json_extract(body,'$.run.state') IN ('starting','running','restarting') ORDER BY json_extract(body,'$.run.ready') DESC,started_ms DESC,id")?
+        .query_map(params![project, definition, worktree], |r| decode(r.get(0)?))?
+        .collect()
+}
+
 /// Prefer a live invocation; history volume cannot evict a running service.
 pub(crate) fn representative(
     tx: &Transaction<'_>,

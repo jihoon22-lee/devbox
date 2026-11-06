@@ -56,6 +56,32 @@ async fn launch_shared_service_dependencies_are_started_once_and_counted() {
 }
 #[tokio::test]
 #[ignore = "needs systemd user"]
+async fn launch_does_not_count_a_running_dependency_it_reused() {
+    let fixture = RuntimeFixture::new();
+    let client = fixture.daemon.client().await;
+    // `web` is the graph's final node, so the running `db` is a reused dependency.
+    let project = configured(&fixture, &client, "[[service]]\nid='db'\ncommand='sleep 60'\n[[service]]\nid='web'\ncommand='sleep 60'\ndepends_on=['db']\n[launch]\nservices=['db','web']\n").await;
+    let db = fixture.start(&client, &project, "db").await;
+    let result: LaunchResult = client
+        .call::<ProjectsLaunch>(&LaunchProject {
+            id: project.clone(),
+        })
+        .await
+        .expect("launch services");
+    let runs = fixture.runs(&client, &project).await;
+    let web = runs
+        .iter()
+        .find(|run| run.def_id == "web")
+        .expect("launched web");
+    assert_eq!(result.services, 1);
+    assert_eq!(result.run_ids, std::slice::from_ref(&web.id));
+    let dbs: Vec<_> = runs.iter().filter(|run| run.def_id == "db").collect();
+    assert_eq!(dbs.len(), 1, "{runs:?}");
+    assert_eq!(dbs[0].id, db.id);
+    assert!(dbs[0].state.is_live(), "{runs:?}");
+}
+#[tokio::test]
+#[ignore = "needs systemd user"]
 async fn launch_readiness_failure_reports_the_service_already_created() {
     let fixture = RuntimeFixture::new();
     let client = fixture.daemon.client().await;

@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { chooseDocumentClose } from "../features/documents/closePrompt";
 import { useDocuments } from "../features/documents/store";
+import { confirmApiQuit } from "../features/tools/api/quitGuard";
 import { createQuitPreparation } from "./quitPreparation";
 
 /** Also mounted before ConnectionGate: every note-bearing WebView must explicitly ACK. */
@@ -29,6 +30,8 @@ export function NativeQuitPreparation() {
       () => {
         if (!disposed) setError(true);
       },
+      // Only the main window has API request tabs and environment drafts.
+      label === "main" ? confirmApiQuit : undefined,
     );
     void (async () => {
       try {

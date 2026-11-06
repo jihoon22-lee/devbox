@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { version } from "../package.json";
 import { App } from "./App";
+import { useApiTabs } from "./features/tools/api/store";
 import { decodeFrame, jsonFrame } from "./rpc/frame";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
@@ -66,4 +67,36 @@ test("native StrictMode waits for Rust configuration and sends actual prod app H
   }
   expect(listeners.get("devbox://gate")?.size).toBe(0);
   expect(listeners.get("devbox://transport")?.size).toBe(0);
+});
+
+test("native_main_window_mounts_the_api_quit_prompt", async () => {
+  Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
+  const listeners = new Map<string, Set<(event: { payload: unknown }) => void>>();
+  mocks.listen.mockReset().mockImplementation(async (name, cb) => {
+    const callbacks = listeners.get(name) ?? new Set();
+    listeners.set(name, callbacks);
+    callbacks.add(cb);
+    return () => callbacks.delete(cb);
+  });
+  mocks.invoke.mockReset().mockImplementation(async (cmd) => {
+    if (cmd === "gate_status") return { state: "connecting", instance: "prod", revision: "1" };
+    if (cmd === "quit_window_ready") return 42;
+  });
+  // A request tab that was never saved, in the same store the app's quit check reads.
+  useApiTabs.getState().openNew({ kind: "personal" });
+  const view = render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+  try {
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("quit_window_ready"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => listeners.get("devbox://prepare-quit")?.forEach((cb) => cb({ payload: 7 })));
+    expect(screen.getByRole("dialog", { name: "저장하지 않은 API 변경이 있습니다" })).toBeInTheDocument();
+  } finally {
+    view.unmount();
+    useApiTabs.getState().reset();
+    Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  }
 });

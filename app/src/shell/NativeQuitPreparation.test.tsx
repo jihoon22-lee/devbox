@@ -1,5 +1,7 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { ApiQuitDialog, useQuitGuard } from "../features/tools/api/quitGuard";
+import { useApiTabs } from "../features/tools/api/store";
 import { NativeQuitPreparation } from "./NativeQuitPreparation";
 
 const mocks = vi.hoisted(() => ({
@@ -34,7 +36,11 @@ beforeEach(() => {
   });
   mocks.prepare.mockResolvedValue(true);
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useQuitGuard.getState().request?.answer(false);
+  useApiTabs.getState().reset();
+});
 
 test.each(["main", "popout-note-owned", "popout-code-owned"])(
   "%s listens before registering and ACKs only after persistence",
@@ -70,3 +76,35 @@ test("terminal popouts do not claim document readiness", async () => {
   expect(mocks.listen).not.toHaveBeenCalled();
   expect(mocks.invoke).not.toHaveBeenCalled();
 });
+
+test("main asks about unsaved API changes before documents, and [취소] is not reported as a failure", async () => {
+  useApiTabs.getState().openNew({ kind: "personal" });
+  render(
+    <>
+      <NativeQuitPreparation />
+      <ApiQuitDialog />
+    </>,
+  );
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("quit_window_ready"));
+  act(() => listeners.get("devbox://prepare-quit")?.({ payload: 7 }));
+  expect(screen.getByRole("dialog", { name: "저장하지 않은 API 변경이 있습니다" })).toBeInTheDocument();
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("quit_prepared", { round: 7, lease: 42, safe: false }));
+  act(() => listeners.get("devbox://cancel-quit")?.({ payload: 7 }));
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test.each(["popout-note-owned", "popout-code-owned"])(
+  "%s has no API tabs and goes straight to documents",
+  async (label) => {
+    mocks.label = label;
+    useApiTabs.getState().openNew({ kind: "personal" });
+    render(<NativeQuitPreparation />);
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("quit_window_ready"));
+    act(() => listeners.get("devbox://prepare-quit")?.({ payload: 7 }));
+    expect(mocks.prepare).toHaveBeenCalledTimes(1);
+    expect(useQuitGuard.getState().request).toBeUndefined();
+  },
+);

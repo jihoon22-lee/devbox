@@ -506,3 +506,60 @@ test("without a work folder there is no branch to name, so the field is hidden a
   expect(wire.request("agents.create").params).toMatchObject({ worktree: false });
   expect(wire.request("agents.create").params).not.toHaveProperty("branch");
 });
+
+test("shows_add_project_when_no_project_is_registered", async () => {
+  await dialog([]);
+  expect(await screen.findByText("에이전트 작업을 만들 프로젝트를 등록해 주세요.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "프로젝트 추가" })).toBeInTheDocument();
+});
+test("hides_add_project_when_projects_exist", async () => {
+  await dialog();
+  expect(screen.queryByRole("button", { name: "프로젝트 추가" })).not.toBeInTheDocument();
+});
+test("new_task_dialog_selects_the_project_added_from_it", async () => {
+  const { wire } = await dialog([]);
+  await userEvent.type(screen.getByLabelText("제목"), "Draft title");
+  await userEvent.type(screen.getByLabelText("지시문"), "Draft prompt");
+  await userEvent.click(screen.getByRole("button", { name: "프로젝트 추가" }));
+  const add = await screen.findByRole("dialog", { name: "프로젝트 추가" });
+  // Escape closes only the add dialog and keeps the draft.
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "프로젝트 추가" })).not.toBeInTheDocument());
+  expect(add).not.toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "새 에이전트 작업" })).toBeInTheDocument();
+  expect(screen.getByLabelText("제목")).toHaveValue("Draft title");
+  expect(screen.getByLabelText("지시문")).toHaveValue("Draft prompt");
+  await userEvent.click(screen.getByRole("button", { name: "프로젝트 추가" }));
+  await waitFor(() => expect(wire.requests("projects.scan")).toHaveLength(2));
+  await act(async () => wire.reply("projects.scan", { candidates: [] }));
+  await userEvent.type(await screen.findByLabelText("폴더 경로"), "/fixture/family");
+  await userEvent.click(screen.getByRole("button", { name: "추가" }));
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  await act(async () => wire.reply("projects.add", projects[1]));
+  await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(2));
+  await act(async () => wire.reply("projects.list", { rev: "2", items: [projects[1]] }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "프로젝트" })).toHaveTextContent("family"));
+  expect(screen.getByLabelText("제목")).toHaveValue("Draft title");
+  expect(screen.queryByRole("button", { name: "프로젝트 추가" })).not.toBeInTheDocument();
+});
+
+test("add_project_dialog_inside_new_task_does_not_submit_the_task", async () => {
+  const { wire, created } = await dialog([]);
+  await userEvent.type(screen.getByLabelText("제목"), "Draft title");
+  await userEvent.type(screen.getByLabelText("지시문"), "Draft prompt");
+  await userEvent.click(screen.getByRole("button", { name: "프로젝트 추가" }));
+  await waitFor(() => expect(wire.requests("projects.scan")).toHaveLength(1));
+  await act(async () => wire.reply("projects.scan", { candidates: [] }));
+  const path = await screen.findByLabelText("폴더 경로");
+  await userEvent.type(path, "/fixture/family{Enter}");
+  // The new-task form would claim (preventDefault) a Ctrl+Enter that bubbles out of the add dialog.
+  expect(fireEvent.keyDown(path, { key: "Enter", ctrlKey: true })).toBe(true);
+  await waitFor(() => expect(wire.requests("projects.add")).toHaveLength(1));
+  expect(wire.requests("agents.create")).toHaveLength(0);
+  expect(created).not.toHaveBeenCalled();
+  await act(async () => wire.fail("projects.add"));
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "프로젝트 추가" })).not.toBeInTheDocument());
+  expect(screen.getByLabelText("제목")).toHaveValue("Draft title");
+  expect(screen.getByLabelText("지시문")).toHaveValue("Draft prompt");
+});
