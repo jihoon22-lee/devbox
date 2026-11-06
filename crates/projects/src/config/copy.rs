@@ -24,6 +24,10 @@ pub(crate) fn open_regular(path: &Path) -> std::io::Result<std::fs::File> {
     let convert = |error: nix::errno::Errno| std::io::Error::from_raw_os_error(error as i32);
     let directory_flags =
         OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW | OFlag::O_DIRECTORY;
+    // Traversal needs search permission only, so an execute-only parent stays usable.
+    // O_NOFOLLOW|O_DIRECTORY still reject a symlinked component (ENOTDIR).
+    #[cfg(target_os = "linux")]
+    let directory_flags = directory_flags | OFlag::O_PATH;
     let mut directory = open(
         if path.is_absolute() {
             Path::new("/")
