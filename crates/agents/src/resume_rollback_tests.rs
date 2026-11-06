@@ -276,7 +276,8 @@ exit 0
             )
             .output()
             .expect("owned child");
-        if !output.status.success() {
+        // A filter that matches nothing exits 0 after running 0 tests.
+        if !output.status.success() || !ran_one_test(&output.stdout) {
             failures.push(format!(
                 "{mode}: {}\n{}",
                 String::from_utf8_lossy(&output.stdout),
@@ -500,11 +501,16 @@ exit 0
         .output()
         .expect("owned child");
     assert!(
-        output.status.success(),
+        output.status.success() && ran_one_test(&output.stdout),
         "{}\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// True when the child's libtest output says it ran exactly one test (not a vacuous 0-test pass).
+fn ran_one_test(stdout: &[u8]) -> bool {
+    String::from_utf8_lossy(stdout).contains("running 1 test\n")
 }
 
 #[path = "resume_discovery_tests.rs"]
