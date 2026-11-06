@@ -83,6 +83,74 @@ fn old_history_is_skipped_and_known_exact_rollout_ignores_unrelated_history() {
     );
 }
 #[test]
+fn known_session_needs_no_new_turn_but_is_still_checked() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    let root = t.path();
+    let path = fixture(root, "primary", "cli", "user", "turn");
+    let mut known = refresh(root, "/owned/work", &launch()).expect("first launch's turn");
+    // A later launch that ended before any turn of its own, as a resume leaves it.
+    known.launch_ms = utc_ms("2026-10-13T00:00:10Z").expect("owned fixture");
+    known.turn_id = None;
+    known.turn_started_ms = None;
+    assert_eq!(
+        refresh(root, "/owned/work", &known).expect_err("completion still needs a turn"),
+        Diagnostic::Missing
+    );
+    assert_eq!(
+        session(root, "/owned/work", &known).as_deref(),
+        Ok("primary")
+    );
+    assert_eq!(
+        session(root, "/elsewhere", &known),
+        Err(Diagnostic::Missing)
+    );
+    let mut other = known.clone();
+    other.thread_id = Some("other".into());
+    assert_eq!(
+        session(root, "/owned/work", &other),
+        Err(Diagnostic::Missing)
+    );
+    for (id, source, thread_source) in [("title", "cli", "title"), ("exec", "exec", "user")] {
+        let mut bound = known.clone();
+        bound.thread_id = Some(id.into());
+        bound.rollout = Some(fixture(root, id, source, thread_source, "turn"));
+        assert_eq!(
+            session(root, "/owned/work", &bound),
+            Err(Diagnostic::Missing),
+            "{id}"
+        );
+    }
+    // No thread verified before: there is no session to check.
+    assert_eq!(
+        session(root, "/owned/work", &launch()),
+        Err(Diagnostic::Missing)
+    );
+    fs::remove_file(path).expect("owned fixture");
+    assert_eq!(
+        session(root, "/owned/work", &known),
+        Err(Diagnostic::Unavailable)
+    );
+}
+#[test]
+fn known_session_found_by_name_stays_within_the_byte_budget() {
+    let t = tempfile::tempdir().expect("owned fixture");
+    let dir = t.path().join("2026/10/13");
+    fs::create_dir_all(&dir).expect("owned fixture");
+    // Rollouts named for the known thread, each with a first line at the 1 MiB limit: one more
+    // than the total a search may read.
+    let meta = session_meta(MIB - session_meta(0).len());
+    for n in 0..=MAX_TOTAL_BYTES / MIB as u64 {
+        fs::write(dir.join(format!("rollout-{n}-primary.jsonl")), &meta).expect("owned fixture");
+    }
+    let mut known = launch();
+    known.thread_id = Some("primary".into());
+    assert!(known.rollout.is_none());
+    assert_eq!(
+        session(t.path(), "/owned/work", &known),
+        Err(Diagnostic::LimitExceeded)
+    );
+}
+#[test]
 fn malformed_timestamps_are_bounded_and_rejected() {
     for text in [
         "999999999999999999999-10-13T00:00:00Z",
@@ -251,9 +319,16 @@ fn oversized_line_is_skipped_not_fatal() {
     let found = refresh(t.path(), "/owned/work", &launch()).expect("oversized lines skipped");
     assert!(found.matches("primary", "at-limit"));
     let (mut budget, mut skipped) = (u64::MAX, 0);
-    let direct = read(&path, "/owned/work", &launch(), &mut budget, &mut skipped)
-        .expect("oversized lines skipped")
-        .expect("primary rollout");
+    let direct = read(
+        &path,
+        "/owned/work",
+        &launch(),
+        Need::Turn,
+        &mut budget,
+        &mut skipped,
+    )
+    .expect("oversized lines skipped")
+    .expect("primary rollout");
     assert!(direct.matches("primary", "at-limit"));
     // The 300 KiB record, the turn one byte over the limit and the unfinished last line.
     assert_eq!(skipped, 3);

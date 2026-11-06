@@ -9,7 +9,8 @@ fn failed_codex_resume_restores_correlation_and_can_retry() {
 fn failed_resume_does_not_overwrite_a_later_launch_or_claim_failed_cleanup_completed() {
     cases(&["newer", "cleanup", "create-cleanup"]);
 }
-async fn case(mode: &str) {
+/// The fixture's task `a` with an owned fake Codex profile, in its project's own folder.
+async fn codex_fixture() -> Fixture {
     let mut f = Fixture::new().await;
     Arc::get_mut(&mut f.svc).expect("owned service").profiles = vec![crate::profile::ToolProfile {
         id: "codex".into(),
@@ -28,6 +29,10 @@ async fn case(mode: &str) {
         git_warnings: None,
     };
     f.svc.db.write(move |tx| tx.execute("INSERT INTO projects_projects(id,name,path,favorite,added_ms) VALUES(?1,?2,?3,?4,?5)",rusqlite::params![project.id,project.name,project.path,project.favorite,project.added_ms])).await.expect("owned project");
+    f
+}
+async fn case(mode: &str) {
+    let f = codex_fixture().await;
     f.rollout(
         "primary",
         "user",
@@ -281,3 +286,226 @@ exit 0
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// A resumed Codex launch can end before the user sends anything. The thread verified before
+/// still names the task's session, so the next resume continues it.
+#[test]
+fn codex_task_resumed_without_a_new_turn_resumes_again_with_the_same_thread() {
+    with_fake_tmux(
+        "codex_task_resumed_without_a_new_turn_resumes_again_with_the_same_thread",
+        || async {
+            let f = ended_codex_task().await;
+            f.svc.resume("a").await.expect("first resume");
+            let first = current_launch(&f).await;
+            assert!(resume_script(&f, &first).contains(" resume 'primary'"));
+            // Codex ends without a new turn.
+            exit_tool(&f, &first).await;
+            let resumed = f.svc.resume("a").await.expect("second resume");
+            let second = current_launch(&f).await;
+            assert_ne!(second, first);
+            let script = resume_script(&f, &second);
+            assert!(script.contains(" resume 'primary'"), "{script}");
+            assert_eq!(
+                f.svc
+                    .launch_binding("a")
+                    .await
+                    .expect("binding")
+                    .thread_id
+                    .as_deref(),
+                Some("primary")
+            );
+            assert_eq!(resumed.session_id.as_deref(), Some("primary"));
+            assert_eq!(resumed.state, AgentState::Running);
+            f.svc
+                .terminal
+                .close_internal(resumed.terminal_id.as_deref().expect("owned terminal"))
+                .await
+                .expect("remove owned fake terminal");
+        },
+    );
+}
+
+/// A thread verified before is checked again: once its rollout names another work directory,
+/// it is not this task's session, and nothing is started in its place.
+#[test]
+fn codex_resume_refuses_a_stored_thread_whose_rollout_names_another_workdir() {
+    with_fake_tmux(
+        "codex_resume_refuses_a_stored_thread_whose_rollout_names_another_workdir",
+        || async {
+            let f = ended_codex_task().await;
+            // Resumed once and ended without a new turn: only the stored thread names it.
+            f.svc.resume("a").await.expect("first resume");
+            exit_tool(&f, &current_launch(&f).await).await;
+            let binding = f.svc.launch_binding("a").await.expect("binding");
+            assert!(binding.turn_id.is_none());
+            let rollout = binding.rollout.clone().expect("verified rollout");
+            let text = fs::read_to_string(&rollout).expect("rollout");
+            let elsewhere = f.root.path().join("elsewhere");
+            let moved = text.replace(&f.workdir, elsewhere.to_str().expect("owned path"));
+            assert_ne!(moved, text);
+            fs::write(&rollout, moved).expect("rollout of another work directory");
+            let before = f.svc.get("a").await.expect("task");
+            let scripts = resume_files(&f);
+            let error = f
+                .svc
+                .resume("a")
+                .await
+                .expect_err("another work directory's session");
+            assert_eq!(
+                serde_json::to_value(match &error {
+                    Fail::Domain(e) => e,
+                    _ => panic!("expected domain error: {error:?}"),
+                })
+                .expect("error")["code"],
+                "agents.session_metadata"
+            );
+            assert_eq!(f.svc.get("a").await.expect("task"), before);
+            assert_eq!(f.svc.launch_binding("a").await.expect("binding"), binding);
+            assert_eq!(
+                resume_files(&f),
+                scripts,
+                "no new start script, so no fresh session"
+            );
+        },
+    );
+}
+
+/// [`codex_fixture`] after its first launch, `first`, verified thread `primary` by its one turn
+/// and ended.
+async fn ended_codex_task() -> Fixture {
+    let f = codex_fixture().await;
+    f.rollout(
+        "primary",
+        "user",
+        "2026-10-13T00:00:01Z",
+        "one",
+        "2026-10-13T00:00:02Z",
+    );
+    let task = f.svc.get("a").await.expect("task");
+    f.svc
+        .refresh_binding(&task, false)
+        .await
+        .expect("first launch's turn verifies its thread");
+    end_first_launch(&f).await;
+    f
+}
+/// The fixture's first launch, `first`, ends.
+async fn end_first_launch(f: &Fixture) {
+    f.svc
+        .db
+        .write(|tx| {
+            let mut binding = store::binding(tx, "a")?.expect("binding");
+            binding.launch_id = Some("first".into());
+            store::put_binding(tx, "a", &binding)
+        })
+        .await
+        .expect("first launch");
+    exit_tool(f, "first").await;
+}
+/// The tool of launch `launch` exits, recorded as its start script records it.
+async fn exit_tool(f: &Fixture, launch: &str) {
+    let task = f.svc.get("a").await.expect("task");
+    let phase = f.svc.phase_path(&task, launch);
+    crate::prepare::private_dir(phase.parent().expect("data directory")).expect("owned data");
+    fs::write(&phase, "exit:0\n").expect("tool exit");
+    f.svc
+        .event(AgentEventParams {
+            agent_id: "a".into(),
+            launch_id: Some(launch.into()),
+            source: crate::hooks::HookSource::Exit,
+            payload: launch.into(),
+            code: Some(0),
+        })
+        .await
+        .expect("exit report");
+    assert!(f.svc.get("a").await.expect("task").tool_exited);
+}
+async fn current_launch(f: &Fixture) -> String {
+    f.svc
+        .launch_binding("a")
+        .await
+        .expect("binding")
+        .launch_id
+        .expect("launch")
+}
+/// The start script a resume wrote for launch `launch`.
+fn resume_script(f: &Fixture, launch: &str) -> String {
+    let path = f.svc.paths.data_dir.join("agents").join("a");
+    fs::read_to_string(path.join(format!("resume-{launch}.sh"))).expect("resume script")
+}
+/// The names of the files resumes wrote, sorted.
+fn resume_files(f: &Fixture) -> Vec<String> {
+    let mut names: Vec<_> = fs::read_dir(f.svc.paths.data_dir.join("agents").join("a"))
+        .expect("owned data")
+        .map(|entry| {
+            entry
+                .expect("owned entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|name| name.starts_with("resume-"))
+        .collect();
+    names.sort();
+    names
+}
+/// Runs `body` in a child test process whose `tmux` is an owned fake holding one session.
+/// `test` is the test's path below this module.
+fn with_fake_tmux<F: std::future::Future<Output = ()>>(test: &str, body: impl FnOnce() -> F) {
+    const LIVE: &str = "DEVBOX_RESUME_AGAIN_LIVE";
+    if std::env::var_os(LIVE).is_some() {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("owned runtime")
+            .block_on(body());
+        return;
+    }
+    let root = tempfile::tempdir().expect("owned fake tmux");
+    fs::write(
+        root.path().join("tmux"),
+        r#"#!/bin/sh
+live=$DEVBOX_RESUME_AGAIN_LIVE
+case "$5" in
+ has-session)
+   if [ -f "$live" ] && [ "$(cat "$live")" = "${7#=}" ]; then exit 0; fi
+   printf '%s\n' "can't find session" >&2; exit 1;;
+ new-session)
+   previous=
+   for argument do
+     if [ "$previous" = -s ]; then printf '%s' "$argument" > "$live"; fi
+     previous=$argument
+   done;;
+ list-sessions) if [ -f "$live" ]; then printf '%s\t0\tbash\t/owned\n' "$(cat "$live")"; fi;;
+ kill-session) rm -f "$live";;
+esac
+exit 0
+"#,
+    )
+    .expect("owned fake executable");
+    fs::set_permissions(root.path().join("tmux"), fs::Permissions::from_mode(0o700)).expect("mode");
+    let path = std::env::join_paths(std::iter::once(root.path().to_owned()).chain(
+        std::env::split_paths(&std::env::var_os("PATH").expect("PATH")),
+    ))
+    .expect("owned PATH");
+    let output = std::process::Command::new(std::env::current_exe().expect("owned executable"))
+        .args([
+            "--exact",
+            &format!("service::correlation_tests::resume_rollback_tests::{test}"),
+            "--nocapture",
+        ])
+        .env(LIVE, root.path().join("live"))
+        .env("PATH", &path)
+        .output()
+        .expect("owned child");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[path = "resume_discovery_tests.rs"]
+mod resume_discovery_tests;

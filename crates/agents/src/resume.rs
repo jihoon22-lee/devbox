@@ -97,7 +97,7 @@ impl AgentsService {
             None => self.resolve_tool(&profile).await?,
         };
         let session_id = if profile.hooks == crate::profile::Hooks::Codex {
-            self.refresh_binding(&task, true).await?.thread_id
+            Some(self.resume_thread(&task).await?)
         } else {
             task.session_id.clone()
         };
