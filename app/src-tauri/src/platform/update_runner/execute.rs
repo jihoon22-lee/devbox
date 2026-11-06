@@ -38,7 +38,8 @@ impl KeepConnection {
             },
         ))
     }
-    /// The old app has exited: this is now the only connection until the new app connects.
+    /// The old app has committed to the update and is leaving: this is now the only connection
+    /// until the new app connects.
     fn release(&mut self) {
         // Dropping a `Child` closes its handle and leaves the process running.
         self.0 = None;
@@ -75,7 +76,8 @@ pub fn run(arguments: &[OsString]) -> Result<()> {
     let runner = native::identity(native::raw(&current))?;
     validate(&manifest, &installer, &payload, &parent, runner)?;
     // The six received handles are already non-inheritable, so the child inherits none of them.
-    // Any failure before the old app's exit is confirmed drops this and ends the connection.
+    // A failure before the old app commits drops this and ends the connection; after the commit
+    // it is kept and expires by itself (at most 15 minutes).
     let mut keep = KeepConnection::start(manifest.keep_distro.as_deref());
     let mut gate = Gate::new(manifest.binding.clone(), manifest.parent)?;
     gate.arm(&manifest.binding, native::identity(native::raw(&parent))?)?;
@@ -90,7 +92,12 @@ pub fn run(arguments: &[OsString]) -> Result<()> {
             ],
             AUTHORITY_TIME,
         )? {
-            Some(1) => gate.commit()?,
+            Some(1) => {
+                gate.commit()?;
+                // The old app is leaving now and does not wait for this runner: from here on
+                // this is the only connection, so it must outlive any later failure.
+                keep.release();
+            }
             Some(_) => {
                 gate.disarm();
                 return Err(RunnerError::Cancelled);
@@ -105,10 +112,7 @@ pub fn run(arguments: &[OsString]) -> Result<()> {
             &[native::raw(&disarm), native::raw(&parent)],
             AUTHORITY_TIME,
         )? {
-            Some(1) => {
-                gate.exited(manifest.parent)?;
-                keep.release();
-            }
+            Some(1) => gate.exited(manifest.parent)?,
             Some(_) => {
                 gate.disarm();
                 return Err(RunnerError::Cancelled);
