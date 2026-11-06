@@ -1178,7 +1178,7 @@ S7 머지와 rc.2 공개 뒤, `v1/s8-release`를 origin/main에서 만든다. �
 ### S8-3 검사·후보
 
 - [x] `pnpm check`를 한 번 돌린다. 버전이 바뀌었기 때문이다.
-- [ ] 1.0.0 후보로 accept 설치 스모크를 한다: 첫 화면, 버전 표시 1.0.0, H1 하나, N1.
+- [ ] 1.0.0 후보로 accept 설치 스모크를 한다: 첫 화면, 버전 표시 1.0.0, H1 하나, N1 (S8-4b squash SHA로).
 - [x] 1.0.0 릴리스 노트(태그 메시지) 초안을 쓴다. 담을 것: 새 구조, v0.9.0 수동 제거 순서, RC→1.0 수동 설치, 알려진 제한·NOT_RUN.
 
 ### S8-4 PR·리뷰·머지
@@ -1235,7 +1235,7 @@ S7-15와 같다.
 
 #### S8-4b-0 채택
 
-- [ ] 이 절을 계획 10에 넣고 커밋한다. 다른 파일은 바꾸지 않는다. 링크 검사와 Biome을 돌린다.
+- [x] 이 절을 계획 10에 넣고 커밋한다. 다른 파일은 바꾸지 않는다. 링크 검사와 Biome을 돌린다.
 
 #### S8-4b-1 X1-01 — 비밀 값의 JSON·Debug 표기도 가린다
 
@@ -1254,7 +1254,7 @@ S7-15와 같다.
 - 이미 저장된 로그는 다시 가리지 않는다(S8-4b-11의 SECURITY.md 문장).
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `json_escaped_secret_is_masked_at_every_split`
     - 비밀 원문: `ow"n\ed` + 줄바꿈 + `x` + U+0001.
     - 입력: JSON 표기를 담은 `{"t":"<JSON 안쪽>"}`.
@@ -1266,10 +1266,10 @@ S7-15와 같다.
     - 따옴표가 든 비밀을 쓰는 작업이 `printf`로 JSON 이스케이프 표기를 찍는다.
     - 기대: 그 표기가 로그 파일과 `runtime.logs` 응답에 없고, `[REDACTED]`가 있다.
     - MCP `devbox_logs`도 같은 로그를 읽는다. `crates/cli/tests/mcp_runs.rs`의 helper로 함께 확인할 수 있으면 같은 시험에 넣는다.
-- [ ] 2. 시험이 실패하는 것을 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 `crates/cli/src/exec/secrets.rs` 시험 모듈, `--test runtime_secrets`가 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 시험이 실패하는 것을 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `crates/cli/src/exec/secrets.rs` 시험 모듈, `--test runtime_secrets`가 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-2 CB-2-01 — 서버 메시지의 밖 경로로 LSP 세션을 끊지 않는다
 
@@ -1296,7 +1296,7 @@ S7-15와 같다.
 - 위 경우는 모두 `Ok`로 끝나 세션이 유지된다. 깨진 JSON 같은 `LspError::Protocol`은 지금처럼 실패다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다. 기존 시험의 밖 경로 `file:///dependency/lib.rs`를 쓴다.
+- [x] 1. 실패 시험을 쓴다. 기존 시험의 밖 경로 `file:///dependency/lib.rs`를 쓴다.
   - `diagnostics_keep_the_session_and_drop_only_outside_related_locations`
     - 열린 문서의 진단에 관련 위치가 둘 있다(안 하나, 밖 하나).
     - 기대: 클라이언트 메시지에 안쪽 하나만 남고, `ready()`가 true다.
@@ -1304,10 +1304,10 @@ S7-15와 같다.
   - `server_request_with_an_outside_uri_gets_an_error_reply_and_is_not_forwarded`
     - 기대: `server`에 같은 id의 오류 응답이 있고, `clients`는 비어 있다.
   - `notification_with_an_outside_uri_is_dropped_and_the_session_stays_ready`
-- [ ] 2. 실패를 본다. 지금은 `Err`가 난다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 기존 "ordinary outside target refusal preserves shared generation" 시험, `cargo test -p devbox-lsp`가 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다. 지금은 `Err`가 난다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 기존 "ordinary outside target refusal preserves shared generation" 시험, `cargo test -p devbox-lsp`가 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-3 X1-02 — 실행 중인 의존 서비스를 다시 띄우지 않는다
 
@@ -1316,11 +1316,13 @@ S7-15와 같다.
 **파일**
 - 수정: `crates/runtime/src/execution.rs`. 필요하면 `crates/runtime/src/run_store.rs`에 조회 함수를 더한다.
 - 시험: `crates/cli/tests/runtime_lifecycle.rs`.
+- (구현 반영) 재사용 판단은 새 모듈 `crates/runtime/src/dependency.rs`에 두었다. systemd 시험은 `crates/cli/tests/runtime_lifecycle_cases/dependencies.rs`(`#[ignore]`, `runtime_lifecycle.rs`가 부른다)에, CI에서 도는 시험은 `crates/runtime/src/dependency_tests.rs`에 있다.
 
 **동작**
 - 그래프에서 마지막이 아닌 서비스 노드는, 같은 프로젝트·worktree·정의 id의 실행 중 서비스(`state.is_live()`)가 있으면 새로 띄우지 않는다.
   - 대신 그 실행의 준비됨을 기다린다(`wait_ready`, 기존 60초).
-  - 준비되지 않으면 지금처럼 `runtime.dependency_failed`다.
+  - (구현 반영) 살아 있지만 준비 시한 안에 준비되지 않으면 `wait_ready`의 `runtime.not_ready`이고(이 과제 전과 같다), 더 이상 살아 있지 않을 때만 `runtime.dependency_failed`다.
+  - (구현 반영) 재사용하기 전에 systemd로 그 실행이 아직 살아 있는지 맞춰 보고(`reconcile_one`, 사라졌으면 새로 띄운다), 후보가 여럿이면 준비된 실행을 먼저 고른다(`run_store::live_services`).
   - 재사용한 실행은 이 시작이 띄운 실행 목록(`started`)에 넣지 않는다. 호출자는 이 목록을 시작 결과 보고에만 쓴다(`crates/cli/src/daemon/launch.rs:158-167`의 서비스 수·run id, `crates/runtime/src/scheduler.rs:30-39`의 실패 보고).
   - 재사용할 실행이 예전 정의로 떠 있어도 그대로 재사용한다. 설계 01 :552 "설정이 바뀌면 실행 중인 것은 그대로 둔다"와 같다.
 - 마지막 노드(사용자가 고른 정의)는 지금 그대로다. [시작]은 새 실행, [재시작]은 그 실행의 대체다.
@@ -1328,7 +1330,7 @@ S7-15와 같다.
 - 같은 정의 식별(프로젝트·worktree·정의 id)의 서비스 시작은 직렬화한다. 동시에 두 번 시작해도 하나만 뜬다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - db: 시험이 실행 중에 고른 빈 포트를 `ports_hint`로 쓰는 서비스다. 잘 알려진 포트는 쓰지 않는다(기존 서비스를 건드리지 않는다).
   - api·worker: `depends_on = ["db"]`인 서비스다.
   - `restarting_a_service_keeps_its_running_dependency`
@@ -1340,10 +1342,10 @@ S7-15와 같다.
   - `two_services_share_one_running_dependency`
     - api 시작 → worker 시작.
     - 기대: db 실행이 하나다.
-- [ ] 2. 실패를 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 `depends_on_runs_in_order`·`depends_on_stops_after_failure`·`manual_restart_resets_the_start_limit`, `cargo test -p devbox-runtime`이 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `depends_on_runs_in_order`·`depends_on_stops_after_failure`·`manual_restart_resets_the_start_limit`, `cargo test -p devbox-runtime`이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-4 CA-02 — 실행 정의 감시가 실패해도 데몬은 뜬다
 
@@ -1352,32 +1354,35 @@ S7-15와 같다.
 **파일**
 - 수정: `crates/runtime/src/watch.rs`.
 - 시험: `crates/cli/tests/daemon.rs`(또는 runtime의 기존 감시 시험 모듈).
+- (구현 반영) 시험은 `crates/cli/tests/runtime_definitions.rs`에 두었다. 정의 읽기도 고쳤다: `crates/projects/src/config/copy.rs`가 중간 폴더를 `O_PATH`로 연다(아래 "실행 비트만" 전제가 틀렸다).
 
 **동작**
 - 디렉터리별 `watch` 실패
   - 그 디렉터리만 감시 목록에서 빼고 경고를 남긴다. 경로 대신 프로젝트 id를 쓴다.
   - 정의는 지금처럼 읽는다.
   - 다음 refresh(`projects.changed`, 기존 주기 갱신)에서 다시 감시를 붙인다.
+  - (구현 반영) 주기 갱신은 없었다. 그래서 감시가 하나라도 빠져 있는 동안 30초마다 refresh를 다시 돌린다(정의도 다시 읽는다).
 - 감시기 생성 실패
   - 감시 없이 정의를 한 번 읽어 쓴다.
   - 30초마다 생성을 다시 시도하고, 붙으면 지금처럼 동작한다.
 - 정의 읽기와 DB의 실패는 지금 처리 그대로다. 감시와 관련된 실패만 시작을 막지 않는다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `daemon_starts_when_a_project_config_directory_cannot_be_watched`
     - 프로젝트 A를 담은 상위 폴더를 `chmod 111`(실행 비트만)로 만든다.
       - 감시 대상은 프로젝트의 상위 폴더·root·`.devbox`다(`crates/runtime/src/watch.rs:146-158`).
       - 실행 비트만 있으면 `is_dir()`와 정의 읽기는 되지만 `inotify_add_watch`는 EACCES다.
+      - (구현 반영) 이 전제는 틀렸다. 중간 폴더를 `O_RDONLY`로 열어 정의 읽기도 EACCES였고, 위 `copy.rs` 수정 뒤에 읽힌다.
       - 시험이 실패해도 권한을 되돌리는 guard를 둔다. root로 돌면 이 시험은 건너뛴다.
     - 시험 데몬을 띄운다.
     - 기대: `system.ping`이 성공하고, 다른 프로젝트 B의 실행 정의 목록이 정상이다.
     - 권한을 되돌리고 프로젝트를 하나 더 등록해 `projects.changed`를 일으킨다.
     - 기대: A의 `.devbox/devbox.toml` 변경이 목록에 반영된다.
-- [ ] 2. 실패를 본다. 지금은 데몬이 뜨지 않는다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 `cargo test -p devbox-runtime`, `--test daemon`이 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다. 지금은 데몬이 뜨지 않는다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `cargo test -p devbox-runtime`, `--test daemon`이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-5 X2-02 — 새 턴 없이 끝난 Codex 작업도 다시 재개한다
 
@@ -1394,20 +1399,21 @@ S7-15와 같다.
 **동작**
 - 재개 때는 "이 작업의 세션이 무엇인가"만 확인한다.
   - 저장된 binding에 전에 검증한 thread id가 있으면 그 id를 쓴다. 단 그 rollout 파일이 있고 세션 메타데이터(`source=cli`, 작업의 workdir)가 맞아야 한다. 마지막 launch 뒤의 턴은 요구하지 않는다.
+  - (구현 반영) 저장된 thread로 재개할 때는 rollout의 첫 `session_meta` 줄만 한 번 확인하고(재시도 없음) binding을 DB에 다시 쓰지 않는다(`tracker::session`).
   - 저장된 id가 없으면 지금처럼 `refresh_binding`으로 찾는다. 못 찾으면 `agents.session_metadata`다.
 - 턴 상관 검증(완료 보고·idle 판정)은 지금 그대로다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `codex_task_resumed_without_a_new_turn_resumes_again_with_the_same_thread`
     - fixture rollout(턴 1개)로 시작한다 → 재개 1회(새 턴 없음) → 도구 종료 → 재개 2회.
     - 기대: 두 번째 시작 스크립트에 `resume <같은 thread id>`가 있다.
   - `codex_resume_refuses_a_stored_thread_whose_rollout_names_another_workdir`
     - 기대: `agents.session_metadata`.
-- [ ] 2. 실패를 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 기존 재개 rollback 시험, `cargo test -p devbox-agents`가 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 기존 재개 rollback 시험, `cargo test -p devbox-agents`가 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-6 X3-01 — 종료·업데이트 전에 저장하지 않은 API 변경을 묻는다
 
@@ -1432,6 +1438,7 @@ S7-15와 같다.
 - [취소]
   - 종료 준비가 `safe=false`로 끝나 종료를 취소한다. 업데이트도 설치하지 않는다.
   - 기존 차단 안내(`blocked`)는 띄우지 않는다.
+  - (구현 반영, Ruling 136) main 창은 `blocked`를 띄우지 않지만, native ACK에 거절 이유가 없어 트레이는 "종료하지 못했습니다…", 업데이트는 `quitRejected` 문구, 열린 팝아웃은 일반 `blocked()` 안내를 보인다. 1.0.x 후속이고, 1.0.0에서 처음 업데이트할 때도 이 문구가 나온다.
 - [변경 버리고 종료]: 문서 확인으로 넘어간다.
 - 저장 버튼은 두지 않는다. 새 요청은 파일 경로가 없을 수 있다.
 - 초안을 디스크에 자동 저장하지 않는다. 비밀이 있을 수 있다.
@@ -1441,17 +1448,17 @@ S7-15와 같다.
 - [변경 버리고 종료]는 API 저장소를 비우지 않는다. 이어지는 문서 확인에서 취소하면 초안이 그대로 남는다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `api_changes_cancelled_quit_acks_unsafe_without_asking_documents`
   - `api_changes_discarded_continue_to_documents`
   - `no_api_changes_go_straight_to_documents`
   - `api_discard_keeps_drafts_when_documents_cancel`
   - `quit_guard_names_only_the_kinds_with_changes`
   - `quit_guard_cancel_resolves_false_and_discard_resolves_true`
-- [ ] 2. 실패를 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 `app/src/shell`·`app/src/features/tools/api` 시험이 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `app/src/shell`·`app/src/features/tools/api` 시험이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-7 X3-05 — 끈 환경 변수는 저장 뒤에도 꺼져 있다
 
@@ -1477,17 +1484,17 @@ S7-15와 같다.
   - 이 판보다 앞선 판은 이 필드를 무시해 끈 행을 켠 것으로 읽는다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `disabled_variable_round_trips_as_enabled_false`
   - `enabled_other_than_false_is_rejected`
   - `files_without_enabled_stay_enabled`
   - `unchecked_row_stays_unchecked_after_save_and_reopen`
     - 같은 이름 두 행 중 하나를 끄고 저장한 뒤 다시 연다.
     - 기대: 그 행은 꺼져 있고, 활성 환경 값은 켠 행의 값이다.
-- [ ] 2. 실패를 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 `app/src/features/tools/api` 시험이 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `app/src/features/tools/api` 시험이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-8 CB-01 — 프로젝트가 없는 빈 화면에 [프로젝트 추가]
 
@@ -1515,13 +1522,13 @@ S7-15와 같다.
 - 바꾼 문구를 e2e·문서에서 찾아(`rg -n '프로젝트를 선택하세요' -g '!node_modules'`) 같은 과제에서 고친다.
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `add_project_action_opens_the_add_dialog`
   - 각 화면: `shows_add_project_when_no_project_is_registered`, `hides_add_project_when_projects_exist`
-- [ ] 2. 실패를 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 바꾼 화면들의 시험이 PASS.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 바꾼 화면들의 시험이 PASS.
+- [x] 5. 검토 뒤 커밋한다.
 
 #### S8-4b-9 CB-02 — 제외
 
@@ -1550,6 +1557,7 @@ S7-15와 같다.
 - 끝내는 때
   - 새 앱을 띄운 뒤에는 그대로 두어 스스로 끝나게 한다(최대 15분). 그 안에 새 앱이 연결한다.
   - 설치하지 않고 끝나는 경로(취소·검증 실패·시간 초과)에서는 바로 끝낸다.
+  - (구현 반영, Ruling 126·138) 바로 끝내는 것은 이전 앱이 끝난 것을 확인하기 전의 실패(취소·권한 대기 시간 초과·arm·기록·신호 실패·그 구간의 신원 오류)뿐이고, 오류 기록보다 먼저 끝낸다. 이전 앱이 끝난 뒤의 실패(설치 프로그램 검증·설치 실패·Unknown·재시작 실패)와 성공에서는 그대로 두어 스스로 끝나게 한다.
 - 핸들과 job
   - runner가 받은 핸들 6개는 받자마자 상속 불가로 바뀐다(`app/src-tauri/src/platform/update_runner/native.rs:316-319`). 유지 연결은 그 뒤에 띄운다.
   - 설치 프로그램 실행(`execute.rs:175-181`)과 같은 방식으로 띄운다: `Command`, null stdio, `CREATE_NO_WINDOW`.
@@ -1557,10 +1565,12 @@ S7-15와 같다.
 - 예외
   - 유지 연결을 띄우지 못해도 업데이트는 진행하고 기록만 남긴다.
   - `keep_distro`가 없으면(이전 형식의 인계) 아무것도 하지 않는다.
+  - (구현 반영, Ruling 127) 기록은 stderr 한 줄이다(`Record`·`Outcome`은 그대로). `keep_distro`는 빈 값·128바이트 초과·제어 문자·`-` 시작만 거절하고(`valid_keep_distro`), 만드는 쪽도 같은 검사를 써서 연결이 준비되지 않았거나 통과하지 못하면 `None`으로 넘긴다(업데이트는 진행한다).
+  - (구현 반영, Ruling 138) `owner.json`은 다음 판이 시작할 때 다시 읽으므로 `keepDistro` 키 이름과 관대한 검사를 주석과 시험으로 고정했다. `wsl.exe`를 runner 폴더보다 System32에서 먼저 찾는 일(M2)은 1.0.x 후속이다(PROGRESS §4).
 - 확인 창 문구: "앱을 닫고 업데이트를 설치한 뒤 다시 시작합니다. 설치하는 동안에도 WSL 연결을 유지하므로 WSL의 에이전트 작업과 서비스는 계속 실행됩니다."
 
 **단계**
-- [ ] 1. 실패 시험을 쓴다.
+- [x] 1. 실패 시험을 쓴다.
   - `keep_connection_command_targets_the_bound_distro_without_a_window`
     - 기대: program이 `wsl.exe`, 인자가 `-d <distro> --exec sleep 900`, 창 없음 플래그.
   - `keep_connection_inherits_no_runner_handle`
@@ -1568,10 +1578,11 @@ S7-15와 같다.
   - `manifest_without_keep_distro_still_validates`
   - `manifest_round_trips_keep_distro`
   - `update_confirmation_says_wsl_stays_connected`
-- [ ] 2. 실패를 본다.
-- [ ] 3. 구현한다.
-- [ ] 4. 확인한다: 위 시험과 `app/src-tauri` 업데이트 시험이 PASS. Windows 전용 코드는 `Rust (Windows)` CI에서 돈다.
-- [ ] 5. 검토 뒤 커밋한다.
+- [x] 2. 실패를 본다.
+- [x] 3. 구현한다.
+- [x] 4. 확인한다: 위 시험과 `app/src-tauri` 업데이트 시험이 PASS. Windows 전용 코드는 `Rust (Windows)` CI에서 돈다.
+  - (구현 반영, Ruling 128) 시험은 위 다섯과 `manifest_rejects_an_unsafe_keep_distro`다. `keep_connection_inherits_no_runner_handle`은 Windows 전용이라 `Rust (Windows)` CI에서만 돈다. 이 PC에서는 gnu target 대신 설치된 MSVC target clippy로 컴파일만 확인했다(`ring` 빌드에 `AR_x86_64_pc_windows_msvc` 대체가 필요했다).
+- [x] 5. 검토 뒤 커밋한다.
 - **Windows 확인:** S8-5 앞의 Windows 확인에 더한다. accept 채널에서 tmux 작업이 도는 동안 fixture 업데이트를 실행한다. fixture 업데이트도 같은 runner 경로를 지난다(`execute.rs:155-168`).
   - 확인: 배포판이 멈추지 않는지(tmux 세션 유지), 그리고 연결 공백 시간.
   - interop이 돌아올 때까지 NOT_RUN이다.
@@ -1607,9 +1618,11 @@ S7-15와 같다.
 - S8-4b 체크박스를 고친다.
 - S8-3의 accept 스모크 항목에 "S8-4b squash SHA로"를 붙인다.
 
+(구현 반영) 코드와 다른 문장은 뜻을 지키고 고쳤다(근거는 SDD 폴더 `task-S8-4b-11-report.md`): bash 로그인 파일은 `~/.bash_profile`·`~/.bash_login`·`~/.profile` 가운데 먼저 있는 것, 언어 서버는 설치된 것만 시작, 비밀 가림은 그 실행에 넘긴 값이고 로그 파일과 그것을 읽는 앱 화면·`logs.search`·MCP `devbox_logs`에 적용, Codex 설정은 "사용자의 Codex `config.toml`". README 설치·앱 업데이트 절과 guide에 S8-4b-6·S8-4b-10 내용을 더했다.
+
 **단계**
-- [ ] 1. 위 문서를 고친다.
-- [ ] 2. 링크 검사와 Biome을 돌린다. 문서가 읽는 시험(`docs/config.md`·`THIRD_PARTY_NOTICES.md`)이 영향을 받으면 그 시험도 돌린다.
+- [x] 1. 위 문서를 고친다.
+- [x] 2. 링크 검사와 Biome을 돌린다. 문서가 읽는 시험(`docs/config.md`·`THIRD_PARTY_NOTICES.md`)이 영향을 받으면 그 시험도 돌린다.
 - [ ] 3. 검토 뒤 커밋한다.
 
 #### S8-4b-12 브랜치 전체 검토·전체 검사
