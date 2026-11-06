@@ -126,7 +126,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       const read = await backend.read(root, path);
       if (!ownsRead()) return;
       const file = parseEnvFile(read.text);
-      const rows = file.variables.map((v) => row(v.name, v.value));
+      const rows = file.variables.map((v) => row(v.name, v.value, v.enabled !== false));
       const unreviewed = root.kind === "project" && !read.reviewed;
       apply({
         draft: newDraft(),
@@ -173,7 +173,11 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
     const file: EnvFile = {
       version: 1,
       name: target.name,
-      variables: target.rows.map((r) => ({ name: r.name, value: r.value })),
+      variables: target.rows.map((r) => ({
+        name: r.name,
+        value: r.value,
+        ...(r.enabled ? {} : { enabled: false as const }),
+      })),
     };
     try {
       const { text, cleared } = serializeEnvFile(file);
