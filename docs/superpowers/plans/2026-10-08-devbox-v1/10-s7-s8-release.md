@@ -1208,7 +1208,7 @@ S7-15와 같다.
 
 **검토 초점(S8-4b).** 시험이 놓치기 쉬운 실제 조건이다.
 
-1. **비밀 값의 이스케이프 표기.** 비밀 값에 따옴표·역슬래시·줄바꿈이 있고, 실행한 프로그램이 그 값을 JSON이나 Rust Debug로 찍는다. 기대: 그 표기가 실행 로그 파일·`runtime.logs`·MCP `devbox_logs` 어디에도 남지 않는다. — S8-4b-1
+1. **비밀 값의 이스케이프 표기.** 비밀 값에 따옴표·역슬래시·줄바꿈이 있고, 실행한 프로그램이 그 값을 JSON이나 Rust Debug로 찍는다. 기대: 그 표기가 실행 로그 파일·`logs.search`·MCP `devbox_logs` 어디에도 남지 않는다. — S8-4b-1
 2. **프로젝트 밖을 가리키는 진단.** Rust 저장 검사의 진단이 `~/.cargo/registry` 안의 관련 위치를 가리킨다. 기대: 세션이 끊기지 않고, 프로젝트 안 진단은 그대로 온다. — S8-4b-2
 3. **공유 의존 서비스.** db(고정 포트)에 기대는 api·worker가 있고, api를 [재시작]한다. 기대: db 실행이 하나로 남고 재시작이 성공한다. — S8-4b-3
 4. **긴 업데이트 설치.** 설치가 15초보다 오래 걸리고, 다른 WSL 창이 없다. 기대: 배포판이 멈추지 않는다. 실제 Windows 확인은 S8-5에서 한다. — S8-4b-10
@@ -1264,7 +1264,7 @@ S7-15와 같다.
     - 기대: 출력이 `t=Some("[REDACTED]")`다. U+0001이 JSON은 `\u0001`, Debug는 `\u{1}`이라 두 표기가 다르다.
   - `run_output_hides_json_escaped_secret`(통합)
     - 따옴표가 든 비밀을 쓰는 작업이 `printf`로 JSON 이스케이프 표기를 찍는다.
-    - 기대: 그 표기가 로그 파일과 `runtime.logs` 응답에 없고, `[REDACTED]`가 있다.
+    - 기대: 그 표기가 로그 파일과 `logs.search` 응답에 없고, `[REDACTED]`가 있다.
     - MCP `devbox_logs`도 같은 로그를 읽는다. `crates/cli/tests/mcp_runs.rs`의 helper로 함께 확인할 수 있으면 같은 시험에 넣는다.
 - [x] 2. 시험이 실패하는 것을 본다.
 - [x] 3. 구현한다.
@@ -1294,6 +1294,7 @@ S7-15와 같다.
   - `workspace/applyEdit`의 기존 `applied:false` 처리는 그대로다.
 - 그 밖의 알림에 밖 경로가 있으면 그 알림만 버린다. 기록은 `tracing::debug!`로 하고 경로는 쓰지 않는다.
 - 위 경우는 모두 `Ok`로 끝나 세션이 유지된다. 깨진 JSON 같은 `LspError::Protocol`은 지금처럼 실패다.
+- (구현 반영, Ruling 131) 진단의 다른 위치(`uri`·`targetUri` 등, `data` 안 포함)가 밖이면 그 진단만 빼고 나머지를 보낸다. 그래도 밖 경로가 남으면 마지막 수단으로 그 알림 전체를 버린다.
 
 **단계**
 - [x] 1. 실패 시험을 쓴다. 기존 시험의 밖 경로 `file:///dependency/lib.rs`를 쓴다.
@@ -1623,15 +1624,15 @@ S7-15와 같다.
 **단계**
 - [x] 1. 위 문서를 고친다.
 - [x] 2. 링크 검사와 Biome을 돌린다. 문서가 읽는 시험(`docs/config.md`·`THIRD_PARTY_NOTICES.md`)이 영향을 받으면 그 시험도 돌린다.
-- [ ] 3. 검토 뒤 커밋한다.
+- [x] 3. 검토 뒤 커밋한다.
 
 #### S8-4b-12 브랜치 전체 검토·전체 검사
 
-- [ ] 1. 다른 에이전트가 `08dffcd3..HEAD` 전체를 검토한다. 과제별 검토로 대신하지 않는다. 결과는 PROGRESS 작업 사본에 남긴다.
-- [ ] 2. 고칠 것이 있으면 그 과제와 같은 방식(실패 시험 → 구현 → 검토 → 커밋)으로 고친다.
-- [ ] 3. `pnpm check`를 한 번 돌린다(clippy·build·E2E 포함, `--wait`).
-- [ ] 4. Biome CI를 돌린다.
-- [ ] 5. 태그 노트 초안(Git common-dir `devbox-verification/s8/sdd-10-s7-s8-release/s8-3-tag-notes-draft.md`)에 이 PR의 수정과 새 알려진 제한(언어 서버)을 더한다.
+- [x] 1. 다른 에이전트가 `08dffcd3..HEAD` 전체를 검토한다. 과제별 검토로 대신하지 않는다. 결과는 PROGRESS 작업 사본에 남긴다.
+- [x] 2. 고칠 것이 있으면 그 과제와 같은 방식(실패 시험 → 구현 → 검토 → 커밋)으로 고친다.
+- [x] 3. `pnpm check`를 한 번 돌린다(clippy·build·E2E 포함, `--wait`).
+- [x] 4. Biome CI를 돌린다.
+- [x] 5. 태그 노트 초안(Git common-dir `devbox-verification/s8/sdd-10-s7-s8-release/s8-3-tag-notes-draft.md`)에 이 PR의 수정과 새 알려진 제한(언어 서버)을 더한다.
 
 #### S8-4b-13 push·PR·리뷰·머지
 
