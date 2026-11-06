@@ -252,7 +252,7 @@ async fn daemon_starts_when_a_project_config_directory_cannot_be_watched() {
     // Execute-only: A's config stays readable, but inotify cannot watch these folders.
     let guards = [
         ModeGuard::restrict(&locked),
-        ModeGuard::restrict(&config.parent().expect("config folder").to_path_buf()),
+        ModeGuard::restrict(config.parent().expect("config folder")),
     ];
     if std::fs::read_dir(&locked).is_ok() {
         eprintln!("skipped: mode bits are not enforced in this environment");
