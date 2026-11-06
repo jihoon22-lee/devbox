@@ -3,7 +3,8 @@ import type { DocKey } from "../../rpc/gen/rpc";
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
 import { useRpc } from "../../rpc/RpcProvider";
 import { openFileLocation } from "../../shell/fileLocation";
-import { Banner, Button, EmptyState } from "../../ui";
+import { Banner, Button } from "../../ui";
+import { NoProjectState } from "../projects/AddProjectAction";
 import { ProjectError } from "../projects/ProjectError";
 import { useCurrentProject } from "../projects/store";
 import type { CodeLocation } from "../source/editor/location";
@@ -15,7 +16,7 @@ export function ProblemsPanel({ onOpenCode }: { onOpenCode?: OpenCode } = {}) {
   return projectId ? (
     <ProjectProblems key={projectId} projectId={projectId} onOpenCode={onOpenCode} />
   ) : (
-    <EmptyState title="프로젝트를 선택하세요" body="현재 프로젝트의 실행에서 발견된 문제를 보여 줍니다." />
+    <NoProjectState body="현재 프로젝트의 실행에서 발견된 문제를 보여 줍니다." />
   );
 }
 function ProjectProblems({ projectId, onOpenCode }: { projectId: string; onOpenCode?: OpenCode }) {

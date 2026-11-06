@@ -16,8 +16,9 @@ const Context = createContext<ReturnType<typeof useProjectList> | null>(null);
 export function recordProjectRemoval(qc: QueryClient, id: string, rev: string) {
   qc.setQueryData<RemovedProjects>(REMOVED_KEY, (old) => ({ ...old, [id]: rev }));
 }
-function useProjectList() {
-  const list = useRpcQuery("projects.list", {});
+/** Also the fallback for screens outside the shell provider, which has no `projects.changed` invalidation. */
+export function useProjectList(enabled = true) {
+  const list = useRpcQuery("projects.list", {}, { enabled });
   const removed = useQuery<RemovedProjects>({ queryKey: REMOVED_KEY, queryFn: skipToken, initialData: {} });
   const snapshot = list.data;
   const data = snapshot && {
@@ -40,6 +41,10 @@ export function ProjectDataProvider({ children }: { children: ReactNode }) {
 export function ProjectDataBoundary({ children }: { children: ReactNode }) {
   const list = useContext(Context);
   return list ? children : <ProjectDataProvider>{children}</ProjectDataProvider>;
+}
+/** For screens that can mount outside the shell's provider (popups, tests). */
+export function useOptionalProjectData() {
+  return useContext(Context);
 }
 export function useProjectData() {
   const list = useContext(Context);

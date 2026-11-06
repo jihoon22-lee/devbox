@@ -6,6 +6,7 @@ import { useRpc } from "../../rpc/RpcProvider";
 import { openFileLocation } from "../../shell/fileLocation";
 import { SectionLayout } from "../../shell/SectionLayout";
 import { Banner, Button, EmptyState, Menu } from "../../ui";
+import { NoProjectState } from "../projects/AddProjectAction";
 import { ProjectError } from "../projects/ProjectError";
 import { useCurrentProject } from "../projects/store";
 import { visibleTrustText } from "../projects/visibleTrustText";
@@ -43,7 +44,7 @@ export function RunsPage() {
   ) : (
     <>
       <ObservationNavigation />
-      <EmptyState title="프로젝트를 선택하세요" body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
+      <NoProjectState body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
     </>
   );
 }

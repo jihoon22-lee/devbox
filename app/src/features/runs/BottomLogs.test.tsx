@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useCurrentProject } from "../projects/store";
-import { ProjectWire } from "../projects/test-wire";
+import { ProjectWire, projects } from "../projects/test-wire";
 import { BottomLogs } from "./BottomLogs";
 import { usePinnedLogSources } from "./pinnedSources";
 import { runFixture } from "./test-wire";
@@ -130,4 +130,22 @@ test("runtime changes replace the recent fallback and close the previous stream"
   await waitFor(() => expect(wire.requests("logs.open")).toHaveLength(2));
   expect(wire.sent.filter((m) => m.type === "streamClose" && m.stream === 7)).toHaveLength(1);
   expect(wire.request("logs.open", -1).params).toMatchObject({ sources: [{ kind: "run", runId: "new-run" }] });
+});
+
+test("shows_add_project_when_no_project_is_registered", async () => {
+  useCurrentProject.setState({ id: undefined });
+  const { wire } = setup();
+  await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(1));
+  expect(screen.getByText("프로젝트를 선택하세요")).toBeInTheDocument();
+  await act(async () => wire.reply("projects.list", { rev: "1", items: [] }));
+  expect(await screen.findByText("등록된 프로젝트가 없습니다")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "프로젝트 추가" })).toBeInTheDocument();
+});
+test("hides_add_project_when_projects_exist", async () => {
+  useCurrentProject.setState({ id: undefined });
+  const { wire } = setup();
+  await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(1));
+  await act(async () => wire.reply("projects.list", { rev: "1", items: projects }));
+  expect(screen.getByText("프로젝트를 선택하세요")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "프로젝트 추가" })).not.toBeInTheDocument();
 });
