@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DocumentCloseDialog } from "./features/documents/DocumentCloseDialog";
+import { ApiQuitDialog } from "./features/tools/api/quitGuard";
 import { RpcClient, type Transport } from "./rpc/client";
 import { RpcProvider } from "./rpc/RpcProvider";
 import { tauriTransport } from "./rpc/transport-tauri";
@@ -30,6 +31,7 @@ export function App({ loadTransport = pickTransport }: { loadTransport?: () => P
       <>
         <NativeQuitPreparation />
         <DocumentCloseDialog />
+        <ApiQuitDialog />
         <NativeMainController ready={ready} />
         <ConnectionGate onReady={() => setReady(true)}>
           {(instance) => <ConnectedApp loadTransport={loadTransport} instance={instance} native />}

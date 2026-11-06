@@ -48,6 +48,9 @@ export const resetEnvDrafts = () => useEnvDrafts.setState({ byRoot: {} });
 const snapshot = (name: string, rows: Row[]) => JSON.stringify([name, rows.map((r) => [r.enabled, r.name, r.value])]);
 const isDirtyEnv = (editing: Editing | undefined) =>
   !!editing && snapshot(editing.name, editing.rows) !== editing.baseline;
+/** 저장하지 않은 환경 초안 수(루트마다 하나). 앱 종료 확인(`quitGuard`)이 센다. */
+export const dirtyEnvDraftCount = () =>
+  Object.values(useEnvDrafts.getState().byRoot).filter((draft) => isDirtyEnv(draft.editing)).length;
 const pairs = (rows: Row[]) => rows.filter((r) => r.enabled && r.name).map((r) => ({ name: r.name, value: r.value }));
 /**
  * What a finished save says. When the editor no longer shows the environment that was written, the
