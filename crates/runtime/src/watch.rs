@@ -135,7 +135,9 @@ impl RuntimeService {
                                 }
                                 Err(reason) => {
                                     tracing::debug!(reason, "execution config watcher still unavailable");
-                                    rearm = Some(Instant::now() + retry);
+                                    // The refresh re-reads definitions (polling fallback)
+                                    // and re-arms this timer while there is no watcher.
+                                    deadline = Some(Instant::now());
                                 }
                             }
                         } else {
