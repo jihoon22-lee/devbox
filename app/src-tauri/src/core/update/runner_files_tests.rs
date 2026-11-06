@@ -42,12 +42,101 @@ pub(crate) fn staged() -> (TempDir, Stage) {
         &exe,
         source,
         binding,
+        None,
         AppChannel::Prod,
         parent,
         &CancellationToken::new(),
     )
     .unwrap();
     (temp, stage)
+}
+#[test]
+fn keep_connection_command_targets_the_bound_distro_without_a_window() {
+    let command = keep_command("Ubuntu-24.04");
+    assert_eq!(command.program, Path::new("wsl.exe"));
+    assert_eq!(
+        command.args,
+        ["-d", "Ubuntu-24.04", "--exec", "sleep", "900"]
+    );
+    assert_eq!(command.creation_flags, 0x0800_0000);
+}
+#[test]
+fn manifest_without_keep_distro_still_validates() {
+    let (_temp, stage) = staged();
+    let mut value = serde_json::to_value(&stage.manifest).unwrap();
+    // Pins the key name: later versions read `owner.json` files this version wrote.
+    assert!(
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("keepDistro")
+            .is_some()
+    );
+    let old = serde_json::to_vec(&value).unwrap();
+    assert!(!std::str::from_utf8(&old).unwrap().contains("keepDistro"));
+    let mut file = tempfile::tempfile().unwrap();
+    file.write_all(&old).unwrap();
+    let manifest = read_manifest(&mut file).unwrap();
+    assert_eq!(manifest.keep_distro, None);
+    assert_eq!(
+        manifest.validate(AppChannel::Prod, &stage.manifest.runner_exe),
+        Ok(())
+    );
+}
+#[test]
+fn manifest_round_trips_keep_distro() {
+    let (temp, exe, source, binding, parent) = inputs();
+    let mut stage = Stage::create(
+        &temp.path().join("data/updates"),
+        &exe,
+        source,
+        binding,
+        Some("Ubuntu-24.04".into()),
+        AppChannel::Prod,
+        parent,
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    let manifest = read_manifest(&mut stage.payload).unwrap();
+    assert_eq!(manifest.keep_distro.as_deref(), Some("Ubuntu-24.04"));
+    assert_eq!(
+        manifest.validate(AppChannel::Prod, &stage.manifest.runner_exe),
+        Ok(())
+    );
+}
+#[test]
+fn manifest_rejects_an_unsafe_keep_distro() {
+    let (_temp, stage) = staged();
+    let cases = [
+        (String::new(), false),
+        ("-x".into(), false),
+        ("Ubuntu\n24.04".into(), false),
+        ("a".repeat(129), false),
+        // 43 characters, 129 bytes: the limit counts bytes.
+        ("가".repeat(43), false),
+        // Lenient on purpose: later versions re-validate the names this version wrote.
+        ("Ubuntu-24.04".into(), true),
+        ("Ubuntu 24.04".into(), true),
+        ("우분투".into(), true),
+        ("a".repeat(128), true),
+        (format!("{}ab", "가".repeat(42)), true),
+    ];
+    for (name, safe) in cases {
+        assert_eq!(valid_keep_distro(&name), safe, "{name:?}");
+        let manifest = Manifest {
+            keep_distro: Some(name.clone()),
+            ..stage.manifest.clone()
+        };
+        assert_eq!(
+            manifest.validate(AppChannel::Prod, &stage.manifest.runner_exe),
+            if safe {
+                Ok(())
+            } else {
+                Err(RunnerError::Identity)
+            },
+            "{name:?}"
+        );
+    }
 }
 #[test]
 fn sealed_ready_source_has_an_independent_cursor_and_stage_outlives_original_proof() {
@@ -73,6 +162,7 @@ fn sealed_ready_source_has_an_independent_cursor_and_stage_outlives_original_pro
         &exe,
         second,
         binding,
+        None,
         AppChannel::Prod,
         parent,
         &CancellationToken::new(),
@@ -121,6 +211,7 @@ fn cancellation_wrong_source_hash_or_identity_never_stages_an_installable_runner
                 &exe,
                 source,
                 binding,
+                None,
                 AppChannel::Prod,
                 parent,
                 &token
@@ -177,6 +268,7 @@ fn root_ownership_channel_and_internal_fixture_mode_are_required() {
             &exe,
             source,
             binding,
+            None,
             AppChannel::Prod,
             parent,
             &CancellationToken::new()
@@ -264,6 +356,7 @@ fn staged_path_replacement_and_symlink_root_are_rejected_and_preserved() {
             &exe,
             source,
             binding,
+            None,
             AppChannel::Prod,
             parent,
             &CancellationToken::new()

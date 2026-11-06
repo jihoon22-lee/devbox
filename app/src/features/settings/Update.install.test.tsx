@@ -91,6 +91,13 @@ test("ready requires fresh summary and explicit confirmation before any install 
   expect(await screen.findByRole("button", { name: "설치 준비 취소" })).toBeVisible();
 });
 
+test("update_confirmation_says_wsl_stays_connected", async () => {
+  const dialog = await open();
+  expect(dialog).toHaveAccessibleDescription(
+    "앱을 닫고 업데이트를 설치한 뒤 다시 시작합니다. 설치하는 동안에도 WSL 연결을 유지하므로 WSL의 에이전트 작업과 서비스는 계속 실행됩니다.",
+  );
+});
+
 test("canceling confirmation or unmounting never installs or stops any running work", async () => {
   const dialog = await open();
   fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));

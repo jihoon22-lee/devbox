@@ -43,6 +43,41 @@ pub struct Manifest {
     pub installer_proof: FileProof,
     pub runner_proof: FileProof,
     pub source_digest: [u8; 32],
+    /// The distro the app was connected to. Older handoffs have none.
+    /// Later versions re-read `owner.json` files written by this version at startup
+    /// (`runner_recovery::entries` → `validate`). Keep this field, and never make
+    /// `valid_keep_distro` stricter, or the first start after an update is blocked.
+    #[serde(default)]
+    pub keep_distro: Option<String>,
+}
+/// Rejects only names that are clearly unsafe for `wsl.exe -d`. A leading `-` would read as an
+/// option. The producer passes `None` instead, so an odd name never blocks an update.
+/// Later versions re-read `owner.json` files written by this version at startup
+/// (`runner_recovery::entries` → `validate`). Never make this check stricter, or the first start
+/// after an update is blocked.
+pub fn valid_keep_distro(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.starts_with('-')
+        && !name.chars().any(char::is_control)
+}
+/// `CREATE_NO_WINDOW`.
+pub const NO_WINDOW: u32 = 0x0800_0000;
+/// What the runner starts to keep the distro running while no app holds a WSL connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeepCommand {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub creation_flags: u32,
+}
+pub fn keep_command(distro: &str) -> KeepCommand {
+    KeepCommand {
+        program: PathBuf::from("wsl.exe"),
+        args: ["-d", distro, "--exec", "sleep", "900"]
+            .map(String::from)
+            .into(),
+        creation_flags: NO_WINDOW,
+    }
 }
 impl Manifest {
     pub fn validate(&self, channel: AppChannel, actual_runner: &Path) -> Result<()> {
@@ -73,6 +108,10 @@ impl Manifest {
             || (channel == AppChannel::Prod && self.binding.fixture_install)
             || (channel == AppChannel::Accept
                 && (!cfg!(any(test, devbox_update_fixture)) || !self.binding.fixture_install))
+            || self
+                .keep_distro
+                .as_deref()
+                .is_some_and(|name| !valid_keep_distro(name))
         {
             return Err(RunnerError::Identity);
         }
@@ -223,11 +262,13 @@ pub struct Stage {
     dir: Option<OwnedDir>,
 }
 impl Stage {
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         root: &Path,
         parent_exe: &Path,
         mut source: SealedSource,
         binding: Binding,
+        keep_distro: Option<String>,
         channel: AppChannel,
         parent: ProcessIdentity,
         cancel: &CancellationToken,
@@ -286,6 +327,7 @@ impl Stage {
             installer_proof,
             source_digest: runner_proof.digest,
             runner_proof,
+            keep_distro,
         };
         manifest.validate(channel, &manifest.runner_exe)?;
         let owner = directory.join("owner.json");

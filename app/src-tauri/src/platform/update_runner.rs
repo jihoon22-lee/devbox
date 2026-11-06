@@ -141,6 +141,7 @@ impl Drop for CancelOnDrop {
 pub async fn prepare(
     app: &AppHandle,
     binding: Binding,
+    keep_distro: Option<String>,
     source: SealedSource,
     cancel: CancellationToken,
 ) -> std::result::Result<Prepared, PrepareFailure> {
@@ -158,8 +159,9 @@ pub async fn prepare(
     let stop = cancel.child_token();
     let _cancel_on_drop = CancelOnDrop(stop.clone());
     let work_stop = stop.clone();
-    let mut task =
-        tokio::task::spawn_blocking(move || prepare_blocking(root, binding, source, work_stop));
+    let mut task = tokio::task::spawn_blocking(move || {
+        prepare_blocking(root, binding, keep_distro, source, work_stop)
+    });
     let (result, timed_out) = tokio::select! {
         result = &mut task => (result, false),
         _ = tokio::time::sleep(PREPARE_TIME) => { stop.cancel(); (task.await, true) },
@@ -186,6 +188,7 @@ pub async fn prepare(
 fn prepare_blocking(
     root: PathBuf,
     binding: Binding,
+    keep_distro: Option<String>,
     source: SealedSource,
     cancel: CancellationToken,
 ) -> std::result::Result<Prepared, PrepareFailure> {
@@ -197,6 +200,7 @@ fn prepare_blocking(
         &parent_exe,
         source,
         binding,
+        keep_distro,
         CHANNEL,
         parent,
         &cancel,
