@@ -160,6 +160,16 @@ impl Fixture {
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    /// Polls the run log for `needle` while the caller keeps the child running (no EOF yet).
+    fn wait_log(&self, needle: &str) {
+        let end = Instant::now() + Duration::from_secs(5);
+        while !std::fs::read_to_string(self.runs().join("run-1.log"))
+            .is_ok_and(|l| l.contains(needle))
+        {
+            assert!(Instant::now() < end, "log never showed {needle:?}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
     fn fallback(
         &self,
         attempt: Option<&str>,
@@ -207,6 +217,7 @@ while not pathlib.Path(os.environ['FINISH']).exists(): time.sleep(.01)
             .split(|b| *b == 0)
             .any(|entry| entry.starts_with(b"TOKEN="))
     );
+    f.wait_log("\to\tACK\n");
     std::fs::write(f.temp.path().join("finish"), "").expect("release");
     assert!(owned.wait().success());
     assert!(f.log().contains("\to\tACK\n"));
@@ -575,3 +586,6 @@ mod background;
 
 #[path = "runtime_wrapper_cases/problems.rs"]
 mod problems;
+
+#[path = "runtime_wrapper_cases/redaction.rs"]
+mod redaction;
