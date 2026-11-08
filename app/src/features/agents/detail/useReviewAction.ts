@@ -26,6 +26,13 @@ type Snapshot = { intent: Intent; changes?: Changes; check?: Check };
  * `hasSubmodules` when it could not check, so the warning errs toward showing.
  */
 const SUBMODULES = "하위 모듈이 있습니다. 하위 모듈 안의 push하지 않은 커밋도 함께 사라집니다.";
+/**
+ * A merge and a PR stop the agent tool before their Git step and, once it succeeds, close the
+ * task; with automatic cleanup on, its work folder and local branch go too. The app does not
+ * know that setting, so the sentence names the condition. Both confirmations end with it.
+ */
+const closesTask = (body: string) =>
+  `${body}\n확인하면 먼저 이 에이전트 도구를 멈춥니다. 성공하면 작업을 닫고, 자동 정리가 켜져 있으면 작업 폴더와 로컬 브랜치도 지웁니다. 닫힌 작업에는 이어서 지시할 수 없습니다.`;
 export function useReviewAction(task: AgentTask, onConflict: (files: string[]) => void) {
   const trust = useProjectTrust(`${task.id}:${task.projectId}:${task.state}`);
   const changes = useRpcQuery("agents.changes", { id: task.id }, { enabled: false });
@@ -238,9 +245,11 @@ export function useReviewAction(task: AgentTask, onConflict: (files: string[]) =
         : snapshot.check
           ? `${snapshot.check.unmergedCommits === 0 && snapshot.check.dirtyFiles === 0 ? "작업 폴더와 브랜치를 지웁니다." : `병합하지 않은 커밋 ${snapshot.check.unmergedCommits}개와 커밋하지 않은 파일 ${snapshot.check.dirtyFiles}개가 사라집니다.`} HEAD ${snapshot.check.headOid}${snapshot.check.hasSubmodules ? `\n${SUBMODULES}` : ""}`
           : "현재 상태 확인 중…"
-      : snapshot?.changes
-        ? `기준 ${snapshot.changes.base} · 브랜치 ${task.branch} · 앞섬 ${snapshot.changes.ahead} · 뒤처짐 ${snapshot.changes.behind}\nHEAD ${snapshot.changes.headOid} · 기준 ${snapshot.changes.baseOid}${snapshot.intent.kind === "pr" ? `\nPR 제목: ${snapshot.intent.title}\n${snapshot.intent.body}` : snapshot.intent.message ? `\n커밋 메시지: ${snapshot.intent.message}` : ""}`
-        : "현재 상태 확인 중…";
+      : closesTask(
+          snapshot?.changes
+            ? `기준 ${snapshot.changes.base} · 브랜치 ${task.branch} · 앞섬 ${snapshot.changes.ahead} · 뒤처짐 ${snapshot.changes.behind}\nHEAD ${snapshot.changes.headOid} · 기준 ${snapshot.changes.baseOid}${snapshot.intent.kind === "pr" ? `\nPR 제목: ${snapshot.intent.title}\n${snapshot.intent.body}` : snapshot.intent.message ? `\n커밋 메시지: ${snapshot.intent.message}` : ""}`
+            : "현재 상태 확인 중…",
+        );
   return {
     snapshot,
     trustDialog: trust.dialog,

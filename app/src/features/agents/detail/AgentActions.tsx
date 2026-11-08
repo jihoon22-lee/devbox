@@ -3,7 +3,7 @@ import { RpcError } from "../../../rpc/client";
 import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
-import { Banner, Button, Dialog, Menu, Tooltip } from "../../../ui";
+import { Banner, Button, ConfirmDialog, Dialog, Menu, Tooltip } from "../../../ui";
 import { useProjectTrust } from "../../projects/useProjectTrust";
 import { MergePanel } from "../../source/merge/MergePanel";
 import { openPopout } from "../../terminal/popout";
@@ -54,6 +54,7 @@ export function AgentActions({
     rebaseStatus.isFetchedAfterMount && !rebaseStatus.isFetching && !rebaseStatus.error && rebaseStatus.data?.owned;
   const conflict = rebaseConflict ? rebaseStatus.data?.files : preflightConflict;
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [rebaseAsked, setRebaseAsked] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [edit, setEdit] = useState<EditIntent>();
@@ -94,6 +95,8 @@ export function AgentActions({
       setConflict(undefined);
       refresh();
     });
+  // A rebase stops the agent tool first, so a tool that still runs stops only once the user agrees.
+  const askReflect = () => (sessionAlive && !task.toolExited ? setRebaseAsked(true) : void reflect());
   const runTest = () =>
     run(async () => {
       if (
@@ -142,7 +145,7 @@ export function AgentActions({
         )}
         {task.worktreePath && (
           <>
-            <Button disabled={blocked} onClick={() => void reflect()}>
+            <Button disabled={blocked} onClick={askReflect}>
               기준 반영
             </Button>
             <Menu
@@ -242,7 +245,7 @@ export function AgentActions({
                 </Button>
               </>
             ) : (
-              <Button disabled={blocked} onClick={() => void reflect()}>
+              <Button disabled={blocked} onClick={askReflect}>
                 기준 반영 실행
               </Button>
             )
@@ -254,6 +257,19 @@ export function AgentActions({
             : "변경 내용을 확인해 충돌을 해결하세요."}
         </Banner>
       )}
+      <ConfirmDialog
+        open={rebaseAsked}
+        title={`기준 반영 · ${task.title}`}
+        body="에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 이어서 지시하려면 [재개]를 누르세요."
+        confirmLabel="기준 반영"
+        tone="primary"
+        disabled={blocked}
+        onConfirm={() => {
+          setRebaseAsked(false);
+          void reflect();
+        }}
+        onCancel={() => setRebaseAsked(false)}
+      />
       <Dialog open={mergeOpen} onOpenChange={setMergeOpen} title="충돌 해결" width={1100}>
         {mergeOpen && (
           <MergePanel

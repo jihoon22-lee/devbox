@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { TooltipProvider, useToasts } from "../../../ui";
@@ -8,6 +8,14 @@ import { task } from "../test-fixtures";
 import { AgentActions } from "./AgentActions";
 
 const changes = { base: "main", ahead: 1, behind: 0, headOid: "h1", baseOid: "b1", files: [] };
+const CLOSES =
+  "확인하면 먼저 이 에이전트 도구를 멈춥니다. 성공하면 작업을 닫고, 자동 정리가 켜져 있으면 작업 폴더와 로컬 브랜치도 지웁니다. 닫힌 작업에는 이어서 지시할 수 없습니다.";
+const REBASE = "에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 이어서 지시하려면 [재개]를 누르세요.";
+async function confirmRebase() {
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+}
 async function setup(inline = false, trustRequired = false) {
   const wire = new ProjectWire({ trustNotRequired: !trustRequired });
   const item = { ...task("a1", "idle"), ...(inline ? { worktreePath: null, branch: null } : {}) };
@@ -174,7 +182,7 @@ test("rebase conflict offers resolution instruction and abort; review and config
       },
     }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  await confirmRebase();
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
   await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
   await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(2));
@@ -186,7 +194,7 @@ test("rebase conflict offers resolution instruction and abort; review and config
     text: expect.stringContaining("a.txt. 충돌을 해결하고 git rebase --continue"),
   });
   await act(async () => wire.reply("agents.send", task("a1")));
-  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  await confirmRebase();
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(2));
   await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
   await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(4));
@@ -286,4 +294,71 @@ test("the resolution instruction is held while the agent waits for a choice in i
   expect(wire.requests("agents.send")).toHaveLength(0);
   view.rerender(node("idle"));
   await waitFor(() => expect(screen.getByRole("button", { name: "해결 지시 보내기" })).toBeEnabled());
+});
+
+test("PR·병합 확인 창은 성공하면 작업을 닫는다고 알린다", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "병합" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "병합 커밋" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  await act(async () => wire.reply("agents.changes", changes));
+  const merge = await screen.findByRole("dialog", { name: "main에 병합 · 작업 a1" });
+  await waitFor(() => expect(merge).toHaveTextContent("HEAD h1 · 기준 b1"));
+  expect(merge).toHaveTextContent("성공하면 작업을 닫고");
+  // The sentence ends the body, after the refs the user confirms.
+  expect(merge).toHaveAccessibleDescription(expect.stringMatching(/기준 b1\s확인하면 먼저 .*할 수 없습니다\.$/));
+  expect(merge).toHaveTextContent(CLOSES);
+  await userEvent.click(within(merge).getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await userEvent.click(screen.getByRole("button", { name: "PR" }));
+  await waitFor(() => expect(wire.requests("agents.commits")).toHaveLength(1));
+  await act(async () => wire.reply("agents.commits", { items: [] }));
+  await userEvent.click(await screen.findByRole("button", { name: "내용 확인" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(2));
+  await act(async () => wire.reply("agents.changes", changes));
+  const pr = await screen.findByRole("dialog", { name: "PR 만들기 · 작업 a1" });
+  await waitFor(() => expect(pr).toHaveTextContent("HEAD h1 · 기준 b1"));
+  expect(pr).toHaveTextContent("성공하면 작업을 닫고");
+  expect(pr).toHaveAccessibleDescription(expect.stringMatching(/PR 제목: 작업 a1[\s\S]*할 수 없습니다\.$/));
+  expect(pr).toHaveTextContent(CLOSES);
+  expect(wire.requests("agents.merge")).toHaveLength(0);
+  expect(wire.requests("agents.pr")).toHaveLength(0);
+});
+
+test("도구가 살아 있으면 [기준 반영]은 확인한 뒤에만 보낸다", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(dialog).toHaveAccessibleDescription(REBASE);
+  expect(within(dialog).getByRole("button", { name: "취소" })).toHaveFocus();
+  await userEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const again = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(within(again).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  expect(wire.request("agents.rebase").params).toEqual({ id: "a1" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+test.each([
+  { sessionAlive: true, toolExited: true },
+  { sessionAlive: false, toolExited: false },
+])("도구가 살아 있지 않으면 [기준 반영]은 확인 없이 보낸다 %o", async ({ sessionAlive, toolExited }) => {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  render(
+    <TooltipProvider>
+      <RpcProvider client={wire.client}>
+        <AgentActions task={{ ...task("a1", "review"), toolExited }} sessionAlive={sessionAlive} />
+      </RpcProvider>
+    </TooltipProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+  await act(async () => wire.reply("agents.rebase_status", { owned: false, files: [] }));
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

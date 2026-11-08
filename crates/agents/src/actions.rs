@@ -156,6 +156,14 @@ impl AgentsService {
                 return Err(AgentsError::OperationInProgress.into());
             }
         }
+        // A folder that is already dirty is refused while the tool still runs, as merge and PR do.
+        // The check after the stop below still catches what changed while it stopped.
+        if !devbox_git::status(&wt).await.map_err(git_failure)?.clean {
+            return Err(AgentsError::WorktreeDirty {
+                files: self.dirty_paths(&wt).await?,
+            }
+            .into());
+        }
         self.quiesce(&task).await?;
         self.update(id, |task| {
             let exited = !task.tool_exited;
