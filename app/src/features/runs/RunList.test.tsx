@@ -198,6 +198,8 @@ test("정의 없는 살아 있는 서비스는 [로그]·[중지]만 보인다",
   wire.runs = [{ ...runFixture }, orphan];
   show(wire);
   const table = await screen.findByRole("table", { name: "정의 없는 실행 목록" });
+  // A sub-group of 서비스, one heading level below it.
+  expect(screen.getByRole("heading", { level: 4, name: "정의 없는 실행 1" })).toBeVisible();
   const labels = within(table)
     .getAllByRole("button")
     .map((button) => button.getAttribute("aria-label"));
@@ -220,4 +222,21 @@ test("정의 없는 살아 있는 서비스는 [로그]·[중지]만 보인다",
   // Without its definition the run cannot start again, so the stop has no undo.
   expect(screen.queryByRole("button", { name: "되돌리기" })).not.toBeInTheDocument();
   await waitFor(() => expect(screen.queryByRole("table", { name: "정의 없는 실행 목록" })).not.toBeInTheDocument());
+});
+test("정의 id가 같은 두 정의 없는 실행은 PID로 구분된다", async () => {
+  const wire = new RunWire();
+  // For example the same service in the main checkout and in a worktree.
+  const main: Run = { ...runFixture, id: "orphan-main", defId: "api", pid: 222 };
+  const worktree: Run = { ...runFixture, id: "orphan-worktree", defId: "api", pid: 333 };
+  wire.runs = [{ ...runFixture }, main, worktree];
+  show(wire);
+  const table = await screen.findByRole("table", { name: "정의 없는 실행 목록" });
+  const labels = within(table)
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
+  expect(labels).toEqual(["api PID 222 로그", "api PID 222 중지", "api PID 333 로그", "api PID 333 중지"]);
+  expect(within(table).getByText(/PID 333/)).toBeVisible();
+  await userEvent.click(within(table).getByRole("button", { name: "api PID 333 중지" }));
+  await waitFor(() => expect(wire.requests("runtime.stop")).toHaveLength(1));
+  expect(wire.request("runtime.stop").params).toEqual({ runId: "orphan-worktree" });
 });

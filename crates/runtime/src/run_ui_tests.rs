@@ -262,7 +262,8 @@ async fn published_start_has_a_readable_log_before_the_wrapper_and_restart_prese
 }
 
 /// Starts service `api` as a recorded live run, then deletes its definition.
-/// The unit name is unique, so a stop only finds the unit missing.
+/// The unit name is unique, so a stop only finds the unit missing. That stop
+/// still asks the user systemd manager, like the CLI runtime fixtures do.
 async fn orphaned_api(f: &Fixture) -> StoredRun {
     f.runs
         .define(DefineRun {
@@ -360,6 +361,76 @@ async fn list_includes_live_service_runs_whose_definition_was_removed() {
     assert_eq!(defs, ["task-256", "web"]);
     let runs: Vec<_> = next.runs.iter().map(|run| run.id.as_str()).collect();
     assert_eq!(runs, ["run-2"], "a later page never repeats the orphan");
+}
+
+fn json_len(value: &impl serde::Serialize) -> usize {
+    serde_json::to_vec(value).expect("measure").len()
+}
+
+fn padded(id: &str, pad: usize) -> RunDef {
+    RunDef::Task(TaskDef {
+        id: id.into(),
+        command: "true".into(),
+        env: [("PAD".to_owned(), "x".repeat(pad))].into(),
+        ..Default::default()
+    })
+}
+
+fn local_len(def: &RunDef) -> usize {
+    json_len(&Definition {
+        source: DefinitionSource::ThisPc,
+        def: def.clone(),
+    })
+}
+
+fn def_ids(page: &DefinitionList) -> Vec<&str> {
+    page.defs.iter().map(|row| row.def.id()).collect()
+}
+
+#[tokio::test]
+async fn a_full_first_page_keeps_the_orphan_and_moves_a_definition_to_the_next() {
+    let f = Fixture::new().await;
+    let orphan = orphaned_api(&f).await;
+    let list = |cursor| {
+        f.runs.list(ListRuns {
+            project_id: f.project.clone(),
+            cursor,
+        })
+    };
+    // The page that holds only the orphan measures everything around the definitions.
+    let orphan_len = json_len(&orphan.run);
+    let around = json_len(&list(None).await.expect("orphan only")) - orphan_len;
+    // Two local definitions fill the page to within half an orphan of the budget.
+    let first = padded("big-a", 390_000);
+    let rest = crate::service::PAGE_BYTES
+        - orphan_len / 2
+        - around
+        - local_len(&first)
+        - 1
+        - local_len(&padded("big-b", 0));
+    let second = padded("big-b", rest);
+    let project = f.project.clone();
+    f.db.write(move |tx| {
+        crate::store::define(tx, &project, &first)?;
+        crate::store::define(tx, &project, &second)
+    })
+    .await
+    .expect("fixture definitions");
+    let page = list(None).await.expect("first page");
+    assert!(json_len(&page) <= crate::service::PAGE_BYTES);
+    assert_eq!(
+        page.runs,
+        [orphan.run],
+        "the orphan stays on the first page"
+    );
+    assert_eq!(def_ids(&page), ["big-a"]);
+    let next = list(page.next_cursor.clone()).await.expect("next page");
+    assert_eq!(
+        def_ids(&next),
+        ["big-b"],
+        "the displaced definition moves on"
+    );
+    assert!(next.runs.is_empty());
 }
 
 #[tokio::test]

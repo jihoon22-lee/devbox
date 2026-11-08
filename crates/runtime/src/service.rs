@@ -160,6 +160,16 @@ impl RuntimeService {
             trust: state.trust,
             next_cursor: None,
         };
+        // Services without a definition appear only on this page. A definition
+        // after the first that would leave too little room for them moves to the
+        // next page; the first keeps the whole budget `validate_definition` promises.
+        let reserve = if orphans.is_empty() {
+            0
+        } else {
+            serde_json::to_vec(&orphans)
+                .internal("measure execution list")?
+                .len()
+        };
         let mut accepted = 0;
         let mut previous_cursor = None;
         while let Some((shadowed, def)) = rows.next() {
@@ -180,7 +190,12 @@ impl RuntimeService {
                 page.defs.push(def);
             }
             page.next_cursor = Some(cursor.clone());
-            if page_bytes(&page)? > PAGE_BYTES {
+            let limit = if accepted == 0 {
+                PAGE_BYTES
+            } else {
+                PAGE_BYTES.saturating_sub(reserve)
+            };
+            if page_bytes(&page)? > limit {
                 if run.is_some() {
                     page.runs.pop();
                 }
@@ -209,8 +224,8 @@ impl RuntimeService {
                 break;
             }
         }
-        // Services without a definition follow the definitions, within the bytes
-        // those left on the page. A later page never repeats them.
+        // Services without a definition follow the definitions. Only a first
+        // definition near the budget can still leave too little room for them.
         for run in orphans {
             page.runs.push(run);
             if page_bytes(&page)? > PAGE_BYTES {

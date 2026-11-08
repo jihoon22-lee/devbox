@@ -233,6 +233,7 @@ export function RunList({
     </div>
   );
 }
+const processLabel = (run: Run) => (run.pid == null ? `실행 ID ${run.id}` : `PID ${run.pid}`);
 /** Without a definition a service can no longer start, so only its log and stop remain. */
 function OrphanRuns({
   runs,
@@ -248,11 +249,16 @@ function OrphanRuns({
   onStop: (run: Run) => void;
 }) {
   if (runs.length === 0) return null;
+  // Runs of one definition id (for example in two worktrees) are also named by their process.
+  const name = (run: Run) =>
+    runs.some((other) => other.id !== run.id && other.defId === run.defId)
+      ? `${run.defId} ${processLabel(run)}`
+      : run.defId;
   return (
     <section aria-label="정의 없는 실행">
-      <h3>
+      <h4>
         정의 없는 실행 <small>{runs.length}</small>
-      </h3>
+      </h4>
       <DataTable
         label="정의 없는 실행 목록"
         rows={runs}
@@ -266,7 +272,7 @@ function OrphanRuns({
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label={`${run.defId} 로그`}
+                  aria-label={`${name(run)} 로그`}
                   aria-pressed={selected !== undefined && "definitionId" in selected && selected.runId === run.id}
                   onClick={() => onSelect({ definitionId: run.defId, runId: run.id })}
                 >
@@ -274,7 +280,7 @@ function OrphanRuns({
                   {run.defId}
                 </Button>
                 <span>
-                  정의 없음 · {resultLabel(run)} · 재시작 {run.restarts}회
+                  정의 없음 · {processLabel(run)} · {resultLabel(run)} · 재시작 {run.restarts}회
                 </span>
               </div>
             ),
@@ -288,7 +294,7 @@ function OrphanRuns({
                   size="sm"
                   disabled={busy || !liveRun(run)}
                   onClick={() => onStop(run)}
-                  aria-label={`${run.defId} 중지`}
+                  aria-label={`${name(run)} 중지`}
                 >
                   중지
                 </Button>
