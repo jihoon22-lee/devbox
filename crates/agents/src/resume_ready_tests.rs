@@ -166,14 +166,25 @@ impl Ended {
         let launch = self.binding().await.launch_id;
         self.claude_from(launch, payload).await;
     }
-    async fn send(&self) -> AgentTask {
+    async fn try_send(&self) -> Result<AgentTask> {
         self.svc
             .send(SendToAgent {
                 id: "a".into(),
                 text: "owned next instruction".into(),
             })
             .await
-            .expect("owned send")
+    }
+    async fn send(&self) -> AgentTask {
+        self.try_send().await.expect("owned send")
+    }
+    /// The output watcher judges Codex ready at its prompt, from a pass that read the task now.
+    async fn ready(&self) {
+        let seen = crate::watch::Snapshot {
+            task: self.task().await,
+            binding: Some(self.binding().await),
+        };
+        let end = crate::service::CodexTurnEnd::Ready(Box::new(seen));
+        self.svc.complete_codex("a", end).await.expect("judged");
     }
     /// Removes the owned fake terminal.
     async fn close(&self) {
@@ -339,8 +350,129 @@ fn tracker_save_keeps_a_cleared_ready_marker() {
     });
 }
 
+#[test]
+fn unsent_send_after_resume_restores_the_ready_marker() {
+    with_fake_tmux(
+        "unsent_send_after_resume_restores_the_ready_marker",
+        || async {
+            let f = Ended::new("codex", Some("primary")).await;
+            f.svc.resume("a").await.expect("resume");
+            let resumed = f.binding().await;
+            assert!(resumed.resumed_session);
+            f.tool_started().await;
+            let mut attention = f.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+            // tmux takes none of the instruction, so Codex never gets it.
+            fail_tmux(Some("load-buffer"));
+            let error = f.try_send().await.expect_err("unsent");
+            assert!(
+                matches!(error, devbox_protocol::Fail::Internal(_)),
+                "{error:?}"
+            );
+            let task = f.task().await;
+            assert!(task.follow_ups.is_empty());
+            assert_eq!((task.state, task.attention), (AgentState::Running, None));
+            assert_eq!(
+                f.binding().await,
+                resumed,
+                "still waits for its first instruction"
+            );
+            // Codex sits at its prompt: the watcher's judgement ends the wait, once.
+            f.ready().await;
+            let idle = f.task().await;
+            assert_eq!(idle.state, AgentState::Idle);
+            let shown = idle.attention.clone().expect("attention");
+            assert_eq!(
+                (shown.kind.as_str(), shown.message.as_str()),
+                ("idle", "다음 지시를 기다립니다")
+            );
+            assert!(!f.binding().await.resumed_session);
+            f.ready().await;
+            assert_eq!(f.task().await, idle);
+            assert_eq!(notices(&mut attention), 1);
+            fail_tmux(None);
+            f.close().await;
+        },
+    );
+}
+
+#[test]
+fn delivered_send_after_resume_keeps_the_marker_cleared() {
+    with_fake_tmux(
+        "delivered_send_after_resume_keeps_the_marker_cleared",
+        || async {
+            // Delivered, and pasted with its delivery unknown: Codex may have the instruction.
+            for failing in [None, Some("paste-buffer")] {
+                let f = Ended::new("codex", Some("primary")).await;
+                f.svc.resume("a").await.expect("resume");
+                assert!(f.binding().await.resumed_session);
+                f.tool_started().await;
+                let mut attention = f.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+                if let Some(operation) = failing {
+                    fail_tmux(Some(operation));
+                }
+                let sent = f.try_send().await;
+                match failing {
+                    None => assert_eq!(sent.expect("delivered").state, AgentState::Running),
+                    Some(_) => assert!(
+                        matches!(
+                            sent,
+                            Err(devbox_protocol::Fail::Domain(AgentsError::DeliveryUnknown))
+                        ),
+                        "{sent:?}"
+                    ),
+                }
+                assert!(!f.binding().await.resumed_session, "{failing:?}");
+                // An unsent send next cleared no marker, so it puts none back.
+                fail_tmux(Some("load-buffer"));
+                f.try_send().await.expect_err("unsent");
+                fail_tmux(None);
+                assert!(!f.binding().await.resumed_session, "{failing:?}");
+                f.ready().await;
+                let task = f.task().await;
+                assert_eq!(task.state, AgentState::Running, "{failing:?}");
+                assert_eq!(notices(&mut attention), 0, "{failing:?}");
+                f.close().await;
+                f.svc.shutdown().await;
+            }
+        },
+    );
+}
+
+#[test]
+fn claude_session_start_while_waiting_keeps_waiting() {
+    with_fake_tmux(
+        "claude_session_start_while_waiting_keeps_waiting",
+        || async {
+            let f = Ended::new("claude", Some("claude-session")).await;
+            f.svc.resume("a").await.expect("resume");
+            // The watcher saw a prompt sit still on Claude's screen, its folder trust say.
+            let seen = crate::watch::Snapshot {
+                task: f.task().await,
+                binding: Some(f.binding().await),
+            };
+            f.svc.output_event(seen, true).await.expect("watched");
+            let waiting = f.task().await;
+            assert_eq!(waiting.state, AgentState::Waiting);
+            assert_eq!(
+                waiting.attention.as_ref().expect("attention").kind,
+                "output"
+            );
+            let mut attention = f.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+            f.claude(session_start("resume")).await;
+            assert_eq!(f.task().await, waiting);
+            assert!(f.binding().await.resumed_session);
+            assert_eq!(notices(&mut attention), 0);
+            f.close().await;
+        },
+    );
+}
+
 const FAKE_TMUX: &str = r#"#!/bin/sh
 live=$DEVBOX_RESUME_READY_LIVE
+if [ -f "$live.fail" ] && [ "$(cat "$live.fail")" = "$5" ]; then
+  if [ "$5" = load-buffer ]; then cat > /dev/null; fi
+  exit 1
+fi
 case "$5" in
  has-session)
    if [ -f "$live" ] && [ "$(cat "$live")" = "${7#=}" ]; then exit 0; fi
@@ -357,6 +489,18 @@ case "$5" in
 esac
 exit 0
 "#;
+
+/// The fake `tmux` fails `operation` (a tmux command) from now on, or nothing.
+fn fail_tmux(operation: Option<&str>) {
+    let fail = format!(
+        "{}.fail",
+        std::env::var("DEVBOX_RESUME_READY_LIVE").expect("fake")
+    );
+    match operation {
+        Some(operation) => fs::write(fail, operation).expect("owned fake failure"),
+        None => fs::remove_file(fail).expect("owned fake failure"),
+    }
+}
 
 /// Runs `body` in a child test process whose `tmux` is an owned fake holding one session, as the
 /// resume rollback tests do. `test` is the test's name in this module.

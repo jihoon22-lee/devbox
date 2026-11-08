@@ -517,6 +517,63 @@ async fn codex_views_over_a_ready_prompt_wait_instead() {
     }
 }
 
+#[tokio::test]
+async fn codex_ready_with_a_stale_snapshot_after_a_send_keeps_running() {
+    use devbox_protocol::Topic;
+    let watched = fixture::Watched::new(true, None).await;
+    let mut attention = watched.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+    // The watcher read the task just before a send's reserve,
+    let (mut task, mut binding) = (watched.task().await, watched.binding().await);
+    let stale = Snapshot {
+        task: task.clone(),
+        binding: Some(binding.clone()),
+    };
+    // which records the instruction and clears the ready marker, as `reserve_instruction` does.
+    task.follow_ups.push(crate::model::FollowUp {
+        at_ms: now_ms(),
+        text: "owned instruction".into(),
+        instruction_id: Some("owned".into()),
+        delivery: Some(crate::model::InstructionDelivery::Pending),
+    });
+    assert!(apply_event(
+        &mut task,
+        &AgentEvent::UserInstructed,
+        now_ms()
+    ));
+    binding.resumed_session = false;
+    let reserved = (task.clone(), binding.clone());
+    watched
+        .svc
+        .db
+        .write(move |tx| {
+            store::put(tx, &task)?;
+            store::put_binding(tx, "a", &binding)
+        })
+        .await
+        .expect("owned reserve");
+    let judged = CodexTurnEnd::Ready(Box::new(stale));
+    watched
+        .svc
+        .complete_codex("a", judged)
+        .await
+        .expect("judged");
+    assert_eq!((watched.task().await, watched.binding().await), reserved);
+    // A current read of the launch, which no longer waits for its first instruction, ends
+    // nothing either.
+    let seen = Snapshot {
+        task: reserved.0.clone(),
+        binding: Some(reserved.1.clone()),
+    };
+    let judged = CodexTurnEnd::Ready(Box::new(seen));
+    watched
+        .svc
+        .complete_codex("a", judged)
+        .await
+        .expect("judged");
+    assert_eq!((watched.task().await, watched.binding().await), reserved);
+    assert_eq!(fixture::notices(&mut attention), Vec::<String>::new());
+}
+
 #[path = "watch_dialog_tests.rs"]
 mod dialogs;
 #[path = "watch_fixture.rs"]
