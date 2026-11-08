@@ -131,7 +131,10 @@ impl AgentsService {
                     if task.state == AgentState::Waiting {
                         return Ok(Err(AgentsError::AwaitingInput));
                     }
-                    let launch = store::binding(tx, &id)?.and_then(|binding| binding.launch_id);
+                    let binding = store::binding(tx, &id)?;
+                    let launch = binding
+                        .as_ref()
+                        .and_then(|binding| binding.launch_id.clone());
                     let before = task.clone();
                     task.follow_ups.push(FollowUp {
                         at_ms: now_ms(),
@@ -154,6 +157,12 @@ impl AgentsService {
                         epoch: task.activity_seq,
                         before,
                     };
+                    // A resumed launch gets its first instruction: the tool's turn says when it
+                    // waits again, not its prompt.
+                    if let Some(mut binding) = binding.filter(|binding| binding.resumed_session) {
+                        binding.resumed_session = false;
+                        store::put_binding(tx, &id, &binding)?;
+                    }
                     store::put(tx, &task)?;
                     Ok(Ok((reservation, task)))
                 },

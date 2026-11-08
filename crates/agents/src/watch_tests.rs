@@ -423,8 +423,104 @@ fn every_profile_of_a_tool_family_keeps_its_patterns_and_adds_its_own() {
     }
 }
 
+/// A launch that resumed Codex's session without an instruction, at its prompt (real capture).
+const RESUME_READY: &str = include_str!("../tests/fixtures/codex-0.167.0/resume-ready.txt");
+
+#[tokio::test]
+async fn codex_resumed_ready_screen_sets_idle_once_quiet() {
+    use devbox_protocol::Topic;
+    let ready = screen(RESUME_READY);
+    assert!(!matches_waiting(&codex_patterns(), ready));
+    let mut watched = fixture::Watched::new(true, None).await;
+    let mut attention = watched.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+    let start = Instant::now();
+    watched.read(ready, start).await;
+    watched.read(ready, start + QUIET / 2).await;
+    assert_eq!(watched.task().await.state, AgentState::Running, "quiet 1 s");
+    watched.read(ready, start + QUIET).await;
+    let idle = watched.task().await;
+    assert_eq!(idle.state, AgentState::Idle);
+    let shown = idle.attention.clone().expect("attention");
+    assert_eq!(
+        (shown.kind.as_str(), shown.message.as_str()),
+        ("idle", "다음 지시를 기다립니다")
+    );
+    assert!(!watched.binding().await.resumed_session, "judged once");
+    // The same screen later changes nothing more.
+    for step in [2, 3] {
+        watched.read(ready, start + QUIET * step).await;
+    }
+    assert_eq!(watched.task().await, idle);
+    let notices = fixture::notices(&mut attention);
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(notices[0].contains(r#""state":"idle""#), "{notices:?}");
+}
+
+/// Five passes, 2 s apart, over `shown` as the pane of a fixture task: the task, its binding and
+/// the notices published must stay as they were.
+async fn unchanged(resumed: bool, turn: Option<&str>, shown: &str) {
+    use devbox_protocol::Topic;
+    let mut watched = fixture::Watched::new(resumed, turn).await;
+    let mut attention = watched.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
+    let (task, binding) = (watched.task().await, watched.binding().await);
+    let start = Instant::now();
+    for step in 0..5 {
+        watched.read(shown, start + QUIET * step).await;
+    }
+    assert_eq!(watched.task().await, task, "{resumed} {turn:?}");
+    assert_eq!(watched.binding().await, binding, "{resumed} {turn:?}");
+    assert_eq!(fixture::notices(&mut attention), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn codex_ready_screen_without_marker_or_after_a_turn_keeps_running() {
+    let ready = screen(RESUME_READY);
+    // A first launch, which hands Codex the task's instruction, and a resumed one whose first
+    // turn began.
+    unchanged(false, None, ready).await;
+    unchanged(true, Some("first-turn"), ready).await;
+}
+
+#[tokio::test]
+async fn codex_working_screen_is_not_ready() {
+    // Codex draws its prompt box and footer while it works too.
+    let working = screen(include_str!("../tests/fixtures/codex-0.164.0/working.txt"));
+    assert!(!shows_prompt(working));
+    unchanged(true, None, working).await;
+}
+
+#[tokio::test]
+async fn codex_views_over_a_ready_prompt_wait_instead() {
+    // The last rows of these are the ready prompt's; the waiting patterns read the rest of the
+    // screen. The paused goal's dialog is what `codex resume` opens on its own.
+    for (name, capture) in [
+        (
+            "dialog-resume-goal-200x50",
+            include_str!("../tests/fixtures/codex-0.166.0/dialog-resume-goal-200x50.txt"),
+        ),
+        (
+            "form-subagent-thread",
+            include_str!("../tests/fixtures/codex-0.166.0/form-subagent-thread.txt"),
+        ),
+    ] {
+        let shown = screen(capture);
+        assert!(shows_prompt(shown), "{name}");
+        let mut watched = fixture::Watched::new(true, None).await;
+        let start = Instant::now();
+        for step in 0..3 {
+            watched.read(shown, start + QUIET * step).await;
+        }
+        let task = watched.task().await;
+        assert_eq!(task.state, AgentState::Waiting, "{name}");
+        assert_eq!(task.attention.expect("attention").kind, "output", "{name}");
+        assert!(watched.binding().await.resumed_session, "{name}");
+    }
+}
+
 #[path = "watch_dialog_tests.rs"]
 mod dialogs;
+#[path = "watch_fixture.rs"]
+mod fixture;
 #[path = "watch_form_tests.rs"]
 mod forms;
 #[path = "watch_prompt_tests.rs"]

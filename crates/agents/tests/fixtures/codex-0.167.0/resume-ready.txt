@@ -1,0 +1,56 @@
+# 실제 녹화. codex-cli 0.167.0, 직접 시험 재실행 70b1b4f6-8ad0ac09의 cases/H2.json captures[8](마지막, t=1456079.191).
+# [재개]가 지시 없이 `codex resume <id>`로 연 작업이 입력창에서 다음 지시를 기다리는 화면이다. 위의 대화는 이어 받은 지난 launch의 것이다.
+# 정리: 소유 fixture 경로는 /owned/project/fixture-task로, 작업·브랜치 이름은 fixture-task·agent/fixture-task로 가렸다(3행·49행, 가린 줄은 짧아졌다).
+# 그 밖의 줄, 줄 수(50), 공백 한 칸인 빈 줄과 줄 끝 공백은 capture 그대로다. 홈 경로·계정·이메일·토큰은 화면에 없었다.
+# 아래 --- 줄 뒤가 pane 내용이다.
+---
+ 
+  >_ OpenAI Codex (v0.167.0)
+     /owned/project/fixture-task
+  permissions: YOLO mode
+ 
+ 
+› Reply with OK and stop.
+ 
+ 
+• OK
+ 
+  Worked for 4s • 19:21                                                                                                                                                                                 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+› Ask Codex to do anything
+ 
+  GPT-6-Astra high · /owned/project/fixture-task · GPT-6-Astra · high · fixture-task · agent/fixture-task · No changes · Ready · Full Access ·…
+  ← for agents · ? for shortcuts                                                                                                                                               ⚠ 1 warning · f2 to view
