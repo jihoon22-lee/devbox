@@ -1,6 +1,7 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ErrorCode } from "../../rpc/client";
+import type { Run } from "../../rpc/gen/rpc";
 import { messageFor } from "../../rpc/messages";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useToasts } from "../../ui";
@@ -190,4 +191,33 @@ test("stop undo survives leaving the runs page and stopped containers cannot be 
   expect(wire.request("runtime.restart").params).toEqual({ runId: "run-1" });
   act(() => wire.reply("runtime.restart", runFixture));
   expect(await screen.findByText("web 다시 시작됨")).toBeVisible();
+});
+test("정의 없는 살아 있는 서비스는 [로그]·[중지]만 보인다", async () => {
+  const wire = new RunWire();
+  const orphan: Run = { ...runFixture, id: "orphan-run", defId: "api", pid: 222 };
+  wire.runs = [{ ...runFixture }, orphan];
+  show(wire);
+  const table = await screen.findByRole("table", { name: "정의 없는 실행 목록" });
+  const labels = within(table)
+    .getAllByRole("button")
+    .map((button) => button.getAttribute("aria-label"));
+  expect(labels).toEqual(["api 로그", "api 중지"]);
+  for (const action of ["시작", "재시작", "수정"])
+    expect(screen.queryByRole("button", { name: `api ${action}` })).not.toBeInTheDocument();
+  const log = within(table).getByRole("button", { name: "api 로그" });
+  expect(log).toHaveAttribute("aria-pressed", "false");
+  wire.selected = orphan;
+  await userEvent.click(log);
+  expect(log).toHaveAttribute("aria-pressed", "true");
+  await waitFor(() => expect(wire.request("runtime.get", -1).params).toEqual({ runId: "orphan-run" }));
+  expect(await screen.findByRole("heading", { name: "api" })).toBeVisible();
+  await userEvent.click(within(table).getByRole("button", { name: "api 중지" }));
+  await waitFor(() => expect(wire.requests("runtime.stop")).toHaveLength(1));
+  expect(wire.request("runtime.stop").params).toEqual({ runId: "orphan-run" });
+  wire.runs = [{ ...runFixture }];
+  act(() => wire.reply("runtime.stop", { ...orphan, state: "stopped", pid: null }));
+  expect(await screen.findByText("api 중지됨")).toBeVisible();
+  // Without its definition the run cannot start again, so the stop has no undo.
+  expect(screen.queryByRole("button", { name: "되돌리기" })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole("table", { name: "정의 없는 실행 목록" })).not.toBeInTheDocument());
 });

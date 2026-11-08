@@ -196,6 +196,7 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                 busy={actions.busy}
                 onSelect={setSelection}
                 onAction={actions.action}
+                onStopOrphan={actions.stopOrphan}
                 onEdit={(definition) => setEditor({ definition })}
                 onContainerAction={actions.containerAction}
               />

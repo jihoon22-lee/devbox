@@ -5,7 +5,7 @@ use devbox_projects::{
     run_config::{RunConfigChange, RunConfigEdit},
 };
 use devbox_protocol::{Done, Fail, Internal};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
@@ -99,6 +99,12 @@ impl RuntimeService {
             .map_err(project_error)?;
         let (local, rev) = self.local(&p.project_id).await?;
         let merged = merge(state.config.definitions(), local)?;
+        // The first page also lists live services whose definition is gone
+        // (edited, branch switch, id change), so their log and stop stay reachable.
+        let defined: Option<HashSet<String>> = p
+            .cursor
+            .is_none()
+            .then(|| merged.defs.iter().map(|d| d.def.id().to_owned()).collect());
         let mut rows: Vec<_> = merged
             .defs
             .into_iter()
@@ -123,7 +129,7 @@ impl RuntimeService {
             .map(|(_, d)| d.def.id().to_owned())
             .collect();
         let project = p.project_id.clone();
-        let (representatives, run_rev) = self
+        let (representatives, orphans, run_rev) = self
             .db
             .read(move |tx| {
                 let mut runs = HashMap::new();
@@ -132,7 +138,16 @@ impl RuntimeService {
                         runs.insert(id, run.run);
                     }
                 }
-                Ok((runs, current_rev(tx)?))
+                let orphans: Vec<Run> = match defined {
+                    Some(defined) => crate::run_store::live_services(tx, &project, None)?
+                        .into_iter()
+                        .map(|stored| stored.run)
+                        .filter(|run| !defined.contains(&run.def_id))
+                        .take(PAGE_ROWS)
+                        .collect(),
+                    None => Vec::new(),
+                };
+                Ok((runs, orphans, current_rev(tx)?))
             })
             .await
             .internal("read definition invocation snapshot")?;
@@ -165,10 +180,7 @@ impl RuntimeService {
                 page.defs.push(def);
             }
             page.next_cursor = Some(cursor.clone());
-            let bytes = serde_json::to_vec(&page)
-                .internal("measure execution list")?
-                .len();
-            if bytes > PAGE_BYTES {
+            if page_bytes(&page)? > PAGE_BYTES {
                 if run.is_some() {
                     page.runs.pop();
                 }
@@ -194,6 +206,15 @@ impl RuntimeService {
                 break;
             }
             if accepted == PAGE_ROWS {
+                break;
+            }
+        }
+        // Services without a definition follow the definitions, within the bytes
+        // those left on the page. A later page never repeats them.
+        for run in orphans {
+            page.runs.push(run);
+            if page_bytes(&page)? > PAGE_BYTES {
+                page.runs.pop();
                 break;
             }
         }
@@ -343,6 +364,12 @@ impl RuntimeService {
             rev: rev.to_string(),
         })
     }
+}
+
+fn page_bytes(page: &DefinitionList) -> R<usize> {
+    Ok(serde_json::to_vec(page)
+        .internal("measure execution list")?
+        .len())
 }
 
 fn publish(hub: &Hub, project_id: &str, rev: u64) {

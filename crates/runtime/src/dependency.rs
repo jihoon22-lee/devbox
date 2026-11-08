@@ -33,7 +33,9 @@ impl RuntimeService {
         let worktree = prepared.worktree.clone();
         let id = def.id().to_owned();
         self.db
-            .read(move |tx| run_store::live_services(tx, &project, worktree.as_deref(), &id))
+            .read(move |tx| {
+                run_store::live_services(tx, &project, Some((worktree.as_deref(), &id)))
+            })
             .await
             .internal("read running dependency")
     }

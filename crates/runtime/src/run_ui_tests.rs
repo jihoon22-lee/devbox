@@ -3,6 +3,8 @@ use crate::{
     service_tests::Fixture,
     *,
 };
+use devbox_projects::{ProjectsError, RemoveProject};
+use devbox_protocol::Fail;
 
 fn recorded(project: &str, index: u64, def: &str, state: RunState) -> StoredRun {
     StoredRun {
@@ -257,4 +259,150 @@ async fn published_start_has_a_readable_log_before_the_wrapper_and_restart_prese
         std::fs::read_to_string(outside).expect("preserved"),
         "preserve"
     );
+}
+
+/// Starts service `api` as a recorded live run, then deletes its definition.
+/// The unit name is unique, so a stop only finds the unit missing.
+async fn orphaned_api(f: &Fixture) -> StoredRun {
+    f.runs
+        .define(DefineRun {
+            project_id: f.project.clone(),
+            def: RunDef::Service(ServiceDef {
+                id: "api".into(),
+                command: "true".into(),
+                ..Default::default()
+            }),
+            save_to: SaveTo::ThisPc,
+        })
+        .await
+        .expect("define api");
+    let mut run = recorded(&f.project, 1, "api", RunState::Running);
+    run.run.unit = format!(
+        "devbox-test-orphan-{}.service",
+        uuid::Uuid::new_v4().simple()
+    );
+    f.runs.save_run(&run).await.expect("started api");
+    f.runs
+        .undefine(UndefineRun {
+            project_id: f.project.clone(),
+            id: "api".into(),
+        })
+        .await
+        .expect("delete api");
+    run
+}
+
+#[tokio::test]
+async fn list_includes_live_service_runs_whose_definition_was_removed() {
+    let f = Fixture::new().await;
+    let orphan = orphaned_api(&f).await;
+    let project = f.project.clone();
+    f.db.write(move |tx| {
+        // 257 tasks fill the first page and the one row it reads ahead, so the
+        // defined live service `web` is beyond everything the first page reads.
+        for i in 0..257 {
+            let id = format!("task-{i:03}");
+            crate::store::define(
+                tx,
+                &project,
+                &RunDef::Task(TaskDef {
+                    id,
+                    command: "true".into(),
+                    ..Default::default()
+                }),
+            )?;
+        }
+        crate::store::define(
+            tx,
+            &project,
+            &RunDef::Service(ServiceDef {
+                id: "web".into(),
+                command: "true".into(),
+                ..Default::default()
+            }),
+        )?;
+        run_store::put(tx, &recorded(&project, 2, "web", RunState::Running))?;
+        // A finished service and live non-service runs of a gone definition stay out.
+        run_store::put(tx, &recorded(&project, 3, "gone", RunState::Exited))?;
+        for (index, kind) in [
+            (4, RunKind::Task),
+            (5, RunKind::Scheduled),
+            (6, RunKind::AgentTest),
+        ] {
+            let mut run = recorded(&project, index, "gone", RunState::Running);
+            run.run.kind = kind;
+            run_store::put(tx, &run)?;
+        }
+        Ok(())
+    })
+    .await
+    .expect("fixture runs");
+    let first = f
+        .runs
+        .list(ListRuns {
+            project_id: f.project.clone(),
+            cursor: None,
+        })
+        .await
+        .expect("first page");
+    assert_eq!(first.defs.len(), 256);
+    assert!(first.defs.iter().all(|row| row.def.id() != "api"));
+    assert_eq!(first.runs, [orphan.run], "only the orphan, once");
+    let next = f
+        .runs
+        .list(ListRuns {
+            project_id: f.project.clone(),
+            cursor: first.next_cursor,
+        })
+        .await
+        .expect("next page");
+    let defs: Vec<_> = next.defs.iter().map(|row| row.def.id()).collect();
+    assert_eq!(defs, ["task-256", "web"]);
+    let runs: Vec<_> = next.runs.iter().map(|run| run.id.as_str()).collect();
+    assert_eq!(runs, ["run-2"], "a later page never repeats the orphan");
+}
+
+#[tokio::test]
+async fn stopping_an_orphan_service_by_run_id_clears_live_services() {
+    let f = Fixture::new().await;
+    orphaned_api(&f).await;
+    let remove = || {
+        f.projects.remove(RemoveProject {
+            id: f.project.clone(),
+        })
+    };
+    assert!(
+        matches!(
+            remove().await,
+            Err(Fail::Domain(ProjectsError::InUse { .. }))
+        ),
+        "the live service still holds its project"
+    );
+    let list = || {
+        f.runs.list(ListRuns {
+            project_id: f.project.clone(),
+            cursor: None,
+        })
+    };
+    // The user stops the run that the list offers, by its run id.
+    let listed = list().await.expect("list");
+    let [run] = listed.runs.as_slice() else {
+        panic!("one orphan run: {:?}", listed.runs);
+    };
+    let stopped = f
+        .runs
+        .stop(RunId {
+            run_id: run.id.clone(),
+        })
+        .await
+        .expect("stop by run id");
+    assert_eq!(stopped.state, RunState::Stopped);
+    let project = f.project.clone();
+    let live =
+        f.db.read(move |tx| run_store::live_services(tx, &project, None))
+            .await
+            .expect("live services");
+    assert!(live.is_empty(), "{live:?}");
+    assert!(list().await.expect("list").runs.is_empty());
+    remove().await.expect("nothing holds the project any more");
 }
