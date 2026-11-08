@@ -10,6 +10,11 @@
   background: var(--bg-0);
   border-right: 1px solid var(--border);
 }
+.list:focus-visible {
+  /* The frame clips an outer ring at the list's top and left edges. */
+  box-shadow: inset var(--focus-ring);
+  border-radius: 0;
+}
 .handle {
   cursor: col-resize;
   touch-action: none;
@@ -18,6 +23,17 @@
 .handle:hover,
 .handle:focus-visible {
   background: var(--accent);
+}
+/* Holds [목록 펼치기] in the 28px column of a collapsed list. */
+.rail {
+  /* A 24px button keeps its 2px focus ring inside the column; the frame clips anything left of it. */
+  --control-lg: var(--control-sm);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--space-1);
+  background: var(--bg-0);
+  box-shadow: inset -1px 0 var(--border);
 }
 .body {
   min-width: 0;

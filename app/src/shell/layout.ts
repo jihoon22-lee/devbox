@@ -3,7 +3,10 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 interface Layout {
   listWidth: number;
+  /** The user's choice, saved across restarts. */
   listCollapsed: boolean;
+  /** A narrow frame hid the list. Never saved, so widening the frame shows the list again. */
+  listAutoCollapsed: boolean;
   bottomOpen: boolean;
   bottomHeight: number;
   toggleList(): void;
@@ -13,6 +16,10 @@ interface Layout {
 }
 export function clampSize(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+/** Whether the list is hidden, by the user or by a narrow frame. */
+export function isListCollapsed(layout: { listCollapsed: boolean; listAutoCollapsed: boolean }): boolean {
+  return layout.listCollapsed || layout.listAutoCollapsed;
 }
 const storage = createJSONStorage(() => ({
   getItem: (name: string) => {
@@ -42,9 +49,12 @@ export const useLayout = create<Layout>()(
     (set) => ({
       listWidth: 260,
       listCollapsed: false,
+      listAutoCollapsed: false,
       bottomOpen: false,
       bottomHeight: 260,
-      toggleList: () => set((s) => ({ listCollapsed: !s.listCollapsed })),
+      // A hidden list always opens, even one the user collapsed before the frame narrowed.
+      toggleList: () =>
+        set((s) => (isListCollapsed(s) ? { listCollapsed: false, listAutoCollapsed: false } : { listCollapsed: true })),
       toggleBottom: () => set((s) => ({ bottomOpen: !s.bottomOpen })),
       setListWidth: (px) => {
         if (Number.isFinite(px)) set({ listWidth: clampSize(px, 180, 480) });

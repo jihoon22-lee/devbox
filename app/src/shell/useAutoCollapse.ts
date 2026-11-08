@@ -6,7 +6,9 @@ export function useAutoCollapse(frame: RefObject<HTMLElement | null>) {
     let previous: ReturnType<typeof autoCollapse> | undefined;
     const update = (width: number, height: number) => {
       const next = autoCollapse(width, height);
-      if (next.list && !previous?.list) useLayout.setState({ listCollapsed: true });
+      // Only crossings change the list, so one opened while narrow stays open until the frame narrows again.
+      if (next.list && !previous?.list) useLayout.setState({ listAutoCollapsed: true });
+      if (!next.list && previous?.list) useLayout.setState({ listAutoCollapsed: false });
       if (next.bottom && !previous?.bottom) useLayout.setState({ bottomOpen: false });
       previous = next;
     };
