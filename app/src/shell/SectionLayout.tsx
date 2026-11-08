@@ -17,13 +17,20 @@ export function SectionLayout({ list, children }: { list: ReactNode; children: R
   const onPointerDown = useResize((start, current) =>
     setListWidth(listWidth + (current.x - start.x) / (Number(document.documentElement.style.zoom) || 1)),
   );
-  // Check focus when the store changes, before React makes the list inert and the browser drops focus to the page.
+  // Check focus when the store changes, before React re-renders. After that, the element that had focus is
+  // inert or gone and the browser has already dropped focus to the page.
   useEffect(
     () =>
       useLayout.subscribe((next, previous) => {
-        if (!next.listAutoCollapsed || isListCollapsed(previous)) return;
+        const now = isListCollapsed(next);
+        if (now === isListCollapsed(previous)) return;
         const active = document.activeElement;
-        if (active && (aside.current?.contains(active) || active === handle.current)) focusNext.current = "expand";
+        const inList = !!active && (!!aside.current?.contains(active) || active === handle.current);
+        focusNext.current = undefined;
+        // Any collapse (by the user or by a narrow frame) that hides the focused list or its separator.
+        if (now && inList) focusNext.current = "expand";
+        // Any reopen (click, Ctrl+Shift+B, or a wider frame) that removes the focused [목록 펼치기].
+        if (!now && active && active === expand.current) focusNext.current = "list";
       }),
     [],
   );
@@ -83,10 +90,7 @@ export function SectionLayout({ list, children }: { list: ReactNode; children: R
             shortcut={["Ctrl", "Shift", "B"]}
             aria-expanded={false}
             aria-controls={listId}
-            onClick={() => {
-              focusNext.current = "list";
-              toggleList();
-            }}
+            onClick={toggleList}
           />
         </div>
       )}

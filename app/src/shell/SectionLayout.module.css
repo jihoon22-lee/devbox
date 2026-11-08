@@ -44,6 +44,15 @@
   .handle {
     background: CanvasText;
   }
+  /* Forced colors drop box-shadows: draw the divider as a border, and keep the button's 2px outline off the left edge. */
+  .rail {
+    border-right: 1px solid CanvasText;
+    justify-content: flex-start;
+    padding-left: 2px;
+  }
+  .list:focus-visible {
+    outline-offset: -2px;
+  }
 }
 
 .list[aria-hidden="true"] {

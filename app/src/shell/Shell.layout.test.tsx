@@ -156,16 +156,27 @@ test("자동으로 접힐 때 목록 안의 포커스는 '목록 펼치기'로 �
   act(() => grid.focus());
   resize(1000);
   expect(expand()).toHaveFocus();
-  await userEvent.click(expand()!);
+  // Widening removes the focused button; focus goes into the list it opened.
   resize(1200);
+  expect(list()).toHaveFocus();
   const edge = screen.getByRole("separator", { name: "목록 너비" });
   act(() => edge.focus());
   resize(1000);
   expect(expand()).toHaveFocus();
-  // A collapse the user asks for keeps focus where it was.
+  // A collapse the user asks for moves focus the same way, and Ctrl+Shift+B brings it back.
   await userEvent.click(expand()!);
   act(() => grid.focus());
   toggleKey();
-  expect(expand()).toBeInTheDocument();
-  expect(expand()).not.toHaveFocus();
+  expect(expand()).toHaveFocus();
+  toggleKey();
+  expect(list()).toHaveFocus();
+});
+
+test("'목록 펼치기'에서 Ctrl+Shift+B로 목록을 열면 포커스가 목록으로 간다", async () => {
+  await agents(1200);
+  act(() => within(list()!).getByRole("button", { name: "격자" }).focus());
+  resize(1000);
+  expect(expand()).toHaveFocus();
+  toggleKey();
+  expect(list()).toHaveFocus();
 });

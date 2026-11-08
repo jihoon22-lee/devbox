@@ -18,15 +18,24 @@ test("rehydration accepts only finite clamped primitives and preserves actions",
   localStorage.setItem(
     "devbox.layout",
     JSON.stringify({
-      state: { listWidth: 900, bottomHeight: -10, listCollapsed: "false", bottomOpen: true, toggleList: null },
+      state: {
+        listWidth: 900,
+        bottomHeight: -10,
+        listCollapsed: "false",
+        listAutoCollapsed: true,
+        bottomOpen: true,
+        toggleList: null,
+      },
       version: 0,
     }),
   );
   await useLayout.persist.rehydrate();
+  // A stored automatic collapse is ignored: only the frame size sets it.
   expect(useLayout.getState()).toMatchObject({
     listWidth: 480,
     bottomHeight: 120,
     listCollapsed: false,
+    listAutoCollapsed: false,
     bottomOpen: true,
   });
   expect(typeof useLayout.getState().toggleList).toBe("function");
