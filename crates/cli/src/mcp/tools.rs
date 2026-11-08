@@ -231,9 +231,16 @@ fn message_for(error: &ClientError) -> Cow<'static, str> {
 mod tests {
     use super::*;
     fn rpc(code: &str, diagnostic_id: Option<&str>) -> ClientError {
+        rpc_with_detail(code, diagnostic_id, None)
+    }
+    fn rpc_with_detail(
+        code: &str,
+        diagnostic_id: Option<&str>,
+        detail: Option<&str>,
+    ) -> ClientError {
         ClientError::Rpc {
             code: code.into(),
-            detail: None,
+            detail: detail.map(|d| serde_json::value::RawValue::from_string(d.into()).unwrap()),
             diagnostic_id: diagnostic_id.map(Into::into),
         }
     }
@@ -242,7 +249,10 @@ mod tests {
         let message = message_for(&rpc("agents.delivery_unknown", None));
         assert!(message.contains("다시 보내지"), "{message}");
         assert!(!message.contains("예상하지 못한"), "{message}");
-        assert!(message.contains("devbox_agents"), "{message}");
+        assert_eq!(
+            message,
+            "전달 결과를 확인하지 못했습니다. 이미 전달됐을 수 있으니 같은 지시를 다시 보내지 말고 devbox_agents로 작업 상태와 터미널을 확인하세요."
+        );
     }
     #[test]
     fn mcp_unknown_daemon_code_names_the_code() {
@@ -252,6 +262,13 @@ mod tests {
         let with_id = message_for(&rpc("notes.conflict", Some("diag-7")));
         assert!(with_id.starts_with("notes.conflict"), "{with_id}");
         assert!(with_id.contains("diag-7"), "{with_id}");
+        let with_detail = message_for(&rpc_with_detail(
+            "notes.conflict",
+            None,
+            Some(r#"{"path":"/home/me/private"}"#),
+        ));
+        assert!(with_detail.starts_with("notes.conflict"), "{with_detail}");
+        assert!(!with_detail.contains("/home/me"), "{with_detail}");
     }
     #[test]
     fn mcp_invalid_params_is_neutral() {

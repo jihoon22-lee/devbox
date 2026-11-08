@@ -161,10 +161,14 @@ test("settings-file errors name the file and where to recover", () => {
 });
 
 test("mcp_http_unauthorized_reports_auth_or_permission", () => {
-  for (const status of [401, 403]) {
+  const action = "인증 설정(토큰·헤더)이나 OAuth 승인을 확인해 주세요.";
+  const titles = {
+    401: "서버가 인증을 받지 않았습니다(HTTP 401).",
+    403: "서버가 이 요청을 허락하지 않았습니다(HTTP 403).",
+  } as const;
+  for (const status of [401, 403] as const) {
     const message = messageFor("api.stream_rejected", { reason: "unauthorized", status });
-    expect(message.title).toContain(`HTTP ${status}`);
+    expect(message).toEqual({ title: titles[status], action });
     expect(message.title).not.toContain("하위 프로토콜");
-    expect(message.action).toContain("OAuth");
   }
 });
