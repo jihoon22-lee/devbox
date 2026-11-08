@@ -4,6 +4,7 @@ use devbox_agents::{AgentsListMethod, AgentsSend, ListAgents, SendToAgent, state
 use devbox_projects::{ListProjects, ProjectsList};
 use devbox_protocol::Method;
 use devbox_protocol::message::ClientKind;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -156,7 +157,7 @@ impl Server {
                 if !matches!(error, ClientError::Rpc { .. }) {
                     self.client = None;
                 }
-                Err(ToolResult::error(message))
+                Err(ToolResult::error(&message))
             }
             Err(_) => {
                 self.client = None;
@@ -175,9 +176,13 @@ fn runs_as_command(text: &str) -> bool {
     text.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
         .starts_with(['!', '/'])
 }
-fn message_for(error: &ClientError) -> &'static str {
-    match error {
-        ClientError::Rpc { code, .. } => match code.as_str() {
+fn message_for(error: &ClientError) -> Cow<'static, str> {
+    Cow::Borrowed(match error {
+        ClientError::Rpc {
+            code,
+            diagnostic_id,
+            ..
+        } => match code.as_str() {
             "agents.not_found" => "에이전트 작업을 찾을 수 없습니다.",
             "agents.bad_state" => "현재 상태에서는 실행할 수 없습니다.",
             "agents.session_missing" => {
@@ -192,9 +197,11 @@ fn message_for(error: &ClientError) -> &'static str {
             "agents.control_characters" => {
                 "보낼 글에 제어 문자가 있어 보내지 않았습니다. 제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요."
             }
-            "agents.invalid_input" | "invalid_params" => {
-                "에이전트 작업의 입력값이 올바르지 않습니다."
+            "agents.delivery_unknown" => {
+                "전달 결과를 확인하지 못했습니다. 이미 전달됐을 수 있으니 같은 지시를 다시 보내지 말고 devbox_agents로 작업 상태와 터미널을 확인하세요."
             }
+            "agents.invalid_input" => "에이전트 작업의 입력값이 올바르지 않습니다.",
+            "invalid_params" => "요청 값이 올바르지 않습니다. 도구 인자를 확인하세요.",
             "projects.trust_required" | "projects.trust_preview_stale" => {
                 "projects.trust_required: 프로젝트 실행 명령의 신뢰 승인이 필요합니다. 앱에서 변경 내용을 확인하고 승인해 주세요."
             }
@@ -207,17 +214,53 @@ fn message_for(error: &ClientError) -> &'static str {
                 "다시 시작하는 중이라 실행하지 않았습니다. 잠시 뒤 다시 시도해 주세요."
             }
             "method_not_found" => "이 기능을 사용할 수 없습니다.",
-            _ => "예상하지 못한 문제가 생겼습니다.",
+            _ => {
+                return Cow::Owned(match diagnostic_id {
+                    Some(id) => format!("{code}: 예상하지 못한 문제가 생겼습니다. 진단 ID: {id}"),
+                    None => format!("{code}: 예상하지 못한 문제가 생겼습니다."),
+                });
+            }
         },
         ClientError::Io(_) => "데몬에 연결할 수 없습니다. 데몬 상태를 확인해 주세요.",
         _ => {
             "데몬 연결이 끊겨 실행 결과를 확인하지 못했습니다. 작업 상태를 확인한 뒤 재시도해 주세요."
         }
-    }
+    })
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn rpc(code: &str, diagnostic_id: Option<&str>) -> ClientError {
+        ClientError::Rpc {
+            code: code.into(),
+            detail: None,
+            diagnostic_id: diagnostic_id.map(Into::into),
+        }
+    }
+    #[test]
+    fn mcp_delivery_unknown_preserves_code_and_warns_against_resend() {
+        let message = message_for(&rpc("agents.delivery_unknown", None));
+        assert!(message.contains("다시 보내지"), "{message}");
+        assert!(!message.contains("예상하지 못한"), "{message}");
+        assert!(message.contains("devbox_agents"), "{message}");
+    }
+    #[test]
+    fn mcp_unknown_daemon_code_names_the_code() {
+        let message = message_for(&rpc("notes.conflict", None));
+        assert!(message.starts_with("notes.conflict"), "{message}");
+        assert!(message.contains("예상하지 못한 문제"), "{message}");
+        let with_id = message_for(&rpc("notes.conflict", Some("diag-7")));
+        assert!(with_id.starts_with("notes.conflict"), "{with_id}");
+        assert!(with_id.contains("diag-7"), "{with_id}");
+    }
+    #[test]
+    fn mcp_invalid_params_is_neutral() {
+        let message = message_for(&rpc("invalid_params", None));
+        assert_eq!(
+            message,
+            "요청 값이 올바르지 않습니다. 도구 인자를 확인하세요."
+        );
+    }
     #[test]
     fn a_send_before_the_agent_reads_its_input_says_when_to_send_again() {
         let error = ClientError::Rpc {

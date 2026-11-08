@@ -159,3 +159,12 @@ test("settings-file errors name the file and where to recover", () => {
     expect(messageFor(code).action).toContain("설정 → 앱 진단 → [다시 설정]");
   }
 });
+
+test("mcp_http_unauthorized_reports_auth_or_permission", () => {
+  for (const status of [401, 403]) {
+    const message = messageFor("api.stream_rejected", { reason: "unauthorized", status });
+    expect(message.title).toContain(`HTTP ${status}`);
+    expect(message.title).not.toContain("하위 프로토콜");
+    expect(message.action).toContain("OAuth");
+  }
+});
