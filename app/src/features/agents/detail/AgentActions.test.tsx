@@ -10,7 +10,7 @@ import { AgentActions } from "./AgentActions";
 const changes = { base: "main", ahead: 1, behind: 0, headOid: "h1", baseOid: "b1", files: [] };
 const CLOSES =
   "확인하면 먼저 이 에이전트 도구를 멈춥니다. 성공하면 작업을 닫고, 자동 정리가 켜져 있으면 작업 폴더와 로컬 브랜치도 지웁니다. 닫힌 작업에는 이어서 지시할 수 없습니다.";
-const REBASE = "에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 이어서 지시하려면 [재개]를 누르세요.";
+const REBASE = "에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 옮긴 뒤 이어서 지시하려면 [재개]를 누르세요.";
 async function confirmRebase() {
   await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
   const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
@@ -343,22 +343,67 @@ test("도구가 살아 있으면 [기준 반영]은 확인한 뒤에만 보낸�
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
 
-test.each([
-  { sessionAlive: true, toolExited: true },
-  { sessionAlive: false, toolExited: false },
-])("도구가 살아 있지 않으면 [기준 반영]은 확인 없이 보낸다 %o", async ({ sessionAlive, toolExited }) => {
+async function renderTool(tool: { sessionAlive: boolean; sessionKnown: boolean; toolExited: boolean }) {
   const wire = new ProjectWire({ trustNotRequired: true });
   render(
     <TooltipProvider>
       <RpcProvider client={wire.client}>
-        <AgentActions task={{ ...task("a1", "review"), toolExited }} sessionAlive={sessionAlive} />
+        <AgentActions
+          task={{ ...task("a1", "review"), toolExited: tool.toolExited }}
+          sessionAlive={tool.sessionAlive}
+          sessionKnown={tool.sessionKnown}
+        />
       </RpcProvider>
     </TooltipProvider>,
   );
   await waitFor(() => expect(wire.client.state).toBe("ready"));
   await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
   await act(async () => wire.reply("agents.rebase_status", { owned: false, files: [] }));
+  return wire;
+}
+test.each([
+  { sessionAlive: true, sessionKnown: true, toolExited: true },
+  { sessionAlive: false, sessionKnown: true, toolExited: false },
+  { sessionAlive: false, sessionKnown: false, toolExited: true },
+])("도구가 살아 있지 않으면 [기준 반영]은 확인 없이 보낸다 %o", async (tool) => {
+  const wire = await renderTool(tool);
   await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("세션 목록을 아직 모르면 [기준 반영]은 확인한 뒤에만 보낸다", async () => {
+  // Until the terminal list loads, a running tool cannot be ruled out.
+  const wire = await renderTool({ sessionAlive: false, sessionKnown: false, toolExited: false });
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(dialog).toHaveAccessibleDescription(REBASE);
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+});
+
+test("병합 충돌 띠의 [기준 반영 실행]도 도구가 살아 있으면 확인한 뒤에만 보낸다", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "병합" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "병합 커밋" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  await act(async () => wire.reply("agents.changes", changes));
+  await userEvent.click(await screen.findByRole("button", { name: "main에 병합" }));
+  await waitFor(() => expect(wire.requests("agents.merge")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("agents.merge").id,
+      error: { code: "agents.conflict", detail: { files: ["a.txt"] } },
+    }),
+  );
+  // The merge's own conflict shows the banner without an owned rebase.
+  await userEvent.click(await screen.findByRole("button", { name: "기준 반영 실행" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(dialog).toHaveAccessibleDescription(REBASE);
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  expect(wire.request("agents.rebase").params).toEqual({ id: "a1" });
 });

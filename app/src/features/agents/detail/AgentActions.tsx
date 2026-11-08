@@ -95,8 +95,10 @@ export function AgentActions({
       setConflict(undefined);
       refresh();
     });
-  // A rebase stops the agent tool first, so a tool that still runs stops only once the user agrees.
-  const askReflect = () => (sessionAlive && !task.toolExited ? setRebaseAsked(true) : void reflect());
+  // A rebase stops the agent tool first, so a tool that may still run stops only once the user
+  // agrees. Until the session list is known, a running tool cannot be ruled out.
+  const toolMayRun = !task.toolExited && (sessionAlive || !sessionKnown);
+  const askReflect = () => (toolMayRun ? setRebaseAsked(true) : void reflect());
   const runTest = () =>
     run(async () => {
       if (
@@ -260,7 +262,7 @@ export function AgentActions({
       <ConfirmDialog
         open={rebaseAsked}
         title={`기준 반영 · ${task.title}`}
-        body="에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 이어서 지시하려면 [재개]를 누르세요."
+        body="에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 옮긴 뒤 이어서 지시하려면 [재개]를 누르세요."
         confirmLabel="기준 반영"
         tone="primary"
         disabled={blocked}
