@@ -190,14 +190,30 @@ function ProjectSource({ project }: { project: Project }) {
         </div>
         <GitControls target={target} />
         <div className={s.toolbar}>
-          <Button onClick={() => setPanel("editor")}>편집기</Button>
-          {selected && <Button onClick={() => setPanel("diff")}>선택한 변경 · {selected.path}</Button>}
-          <Button onClick={() => setPanel("log")}>커밋 기록</Button>
-          <Button disabled={!selected?.path && !active} onClick={() => setPanel("blame")}>
+          <Button aria-pressed={panel === "editor"} onClick={() => setPanel("editor")}>
+            편집기
+          </Button>
+          {selected && (
+            <Button aria-pressed={panel === "diff"} onClick={() => setPanel("diff")}>
+              선택한 변경 · {selected.path}
+            </Button>
+          )}
+          <Button aria-pressed={panel === "log"} onClick={() => setPanel("log")}>
+            커밋 기록
+          </Button>
+          <Button
+            aria-pressed={panel === "blame"}
+            disabled={!selected?.path && !active}
+            onClick={() => setPanel("blame")}
+          >
             줄별 변경 기록
           </Button>
-          <Button onClick={() => setPanel("cleanup")}>작업 폴더 정리</Button>
-          <Button onClick={() => setPanel("deps")}>의존성 점검</Button>
+          <Button aria-pressed={panel === "cleanup"} onClick={() => setPanel("cleanup")}>
+            작업 폴더 정리
+          </Button>
+          <Button aria-pressed={panel === "deps"} onClick={() => setPanel("deps")}>
+            의존성 점검
+          </Button>
         </div>
         <div className={s.editorWorkspace} hidden={panel !== "editor"}>
           <CodeTabs root={root} />

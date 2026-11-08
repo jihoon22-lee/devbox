@@ -45,6 +45,7 @@
   --fg-subtle: #6d7684;
   --accent: #5b8cff;
   --accent-fg: #0a0f1d;
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, white);
   --selection: color-mix(in srgb, var(--accent) 22%, transparent);
   --ok: #3fb97a;
   --warn: #e0a43a;
@@ -69,6 +70,8 @@
   --fg-subtle: #7a8391;
   --accent: #2f6bf0;
   --accent-fg: #ffffff;
+  /* Darker on hover: mixing in white drops white text to 3.83:1 in this theme. */
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, black);
   --selection: color-mix(in srgb, var(--accent) 18%, transparent);
   --ok: #1f8a55;
   --warn: #a96c00;

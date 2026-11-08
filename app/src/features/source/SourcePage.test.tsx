@@ -217,10 +217,28 @@ test("opening a location while viewing a diff reveals the editor even for the al
   );
   await screen.findByRole("region", { name: "소스 변경 내용" });
   expect(screen.queryByRole("textbox", { name: "코드 편집기" })).toBeNull();
+  expect(screen.getByRole("button", { name: "선택한 변경 · a.ts" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집기" })).toHaveAttribute("aria-pressed", "false");
   await act(async () => {
     await router.navigate({ to: "/source", search: { root: "project:p", path: "a.ts", line: 1, column: 1 } });
   });
   expect(await screen.findByRole("textbox", { name: "코드 편집기" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "편집기" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "선택한 변경 · a.ts" })).toHaveAttribute("aria-pressed", "false");
+});
+test("[커밋 기록]을 누르면 그 단추만 눌림이다", async () => {
+  const { wire } = show();
+  wire.handlers["git.log"] = () => [];
+  await screen.findByRole("button", { name: "a.ts" });
+  fireEvent.click(screen.getByRole("button", { name: "커밋 기록" }));
+  await screen.findByRole("region", { name: "커밋 기록" });
+  expect(screen.getByRole("button", { name: "커밋 기록" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집기" })).toHaveAttribute("aria-pressed", "false");
+  for (const name of ["줄별 변경 기록", "작업 폴더 정리", "의존성 점검"])
+    expect(screen.getByRole("button", { name })).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(screen.getByRole("button", { name: "편집기" }));
+  expect(screen.getByRole("button", { name: "편집기" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "커밋 기록" })).toHaveAttribute("aria-pressed", "false");
 });
 test("history blame cleanup dependencies and conflict tools are reachable for the selected project", async () => {
   const { wire } = show();

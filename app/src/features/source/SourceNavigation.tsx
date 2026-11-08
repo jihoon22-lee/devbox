@@ -24,6 +24,7 @@ export function SourceNavigation({
             role="tab"
             id={`source-${key}`}
             key={key}
+            className={s.sectionTab}
             aria-selected={section === key}
             aria-controls="source-panel"
             tabIndex={section === key ? 0 : -1}

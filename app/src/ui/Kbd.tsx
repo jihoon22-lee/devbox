@@ -4,8 +4,9 @@ export function Kbd({ keys }: { keys: string[] }) {
       style={{
         fontFamily: "var(--font-sans)",
         fontSize: "var(--text-xs)",
-        color: "var(--fg-muted)",
-        border: "1px solid var(--border)",
+        // A filled container (primary button) sets these; elsewhere the muted defaults apply.
+        color: "var(--kbd-color, var(--fg-muted))",
+        border: "1px solid var(--kbd-border, var(--border))",
         borderRadius: "var(--radius-sm)",
         padding: "0 4px",
       }}

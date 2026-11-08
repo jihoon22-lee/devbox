@@ -27,9 +27,12 @@
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-fg);
+  /* Read by Kbd: its default muted text is unreadable on the accent fill. */
+  --kbd-color: var(--accent-fg);
+  --kbd-border: color-mix(in srgb, var(--accent-fg) 45%, transparent);
 }
 .primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, white);
+  background: var(--accent-hover);
 }
 .ghost {
   background: transparent;
@@ -40,5 +43,27 @@
   border-color: var(--danger);
   color: var(--danger);
 }
+/* Danger text on the generic hover fill drops under 4.5:1, so hover fills with the danger colour. */
+.danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--accent-fg);
+}
 .secondary {
+}
+/*
+ * Pressed toggles and selected items, for every variant. The fill alone is under 3:1, so the accent
+ * border carries the state. No box-shadow: it would replace the :focus-visible ring. The hover
+ * selector outranks the hover fills above so the pressed look stays under the pointer.
+ */
+.button[aria-pressed="true"],
+.button[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--selection);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+@media (forced-colors: active) {
+  .button[aria-pressed="true"],
+  .button[aria-pressed="true"]:hover:not(:disabled) {
+    border-color: Highlight;
+  }
 }

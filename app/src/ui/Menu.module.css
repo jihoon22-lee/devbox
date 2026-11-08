@@ -26,6 +26,11 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* Danger text on the selection tint is under 4.5:1, so a highlighted danger item fills instead. */
+.item[data-danger][data-highlighted]:not([data-disabled]) {
+  background: var(--danger);
+  color: var(--accent-fg);
+}
 .item[data-disabled] {
   color: var(--fg-subtle);
 }
@@ -33,7 +38,9 @@
   .content {
     border-color: ButtonBorder;
   }
-  .item[data-highlighted] {
+  /* Repeats the danger selector so its higher specificity cannot replace the system highlight. */
+  .item[data-highlighted],
+  .item[data-danger][data-highlighted]:not([data-disabled]) {
     color: HighlightText;
     background: Highlight;
     outline-color: Highlight;
