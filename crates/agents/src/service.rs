@@ -443,11 +443,11 @@ impl AgentsService {
             .await
             .internal("complete Codex turn")?;
         match result {
-            Ok(((task, previous), rev)) => {
-                // The reported turn ended, or the resumed session waits for its first instruction.
-                if task.state == AgentState::Idle && previous != AgentState::Idle {
-                    self.refresh_tokens(&task.id);
-                }
+            Ok(((task, _), rev)) => {
+                // Every write here ends a turn: the reported one, also on a task still idle from
+                // the turn before (a turn typed in the pane can end before a poll sees it start),
+                // or the resumed session's ready judgement. A repeated report writes nothing.
+                self.refresh_tokens(&task.id);
                 Ok(Done {
                     rev: rev.to_string(),
                 })

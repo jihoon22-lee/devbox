@@ -42,6 +42,29 @@ impl TokenRefreshes {
         self.tasks().remove(task);
     }
 }
+/// The refresh of `task` while it runs. Dropped before the refresh ended itself (`again`), on
+/// shutdown or a panic, it ends the refresh, so the task's next turn end starts another.
+struct Running<'a> {
+    refreshes: &'a TokenRefreshes,
+    task: &'a str,
+    ended: bool,
+}
+impl Running<'_> {
+    /// Whether the refresh reads once more; when it does not, it has ended
+    /// (see `TokenRefreshes::again`).
+    fn again(&mut self) -> bool {
+        let again = self.refreshes.again(self.task);
+        self.ended = !again;
+        again
+    }
+}
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            self.refreshes.end(self.task);
+        }
+    }
+}
 impl AgentsService {
     pub async fn usage(&self, id: &str) -> Result<AgentUsage> {
         self.read_usage(id, false).await
@@ -54,16 +77,20 @@ impl AgentsService {
         }
         let (service, id) = (self.clone(), id.to_owned());
         self.background.spawn(async move {
+            let mut running = Running {
+                refreshes: &service.token_refreshes,
+                task: &id,
+                ended: false,
+            };
             loop {
                 tokio::select! {
-                    _ = service.stop.cancelled() => break,
+                    _ = service.stop.cancelled() => return,
                     () = service.store_tokens(&id) => {}
                 }
-                if !service.token_refreshes.again(&id) {
+                if !running.again() {
                     return;
                 }
             }
-            service.token_refreshes.end(&id);
         });
     }
     /// Reads the usage of open task `id` and stores its total. A read without one leaves the

@@ -11,7 +11,7 @@ use devbox_protocol::Topic;
 use serde_json::json;
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -47,6 +47,14 @@ struct Fixture {
 }
 impl Fixture {
     async fn new(profile: &str, session: Option<&str>) -> Self {
+        Self::with_shell(profile, session, crate::command_path::fixture_shell).await
+    }
+    /// The fixture whose CLI lookups ask `shell(home)`.
+    async fn with_shell(
+        profile: &str,
+        session: Option<&str>,
+        shell: fn(&Path) -> Arc<dyn crate::command_path::ShellProbe>,
+    ) -> Self {
         let root = tempfile::tempdir().expect("owned home");
         let paths = Paths::resolve(
             Instance::parse("test-token-refresh").expect("owned instance"),
@@ -76,7 +84,7 @@ impl Fixture {
             projects.clone(),
             Default::default(),
         ));
-        let shell = crate::command_path::fixture_shell(&paths.home);
+        let shell = shell(&paths.home);
         let runtime = crate::AgentRuntime {
             devbox_bin: "/owned/devbox".into(),
             use_scope: false,
@@ -128,6 +136,12 @@ impl Fixture {
             })
             .await
             .expect("owned report");
+    }
+    /// Codex's notify that turn `turn` of thread `primary` ended with `message`.
+    async fn codex_done(&self, turn: &str, message: &str) {
+        let done = json!({"type":"agent-turn-complete","thread-id":"primary","turn-id":turn,
+            "cwd":self.workdir,"last-assistant-message":message});
+        self.report(HookSource::Codex, done).await;
     }
     /// Claude ends its turn.
     async fn stop(&self) {
@@ -330,9 +344,7 @@ async fn codex_turn_completion_refreshes_tokens() {
     let f = Fixture::new("codex", None).await;
     f.rollout();
     let mut changes = f.svc.hub.subscribe(crate::AgentsChangedTopic::NAME);
-    let done = json!({"type":"agent-turn-complete","thread-id":"primary","turn-id":"one",
-        "cwd":f.workdir,"last-assistant-message":"done"});
-    f.report(HookSource::Codex, done).await;
+    f.codex_done("one", "done").await;
     // The binding and the turn's end are published before the report replies.
     assert!(notices(&mut changes) > 0);
     f.settled().await;
@@ -464,3 +476,6 @@ async fn close_keeps_the_refreshed_total_when_the_closing_read_fails() {
         (Some(transcribed()), true)
     );
 }
+
+#[path = "token_refresh_path_tests.rs"]
+mod paths;
