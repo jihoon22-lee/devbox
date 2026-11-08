@@ -226,7 +226,7 @@ impl Watcher {
     /// any turn, waits for the next instruction.
     pub(crate) async fn read(
         &mut self,
-        service: &AgentsService,
+        service: &Arc<AgentsService>,
         snapshot: Snapshot,
         tail: String,
         now: Instant,

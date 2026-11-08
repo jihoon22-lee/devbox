@@ -57,6 +57,8 @@ pub struct AgentsService {
     pub(crate) launches: Arc<crate::ready::Launches>,
     /// When this daemon started: it may have missed the reports of launches from before.
     pub(crate) started_ms: i64,
+    /// The token totals read again after a turn's end (see `refresh_tokens`).
+    pub(crate) token_refreshes: crate::metrics::TokenRefreshes,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -106,6 +108,7 @@ impl AgentsService {
             waiting_patterns: OnceLock::new(),
             launches: Arc::default(),
             started_ms: now_ms(),
+            token_refreshes: Default::default(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -136,19 +139,22 @@ impl AgentsService {
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
-        self.update_bound(id, None, false, move |task, _| f(task))
-            .await
+        let (done, _) = self
+            .update_bound(id, None, false, move |task, _| f(task))
+            .await?;
+        Ok(done)
     }
     /// `launch`, when given, must be the task's current launch: `f` then also gets that launch's
     /// binding, which is saved with the task when `f` changes it. `announce_later` holds back the
     /// notice of a wait the update enters (see `announce_later`); the task still changes at once.
+    /// Also says whether the update turned the task idle: one of its turns ended.
     async fn update_bound<F>(
         &self,
         id: &str,
         launch: Option<String>,
         announce_later: bool,
         f: F,
-    ) -> Result<Done>
+    ) -> Result<(Done, bool)>
     where
         F: FnOnce(&mut AgentTask, Option<&mut Binding>) -> bool + Send + 'static,
     {
@@ -193,20 +199,25 @@ impl AgentsService {
             .internal("update agent")?;
         match result {
             Ok(((task, previous), rev)) => {
+                let turned_idle = task.state == AgentState::Idle && previous != AgentState::Idle;
                 if announce_later && task.state != previous && task.state == AgentState::Waiting {
                     self.announce_later(task);
                 }
-                Ok(Done {
+                let done = Done {
                     rev: rev.to_string(),
-                })
+                };
+                Ok((done, turned_idle))
             }
             Err(Some(e)) => Err(e.into()),
-            Err(None) => Ok(Done {
-                rev: self.db.rev().to_string(),
-            }),
+            Err(None) => Ok((
+                Done {
+                    rev: self.db.rev().to_string(),
+                },
+                false,
+            )),
         }
     }
-    pub async fn event(&self, p: AgentEventParams) -> Result<Done> {
+    pub async fn event(self: &Arc<Self>, p: AgentEventParams) -> Result<Done> {
         let lifecycle = matches!(
             p.source,
             crate::hooks::HookSource::Setup | crate::hooks::HookSource::Exit
@@ -343,7 +354,7 @@ impl AgentsService {
         let resumed = launch.is_some()
             && crate::hooks::claude_session_source(&p.payload).as_deref() == Some("resume");
         let approvals = self.approvals.clone();
-        self.update_bound(&p.agent_id, bound, trust, move |t, binding| {
+        let update = self.update_bound(&p.agent_id, bound, trust, move |t, binding| {
             if let Some(exports) = exports {
                 exports.turn_completed(&t.id);
             }
@@ -367,11 +378,21 @@ impl AgentsService {
                 changed |= apply_event(t, &event, now_ms())
             }
             changed
-        })
-        .await
+        });
+        let (done, turned_idle) = update.await?;
+        // The turn that ended may have added tokens. The stored total is read again, after the
+        // opencode export read before it was dropped above.
+        if turned_idle {
+            self.refresh_tokens(&task.id);
+        }
+        Ok(done)
     }
     /// Ends a Codex turn as `end` shows it, checked against the task and its binding in the writer.
-    pub(crate) async fn complete_codex(&self, id: &str, end: CodexTurnEnd) -> Result<Done> {
+    pub(crate) async fn complete_codex(
+        self: &Arc<Self>,
+        id: &str,
+        end: CodexTurnEnd,
+    ) -> Result<Done> {
         let id = id.to_owned();
         let hub = self.hub.clone();
         let result = self
@@ -422,9 +443,15 @@ impl AgentsService {
             .await
             .internal("complete Codex turn")?;
         match result {
-            Ok((_, rev)) => Ok(Done {
-                rev: rev.to_string(),
-            }),
+            Ok(((task, previous), rev)) => {
+                // The reported turn ended, or the resumed session waits for its first instruction.
+                if task.state == AgentState::Idle && previous != AgentState::Idle {
+                    self.refresh_tokens(&task.id);
+                }
+                Ok(Done {
+                    rev: rev.to_string(),
+                })
+            }
             Err(Some(e)) => Err(e.into()),
             Err(None) => Ok(Done {
                 rev: self.db.rev().to_string(),

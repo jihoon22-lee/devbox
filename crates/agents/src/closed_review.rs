@@ -91,8 +91,14 @@ impl AgentsService {
                             state: "closed".into(),
                         }));
                     }
-                    task.tokens = usage.tokens;
-                    task.tokens_truncated = usage.truncated;
+                    // A closing read without tokens keeps the total last read while the task was
+                    // open, which may miss the tokens since.
+                    if usage.tokens.is_some() || task.tokens.is_none() {
+                        task.tokens = usage.tokens;
+                        task.tokens_truncated = usage.truncated;
+                    } else {
+                        task.tokens_truncated = true;
+                    }
                     task.closed_how = Some(how);
                     task.closed_ms = Some(now_ms());
                     task.closed_commits = Some(count);
