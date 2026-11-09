@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { AgentTask, Methods, NotificationReason } from "../../rpc/gen/rpc";
+import type { AgentTask, Methods, NotificationReason, ToolProfile } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { useNativeRuntime } from "../../shell/nativeRuntime";
 import { useActivityHealth } from "../activity/useActivityStatus";
@@ -15,11 +15,25 @@ const runReason: Record<NotificationReason, string> = {
 };
 // Keep replay identity for the RPC session even after the user clears visible history.
 const seenRunEvents = new WeakMap<object, Set<string>>();
+/**
+ * True when the daemon wrote the message with the tool's own name in front ("opencode 승인 요청",
+ * "pi가 …"). The family comes from the profile's hooks; a missing profile entry falls back to the id.
+ */
+function startsWithPluginFamily(message: string, family: string | undefined) {
+  if (family !== "opencode" && family !== "pi") return false;
+  return message.startsWith(family) && !/[A-Za-z0-9-]/.test(message.charAt(family.length));
+}
 /** "프로젝트 · 도구 — " from the caches. opencode and pi messages already start with their tool name. */
-function bodyPrefix(task: AgentTask | undefined, message: string, project: string | undefined, tool: string) {
+function bodyPrefix(
+  task: AgentTask | undefined,
+  message: string,
+  project: string | undefined,
+  profiles: ToolProfile[] | undefined,
+) {
   if (!task) return "";
-  const own = message.startsWith(`${task.profile} `);
-  const parts = [project, own ? undefined : tool].filter((part): part is string => !!part);
+  const family = profiles?.find((p) => p.id === task.profile)?.hooks ?? task.profile;
+  const tool = startsWithPluginFamily(message, family) ? undefined : toolLabel(profiles, task.profile);
+  const parts = [project, tool].filter((part): part is string => !!part);
   return parts.length ? `${parts.join(" · ")} — ` : "";
 }
 const noLocation = () => ({ pathname: "", search: {} });
@@ -61,7 +75,7 @@ export function AttentionBridge({
             .getQueryData<Methods["projects.list"]["result"]>(["projects.list", {}])
             ?.items.find((item) => item.id === task?.projectId)?.name;
           const profiles = qc.getQueryData<Methods["agents.profiles"]["result"]>(["agents.profiles", {}]);
-          const body = `${bodyPrefix(task, event.message, project, task ? toolLabel(profiles?.items, task.profile) : "")}${event.message}`;
+          const body = `${bodyPrefix(task, event.message, project, profiles?.items)}${event.message}`;
           const title = `${task?.title ?? "에이전트 작업"} · ${STATE_LABEL[event.state]}`;
           const current = location();
           void nativeAttention({

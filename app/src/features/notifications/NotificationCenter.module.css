@@ -71,3 +71,10 @@
   border-radius: 50%;
   background: var(--accent);
 }
+@media (forced-colors: active) {
+  /* Forced colours drop backgrounds: keep the unread dot. */
+  .dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
