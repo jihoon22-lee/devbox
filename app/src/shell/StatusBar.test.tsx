@@ -192,3 +192,40 @@ test("Git chip shows current branch counts and isolates a late former-project st
   fireEvent.click(chip);
   expect(navigate).toHaveBeenCalledWith({ to: "/source" });
 });
+
+test("many ports show owned ones first, three at most, with the full list in the title", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <StatusBar />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("observe.ports")).toHaveLength(1));
+  await act(async () => {
+    wire.reply("runtime.summary", { rev: "1", active: 1 });
+    wire.reply(
+      "observe.ports",
+      [9000, 8080, 53, 5173, 22].map((port) => ({ port, runId: port === 5173 ? "r1" : null })),
+    );
+    wire.reply("observe.system", { memoryTotalBytes: 20 * gib, memoryAvailableBytes: 13.9 * gib });
+  });
+  const button = await screen.findByRole("button", { name: "포트 5173, 22, 53 외 2개" });
+  expect(button).toHaveAttribute("title", "포트 5173, 22, 53, 8080, 9000");
+});
+
+test("a long Git cell shrinks with an ellipsis and keeps its full text in the title", async () => {
+  useCurrentProject.setState({ id: "p" });
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <StatusBar />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
+  const branch = "feature/a-very-long-branch-name-that-would-push-the-other-cells-out";
+  await act(async () => wire.reply("git.status", { summary: { branch, ahead: 1, behind: 0 }, files: [] }));
+  const chip = await screen.findByRole("button", { name: "Git 상태 · 소스로 이동" });
+  expect(chip).toHaveStyle({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: "0" });
+  expect(chip).toHaveAttribute("title", `Git ${branch} ↑1 ↓0 · 변경 0`);
+  expect(screen.getByRole("contentinfo")).toHaveStyle({ whiteSpace: "nowrap" });
+});

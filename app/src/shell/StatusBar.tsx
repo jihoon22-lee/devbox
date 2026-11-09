@@ -14,7 +14,24 @@ const LABEL = {
   reconnecting: "다시 연결 중",
   versionMismatch: "버전 불일치",
 } as const;
+const PORT_LIMIT = 3;
 const TONE = { connecting: "progress", ready: "ok", reconnecting: "warn", versionMismatch: "danger" } as const;
+
+type PortRow = { port: number; runId?: string | null; containerId?: string | null; projectId?: string | null };
+
+// Owned ports (tied to a run, container or project) come first; each group is ascending and deduplicated.
+export function portSummary(rows: readonly PortRow[]): { shown: string; all: string } {
+  const owned = new Map<number, boolean>();
+  for (const row of rows) {
+    const mine = Boolean(row.runId || row.containerId || row.projectId);
+    owned.set(row.port, (owned.get(row.port) ?? false) || mine);
+  }
+  const ordered = [...owned.entries()].sort(([a, aOwned], [b, bOwned]) => Number(bOwned) - Number(aOwned) || a - b);
+  const numbers = ordered.map(([port]) => port);
+  const rest = numbers.length - PORT_LIMIT;
+  const all = numbers.join(", ");
+  return { shown: rest > 0 ? `${numbers.slice(0, PORT_LIMIT).join(", ")} 외 ${rest}개` : all, all };
+}
 
 export function StatusBar() {
   const agents = useAgentSummary();
@@ -22,7 +39,7 @@ export function StatusBar() {
   const summary = useRpcQuery("runtime.summary", {}, { enabled: visible, staleTime: 0 });
   useTopicInvalidation("runtime.changed", [["runtime.summary", {}]]);
   const { system, ports } = useSystemMetrics();
-  const portNumbers = [...new Set(ports.data?.map((port) => port.port) ?? [])].sort((a, b) => a - b);
+  const portText = portSummary(ports.data ?? []);
   const actionStyle = { background: "transparent", border: 0, cursor: "pointer", color: "inherit" };
   const navigate = useNavigate();
   const { state, daemonVersion } = useConnection();
@@ -33,6 +50,9 @@ export function StatusBar() {
         alignItems: "center",
         gap: "var(--space-3)",
         padding: "0 var(--space-3)",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        minWidth: 0,
         fontSize: "var(--text-xs)",
         color: "var(--fg-muted)",
         background: "var(--bg-0)",
@@ -58,9 +78,10 @@ export function StatusBar() {
       <button
         type="button"
         style={actionStyle}
+        title={portText.all ? `포트 ${portText.all}` : undefined}
         onClick={() => void navigate({ to: "/runs", search: { view: "ports" } })}
       >
-        포트 {ports.isError ? "조회 실패" : ports.data ? portNumbers.join(", ") || "없음" : "—"}
+        포트 {ports.isError ? "조회 실패" : ports.data ? portText.shown || "없음" : "—"}
       </button>
       <button
         type="button"
