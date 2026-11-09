@@ -47,6 +47,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const profile =
     options.find((p) => p.id === picked) ?? options.find((p) => p.id === rememberedProfile(project?.id)) ?? options[0];
   const prompts = useRpcQuery("projects.prompts", { id: project?.id ?? "" }, { enabled: !!project });
+  const templates = prompts.data?.items ?? [];
   const create = useRpcMutation("agents.create");
   const trust = useProjectTrust(project?.id ?? "");
   const mounted = useRef(true);
@@ -169,15 +170,36 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             }
           }}
         >
-          <label htmlFor={`${uid}-title`}>제목</label>
-          <input id={`${uid}-title`} value={title} onChange={(event) => setTitle(event.target.value)} required />
-          <Select
-            label="프로젝트"
-            value={project?.id ?? ""}
-            onChange={setProjectId}
-            disabled={create.isPending}
-            options={(projects.data?.items ?? []).map((p) => ({ value: p.id, label: p.name }))}
-          />
+          <div className={s.field}>
+            <label htmlFor={`${uid}-title`}>제목</label>
+            <input id={`${uid}-title`} value={title} onChange={(event) => setTitle(event.target.value)} required />
+          </div>
+          <div className={s.pair}>
+            <div className={s.field}>
+              <label htmlFor={`${uid}-project`}>프로젝트</label>
+              <Select
+                id={`${uid}-project`}
+                className={s.control}
+                label="프로젝트"
+                value={project?.id ?? ""}
+                onChange={setProjectId}
+                disabled={create.isPending}
+                options={(projects.data?.items ?? []).map((p) => ({ value: p.id, label: p.name }))}
+              />
+            </div>
+            <div className={s.field}>
+              <label htmlFor={`${uid}-tool`}>도구</label>
+              <Select
+                id={`${uid}-tool`}
+                className={s.control}
+                label="도구"
+                value={profile?.id ?? ""}
+                onChange={setPicked}
+                disabled={create.isPending}
+                options={options.map((p) => ({ value: p.id, label: p.label }))}
+              />
+            </div>
+          </div>
           {noProjects && (
             <>
               <p>에이전트 작업을 만들 프로젝트를 등록해 주세요.</p>
@@ -187,28 +209,23 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
           {projects.data && !project && projects.data.items.length > 0 && (
             <p>에이전트 작업을 만들 프로젝트를 선택해 주세요.</p>
           )}
-          <Select
-            label="도구"
-            value={profile?.id ?? ""}
-            onChange={setPicked}
-            disabled={create.isPending}
-            options={options.map((p) => ({ value: p.id, label: p.label }))}
-          />
           {profiles.data?.items.length === 0 && <p>사용할 도구가 없습니다. 설정에서 에이전트 도구를 확인해 주세요.</p>}
-          <label htmlFor={`${uid}-base`}>기준 브랜치</label>
-          <input
-            id={`${uid}-base`}
-            placeholder="비우면 현재 브랜치"
-            value={baseBranch}
-            onChange={(event) => setBaseBranch(event.target.value)}
-          />
+          <div className={s.field}>
+            <label htmlFor={`${uid}-base`}>기준 브랜치</label>
+            <input
+              id={`${uid}-base`}
+              placeholder="비우면 현재 브랜치"
+              value={baseBranch}
+              onChange={(event) => setBaseBranch(event.target.value)}
+            />
+          </div>
           <label className={s.check}>
             <input type="checkbox" checked={worktree} onChange={(event) => setWorktree(event.target.checked)} />
             작업 폴더 만들기
           </label>
           {worktree ? <BranchNameField branch={branch} /> : <p>현재 체크아웃에서 실행</p>}
           <div className={s.templates}>
-            {(prompts.data?.items ?? []).map((template) => (
+            {templates.map((template) => (
               <Button
                 key={template.name}
                 size="sm"
@@ -229,20 +246,28 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
               </Button>
             ))}
           </div>
+          {templates.length > 0 && (
+            <p className={s.muted}>
+              브랜치 이름을 직접 고치지 않으면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다.
+            </p>
+          )}
           {useAgentsUi.getState().draft?.truncated && (
             <p role="status">노트 내용이 길어 처음 64 KiB만 지시문에 넣었습니다.</p>
           )}
-          <label htmlFor={`${uid}-prompt`}>지시문</label>
-          <TextArea
-            id={`${uid}-prompt`}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            maxRows={10}
-          />
-          <p className={s.muted}>
-            브랜치 이름을 직접 고치지 않으면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다. Ctrl+Enter로
-            시작합니다.
-          </p>
+          <div className={s.field}>
+            <label htmlFor={`${uid}-prompt`}>지시문</label>
+            <TextArea
+              id={`${uid}-prompt`}
+              className={s.control}
+              aria-describedby={`${uid}-prompt-help`}
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              maxRows={10}
+            />
+            <p id={`${uid}-prompt-help`} className={s.muted}>
+              Ctrl+Enter로 시작
+            </p>
+          </div>
           {(!projects.data || !profiles.data) && !queryError && <p role="status">프로젝트와 도구를 불러오는 중…</p>}
           {trust.notice && <p role="alert">{trust.notice}</p>}
           {message && (

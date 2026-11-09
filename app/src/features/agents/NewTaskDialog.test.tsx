@@ -13,7 +13,13 @@ beforeEach(() => {
 });
 
 const profileKey = (projectId: string) => `devbox.newTask.lastProfile.${projectId}`;
-async function dialog(items = projects, saved: string | null = "claude", trustRequired = false) {
+const bugfix = [{ name: "bugfix", body: "버그: {{title}}\n{{branch}} {{project}} {{other}}" }];
+async function dialog(
+  items = projects,
+  saved: string | null = "claude",
+  trustRequired = false,
+  templates: typeof bugfix = bugfix,
+) {
   if (saved !== null) localStorage.setItem(profileKey("a"), saved);
   useCurrentProject.getState().set("a");
   const wire = new ProjectWire({ trustNotRequired: !trustRequired }),
@@ -32,11 +38,7 @@ async function dialog(items = projects, saved: string | null = "claude", trustRe
   if (items.length) {
     await waitFor(() => expect(wire.requests("projects.prompts")).toHaveLength(1));
     expect(wire.request("projects.prompts").params).toEqual({ id: "a" });
-    await act(async () =>
-      wire.reply("projects.prompts", {
-        items: [{ name: "bugfix", body: "버그: {{title}}\n{{branch}} {{project}} {{other}}" }],
-      }),
-    );
+    await act(async () => wire.reply("projects.prompts", { items: templates }));
   }
   return { wire, created, changed, view };
 }
@@ -562,4 +564,28 @@ test("add_project_dialog_inside_new_task_does_not_submit_the_task", async () => 
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "프로젝트 추가" })).not.toBeInTheDocument());
   expect(screen.getByLabelText("제목")).toHaveValue("Draft title");
   expect(screen.getByLabelText("지시문")).toHaveValue("Draft prompt");
+});
+
+const TEMPLATE_HELP = /템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다/;
+test("new_task_form_shows_field_labels_and_only_relevant_template_help", async () => {
+  const { view } = await dialog();
+  for (const [name, role] of [
+    ["제목", "textbox"],
+    ["프로젝트", "combobox"],
+    ["도구", "combobox"],
+    ["기준 브랜치", "textbox"],
+    ["지시문", "textbox"],
+  ] as const) {
+    const label = screen.getByText(name, { selector: "label" });
+    expect(label).toBeVisible();
+    expect((label as HTMLLabelElement).control).toBe(screen.getByRole(role, { name }));
+    expect(screen.getByLabelText(name)).toBeInTheDocument();
+  }
+  expect(await screen.findByText(TEMPLATE_HELP)).toBeInTheDocument();
+  expect(screen.getByLabelText("지시문")).toHaveAccessibleDescription("Ctrl+Enter로 시작");
+  expect(screen.getByText("Ctrl+Enter로 시작")).toBeVisible();
+  view.unmount();
+  await dialog(projects, "claude", false, []);
+  expect(screen.queryByText(TEMPLATE_HELP)).not.toBeInTheDocument();
+  expect(screen.getByText("Ctrl+Enter로 시작")).toBeVisible();
 });

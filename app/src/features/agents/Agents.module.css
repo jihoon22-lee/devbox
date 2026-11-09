@@ -115,11 +115,32 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.form input:not([type="checkbox"]) {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  padding: var(--space-2);
+.form input:not([type="checkbox"]),
+.form .control {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--bg-0);
+  border: 1px solid var(--border-strong);
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
+}
+.form input:not([type="checkbox"]),
+.form button.control {
+  height: var(--control-lg);
+}
+.form textarea.control {
+  padding: 6px var(--space-2);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
 }
 .form p {
   margin: 0;

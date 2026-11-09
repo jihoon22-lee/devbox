@@ -12,6 +12,7 @@ export function Select({
   options,
   placeholder = "선택",
   className,
+  id,
   onChange,
   onValueChange,
   ...props
@@ -20,11 +21,12 @@ export function Select({
   options: SelectOption[];
   placeholder?: string;
   className?: string;
+  id?: string;
   onChange?: (value: string) => void;
 }) {
   return (
     <S.Root {...props} onValueChange={onChange ?? onValueChange}>
-      <S.Trigger aria-label={label} className={[s.trigger, className].filter(Boolean).join(" ")}>
+      <S.Trigger id={id} aria-label={label} className={[s.trigger, className].filter(Boolean).join(" ")}>
         <S.Value placeholder={placeholder} />
         <S.Icon>
           <ChevronDown size={14} aria-hidden="true" />
