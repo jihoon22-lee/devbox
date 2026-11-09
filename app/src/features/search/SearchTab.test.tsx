@@ -149,6 +149,47 @@ test("turning the current project box off sends projectIds null", async () => {
   expect(opened[0]!.params).toMatchObject({ projectIds: null });
 });
 
+test("the notes hint is the box's description", async () => {
+  await scoped("p1");
+  expect(await screen.findByRole("checkbox", { name: "현재 프로젝트만: Alpha" })).toHaveAccessibleDescription(
+    "노트는 프로젝트에 속하지 않아 늘 전체 노트에서 찾습니다.",
+  );
+});
+
+test("a scope that follows the current project moves with it", async () => {
+  const { opened } = await scoped("p1");
+  expect(await screen.findByRole("checkbox", { name: "현재 프로젝트만: Alpha" })).toBeChecked();
+  act(() => useCurrentProject.setState({ id: "p2" }));
+  expect(screen.getByRole("checkbox", { name: "현재 프로젝트만: Beta" })).toBeChecked();
+  await userEvent.click(screen.getByRole("button", { name: "검색" }));
+  await waitFor(() => expect(opened).toHaveLength(1));
+  expect(opened[0]!.params).toMatchObject({ projectIds: ["p2"] });
+});
+
+test("choosing a current project turns the box on when there was none", async () => {
+  await scoped(undefined);
+  act(() => useCurrentProject.setState({ id: "p1" }));
+  expect(screen.getByRole("checkbox", { name: "현재 프로젝트만: Alpha" })).toBeChecked();
+});
+
+test("an unchecked box stays unchecked when the current project changes", async () => {
+  const { opened } = await scoped("p1");
+  await userEvent.click(await screen.findByRole("checkbox", { name: "현재 프로젝트만: Alpha" }));
+  act(() => useCurrentProject.setState({ id: "p2" }));
+  expect(screen.getByRole("checkbox", { name: "현재 프로젝트만: Beta" })).not.toBeChecked();
+  await userEvent.click(screen.getByRole("button", { name: "검색" }));
+  await waitFor(() => expect(opened).toHaveLength(1));
+  expect(opened[0]!.params).toMatchObject({ projectIds: null });
+});
+
+test("a saved search's project stays when the current project changes", async () => {
+  await scoped("p1");
+  await userEvent.click(await screen.findByRole("button", { name: "다른 것" }));
+  expect(await screen.findByRole("checkbox", { name: "이 프로젝트만: Beta" })).toBeChecked();
+  act(() => useCurrentProject.setState({ id: undefined }));
+  expect(screen.getByRole("checkbox", { name: "이 프로젝트만: Beta" })).toBeChecked();
+});
+
 test("without a current project there is no box and every project is searched", async () => {
   const { opened } = await scoped(undefined);
   expect(screen.queryByRole("checkbox", { name: /프로젝트만/ })).toBeNull();

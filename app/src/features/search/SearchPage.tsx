@@ -35,12 +35,18 @@ export function SearchPage({
   const names = new Map(projects.data?.items.map((project) => [project.id, project.name]));
   const nameOf = (id: string) => names.get(id) ?? id;
   const [draft, setDraft] = useState<SearchQuery>({ ...initial, projectIds: currentId ? [currentId] : null });
-  // Switching project moves the scope with it; the first run only restates the initial draft.
+  // Switching project moves a scope that still follows the current project: [previous], or every project
+  // when there was none. An unchecked box or another project's saved scope stays as it is.
   const scopedTo = useRef(currentId);
   useEffect(() => {
-    if (scopedTo.current === currentId) return;
+    const previous = scopedTo.current;
+    if (previous === currentId) return;
     scopedTo.current = currentId;
-    setDraft((now) => ({ ...now, projectIds: currentId ? [currentId] : null }));
+    setDraft((now) => {
+      const ids = now.projectIds;
+      const following = previous ? ids?.length === 1 && ids[0] === previous : ids === null;
+      return following ? { ...now, projectIds: currentId ? [currentId] : null } : now;
+    });
   }, [currentId]);
   const [query, setQuery] = useState<SearchQuery>();
   const result = useSearchStream(query);
