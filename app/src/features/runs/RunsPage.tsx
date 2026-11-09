@@ -222,7 +222,7 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                   <span>{resultLabel(run)}</span>
                 </div>
                 <PastRunPicker run={run} onPick={(id) => setSelection({ definitionId: run.defId, runId: id })} />
-                {failedRun(run) && <RunFailureTaskAction key={run.id} run={run} />}
+                {failedRun(run) && <RunFailureTaskAction key={`fix-${run.id}`} run={run} />}
                 <RunChips key={run.id} run={run} />
                 {run.windows && (
                   <Banner tone="info">
