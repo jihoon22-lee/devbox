@@ -26,9 +26,10 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
+/* Starts where the caption ends: keep the two heights equal. */
 .terminal {
   position: absolute;
-  inset: 34px 0 0;
+  inset: 46px 0 0;
   pointer-events: none;
 }
 .cover {
@@ -42,21 +43,36 @@
   cursor: pointer;
   text-align: left;
 }
+/* Two lines: the title and state mark, then project · tool. */
 .caption {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 34px;
+  height: 46px;
   padding: 0 var(--space-2);
   background: var(--bg-2);
   font-size: var(--text-xs);
 }
-.caption strong {
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.heading strong {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source {
+  color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

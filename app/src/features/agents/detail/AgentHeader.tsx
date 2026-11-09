@@ -1,8 +1,9 @@
 import type { Methods } from "../../../rpc/gen/rpc";
 import { useRpcQuery } from "../../../rpc/query";
-import { Button, StatusDot } from "../../../ui";
+import { Button } from "../../../ui";
+import { AgentStateMark } from "../AgentStateMark";
 import type { AgentTask } from "../model";
-import { failureLabel, STATE_LABEL } from "../model";
+import { failureLabel } from "../model";
 import { TokenMetrics } from "../TokenMetrics";
 import { CleanupNotice } from "./CleanupNotice";
 import s from "./Detail.module.css";
@@ -24,23 +25,12 @@ export function AgentHeader({
 }) {
   const usage = useRpcQuery("agents.usage", { id: task.id });
   const seconds = Math.max(0, Math.floor(((task.closedMs ?? now) - task.createdMs) / 1000));
-  const tone =
-    task.state === "failed"
-      ? "danger"
-      : task.state === "waiting"
-        ? "warn"
-        : task.state === "running" || task.state === "preparing"
-          ? "progress"
-          : task.state === "review"
-            ? "ok"
-            : "idle";
   const tokens = usage.data ? usage.data.tokens : task.tokens;
   return (
     <header className={s.header}>
       <h1>{task.title}</h1>
       <div className={s.metrics}>
-        <StatusDot tone={tone} label={STATE_LABEL[task.state]} />
-        <span>{STATE_LABEL[task.state]}</span>
+        <AgentStateMark state={task.state} />
         <span>{projectName}</span>
         <span>{task.branch ?? task.baseBranch}</span>
         <span>{toolName}</span>

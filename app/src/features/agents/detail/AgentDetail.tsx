@@ -7,6 +7,7 @@ import { openPopout } from "../../terminal/popout";
 import { TerminalView } from "../../terminal/TerminalView";
 import { useSessions } from "../../terminal/useSessions";
 import { useAgentsData } from "../hooks";
+import { toolLabel } from "../model";
 import { AgentActions } from "./AgentActions";
 import { AgentHeader } from "./AgentHeader";
 import { ChangesTab } from "./ChangesTab";
@@ -51,7 +52,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         projectName={
           projects.data?.items.find((project) => project.id === task.projectId)?.name ?? "프로젝트를 찾을 수 없음"
         }
-        toolName={data.profiles.data?.items.find((profile) => profile.id === task.profile)?.label ?? task.profile}
+        toolName={toolLabel(data.profiles.data?.items, task.profile)}
         now={data.now}
         resource={data.resources.get(id)}
         behind={data.stats.get(id)?.behind}

@@ -7,6 +7,7 @@ import { useProjectData } from "../projects/ProjectData";
 import { AgentRow } from "./AgentRow";
 import s from "./Agents.module.css";
 import type { useAgentsData } from "./hooks";
+import { toolLabel } from "./model";
 export function AgentList({
   data,
   selected,
@@ -67,6 +68,7 @@ export function AgentList({
               selected={task.id === selected}
               now={data.now}
               projectName={names.get(task.projectId) ?? "프로젝트를 찾을 수 없음"}
+              toolName={toolLabel(data.profiles.data?.items, task.profile)}
               stats={data.stats.get(task.id)}
               resources={data.resources.get(task.id)}
               onSelect={onSelect}

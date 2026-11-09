@@ -82,6 +82,20 @@ export const STATE_LABEL: Record<AgentTask["state"], string> = {
   review: "검토 대기",
   closed: "닫힘",
 };
+/** The state mark's icon colour. Only a waiting task is in the warning colour; the state name stays in text colours. */
+export const STATE_TONE: Record<AgentTask["state"], string> = {
+  preparing: "var(--progress)",
+  running: "var(--progress)",
+  waiting: "var(--warn)",
+  idle: "var(--fg-muted)",
+  failed: "var(--danger)",
+  review: "var(--ok)",
+  closed: "var(--fg-muted)",
+};
+/** The tool's name from the profile list, or the task's profile id while the list is missing or lacks it. */
+export function toolLabel(profiles: ToolProfile[] | undefined, profile: string) {
+  return profiles?.find((p) => p.id === profile)?.label ?? profile;
+}
 export function failureLabel(reason: string | null) {
   if (reason === "session_lost") return "WSL이 멈춰 세션이 끊겼습니다";
   if (reason?.startsWith("killed:")) return "외부에서 종료됨(메모리 부족이나 다른 도구가 끝냈을 수 있습니다)";

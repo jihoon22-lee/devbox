@@ -18,6 +18,7 @@
   margin: var(--space-2);
 }
 .row {
+  position: relative;
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
@@ -25,6 +26,18 @@
 .row[data-selected] {
   background: var(--selection);
   border-color: var(--accent);
+}
+/* A task blocked on an answer gets a band on its leading edge. Not a box-shadow: that is the focus ring. */
+.row[data-state="waiting"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-start-radius: calc(var(--radius-sm) - 1px);
+  border-end-start-radius: calc(var(--radius-sm) - 1px);
+  background: var(--warn);
+  pointer-events: none;
 }
 .open {
   border: 0;
@@ -52,9 +65,35 @@
   color: var(--fg-muted);
   font-size: var(--text-xs);
 }
-.message {
+/* The state mark: the icon carries the state colour, the name stays in text colour. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  white-space: nowrap;
+}
+.state svg {
+  flex: none;
+}
+.stateName {
+  color: var(--fg);
+  font-weight: 600;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
+}
+.message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
 }
 .metrics {
   display: flex;
@@ -104,4 +143,11 @@
 }
 .preview h1 {
   font-size: var(--text-lg);
+}
+@media (forced-colors: active) {
+  /* Forced colours drop backgrounds: keep the waiting band. */
+  .row[data-state="waiting"]::before {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }
