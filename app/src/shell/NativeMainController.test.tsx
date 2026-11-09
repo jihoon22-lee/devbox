@@ -280,12 +280,44 @@ test("pressing 종료 twice while the draft is asked again starts one quit", asy
   captureDraft(false);
   await requestQuit();
   const confirm = await screen.findByRole("button", { name: "종료" });
+  // Two presses that are not one double click (detail 0, as Enter or Space give): the pending
+  // guard, not the double-click filter, keeps this to one quit.
   act(() => {
-    fireEvent.click(confirm);
-    fireEvent.click(confirm);
+    fireEvent.click(confirm, { detail: 0 });
+    fireEvent.click(confirm, { detail: 0 });
   });
   await waitFor(() => expect(called("quit_app")).toHaveLength(1));
   await act(async () => {});
   expect(called("quit_app")).toHaveLength(1);
   expect(called("capture_has_draft")).toHaveLength(2);
+});
+
+test("the second click of a double click on 종료 does not drop the draft the first click found", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  await screen.findByRole("dialog", { name: "devbox 종료" });
+  captureDraft(true);
+  fireEvent.click(screen.getByRole("button", { name: "종료" }), { detail: 1 });
+  const discard = await screen.findByRole("button", { name: "버리고 종료" });
+  expect(called("quit_app")).toEqual([]);
+  // The double click's second click lands where [종료] was, after the draft question replaced it.
+  fireEvent.click(discard, { detail: 2 });
+  expect(called("quit_app")).toEqual([]);
+  expect(screen.getByRole("dialog", { name: "devbox 종료" })).toHaveTextContent("빠른 캡처에 저장하지 않은 초안이");
+  fireEvent.click(discard, { detail: 1 });
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+  await act(async () => {});
+});
+
+test.each([
+  ["Enter", "{Enter}"],
+  ["Space", " "],
+])("%s on 종료 still quits: a key press is not a double click", async (_, key) => {
+  useNativeRuntime.setState({ openTasks: 3, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  (await screen.findByRole("button", { name: "종료" })).focus();
+  await userEvent.keyboard(key);
+  await waitFor(() => expect(called("quit_app")).toEqual([["quit_app"]]));
 });

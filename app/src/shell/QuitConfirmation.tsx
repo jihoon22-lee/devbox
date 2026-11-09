@@ -63,7 +63,15 @@ export function QuitConfirmation({
               캡처 열기
             </Button>
           )}
-          <Button variant="danger" disabled={busy} onClick={onConfirm}>
+          <Button
+            variant="danger"
+            disabled={busy}
+            onClick={(event) => {
+              // A double click's second click may land after [종료] turned into [버리고 종료].
+              // Key presses (Enter, Space) have detail 0 and still confirm.
+              if (event.detail <= 1) onConfirm();
+            }}
+          >
             {draft ? "버리고 종료" : "종료"}
           </Button>
         </>
