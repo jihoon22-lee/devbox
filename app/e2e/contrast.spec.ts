@@ -312,3 +312,92 @@ test("forced-colors-keep-highlight-on-pressed-selected-and-highlighted-items", a
   expect(await look(trash), "highlighted danger menu item").toMatchObject({ background: highlight });
   await page.keyboard.press("Escape");
 });
+
+const BASIC = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+/** The run log's 16 basic foreground colours (SGR 30–37, 90–97) and their tokens. */
+const ANSI16 = [
+  ...BASIC.map((name, index) => ({ code: 30 + index, token: `--log-ansi-${name}` })),
+  ...BASIC.map((name, index) => ({ code: 90 + index, token: `--log-ansi-bright-${name}` })),
+];
+
+test.describe("run log", () => {
+  test.use({ runtimeEnabled: true });
+
+  test("ansi16-log-contrast-survives-theme-switch", async ({ page, stack }) => {
+    test.slow();
+    const projectId = await stack.gammaProjectId();
+    // One line in the owned fixture project: every basic foreground colour, then a white-on-red badge.
+    const codes = ANSI16.map(({ code }) => code).join(" ");
+    const command = String.raw`for code in ${codes}; do printf '\033[%smfg-%s\033[0m ' "$code" "$code"; done; printf '\033[37;41mbadge\033[0m\n'`;
+    await stack.rpc("runtime.define", {
+      projectId,
+      saveTo: "thisPc",
+      def: {
+        kind: "task",
+        id: "owned-ansi16",
+        command,
+        cwd: null,
+        env: {},
+        target: "linux",
+        dependsOn: [],
+        worktree: null,
+        secrets: [],
+      },
+    });
+    const run = await stack.rpc("runtime.start", { projectId, id: "owned-ansi16", worktree: null });
+    await expect
+      .poll(async () => (await stack.rpc("runtime.get", { runId: run.id })).run.exit?.code, { timeout: 15_000 })
+      .toBe(0);
+    // The run page selects the project's only definition and shows its latest run.
+    await page.addInitScript(
+      (id) => localStorage.setItem("devbox.currentProject", JSON.stringify({ state: { id }, version: 0 })),
+      projectId,
+    );
+    const log = page.getByRole("region", { name: "실행 로그" });
+    const readColours = async (label: string) => {
+      const spans: { code: number; token: string; seen: Look }[] = [];
+      for (const { code, token } of ANSI16)
+        spans.push({ code, token, seen: await look(log.getByText(`fg-${code}`, { exact: true })) });
+      const unreadable = spans.flatMap(({ code, seen }) => {
+        const ratio = textContrast(seen);
+        return ratio < 4.5 ? [`SGR ${code} ${seen.color}: ${ratio.toFixed(2)}`] : [];
+      });
+      const fill = backdrop(spans[0]!.seen.layers).slice(0, 3).map(Math.round).join(", ");
+      expect(unreadable, `${label}: log colours under 4.5:1 on rgb(${fill})`).toEqual([]);
+      const colours: Record<number, string> = {};
+      for (const { code, token, seen } of spans) {
+        expect(seen.color, `${label}: SGR ${code} is ${token}`).toBe(await resolve(page, token));
+        colours[code] = seen.color;
+      }
+      // An undefined token leaves both the span and the probe on the inherited --fg, and passes the checks above.
+      const tokens = [...ANSI16.map(({ token }) => token), "--log-ansi-bg-red"];
+      const undefinedTokens = await page.evaluate(
+        (names) => names.filter((name) => !getComputedStyle(document.documentElement).getPropertyValue(name).trim()),
+        tokens,
+      );
+      expect(undefinedTokens, `${label}: undefined tokens`).toEqual([]);
+      // A badge keeps its classic pair, #e5e5e5 on #cd3131, in every theme. Its contrast is not claimed.
+      expect(await look(log.getByText("badge", { exact: true })), `${label}: badge`).toMatchObject({
+        color: "rgb(229, 229, 229)",
+        background: "rgb(205, 49, 49)",
+      });
+      return colours;
+    };
+    const byTheme: Record<string, Record<number, string>> = {};
+    for (const theme of THEMES) {
+      await test.step(theme.name, async () => {
+        await showTheme(page, at("/runs", stack.gatewayUrl), theme);
+        await expect(log.getByText("fg-97", { exact: true })).toBeVisible();
+        byTheme[theme.theme] = await readColours(theme.name);
+      });
+    }
+    await test.step("system theme follows the OS to dark without a reload", async () => {
+      // The last step left the system preference in a light OS. The lines already on screen must follow.
+      await page.emulateMedia({ colorScheme: "dark" });
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      const switched = await readColours("switched to dark");
+      expect(switched).toEqual(byTheme.dark);
+      expect(switched).not.toEqual(byTheme.light);
+    });
+  });
+});

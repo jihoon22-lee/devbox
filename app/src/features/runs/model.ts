@@ -5,6 +5,7 @@ export interface AnsiSpan {
   text: string;
   style: CSSProperties;
 }
+/** The classic 16-colour table: 256-colour indexes 0–15, and a basic foreground on an explicit background. */
 const COLORS = [
   "#000000",
   "#cd3131",
@@ -23,6 +24,11 @@ const COLORS = [
   "#29b8db",
   "#ffffff",
 ];
+const BASIC = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+/** The token names of the 16 basic colours in SGR order: 30–37 (40–47), then 90–97 (100–107). */
+const NAMES = [...BASIC, ...BASIC.map((name) => `bright-${name}`)];
+/** The SGR state so far. A basic foreground stays an index (0–15): its colour depends on the final background. */
+type SgrStyle = Omit<CSSProperties, "color"> & { color?: number | string };
 function color256(code: number): string | undefined {
   if (!Number.isInteger(code) || code < 0 || code > 255) return;
   if (code < 16) return COLORS[code];
@@ -34,7 +40,7 @@ function color256(code: number): string | undefined {
   const levels = [0, 95, 135, 175, 215, 255];
   return `rgb(${[levels[Math.floor(n / 36)], levels[Math.floor(n / 6) % 6], levels[n % 6]].join(", ")})`;
 }
-function sgr(style: CSSProperties, values: number[]): CSSProperties {
+function sgr(style: SgrStyle, values: number[]): SgrStyle {
   let next = { ...style };
   for (let i = 0; i < values.length; i++) {
     const code = values[i]!;
@@ -45,10 +51,10 @@ function sgr(style: CSSProperties, values: number[]): CSSProperties {
     else if (code === 24) delete next.textDecoration;
     else if (code === 39) delete next.color;
     else if (code === 49) delete next.backgroundColor;
-    else if (code >= 30 && code <= 37) next.color = COLORS[code - 30];
-    else if (code >= 90 && code <= 97) next.color = COLORS[code - 90 + 8];
-    else if (code >= 40 && code <= 47) next.backgroundColor = COLORS[code - 40];
-    else if (code >= 100 && code <= 107) next.backgroundColor = COLORS[code - 100 + 8];
+    else if (code >= 30 && code <= 37) next.color = code - 30;
+    else if (code >= 90 && code <= 97) next.color = code - 90 + 8;
+    else if (code >= 40 && code <= 47) next.backgroundColor = `var(--log-ansi-bg-${NAMES[code - 40]})`;
+    else if (code >= 100 && code <= 107) next.backgroundColor = `var(--log-ansi-bg-${NAMES[code - 100 + 8]})`;
     else if (code === 38 || code === 48) {
       let color: string | undefined;
       const mode = values[++i];
@@ -64,6 +70,15 @@ function sgr(style: CSSProperties, values: number[]): CSSProperties {
     }
   }
   return next;
+}
+/**
+ * A span's style from its final SGR state. A basic foreground takes the log's theme token, readable on
+ * the log background. On an explicit background (40–47, 100–107, 48) it keeps the classic colour paired
+ * with that background, such as a badge's white on red.
+ */
+function spanStyle({ color, ...style }: SgrStyle): CSSProperties {
+  if (typeof color !== "number") return color === undefined ? style : { ...style, color };
+  return { ...style, color: style.backgroundColor ? COLORS[color] : `var(--log-ansi-${NAMES[color]})` };
 }
 
 /**
@@ -104,10 +119,10 @@ const isControl = (code: number) => code < 32 || (code >= 127 && code <= 159);
 /** SGR is the only executable terminal sequence retained, as ordinary React styles. */
 export function ansiToSpans(text: string): AnsiSpan[] {
   const spans: AnsiSpan[] = [];
-  let style: CSSProperties = {};
+  let style: SgrStyle = {};
   let plain = "";
   const flush = () => {
-    if (plain) spans.push({ text: plain, style: { ...style } });
+    if (plain) spans.push({ text: plain, style: spanStyle(style) });
     plain = "";
   };
   walkAnsi(

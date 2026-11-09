@@ -134,3 +134,63 @@
   --term-bright-cyan: #0184bc;
   --term-bright-white: #ffffff;
 }
+
+/* Run log ANSI colours (features/runs/model.ts). Every basic foreground is at least 4.5:1 on --bg-1.
+   A --term-* colour that meets this is reused; the rest have log values. */
+:root,
+[data-theme="dark"] {
+  --log-ansi-black: #8e95a2;
+  --log-ansi-red: var(--term-red);
+  --log-ansi-green: var(--term-green);
+  --log-ansi-yellow: var(--term-yellow);
+  --log-ansi-blue: var(--term-blue);
+  --log-ansi-magenta: var(--term-magenta);
+  --log-ansi-cyan: var(--term-cyan);
+  --log-ansi-white: var(--term-white);
+  --log-ansi-bright-black: var(--log-ansi-black);
+  --log-ansi-bright-red: var(--term-bright-red);
+  --log-ansi-bright-green: var(--term-bright-green);
+  --log-ansi-bright-yellow: var(--term-bright-yellow);
+  --log-ansi-bright-blue: var(--term-bright-blue);
+  --log-ansi-bright-magenta: var(--term-bright-magenta);
+  --log-ansi-bright-cyan: var(--term-bright-cyan);
+  --log-ansi-bright-white: var(--term-bright-white);
+}
+[data-theme="light"] {
+  --log-ansi-black: var(--term-black);
+  --log-ansi-red: #cd3131;
+  --log-ansi-green: #3e7d3d;
+  --log-ansi-yellow: #966701;
+  --log-ansi-blue: #2665f0;
+  --log-ansi-magenta: var(--term-magenta);
+  --log-ansi-cyan: #0178aa;
+  --log-ansi-white: #6f7077;
+  /* A bright colour that needs a log value repeats its base colour. */
+  --log-ansi-bright-black: var(--term-bright-black);
+  --log-ansi-bright-red: var(--log-ansi-red);
+  --log-ansi-bright-green: var(--log-ansi-green);
+  --log-ansi-bright-yellow: var(--log-ansi-yellow);
+  --log-ansi-bright-blue: var(--log-ansi-blue);
+  --log-ansi-bright-magenta: var(--term-bright-magenta);
+  --log-ansi-bright-cyan: var(--log-ansi-cyan);
+  --log-ansi-bright-white: var(--log-ansi-white);
+}
+/* Explicit ANSI backgrounds keep the classic table in both themes, and text on them its classic colour. */
+:root {
+  --log-ansi-bg-black: #000000;
+  --log-ansi-bg-red: #cd3131;
+  --log-ansi-bg-green: #0dbc79;
+  --log-ansi-bg-yellow: #e5e510;
+  --log-ansi-bg-blue: #2472c8;
+  --log-ansi-bg-magenta: #bc3fbc;
+  --log-ansi-bg-cyan: #11a8cd;
+  --log-ansi-bg-white: #e5e5e5;
+  --log-ansi-bg-bright-black: #666666;
+  --log-ansi-bg-bright-red: #f14c4c;
+  --log-ansi-bg-bright-green: #23d18b;
+  --log-ansi-bg-bright-yellow: #f5f543;
+  --log-ansi-bg-bright-blue: #3b8eea;
+  --log-ansi-bg-bright-magenta: #d670d6;
+  --log-ansi-bg-bright-cyan: #29b8db;
+  --log-ansi-bg-bright-white: #ffffff;
+}

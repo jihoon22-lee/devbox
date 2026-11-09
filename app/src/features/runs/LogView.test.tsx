@@ -55,7 +55,7 @@ test("file-only log views retain live-tail behavior", async () => {
 test("uses actual log stream frames, credits bytes, renders safe ANSI and file locations, and closes on unmount", async () => {
   const { wire, view, open } = await setup();
   act(() => deliver(wire, "\x1b[31mfailed\x1b[0m src/app.ts:12:3"));
-  expect(await screen.findByText("failed")).toHaveStyle({ color: "#cd3131" });
+  expect((await screen.findByText("failed")).style.color).toBe("var(--log-ansi-red)");
   fireEvent.click(screen.getByRole("button", { name: "src/app.ts:12:3" }));
   expect(open).toHaveBeenCalledWith({ path: "src/app.ts", line: 12, column: 3, source });
   expect(wire.sent.some((m) => m.type === "streamCredit" && m.stream === 7)).toBe(true);
