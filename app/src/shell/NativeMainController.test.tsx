@@ -89,7 +89,11 @@ test("a current confirmed empty snapshot can quit directly and pending quit requ
     listeners.get("devbox://quit")?.({ payload: null });
     listeners.get("devbox://quit")?.({ payload: null });
   });
-  expect(mocks.invoke.mock.calls.filter(([name]) => name === "quit_app")).toHaveLength(1);
+  const exits = () => mocks.invoke.mock.calls.filter(([name]) => name === "quit_app");
+  // Each request first asks native whether quick capture holds a draft.
+  await waitFor(() => expect(exits()).toHaveLength(1));
+  await act(async () => {});
+  expect(exits()).toHaveLength(1);
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await act(async () => finish());
 });
@@ -193,4 +197,56 @@ test("시작하기 still saves the explicit choice and the question together", a
   await waitFor(() => expect(saved.autostartAsked).toBe(true));
   expect(called("set_autostart")).toEqual([["set_autostart", { enabled: false, firstRun: true }]]);
   expect(called("mark_autostart_asked")).toEqual([]);
+});
+
+/** Native says the hidden quick capture window holds a draft; every other command succeeds. */
+function captureDraft(present: boolean | Error) {
+  mocks.invoke.mockReset().mockImplementation(async (name) => {
+    if (name !== "capture_has_draft") return undefined;
+    if (present instanceof Error) throw present;
+    return present;
+  });
+}
+async function requestQuit() {
+  render(<NativeMainController ready={false} />);
+  await waitFor(() => expect(listeners.has("devbox://quit")).toBe(true));
+  act(() => listeners.get("devbox://quit")?.({ payload: null }));
+}
+
+test("캡처 초안이 있으면 종료를 묻고 quit_app을 부르지 않는다", async () => {
+  useNativeRuntime.setState({ openTasks: 0, snapshotCurrent: true });
+  captureDraft(true);
+  await requestQuit();
+  const dialog = await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(dialog).toHaveTextContent("빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.");
+  // No agent task runs, so neither the task nor the WSL sentence is a reason.
+  expect(dialog).not.toHaveTextContent("에이전트");
+  expect(dialog).not.toHaveTextContent("WSL");
+  expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "종료" })).toBeNull();
+  expect(called("quit_app")).toEqual([]);
+  await userEvent.click(screen.getByRole("button", { name: "캡처 열기" }));
+  expect(called("capture_open")).toEqual([["capture_open"]]);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(called("quit_app")).toEqual([]);
+});
+
+test("running tasks and a draft are both named, and 버리고 종료 quits", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(true);
+  await requestQuit();
+  expect(await screen.findByRole("dialog", { name: "devbox 종료" })).toHaveTextContent(
+    "에이전트 2개가 실행 중입니다. 앱을 끄면 WSL이 약 15초 뒤 멈추면서 함께 종료될 수 있습니다. 빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "버리고 종료" }));
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+  expect(called("capture_open")).toEqual([]);
+});
+
+test("a draft check that fails counts as no draft, so a current empty snapshot still quits directly", async () => {
+  useNativeRuntime.setState({ openTasks: 0, snapshotCurrent: true });
+  captureDraft(new Error("owned fixture failure"));
+  await requestQuit();
+  await waitFor(() => expect(called("quit_app")).toEqual([["quit_app"]]));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

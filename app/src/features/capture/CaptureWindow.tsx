@@ -7,7 +7,14 @@ import { messageText } from "../../rpc/messages";
 import { useRpcMutation } from "../../rpc/query";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Button } from "../../ui";
-import { captureKey, hideCapture, readCaptureDraft, saveCaptureDraft, submitCapture } from "./capture";
+import {
+  captureKey,
+  hideCapture,
+  readCaptureDraft,
+  reportCaptureDraft,
+  saveCaptureDraft,
+  submitCapture,
+} from "./capture";
 
 export function CaptureWindow() {
   const { state } = useRpcSession();
@@ -22,6 +29,8 @@ export function CaptureWindow() {
     setText(value);
     if (!saveCaptureDraft(value)) setError("임시 내용을 보관하지 못했습니다. 이 창을 닫지 말고 저장해 주세요.");
   };
+  // The session keeps a draft across a reload of this window; say once what it holds now.
+  useEffect(() => reportCaptureDraft(readCaptureDraft()), []);
   useEffect(() => {
     let live = true;
     let frame = 0;

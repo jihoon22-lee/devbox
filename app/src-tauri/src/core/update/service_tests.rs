@@ -437,7 +437,8 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
                 round,
                 labels: &labels,
                 native: (Some(0), 10),
-                expected_native_epoch: 10
+                expected_native_epoch: 10,
+                capture_draft: false,
             },
             || panic!("dirty note must prevent runner commit")
         ),
@@ -461,7 +462,8 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
                         round,
                         labels: &labels,
                         native,
-                        expected_native_epoch: 10
+                        expected_native_epoch: 10,
+                        capture_draft: false,
                     },
                     || panic!("changed native lifetime must block commit")
                 )
@@ -486,6 +488,7 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
                 labels: &labels,
                 native: (Some(0), 10),
                 expected_native_epoch: 10,
+                capture_draft: false,
             },
             || {
                 commits += 1;
@@ -512,7 +515,8 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
                     round,
                     labels: &labels,
                     native: (Some(0), 10),
-                    expected_native_epoch: 10
+                    expected_native_epoch: 10,
+                    capture_draft: false,
                 },
                 || panic!("already committed")
             )
@@ -522,6 +526,50 @@ async fn actual_commit_fence_requires_every_dirty_window_and_same_native_epoch()
     assert!(quit.approved);
     assert!(!quit.reserve_window());
     assert_eq!(quit.register("popout-note-too-late"), 0);
+    worker.abort();
+    let _ = worker.await;
+}
+#[tokio::test]
+async fn update_quit_is_rejected_while_a_capture_draft_exists() {
+    use crate::core::quit::Quit;
+    let (_temp, service) = setup(Duration::ZERO);
+    let worker = tokio::spawn(service.clone().run());
+    service.check(false).unwrap();
+    let available = wait(&service, |s| s.phase == Phase::Available).await;
+    service.download(available.generation).unwrap();
+    let ready = wait(&service, |s| s.phase == Phase::Ready).await;
+    let ticket = service
+        .install_summary(ready.generation, Some(0), 10, 0)
+        .confirmation_id
+        .unwrap();
+    let work = service
+        .begin_install(ready.generation, ticket, Some(0), 10, 0)
+        .unwrap();
+    let mut quit = Quit::default();
+    let main = quit.register("main");
+    let labels = vec!["main".into()];
+    let round = quit.start(labels.clone()).unwrap();
+    quit.ack("main", main, round, true);
+    // Every window agreed; only the hidden quick capture draft stands in the way.
+    let fence = install::CommitFence {
+        generation: work.generation,
+        round,
+        labels: &labels,
+        native: (Some(0), 10),
+        expected_native_epoch: 10,
+        capture_draft: true,
+    };
+    let commit = || panic!("a quick capture draft must prevent runner commit");
+    assert_eq!(
+        service.commit_after_quit(&mut quit, fence, commit),
+        Err(UpdateError::QuitRejected)
+    );
+    assert!(!quit.sealed() && !quit.approved);
+    assert!(
+        quit.start(labels.clone()).is_none(),
+        "cleanup owns the round"
+    );
+    assert!(!service.installation_committed(work.generation));
     worker.abort();
     let _ = worker.await;
 }

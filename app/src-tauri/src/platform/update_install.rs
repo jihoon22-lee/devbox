@@ -1,5 +1,6 @@
 //! Native installation orchestration; irreversible authorization stays under Rust locks.
 use super::{
+    capture::Capture,
     connection::Connection,
     native_activity::Activity,
     quit::{self, QuitState},
@@ -150,6 +151,7 @@ pub fn update_install_confirm(
                     labels: &quit::labels(&ui),
                     native,
                     expected_native_epoch: epoch,
+                    capture_draft: ui.state::<Capture>().has_draft(),
                 },
                 || {
                     ui_prepared

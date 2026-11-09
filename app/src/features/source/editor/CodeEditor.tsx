@@ -5,7 +5,7 @@ import { EditorHost } from "../../documents/EditorHost";
 import { keyId } from "../../documents/offlineJournal";
 import { useDocuments } from "../../documents/store";
 import { CompareView } from "../../notes/CompareView";
-import { OpenError, ReadOnlyBar } from "../../notes/ReadOnlyBar";
+import { OpenError, ReadOnlyBar, SaveError } from "../../notes/ReadOnlyBar";
 import { RecoveryView } from "../../notes/RecoveryView";
 import { SaveStatus } from "../../notes/SaveStatus";
 import { sendToTransforms } from "../../tools/transforms/handoff";
@@ -90,6 +90,7 @@ export function CodeEditor({ docKey, location }: { docKey: DocKey; location?: Co
       {lsp.message && <p role="status">{lsp.message}</p>}
       <OpenError docKey={key} />
       <ReadOnlyBar docKey={key} />
+      <SaveError docKey={key} />
       <CompareView docKey={key} />
       <RecoveryView docKey={key} />
       {doc?.state === "Orphaned" && <p role="status">파일이 삭제되었습니다. 저장하면 현재 내용을 다시 만듭니다.</p>}

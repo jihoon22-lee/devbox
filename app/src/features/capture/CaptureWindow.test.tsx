@@ -4,17 +4,31 @@ import { RpcError } from "../../rpc/client";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { NotesWire } from "../notes/test-wire";
 import { CaptureWindow } from "./CaptureWindow";
-import { DRAFT_KEY, hideCapture } from "./capture";
+import { DRAFT_KEY, hideCapture, reportCaptureDraft } from "./capture";
 
 vi.mock("./capture", async (original) => ({
   ...(await original<typeof import("./capture")>()),
   hideCapture: vi.fn(async () => {}),
+  reportCaptureDraft: vi.fn(),
 }));
 beforeEach(() => {
   sessionStorage.clear();
   vi.mocked(hideCapture).mockClear();
+  vi.mocked(reportCaptureDraft).mockClear();
 });
 afterEach(cleanup);
+
+test("on mount the window tells native once about the draft its session kept across a reload", async () => {
+  sessionStorage.setItem(DRAFT_KEY, "kept draft");
+  render(
+    <RpcProvider client={new NotesWire().client}>
+      <CaptureWindow />
+    </RpcProvider>,
+  );
+  expect(screen.getByRole("textbox", { name: "캡처할 내용" })).toHaveValue("kept draft");
+  await waitFor(() => expect(screen.getByRole("button", { name: "저장" })).toBeEnabled());
+  expect(vi.mocked(reportCaptureDraft).mock.calls).toEqual([["kept draft"]]);
+});
 
 test("IME and Shift+Enter do not send, Esc hides while preserving the draft", async () => {
   const wire = new NotesWire();

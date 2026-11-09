@@ -3,15 +3,16 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appPreferences, isNative, markAutostartAsked, setAutostart } from "../features/settings/nativePreferences";
-import { Button, ConfirmDialog } from "../ui";
+import { Button } from "../ui";
 import { FirstRun } from "./FirstRun";
 import { useNativeRuntime } from "./nativeRuntime";
+import { QuitConfirmation, type QuitReasons, quitsDirectly } from "./QuitConfirmation";
 
 /** Mount outside ConnectionGate so tray quit is always available, including startup failures. */
 export function NativeMainController({ ready }: { ready: boolean }) {
   const [main] = useState(() => isNative() && getCurrentWindow().label === "main");
   const [firstRun, setFirstRun] = useState(false);
-  const [quit, setQuit] = useState<number | null | undefined>(undefined);
+  const [quit, setQuit] = useState<QuitReasons | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -37,13 +38,20 @@ export function NativeMainController({ ready }: { ready: boolean }) {
     let cancelled = false;
     let lease: number | undefined;
     const cleanups: (() => void)[] = [];
-    const requestQuit = () => {
+    const requestQuit = async () => {
+      // The draft lives only in the hidden capture window; a failed question counts as none.
+      const captureDraft = await invoke<boolean>("capture_has_draft").then(
+        (draft) => draft === true,
+        () => false,
+      );
+      if (cancelled) return;
       const snapshot = useNativeRuntime.getState();
-      const count = snapshot.snapshotCurrent || (snapshot.openTasks ?? 0) > 0 ? snapshot.openTasks : null;
-      if (count === 0) void exit();
+      const tasks = snapshot.snapshotCurrent || (snapshot.openTasks ?? 0) > 0 ? snapshot.openTasks : null;
+      const reasons = { tasks, captureDraft };
+      if (quitsDirectly(reasons)) void exit();
       else {
         setFirstRun(false);
-        setQuit(count);
+        setQuit(reasons);
       }
     };
     void (async () => {
@@ -65,7 +73,7 @@ export function NativeMainController({ ready }: { ready: boolean }) {
             (payload: { wasFocused: boolean }) =>
               useNativeRuntime.getState().push({ kind: "bottom-terminal", wasFocused: payload.wasFocused === true }),
           ],
-          ["devbox://quit", requestQuit],
+          ["devbox://quit", () => void requestQuit()],
         ] as const) {
           const off = await listen<{ wasFocused: boolean }>(name, (event) => {
             if (!cancelled) receive(event.payload);
@@ -138,13 +146,16 @@ export function NativeMainController({ ready }: { ready: boolean }) {
           }}
         />
       )}
-      <ConfirmDialog
-        open={quit !== undefined}
-        title="devbox 종료"
-        body={`${quit === null ? "실행 중인 에이전트 작업을 확인하지 못했습니다." : `에이전트 ${quit ?? 0}개가 실행 중입니다.`} 앱을 끄면 WSL이 약 15초 뒤 멈추면서 함께 종료될 수 있습니다.`}
-        confirmLabel="종료"
-        disabled={busy}
+      <QuitConfirmation
+        reasons={quit}
+        busy={busy}
         onCancel={() => !pending.current && setQuit(undefined)}
+        onOpenCapture={() => {
+          if (pending.current) return;
+          setQuit(undefined);
+          // Native logs a failure to show the window, as for the tray item; nothing quits either way.
+          void invoke("capture_open").catch(() => {});
+        }}
         onConfirm={() => void exit()}
       />
     </>
