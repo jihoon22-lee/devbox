@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Button, useToasts } from "../../../ui";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
@@ -33,6 +34,8 @@ function Entry({
   /** Shown in place of an empty text. */
   empty?: string;
 }) {
+  // Whitespace alone reads as nothing, so it counts as empty; any other text is shown and copied as stored.
+  const blank = !text.trim();
   return (
     <li>
       <div className={s.entryHead}>
@@ -40,20 +43,21 @@ function Entry({
         {/* The same local date and time as the header's closing time. */}
         <time dateTime={new Date(atMs).toISOString()}>{new Date(atMs).toLocaleString("ko")}</time>
         {delivery && <span>{delivery}</span>}
-        <Button size="sm" disabled={!text} onClick={() => copy(text)}>
+        <Button size="sm" disabled={blank} onClick={() => copy(text)}>
           복사
         </Button>
       </div>
-      {text ? <p className={s.entryText}>{text}</p> : empty && <p className={s.entryNote}>{empty}</p>}
+      {blank ? empty && <p className={s.entryNote}>{empty}</p> : <p className={s.entryText}>{text}</p>}
     </li>
   );
 }
 
 /**
  * What the task was asked: its first prompt, then each follow-up in the order it was sent, with its delivery.
- * Only reads the task, so a closed task shows it too; nothing here sends.
+ * Only reads the task, so a closed task shows it too; nothing here sends. The detail re-renders every second for its
+ * clock while the task object stays the same, so the tab renders again only when the task does.
  */
-export function InstructionsTab({ task }: { task: AgentTask }) {
+export const InstructionsTab = memo(function InstructionsTab({ task }: { task: AgentTask }) {
   // Follow-ups sent in the same millisecond keep the order they were stored in.
   const followUps = task.followUps
     .map((followUp, index) => ({ followUp, index }))
@@ -75,4 +79,4 @@ export function InstructionsTab({ task }: { task: AgentTask }) {
       {followUps.length === 0 && <p className={s.entryNote}>이어서 보낸 지시가 없습니다.</p>}
     </div>
   );
-}
+});

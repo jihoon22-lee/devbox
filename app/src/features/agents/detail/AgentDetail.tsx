@@ -25,7 +25,16 @@ const tabs = [
   { id: "run", label: "실행" },
   { id: "instructions", label: "지시" },
 ];
-export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof useAgentsData> }) {
+export function AgentDetail({
+  id,
+  data,
+  popout = false,
+}: {
+  id: string;
+  data: ReturnType<typeof useAgentsData>;
+  /** Shown in its own popout window rather than the agents page. */
+  popout?: boolean;
+}) {
   const detail = useRpcQuery("agents.get", { id });
   const listed = data.tasks.find((task) => task.id === id);
   const task = detail.data ?? listed;
@@ -58,6 +67,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         now={data.now}
         resource={data.resources.get(id)}
         behind={data.stats.get(id)?.behind}
+        popout={popout}
       />
       <QueryError query={detail} />
       <QueryError query={sessions} />
@@ -122,5 +132,9 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
 export function PopoutAgent() {
   const data = useAgentsData();
   const { id } = useParams({ strict: false }) as { id?: string };
-  return id ? <AgentDetail key={id} id={id} data={data} /> : <EmptyState title="에이전트 작업을 찾을 수 없습니다" />;
+  return id ? (
+    <AgentDetail key={id} id={id} data={data} popout />
+  ) : (
+    <EmptyState title="에이전트 작업을 찾을 수 없습니다" />
+  );
 }

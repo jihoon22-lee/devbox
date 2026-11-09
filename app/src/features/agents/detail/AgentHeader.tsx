@@ -16,6 +16,7 @@ export function AgentHeader({
   now,
   resource,
   behind,
+  popout = false,
 }: {
   task: AgentTask;
   projectName: string;
@@ -23,6 +24,8 @@ export function AgentHeader({
   now: number;
   resource?: Methods["agents.resources"]["result"]["items"][number];
   behind?: number;
+  /** Shown in a popout window, where [같은 지시로 새 작업] is left out. */
+  popout?: boolean;
 }) {
   const usage = useRpcQuery("agents.usage", { id: task.id });
   const seconds = Math.max(0, Math.floor(((task.closedMs ?? now) - task.createdMs) / 1000));
@@ -32,13 +35,17 @@ export function AgentHeader({
     <header className={s.header}>
       <div className={s.heading}>
         <h1>{task.title}</h1>
-        {/* Open or closed: only fills the new task form with the first prompt and the project. [시작] starts it. */}
-        <Button
-          size="sm"
-          onClick={() => useAgentsUi.getState().setCreating(true, { prompt: task.prompt, projectId: task.projectId })}
-        >
-          같은 지시로 새 작업
-        </Button>
+        {/* Open or closed: only fills the new task form with the first prompt and the project. [시작] starts it.
+            Not in a popout: the form opens the new task in the window it started from, which would turn the
+            popout into the agents page. */}
+        {!popout && (
+          <Button
+            size="sm"
+            onClick={() => useAgentsUi.getState().setCreating(true, { prompt: task.prompt, projectId: task.projectId })}
+          >
+            같은 지시로 새 작업
+          </Button>
+        )}
       </div>
       <div className={s.metrics}>
         <AgentStateMark state={task.state} />

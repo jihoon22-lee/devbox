@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { METHOD_INFO } from "../../../rpc/gen/rpc";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { TooltipProvider, useToasts } from "../../../ui";
+import { useNotifications } from "../../notifications/store";
 import { ProjectDataProvider } from "../../projects/ProjectData";
 import { ProjectWire } from "../../projects/test-wire";
 import { AgentDataProvider } from "../AgentData";
@@ -17,7 +18,10 @@ const toasts = () => useToasts.getState().items.map(({ tone, title }) => ({ tone
 const rows = () => within(screen.getByRole("list", { name: "지시 기록" })).getAllByRole("listitem");
 /** Times are shown in the local format; the machine-readable time is what the order is checked against. */
 const sentAt = (row: HTMLElement) => row.querySelector("time")?.getAttribute("datetime");
-beforeEach(() => useToasts.setState({ items: [] }));
+beforeEach(() => {
+  useToasts.setState({ items: [] });
+  useNotifications.getState().clear();
+});
 afterEach(cleanup);
 
 test("lists prompt then follow-ups by time and labels only delivered ones 전달됨", async () => {
@@ -79,6 +83,7 @@ test("a copy the clipboard refuses warns without posting an error notification",
   render(<InstructionsTab task={{ ...task("a", "idle"), prompt: "고쳐 주세요" }} />);
   await user.click(within(rows()[0]!).getByRole("button", { name: "복사" }));
   await waitFor(() => expect(toasts()).toEqual([{ tone: "warn", title: "클립보드에 복사하지 못했습니다" }]));
+  expect(useNotifications.getState().items).toEqual([]);
 });
 
 test("a task started without a prompt says so and has nothing to copy", () => {
@@ -89,6 +94,38 @@ test("a task started without a prompt says so and has nothing to copy", () => {
   expect(first).toHaveTextContent("지시문 없이 시작했습니다.");
   expect(within(first!).getByRole("button", { name: "복사" })).toBeDisabled();
   expect(screen.getByText("이어서 보낸 지시가 없습니다.")).toBeInTheDocument();
+});
+
+test("a first prompt of only whitespace counts as empty; one with text is copied exactly as stored", async () => {
+  const user = userEvent.setup();
+  const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+  const { rerender } = render(<InstructionsTab task={{ ...task("a", "running"), prompt: " \n\t \n" }} />);
+  expect(rows()[0]).toHaveTextContent("지시문 없이 시작했습니다.");
+  expect(within(rows()[0]!).getByRole("button", { name: "복사" })).toBeDisabled();
+  rerender(<InstructionsTab task={{ ...task("a", "running"), prompt: "  고쳐 주세요\n" }} />);
+  expect(rows()[0]).not.toHaveTextContent("지시문 없이 시작했습니다.");
+  await user.click(within(rows()[0]!).getByRole("button", { name: "복사" }));
+  expect(write).toHaveBeenCalledWith("  고쳐 주세요\n");
+});
+
+test("a re-render with the same task leaves the history alone; a changed task updates it", () => {
+  const same = {
+    ...task("a", "idle", 50),
+    prompt: "처음",
+    followUps: [{ atMs: 100, text: "다음", delivery: "delivered" as const }],
+  };
+  const { rerender } = render(<InstructionsTab task={same} />);
+  // The detail re-renders every second for its clock. Each entry formats its time when it renders.
+  const format = vi.spyOn(Date.prototype, "toLocaleString");
+  rerender(<InstructionsTab task={same} />);
+  expect(format).not.toHaveBeenCalled();
+  rerender(
+    <InstructionsTab
+      task={{ ...same, followUps: [...same.followUps, { atMs: 200, text: "그다음", delivery: "pending" }] }}
+    />,
+  );
+  expect(rows()).toHaveLength(3);
+  expect(rows()[2]).toHaveTextContent("그다음");
 });
 
 function Detail() {

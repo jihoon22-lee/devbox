@@ -263,6 +263,19 @@ test("agent popout mounts full detail without frame and retains gateway/renderer
   expect(wire.requests("agents.list")).toHaveLength(1);
 });
 
+test("the popout agent window offers no [같은 지시로 새 작업]; the main detail does", async () => {
+  // After [시작] the form opens the new task in the window it was started from; a popout would become the agents page.
+  const popout = await setup("/popout/agent/w?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  const detail = await screen.findByRole("article", { name: "에이전트 작업 상세" });
+  expect(detail).toHaveTextContent("작업 w");
+  expect(within(detail).getByRole("tab", { name: "지시" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "같은 지시로 새 작업" })).toBeNull();
+  popout.view.unmount();
+  await setup("/agents?id=w&gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  const main = await screen.findByRole("article", { name: "에이전트 작업 상세" });
+  expect(within(main).getByRole("button", { name: "같은 지시로 새 작업" })).toBeInTheDocument();
+});
+
 test("grid selection keeps routing search and popout grid never mounts attention bridge", async () => {
   vi.stubGlobal(
     "ResizeObserver",
