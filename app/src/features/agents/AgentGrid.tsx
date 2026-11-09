@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, EmptyState, useToasts } from "../../ui";
+import { Button, useToasts } from "../../ui";
 import { useOptionalProjectData } from "../projects/ProjectData";
 import { openPopout } from "../terminal/popout";
 import { TerminalView } from "../terminal/TerminalView";
 import { useAgentData, useAgentSummary } from "./AgentData";
+import { AgentEmpty } from "./AgentEmpty";
 import s from "./AgentGrid.module.css";
 import { AgentStateMark } from "./AgentStateMark";
 import { QueryError } from "./detail/QueryError";
@@ -87,7 +88,8 @@ export function AgentGrid({ tasks, onOpen }: { tasks: AgentTask[]; onOpen: (id: 
         </Button>
       </div>
       {!openTasks.length ? (
-        <EmptyState title="에이전트 작업이 없습니다" />
+        // The same next action as the list view's body; it reads the shared lists, so only an empty grid needs them.
+        <AgentEmpty onOpen={onOpen} />
       ) : (
         <section
           aria-label="에이전트 터미널 격자"

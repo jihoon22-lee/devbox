@@ -26,13 +26,13 @@ async function setup(items: typeof projects) {
     wire.reply("agents.list", { rev: "1", items: [] });
   });
 }
-test("shows_add_project_when_no_project_is_registered", async () => {
-  await setup([]);
-  expect(await screen.findByText("등록된 프로젝트가 없습니다")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "프로젝트 추가" })).toBeInTheDocument();
-});
-test("hides_add_project_when_projects_exist", async () => {
-  await setup(projects);
+// [프로젝트 추가] and [새 작업] are the body's actions (AgentsPage.test.tsx), so they stay in view with the list collapsed.
+test.each([
+  ["no project is registered", [], "프로젝트를 추가한 뒤 새 작업을 만들 수 있습니다."],
+  ["projects exist", projects, "새 작업으로 도구와 지시문을 선택하세요."],
+])("the empty list keeps its title and leaves the action to the body: %s", async (_, items, body) => {
+  await setup(items);
   expect(await screen.findByText("에이전트 작업이 없습니다")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "프로젝트 추가" })).not.toBeInTheDocument();
+  expect(screen.getByText(body)).toBeInTheDocument();
+  expect(screen.queryByRole("button")).toBeNull();
 });

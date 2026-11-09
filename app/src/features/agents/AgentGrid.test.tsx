@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { ProjectDataProvider } from "../projects/ProjectData";
 import { ProjectWire, projects } from "../projects/test-wire";
@@ -9,6 +10,7 @@ import { AgentRow } from "./AgentRow";
 import { AgentHeader } from "./detail/AgentHeader";
 import { useAgentsData } from "./hooks";
 import { profiles, task } from "./test-fixtures";
+import { useAgentsUi } from "./ui";
 
 const terminal = vi.fn();
 vi.mock("../terminal/TerminalView", () => ({
@@ -67,16 +69,45 @@ test("tiles retain title and state without a session and observe cell width", ()
   vi.unstubAllGlobals();
 });
 
-test("closed work never appears in grid previews, column counts or the nonempty state", () => {
+test("closed work never appears in grid previews or column counts", () => {
   const tasks = [task("a"), task("b"), task("c"), task("d"), task("closed", "closed")];
-  const view = render(<AgentGrid tasks={tasks} onOpen={() => {}} />);
+  render(<AgentGrid tasks={tasks} onOpen={() => {}} />);
   expect(screen.queryByRole("button", { name: "작업 closed 터미널 미리보기" })).toBeNull();
   expect(screen.getByRole("region", { name: "에이전트 터미널 격자" })).toHaveStyle({
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   });
-  view.rerender(<AgentGrid tasks={[task("closed", "closed")]} onOpen={() => {}} />);
+});
+
+function Grid() {
+  const data = useAgentsData();
+  return <AgentGrid tasks={data.tasks} onOpen={() => {}} />;
+}
+test.each([
+  { name: "no project", items: [], action: "프로젝트 추가" },
+  { name: "closed work only", items: projects, action: "새 작업" },
+])("빈 격자도 다음 동작을 보인다: $name", async ({ items, action }) => {
+  useAgentsUi.getState().setCreating(false);
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <ProjectDataProvider>
+        <AgentDataProvider>
+          <Grid />
+        </AgentDataProvider>
+      </ProjectDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  // Until both lists arrive the grid decides nothing: no "no work" text and no action.
+  expect(screen.queryAllByRole("button").map((button) => button.textContent)).toEqual(["새 창으로"]);
+  await act(async () => {
+    wire.reply("projects.list", { rev: "1", items });
+    wire.reply("agents.list", { rev: "1", items: [task("closed", "closed", Date.now())] });
+  });
   expect(screen.queryByRole("region", { name: "에이전트 터미널 격자" })).toBeNull();
-  expect(screen.getByText("에이전트 작업이 없습니다")).toBeInTheDocument();
+  await userEvent.click(await screen.findByRole("button", { name: action }));
+  if (action === "새 작업") expect(useAgentsUi.getState().creating).toBe(true);
+  else expect(await screen.findByRole("dialog", { name: "프로젝트 추가" })).toBeInTheDocument();
 });
 
 test("agent_state_mark_matches_across_list_header_and_grid", async () => {

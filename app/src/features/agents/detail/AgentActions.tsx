@@ -6,7 +6,6 @@ import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Banner, Button, ConfirmDialog, Dialog, Menu, Tooltip } from "../../../ui";
 import { useProjectTrust } from "../../projects/useProjectTrust";
 import { MergePanel } from "../../source/merge/MergePanel";
-import { openPopout } from "../../terminal/popout";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
 import { useAgentRefresh, useAgentResult } from "./data";
@@ -19,6 +18,7 @@ export function AgentActions({
   sessionKnown = true,
   onInstruct,
   onResume,
+  onShowTerminal,
   onTest,
 }: {
   task: AgentTask;
@@ -26,6 +26,7 @@ export function AgentActions({
   sessionKnown?: boolean;
   onInstruct?: () => void;
   onResume?: () => void;
+  onShowTerminal?: () => void;
   onTest?: (id: string) => void;
 }) {
   const resume = useRpcMutation("agents.resume"),
@@ -124,11 +125,18 @@ export function AgentActions({
       });
     });
   const hasTest = !!config.data?.config.agent.test && !config.data.error;
+  // The live tool waits for a choice or an answer in its terminal; the answer goes there, never through a send.
+  const respond = sessionAlive && !task.toolExited && task.state === "waiting";
   if (task.state === "closed") return null;
   return (
     <>
+      {respond && <Banner tone="warn">터미널에서 선택하거나 응답해 주세요.</Banner>}
       <div className={s.actions}>
-        {sessionAlive && !task.toolExited ? (
+        {respond ? (
+          <Button variant="primary" disabled={blocked} onClick={onShowTerminal}>
+            터미널에서 응답
+          </Button>
+        ) : sessionAlive && !task.toolExited ? (
           <Button disabled={blocked} onClick={onInstruct}>
             이어서 지시
           </Button>
@@ -181,13 +189,6 @@ export function AgentActions({
               onSelect: () =>
                 void run(async () => {
                   apply(await review.mutateAsync({ id: task.id }));
-                }),
-            },
-            {
-              label: "새 창으로",
-              onSelect: () =>
-                void run(async () => {
-                  await openPopout("agent", task.id);
                 }),
             },
             {

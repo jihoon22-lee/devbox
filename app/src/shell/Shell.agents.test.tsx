@@ -137,7 +137,8 @@ test("new command from palette keeps the created dialog input focused", async ()
 test("detail uses live terminal status despite missing CLI session metadata; explicit instruct focuses without polling theft", async () => {
   const { wire } = await setup("/agents?id=w&gateway=ws%3A%2F%2Ffixture&renderer=dom");
   await waitFor(() => expect(wire.requests("agents.get")).toHaveLength(1));
-  await act(async () => wire.reply("agents.get", { ...task("w", "waiting"), sessionId: null }));
+  // Idle, not waiting: a waiting task with a live session offers [터미널에서 응답] instead of [이어서 지시].
+  await act(async () => wire.reply("agents.get", { ...task("w", "idle"), sessionId: null }));
   await waitFor(() =>
     expect(
       wire.requests("terminal.list").some((request) => (request.params as { projectId: string }).projectId === "a"),

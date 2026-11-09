@@ -1,7 +1,8 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { SectionLayout } from "../../shell/SectionLayout";
-import { Banner, Button, EmptyState, Kbd } from "../../ui";
+import { Banner, Button, Kbd } from "../../ui";
 import { openSettings } from "../settings/open";
+import { AgentEmpty } from "./AgentEmpty";
 import { AgentGrid } from "./AgentGrid";
 import { AgentList } from "./AgentList";
 import { AgentDetail } from "./detail/AgentDetail";
@@ -83,7 +84,7 @@ export function AgentsPage() {
       ) : id ? (
         <AgentDetail key={id} id={id} data={data} />
       ) : (
-        <EmptyState title="에이전트 작업을 고르세요" body="입력을 기다리는 작업이 위에 모입니다." />
+        <AgentEmpty onOpen={select} />
       )}
     </SectionLayout>
   );
