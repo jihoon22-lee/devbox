@@ -110,6 +110,7 @@ export function ProjectCard({
           tabIndex={-1}
           variant="ghost"
           size="sm"
+          className={s.favorite}
           disabled={pending}
           aria-pressed={project.favorite}
           aria-label={`${project.name} 즐겨찾기`}

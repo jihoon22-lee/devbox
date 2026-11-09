@@ -57,10 +57,14 @@
   .trigger:focus-visible {
     outline-color: Highlight;
   }
+  /* No Canvas backplate, which would hide HighlightText (CommandPalette.module.css). */
   .item[data-highlighted] {
+    forced-color-adjust: none;
     color: HighlightText;
     background: Highlight;
     outline-color: Highlight;
+    --kbd-color: HighlightText;
+    --kbd-border: HighlightText;
   }
   .trigger:disabled,
   .item[data-disabled] {

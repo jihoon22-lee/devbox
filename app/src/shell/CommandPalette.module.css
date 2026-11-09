@@ -25,10 +25,17 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/*
+ * Forced colours paint a Canvas backplate behind text, and HighlightText can equal Canvas, so the label
+ * would vanish. The current option opts out and sets the system pair itself, its Kbd chip included.
+ */
 @media (forced-colors: active) {
   .option[aria-selected="true"] {
+    forced-color-adjust: none;
     color: HighlightText;
     background: Highlight;
     outline-color: Highlight;
+    --kbd-color: HighlightText;
+    --kbd-border: HighlightText;
   }
 }

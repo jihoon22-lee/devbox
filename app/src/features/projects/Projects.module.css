@@ -88,3 +88,13 @@
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
+/*
+ * The filled star is the favourite state, so its button keeps the ghost look when pressed: the shared
+ * pressed box would sit beside the selected row's fill and the active cell's outline. Outranks both
+ * pressed selectors in Button.module.css.
+ */
+.actionCell .favorite[aria-pressed="true"],
+.actionCell .favorite[aria-pressed="true"]:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+}

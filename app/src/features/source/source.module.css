@@ -40,9 +40,13 @@
   border-bottom-color: var(--accent);
   color: var(--fg);
 }
+/* Forced colours turn the transparent underline into CanvasText, so unselected tabs paint it as Canvas. */
 @media (forced-colors: active) {
   .sectionTab[aria-selected="true"] {
     border-bottom-color: Highlight;
+  }
+  .sectionTab:not([aria-selected="true"]) {
+    border-bottom-color: Canvas;
   }
 }
 .editorHeader {

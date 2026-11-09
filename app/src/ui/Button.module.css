@@ -47,19 +47,24 @@
 .danger:hover:not(:disabled) {
   background: var(--danger);
   color: var(--accent-fg);
+  --kbd-color: var(--accent-fg);
+  --kbd-border: color-mix(in srgb, var(--accent-fg) 45%, transparent);
 }
 .secondary {
 }
 /*
  * Pressed toggles and selected items, for every variant. The fill alone is under 3:1, so the accent
  * border carries the state. No box-shadow: it would replace the :focus-visible ring. The hover
- * selector outranks the hover fills above so the pressed look stays under the pointer.
+ * selector outranks the hover fills above so the pressed look stays under the pointer. A Kbd chip
+ * returns to its default colours, which a filled variant changed.
  */
 .button[aria-pressed="true"],
 .button[aria-pressed="true"]:hover:not(:disabled) {
   background: var(--selection);
   border-color: var(--accent);
   color: var(--fg);
+  --kbd-color: var(--fg-muted);
+  --kbd-border: var(--border);
 }
 @media (forced-colors: active) {
   .button[aria-pressed="true"],

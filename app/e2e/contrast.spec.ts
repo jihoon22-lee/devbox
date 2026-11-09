@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
+import { each, hex, mostCommon, near, pixelsOf, type Rgba } from "./pixels";
 import { expect, test } from "./support";
 
 // Both themes through the stored app preference. Each explicit preference runs against the opposite
@@ -12,7 +13,6 @@ const THEMES = [
   { name: "system in a light OS", preference: "system", scheme: "light", theme: "light" },
 ] as const;
 type Theme = (typeof THEMES)[number];
-type Rgba = [number, number, number, number];
 
 /** Computed colours: `rgb()`/`rgba()`, and `color(srgb …)` for color-mix values. */
 function parse(value: string): Rgba {
@@ -87,10 +87,25 @@ function textContrast(seen: Look) {
 function expectReadable(seen: Look, label: string) {
   expect(textContrast(seen), `${label}: ${seen.color} on ${seen.layers.join(" < ")}`).toBeGreaterThanOrEqual(4.5);
 }
-/** A mark (border, underline, outline) against the colours on both of its sides. */
+/** A mark (border, underline, inset outline) drawn on its element's fill, against the colours on both sides. */
 function expectVisibleMark(mark: string, inside: Rgba, outside: Rgba, label: string) {
-  expect(contrast(parse(mark), inside), `${label} against its own fill`).toBeGreaterThanOrEqual(3);
-  expect(contrast(parse(mark), outside), `${label} against the surrounding background`).toBeGreaterThanOrEqual(3);
+  // A translucent mark is seen over the fill it is painted on.
+  const seen = over(parse(mark), inside);
+  expect(contrast(seen, inside), `${label} against its own fill`).toBeGreaterThanOrEqual(3);
+  expect(contrast(seen, outside), `${label} against the surrounding background`).toBeGreaterThanOrEqual(3);
+}
+
+/**
+ * A label paints its glyphs: inside its box most pixels are the row's own fill and some stand apart from it.
+ * Computed colours cannot show this. A forced-colours backplate covers the box in Canvas, which can be the
+ * text colour itself (S8-5b-8 M2, RC3-SHOT-01).
+ */
+async function expectPaintedLabel(page: Page, label: Locator, row: Locator, name: string) {
+  const fill = mostCommon(await pixelsOf(page, row));
+  const box = each(await pixelsOf(page, label));
+  const ink = box.filter((color) => !near(color, fill)).length / box.length;
+  expect(ink, `${name}: glyph pixels apart from the row fill ${hex(fill)}`).toBeGreaterThanOrEqual(0.05);
+  expect(ink, `${name}: the label box shows the row fill ${hex(fill)}, not a backplate`).toBeLessThanOrEqual(0.6);
 }
 
 async function showTheme(page: Page, url: string, theme: Theme) {
@@ -228,9 +243,30 @@ test("palette_active_option_has_visible_outline_in_each_theme", async ({ page, s
   }
 });
 
+/**
+ * A Kbd chip in a state no shipped control shows yet (S8-5b-8 M1): a copy of `host` with `attributes` and a
+ * copy of a real chip, hovered beside the original, measured and removed again.
+ */
+async function expectReadableChipIn(page: Page, host: Locator, attributes: Record<string, string>, label: string) {
+  await host.evaluate((element, extra) => {
+    const copy = element.cloneNode(true) as HTMLElement;
+    for (const [name, value] of Object.entries(extra)) copy.setAttribute(name, value);
+    copy.dataset.probe = "";
+    const chip = document.querySelector("kbd");
+    if (!chip) throw new Error("no chip to copy");
+    if (!copy.querySelector("kbd")) copy.append(chip.cloneNode(true));
+    element.after(copy);
+  }, attributes);
+  const probe = page.locator("[data-probe]");
+  await probe.hover();
+  expectReadable(await look(probe.locator("kbd")), label);
+  await probe.evaluate((element) => element.remove());
+}
+
 test("primary-kbd-and-danger-highlight-meet-contrast", async ({ page, stack }) => {
   test.slow();
-  await stack.gammaProjectId();
+  const projectId = await stack.gammaProjectId();
+  await stack.rpc("projects.set_favorite", { id: projectId, favorite: true });
   // The fixture HOME is owned by the test, so the default vault `~/notes` is a fixture folder.
   mkdirSync(join(stack.home, "notes"), { recursive: true });
   writeFileSync(join(stack.home, "notes/owned.md"), "# owned\n");
@@ -243,6 +279,12 @@ test("primary-kbd-and-danger-highlight-meet-contrast", async ({ page, stack }) =
       await primary.hover();
       expectReadable(await look(primary), "hovered [새 작업]");
       expectReadable(await look(chip), "shortcut chip in hovered [새 작업]");
+      await expectReadableChipIn(
+        page,
+        primary,
+        { "aria-pressed": "true" },
+        "shortcut chip in a pressed primary button",
+      );
       // A chip outside a primary button keeps its default colours.
       const plain = await look(page.getByRole("button", { name: "명령 팔레트 열기" }).locator("kbd"));
       expect(plain.color).toBe(await resolve(page, "--fg-muted"));
@@ -250,12 +292,23 @@ test("primary-kbd-and-danger-highlight-meet-contrast", async ({ page, stack }) =
 
       await page.getByRole("button", { name: "프로젝트 전환" }).click();
       const projects = page.getByRole("dialog", { name: "프로젝트", exact: true });
+      // The filled star is the favourite's state; a pressed box would sit beside the row's own marks (M4).
+      const star = projects.getByRole("button", { name: "gamma 즐겨찾기", exact: true });
+      await expect(star).toHaveAttribute("aria-pressed", "true");
+      for (const state of ["resting", "hovered"]) {
+        if (state === "hovered") await star.hover();
+        const seen = await look(star);
+        expect(parse(seen.background)[3], `${state} favourite star fill`).toBe(0);
+        expect(parse(seen.border)[3], `${state} favourite star border`).toBe(0);
+        expect(await star.locator("svg").evaluate((svg) => getComputedStyle(svg).fill), "filled star").toBe(seen.color);
+      }
       await projects.getByRole("button", { name: "gamma 제거", exact: true }).click();
       const confirm = page.getByRole("dialog", { name: "프로젝트 제거", exact: true });
       const danger = confirm.getByRole("button", { name: "프로젝트 제거", exact: true });
       expectReadable(await look(danger), "danger button");
       await danger.hover();
       expectReadable(await look(danger), "hovered danger button");
+      await expectReadableChipIn(page, danger, {}, "shortcut chip in a hovered danger button");
       await confirm.getByRole("button", { name: "취소", exact: true }).click();
       await expect(confirm).toBeHidden();
       await page.keyboard.press("Escape");
@@ -267,7 +320,11 @@ test("primary-kbd-and-danger-highlight-meet-contrast", async ({ page, stack }) =
       const trash = page.getByRole("menuitem", { name: "휴지통으로 옮기기", exact: true });
       await trash.hover();
       await expect(trash).toHaveAttribute("data-highlighted", "");
-      expectReadable(await look(trash), "highlighted danger menu item");
+      const highlighted = await look(trash);
+      expectReadable(highlighted, "highlighted danger menu item");
+      // The danger fill carries the highlight; an accent frame on red would read as a second state.
+      expect(highlighted.outline, "highlighted danger menu item outline").toBe(await resolve(page, "--danger"));
+      await expectReadableChipIn(page, trash, {}, "shortcut chip in a highlighted danger menu item");
       await page.keyboard.press("Escape");
       await expect(trash).toBeHidden();
     });
@@ -283,34 +340,94 @@ test("forced-colors-keep-highlight-on-pressed-selected-and-highlighted-items", a
     (id) => localStorage.setItem("devbox.currentProject", JSON.stringify({ state: { id }, version: 0 })),
     projectId,
   );
-  await page.emulateMedia({ forcedColors: "active" });
-  await page.goto(at("/agents", stack.gatewayUrl));
-  await expect(page.getByText("데몬 연결됨")).toBeVisible();
-  const highlight = await resolve(page, "Highlight");
-  const list = page.getByRole("button", { name: "목록", exact: true });
-  await expect(list).toHaveAttribute("aria-pressed", "true");
-  expect((await look(list)).border, "pressed button border").toBe(highlight);
-  await list.hover();
-  expect((await look(list)).border, "hovered pressed button border").toBe(highlight);
+  // Chromium's light and dark forced palettes both have HighlightText equal to Canvas.
+  for (const scheme of ["light", "dark"] as const) {
+    await test.step(`${scheme} forced palette`, async () => {
+      await page.emulateMedia({ forcedColors: "active", colorScheme: scheme });
+      await page.goto(at("/agents", stack.gatewayUrl));
+      await expect(page.getByText("데몬 연결됨")).toBeVisible();
+      await page.mouse.move(0, 0);
+      const [highlight, highlightText, canvas] = await Promise.all(
+        ["Highlight", "HighlightText", "Canvas"].map((name) => resolve(page, name)),
+      );
+      const list = page.getByRole("button", { name: "목록", exact: true });
+      await expect(list).toHaveAttribute("aria-pressed", "true");
+      expect((await look(list)).border, "pressed button border").toBe(highlight);
+      const grid = await look(page.getByRole("button", { name: "격자", exact: true }));
+      expect(grid.border, "unpressed button border").not.toBe(highlight);
+      await list.hover();
+      expect((await look(list)).border, "hovered pressed button border").toBe(highlight);
 
-  await page.getByRole("button", { name: "명령 팔레트 열기" }).click();
-  const option = page.getByRole("dialog", { name: "명령" }).getByRole("option").first();
-  await expect(option).toHaveAttribute("aria-selected", "true");
-  expect(await look(option), "active palette option").toMatchObject({ background: highlight, outline: highlight });
-  await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "명령 팔레트 열기" }).click();
+      const options = page.getByRole("dialog", { name: "명령" }).getByRole("option");
+      const option = options.first();
+      await expect(option).toHaveAttribute("aria-selected", "true");
+      expect(await look(option), "active palette option").toMatchObject({
+        background: highlight,
+        outline: highlight,
+        color: highlightText,
+      });
+      await expectPaintedLabel(page, option.locator("span").first(), option, "active palette option");
+      const chip = await look(option.locator("kbd"));
+      expect(chip, "shortcut chip in the active option").toMatchObject({ color: highlightText, border: highlightText });
+      expectReadable(chip, "shortcut chip in the active option");
+      const other = options.nth(1);
+      const rest = await look(other);
+      expect(rest.background, "other palette option fill").not.toBe(highlight);
+      expect(rest.outlineStyle, "other palette option outline").toBe("none");
+      await expectPaintedLabel(page, other.locator("span").first(), other, "other palette option");
+      await page.keyboard.press("Escape");
 
-  await page.goto(at("/source", stack.gatewayUrl));
-  const files = page.getByRole("tablist", { name: "소스 보기" }).getByRole("tab", { name: "파일", exact: true });
-  await expect(files).toHaveAttribute("aria-selected", "true");
-  expect((await look(files)).underline, "selected source tab underline").toBe(highlight);
+      await page.goto(at("/source", stack.gatewayUrl));
+      const tabs = page.getByRole("tablist", { name: "소스 보기" });
+      const files = tabs.getByRole("tab", { name: "파일", exact: true });
+      await expect(files).toHaveAttribute("aria-selected", "true");
+      expect((await look(files)).underline, "selected source tab underline").toBe(highlight);
+      for (const name of ["변경", "브랜치"]) {
+        const unselected = await look(tabs.getByRole("tab", { name, exact: true }));
+        expect(unselected.underline, `unselected [${name}] has no forced underline`).toBe(canvas);
+      }
+      const editor = page.getByRole("button", { name: "편집기", exact: true });
+      await expect(editor).toHaveAttribute("aria-pressed", "true");
+      expect((await look(editor)).border, "pressed source toggle border").toBe(highlight);
+      const log = page.getByRole("button", { name: "커밋 기록", exact: true });
+      await expect(log).toHaveAttribute("aria-pressed", "false");
+      expect((await look(log)).border, "unpressed source toggle border").not.toBe(highlight);
 
-  await page.goto(at("/notes", stack.gatewayUrl));
-  await page.getByRole("button", { name: "owned 메뉴", exact: true }).click({ timeout: 10_000 });
-  const trash = page.getByRole("menuitem", { name: "휴지통으로 옮기기", exact: true });
-  await trash.hover();
-  await expect(trash).toHaveAttribute("data-highlighted", "");
-  expect(await look(trash), "highlighted danger menu item").toMatchObject({ background: highlight });
-  await page.keyboard.press("Escape");
+      await page.goto(at("/notes", stack.gatewayUrl));
+      await page.getByRole("button", { name: "owned 메뉴", exact: true }).click({ timeout: 10_000 });
+      const trash = page.getByRole("menuitem", { name: "휴지통으로 옮기기", exact: true });
+      await trash.hover();
+      await expect(trash).toHaveAttribute("data-highlighted", "");
+      expect(await look(trash), "highlighted danger menu item").toMatchObject({
+        background: highlight,
+        color: highlightText,
+      });
+      await expectPaintedLabel(page, trash.locator("span").first(), trash, "highlighted danger menu item");
+      const rename = page.getByRole("menuitem", { name: "이름 바꾸기", exact: true });
+      expect((await look(rename)).background, "other menu item fill").not.toBe(highlight);
+      await expectPaintedLabel(page, rename.locator("span").first(), rename, "other menu item");
+      await page.keyboard.press("Escape");
+
+      await page.goto(at("/agents", stack.gatewayUrl));
+      await page.getByRole("button", { name: "새 작업 Ctrl+Shift+N", exact: true }).click();
+      await page.getByRole("combobox", { name: "도구", exact: true }).press("Enter");
+      const listbox = page.getByRole("listbox");
+      await expect(listbox).toBeVisible();
+      await page.keyboard.press("ArrowDown");
+      const lit = listbox.locator('[role="option"][data-highlighted]');
+      await expect(lit).toHaveCount(1);
+      expect(await look(lit), "highlighted Select option").toMatchObject({
+        background: highlight,
+        color: highlightText,
+      });
+      await expectPaintedLabel(page, lit.locator("span").first(), lit, "highlighted Select option");
+      const unlit = listbox.locator('[role="option"]:not([data-highlighted])').first();
+      expect((await look(unlit)).background, "other Select option fill").not.toBe(highlight);
+      await expectPaintedLabel(page, unlit.locator("span").first(), unlit, "other Select option");
+      await page.keyboard.press("Escape");
+    });
+  }
 });
 
 const BASIC = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
