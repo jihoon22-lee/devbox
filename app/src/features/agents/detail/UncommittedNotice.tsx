@@ -52,7 +52,7 @@ function FolderChanges({ task, onCompose }: Props) {
         </Button>
       }
     >
-      {`커밋하지 않은 변경 ${count}개가 있어 병합·PR을 진행할 수 없습니다.`}
+      {`커밋하지 않은 변경 ${count}개가 있어 병합·PR·기준 반영을 진행할 수 없습니다.`}
     </Banner>
   );
 }

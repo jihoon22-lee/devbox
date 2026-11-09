@@ -308,4 +308,12 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn redactor_releases_a_shorter_secret_completed_at_the_end_of_a_push() {
+        let secrets = Secrets::parse(b"A=xyz\0B=abcd\0").expect("secrets");
+        assert_eq!(
+            secrets.redactor().expect("redactor").push(b"zxyz", false),
+            b"z[REDACTED]"
+        );
+    }
 }

@@ -14,7 +14,7 @@ import { useDrafts } from "./drafts";
 vi.mock("../../terminal/TerminalView", () => ({ TerminalView: () => <div data-testid="terminal" /> }));
 
 type Task = ReturnType<typeof task>;
-const NOTICE = (count: number) => `커밋하지 않은 변경 ${count}개가 있어 병합·PR을 진행할 수 없습니다.`;
+const NOTICE = (count: number) => `커밋하지 않은 변경 ${count}개가 있어 병합·PR·기준 반영을 진행할 수 없습니다.`;
 const INSTRUCTION = (count: number) =>
   `작업 폴더에 커밋하지 않은 변경이 ${count}개 있습니다. 변경을 확인하고 알맞은 메시지로 모두 커밋해 주세요.`;
 const SHOWN = /커밋하지 않은 변경|변경 없음|변경을 확인하지 못했습니다/;

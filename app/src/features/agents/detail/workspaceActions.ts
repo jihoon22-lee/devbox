@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useToasts } from "../../../ui";
+import { pushCreateFailure } from "../../terminal/createFailure";
 import { openPopout } from "../../terminal/popout";
 import { useCreateSession } from "../../terminal/useSessions";
 import type { AgentTask } from "../model";
@@ -19,8 +20,11 @@ export function useWorkspaceItems(task: AgentTask) {
       title: null,
       command: null,
       attachZellij: null,
-    }).catch(() => null);
-    if (!session) return toast("터미널을 만들지 못했습니다. 다시 시도하세요");
+    }).catch((error: unknown) => {
+      pushCreateFailure(error);
+      return null;
+    });
+    if (!session) return;
     await openPopout("terminal", session.id).catch(() => toast("새 창을 열지 못했습니다"));
   };
   const code = async () => {

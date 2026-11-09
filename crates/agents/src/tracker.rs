@@ -34,9 +34,11 @@ pub(crate) struct Binding {
     #[serde(default)]
     pub resources: Resources,
     /// The launch resumed the tool's session (Claude `--resume`, Codex `resume`), which hands the
-    /// tool no instruction: it starts at its prompt with no turn to report. The launch's first
-    /// prompt or send, or the judgement that the tool is ready, clears it; a send that never
-    /// reached the tool puts it back.
+    /// tool no instruction: it starts at its prompt with no turn to report. A send, Claude's first
+    /// prompt, or the judgement that the tool is ready clears it; a send that never reached the
+    /// tool puts it back. A Codex turn found in its metadata (a prompt typed in the pane) ends the
+    /// wait through `turn_id` instead and may leave this set: every reader also requires `turn_id`
+    /// to be `None`, and nothing clears `turn_id` within a launch.
     #[serde(default)]
     pub resumed_session: bool,
     pub thread_id: Option<String>,

@@ -451,6 +451,29 @@ test("opens_task_worktree_without_switching_global_project", async () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   }
 });
+test("a failed task-folder terminal tells the daemon's reason and opens no window", async () => {
+  vi.mocked(openPopout).mockClear();
+  const wire = await openMore({ ...task("a1", "idle"), projectId: "p-task" });
+  await userEvent.click(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" }));
+  await waitFor(() => expect(wire.requests("terminal.create")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("terminal.create", -1).id,
+      error: { code: "terminal.cwd_invalid", detail: { cwd: "/gone" } },
+    }),
+  );
+  await waitFor(() =>
+    expect(useToasts.getState().items).toContainEqual(
+      expect.objectContaining({
+        tone: "danger",
+        title: "터미널 시작 폴더를 열 수 없습니다.",
+        body: "WSL 안의 폴더 경로를 확인해 주세요.",
+      }),
+    ),
+  );
+  expect(openPopout).not.toHaveBeenCalled();
+});
 test("the VS Code item is only in the Windows app", async () => {
   await openMore(task("a1", "idle"));
   expect(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" })).toBeInTheDocument();
