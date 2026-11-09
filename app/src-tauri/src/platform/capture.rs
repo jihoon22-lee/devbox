@@ -20,6 +20,10 @@ impl Capture {
     pub(crate) fn has_draft(&self) -> bool {
         self.draft.load(Ordering::SeqCst)
     }
+    /// The draft lived in the destroyed window's session storage and is gone with it.
+    pub(crate) fn clear_draft(&self) {
+        self.draft.store(false, Ordering::SeqCst);
+    }
 }
 
 pub fn initialize(app: &AppHandle) {

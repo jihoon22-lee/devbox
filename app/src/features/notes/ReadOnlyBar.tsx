@@ -64,8 +64,9 @@ export function OpenError({ docKey }: { docKey: DocKey }) {
 }
 
 /**
- * A save the daemon refused (too large, …) while the header says "저장 실패": what happened and
- * what to do. No retry button: the next edit (a note) or Ctrl+S (code) saves again as usual.
+ * A save the daemon refused (too large, …) while the header says "저장 실패": what happened and,
+ * when the message has one, what to do. No retry button: the next edit (a note) or Ctrl+S (code)
+ * saves again as usual.
  */
 export function SaveError({ docKey }: { docKey: DocKey }) {
   const { state } = useRpcSession();

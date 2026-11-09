@@ -157,6 +157,12 @@ pub fn run() {
                 if window.label() == "main" {
                     platform::intents::disconnect(window.app_handle());
                 }
+                if window.label() == platform::capture::LABEL {
+                    window
+                        .app_handle()
+                        .state::<platform::capture::Capture>()
+                        .clear_draft();
+                }
                 window
                     .app_handle()
                     .state::<connection::Connection>()

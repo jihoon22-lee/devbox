@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NativeMainController } from "./NativeMainController";
 import { useNativeRuntime } from "./nativeRuntime";
@@ -34,6 +34,7 @@ test("quit remains safe before the connection gate is ready and unknown tasks re
   act(() => listeners.get("devbox://quit")?.({ payload: null }));
   expect(await screen.findByRole("dialog", { name: "devbox 종료" })).toHaveTextContent("확인하지 못했습니다");
   expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "캡처 열기" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   expect(mocks.invoke).not.toHaveBeenCalledWith("quit_app");
 });
@@ -55,6 +56,7 @@ test("known open task count survives disconnection and full exit uses native exi
   act(() => listeners.get("devbox://quit")?.({ payload: null }));
   expect(await screen.findByRole("dialog")).toHaveTextContent("에이전트 3개");
   expect(screen.getByRole("dialog")).toHaveTextContent("약 15초 뒤");
+  expect(screen.queryByRole("button", { name: "캡처 열기" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "종료" }));
   expect(mocks.invoke).toHaveBeenCalledWith("quit_app");
 });
@@ -199,9 +201,9 @@ test("시작하기 still saves the explicit choice and the question together", a
   expect(called("mark_autostart_asked")).toEqual([]);
 });
 
-/** Native says the hidden quick capture window holds a draft; every other command succeeds. */
+/** From now on native says whether quick capture holds a draft; every other command succeeds. */
 function captureDraft(present: boolean | Error) {
-  mocks.invoke.mockReset().mockImplementation(async (name) => {
+  mocks.invoke.mockImplementation(async (name) => {
     if (name !== "capture_has_draft") return undefined;
     if (present instanceof Error) throw present;
     return present;
@@ -249,4 +251,41 @@ test("a draft check that fails counts as no draft, so a current empty snapshot s
   await requestQuit();
   await waitFor(() => expect(called("quit_app")).toEqual([["quit_app"]]));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+test("a draft typed while the dialog is open turns 종료 into the draft question instead of quitting", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  const dialog = await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(dialog).not.toHaveTextContent("빠른 캡처");
+  expect(screen.queryByRole("button", { name: "캡처 열기" })).toBeNull();
+  // Quick capture stays available while the dialog asks; a draft is written there meanwhile.
+  captureDraft(true);
+  await userEvent.click(screen.getByRole("button", { name: "종료" }));
+  expect(await screen.findByRole("button", { name: "버리고 종료" })).toBeEnabled();
+  expect(dialog).toHaveTextContent("에이전트 2개가 실행 중입니다.");
+  expect(dialog).toHaveTextContent("빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.");
+  expect(screen.getByRole("button", { name: "캡처 열기" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(called("quit_app")).toEqual([]);
+  await userEvent.click(screen.getByRole("button", { name: "버리고 종료" }));
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+  // [버리고 종료] answers the question; it does not ask again.
+  expect(called("capture_has_draft")).toHaveLength(2);
+});
+
+test("pressing 종료 twice while the draft is asked again starts one quit", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  const confirm = await screen.findByRole("button", { name: "종료" });
+  act(() => {
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+  });
+  await waitFor(() => expect(called("quit_app")).toHaveLength(1));
+  await act(async () => {});
+  expect(called("quit_app")).toHaveLength(1);
+  expect(called("capture_has_draft")).toHaveLength(2);
 });

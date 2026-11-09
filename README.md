@@ -20,7 +20,7 @@ Windows 11 + WSL에서 여러 프로젝트를 AI 에이전트와 함께 열고·
 
 설치 파일은 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases)의 `devbox-<버전>-setup.exe` 하나다. 사용자 단위 NSIS 설치라 관리자 권한이 필요 없다. 받은 폴더의 PowerShell에서 `Get-FileHash .\devbox-<버전>-setup.exe`(기본 SHA256)를 실행해 나온 `Hash`를 Release 자산의 digest(`sha256:` 뒤 값)와 비교한다. `Get-FileHash`는 대문자로, Release는 소문자로 보이므로 대소문자는 무시한다. 설치 파일에는 코드 서명이 없어([ADR 0016](docs/adr/0016-personal-security-scope.md)) 실행할 때 Windows SmartScreen 경고가 날 수 있다. 실제로 어떤 경고와 문구가 보이는지는 아직 확인하지 않았다.
 
-이미 설치된 Devbox 위에 직접 설치할 때(릴리스 후보에서 정식 버전으로 올릴 때, 앱 업데이트가 되지 않을 때)는 먼저 트레이 메뉴의 [종료]로 Devbox를 끝낸다. 실행 중인 Devbox를 설치 프로그램이 끝내면 앱의 종료 확인(열린 문서 저장, 저장하지 않은 API 변경 확인)을 거치지 않는다. 설치 프로그램이 이전 판을 먼저 제거하면 나오는 제거 확인 화면에서 "Delete the application data"는 켜지 않는다. 켜면 Windows 쪽 앱 데이터(`%APPDATA%`와 `%LOCALAPPDATA%`의 `io.github.jihoon22lee.devbox`: 앱 설정, 연결이 끊긴 동안 이 PC에 임시로 저장한 노트·파일 편집 내용)가 지워진다. WSL 쪽 데이터와 비밀 키는 지워지지 않는다. 설치 프로그램의 이 동작은 템플릿과 코드에서 읽은 것이고 Windows에서 확인하지는 않았다.
+이미 설치된 Devbox 위에 직접 설치할 때(릴리스 후보에서 정식 버전으로 올릴 때, 앱 업데이트가 되지 않을 때)는 먼저 트레이 메뉴의 [종료]로 Devbox를 끝낸다. 실행 중인 Devbox를 설치 프로그램이 끝내면 앱의 종료 확인(열린 문서 저장, 저장하지 않은 API 변경·빠른 캡처 초안 확인)을 거치지 않는다. 설치 프로그램이 이전 판을 먼저 제거하면 나오는 제거 확인 화면에서 "Delete the application data"는 켜지 않는다. 켜면 Windows 쪽 앱 데이터(`%APPDATA%`와 `%LOCALAPPDATA%`의 `io.github.jihoon22lee.devbox`: 앱 설정, 연결이 끊긴 동안 이 PC에 임시로 저장한 노트·파일 편집 내용)가 지워진다. WSL 쪽 데이터와 비밀 키는 지워지지 않는다. 설치 프로그램의 이 동작은 템플릿과 코드에서 읽은 것이고 Windows에서 확인하지는 않았다.
 
 1. systemd가 켜진 WSL2 배포판이 필요하다. WSL이 없거나 WSL1이거나 systemd가 꺼져 있으면 첫 화면이 실행할 명령을 안내하고 [다시 시도]를 보여 준다.
 2. 배포판이 여러 개면 "devbox가 쓸 WSL 배포판을 고르세요"에서 하나를 고른다.

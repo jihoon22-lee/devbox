@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Button, Dialog } from "../ui";
 
 /** What a full quit would end or drop. */
@@ -38,6 +38,11 @@ export function QuitConfirmation({
   onConfirm(): void;
 }) {
   const cancel = useRef<HTMLButtonElement>(null);
+  const draft = reasons?.captureDraft === true;
+  // A draft found only when [종료] is pressed moves the focus back to [취소], as on opening with one.
+  useEffect(() => {
+    if (draft) cancel.current?.focus({ preventScroll: true });
+  }, [draft]);
   return (
     <Dialog
       open={reasons !== undefined}
@@ -53,13 +58,13 @@ export function QuitConfirmation({
           <Button ref={cancel} onClick={onCancel}>
             취소
           </Button>
-          {reasons?.captureDraft && (
+          {draft && (
             <Button disabled={busy} onClick={onOpenCapture}>
               캡처 열기
             </Button>
           )}
           <Button variant="danger" disabled={busy} onClick={onConfirm}>
-            {reasons?.captureDraft ? "버리고 종료" : "종료"}
+            {draft ? "버리고 종료" : "종료"}
           </Button>
         </>
       }
