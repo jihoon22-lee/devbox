@@ -183,3 +183,16 @@ describe("request editor", () => {
     expect(await screen.findByText("200 OK")).toBeInTheDocument();
   });
 });
+
+describe("request header environment", () => {
+  it("고른 환경이 요청 머리에 보인다", async () => {
+    const backend = new FakeBackend();
+    open(backend);
+    setup(backend);
+    expect(screen.getByText("환경: 없음")).toBeInTheDocument();
+    act(() => useApiTabs.getState().setEnvironment({ name: "dev", variables: [] }));
+    expect(screen.getByText("환경: dev")).toBeInTheDocument();
+    act(() => useApiTabs.getState().setEnvironment({ name: "dev", variables: [], unreviewed: true }));
+    expect(screen.getByText("환경: dev · 검토 필요")).toBeInTheDocument();
+  });
+});

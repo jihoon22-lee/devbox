@@ -39,6 +39,7 @@ export function RequestEditor({ tab }: { tab: ApiTab }) {
   const [section, setSection] = useState<Section>(() => (tab.draft.bodyKind === "graphql" ? "body" : "query"));
   const [confirmReload, setConfirmReload] = useState(false);
   const setDraft = (draft: RequestDraft) => useApiTabs.getState().setDraftById(tab.id, draft);
+  const environment = useApiTabs((state) => state.environment);
   const save = useSave(tab);
   const sender = useSend();
   const send = () => void sender.send(tab.id);
@@ -74,6 +75,10 @@ export function RequestEditor({ tab }: { tab: ApiTab }) {
         onSend={send}
         onCancel={() => sender.cancel(tab.id)}
       />
+      <p className={s.muted}>
+        환경: {environment?.name ?? "없음"}
+        {environment?.unreviewed ? " · 검토 필요" : ""}
+      </p>
       <div className={s.bar}>
         <Button size="sm" disabled={save.busy} onClick={save.save}>
           저장

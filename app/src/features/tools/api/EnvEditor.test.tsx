@@ -112,3 +112,31 @@ it("unchecked_row_stays_unchecked_after_save_and_reopen", async () => {
   expect(screen.getByLabelText("변수 2 사용")).toBeChecked();
   expect(useApiTabs.getState().environment?.variables).toEqual([{ name: "host", value: "dev.test" }]);
 });
+
+it("비밀 표시는 읽기와 저장을 지나도 남는다", async () => {
+  const user = userEvent.setup();
+  const { backend } = setup((b) =>
+    b.seed(
+      personal,
+      "env/sec.json",
+      JSON.stringify({ version: 1, name: "sec", variables: [{ name: "opaque", value: "", secret: true }] }),
+    ),
+  );
+  await screen.findByRole("option", { name: "sec" });
+  await user.selectOptions(screen.getByLabelText("환경"), "env/sec.json");
+  await waitFor(() => expect(screen.getByLabelText("변수 1 이름")).toHaveValue("opaque"));
+  const written = () => JSON.parse(backend.write.mock.calls.at(-1)![2] as string).variables;
+
+  // 손대지 않고 저장해도 secret이 남는다.
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.write).toHaveBeenCalledOnce());
+  expect(written()).toEqual([{ name: "opaque", value: "", secret: true }]);
+
+  // 평문을 넣고 저장하면 지우고, 알림이 그 이름을 말한다.
+  await user.type(screen.getByLabelText("변수 1 값"), "hunter2");
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.write).toHaveBeenCalledTimes(2));
+  expect(written()).toEqual([{ name: "opaque", value: "", secret: true }]);
+  expect(JSON.stringify(backend.write.mock.calls.at(-1))).not.toContain("hunter2");
+  expect(await screen.findByRole("status")).toHaveTextContent("opaque");
+});
