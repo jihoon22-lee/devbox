@@ -35,7 +35,7 @@ function ProjectGitStatus({ projectId }: { projectId: string }) {
         whiteSpace: "nowrap",
       }}
       onClick={() => void navigate({ to: "/source" })}
-      aria-label="Git 상태 · 소스로 이동"
+      aria-label={`Git ${text} · 소스로 이동`}
     >
       Git {text}
     </button>
