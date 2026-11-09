@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { RpcError } from "../../rpc/client";
 import type { DocKey } from "../../rpc/gen/rpc";
+import { messageText } from "../../rpc/messages";
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
 import { useRpc } from "../../rpc/RpcProvider";
 import { openFileLocation } from "../../shell/fileLocation";
@@ -10,6 +12,12 @@ import { useCurrentProject } from "../projects/store";
 import type { CodeLocation } from "../source/editor/location";
 import { resolveSourceLocation } from "../source/openLocation";
 
+const OPEN_FAILED = "파일을 열지 못했습니다. 원본 파일과 외부 편집기 설치를 확인하세요.";
+/** Why a language server problem did not open: the daemon's meaning, a helper's own sentence, or the generic text. */
+function lspReason(error: unknown): string {
+  if (error instanceof RpcError) return messageText(error.code, error.detail, error.diagnosticId);
+  return error instanceof Error ? error.message : OPEN_FAILED;
+}
 type OpenCode = (key: DocKey, location: CodeLocation) => void;
 export function ProblemsPanel({ onOpenCode }: { onOpenCode?: OpenCode } = {}) {
   const projectId = useCurrentProject((state) => state.id);
@@ -54,6 +62,7 @@ function ProjectProblems({ projectId, onOpenCode }: { projectId: string; onOpenC
       <ul>
         {problems.data?.items.map((problem) => {
           const runId = problem.source.startsWith("run:") ? problem.source.slice(4) : undefined;
+          const isLsp = problem.source.startsWith("lsp:");
           return (
             <li key={JSON.stringify(problem)}>
               <span>{problem.severity === "error" ? "오류" : problem.severity === "warning" ? "경고" : "정보"} </span>
@@ -63,6 +72,29 @@ function ProjectProblems({ projectId, onOpenCode }: { projectId: string; onOpenC
                   event.preventDefault();
                   setError(undefined);
                   const own = ++request.current;
+                  if (isLsp) {
+                    const target = {
+                      path: problem.file,
+                      line: problem.line,
+                      column: problem.col ?? undefined,
+                      source: { kind: "file", path: problem.file } as const,
+                    };
+                    const fail = (reason: unknown) => {
+                      if (request.current === own) setError(lspReason(reason));
+                    };
+                    if (editor === "source" && onOpenCode) {
+                      void resolveSourceLocation(client, projectId, target)
+                        .then(({ key, location }) => {
+                          if (request.current === own) onOpenCode(key, location);
+                        })
+                        .catch(fail);
+                    } else {
+                      void openFileLocation(client, projectId, target, editor === "source" ? "vscode" : editor).catch(
+                        fail,
+                      );
+                    }
+                    return;
+                  }
                   if (!runId) {
                     setError("문제의 원본 실행을 찾을 수 없습니다.");
                     return;
@@ -93,7 +125,7 @@ function ProjectProblems({ projectId, onOpenCode }: { projectId: string; onOpenC
                       source: { kind: "run", runId },
                     },
                     editor === "source" ? "vscode" : editor,
-                  ).catch(() => setError("파일을 열지 못했습니다. 원본 파일과 외부 편집기 설치를 확인하세요."));
+                  ).catch(() => setError(OPEN_FAILED));
                 }}
               >
                 {problem.file}:{problem.line}
