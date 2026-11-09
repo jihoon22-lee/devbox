@@ -7,7 +7,7 @@ import { Button } from "../../ui";
 import { AGENT_KEYS } from "./AgentData";
 import { AgentStateMark } from "./AgentStateMark";
 import s from "./Agents.module.css";
-import { type AgentTask, failureLabel } from "./model";
+import { type AgentTask, attentionNote, failureLabel } from "./model";
 import { TokenMetrics } from "./TokenMetrics";
 
 const relative = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });
@@ -61,9 +61,9 @@ export function AgentRow({
     }
   };
   const error = resume.error && messageFor(resume.error.code, resume.error.detail);
-  // What the task waits on, or why it failed. It sits next to the state name, never in its place, on one
-  // line; the title keeps the whole text for when the line cuts it short.
-  const note = task.state === "failed" ? failureLabel(task.reason) : task.attention?.message;
+  // What the task waits on (unless that only restates the state), or why it failed. It sits next to the state
+  // name, never in its place, on one line; the title keeps the whole text for when the line cuts it short.
+  const note = task.state === "failed" ? failureLabel(task.reason) : attentionNote(task);
   return (
     <div className={s.row} data-selected={selected || undefined} data-state={task.state}>
       <button

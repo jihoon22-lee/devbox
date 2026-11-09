@@ -182,4 +182,6 @@ test.each([
   expect(row.children[1]).toHaveTextContent(new RegExp(`^app · ${tool}$`));
   const tile = screen.getByRole("button", { name: "작업 c 터미널 미리보기" });
   expect(within(tile).getByText(`app · ${tool}`, { exact: true })).toBeInTheDocument();
+  // The tile keeps its name; a screen reader gets the state, project and tool as its description.
+  expect(tile).toHaveAccessibleDescription(`실행 중 app · ${tool}`);
 });

@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { ProjectWire } from "../projects/test-wire";
 import { AgentRow } from "./AgentRow";
+import { AgentStateMark } from "./AgentStateMark";
+import { AgentHeader } from "./detail/AgentHeader";
+import { type AgentTask, STATE_LABEL } from "./model";
 import { task } from "./test-fixtures";
 
 test("waiting_and_idle_rows_keep_visible_status_with_messages", async () => {
@@ -54,6 +57,65 @@ test("waiting_and_idle_rows_keep_visible_status_with_messages", async () => {
   // Only the waiting row carries the state its band keys on.
   expect(waiting.row).toHaveAttribute("data-state", "waiting");
   expect(idle.row).toHaveAttribute("data-state", "idle");
+});
+
+test("restated_attention_messages_leave_only_the_state", async () => {
+  const wire = new ProjectWire();
+  // The first two are the daemon's own words when it knows nothing more than the state. The last one is the
+  // daemon's fallback on a waiting task: the idle words are no repeat of 입력 대기, so they stay.
+  const cases = [
+    { id: "i", state: "idle", kind: "idle", message: "다음 지시를 기다립니다", shown: false, name: "다음 지시 대기" },
+    { id: "w", state: "waiting", kind: "output", message: "입력을 기다립니다", shown: false, name: "입력 대기" },
+    { id: "d", state: "idle", kind: "idle", message: "done", shown: true, name: "다음 지시 대기" },
+    { id: "b", state: "waiting", kind: "input", message: "Bash: pnpm test", shown: true, name: "입력 대기" },
+    { id: "x", state: "waiting", kind: "input", message: "다음 지시를 기다립니다", shown: true, name: "입력 대기" },
+  ] as const;
+  render(
+    <RpcProvider client={wire.client}>
+      {cases.map(({ id, state, kind, message }) => {
+        const item = { ...task(id, state), attention: { kind, message, atMs: 1 } };
+        return (
+          <div key={id}>
+            <AgentRow
+              task={item}
+              selected={false}
+              projectName="devbox"
+              toolName="Claude Code"
+              now={1000}
+              onSelect={() => {}}
+            />
+            <AgentHeader task={item} projectName="devbox" toolName="Claude Code" now={1000} />
+          </div>
+        );
+      })}
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  for (const { id, message, shown, name } of cases) {
+    const row = screen.getByRole("button", { name: new RegExp(`작업 ${id}`) });
+    const header = screen.getByRole("heading", { name: `작업 ${id}` }).closest("header")!;
+    for (const surface of [row, header]) {
+      expect(within(surface).getByText(name, { exact: true })).toBeInTheDocument();
+      if (shown) expect(within(surface).getByText(message, { exact: true })).toBeInTheDocument();
+      else expect(within(surface).queryByText(message)).toBeNull();
+    }
+  }
+});
+
+test("state_marks_draw_a_different_icon_for_each_state", () => {
+  const states = Object.keys(STATE_LABEL) as AgentTask["state"][];
+  render(
+    <>
+      {states.map((state) => (
+        <AgentStateMark key={state} state={state} />
+      ))}
+    </>,
+  );
+  const icons = states.map((state) => document.querySelector(`[data-state="${state}"] svg`));
+  expect(icons.every(Boolean)).toBe(true);
+  // Forced colours take the colour away; the shape still has to tell every state apart.
+  expect(new Set(icons.map((icon) => icon?.innerHTML)).size).toBe(states.length);
+  expect(new Set(icons.map((icon) => icon?.getAttribute("class"))).size).toBe(states.length);
 });
 
 test("selected row uses actual resource/token fields and hides unavailable metrics", async () => {

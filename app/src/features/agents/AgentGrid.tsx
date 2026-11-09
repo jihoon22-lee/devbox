@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button, EmptyState, useToasts } from "../../ui";
 import { useOptionalProjectData } from "../projects/ProjectData";
 import { openPopout } from "../terminal/popout";
@@ -21,6 +21,7 @@ function Tile({
   onOpen: (id: string) => void;
 }) {
   const cell = useRef<HTMLDivElement>(null);
+  const id = useId();
   const [width, setWidth] = useState(1000);
   useEffect(() => {
     const el = cell.current;
@@ -42,18 +43,21 @@ function Tile({
           <p>{task.state === "preparing" ? "터미널을 준비하는 중…" : "연결된 터미널이 없습니다"}</p>
         )}
       </div>
+      {/* The name is what tiles are found by; the state and project · tool reach a screen reader as the
+          description, from two ids so that the title is not read twice. */}
       <button
         type="button"
         className={s.cover}
         aria-label={`${task.title} 터미널 미리보기`}
+        aria-describedby={`${id}-state ${id}-source`}
         onClick={() => onOpen(task.id)}
       >
         <span className={s.caption}>
           <span className={s.heading}>
             <strong>{task.title}</strong>
-            <AgentStateMark state={task.state} />
+            <AgentStateMark id={`${id}-state`} state={task.state} />
           </span>
-          <span className={s.source}>
+          <span id={`${id}-source`} className={s.source}>
             {projectName} · {toolName}
           </span>
         </span>

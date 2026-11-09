@@ -3,7 +3,7 @@ import { useRpcQuery } from "../../../rpc/query";
 import { Button } from "../../../ui";
 import { AgentStateMark } from "../AgentStateMark";
 import type { AgentTask } from "../model";
-import { failureLabel } from "../model";
+import { attentionNote, failureLabel } from "../model";
 import { TokenMetrics } from "../TokenMetrics";
 import { CleanupNotice } from "./CleanupNotice";
 import s from "./Detail.module.css";
@@ -26,6 +26,7 @@ export function AgentHeader({
   const usage = useRpcQuery("agents.usage", { id: task.id });
   const seconds = Math.max(0, Math.floor(((task.closedMs ?? now) - task.createdMs) / 1000));
   const tokens = usage.data ? usage.data.tokens : task.tokens;
+  const note = attentionNote(task);
   return (
     <header className={s.header}>
       <h1>{task.title}</h1>
@@ -48,7 +49,7 @@ export function AgentHeader({
       </div>
       {usage.error && <p role="status">토큰 기록을 다시 확인하지 못했습니다.</p>}
       {task.state === "failed" && <p role="alert">{failureLabel(task.reason)}</p>}
-      {task.attention?.message && <p>{task.attention.message}</p>}
+      {note && <p>{note}</p>}
       {task.state === "closed" && (
         <p>
           닫힘 · {task.closedHow === "merged" ? "병합됨" : task.closedHow === "pullRequest" ? "PR" : "폐기"} ·{" "}
