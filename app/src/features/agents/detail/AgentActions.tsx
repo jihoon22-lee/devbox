@@ -209,7 +209,8 @@ export function AgentActions({
           </Tooltip>
         )}
       </div>
-      <UncommittedNotice task={task} onCompose={onInstruct} />
+      {/* Known and not owned: during the task's own rebase the conflict banner says what to do. */}
+      {rebaseStatus.data?.owned === false && <UncommittedNotice task={task} onCompose={onInstruct} />}
       {trust.dialog}
       {trust.notice && <Banner tone="danger">{trust.notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}

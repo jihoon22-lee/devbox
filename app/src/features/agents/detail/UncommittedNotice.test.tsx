@@ -18,7 +18,7 @@ const NOTICE = (count: number) => `커밋하지 않은 변경 ${count}개가 있
 const INSTRUCTION = (count: number) =>
   `작업 폴더에 커밋하지 않은 변경이 ${count}개 있습니다. 변경을 확인하고 알맞은 메시지로 모두 커밋해 주세요.`;
 const SHOWN = /커밋하지 않은 변경|변경 없음|변경을 확인하지 못했습니다/;
-const status = (count: number) => ({
+const status = (count: number, conflicted: string[] = []) => ({
   expect: {
     state: { branch: "agent/a1", headOid: "h1", upstream: null, upstreamOid: null },
     indexHash: "i",
@@ -31,18 +31,27 @@ const status = (count: number) => ({
     staged: 0,
     unstaged: count,
     untracked: 0,
-    conflicted: [],
+    conflicted,
     clean: count === 0,
   },
-  files: Array.from({ length: count }, (_, index) => ({
-    path: `file${index}.txt`,
-    oldPath: null,
-    indexStatus: ".",
-    worktreeStatus: "M",
-    conflicted: false,
-  })),
+  files: Array.from({ length: count }, (_, index) => {
+    const path = `file${index}.txt`;
+    const conflict = conflicted.includes(path);
+    return {
+      path,
+      oldPath: null,
+      indexStatus: conflict ? "U" : ".",
+      worktreeStatus: conflict ? "U" : "M",
+      conflicted: conflict,
+    };
+  }),
   warnings: [],
 });
+/** The task's rebase status, which the notice waits for: here no rebase owns the folder. */
+async function answerRebase(wire: ProjectWire, owned = false) {
+  await waitFor(() => expect(wire.requests("agents.rebase_status").length).toBeGreaterThan(0));
+  await act(async () => wire.reply("agents.rebase_status", { owned, files: owned ? ["a.txt"] : [] }));
+}
 beforeEach(() => useDrafts.setState({ text: {} }));
 afterEach(() => {
   cleanup();
@@ -87,11 +96,12 @@ async function showDetail(state: Task["state"]) {
       ],
     }),
   );
+  await answerRebase(wire);
   const box = await screen.findByLabelText("에이전트에게 보낼 지시");
   await waitFor(() => expect(box).toBeEnabled());
   return { wire, box };
 }
-async function renderActions(item: Task, onInstruct = vi.fn()) {
+async function renderActions(item: Task, onInstruct = vi.fn(), rebase = true) {
   const wire = new ProjectWire({ trustNotRequired: true });
   const node = (next: Task) => (
     <TooltipProvider>
@@ -102,9 +112,12 @@ async function renderActions(item: Task, onInstruct = vi.fn()) {
   );
   const view = render(node(item));
   await waitFor(() => expect(wire.client.state).toBe("ready"));
+  if (rebase && item.worktreePath && item.state !== "closed") await answerRebase(wire);
   return { wire, rerender: (next: Task) => view.rerender(node(next)) };
 }
 const noticeOf = async (text: string) => (await screen.findByText(text)).closest<HTMLElement>('[role="status"]')!;
+/** The query library tells React about an answer in a `setTimeout(0)`: wait for it before checking that nothing shows. */
+const delivered = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
 
 test("shows_task_worktree_changes_and_prepares_commit_instruction_without_sending", async () => {
   const { wire, box } = await showDetail("idle");
@@ -135,7 +148,7 @@ test("status를 읽지 못하면 '변경 없음'으로 보이지 않는다", asy
   expect(screen.queryByRole("button", { name: "커밋 지시 작성" })).toBeNull();
 });
 
-test("[커밋 지시 작성] adds the instruction after the draft, and not again while the draft ends with it", async () => {
+test("[커밋 지시 작성] adds the instruction after the draft, and not again while the draft holds it", async () => {
   useDrafts.getState().set("a1", "먼저 테스트를 돌려 주세요");
   const onInstruct = vi.fn();
   const { wire } = await renderActions(task("a1", "idle"), onInstruct);
@@ -145,9 +158,11 @@ test("[커밋 지시 작성] adds the instruction after the draft, and not again
   await userEvent.click(write);
   await userEvent.click(write);
   expect(useDrafts.getState().text.a1).toBe(`먼저 테스트를 돌려 주세요\n${INSTRUCTION(2)}`);
-  act(() => useDrafts.getState().set("a1", `${INSTRUCTION(2)}\n`));
+  // The user wrote on after the sentence: it is still in the draft, so it is not added again.
+  const continued = `${INSTRUCTION(2)}\n그리고 PR 본문도 써 주세요`;
+  act(() => useDrafts.getState().set("a1", continued));
   await userEvent.click(write);
-  expect(useDrafts.getState().text.a1).toBe(`${INSTRUCTION(2)}\n`);
+  expect(useDrafts.getState().text.a1).toBe(continued);
   // Each press still takes the user to the composer.
   expect(onInstruct).toHaveBeenCalledTimes(3);
   expect(wire.requests("agents.send")).toHaveLength(0);
@@ -181,8 +196,56 @@ test("a clean folder shows nothing", async () => {
   const { wire } = await renderActions(task("a1", "idle"));
   await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
   await act(async () => wire.reply("git.status", status(0)));
+  await delivered();
   expect(screen.queryByText(SHOWN)).toBeNull();
   expect(screen.queryByRole("button", { name: "커밋 지시 작성" })).toBeNull();
+});
+
+test("the folder is read only once the rebase status shows that no rebase owns it", async () => {
+  const { wire } = await renderActions(task("a1", "idle"), vi.fn(), false);
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+  // The project's settings are read in the same pass: a read of the folder would be here by now.
+  await waitFor(() => expect(wire.requests("projects.config")).toHaveLength(1));
+  await act(async () => {});
+  expect(wire.requests("git.status")).toHaveLength(0);
+  await act(async () => wire.reply("agents.rebase_status", { owned: false, files: [] }));
+  await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
+});
+
+test("an owned rebase shows neither the notice nor its button", async () => {
+  const { wire } = await renderActions(task("a1", "idle"));
+  await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
+  await act(async () => wire.reply("git.status", status(2)));
+  expect(await noticeOf(NOTICE(2))).toBeInTheDocument();
+  // [기준 반영] stops on a conflict: the rebase owns the folder until it continues or is undone,
+  // and the conflict banner says what to do.
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(2));
+  await act(async () => wire.reply("agents.rebase_status", { owned: true, files: ["a.txt"] }));
+  expect(await screen.findByText(/충돌 파일 1개/)).toBeInTheDocument();
+  expect(screen.queryByText(SHOWN)).toBeNull();
+  expect(screen.queryByRole("button", { name: "커밋 지시 작성" })).toBeNull();
+  expect(wire.requests("git.status")).toHaveLength(1);
+});
+
+test("a folder stopped on conflicted files offers nothing to commit", async () => {
+  const item = task("a1", "idle");
+  const { wire, rerender } = await renderActions(item);
+  await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
+  // The agent's own merge or rebase stopped on a conflict: finishing it comes first.
+  await act(async () => wire.reply("git.status", status(2, ["file0.txt"])));
+  await delivered();
+  expect(screen.queryByText(SHOWN)).toBeNull();
+  expect(screen.queryByRole("button", { name: "커밋 지시 작성" })).toBeNull();
+  // Once the conflict is gone, the next read names the changes.
+  rerender({ ...item, activitySeq: 1 });
+  await waitFor(() => expect(wire.requests("git.status")).toHaveLength(2));
+  await act(async () => wire.reply("git.status", status(1)));
+  expect(await noticeOf(NOTICE(1))).toBeInTheDocument();
 });
 
 test("a turn that ends reads the folder again and shows no earlier count meanwhile", async () => {
@@ -201,6 +264,7 @@ test("a turn that ends reads the folder again and shows no earlier count meanwhi
   expect(screen.queryByText(SHOWN)).toBeNull();
   await waitFor(() => expect(wire.requests("git.status")).toHaveLength(2));
   await act(async () => wire.reply("git.status", status(0)));
+  await delivered();
   expect(screen.queryByText(SHOWN)).toBeNull();
   // A task that changes without leaving the state reads again too, once.
   rerender({ ...item, state: "idle", activitySeq: 3 });
@@ -218,6 +282,7 @@ test("an answer to a read started before the task changed is not shown", async (
   rerender({ ...item, state: "waiting", activitySeq: 1 });
   await waitFor(() => expect(wire.requests("git.status")).toHaveLength(2));
   await act(async () => wire.deliver({ type: "response", id: old, result: status(3) }));
+  await delivered();
   expect(screen.queryByText(SHOWN)).toBeNull();
   await act(async () => wire.reply("git.status", status(2)));
   expect(await noticeOf(NOTICE(2))).toBeInTheDocument();
@@ -232,7 +297,11 @@ test("the folder is read again every 15 seconds while the page is visible, and n
   await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
   await act(async () => wire.reply("git.status", status(1)));
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(15_100);
+    await vi.advanceTimersByTimeAsync(14_900);
+  });
+  expect(wire.requests("git.status")).toHaveLength(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
   });
   expect(wire.requests("git.status")).toHaveLength(2);
   await act(async () => wire.reply("git.status", status(1)));

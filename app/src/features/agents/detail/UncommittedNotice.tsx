@@ -9,6 +9,8 @@ type Props = { task: AgentTask; onCompose?: () => void };
 /**
  * Merge and PR refuse a task folder with uncommitted changes; this says so before their confirmation
  * does. Changes in the middle of a turn are normal, so a running or preparing task shows nothing.
+ * A folder in a merge or rebase stopped on conflicts shows nothing either: finishing it comes first,
+ * and AgentActions leaves the task's own rebase to its conflict banner.
  */
 export function UncommittedNotice({ task, onCompose }: Props) {
   const shown = !!task.worktreePath && !["closed", "running", "preparing"].includes(task.state);
@@ -27,6 +29,7 @@ function FolderChanges({ task, onCompose }: Props) {
   );
   if (!status.isFetchedAfterMount) return null;
   if (status.error) return <Banner tone="warn">변경을 확인하지 못했습니다</Banner>;
+  if (status.data?.summary.conflicted.length) return null;
   const count = status.data?.files.length ?? 0;
   if (!count) return null;
   return (

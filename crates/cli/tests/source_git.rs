@@ -1,6 +1,7 @@
 mod support;
 use devbox_git::{model::*, rpc::*};
 use devbox_protocol::{Confirm, Method};
+use std::time::Duration;
 use support::{TestDaemon, bounded};
 fn git(dir: &std::path::Path, args: &[&str]) {
     let out = std::process::Command::new("git")
@@ -256,4 +257,135 @@ fn conflict_deletion_requires_explicit_null_and_never_an_omitted_resolution() {
         .expect("owned request JSON object")
         .remove("resolution");
     assert!(serde_json::from_value::<ConflictApply>(json).is_err());
+}
+
+/// A task folder (`worktree_id` is the task) whose tool committed once and now waits idle.
+async fn idle_task_folder(
+    d: &mut TestDaemon,
+) -> (
+    devbox_cli::client::Client,
+    String,
+    String,
+    serde_json::Value,
+) {
+    d.paths.ensure_dirs().expect("owned fixture");
+    std::fs::write(
+        d.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .expect("owned fixture");
+    let tool = d.home.path().join("tool.sh");
+    std::fs::write(
+        &tool,
+        r#"#!/usr/bin/env bash
+printf change > agent.txt
+git add agent.txt && git commit -qm 'agent change'
+printf '%s' '{"hook_event_name":"Stop","last_assistant_message":"done"}' | "$DEVBOX_BIN" agent event --from claude
+while read -r text; do :; done
+"#,
+    )
+    .expect("owned fixture");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(tool.to_str().expect("path"))
+    );
+    d.write_config(&format!(
+        "[agents]\n[[agents.profiles]]\nid='fixture'\nlabel='Fixture'\ncommand={}\nhooks='none'\n",
+        serde_json::to_string(&command).expect("command")
+    ));
+    let repo = d.git_repo("projects/app");
+    d.launch();
+    let client = d.client().await;
+    let project = d.add_project(&client, &repo).await;
+    let id = d.create_agent(&client, &project, "fixture", true).await;
+    let idle = d
+        .wait_for(&client, &id, "idle", Duration::from_secs(10))
+        .await;
+    (client, project, id, idle)
+}
+/// The `worktreeId` of every `git.changed` for `project` from now until one matches `until`, and
+/// for a second after it, so another watcher that saw the same change has time to report it too.
+async fn changed_targets(
+    events: &mut devbox_cli::client::Subscription,
+    project: &str,
+    until: impl Fn(Option<&str>) -> bool,
+) -> Vec<Option<String>> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut settle = None;
+    let mut seen = Vec::new();
+    while let Ok(event) =
+        tokio::time::timeout_at(settle.unwrap_or(deadline), events.next_event()).await
+    {
+        let event = event.expect("open git.changed subscription");
+        // An empty rev is a resync, not a change.
+        if event.rev.is_empty() {
+            continue;
+        }
+        let changed: GitChanged =
+            serde_json::from_str(&event.payload).expect("git.changed payload");
+        if changed.project_id != project {
+            continue;
+        }
+        if settle.is_none() && until(changed.worktree_id.as_deref()) {
+            settle = Some(tokio::time::Instant::now() + Duration::from_secs(1));
+        }
+        seen.push(changed.worktree_id);
+    }
+    assert!(
+        settle.is_some(),
+        "the expected git.changed did not come: {seen:?}"
+    );
+    seen
+}
+#[tokio::test]
+async fn task_folder_status_adds_no_watcher_and_conflict_reads_still_watch() {
+    let mut d = TestDaemon::fixture();
+    let (c, project, id, idle) = idle_task_folder(&mut d).await;
+    let worktree = std::path::PathBuf::from(idle["worktreePath"].as_str().expect("worktree path"));
+    let mut events = bounded(c.subscribe("git.changed"))
+        .await
+        .expect("owned subscription");
+    let folder = SourceTarget {
+        project_id: project.clone(),
+        worktree_id: Some(id.clone()),
+    };
+    // The project's own checkout keeps its watcher.
+    bounded(c.call::<GitStatus>(&GitTargetQuery {
+        target: SourceTarget {
+            project_id: project.clone(),
+            worktree_id: None,
+        },
+    }))
+    .await
+    .expect("owned RPC response");
+    // The task folder's status is read from that folder ...
+    std::fs::write(worktree.join("untracked.txt"), "new\n").expect("write owned fixture");
+    let status = bounded(c.call::<GitStatus>(&GitTargetQuery {
+        target: folder.clone(),
+    }))
+    .await
+    .expect("owned RPC response");
+    assert_eq!(status.summary.branch.as_deref(), idle["branch"].as_str());
+    assert!(status.files.iter().any(|file| file.path == "untracked.txt"));
+    // ... without watching it: a commit there reaches the project's watcher alone.
+    d.git(&worktree, &["commit", "--allow-empty", "-qm", "outside"]);
+    let seen = changed_targets(&mut events, &project, |target| target.is_none()).await;
+    assert!(
+        !seen
+            .iter()
+            .any(|target| target.as_deref() == Some(id.as_str())),
+        "a task folder's status registered a watcher: {seen:?}"
+    );
+    // A conflict read still watches the task folder, as conflict resolution relies on.
+    assert!(
+        bounded(c.call::<GitConflicts>(&GitTargetQuery { target: folder }))
+            .await
+            .expect("owned RPC response")
+            .is_empty()
+    );
+    d.git(
+        &worktree,
+        &["commit", "--allow-empty", "-qm", "outside again"],
+    );
+    changed_targets(&mut events, &project, |target| target == Some(id.as_str())).await;
 }

@@ -6,7 +6,7 @@ export const useDrafts = create<{
   revisions: Record<string, number>;
   set: (id: string, text: string) => void;
   append: (id: string, text: string) => void;
-  /** `append`, unless the draft already ends with `text`: asking again adds no second copy. */
+  /** `append`, unless the draft already holds `text`: asking again adds no second copy. */
   appendOnce: (id: string, text: string) => void;
 }>()(
   persist(
@@ -23,7 +23,7 @@ export const useDrafts = create<{
         get().set(id, `${previous}${previous && !previous.endsWith("\n") ? "\n" : ""}${text}`);
       },
       appendOnce: (id, text) => {
-        if (!(get().text[id] ?? "").trimEnd().endsWith(text)) get().append(id, text);
+        if (!(get().text[id] ?? "").includes(text)) get().append(id, text);
       },
     }),
     {
