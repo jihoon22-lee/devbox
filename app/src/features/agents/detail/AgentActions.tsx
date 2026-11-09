@@ -12,6 +12,7 @@ import { useAgentRefresh, useAgentResult } from "./data";
 import { QueryError } from "./QueryError";
 import { type EditIntent, ReviewDialogs } from "./ReviewDialogs";
 import { useReviewAction } from "./useReviewAction";
+import { useWorkspaceItems } from "./workspaceActions";
 export function AgentActions({
   task,
   sessionAlive,
@@ -60,6 +61,7 @@ export function AgentActions({
   const [error, setError] = useState("");
   const [edit, setEdit] = useState<EditIntent>();
   const guard = useRef(false);
+  const workspace = useWorkspaceItems(task);
   const destructive = useReviewAction(task, (files) => {
     setConflict(files);
   });
@@ -191,6 +193,7 @@ export function AgentActions({
                   apply(await review.mutateAsync({ id: task.id }));
                 }),
             },
+            ...workspace,
             {
               label: task.worktreePath ? "폐기" : "세션 끝내기",
               danger: true,

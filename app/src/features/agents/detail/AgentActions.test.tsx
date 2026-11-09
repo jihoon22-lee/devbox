@@ -1,12 +1,17 @@
+import { invoke } from "@tauri-apps/api/core";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { TooltipProvider, useToasts } from "../../../ui";
+import { useCurrentProject } from "../../projects/store";
 import { ProjectWire } from "../../projects/test-wire";
 import { trustPreview } from "../../projects/trust-fixtures";
+import { openPopout } from "../../terminal/popout";
 import { task } from "../test-fixtures";
 import { AgentActions } from "./AgentActions";
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../../terminal/popout", () => ({ openPopout: vi.fn().mockResolvedValue(undefined) }));
 const changes = { base: "main", ahead: 1, behind: 0, headOid: "h1", baseOid: "b1", files: [] };
 const CLOSES =
   "확인하면 먼저 이 에이전트 도구를 멈춥니다. 성공하면 작업을 닫고, 자동 정리가 켜져 있으면 작업 폴더와 로컬 브랜치도 지웁니다. 닫힌 작업에는 이어서 지시할 수 없습니다.";
@@ -406,4 +411,58 @@ test("병합 충돌 띠의 [기준 반영 실행]도 도구가 살아 있으면 
   await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
   expect(wire.request("agents.rebase").params).toEqual({ id: "a1" });
+});
+
+async function openMore(item: ReturnType<typeof task>) {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  render(
+    <TooltipProvider>
+      <RpcProvider client={wire.client}>
+        <AgentActions task={item} sessionAlive onInstruct={vi.fn()} />
+      </RpcProvider>
+    </TooltipProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  await userEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+  return wire;
+}
+test("opens_task_worktree_without_switching_global_project", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  useCurrentProject.setState({ id: "other-project" });
+  try {
+    const item = { ...task("a1", "idle"), projectId: "p-task" };
+    const wire = await openMore(item);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "VS Code로 작업 폴더 열기" }));
+    expect(invoke).toHaveBeenLastCalledWith("open_external", { kind: "vscode", path: item.worktreePath });
+    await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" }));
+    await waitFor(() => expect(wire.requests("terminal.create")).toHaveLength(1));
+    expect(wire.request("terminal.create").params).toEqual({
+      projectId: "p-task",
+      cwd: item.worktreePath,
+      title: null,
+      command: null,
+      attachZellij: null,
+    });
+    await act(async () => wire.reply("terminal.create", { id: "t1", projectId: "p-task" }));
+    await waitFor(() => expect(openPopout).toHaveBeenLastCalledWith("terminal", "t1"));
+    expect(useCurrentProject.getState().id).toBe("other-project");
+  } finally {
+    delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
+});
+test("the VS Code item is only in the Windows app", async () => {
+  await openMore(task("a1", "idle"));
+  expect(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" })).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "VS Code로 작업 폴더 열기" })).toBeNull();
+});
+test("a task without a worktree folder has neither folder item", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  try {
+    await openMore({ ...task("a1", "idle"), worktreePath: null, branch: null });
+    await screen.findByRole("menuitem", { name: "테스트 실행" });
+    expect(screen.queryByRole("menuitem", { name: /작업 폴더 터미널|VS Code로 작업 폴더/ })).toBeNull();
+  } finally {
+    delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
 });
