@@ -184,3 +184,11 @@ test("not_ready identifies the requested service without implying dependencies",
     expect(fallback.action).toBe(message.action);
   }
 });
+
+test("resume_metadata_failure_explains_record_recovery", () => {
+  const { title, action } = messageFor("agents.session_metadata", { diagnostic: {} });
+  expect(title).toBe("에이전트의 대화 기록을 확인하지 못했습니다.");
+  expect(action).not.toContain("잠시 뒤");
+  expect(action).toContain("[같은 지시로 새 작업]");
+  expect(action).toContain("Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다.");
+});

@@ -9,16 +9,11 @@ export interface QuitReasons {
   captureDraft: boolean;
 }
 
-/** Nothing would be lost, so the app quits without asking. */
-export const quitsDirectly = (reasons: QuitReasons) => reasons.tasks === 0 && !reasons.captureDraft;
-
 function sentences({ tasks, captureDraft }: QuitReasons): string[] {
   const out: string[] = [];
-  if (tasks !== 0)
-    out.push(
-      tasks === null ? "실행 중인 에이전트 작업을 확인하지 못했습니다." : `에이전트 ${tasks}개가 실행 중입니다.`,
-      "앱을 끄면 WSL이 약 15초 뒤 멈추면서 함께 종료될 수 있습니다.",
-    );
+  if (tasks === null) out.push("실행 중인 작업을 확인하지 못했습니다.");
+  else if (tasks > 0) out.push(`에이전트 ${tasks}개가 실행 중입니다.`);
+  out.push("앱을 끄면 에이전트 작업·서비스·터미널이 WSL과 함께 종료될 수 있습니다.");
   if (captureDraft) out.push("빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.");
   return out;
 }

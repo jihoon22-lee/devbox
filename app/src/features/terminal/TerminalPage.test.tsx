@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { RpcProvider } from "../../rpc/RpcProvider";
-import { TooltipProvider } from "../../ui";
+import { TooltipProvider, useToasts } from "../../ui";
 import { useCurrentProject } from "../projects/store";
 import { ProjectWire } from "../projects/test-wire";
 import { useTerminalFocus } from "./focus";
@@ -37,6 +37,7 @@ beforeEach(() => {
   useCurrentProject.getState().set(undefined);
   useTerminalLayout.setState({ byProject: {} });
   useTerminalFocus.setState({ byProject: {}, cwd: {}, bells: {} });
+  useToasts.setState({ items: [] });
 });
 function mount() {
   const wire = new ProjectWire();
@@ -84,6 +85,25 @@ test("no-project filters the all-project RPC, closes panes without ending sessio
   await act(async () => wire.fail("terminal.close"));
   expect(await screen.findByRole("alert")).toHaveTextContent("끝내지 못했습니다");
   expect(useTerminalLayout.getState().byProject.none?.tabs).toHaveLength(1);
+});
+test("터미널을 만들지 못하면 오류의 이유를 보인다", async () => {
+  const wire = mount();
+  await replyList(wire, []);
+  fireEvent.keyDown(window, { code: "KeyT", ctrlKey: true, shiftKey: true });
+  await waitFor(() => expect(wire.requests("terminal.create")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("terminal.create", -1).id,
+      error: { code: "terminal.project_not_found", detail: { id: "gone" } },
+    }),
+  );
+  await waitFor(() => expect(useToasts.getState().items).toHaveLength(1));
+  expect(useToasts.getState().items[0]).toMatchObject({
+    tone: "danger",
+    title: "터미널의 프로젝트를 찾을 수 없습니다.",
+    body: "프로젝트를 다시 선택해 주세요.",
+  });
 });
 test("in-flight split captures its project/focused CWD and survives switching projects", async () => {
   useCurrentProject.getState().set("p");

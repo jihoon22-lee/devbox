@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useCommands } from "../../shell/commands";
 import { useToasts } from "../../ui";
 import { useCurrentProject } from "../projects/store";
+import { pushCreateFailure } from "./createFailure";
 import { useTerminalFocus } from "./focus";
 import { openPopout } from "./popout";
 import { openTab, projectKey, sessionsIn, useTerminalLayout } from "./store";
@@ -36,8 +37,8 @@ export function TerminalCommands({ navigate }: { navigate: () => void }) {
         useTerminalLayout.getState().update(project, (layout) => openTab(layout, session.id));
         useTerminalFocus.getState().focus(project, session.id);
         actions.current.navigate();
-      } catch {
-        useToasts.getState().push({ tone: "danger", title: "터미널을 만들지 못했습니다. 다시 시도하세요" });
+      } catch (error) {
+        pushCreateFailure(error);
       } finally {
         busy.current = false;
       }

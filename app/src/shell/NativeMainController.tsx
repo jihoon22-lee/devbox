@@ -6,7 +6,7 @@ import { appPreferences, isNative, markAutostartAsked, setAutostart } from "../f
 import { Button } from "../ui";
 import { FirstRun } from "./FirstRun";
 import { useNativeRuntime } from "./nativeRuntime";
-import { QuitConfirmation, type QuitReasons, quitsDirectly } from "./QuitConfirmation";
+import { QuitConfirmation, type QuitReasons } from "./QuitConfirmation";
 
 /** The draft lives only in the hidden capture window; a failed question counts as none. */
 const captureHasDraft = () =>
@@ -57,11 +57,8 @@ export function NativeMainController({ ready }: { ready: boolean }) {
       const snapshot = useNativeRuntime.getState();
       const tasks = snapshot.snapshotCurrent || (snapshot.openTasks ?? 0) > 0 ? snapshot.openTasks : null;
       const reasons = { tasks, captureDraft };
-      if (quitsDirectly(reasons)) void exit();
-      else {
-        setFirstRun(false);
-        setQuit(reasons);
-      }
+      setFirstRun(false);
+      setQuit(reasons);
     };
     void (async () => {
       try {
