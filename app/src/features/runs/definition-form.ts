@@ -40,7 +40,7 @@ export function initialDefinitionForm(definition?: Definition, suggestion?: Sugg
   const service = def?.kind === "service" ? def : undefined;
   const schedule = def?.kind === "schedule" ? def : undefined;
   return {
-    id: def?.id ?? crypto.randomUUID(),
+    id: def?.id ?? suggestion?.id ?? crypto.randomUUID(),
     kind: def?.kind ?? suggestion?.kind ?? "task",
     command: executable?.command ?? suggestion?.command ?? "",
     cwd: executable?.cwd ?? "",

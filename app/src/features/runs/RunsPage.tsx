@@ -265,6 +265,9 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
           projectId={projectId}
           {...editor}
           onClose={() => setEditor(undefined)}
+          onSaved={() => {
+            if (detect) void suggestions.refetch();
+          }}
         />
       )}
     </>

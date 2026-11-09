@@ -172,3 +172,15 @@ test("mcp_http_unauthorized_reports_auth_or_permission", () => {
     expect(message.title).not.toContain("하위 프로토콜");
   }
 });
+
+test("not_ready identifies the requested service without implying dependencies", () => {
+  const message = messageFor("runtime.not_ready", { id: "api" });
+  expect(message.title).toContain("api");
+  expect(message.action).toBe("그 서비스의 ports_hint·준비 시한과 로그를 확인해 주세요.");
+  expect(JSON.stringify(message)).not.toContain("선행");
+  for (const detail of [undefined, {}, { id: "" }, { id: 3 }]) {
+    const fallback = messageFor("runtime.not_ready", detail);
+    expect(fallback.title).toBe("서비스가 준비 시한 안에 준비되지 않았습니다.");
+    expect(fallback.action).toBe(message.action);
+  }
+});

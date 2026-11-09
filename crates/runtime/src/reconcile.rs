@@ -127,17 +127,7 @@ impl RuntimeService {
         if value != before {
             let rev = self.save_run(&value).await?;
             if alert {
-                raise(
-                    &self.hub,
-                    rev,
-                    &Notification {
-                        id: format!("run-{}-start-limit-{}", value.run.id, value.run.started_ms),
-                        project_id: value.run.project_id.clone(),
-                        run_id: Some(value.run.id.clone()),
-                        task: None,
-                        reason: NotificationReason::StartLimit,
-                    },
-                );
+                raise(&self.hub, rev, &start_limit_notification(&value.run));
             }
         }
         Ok(value.run)
@@ -261,9 +251,44 @@ fn start_limit_hit(
         _ => false,
     }
 }
+fn start_limit_notification(run: &Run) -> Notification {
+    Notification {
+        id: format!("run-{}-start-limit-{}", run.id, run.started_ms),
+        project_id: run.project_id.clone(),
+        run_id: Some(run.id.clone()),
+        task: Some(run.def_id.clone()),
+        reason: NotificationReason::StartLimit,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn start_limit_notification_names_the_definition() {
+        let run = Run {
+            id: "r1".into(),
+            project_id: "p".into(),
+            def_id: "api".into(),
+            kind: RunKind::Service,
+            state: RunState::Failed,
+            exit: None,
+            started_ms: 42,
+            ended_ms: None,
+            restarts: 3,
+            unit: "u".into(),
+            ready: false,
+            pid: None,
+            port: None,
+            attempt_id: None,
+            windows: None,
+        };
+        let n = start_limit_notification(&run);
+        assert_eq!(n.task.as_deref(), Some("api"));
+        assert_eq!(n.id, "run-r1-start-limit-42");
+        assert_eq!(n.project_id, "p");
+        assert_eq!(n.run_id.as_deref(), Some("r1"));
+        assert!(matches!(n.reason, NotificationReason::StartLimit));
+    }
     #[test]
     fn start_limit_fallback_requires_a_restartable_failure_and_enabled_limit() {
         let mut unit = devbox_core::systemd::UnitState {

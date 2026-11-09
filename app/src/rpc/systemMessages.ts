@@ -1,4 +1,4 @@
-import { configFile, type Messages, restart } from "./messageDetail";
+import { configFile, field, type Messages, restart } from "./messageDetail";
 
 type Domain = "runtime" | "observe" | "activity" | "debug" | "system" | "tools" | "windows";
 /** Messages for runs, observation, activity, diagnostics and the environment. */
@@ -30,7 +30,17 @@ export const SYSTEM_MESSAGES: Messages<Domain> = {
     action: ".devbox/devbox.toml의 내용과 쓰기 권한을 확인해 주세요.",
   },
   "runtime.run_not_found": { title: "실행을 찾을 수 없습니다.", action: "실행 목록을 새로고침해 주세요." },
-  "runtime.not_ready": { title: "서비스가 준비되지 않았습니다.", action: "선행 서비스의 포트와 로그를 확인해 주세요." },
+  // The detail names the service that missed its ready deadline, not one of its dependencies.
+  "runtime.not_ready": (detail) => {
+    const id = field(detail, "id");
+    return {
+      title:
+        typeof id === "string" && id
+          ? `서비스 ${id}이(가) 준비 시한 안에 준비되지 않았습니다.`
+          : "서비스가 준비 시한 안에 준비되지 않았습니다.",
+      action: "그 서비스의 ports_hint·준비 시한과 로그를 확인해 주세요.",
+    };
+  },
   // A run's leftover processes, build servers included, keep its Windows copy in use (I1).
   "runtime.windows_copy_busy": {
     title: "Windows 사본을 쓰는 실행이나 그 실행이 남긴 프로세스(빌드 서버 등)가 아직 끝나지 않았습니다.",

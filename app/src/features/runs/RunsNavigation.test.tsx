@@ -125,3 +125,25 @@ test("run navigation exposes process observation using the selected project", as
   await userEvent.click(screen.getByRole("button", { name: "포트 목록" }));
   expect(await screen.findByRole("heading", { name: "포트 목록" })).toBeVisible();
 });
+test("saving a definition reads the auto-detected suggestions again", async () => {
+  const wire = new RunWire();
+  wire.suggestions = [{ id: "build", command: "pnpm build", kind: "task", from: "package.json" }];
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  await userEvent.click(await screen.findByRole("button", { name: "작업 추가 ▾" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "자동 감지 제안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "명령 확인 후 추가" }));
+  await waitFor(() => expect(wire.requests("runtime.detect")).toHaveLength(1));
+  await userEvent.click(await screen.findByRole("button", { name: "저장" }));
+  await waitFor(() => expect(wire.requests("runtime.define")).toHaveLength(1));
+  const params = wire.request("runtime.define").params as { def: { id: string } };
+  expect(params.def.id).toBe("build");
+  await act(async () =>
+    wire.reply("runtime.define", {
+      rev: "2",
+      definition: { source: "projectFile", def: { ...serviceDefinition.def, id: "build" } },
+    }),
+  );
+  await waitFor(() => expect(wire.requests("runtime.detect")).toHaveLength(2));
+});
