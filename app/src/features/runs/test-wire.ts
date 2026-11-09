@@ -43,6 +43,7 @@ export class RunWire extends ProjectWire {
   selected: Run = { ...runFixture };
   /** What `runtime.runs` returns: the project's latest runs of every definition. */
   history: Run[] = [];
+  historyFails = false;
   trust: DefinitionList["trust"] = "not_required";
   suggestions: Suggestion[] = [];
   containers = [
@@ -63,6 +64,10 @@ export class RunWire extends ProjectWire {
         result = { rev: this.rev, run: this.selected };
         break;
       case "runtime.runs":
+        if (this.historyFails) {
+          queueMicrotask(() => this.deliver({ type: "response", id: request.id, error: { code: "internal" } }));
+          return;
+        }
         result = { rev: this.rev, items: this.history };
         break;
       case "runtime.containers":

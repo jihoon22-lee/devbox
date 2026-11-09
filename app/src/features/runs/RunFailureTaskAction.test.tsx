@@ -145,3 +145,29 @@ test("failed_run_log_read_failure_shows_the_reason_and_opens_nothing", async () 
   expect(fix).toBeEnabled();
   expect(useAgentsUi.getState().creating).toBe(false);
 });
+
+test.each([
+  ["the daemon answers the cancel sent at the limit", "call"],
+  ["the limit trips between pages", "page"],
+] as const)("failed_run_log_read_timeout_is_reported_as_a_timeout: %s", async (_case, where) => {
+  const wire = new RunWire();
+  show(wire, failed("run-1", 2_000, 1));
+  const fix = await fixButton();
+  // The read's own bound has already run out when the next page is due.
+  if (where === "page")
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(
+      AbortSignal.abort(new DOMException("signal timed out", "TimeoutError")),
+    );
+  await userEvent.click(fix);
+  if (where === "call") {
+    await waitFor(() => expect(wire.requests("logs.search")).toHaveLength(1));
+    await act(async () =>
+      wire.deliver({ type: "response", id: wire.request("logs.search").id, error: { code: "cancelled" } }),
+    );
+  }
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "실행 로그를 제한 시간 안에 읽지 못했습니다. 다시 시도해 주세요.",
+  );
+  expect(fix).toBeEnabled();
+  expect(useAgentsUi.getState().creating).toBe(false);
+});

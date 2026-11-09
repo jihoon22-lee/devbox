@@ -175,9 +175,28 @@ test("지난 실행에서 old를 고르면 그 실행을 연다", async () => {
   expect(options[1]).toHaveTextContent(/ · 종료 코드 0$/);
   expect(picker).toHaveValue("new");
   wire.selected = old;
+  picker.focus();
   await userEvent.selectOptions(picker, "old");
   await waitFor(() => expect(wire.request("runtime.get", -1).params).toEqual({ runId: "old" }));
   expect(await screen.findByText("PID 222")).toBeVisible();
   expect(screen.getByRole("heading", { name: "web" })).toBeVisible();
-  expect(screen.getByRole("combobox", { name: "지난 실행" })).toHaveValue("old");
+  // The select stays in place while the picked run loads, so the keyboard can step on from it.
+  expect(screen.getByRole("combobox", { name: "지난 실행" })).toBe(picker);
+  expect(document.activeElement).toBe(picker);
+  expect(picker).toHaveValue("old");
+});
+test("지난 실행 목록을 읽지 못하면 그 자리에서 다시 불러온다", async () => {
+  const wire = new RunWire();
+  wire.history = [{ ...runFixture }, { ...runFixture, id: "old", startedMs: 0 }];
+  wire.historyFails = true;
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("지난 실행 목록을 불러오지 못했습니다.");
+  expect(screen.queryByRole("combobox", { name: "지난 실행" })).toBeNull();
+  wire.historyFails = false;
+  await userEvent.click(within(alert).getByRole("button", { name: "다시 불러오기" }));
+  expect(await screen.findByRole("combobox", { name: "지난 실행" })).toHaveValue("run-1");
+  expect(screen.queryByRole("alert")).toBeNull();
 });
