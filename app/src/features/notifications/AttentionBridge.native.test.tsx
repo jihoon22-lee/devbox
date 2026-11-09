@@ -1,8 +1,8 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { RpcProvider } from "../../rpc/RpcProvider";
+import { RpcProvider, useRpcSession } from "../../rpc/RpcProvider";
 import { AgentDataProvider } from "../agents/AgentData";
-import { task } from "../agents/test-fixtures";
-import { ProjectWire } from "../projects/test-wire";
+import { profiles, task } from "../agents/test-fixtures";
+import { ProjectWire, projects } from "../projects/test-wire";
 import { AttentionBridge } from "./AttentionBridge";
 import { useNotifications } from "./store";
 
@@ -44,7 +44,7 @@ test("attention uses current visible list detail and task counts, and hidden gri
   expect(mocks.attention).toHaveBeenLastCalledWith({
     id: "a",
     title: "작업 a · 입력 대기",
-    body: "입력 확인",
+    body: "claude — 입력 확인",
     visible: false,
   });
   location = { pathname: "/agents", search: { id: "a", view: "list" } };
@@ -158,4 +158,72 @@ test("preflight and trust failures retain the exact project and task without inv
     </RpcProvider>,
   );
   expect(wire.sent).toContainEqual({ type: "unsubscribe", subId: sub.id });
+});
+
+function Seed({ projectsCache, profilesCache }: { projectsCache: boolean; profilesCache: boolean }) {
+  const { qc } = useRpcSession();
+  if (projectsCache) qc.setQueryData(["projects.list", {}], { rev: "1", items: [{ ...projects[0], name: "app" }] });
+  if (profilesCache) qc.setQueryData(["agents.profiles", {}], { items: profiles });
+  return null;
+}
+async function attentionBodies(seed: { projectsCache: boolean; profilesCache: boolean }, messages: string[]) {
+  mocks.attention.mockReset();
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <Seed {...seed} />
+        <AttentionBridge />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  const same = (id: string, profile: string) => ({ ...task(id, "waiting"), title: "같은 제목", profile });
+  await act(async () =>
+    wire.reply("agents.list", {
+      rev: "1",
+      items: [same("c", "claude"), same("x", "codex"), same("o", "opencode"), same("p", "pi")],
+    }),
+  );
+  const sub = wire.sent.find((message) => message.topic === "agents.attention")!;
+  const ids = ["c", "x", "o", "p"];
+  for (const [index, message] of messages.entries())
+    await act(async () =>
+      wire.deliver({
+        type: "event",
+        subId: sub.id,
+        rev: String(index + 2),
+        payload: { id: ids[index] ?? "gone", state: "waiting", message },
+      }),
+    );
+  return mocks.attention.mock.calls.map((call) => call[0] as { title: string; body: string });
+}
+test("same_title_agent_notices_keep_tool_identity_and_deliver_without_cache", async () => {
+  const calls = await attentionBodies({ projectsCache: true, profilesCache: true }, [
+    "입력 확인",
+    "입력 확인",
+    "opencode 승인 요청: bash",
+    "pi 승인 요청",
+    "없는 작업",
+  ]);
+  expect(calls.map((call) => call.body)).toEqual([
+    "app · Claude Code — 입력 확인",
+    "app · Codex — 입력 확인",
+    "app — opencode 승인 요청: bash",
+    "app — pi 승인 요청",
+    "없는 작업",
+  ]);
+  expect(calls[0]?.title).toBe("같은 제목 · 입력 대기");
+  expect(calls[4]?.title).toBe("에이전트 작업 · 입력 대기");
+  expect(useNotifications.getState().items.find((item) => item.key === "agent:x")?.body).toBe(
+    "app · Codex — 입력 확인",
+  );
+  cleanup();
+  useNotifications.getState().clear();
+  const bare = await attentionBodies({ projectsCache: false, profilesCache: false }, [
+    "입력 확인",
+    "x",
+    "opencode 승인 요청",
+  ]);
+  expect(bare.map((call) => call.body)).toEqual(["claude — 입력 확인", "codex — x", "opencode 승인 요청"]);
 });

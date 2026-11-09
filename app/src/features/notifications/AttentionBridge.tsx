@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import type { Methods, NotificationReason } from "../../rpc/gen/rpc";
+import type { AgentTask, Methods, NotificationReason } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { useNativeRuntime } from "../../shell/nativeRuntime";
 import { useActivityHealth } from "../activity/useActivityStatus";
 import { useAgentData } from "../agents/AgentData";
-import { STATE_LABEL } from "../agents/model";
+import { STATE_LABEL, toolLabel } from "../agents/model";
 import { nativeAttention, nativeBadge, type RunNavigation } from "./native";
 import { useNotifications } from "./store";
 
@@ -15,6 +15,13 @@ const runReason: Record<NotificationReason, string> = {
 };
 // Keep replay identity for the RPC session even after the user clears visible history.
 const seenRunEvents = new WeakMap<object, Set<string>>();
+/** "프로젝트 · 도구 — " from the caches. opencode and pi messages already start with their tool name. */
+function bodyPrefix(task: AgentTask | undefined, message: string, project: string | undefined, tool: string) {
+  if (!task) return "";
+  const own = message.startsWith(`${task.profile} `);
+  const parts = [project, own ? undefined : tool].filter((part): part is string => !!part);
+  return parts.length ? `${parts.join(" · ")} — ` : "";
+}
 const noLocation = () => ({ pathname: "", search: {} });
 
 /** Shell mounts this only for the main host, regardless of route changes. */
@@ -50,12 +57,17 @@ export function AttentionBridge({
         (_revision, event) => {
           const list = qc.getQueryData<Methods["agents.list"]["result"]>(["agents.list", { includeClosedHours: 24 }]);
           const task = list?.items.find((item) => item.id === event.id);
+          const project = qc
+            .getQueryData<Methods["projects.list"]["result"]>(["projects.list", {}])
+            ?.items.find((item) => item.id === task?.projectId)?.name;
+          const profiles = qc.getQueryData<Methods["agents.profiles"]["result"]>(["agents.profiles", {}]);
+          const body = `${bodyPrefix(task, event.message, project, task ? toolLabel(profiles?.items, task.profile) : "")}${event.message}`;
           const title = `${task?.title ?? "에이전트 작업"} · ${STATE_LABEL[event.state]}`;
           const current = location();
           void nativeAttention({
             id: event.id,
             title,
-            body: event.message,
+            body,
             visible:
               !!task &&
               document.visibilityState === "visible" &&
@@ -68,7 +80,7 @@ export function AttentionBridge({
             id: event.id,
             kind: "agent",
             title,
-            body: event.message,
+            body,
             target: { to: "/agents", search: { id: event.id, view: "list" } },
           });
         },

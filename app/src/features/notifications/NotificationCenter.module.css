@@ -55,3 +55,19 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+.item strong {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.item[data-read="true"] strong {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
