@@ -1,6 +1,7 @@
 import { createMemoryHistory, Outlet, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { messageFor } from "../../rpc/messages";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { useLayout } from "../../shell/layout";
 import { buildRouter } from "../../shell/router";
@@ -32,17 +33,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 type Task = ReturnType<typeof task>;
-async function setup({
-  path = "/agents",
-  items,
-  tasks,
-  collapsed = false,
-}: {
-  path?: string;
-  items: typeof projects;
-  tasks: Task[];
-  collapsed?: boolean;
-}) {
+/** Mounts the page with both lists requested and unanswered. */
+async function mount({ path = "/agents", collapsed = false }: { path?: string; collapsed?: boolean }) {
   useLayout.setState({ listCollapsed: collapsed });
   const wire = new ProjectWire({ trustNotRequired: true });
   const router = buildRouter(
@@ -82,15 +74,29 @@ async function setup({
     ["프로젝트 추가", "새 작업", "첫 입력 대기 작업 열기"].filter((name) =>
       within(body).queryByRole("button", { name }),
     );
-  // Nothing is decided until both lists have arrived: no flash of an action that does not apply.
+  // Nothing is decided before the lists arrive: no flash of an action that does not apply.
   expect(actions()).toEqual([]);
-  await act(async () => wire.reply("projects.list", { rev: "1", items }));
-  expect(actions()).toEqual([]);
-  await act(async () => {
-    wire.reply("agents.list", { rev: "1", items: tasks });
-    wire.reply("agents.profiles", { items: profiles });
-  });
   return { wire, router, body, actions };
+}
+async function setup({
+  path,
+  items,
+  tasks,
+  collapsed,
+}: {
+  path?: string;
+  items: typeof projects;
+  tasks: Task[];
+  collapsed?: boolean;
+}) {
+  const page = await mount({ path, collapsed });
+  await act(async () => page.wire.reply("projects.list", { rev: "1", items }));
+  expect(page.actions()).toEqual([]);
+  await act(async () => {
+    page.wire.reply("agents.list", { rev: "1", items: tasks });
+    page.wire.reply("agents.profiles", { items: profiles });
+  });
+  return page;
 }
 
 const now = Date.now();
@@ -159,3 +165,83 @@ test("hides_add_project_when_projects_exist", async () => {
   expect(screen.queryByRole("button", { name: "프로젝트 추가" })).not.toBeInTheDocument();
   expect(within(body).getByRole("button", { name: "새 작업" })).toBeInTheDocument();
 });
+
+test("tasks that arrive before the project list decide nothing until it arrives", async () => {
+  const { wire, actions } = await mount({});
+  await act(async () => {
+    wire.reply("agents.list", { rev: "1", items: [] });
+    wire.reply("agents.profiles", { items: profiles });
+  });
+  // The task list has arrived (the list says so), but the first step depends on the project count:
+  // no [새 작업] flashes up for someone who has no project yet.
+  expect(await screen.findByText("에이전트 작업이 없습니다")).toBeInTheDocument();
+  expect(actions()).toEqual([]);
+  await act(async () => wire.reply("projects.list", { rev: "1", items: [] }));
+  await waitFor(() => expect(actions()).toEqual(["프로젝트 추가"]));
+});
+
+const FAILED = messageFor("internal").title;
+test("a failed project list neither blanks the pick nor goes unexplained", async () => {
+  const { wire, body, actions } = await mount({});
+  await act(async () => {
+    wire.fail("projects.list");
+    wire.reply("agents.list", { rev: "1", items: [task("i", "idle", 1), task("w", "waiting", 2), task("r")] });
+  });
+  // Picking a task needs only the task list.
+  await waitFor(() => expect(actions()).toEqual(["첫 입력 대기 작업 열기"]));
+  // Nothing else on the page shows the failed project list (the switcher only once opened), so the body does.
+  const alert = within(body).getByRole("alert");
+  expect(alert).toHaveTextContent(FAILED);
+  await userEvent.click(within(alert).getByRole("button", { name: "다시 확인" }));
+  await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(2));
+  await act(async () => wire.reply("projects.list", { rev: "1", items: projects }));
+  await waitFor(() => expect(within(body).queryByRole("alert")).toBeNull());
+  expect(actions()).toEqual(["첫 입력 대기 작업 열기"]);
+});
+
+test.each(["/agents", "/agents?view=grid"])(
+  "with no open task, a failed project list shows its error instead of a guessed first step: %s",
+  async (path) => {
+    const { wire, body, actions } = await mount({ path });
+    await act(async () => {
+      wire.fail("projects.list");
+      wire.reply("agents.list", { rev: "1", items: [] });
+    });
+    const alert = await within(body).findByRole("alert");
+    expect(alert).toHaveTextContent(FAILED);
+    expect(actions()).toEqual([]);
+    await userEvent.click(within(alert).getByRole("button", { name: "다시 확인" }));
+    await waitFor(() => expect(wire.requests("projects.list")).toHaveLength(2));
+    await act(async () => wire.reply("projects.list", { rev: "1", items: [] }));
+    await waitFor(() => expect(actions()).toEqual(["프로젝트 추가"]));
+    expect(within(body).queryByRole("alert")).toBeNull();
+  },
+);
+
+test.each(["/agents", "/agents?view=grid"])(
+  "a failed task list shows its error in the body only while the list is collapsed: %s",
+  async (path) => {
+    const { wire, body, actions } = await mount({ path, collapsed: true });
+    await act(async () => {
+      wire.reply("projects.list", { rev: "1", items: projects });
+      wire.fail("agents.list");
+    });
+    // The collapsed list hides its own error, so the body shows it, with no action guessed from no data.
+    const alert = await within(body).findByRole("alert");
+    expect(alert).toHaveTextContent(FAILED);
+    expect(actions()).toEqual([]);
+    // An open list shows the error itself; the body does not repeat it.
+    act(() => useLayout.getState().toggleList());
+    const list = await screen.findByRole("complementary", { name: "목록" });
+    expect(within(list).getByRole("alert")).toHaveTextContent(FAILED);
+    expect(within(body).queryByRole("alert")).toBeNull();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    act(() => useLayout.getState().toggleList());
+    // [다시 확인] in the body recovers without opening the list.
+    await userEvent.click(within(await within(body).findByRole("alert")).getByRole("button", { name: "다시 확인" }));
+    await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(2));
+    await act(async () => wire.reply("agents.list", { rev: "1", items: [] }));
+    await waitFor(() => expect(actions()).toEqual(["새 작업"]));
+    expect(within(body).queryByRole("alert")).toBeNull();
+  },
+);

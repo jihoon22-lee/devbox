@@ -3,6 +3,16 @@
   overflow: auto;
   padding: var(--space-2);
 }
+/* The body with nothing picked: a failed project list's error on top, the empty state centred in the rest. */
+.emptyBody {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.emptyBody > :last-child {
+  flex: 1;
+  min-height: 0;
+}
 .header {
   display: flex;
   flex-wrap: wrap;

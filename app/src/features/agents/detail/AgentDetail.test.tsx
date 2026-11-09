@@ -102,10 +102,13 @@ test("waiting_primary_action_opens_and_focuses_terminal_without_sending", async 
   expect(respond).toHaveClass(buttonStyles.primary as string);
   expect(screen.getByRole("button", { name: /^보내기/ })).not.toHaveClass(buttonStyles.primary as string);
   expect(screen.queryByRole("button", { name: "이어서 지시" })).toBeNull();
-  // The warning names what to do and leaves the button to the action row.
+  // The warning names what to do, sits above the action row and leaves the button to it.
   const warning = screen.getByText("터미널에서 선택하거나 응답해 주세요.").closest<HTMLElement>('[role="status"]')!;
   expect(within(warning).queryByRole("button")).toBeNull();
   expect(screen.getAllByRole("button", { name: "터미널에서 응답" })).toHaveLength(1);
+  const row = respond.parentElement!;
+  expect(row.contains(warning)).toBe(false);
+  expect(warning.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   await userEvent.click(screen.getByRole("tab", { name: "변경" }));
   expect(screen.queryByTestId("terminal")).toBeNull();
   await userEvent.click(respond);
