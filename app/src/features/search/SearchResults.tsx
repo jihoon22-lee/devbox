@@ -1,6 +1,6 @@
 import type { SearchHit } from "../../rpc/gen/rpc";
 import s from "./search.module.css";
-import { hitKey } from "./searchChunk";
+import { hitKey, projectOf } from "./searchChunk";
 import type { SearchGroups } from "./useSearchStream";
 
 const names = { notes: "노트", files: "파일 이름", code: "코드" } as const;
@@ -18,10 +18,12 @@ function Snippet({ hit }: { hit: SearchHit }) {
 export function SearchResults({
   groups,
   selected,
+  projectName,
   onSelect,
 }: {
   groups: SearchGroups;
   selected?: string;
+  projectName(id: string): string;
   onSelect(hit: SearchHit): void;
 }) {
   return (
@@ -43,6 +45,7 @@ export function SearchResults({
                 >
                   <strong>{hit.title || hit.path}</strong>
                   <small>
+                    {projectOf(hit, projectName) && `${projectOf(hit, projectName)} · `}
                     {hit.path}
                     {hit.line ? `:${hit.line}` : ""}
                   </small>

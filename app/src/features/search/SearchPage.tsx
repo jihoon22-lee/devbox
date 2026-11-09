@@ -2,12 +2,15 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { Scope, SearchHit, SearchQuery } from "../../rpc/gen/rpc";
 import { messageText } from "../../rpc/messages";
+import { useRpcQuery } from "../../rpc/query";
 import { Button } from "../../ui";
+import { useCurrentProject } from "../projects/store";
 import { CodePreview } from "./CodePreview";
+import { ProjectScope } from "./ProjectScope";
 import { SavedSearches } from "./SavedSearches";
 import { SearchResults } from "./SearchResults";
 import s from "./search.module.css";
-import { hitKey } from "./searchChunk";
+import { hitKey, projectOf } from "./searchChunk";
 import { useSearchStream } from "./useSearchStream";
 
 const initial: SearchQuery = {
@@ -27,7 +30,18 @@ export function SearchPage({
 }) {
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
-  const [draft, setDraft] = useState(initial);
+  const currentId = useCurrentProject((state) => state.id);
+  const projects = useRpcQuery("projects.list", {});
+  const names = new Map(projects.data?.items.map((project) => [project.id, project.name]));
+  const nameOf = (id: string) => names.get(id) ?? id;
+  const [draft, setDraft] = useState<SearchQuery>({ ...initial, projectIds: currentId ? [currentId] : null });
+  // Switching project moves the scope with it; the first run only restates the initial draft.
+  const scopedTo = useRef(currentId);
+  useEffect(() => {
+    if (scopedTo.current === currentId) return;
+    scopedTo.current = currentId;
+    setDraft((now) => ({ ...now, projectIds: currentId ? [currentId] : null }));
+  }, [currentId]);
   const [query, setQuery] = useState<SearchQuery>();
   const result = useSearchStream(query);
   const selected = Object.values(result.groups)
@@ -86,6 +100,12 @@ export function SearchPage({
               {name}
             </label>
           ))}
+          <ProjectScope
+            query={draft}
+            currentId={currentId}
+            nameOf={nameOf}
+            onChange={(projectIds) => setDraft({ ...draft, projectIds })}
+          />
           <label>
             <input
               type="checkbox"
@@ -120,13 +140,21 @@ export function SearchPage({
         <SearchResults
           groups={result.groups}
           selected={result.selection}
+          projectName={nameOf}
           onSelect={(hit) => result.select(hitKey(hit))}
         />
         <div className={s.preview}>
           {selected?.root === "vault" ? (
             <Button onClick={() => onOpenNote(selected.path)}>노트 열기</Button>
           ) : (
-            selected && <CodePreview key={hitKey(selected)} hit={selected} onOpen={onOpenCode} />
+            selected && (
+              <CodePreview
+                key={hitKey(selected)}
+                hit={selected}
+                projectName={projectOf(selected, nameOf)}
+                onOpen={onOpenCode}
+              />
+            )
           )}
           <SavedSearches query={query} onSelect={apply} />
         </div>

@@ -65,3 +65,14 @@ test("a file read that failed unexpectedly shows its diagnostic ID", async () =>
     "예상하지 못한 문제가 생겼습니다. 진단 ID를 복사해 두면 원인을 찾을 수 있습니다. · 진단 diag-3",
   );
 });
+test("the heading names the project the file belongs to", async () => {
+  const wire = new NotesWire();
+  const hit = { root: "project:owned", path: "src/main.ts", line: 2, title: null, snippet: "x", rangesUtf16: [] };
+  wire.docs.write(hit, "content");
+  render(
+    <RpcProvider client={wire.client}>
+      <CodePreview hit={hit} projectName="Alpha" />
+    </RpcProvider>,
+  );
+  expect(await screen.findByRole("heading", { name: /Alpha · src\/main\.ts:2/ })).toBeVisible();
+});
