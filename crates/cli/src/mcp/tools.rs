@@ -240,7 +240,10 @@ mod tests {
     ) -> ClientError {
         ClientError::Rpc {
             code: code.into(),
-            detail: detail.map(|d| serde_json::value::RawValue::from_string(d.into()).unwrap()),
+            detail: detail.map(|d| {
+                serde_json::value::RawValue::from_string(d.into())
+                    .expect("test detail is valid JSON")
+            }),
             diagnostic_id: diagnostic_id.map(Into::into),
         }
     }
