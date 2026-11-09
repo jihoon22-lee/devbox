@@ -6,6 +6,7 @@ import { GitStatus } from "../features/source/GitStatus";
 import { useConnection } from "../rpc/connection";
 import { useRpcQuery, useTopicInvalidation } from "../rpc/query";
 import { StatusDot } from "../ui";
+import s from "./StatusBar.module.css";
 import { usePageVisible } from "./visibility";
 
 const LABEL = {
@@ -45,6 +46,7 @@ export function StatusBar() {
   const { state, daemonVersion } = useConnection();
   return (
     <footer
+      className={s.bar}
       style={{
         display: "flex",
         alignItems: "center",
@@ -85,6 +87,7 @@ export function StatusBar() {
       </button>
       <button
         type="button"
+        className={s.memory}
         style={actionStyle}
         onClick={() => void navigate({ to: "/runs", search: { view: "system" } })}
       >
@@ -93,7 +96,7 @@ export function StatusBar() {
       <GitStatus />
       <span style={{ flex: 1 }} />
       <UpdateStatus />
-      {daemonVersion && <span>데몬 {daemonVersion}</span>}
+      {daemonVersion && <span style={{ flexShrink: 0 }}>데몬 {daemonVersion}</span>}
     </footer>
   );
 }

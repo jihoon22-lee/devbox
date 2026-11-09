@@ -172,7 +172,7 @@ test("지난 실행에서 old를 고르면 그 실행을 연다", async () => {
   expect(screen.getByText("최근 100개 실행 중")).toBeVisible();
   const options = within(picker).getAllByRole("option");
   expect(options.map((option) => option.getAttribute("value"))).toEqual(["new", "old"]);
-  expect(options[1]).toHaveTextContent(/ · 종료 코드 0$/);
+  expect(options[1]).toHaveTextContent(/ · 종료 코드 0 · old$/);
   expect(picker).toHaveValue("new");
   wire.selected = old;
   picker.focus();
@@ -184,6 +184,31 @@ test("지난 실행에서 old를 고르면 그 실행을 연다", async () => {
   expect(screen.getByRole("combobox", { name: "지난 실행" })).toBe(picker);
   expect(document.activeElement).toBe(picker);
   expect(picker).toHaveValue("old");
+});
+test("지난 실행은 같은 초에 시작한 실행을 실행 ID 앞 8자로 구별한다", async () => {
+  const wire = new RunWire();
+  const ended = (id: string): Run => ({
+    ...runFixture,
+    id,
+    state: "exited",
+    exit: { attemptId: `attempt-${id}`, code: 3, endedMs: 2_500, by: "wrapper" },
+    startedMs: 2_000,
+    endedMs: 2_500,
+  });
+  const latest = ended("750832aa1b2c4d5e8f90a1b2c3d4e5f6");
+  wire.runs = [latest];
+  wire.selected = latest;
+  wire.history = [latest, ended("1f0e2d3c4b5a69788796a5b4c3d2e1f0")];
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const picker = await screen.findByRole("combobox", { name: "지난 실행" });
+  const time = new Date(2_000).toLocaleString("ko-KR");
+  expect(
+    within(picker)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual([`${time} · 종료 코드 3 · 750832aa`, `${time} · 종료 코드 3 · 1f0e2d3c`]);
 });
 test("지난 실행 목록을 읽지 못하면 그 자리에서 다시 불러온다", async () => {
   const wire = new RunWire();

@@ -77,7 +77,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cover:focus-visible {
+/*
+ * The keyboard ring is a layer painted after the caption, which would otherwise cover its top edge and the
+ * top of its sides. The global ring (a box-shadow) falls outside the clipped cell.
+ */
+.cover:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+  border-radius: inherit;
+  pointer-events: none;
 }

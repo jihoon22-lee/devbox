@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
+import { near, pixelsOf, type Rgba } from "./pixels";
 import { expect, test } from "./support";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -123,6 +125,85 @@ test("poppers-open-at-their-trigger-and-selects-keep-one-line-at-each-ui-scale",
       expect(Math.abs(toolList.width - toolField.width), "[도구] list width").toBeLessThanOrEqual(1);
       await page.keyboard.press("Escape");
       await expect(list).toBeHidden();
+    });
+  }
+});
+
+test("grid-tile-focus-ring-shows-on-all-four-edges", async ({ page, stack }) => {
+  test.slow();
+  await stack.waitingAgent();
+  await page.goto(at("/agents?view=grid&renderer=dom", stack.gatewayUrl));
+  const grid = page.getByRole("region", { name: "에이전트 터미널 격자" });
+  const tile = grid.getByRole("button", { name: "Waiting one 터미널 미리보기", exact: true });
+  await expect(tile).toBeVisible({ timeout: 10_000 });
+  await grid.locator("..").getByRole("button", { name: "새 창으로", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(tile).toBeFocused();
+  expect(await tile.evaluate((node) => node.matches(":focus-visible")), "keyboard focus").toBe(true);
+  const accent = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--accent)";
+    document.body.append(probe);
+    const [r, g, b] = (getComputedStyle(probe).color.match(/[\d.]+/g) ?? []).map(Number);
+    probe.remove();
+    return [r, g, b, 1] as Rgba;
+  });
+  // The 2 px ring lies just inside the tile. Each edge is read away from the rounded corners, and the
+  // sides once beside the 46 px caption and once beside the terminal.
+  const ring = await pixelsOf(page, tile);
+  const [w, h] = [ring.width, ring.height];
+  const edges: Record<string, [number, number][]> = {
+    "top edge, over the caption": [0, 1, 2].map((d) => [Math.round(w / 2), d]),
+    "bottom edge": [1, 2, 3].map((d) => [Math.round(w / 2), h - d]),
+    "left edge beside the caption": [0, 1, 2].map((d) => [d, 20]),
+    "right edge beside the caption": [1, 2, 3].map((d) => [w - d, 20]),
+    "left edge beside the terminal": [0, 1, 2].map((d) => [d, Math.round(h * 0.7)]),
+    "right edge beside the terminal": [1, 2, 3].map((d) => [w - d, Math.round(h * 0.7)]),
+  };
+  for (const [edge, points] of Object.entries(edges))
+    expect(
+      points.some(([x, y]) => near(ring.at(x, y), accent, 40)),
+      `${edge}: ${points.map(([x, y]) => ring.at(x, y).slice(0, 3).join(",")).join(" | ")}`,
+    ).toBe(true);
+});
+
+test("status-bar-keeps-the-daemon-version-whole-at-640-css-px", async ({ page, stack }) => {
+  test.slow();
+  const projectId = await stack.gammaProjectId();
+  // The owned fixture repository gets a long branch, so the Git chip has to shrink.
+  const branch = "feature/rc3-status-bar-overflow-check-with-a-really-long-branch-name-for-the-git-chip";
+  execFileSync("git", ["-C", join(stack.home, "projects/gamma"), "checkout", "-qb", branch], {
+    env: stack.env,
+    stdio: "pipe",
+    timeout: 5000,
+  });
+  await page.addInitScript(
+    (id) => localStorage.setItem("devbox.currentProject", JSON.stringify({ state: { id }, version: 0 })),
+    projectId,
+  );
+  const footer = page.getByRole("contentinfo");
+  // 960×600 at 125% and 150%: 768 and 640 CSS px wide. Below about 700 the WSL memory cell gives way.
+  for (const [scale, memory] of [
+    [1.25, true],
+    [1.5, false],
+  ] as const) {
+    await test.step(`${WINDOW.width / scale} CSS px`, async () => {
+      await showScale(page, at("/agents", stack.gatewayUrl), scale);
+      await expect(footer.getByRole("button", { name: /^Git feature\// })).toBeVisible();
+      const wsl = footer.getByRole("button", { name: /^WSL / });
+      if (memory) await expect(wsl).toBeVisible();
+      else await expect(wsl).toBeHidden();
+      const version = footer.getByText(/^데몬 \d/);
+      const [bar, cell] = [await box(footer), await box(version)];
+      expect(cell.x + cell.width, "daemon version ends inside the bar").toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+      expect(
+        await version.evaluate((node) => ({
+          shrink: getComputedStyle(node).flexShrink,
+          whole: node.scrollWidth <= node.clientWidth,
+        })),
+        "daemon version",
+      ).toEqual({ shrink: "0", whole: true });
+      expect(await footer.evaluate((node) => node.scrollWidth <= node.clientWidth), "bar fits its width").toBe(true);
     });
   }
 });

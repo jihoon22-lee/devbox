@@ -1,0 +1,10 @@
+/* A size container: its own width, with the UI scale already in it, decides which cell gives way. */
+.bar {
+  container: status-bar / inline-size;
+}
+/* Below about 700 px the WSL memory cell gives way first, so the daemon version stays whole. */
+@container status-bar (max-width: 700px) {
+  .memory {
+    display: none;
+  }
+}

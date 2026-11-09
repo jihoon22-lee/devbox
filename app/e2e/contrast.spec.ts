@@ -508,6 +508,12 @@ test.describe("run log", () => {
         byTheme[theme.theme] = await readColours(theme.name);
       });
     }
+    // Light grey (SGR 90) sits between black (30) and white (37), apart from both (S8-5b-9 review).
+    const light = byTheme.light!;
+    for (const code of [30, 37]) {
+      const apart = contrast(parse(light[90]!), parse(light[code]!));
+      expect(apart, `light SGR 90 apart from SGR ${code}`).toBeGreaterThanOrEqual(1.3);
+    }
     await test.step("system theme follows the OS to dark without a reload", async () => {
       // The last step left the system preference in a light OS. The lines already on screen must follow.
       await page.emulateMedia({ colorScheme: "dark" });

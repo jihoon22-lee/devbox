@@ -165,8 +165,9 @@
   --log-ansi-magenta: var(--term-magenta);
   --log-ansi-cyan: #0178aa;
   --log-ansi-white: #6f7077;
-  /* A bright colour that needs a log value repeats its base colour. */
-  --log-ansi-bright-black: var(--term-bright-black);
+  /* A bright colour that needs a log value repeats its base colour. Grey has its own, between black and
+     white: --term-bright-black (#696c77) is 1.06:1 from white (#6f7077). */
+  --log-ansi-bright-black: #55585f;
   --log-ansi-bright-red: var(--log-ansi-red);
   --log-ansi-bright-green: var(--log-ansi-green);
   --log-ansi-bright-yellow: var(--log-ansi-yellow);

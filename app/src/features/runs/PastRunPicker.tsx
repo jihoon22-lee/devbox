@@ -47,7 +47,8 @@ export function PastRunPicker({
           >
             {runs.map((item) => (
               <option key={item.id} value={item.id}>
-                {`${new Date(item.startedMs).toLocaleString("ko-KR")} · ${resultLabel(item)}`}
+                {/* Runs started in the same second differ by their id. */}
+                {`${new Date(item.startedMs).toLocaleString("ko-KR")} · ${resultLabel(item)} · ${item.id.slice(0, 8)}`}
               </option>
             ))}
           </select>
