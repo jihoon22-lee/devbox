@@ -5,6 +5,7 @@ import { AgentStateMark } from "../AgentStateMark";
 import type { AgentTask } from "../model";
 import { attentionNote, failureLabel } from "../model";
 import { TokenMetrics } from "../TokenMetrics";
+import { useAgentsUi } from "../ui";
 import { CleanupNotice } from "./CleanupNotice";
 import s from "./Detail.module.css";
 import { openAgentPr } from "./links";
@@ -29,7 +30,16 @@ export function AgentHeader({
   const note = attentionNote(task);
   return (
     <header className={s.header}>
-      <h1>{task.title}</h1>
+      <div className={s.heading}>
+        <h1>{task.title}</h1>
+        {/* Open or closed: only fills the new task form with the first prompt and the project. [시작] starts it. */}
+        <Button
+          size="sm"
+          onClick={() => useAgentsUi.getState().setCreating(true, { prompt: task.prompt, projectId: task.projectId })}
+        >
+          같은 지시로 새 작업
+        </Button>
+      </div>
       <div className={s.metrics}>
         <AgentStateMark state={task.state} />
         <span>{projectName}</span>

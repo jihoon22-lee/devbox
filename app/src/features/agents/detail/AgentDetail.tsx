@@ -14,6 +14,7 @@ import { ChangesTab } from "./ChangesTab";
 import { CommitsTab } from "./CommitsTab";
 import { Compose } from "./Compose";
 import s from "./Detail.module.css";
+import { InstructionsTab } from "./InstructionsTab";
 import { QueryError } from "./QueryError";
 import { RunTab, useAgentRuns } from "./RunTab";
 
@@ -22,6 +23,7 @@ const tabs = [
   { id: "changes", label: "변경" },
   { id: "commits", label: "커밋" },
   { id: "run", label: "실행" },
+  { id: "instructions", label: "지시" },
 ];
 export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof useAgentsData> }) {
   const detail = useRpcQuery("agents.get", { id });
@@ -103,6 +105,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         {tab === "changes" && <ChangesTab agentId={id} closed={task.state === "closed"} onQuote={instruct} />}
         {tab === "commits" && <CommitsTab agentId={id} />}
         {tab === "run" && <RunTab task={task} />}
+        {tab === "instructions" && <InstructionsTab task={task} />}
       </div>
       {task.state !== "closed" && (
         <Compose

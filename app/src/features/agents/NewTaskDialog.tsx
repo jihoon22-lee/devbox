@@ -12,7 +12,7 @@ import { AGENT_KEYS } from "./AgentData";
 import s from "./Agents.module.css";
 import { BranchNameField, useBranchName } from "./BranchName";
 import { rememberedProfile, rememberProfile } from "./lastProfile";
-import { BRANCH_PREFIX, fillTemplate, previewBranch } from "./model";
+import { TemplateButtons } from "./TemplateButtons";
 import { useAgentsUi } from "./ui";
 
 interface Props {
@@ -34,13 +34,22 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const noProjects = useNoRegisteredProjects();
   const profiles = useRpcQuery("agents.profiles", {});
   const current = useCurrentProject((state) => state.id);
-  const [projectId, setProjectId] = useState(current ?? "");
+  // Read once: from here on the form is the user's.
+  const [draft] = useState(() => useAgentsUi.getState().draft);
+  const [projectId, setProjectId] = useState(draft?.projectId ?? current ?? "");
+  // A draft's project that was removed since gives way to the usual default, once, as soon as the list is known.
+  // A project removed after that is never replaced: the form asks for one, as for any project removed meanwhile.
+  const [draftChecked, setDraftChecked] = useState(!draft?.projectId);
+  if (!draftChecked && projects.data) {
+    setDraftChecked(true);
+    if (!projects.data.items.some((p) => p.id === projectId)) setProjectId(current ?? "");
+  }
   // The tool picked in this dialog; until then the project's last tool is the default.
   const [picked, setPicked] = useState<string | null>(null);
-  const [title, setTitle] = useState(""),
-    [baseBranch, setBaseBranch] = useState("");
-  const [worktree, setWorktree] = useState(true),
-    [prompt, setPrompt] = useState(() => useAgentsUi.getState().draft?.prompt ?? "");
+  const [title, setTitle] = useState(draft?.title ?? ""),
+    [baseBranch, setBaseBranch] = useState(draft?.baseBranch ?? "");
+  const [worktree, setWorktree] = useState(draft?.worktree ?? true),
+    [prompt, setPrompt] = useState(draft?.prompt ?? "");
   const project = projects.data?.items.find((p) => p.id === projectId);
   const options = profiles.data?.items ?? [];
   // A remembered tool that was removed since is ignored.
@@ -112,29 +121,23 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const queryError = projects.error ?? profiles.error ?? prompts.error;
   const error = create.error ?? queryError;
   const message = error && messageFor(error.code, error.detail);
+  // [취소], Esc and a click outside: ignored while the create request is in flight, else they also drop a trust check.
+  const close = (value: boolean) => {
+    if (!create.isPending) {
+      trust.cancel();
+      onOpenChange(value);
+    }
+  };
   return (
     <>
       <Dialog
         open={open}
-        onOpenChange={(value) => {
-          if (!create.isPending) {
-            trust.cancel();
-            onOpenChange(value);
-          }
-        }}
+        onOpenChange={close}
         title="새 에이전트 작업"
         width={560}
         footer={
           <>
-            <Button
-              disabled={create.isPending}
-              onClick={() => {
-                if (!create.isPending) {
-                  trust.cancel();
-                  onOpenChange(false);
-                }
-              }}
-            >
+            <Button disabled={create.isPending} onClick={() => close(false)}>
               취소
             </Button>
             <Button
@@ -224,36 +227,16 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             작업 폴더 만들기
           </label>
           {worktree ? <BranchNameField branch={branch} /> : <p>현재 체크아웃에서 실행</p>}
-          <div className={s.templates}>
-            {templates.map((template) => (
-              <Button
-                key={template.name}
-                size="sm"
-                disabled={!project || create.isPending}
-                onClick={() =>
-                  setPrompt(
-                    fillTemplate(template.body, {
-                      title: title.trim(),
-                      branch:
-                        baseBranch.trim() ||
-                        (branch.send ? `${BRANCH_PREFIX}${branch.send}` : previewBranch(title.trim(), Date.now())),
-                      project: project?.name ?? "",
-                    }),
-                  )
-                }
-              >
-                템플릿: {template.name}
-              </Button>
-            ))}
-          </div>
-          {templates.length > 0 && (
-            <p className={s.muted}>
-              브랜치 이름을 직접 고치지 않으면 템플릿의 예상 브랜치는 이름이 겹칠 때 바뀔 수 있습니다.
-            </p>
-          )}
-          {useAgentsUi.getState().draft?.truncated && (
-            <p role="status">노트 내용이 길어 처음 64 KiB만 지시문에 넣었습니다.</p>
-          )}
+          <TemplateButtons
+            templates={templates}
+            disabled={!project || create.isPending}
+            title={title}
+            baseBranch={baseBranch}
+            branch={branch.send}
+            project={project?.name ?? ""}
+            onFill={setPrompt}
+          />
+          {draft?.truncated && <p role="status">노트 내용이 길어 처음 64 KiB만 지시문에 넣었습니다.</p>}
           <div className={s.field}>
             <label htmlFor={`${uid}-prompt`}>지시문</label>
             <TextArea

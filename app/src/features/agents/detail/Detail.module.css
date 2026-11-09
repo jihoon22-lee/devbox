@@ -12,6 +12,22 @@
   font-size: 18px;
   margin: 0 0 6px;
 }
+/* The title takes the row; the header's own action keeps its size at the end. */
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.heading h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.heading > button {
+  flex: none;
+}
 .metrics,
 .actions {
   display: flex;
@@ -98,14 +114,43 @@
   overflow: auto;
   padding: 8px;
 }
-.commits {
+.commits,
+.instructions ol {
   list-style: none;
   margin: 0;
   padding: 12px;
 }
-.commits li {
+.commits li,
+.instructions li {
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
+}
+.entryHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--fg-muted);
+}
+.entryHead strong {
+  color: var(--fg);
+}
+.entryHead > button {
+  margin-inline-start: auto;
+}
+/* Text exactly as sent: kept as text, line breaks kept, long words wrapped. */
+.entryText {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.entryNote {
+  margin: 6px 0 0;
+  color: var(--fg-muted);
+}
+.instructions > .entryNote {
+  margin: 0;
+  padding: 0 12px 12px;
 }
 .field {
   display: flex;
