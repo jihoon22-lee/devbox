@@ -1,7 +1,8 @@
 import { createMemoryHistory, Outlet, RouterProvider } from "@tanstack/react-router";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
+import type { Run } from "../../rpc/gen/rpc";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { buildRouter } from "../../shell/router";
 import { NotificationCenter } from "../notifications/NotificationCenter";
@@ -146,4 +147,37 @@ test("saving a definition reads the auto-detected suggestions again", async () =
     }),
   );
   await waitFor(() => expect(wire.requests("runtime.detect")).toHaveLength(2));
+});
+test("지난 실행에서 old를 고르면 그 실행을 연다", async () => {
+  const wire = new RunWire();
+  const latest: Run = { ...runFixture, id: "new", startedMs: 3_000 };
+  const old: Run = {
+    ...runFixture,
+    id: "old",
+    state: "exited",
+    exit: { attemptId: "attempt-old", code: 0, endedMs: 1_500, by: "wrapper" },
+    startedMs: 1_000,
+    endedMs: 1_500,
+    pid: 222,
+  };
+  wire.runs = [latest];
+  wire.selected = latest;
+  // The project's latest runs of every definition; only web's are offered.
+  wire.history = [latest, { ...runFixture, id: "api-run", defId: "api", startedMs: 2_000 }, old];
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const picker = await screen.findByRole("combobox", { name: "지난 실행" });
+  expect(wire.request("runtime.runs").params).toEqual({ projectId: "p", limit: 100 });
+  expect(screen.getByText("최근 100개 실행 중")).toBeVisible();
+  const options = within(picker).getAllByRole("option");
+  expect(options.map((option) => option.getAttribute("value"))).toEqual(["new", "old"]);
+  expect(options[1]).toHaveTextContent(/ · 종료 코드 0$/);
+  expect(picker).toHaveValue("new");
+  wire.selected = old;
+  await userEvent.selectOptions(picker, "old");
+  await waitFor(() => expect(wire.request("runtime.get", -1).params).toEqual({ runId: "old" }));
+  expect(await screen.findByText("PID 222")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "web" })).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "지난 실행" })).toHaveValue("old");
 });

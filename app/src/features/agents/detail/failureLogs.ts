@@ -2,10 +2,15 @@ import type { RpcClient } from "../../../rpc/client";
 import type { LogLine, SearchCursor } from "../../../rpc/gen/rpc";
 import { ansiToText } from "../../runs/model";
 
+// The daemon's limit for a send and for a new task's first prompt alike (agents `limits::INPUT_BYTES`).
 const MAX_BYTES = 64 * 1024;
 const encode = (text: string) => new TextEncoder().encode(text).length;
-export function quoteFailureLogs(runId: string, newest: LogLine[]): string {
-  const header = `테스트 실행 ${runId}이 실패했습니다. 아래 가려진 실행 로그를 확인해 수정해 주세요.\n`;
+/** `header` is the first line, ending in "\n". It counts in the same budget, so only the log rows are cut. */
+export function quoteFailureLogs(
+  runId: string,
+  newest: LogLine[],
+  header = `테스트 실행 ${runId}이 실패했습니다. 아래 가려진 실행 로그를 확인해 수정해 주세요.\n`,
+): string {
   const omitted = "> [전송 크기 제한으로 일부 로그 생략]\n";
   let left = MAX_BYTES - encode(header) - encode(omitted);
   const rows: string[] = [];
@@ -37,7 +42,12 @@ export function quoteFailureLogs(runId: string, newest: LogLine[]): string {
 }
 
 /** Fetch only this run's server-redacted rows, independent of LogView's filters/buffer. */
-export async function readFailureLogs(client: RpcClient, runId: string, signal: AbortSignal): Promise<string> {
+export async function readFailureLogs(
+  client: RpcClient,
+  runId: string,
+  signal: AbortSignal,
+  header?: string,
+): Promise<string> {
   const boundedSignal = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
   const rows: LogLine[] = [];
   const seen = new Set<string>();
@@ -58,7 +68,7 @@ export async function readFailureLogs(client: RpcClient, runId: string, signal: 
     rows.push(
       ...result.items.filter((row) => row.src.kind === "run" && row.src.runId === runId).slice(0, 200 - rows.length),
     );
-    if (rows.length === 200 || !result.nextCursor) return quoteFailureLogs(runId, rows);
+    if (rows.length === 200 || !result.nextCursor) return quoteFailureLogs(runId, rows, header);
     const key = JSON.stringify(result.nextCursor);
     if (seen.has(key)) throw new Error("로그 페이지가 반복되어 전송하지 못했습니다.");
     seen.add(key);

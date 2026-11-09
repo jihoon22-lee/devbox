@@ -14,15 +14,14 @@ export function resultLabel(run?: Run) {
   if (run.exit?.signal) return `신호 ${run.exit.signal}`;
   return runStateLabel[run.state];
 }
+/** A run that has ended in failure: its state says so, or it exited with a code other than 0. */
+export function failedRun(run: Run): boolean {
+  return !liveRun(run) && (run.state === "failed" || (run.exit?.code != null && run.exit.code !== 0));
+}
 export function runTone(run?: Run): "idle" | "progress" | "ok" | "danger" {
   if (!run) return "idle";
-  return liveRun(run)
-    ? run.ready
-      ? "ok"
-      : "progress"
-    : run.state === "failed" || (run.exit?.code != null && run.exit.code !== 0)
-      ? "danger"
-      : "idle";
+  if (liveRun(run)) return run.ready ? "ok" : "progress";
+  return failedRun(run) ? "danger" : "idle";
 }
 
 export const scheduleResultLabel: Record<ScheduleOutcome, string> = {

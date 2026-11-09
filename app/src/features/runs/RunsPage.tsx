@@ -13,11 +13,13 @@ import { visibleTrustText } from "../projects/visibleTrustText";
 import { DefineDialog } from "./DefineDialog";
 import { LogView } from "./LogView";
 import { ObservationNavigation } from "./ObservationNavigation";
+import { PastRunPicker } from "./PastRunPicker";
 import { usePinnedLogSources } from "./pinnedSources";
 import { RunChips } from "./RunChips";
+import { RunFailureTaskAction } from "./RunFailureTaskAction";
 import { RunList, type RunSelection } from "./RunList";
 import s from "./RunsPage.module.css";
-import { resultLabel, runStateLabel } from "./runPresentation";
+import { failedRun, resultLabel, runStateLabel } from "./runPresentation";
 import { SystemOverview } from "./SystemOverview";
 import { type RunsSearch, runsSearch } from "./search";
 import { useRunActions } from "./useRunActions";
@@ -219,6 +221,8 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                   <span>재시작 {run.restarts}회</span>
                   <span>{resultLabel(run)}</span>
                 </div>
+                <PastRunPicker run={run} onPick={(id) => setSelection({ definitionId: run.defId, runId: id })} />
+                {failedRun(run) && <RunFailureTaskAction key={run.id} run={run} />}
                 <RunChips key={run.id} run={run} />
                 {run.windows && (
                   <Banner tone="info">

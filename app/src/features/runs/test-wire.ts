@@ -41,6 +41,8 @@ export class RunWire extends ProjectWire {
   defs = [serviceDefinition];
   runs: Run[] = [{ ...runFixture }];
   selected: Run = { ...runFixture };
+  /** What `runtime.runs` returns: the project's latest runs of every definition. */
+  history: Run[] = [];
   trust: DefinitionList["trust"] = "not_required";
   suggestions: Suggestion[] = [];
   containers = [
@@ -59,6 +61,9 @@ export class RunWire extends ProjectWire {
         break;
       case "runtime.get":
         result = { rev: this.rev, run: this.selected };
+        break;
+      case "runtime.runs":
+        result = { rev: this.rev, items: this.history };
         break;
       case "runtime.containers":
         result = { available: true, items: this.containers };
