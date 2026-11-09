@@ -11,6 +11,7 @@ import s from "./Detail.module.css";
 import { useAgentRefresh, useAgentResult } from "./data";
 import { QueryError } from "./QueryError";
 import { type EditIntent, ReviewDialogs } from "./ReviewDialogs";
+import { UncommittedNotice } from "./UncommittedNotice";
 import { useReviewAction } from "./useReviewAction";
 import { useWorkspaceItems } from "./workspaceActions";
 export function AgentActions({
@@ -208,6 +209,7 @@ export function AgentActions({
           </Tooltip>
         )}
       </div>
+      <UncommittedNotice task={task} onCompose={onInstruct} />
       {trust.dialog}
       {trust.notice && <Banner tone="danger">{trust.notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
