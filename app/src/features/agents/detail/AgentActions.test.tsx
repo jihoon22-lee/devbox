@@ -1,13 +1,26 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { TooltipProvider, useToasts } from "../../../ui";
+import { useCurrentProject } from "../../projects/store";
 import { ProjectWire } from "../../projects/test-wire";
 import { trustPreview } from "../../projects/trust-fixtures";
+import { openPopout } from "../../terminal/popout";
 import { task } from "../test-fixtures";
 import { AgentActions } from "./AgentActions";
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../../terminal/popout", () => ({ openPopout: vi.fn().mockResolvedValue(undefined) }));
 const changes = { base: "main", ahead: 1, behind: 0, headOid: "h1", baseOid: "b1", files: [] };
+const CLOSES =
+  "확인하면 먼저 이 에이전트 도구를 멈춥니다. 성공하면 작업을 닫고, 자동 정리가 켜져 있으면 작업 폴더와 로컬 브랜치도 지웁니다. 닫힌 작업에는 이어서 지시할 수 없습니다.";
+const REBASE = "에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 옮긴 뒤 이어서 지시하려면 [재개]를 누르세요.";
+async function confirmRebase() {
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+}
 async function setup(inline = false, trustRequired = false) {
   const wire = new ProjectWire({ trustNotRequired: !trustRequired });
   const item = { ...task("a1", "idle"), ...(inline ? { worktreePath: null, branch: null } : {}) };
@@ -174,7 +187,7 @@ test("rebase conflict offers resolution instruction and abort; review and config
       },
     }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  await confirmRebase();
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
   await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
   await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(2));
@@ -186,7 +199,7 @@ test("rebase conflict offers resolution instruction and abort; review and config
     text: expect.stringContaining("a.txt. 충돌을 해결하고 git rebase --continue"),
   });
   await act(async () => wire.reply("agents.send", task("a1")));
-  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  await confirmRebase();
   await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(2));
   await act(async () => wire.reply("agents.rebase", { result: "conflict", files: ["a.txt"] }));
   await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(4));
@@ -286,4 +299,193 @@ test("the resolution instruction is held while the agent waits for a choice in i
   expect(wire.requests("agents.send")).toHaveLength(0);
   view.rerender(node("idle"));
   await waitFor(() => expect(screen.getByRole("button", { name: "해결 지시 보내기" })).toBeEnabled());
+});
+
+test("PR·병합 확인 창은 성공하면 작업을 닫는다고 알린다", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "병합" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "병합 커밋" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  await act(async () => wire.reply("agents.changes", changes));
+  const merge = await screen.findByRole("dialog", { name: "main에 병합 · 작업 a1" });
+  await waitFor(() => expect(merge).toHaveTextContent("HEAD h1 · 기준 b1"));
+  expect(merge).toHaveTextContent("성공하면 작업을 닫고");
+  // The sentence ends the body, after the refs the user confirms.
+  expect(merge).toHaveAccessibleDescription(expect.stringMatching(/기준 b1\s확인하면 먼저 .*할 수 없습니다\.$/));
+  expect(merge).toHaveTextContent(CLOSES);
+  await userEvent.click(within(merge).getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await userEvent.click(screen.getByRole("button", { name: "PR" }));
+  await waitFor(() => expect(wire.requests("agents.commits")).toHaveLength(1));
+  await act(async () => wire.reply("agents.commits", { items: [] }));
+  await userEvent.click(await screen.findByRole("button", { name: "내용 확인" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(2));
+  await act(async () => wire.reply("agents.changes", changes));
+  const pr = await screen.findByRole("dialog", { name: "PR 만들기 · 작업 a1" });
+  await waitFor(() => expect(pr).toHaveTextContent("HEAD h1 · 기준 b1"));
+  expect(pr).toHaveTextContent("성공하면 작업을 닫고");
+  expect(pr).toHaveAccessibleDescription(expect.stringMatching(/PR 제목: 작업 a1[\s\S]*할 수 없습니다\.$/));
+  expect(pr).toHaveTextContent(CLOSES);
+  expect(wire.requests("agents.merge")).toHaveLength(0);
+  expect(wire.requests("agents.pr")).toHaveLength(0);
+});
+
+test("도구가 살아 있으면 [기준 반영]은 확인한 뒤에만 보낸다", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(dialog).toHaveAccessibleDescription(REBASE);
+  expect(within(dialog).getByRole("button", { name: "취소" })).toHaveFocus();
+  await userEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const again = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(within(again).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  expect(wire.request("agents.rebase").params).toEqual({ id: "a1" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+async function renderTool(tool: { sessionAlive: boolean; sessionKnown: boolean; toolExited: boolean }) {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  render(
+    <TooltipProvider>
+      <RpcProvider client={wire.client}>
+        <AgentActions
+          task={{ ...task("a1", "review"), toolExited: tool.toolExited }}
+          sessionAlive={tool.sessionAlive}
+          sessionKnown={tool.sessionKnown}
+        />
+      </RpcProvider>
+    </TooltipProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  await waitFor(() => expect(wire.requests("agents.rebase_status")).toHaveLength(1));
+  await act(async () => wire.reply("agents.rebase_status", { owned: false, files: [] }));
+  return wire;
+}
+test.each([
+  { sessionAlive: true, sessionKnown: true, toolExited: true },
+  { sessionAlive: false, sessionKnown: true, toolExited: false },
+  { sessionAlive: false, sessionKnown: false, toolExited: true },
+])("도구가 살아 있지 않으면 [기준 반영]은 확인 없이 보낸다 %o", async (tool) => {
+  const wire = await renderTool(tool);
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("세션 목록을 아직 모르면 [기준 반영]은 확인한 뒤에만 보낸다", async () => {
+  // Until the terminal list loads, a running tool cannot be ruled out.
+  const wire = await renderTool({ sessionAlive: false, sessionKnown: false, toolExited: false });
+  await userEvent.click(screen.getByRole("button", { name: "기준 반영" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(dialog).toHaveAccessibleDescription(REBASE);
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+});
+
+test("병합 충돌 띠의 [기준 반영 실행]도 도구가 살아 있으면 확인한 뒤에만 보낸다", async () => {
+  const wire = await setup();
+  await userEvent.click(screen.getByRole("button", { name: "병합" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "병합 커밋" }));
+  await waitFor(() => expect(wire.requests("agents.changes")).toHaveLength(1));
+  await act(async () => wire.reply("agents.changes", changes));
+  await userEvent.click(await screen.findByRole("button", { name: "main에 병합" }));
+  await waitFor(() => expect(wire.requests("agents.merge")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("agents.merge").id,
+      error: { code: "agents.conflict", detail: { files: ["a.txt"] } },
+    }),
+  );
+  // The merge's own conflict shows the banner without an owned rebase.
+  await userEvent.click(await screen.findByRole("button", { name: "기준 반영 실행" }));
+  const dialog = await screen.findByRole("dialog", { name: "기준 반영 · 작업 a1" });
+  expect(dialog).toHaveAccessibleDescription(REBASE);
+  expect(wire.requests("agents.rebase")).toHaveLength(0);
+  await userEvent.click(within(dialog).getByRole("button", { name: "기준 반영" }));
+  await waitFor(() => expect(wire.requests("agents.rebase")).toHaveLength(1));
+  expect(wire.request("agents.rebase").params).toEqual({ id: "a1" });
+});
+
+async function openMore(item: ReturnType<typeof task>) {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  render(
+    <TooltipProvider>
+      <RpcProvider client={wire.client}>
+        <AgentActions task={item} sessionAlive onInstruct={vi.fn()} />
+      </RpcProvider>
+    </TooltipProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  await userEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+  return wire;
+}
+test("opens_task_worktree_without_switching_global_project", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  useCurrentProject.setState({ id: "other-project" });
+  try {
+    const item = { ...task("a1", "idle"), projectId: "p-task" };
+    const wire = await openMore(item);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "VS Code로 작업 폴더 열기" }));
+    expect(invoke).toHaveBeenLastCalledWith("open_external", { kind: "vscode", path: item.worktreePath });
+    await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" }));
+    await waitFor(() => expect(wire.requests("terminal.create")).toHaveLength(1));
+    expect(wire.request("terminal.create").params).toEqual({
+      projectId: "p-task",
+      cwd: item.worktreePath,
+      title: null,
+      command: null,
+      attachZellij: null,
+    });
+    await act(async () => wire.reply("terminal.create", { id: "t1", projectId: "p-task" }));
+    await waitFor(() => expect(openPopout).toHaveBeenLastCalledWith("terminal", "t1"));
+    expect(useCurrentProject.getState().id).toBe("other-project");
+  } finally {
+    delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
+});
+test("a failed task-folder terminal tells the daemon's reason and opens no window", async () => {
+  vi.mocked(openPopout).mockClear();
+  const wire = await openMore({ ...task("a1", "idle"), projectId: "p-task" });
+  await userEvent.click(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" }));
+  await waitFor(() => expect(wire.requests("terminal.create")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("terminal.create", -1).id,
+      error: { code: "terminal.cwd_invalid", detail: { cwd: "/gone" } },
+    }),
+  );
+  await waitFor(() =>
+    expect(useToasts.getState().items).toContainEqual(
+      expect.objectContaining({
+        tone: "danger",
+        title: "터미널 시작 폴더를 열 수 없습니다.",
+        body: "WSL 안의 폴더 경로를 확인해 주세요.",
+      }),
+    ),
+  );
+  expect(openPopout).not.toHaveBeenCalled();
+});
+test("the VS Code item is only in the Windows app", async () => {
+  await openMore(task("a1", "idle"));
+  expect(await screen.findByRole("menuitem", { name: "작업 폴더 터미널" })).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "VS Code로 작업 폴더 열기" })).toBeNull();
+});
+test("a task without a worktree folder has neither folder item", async () => {
+  Object.assign(window, { __TAURI_INTERNALS__: {} });
+  try {
+    await openMore({ ...task("a1", "idle"), worktreePath: null, branch: null });
+    await screen.findByRole("menuitem", { name: "테스트 실행" });
+    expect(screen.queryByRole("menuitem", { name: /작업 폴더 터미널|VS Code로 작업 폴더/ })).toBeNull();
+  } finally {
+    delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
 });

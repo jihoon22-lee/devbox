@@ -12,7 +12,7 @@ import { noteKey, stem } from "./notePaths";
 import s from "./notes.module.css";
 import { openNotePopout } from "./openNoteWindow";
 import { Preview } from "./Preview";
-import { OpenError, ReadOnlyBar } from "./ReadOnlyBar";
+import { OpenError, ReadOnlyBar, SaveError } from "./ReadOnlyBar";
 import { RecoveryView } from "./RecoveryView";
 import { SaveStatus } from "./SaveStatus";
 import { useNoteTree } from "./useNoteTree";
@@ -70,6 +70,7 @@ export function NoteView({
       </header>
       <OpenError docKey={key} />
       <ReadOnlyBar docKey={key} />
+      <SaveError docKey={key} />
       <CompareView docKey={key} />
       <RecoveryView docKey={key} />
       <div className={s.workspace} data-preview={preview ? "on" : "off"}>

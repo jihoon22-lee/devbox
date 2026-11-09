@@ -29,7 +29,8 @@ pub(super) fn service(hub: &Arc<devbox_core::Hub>) -> Arc<GitService> {
         }),
     ))
 }
-async fn root(s: &Services, target: &SourceTarget) -> R<PathBuf> {
+/// The target's checkout: the project's own, or the folder its agent task owns.
+async fn resolve(s: &Services, target: &SourceTarget) -> R<PathBuf> {
     let project = s
         .projects
         .get(&target.project_id)
@@ -66,8 +67,13 @@ async fn root(s: &Services, target: &SourceTarget) -> R<PathBuf> {
     {
         return Err(SourceGitError::InvalidTarget.into());
     }
-    s.git.observe(&canonical, target).await?;
     Ok(canonical)
+}
+/// `resolve`, and watch the checkout so `git.changed` follows changes made outside the daemon.
+async fn root(s: &Services, target: &SourceTarget) -> R<PathBuf> {
+    let dir = resolve(s, target).await?;
+    s.git.observe(&dir, target).await?;
+    Ok(dir)
 }
 async fn done(s: &Services, target: &SourceTarget, result: Result<(), SourceGitError>) -> R<Done> {
     result?;
@@ -132,7 +138,13 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
             done(&s, &p.target, result).await
         })
         .register::<GitStatus, _, _>(|s, _, p| async move {
-            let dir = root(&s, &p.target).await?;
+            // A task folder's status is polled by its agent detail, which needs no `git.changed`;
+            // watching it would keep a watcher per opened task until the daemon stops.
+            let dir = if p.target.worktree_id.is_some() {
+                resolve(&s, &p.target).await?
+            } else {
+                root(&s, &p.target).await?
+            };
             map(&dir, devbox_git::source_queries::status(&dir).await).await
         })
         .register::<GitDiff, _, _>(|s, _, p| async move {

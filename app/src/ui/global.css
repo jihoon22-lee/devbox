@@ -29,8 +29,24 @@ textarea {
   font: inherit;
   color: inherit;
 }
+/*
+ * Forced colours drop author shadows, but not inside an opted-out item (forced-color-adjust: none, such
+ * as a highlighted Menu or Select row that Radix focuses), which would keep the theme focus ring.
+ */
 @media (forced-colors: active) {
   :focus-visible {
     outline: 2px solid CanvasText;
+    box-shadow: none;
   }
+}
+/*
+ * The UI scale is the root zoom (preferences.ts setUiScale). Radix poppers (menus, Select lists,
+ * tooltips) measure their trigger in window pixels and place their wrapper with them, which a zoomed
+ * wrapper would scale again. The wrapper undoes the zoom and its content applies it once more.
+ */
+[data-radix-popper-content-wrapper] {
+  zoom: calc(1 / var(--ui-zoom, 1));
+}
+[data-radix-popper-content-wrapper] > * {
+  zoom: var(--ui-zoom, 1);
 }

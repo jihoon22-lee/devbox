@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NativeMainController } from "./NativeMainController";
 import { useNativeRuntime } from "./nativeRuntime";
@@ -34,6 +34,7 @@ test("quit remains safe before the connection gate is ready and unknown tasks re
   act(() => listeners.get("devbox://quit")?.({ payload: null }));
   expect(await screen.findByRole("dialog", { name: "devbox 종료" })).toHaveTextContent("확인하지 못했습니다");
   expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "캡처 열기" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   expect(mocks.invoke).not.toHaveBeenCalledWith("quit_app");
 });
@@ -54,7 +55,8 @@ test("known open task count survives disconnection and full exit uses native exi
   await waitFor(() => expect(listeners.has("devbox://quit")).toBe(true));
   act(() => listeners.get("devbox://quit")?.({ payload: null }));
   expect(await screen.findByRole("dialog")).toHaveTextContent("에이전트 3개");
-  expect(screen.getByRole("dialog")).toHaveTextContent("약 15초 뒤");
+  expect(screen.getByRole("dialog")).toHaveTextContent("WSL과 함께 종료될 수 있습니다");
+  expect(screen.queryByRole("button", { name: "캡처 열기" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "종료" }));
   expect(mocks.invoke).toHaveBeenCalledWith("quit_app");
 });
@@ -73,7 +75,7 @@ test("zero task count from a disconnected snapshot still requires a warning", as
   expect(await screen.findByRole("dialog")).toHaveTextContent("확인하지 못했습니다");
   expect(mocks.invoke).not.toHaveBeenCalledWith("quit_app");
 });
-test("a current confirmed empty snapshot can quit directly and pending quit requests do not duplicate exit", async () => {
+test("a current confirmed empty snapshot still confirms, and pending quit requests do not duplicate exit", async () => {
   useNativeRuntime.setState({ openTasks: 0, snapshotCurrent: true });
   let finish!: () => void;
   mocks.invoke.mockImplementation((name) =>
@@ -89,8 +91,13 @@ test("a current confirmed empty snapshot can quit directly and pending quit requ
     listeners.get("devbox://quit")?.({ payload: null });
     listeners.get("devbox://quit")?.({ payload: null });
   });
-  expect(mocks.invoke.mock.calls.filter(([name]) => name === "quit_app")).toHaveLength(1);
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const exits = () => mocks.invoke.mock.calls.filter(([name]) => name === "quit_app");
+  await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(exits()).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "종료" }));
+  await waitFor(() => expect(exits()).toHaveLength(1));
+  await act(async () => {});
+  expect(exits()).toHaveLength(1);
   await act(async () => finish());
 });
 test("native palette events carry only a numeric trace ID into the intent queue", async () => {
@@ -193,4 +200,148 @@ test("시작하기 still saves the explicit choice and the question together", a
   await waitFor(() => expect(saved.autostartAsked).toBe(true));
   expect(called("set_autostart")).toEqual([["set_autostart", { enabled: false, firstRun: true }]]);
   expect(called("mark_autostart_asked")).toEqual([]);
+});
+
+/** From now on native says whether quick capture holds a draft; every other command succeeds. */
+function captureDraft(present: boolean | Error) {
+  mocks.invoke.mockImplementation(async (name) => {
+    if (name !== "capture_has_draft") return undefined;
+    if (present instanceof Error) throw present;
+    return present;
+  });
+}
+async function requestQuit() {
+  render(<NativeMainController ready={false} />);
+  await waitFor(() => expect(listeners.has("devbox://quit")).toBe(true));
+  act(() => listeners.get("devbox://quit")?.({ payload: null }));
+}
+
+test("열린 작업이 0개여도 종료를 확인한다", async () => {
+  useNativeRuntime.setState({ openTasks: 0, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  const dialog = await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(dialog).toHaveTextContent("앱을 끄면 에이전트 작업·서비스·터미널이 WSL과 함께 종료될 수 있습니다.");
+  expect(dialog).not.toHaveTextContent("에이전트 0개");
+  expect(dialog).not.toHaveTextContent("약 15초");
+  expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(called("quit_app")).toEqual([]);
+  await userEvent.click(screen.getByRole("button", { name: "종료" }));
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+});
+
+test("개수를 모르면 '확인하지 못했습니다' 창이 뜬다", async () => {
+  useNativeRuntime.setState({ openTasks: null, snapshotCurrent: false });
+  captureDraft(false);
+  await requestQuit();
+  expect(await screen.findByRole("dialog", { name: "devbox 종료" })).toHaveTextContent(
+    "실행 중인 작업을 확인하지 못했습니다. 앱을 끄면 에이전트 작업·서비스·터미널이 WSL과 함께 종료될 수 있습니다.",
+  );
+});
+
+test("캡처 초안이 있으면 종료를 묻고 quit_app을 부르지 않는다", async () => {
+  useNativeRuntime.setState({ openTasks: 0, snapshotCurrent: true });
+  captureDraft(true);
+  await requestQuit();
+  const dialog = await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(dialog).toHaveTextContent("빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.");
+  expect(dialog).toHaveTextContent("에이전트 작업·서비스·터미널이 WSL과 함께 종료될 수 있습니다. 빠른 캡처에");
+  expect(dialog).not.toHaveTextContent("에이전트 0개");
+  expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "종료" })).toBeNull();
+  expect(called("quit_app")).toEqual([]);
+  await userEvent.click(screen.getByRole("button", { name: "캡처 열기" }));
+  expect(called("capture_open")).toEqual([["capture_open"]]);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(called("quit_app")).toEqual([]);
+});
+
+test("running tasks and a draft are both named, and 버리고 종료 quits", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(true);
+  await requestQuit();
+  expect(await screen.findByRole("dialog", { name: "devbox 종료" })).toHaveTextContent(
+    "에이전트 2개가 실행 중입니다. 앱을 끄면 에이전트 작업·서비스·터미널이 WSL과 함께 종료될 수 있습니다. 빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "버리고 종료" }));
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+  expect(called("capture_open")).toEqual([]);
+});
+
+test("a draft check that fails counts as no draft, and the quit is still confirmed", async () => {
+  useNativeRuntime.setState({ openTasks: 0, snapshotCurrent: true });
+  captureDraft(new Error("owned fixture failure"));
+  await requestQuit();
+  const dialog = await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(dialog).not.toHaveTextContent("초안");
+  expect(called("quit_app")).toEqual([]);
+});
+
+test("a draft typed while the dialog is open turns 종료 into the draft question instead of quitting", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  const dialog = await screen.findByRole("dialog", { name: "devbox 종료" });
+  expect(dialog).not.toHaveTextContent("빠른 캡처");
+  expect(screen.queryByRole("button", { name: "캡처 열기" })).toBeNull();
+  // Quick capture stays available while the dialog asks; a draft is written there meanwhile.
+  captureDraft(true);
+  await userEvent.click(screen.getByRole("button", { name: "종료" }));
+  expect(await screen.findByRole("button", { name: "버리고 종료" })).toBeEnabled();
+  expect(dialog).toHaveTextContent("에이전트 2개가 실행 중입니다.");
+  expect(dialog).toHaveTextContent("빠른 캡처에 저장하지 않은 초안이 있습니다. 종료하면 사라집니다.");
+  expect(screen.getByRole("button", { name: "캡처 열기" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "취소" })).toHaveFocus();
+  expect(called("quit_app")).toEqual([]);
+  await userEvent.click(screen.getByRole("button", { name: "버리고 종료" }));
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+  // [버리고 종료] answers the question; it does not ask again.
+  expect(called("capture_has_draft")).toHaveLength(2);
+});
+
+test("pressing 종료 twice while the draft is asked again starts one quit", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  const confirm = await screen.findByRole("button", { name: "종료" });
+  // Two presses that are not one double click (detail 0, as Enter or Space give): the pending
+  // guard, not the double-click filter, keeps this to one quit.
+  act(() => {
+    fireEvent.click(confirm, { detail: 0 });
+    fireEvent.click(confirm, { detail: 0 });
+  });
+  await waitFor(() => expect(called("quit_app")).toHaveLength(1));
+  await act(async () => {});
+  expect(called("quit_app")).toHaveLength(1);
+  expect(called("capture_has_draft")).toHaveLength(2);
+});
+
+test("the second click of a double click on 종료 does not drop the draft the first click found", async () => {
+  useNativeRuntime.setState({ openTasks: 2, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  await screen.findByRole("dialog", { name: "devbox 종료" });
+  captureDraft(true);
+  fireEvent.click(screen.getByRole("button", { name: "종료" }), { detail: 1 });
+  const discard = await screen.findByRole("button", { name: "버리고 종료" });
+  expect(called("quit_app")).toEqual([]);
+  // The double click's second click lands where [종료] was, after the draft question replaced it.
+  fireEvent.click(discard, { detail: 2 });
+  expect(called("quit_app")).toEqual([]);
+  expect(screen.getByRole("dialog", { name: "devbox 종료" })).toHaveTextContent("빠른 캡처에 저장하지 않은 초안이");
+  fireEvent.click(discard, { detail: 1 });
+  expect(called("quit_app")).toEqual([["quit_app"]]);
+  await act(async () => {});
+});
+
+test.each([
+  ["Enter", "{Enter}"],
+  ["Space", " "],
+])("%s on 종료 still quits: a key press is not a double click", async (_, key) => {
+  useNativeRuntime.setState({ openTasks: 3, snapshotCurrent: true });
+  captureDraft(false);
+  await requestQuit();
+  (await screen.findByRole("button", { name: "종료" })).focus();
+  await userEvent.keyboard(key);
+  await waitFor(() => expect(called("quit_app")).toEqual([["quit_app"]]));
 });

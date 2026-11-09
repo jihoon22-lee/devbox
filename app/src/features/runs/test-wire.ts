@@ -1,5 +1,5 @@
 import { decodeFrame } from "../../rpc/frame";
-import type { Definition, DefinitionList, Run } from "../../rpc/gen/rpc";
+import type { Definition, DefinitionList, Run, Suggestion } from "../../rpc/gen/rpc";
 import { ProjectWire } from "../projects/test-wire";
 export const serviceDefinition: Definition = {
   source: "thisPc",
@@ -41,7 +41,11 @@ export class RunWire extends ProjectWire {
   defs = [serviceDefinition];
   runs: Run[] = [{ ...runFixture }];
   selected: Run = { ...runFixture };
+  /** What `runtime.runs` returns: the project's latest runs of every definition. */
+  history: Run[] = [];
+  historyFails = false;
   trust: DefinitionList["trust"] = "not_required";
+  suggestions: Suggestion[] = [];
   containers = [
     { id: "a".repeat(64), name: "owned-container", image: "fake", state: "running", status: "Up", ports: "" },
   ];
@@ -53,8 +57,18 @@ export class RunWire extends ProjectWire {
       case "runtime.list":
         result = { rev: this.rev, defs: this.defs, shadowed: [], runs: this.runs, trust: this.trust, nextCursor: null };
         break;
+      case "runtime.detect":
+        result = this.suggestions;
+        break;
       case "runtime.get":
         result = { rev: this.rev, run: this.selected };
+        break;
+      case "runtime.runs":
+        if (this.historyFails) {
+          queueMicrotask(() => this.deliver({ type: "response", id: request.id, error: { code: "internal" } }));
+          return;
+        }
+        result = { rev: this.rev, items: this.history };
         break;
       case "runtime.containers":
         result = { available: true, items: this.containers };

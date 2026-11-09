@@ -5,6 +5,7 @@ use crate::{
     service::{AgentsService, Result, apply_event, changed, now_ms},
     state::{AgentEvent, AgentState},
     store,
+    tracker::Binding,
 };
 use devbox_protocol::{Fail, Internal};
 use devbox_terminal::tmux::PasteDelivery;
@@ -18,6 +19,16 @@ struct Reservation {
     launch: Option<String>,
     epoch: u64,
     before: AgentTask,
+    /// The reserve cleared the launch's ready marker (`Binding::resumed_session`).
+    cleared_marker: bool,
+}
+impl Reservation {
+    /// Whether nothing reached `task` since the reserve: no hook, turn or launch moved it on.
+    fn untouched(&self, task: &AgentTask) -> bool {
+        task.activity_seq == self.epoch
+            && task.terminal_id == self.before.terminal_id
+            && task.session_id == self.before.session_id
+    }
 }
 impl AgentsService {
     pub async fn send(&self, p: SendToAgent) -> Result<AgentTask> {
@@ -131,7 +142,10 @@ impl AgentsService {
                     if task.state == AgentState::Waiting {
                         return Ok(Err(AgentsError::AwaitingInput));
                     }
-                    let launch = store::binding(tx, &id)?.and_then(|binding| binding.launch_id);
+                    let binding = store::binding(tx, &id)?;
+                    let launch = binding
+                        .as_ref()
+                        .and_then(|binding| binding.launch_id.clone());
                     let before = task.clone();
                     task.follow_ups.push(FollowUp {
                         at_ms: now_ms(),
@@ -148,11 +162,22 @@ impl AgentsService {
                             Fail::Internal(_) => AgentsError::InvalidInput,
                         }));
                     }
+                    // A resumed launch gets its first instruction: the tool's turn says when it
+                    // waits again, not its prompt.
+                    let cleared_marker = match binding.filter(|binding| binding.resumed_session) {
+                        Some(mut binding) => {
+                            binding.resumed_session = false;
+                            store::put_binding(tx, &id, &binding)?;
+                            true
+                        }
+                        None => false,
+                    };
                     let reservation = Reservation {
                         instruction,
                         launch,
                         epoch: task.activity_seq,
                         before,
+                        cleared_marker,
                     };
                     store::put(tx, &task)?;
                     Ok(Ok((reservation, task)))
@@ -180,10 +205,15 @@ impl AgentsService {
                     let Some(mut task) = store::get(tx, &id)? else {
                         return Ok(Err(()));
                     };
-                    let launch = store::binding(tx, &id)?.and_then(|binding| binding.launch_id);
+                    let binding = store::binding(tx, &id)?;
+                    let launch = binding.as_ref().and_then(|b| b.launch_id.clone());
                     let previous = task.state;
+                    let undone = delivery.is_none() && reservation.untouched(&task);
                     if !finish_row(&mut task, &reservation, &launch, delivery) {
                         return Ok(Err(()));
+                    }
+                    if let Some(binding) = restore_marker(&reservation, undone, binding) {
+                        store::put_binding(tx, &id, &binding)?;
                     }
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous)))
@@ -216,10 +246,7 @@ fn finish_row(
         task.follow_ups[index].delivery = Some(delivery);
     } else {
         task.follow_ups.remove(index);
-        if task.activity_seq == reservation.epoch
-            && task.terminal_id == reservation.before.terminal_id
-            && task.session_id == reservation.before.session_id
-        {
+        if reservation.untouched(task) {
             task.state = reservation.before.state;
             task.reason = reservation.before.reason.clone();
             task.attention = reservation.before.attention.clone();
@@ -228,6 +255,23 @@ fn finish_row(
     }
     task.updated_ms = now_ms();
     true
+}
+/// The binding to store once an unsent instruction is `undone` (`finish_row` restored the task):
+/// the ready marker its reserve cleared goes back on while the launch is the reserve's and began no
+/// turn. The tool never got the instruction, so it still waits at its prompt for its first one.
+fn restore_marker(
+    reservation: &Reservation,
+    undone: bool,
+    binding: Option<Binding>,
+) -> Option<Binding> {
+    let mut binding = binding.filter(|binding| {
+        undone
+            && reservation.cleared_marker
+            && binding.launch_id == reservation.launch
+            && binding.turn_id.is_none()
+    })?;
+    binding.resumed_session = true;
+    Some(binding)
 }
 #[cfg(test)]
 mod tests {
@@ -253,8 +297,34 @@ mod tests {
             launch: Some("launch".into()),
             epoch: task.activity_seq,
             before,
+            cleared_marker: false,
         };
         (task, reservation)
+    }
+    #[test]
+    fn an_undone_instruction_restores_only_the_marker_its_reserve_cleared() {
+        let (_, mut reservation) = provisional();
+        reservation.cleared_marker = true;
+        let mut binding = Binding::new(1);
+        binding.launch_id = Some("launch".into());
+        let restored = restore_marker(&reservation, true, Some(binding.clone()));
+        assert!(restored.expect("restored").resumed_session);
+        // A hook, a turn or a launch moved the task on since the reserve.
+        assert_eq!(
+            restore_marker(&reservation, false, Some(binding.clone())),
+            None
+        );
+        // The launch began a turn, or is not the reserve's.
+        let mut turned = binding.clone();
+        turned.turn_id = Some("turn".into());
+        assert_eq!(restore_marker(&reservation, true, Some(turned)), None);
+        let mut other = binding.clone();
+        other.launch_id = Some("new-launch".into());
+        assert_eq!(restore_marker(&reservation, true, Some(other)), None);
+        assert_eq!(restore_marker(&reservation, true, None), None);
+        // A send that cleared no marker never sets one.
+        reservation.cleared_marker = false;
+        assert_eq!(restore_marker(&reservation, true, Some(binding)), None);
     }
     #[test]
     fn unsent_compensation_preserves_a_newer_permission_hook() {

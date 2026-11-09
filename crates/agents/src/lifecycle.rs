@@ -93,75 +93,7 @@ impl AgentsService {
             match result {
                 Ok(None) => return Ok(None),
                 Ok(Some(binding)) => {
-                    let id = task.id.clone();
-                    let saved = binding.clone();
-                    let hub = self.hub.clone();
-                    let _ = self
-                        .db
-                        .write_checked_with_commit(
-                            move |tx| {
-                                let Some(mut current) = store::get(tx, &id)? else {
-                                    return Ok(Err(()));
-                                };
-                                if current.state == AgentState::Closed {
-                                    return Ok(Err(()));
-                                }
-                                let previous_state = current.state;
-                                let current_binding = store::binding(tx, &id)?;
-                                // A poll started before resume must not replace the new launch or ownership.
-                                if current_binding.as_ref().is_some_and(|b| {
-                                    b.launch_ms != saved.launch_ms || b.launch_id != saved.launch_id
-                                }) {
-                                    return Ok(Err(()));
-                                }
-                                let mut saved = saved;
-                                if let Some(binding) = &current_binding {
-                                    saved.resources = binding.resources.clone();
-                                    saved.owned_rebase = binding.owned_rebase;
-                                }
-                                if current_binding.as_ref().and_then(|b| b.turn_started_ms)
-                                    > saved.turn_started_ms
-                                {
-                                    return Ok(Err(()));
-                                }
-                                let previous =
-                                    current_binding.as_ref().and_then(|b| b.turn_id.clone());
-                                if current_binding.as_ref() == Some(&saved)
-                                    && current.session_id == saved.thread_id
-                                {
-                                    return Ok(Err(()));
-                                }
-                                store::put_binding(tx, &id, &saved)?;
-                                let mut changed = false;
-                                if let Some(session) = &saved.thread_id {
-                                    changed |= apply_event(
-                                        &mut current,
-                                        &AgentEvent::SessionStarted {
-                                            session_id: session.clone(),
-                                        },
-                                        now_ms(),
-                                    );
-                                }
-                                if !retry && previous != saved.turn_id {
-                                    changed |= apply_event(
-                                        &mut current,
-                                        &AgentEvent::PromptSubmitted,
-                                        now_ms(),
-                                    );
-                                }
-                                if changed {
-                                    store::put(tx, &current)?;
-                                }
-                                Ok(Ok((current, changed, previous_state)))
-                            },
-                            move |(current, did_change, previous), rev| {
-                                if *did_change {
-                                    changed(&hub, current, rev, current.state != *previous)
-                                }
-                            },
-                        )
-                        .await
-                        .internal("save Codex binding")?;
+                    self.save_binding(&task.id, binding.clone(), retry).await?;
                     return Ok(Some(binding));
                 }
                 Err(d) => last = d,
@@ -171,6 +103,79 @@ impl AgentsService {
             }
         }
         Err(AgentsError::SessionMetadata { diagnostic: last }.into())
+    }
+    /// Saves `saved`, the binding a read of Codex's metadata built from the one stored before it.
+    /// A resume or a newer turn stored meanwhile wins. What the metadata does not hold stays as
+    /// stored: the task's resources and owned rebase, and whether its resumed launch still waits
+    /// for a first instruction, which a send may have given meanwhile. Unless `retry` (a
+    /// completion report's read), a turn found since the stored one counts as a prompt.
+    pub(crate) async fn save_binding(&self, id: &str, saved: Binding, retry: bool) -> Result<()> {
+        let id = id.to_owned();
+        let hub = self.hub.clone();
+        let _ = self
+            .db
+            .write_checked_with_commit(
+                move |tx| {
+                    let Some(mut current) = store::get(tx, &id)? else {
+                        return Ok(Err(()));
+                    };
+                    if current.state == AgentState::Closed {
+                        return Ok(Err(()));
+                    }
+                    let previous_state = current.state;
+                    let current_binding = store::binding(tx, &id)?;
+                    // A poll started before resume must not replace the new launch or ownership.
+                    if current_binding.as_ref().is_some_and(|b| {
+                        b.launch_ms != saved.launch_ms || b.launch_id != saved.launch_id
+                    }) {
+                        return Ok(Err(()));
+                    }
+                    let mut saved = saved;
+                    if let Some(binding) = &current_binding {
+                        saved.resources = binding.resources.clone();
+                        saved.owned_rebase = binding.owned_rebase;
+                        saved.resumed_session = binding.resumed_session;
+                    }
+                    if current_binding.as_ref().and_then(|b| b.turn_started_ms)
+                        > saved.turn_started_ms
+                    {
+                        return Ok(Err(()));
+                    }
+                    let previous = current_binding.as_ref().and_then(|b| b.turn_id.clone());
+                    if current_binding.as_ref() == Some(&saved)
+                        && current.session_id == saved.thread_id
+                    {
+                        return Ok(Err(()));
+                    }
+                    store::put_binding(tx, &id, &saved)?;
+                    let mut changed = false;
+                    if let Some(session) = &saved.thread_id {
+                        changed |= apply_event(
+                            &mut current,
+                            &AgentEvent::SessionStarted {
+                                session_id: session.clone(),
+                            },
+                            now_ms(),
+                        );
+                    }
+                    if !retry && previous != saved.turn_id {
+                        changed |=
+                            apply_event(&mut current, &AgentEvent::PromptSubmitted, now_ms());
+                    }
+                    if changed {
+                        store::put(tx, &current)?;
+                    }
+                    Ok(Ok((current, changed, previous_state)))
+                },
+                move |(current, did_change, previous), rev| {
+                    if *did_change {
+                        changed(&hub, current, rev, current.state != *previous)
+                    }
+                },
+            )
+            .await
+            .internal("save Codex binding")?;
+        Ok(())
     }
     pub async fn reconcile(&self) -> Result<()> {
         self.reconcile_known(None).await

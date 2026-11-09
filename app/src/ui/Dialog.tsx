@@ -33,8 +33,10 @@ export function Dialog(props: {
           {...(props.description ? {} : { "aria-describedby": undefined })}
         >
           <D.Title className={s.title}>{props.title}</D.Title>
-          {props.description && <D.Description className={s.description}>{props.description}</D.Description>}
-          <div className={s.body}>{props.children}</div>
+          <div className={s.body} data-dialog-body="">
+            {props.description && <D.Description className={s.description}>{props.description}</D.Description>}
+            {props.children}
+          </div>
           {props.footer && <div className={s.footer}>{props.footer}</div>}
         </D.Content>
       </D.Portal>

@@ -157,6 +157,25 @@ test("summary is open-only, visible config is cached for 30 seconds and unknown 
   expect(wire.requests("projects.config")).toHaveLength(2);
 });
 
+test("the favourite star keeps aria-pressed and shows the state by its fill", async () => {
+  const wire = new ProjectWire({ trustNotRequired: true });
+  render(
+    <RpcProvider client={wire.client}>
+      <ProjectSwitcher open onOpenChange={() => {}} />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests()).toHaveLength(1));
+  await act(async () =>
+    wire.reply("projects.list", { rev: "1", items: [projects[0], { ...projects[1], favorite: true }] }),
+  );
+  const plain = await screen.findByRole("button", { name: "devbox 즐겨찾기" });
+  const starred = screen.getByRole("button", { name: "family 즐겨찾기" });
+  expect(plain).toHaveAttribute("aria-pressed", "false");
+  expect(starred).toHaveAttribute("aria-pressed", "true");
+  expect(plain.querySelector("svg")).toHaveAttribute("fill", "none");
+  expect(starred.querySelector("svg")).toHaveAttribute("fill", "currentColor");
+});
+
 test("favorite waits for authoritative revision, sorts first and preserves current selection", async () => {
   const wire = new ProjectWire({ trustNotRequired: true });
   useCurrentProject.getState().set("a");

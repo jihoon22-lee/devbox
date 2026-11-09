@@ -65,3 +65,15 @@ test("relative times clamp future timestamps and display minute, hour and day", 
   expect(relativeTime(0, 3600_000)).toBe("1시간 전");
   expect(relativeTime(0, 86400_000)).toBe("1일 전");
 });
+test("안 읽은 알림에만 '읽지 않음' 표시가 있다", async () => {
+  act(() => {
+    useNotifications.getState().push({ key: "a", kind: "error", title: "안읽음", body: "" });
+    useNotifications.getState().push({ key: "b", kind: "error", title: "읽음", body: "" });
+    useNotifications.getState().markRead("b");
+  });
+  setup();
+  await userEvent.click(await screen.findByRole("button", { name: /^알림/ }));
+  expect(screen.getByRole("button", { name: /안읽음/ })).toHaveAccessibleName(/^읽지 않음/);
+  expect(screen.getByRole("button", { name: /^읽음/ })).not.toHaveAccessibleName(/읽지 않음/);
+  expect(screen.getAllByRole("img", { name: "읽지 않음" })).toHaveLength(1);
+});

@@ -3,6 +3,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+  min-width: 0;
   min-height: var(--control-md);
   padding: 0 var(--space-2);
   border: 1px solid var(--border-strong);
@@ -10,6 +11,18 @@
   background: var(--bg-1);
   color: var(--fg);
   font: inherit;
+  text-align: start;
+}
+/*
+ * The value (Radix drops a className on Select.Value, so it is the first span): one line, a long label
+ * ends in an ellipsis and the trigger's title holds all of it.
+ */
+.trigger > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .trigger:focus-visible {
   outline: 2px solid var(--accent);
@@ -21,8 +34,9 @@
 }
 .content {
   z-index: 50;
-  min-width: var(--radix-select-trigger-width);
-  max-height: var(--radix-select-content-available-height);
+  /* Radix sets these in window pixels; the content is zoomed by the UI scale (global.css). */
+  min-width: calc(var(--radix-select-trigger-width) / var(--ui-zoom, 1));
+  max-height: calc(var(--radix-select-content-available-height) / var(--ui-zoom, 1));
   overflow: auto;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -57,10 +71,15 @@
   .trigger:focus-visible {
     outline-color: Highlight;
   }
+  /* No Canvas backplate, which would hide HighlightText (CommandPalette.module.css). */
   .item[data-highlighted] {
+    forced-color-adjust: none;
     color: HighlightText;
     background: Highlight;
     outline-color: Highlight;
+    box-shadow: none;
+    --kbd-color: HighlightText;
+    --kbd-border: HighlightText;
   }
   .trigger:disabled,
   .item[data-disabled] {

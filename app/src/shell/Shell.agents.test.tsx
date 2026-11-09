@@ -1,7 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { profiles, task } from "../features/agents/test-fixtures";
 import { useAgentsUi } from "../features/agents/ui";
+import { useCurrentProject } from "../features/projects/store";
 import { ProjectWire, projects } from "../features/projects/test-wire";
 import { RpcProvider } from "../rpc/RpcProvider";
 import { TooltipProvider } from "../ui";
@@ -125,6 +126,50 @@ test("confirmed new selection survives stale list and a failed refresh", async (
   expect(window.location.search).toContain("gateway=");
 });
 
+test("duplicates_closed_task_from_its_project_only_after_explicit_start", async () => {
+  // The current project is another one, so only the task can have put "family" in the form.
+  useCurrentProject.getState().set("a");
+  try {
+    const { wire } = await setup("/agents?id=c&gateway=ws%3A%2F%2Ffixture&renderer=dom");
+    await waitFor(() => expect(wire.requests("agents.get")).toHaveLength(1));
+    await act(async () =>
+      wire.reply("agents.get", {
+        ...task("c", "closed", 4),
+        projectId: "b",
+        closedHow: "merged",
+        prompt: "원래 지시",
+        followUps: [{ atMs: 5, text: "이어서 보낸 지시", instructionId: "x", delivery: "delivered" }],
+      }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "같은 지시로 새 작업" }));
+    const dialog = await screen.findByRole("dialog", { name: "새 에이전트 작업" });
+    // The task's first prompt, not what was sent after it, and the task's own project.
+    expect(within(dialog).getByLabelText("지시문")).toHaveValue("원래 지시");
+    await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "프로젝트" })).toHaveTextContent("family"));
+    // Everything else keeps the form's usual defaults.
+    expect(within(dialog).getByLabelText("제목")).toHaveValue("");
+    expect(within(dialog).getByLabelText("기준 브랜치")).toHaveValue("");
+    expect(within(dialog).getByLabelText("작업 폴더 만들기")).toBeChecked();
+    await waitFor(() => expect(wire.requests("projects.prompts")).toHaveLength(1));
+    expect(wire.request("projects.prompts").params).toEqual({ id: "b" });
+    await act(async () => wire.reply("projects.prompts", { items: [] }));
+    await userEvent.type(within(dialog).getByLabelText("제목"), "Again");
+    // Opening and filling the form starts nothing.
+    expect(wire.requests("agents.create")).toHaveLength(0);
+    await userEvent.click(within(dialog).getByRole("button", { name: "시작" }));
+    await waitFor(() => expect(wire.requests("agents.create")).toHaveLength(1));
+    expect(wire.request("agents.create").params).toMatchObject({
+      projectId: "b",
+      title: "Again",
+      baseBranch: null,
+      worktree: true,
+      prompt: "원래 지시",
+    });
+  } finally {
+    useCurrentProject.getState().set(undefined);
+  }
+});
+
 test("new command from palette keeps the created dialog input focused", async () => {
   await setup("/notes");
   fireEvent.keyDown(window, { code: "KeyP", ctrlKey: true, shiftKey: true });
@@ -137,7 +182,8 @@ test("new command from palette keeps the created dialog input focused", async ()
 test("detail uses live terminal status despite missing CLI session metadata; explicit instruct focuses without polling theft", async () => {
   const { wire } = await setup("/agents?id=w&gateway=ws%3A%2F%2Ffixture&renderer=dom");
   await waitFor(() => expect(wire.requests("agents.get")).toHaveLength(1));
-  await act(async () => wire.reply("agents.get", { ...task("w", "waiting"), sessionId: null }));
+  // Idle, not waiting: a waiting task with a live session offers [터미널에서 응답] instead of [이어서 지시].
+  await act(async () => wire.reply("agents.get", { ...task("w", "idle"), sessionId: null }));
   await waitFor(() =>
     expect(
       wire.requests("terminal.list").some((request) => (request.params as { projectId: string }).projectId === "a"),
@@ -215,6 +261,19 @@ test("agent popout mounts full detail without frame and retains gateway/renderer
   expect(window.location.search).toContain("gateway=");
   expect(window.location.search).toContain("renderer=dom");
   expect(wire.requests("agents.list")).toHaveLength(1);
+});
+
+test("the popout agent window offers no [같은 지시로 새 작업]; the main detail does", async () => {
+  // After [시작] the form opens the new task in the window it was started from; a popout would become the agents page.
+  const popout = await setup("/popout/agent/w?gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  const detail = await screen.findByRole("article", { name: "에이전트 작업 상세" });
+  expect(detail).toHaveTextContent("작업 w");
+  expect(within(detail).getByRole("tab", { name: "지시" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "같은 지시로 새 작업" })).toBeNull();
+  popout.view.unmount();
+  await setup("/agents?id=w&gateway=ws%3A%2F%2Ffixture&renderer=dom");
+  const main = await screen.findByRole("article", { name: "에이전트 작업 상세" });
+  expect(within(main).getByRole("button", { name: "같은 지시로 새 작업" })).toBeInTheDocument();
 });
 
 test("grid selection keeps routing search and popout grid never mounts attention bridge", async () => {

@@ -1,7 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { TooltipProvider } from "../../../ui";
+import buttonStyles from "../../../ui/Button.module.css";
 import { ProjectDataProvider } from "../../projects/ProjectData";
 import { ProjectWire } from "../../projects/test-wire";
 import { AgentDataProvider } from "../AgentData";
@@ -92,3 +93,43 @@ test("from another tab the button opens the terminal with a focus request, which
   await userEvent.click(screen.getByRole("tab", { name: "터미널" }));
   expect(screen.getByTestId("terminal")).toHaveAttribute("data-focus-request", "none");
 });
+
+test("waiting_primary_action_opens_and_focuses_terminal_without_sending", async () => {
+  const { wire, box } = await show("waiting");
+  fireEvent.change(box, { target: { value: "승인 화면에 들어가면 안 되는 지시" } });
+  // One primary action: the answer is in the terminal, so [보내기] no longer looks like the way forward.
+  const respond = screen.getByRole("button", { name: "터미널에서 응답" });
+  expect(respond).toHaveClass(buttonStyles.primary as string);
+  expect(screen.getByRole("button", { name: /^보내기/ })).not.toHaveClass(buttonStyles.primary as string);
+  expect(screen.queryByRole("button", { name: "이어서 지시" })).toBeNull();
+  // The warning names what to do, sits above the action row and leaves the button to it.
+  const warning = screen.getByText("터미널에서 선택하거나 응답해 주세요.").closest<HTMLElement>('[role="status"]')!;
+  expect(within(warning).queryByRole("button")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "터미널에서 응답" })).toHaveLength(1);
+  const row = respond.parentElement!;
+  expect(row.contains(warning)).toBe(false);
+  expect(warning.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await userEvent.click(screen.getByRole("tab", { name: "변경" }));
+  expect(screen.queryByTestId("terminal")).toBeNull();
+  await userEvent.click(respond);
+  expect(screen.getByRole("tab", { name: "터미널" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByTestId("terminal")).toHaveAttribute("data-focus-request", "1");
+  expect(box).toHaveValue("승인 화면에 들어가면 안 되는 지시");
+  expect(wire.requests("agents.send")).toHaveLength(0);
+  // A new window opens from the tab row only; [더 보기] no longer repeats it.
+  expect(screen.getAllByRole("button", { name: "새 창으로" })).toHaveLength(1);
+  await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
+  expect(await screen.findByRole("menuitem", { name: "검토 시작" })).toBeInTheDocument();
+  expect(screen.queryByRole("menuitem", { name: "새 창으로" })).toBeNull();
+});
+
+test.each(["idle", "running"] as const)(
+  "with a live session, the %s state keeps [이어서 지시] and shows no terminal warning",
+  async (state) => {
+    await show(state);
+    expect(screen.getByRole("button", { name: "이어서 지시" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "터미널에서 응답" })).toBeNull();
+    expect(screen.queryByText("터미널에서 선택하거나 응답해 주세요.")).toBeNull();
+    expect(screen.getByRole("button", { name: /^보내기/ })).toHaveClass(buttonStyles.primary as string);
+  },
+);

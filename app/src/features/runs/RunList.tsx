@@ -29,6 +29,7 @@ export function RunList({
   busy,
   onSelect,
   onAction,
+  onStopOrphan,
   onEdit,
   onContainerAction,
 }: {
@@ -41,9 +42,12 @@ export function RunList({
   busy: boolean;
   onSelect: (selection: RunSelection) => void;
   onAction: (action: "start" | "stop" | "restart", definition: Definition, run?: Run) => void;
+  onStopOrphan: (run: Run) => void;
   onEdit: (definition: Definition) => void;
   onContainerAction: (action: "start" | "stop" | "restart", container: ContainerInfo) => void;
 }) {
+  // The daemon adds live services whose definition is gone; every other run has its definition row.
+  const orphans = runs.filter((run) => !definitions.some((row) => row.def.id === run.defId));
   return (
     <div className={s.listGroups}>
       {(
@@ -151,6 +155,9 @@ export function RunList({
                 ]}
               />
             )}
+            {kind === "service" && (
+              <OrphanRuns runs={orphans} selected={selected} busy={busy} onSelect={onSelect} onStop={onStopOrphan} />
+            )}
           </section>
         );
       })}
@@ -224,5 +231,78 @@ export function RunList({
         )}
       </section>
     </div>
+  );
+}
+const processLabel = (run: Run) => (run.pid == null ? `실행 ID ${run.id}` : `PID ${run.pid}`);
+/** Without a definition a service can no longer start, so only its log and stop remain. */
+function OrphanRuns({
+  runs,
+  selected,
+  busy,
+  onSelect,
+  onStop,
+}: {
+  runs: Run[];
+  selected?: RunSelection;
+  busy: boolean;
+  onSelect: (selection: RunSelection) => void;
+  onStop: (run: Run) => void;
+}) {
+  if (runs.length === 0) return null;
+  // Runs of one definition id (for example in two worktrees) are also named by their process.
+  const name = (run: Run) =>
+    runs.some((other) => other.id !== run.id && other.defId === run.defId)
+      ? `${run.defId} ${processLabel(run)}`
+      : run.defId;
+  return (
+    <section aria-label="정의 없는 실행">
+      <h4>
+        정의 없는 실행 <small>{runs.length}</small>
+      </h4>
+      <DataTable
+        label="정의 없는 실행 목록"
+        rows={runs}
+        rowKey={(run) => run.id}
+        columns={[
+          {
+            key: "name",
+            title: "이름 · 상태",
+            render: (run) => (
+              <div className={s.rowSummary}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`${name(run)} 로그`}
+                  aria-pressed={selected !== undefined && "definitionId" in selected && selected.runId === run.id}
+                  onClick={() => onSelect({ definitionId: run.defId, runId: run.id })}
+                >
+                  <StatusDot tone={runTone(run)} label={runStateLabel[run.state]} />
+                  {run.defId}
+                </Button>
+                <span>
+                  정의 없음 · {processLabel(run)} · {resultLabel(run)} · 재시작 {run.restarts}회
+                </span>
+              </div>
+            ),
+          },
+          {
+            key: "actions",
+            title: "동작",
+            render: (run) => (
+              <div className={s.actions}>
+                <Button
+                  size="sm"
+                  disabled={busy || !liveRun(run)}
+                  onClick={() => onStop(run)}
+                  aria-label={`${name(run)} 중지`}
+                >
+                  중지
+                </Button>
+              </div>
+            ),
+          },
+        ]}
+      />
+    </section>
   );
 }

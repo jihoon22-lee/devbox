@@ -1,11 +1,30 @@
 //! A preloaded hidden window; showing capture never focuses the main application.
 use crate::core::connection::IpcError;
-use std::{sync::Mutex, time::Instant};
+use std::{
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 pub const LABEL: &str = "popout-capture-main";
 #[derive(Default)]
-pub struct Capture(Mutex<Option<Instant>>);
+pub struct Capture {
+    shown: Mutex<Option<Instant>>,
+    /// The capture window holds text the inbox does not have. Memory only: a guard, not storage.
+    draft: AtomicBool,
+}
+impl Capture {
+    pub(crate) fn has_draft(&self) -> bool {
+        self.draft.load(Ordering::SeqCst)
+    }
+    /// The draft lived in the destroyed window's session storage and is gone with it.
+    pub(crate) fn clear_draft(&self) {
+        self.draft.store(false, Ordering::SeqCst);
+    }
+}
 
 pub fn initialize(app: &AppHandle) {
     if let Err(error) = ensure(app) {
@@ -42,7 +61,7 @@ pub fn show(app: &AppHandle) {
         return;
     }
     *app.state::<Capture>()
-        .0
+        .shown
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
     let result = ensure(app).and_then(|window| {
@@ -73,12 +92,36 @@ pub fn capture_ready(window: WebviewWindow, app: AppHandle) -> Result<(), IpcErr
         .map_err(|e| IpcError::new(e.to_string()))?
         && let Some(start) = app
             .state::<Capture>()
-            .0
+            .shown
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take()
     {
         eprintln!("capture-ready elapsed_ms={}", start.elapsed().as_millis());
     }
+    Ok(())
+}
+/// The capture window says whether it holds a draft, only when that changes.
+#[tauri::command]
+pub fn capture_draft(window: WebviewWindow, has_draft: bool) -> Result<(), IpcError> {
+    only_capture(&window)?;
+    window
+        .state::<Capture>()
+        .draft
+        .store(has_draft, Ordering::SeqCst);
+    Ok(())
+}
+/// The main window asks before a full quit; the update fence reads the same flag.
+#[tauri::command]
+pub fn capture_has_draft(window: WebviewWindow) -> Result<bool, IpcError> {
+    super::preferences::main_only(&window)?;
+    Ok(window.state::<Capture>().has_draft())
+}
+/// [캡처 열기] in the quit confirmation. Async: showing may build the window, which deadlocks
+/// in a synchronous command on Windows.
+#[tauri::command]
+pub async fn capture_open(window: WebviewWindow, app: AppHandle) -> Result<(), IpcError> {
+    super::preferences::main_only(&window)?;
+    show(&app);
     Ok(())
 }

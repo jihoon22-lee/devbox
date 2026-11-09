@@ -19,8 +19,8 @@ function savedAt(doc: Doc): string {
 }
 
 /**
- * The note header's save state. Four words only: saved, saving, kept on this device while
- * disconnected, and conflict. Recovering, read-only and loading show their own panels instead.
+ * The note header's save state. Five words only: saved, saving, kept on this device while
+ * disconnected, failed, and conflict. Recovering, read-only and loading show their own panels instead.
  */
 export function saveLabel(doc: Doc, online: boolean): string | null {
   const unsaved = doc.editSeq > doc.savedSeq;
@@ -34,8 +34,13 @@ export function saveLabel(doc: Doc, online: boolean): string | null {
     case "Orphaned":
       if (!unsaved) return doc.state === "Orphaned" ? null : "저장 중";
       if (!online || doc.retry || (doc.error && OFFLINE.has(doc.error))) return "연결 끊김 · 이 기기에 임시 저장";
+      // Refused for another reason (too large, …): the edit stays here until the next save starts.
+      if (doc.error) return "저장 실패";
       return doc.policy.kind === "code" && doc.state !== "Saving" ? "저장하지 않음 · Ctrl+S" : "저장 중";
     default:
       return null;
   }
 }
+
+/** The daemon refused the newest save for a reason the connection does not explain; `SaveError` says why. */
+export const saveFailed = (doc: Doc, online: boolean) => saveLabel(doc, online) === "저장 실패";

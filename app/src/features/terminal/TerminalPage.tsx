@@ -3,8 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCommands } from "../../shell/commands";
 import { type Binding, useKeymap } from "../../shell/keymap";
 import { SectionLayout } from "../../shell/SectionLayout";
-import { Button, EmptyState, IconButton, Tabs, useToasts } from "../../ui";
+import { Button, EmptyState, IconButton, Tabs } from "../../ui";
 import { useCurrentProject } from "../projects/store";
+import { pushCreateFailure } from "./createFailure";
 import { useTerminalFocus } from "./focus";
 import { PaneTree } from "./PaneTree";
 import { SessionList } from "./SessionList";
@@ -78,8 +79,8 @@ export function TerminalPage() {
       );
       useTerminalFocus.getState().focus(origin, session.id);
       return true;
-    } catch {
-      useToasts.getState().push({ tone: "danger", title: "터미널을 만들지 못했습니다. 다시 시도하세요" });
+    } catch (error) {
+      pushCreateFailure(error);
       return false;
     } finally {
       pending.current.delete(origin);

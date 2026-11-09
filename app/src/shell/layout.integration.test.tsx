@@ -8,7 +8,13 @@ import { useAutoCollapse } from "./useAutoCollapse";
 
 beforeEach(() => {
   document.documentElement.style.zoom = "";
-  useLayout.setState({ listWidth: 260, listCollapsed: false, bottomOpen: false, bottomHeight: 260 });
+  useLayout.setState({
+    listWidth: 260,
+    listCollapsed: false,
+    listAutoCollapsed: false,
+    bottomOpen: false,
+    bottomHeight: 260,
+  });
   useBottomTabs.setState({ tabs: [] });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -26,10 +32,13 @@ test("list resizing clamps, cleans cancelled drag and retains list state through
       </button>
     );
   }
+  // A collapsed list shows [목록 펼치기], whose tooltip needs the provider.
   const view = render(
-    <SectionLayout list={<List />}>
-      <p>본문</p>
-    </SectionLayout>,
+    <TooltipProvider>
+      <SectionLayout list={<List />}>
+        <p>본문</p>
+      </SectionLayout>
+    </TooltipProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "목록 0" }));
   const edge = screen.getByRole("separator", { name: "목록 너비" });
@@ -106,25 +115,26 @@ test("auto collapse only applies initially or on breakpoint entry and observes t
   expect(observe).toHaveBeenCalledWith(screen.getByTestId("frame"));
   const size = (width: number, height: number) =>
     act(() => notify([{ contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver));
+  // The automatic collapse is its own flag; the user's listCollapsed stays false throughout.
   size(1000, 700);
-  expect(useLayout.getState()).toMatchObject({ listCollapsed: true, bottomOpen: false });
+  expect(useLayout.getState()).toMatchObject({ listCollapsed: false, listAutoCollapsed: true, bottomOpen: false });
   act(() => {
     useLayout.getState().toggleList();
     useLayout.getState().toggleBottom();
   });
   fireEvent(window, new Event("resize"));
   size(1000, 710);
-  expect(useLayout.getState()).toMatchObject({ listCollapsed: false, bottomOpen: true });
+  expect(useLayout.getState()).toMatchObject({ listCollapsed: false, listAutoCollapsed: false, bottomOpen: true });
   size(1200, 800);
   size(1000, 700);
-  expect(useLayout.getState()).toMatchObject({ listCollapsed: true, bottomOpen: false });
+  expect(useLayout.getState()).toMatchObject({ listCollapsed: false, listAutoCollapsed: true, bottomOpen: false });
   view.unmount();
   expect(disconnect).toHaveBeenCalledOnce();
   vi.stubGlobal("innerWidth", 900);
   vi.stubGlobal("innerHeight", 700);
-  useLayout.setState({ listCollapsed: false, bottomOpen: true });
+  useLayout.setState({ listCollapsed: false, listAutoCollapsed: false, bottomOpen: true });
   render(<Frame />);
-  expect(useLayout.getState()).toMatchObject({ listCollapsed: true, bottomOpen: false });
+  expect(useLayout.getState()).toMatchObject({ listCollapsed: false, listAutoCollapsed: true, bottomOpen: false });
 });
 
 test("bottom resize starts at the displayed height after a viewport clamp", () => {

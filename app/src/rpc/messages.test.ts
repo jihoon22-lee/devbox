@@ -159,3 +159,49 @@ test("settings-file errors name the file and where to recover", () => {
     expect(messageFor(code).action).toContain("설정 → 앱 진단 → [다시 설정]");
   }
 });
+
+test("mcp_http_unauthorized_reports_auth_or_permission", () => {
+  const action = "인증 설정(토큰·헤더)이나 OAuth 승인을 확인해 주세요.";
+  const titles = {
+    401: "서버가 인증을 받지 않았습니다(HTTP 401).",
+    403: "서버가 이 요청을 허락하지 않았습니다(HTTP 403).",
+  } as const;
+  for (const status of [401, 403] as const) {
+    const message = messageFor("api.stream_rejected", { reason: "unauthorized", status });
+    expect(message).toEqual({ title: titles[status], action });
+    expect(message.title).not.toContain("하위 프로토콜");
+  }
+});
+
+test("not_ready identifies the requested service without implying dependencies", () => {
+  const message = messageFor("runtime.not_ready", { id: "api" });
+  expect(message.title).toContain("api");
+  expect(message.action).toBe("그 서비스의 ports_hint·준비 시한과 로그를 확인해 주세요.");
+  expect(JSON.stringify(message)).not.toContain("선행");
+  for (const detail of [undefined, {}, { id: "" }, { id: 3 }]) {
+    const fallback = messageFor("runtime.not_ready", detail);
+    expect(fallback.title).toBe("서비스가 준비 시한 안에 준비되지 않았습니다.");
+    expect(fallback.action).toBe(message.action);
+  }
+});
+
+test("resume_metadata_failure_explains_record_recovery", () => {
+  const { title, action } = messageFor("agents.session_metadata", { diagnostic: {} });
+  expect(title).toBe("에이전트의 대화 기록을 확인하지 못했습니다.");
+  expect(action).not.toContain("잠시 뒤");
+  expect(action).toContain("[같은 지시로 새 작업]");
+  expect(action).toContain("Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다.");
+});
+
+test("a transient Codex record read error asks to retry the resume", () => {
+  const { title, action } = messageFor("agents.session_metadata", { diagnostic: "unavailable" });
+  expect(title).toBe("에이전트의 대화 기록을 읽지 못했습니다.");
+  expect(action).toBe(
+    "잠시 뒤 [재개]를 다시 눌러 주세요. 계속 실패하면 작업 폴더와 파일은 그대로 있으니 [같은 지시로 새 작업]으로 다시 시작하세요.",
+  );
+  for (const detail of [{ diagnostic: "missing" }, { diagnostic: "bogus" }, {}, undefined]) {
+    const old = messageFor("agents.session_metadata", detail);
+    expect(old.title).toBe("에이전트의 대화 기록을 확인하지 못했습니다.");
+    expect(old.action).toContain("Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다.");
+  }
+});

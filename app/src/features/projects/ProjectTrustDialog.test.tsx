@@ -58,6 +58,25 @@ test("approval shows logical controls in all repository text without modifying a
   expect(JSON.stringify(preview)).toBe(original);
 });
 
+test("approval focuses [승인 취소] without scrolling the dialog", () => {
+  const focus = vi.spyOn(HTMLElement.prototype, "focus");
+  render(
+    <ProjectTrustDialog
+      preview={trustPreview("a") as Methods["projects.trust_preview"]["result"]}
+      pending={false}
+      notice=""
+      onCancel={vi.fn()}
+      onRetry={vi.fn()}
+      onApprove={vi.fn()}
+    />,
+  );
+  const cancel = screen.getByRole("button", { name: "승인 취소" });
+  expect(cancel).toHaveFocus();
+  expect(focus.mock.calls.filter((_, index) => focus.mock.contexts[index] === cancel)).toEqual([
+    [{ preventScroll: true }],
+  ]);
+});
+
 test("control notation stays distinct from literal escapes and preserves readable Unicode and line breaks", () => {
   const command = "printf '\\u202E'\n\t# עברית العربية\u202e\u000d\u001b\u200b\u{e0001}";
   const preview = trustPreview("a", {

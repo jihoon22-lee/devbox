@@ -117,6 +117,7 @@ impl Secrets {
         };
         Ok(Redactor {
             matcher,
+            patterns,
             longest,
             pending: Vec::new(),
         })
@@ -124,6 +125,8 @@ impl Secrets {
 }
 pub struct Redactor {
     matcher: Option<AhoCorasick>,
+    // Kept (zeroized on drop) to tell whether a held tail can still begin a secret.
+    patterns: Vec<Zeroizing<Vec<u8>>>,
     longest: usize,
     pending: Vec<u8>,
 }
@@ -141,9 +144,7 @@ impl Redactor {
         let safe_end = if eof {
             self.pending.len()
         } else {
-            self.pending
-                .len()
-                .saturating_sub(self.longest.saturating_sub(1))
+            hold_start(&self.pending, &self.patterns, self.longest)
         };
         let mut output = Vec::new();
         let mut consumed = 0;
@@ -162,6 +163,20 @@ impl Redactor {
         self.pending.drain(..consumed);
         output
     }
+}
+/// Earliest offset whose rest of `pending` is a proper prefix of a pattern, so later output could
+/// still complete a secret there; `pending.len()` if there is none. Every match that starts before
+/// it is already fully visible, so LeftmostLongest decides it exactly as on the whole stream.
+fn hold_start(pending: &[u8], patterns: &[Zeroizing<Vec<u8>>], longest: usize) -> usize {
+    let len = pending.len();
+    (len.saturating_sub(longest.saturating_sub(1))..len)
+        .find(|&start| {
+            let tail = &pending[start..];
+            patterns
+                .iter()
+                .any(|pattern| pattern.len() > tail.len() && pattern.starts_with(tail))
+        })
+        .unwrap_or(len)
 }
 #[cfg(test)]
 mod tests {
@@ -210,6 +225,21 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn redactor_releases_tail_that_cannot_begin_a_secret() {
+        let secrets = Secrets::parse(b"TOKEN=owned-token-for-task3\0").expect("secrets");
+        let mut redactor = secrets.redactor().expect("redactor");
+        assert_eq!(redactor.push(b"ready\n", false), b"ready\n");
+        assert_eq!(redactor.push(b"x owned-", false), b"x ");
+        assert_eq!(redactor.push(b"token-for-task3\n", true), b"[REDACTED]\n");
+    }
+    #[test]
+    fn redactor_holds_a_short_secret_end_that_can_start_a_longer_one() {
+        let secrets = Secrets::parse(b"A=ab\0B=abcd\0").expect("secrets");
+        let mut redactor = secrets.redactor().expect("redactor");
+        assert_eq!(redactor.push(b"zab", false), b"z");
+        assert_eq!(redactor.push(b"cd\n", true), b"[REDACTED]\n");
+    }
     fn escaped_secret_inputs() -> (Secrets, String, String) {
         let raw = "ow\"n\\ed\nx\u{1}";
         let mut record = b"@=".to_vec();
@@ -243,5 +273,47 @@ mod tests {
         let (secrets, _, debug) = escaped_secret_inputs();
         let input = format!("t=Some(\"{debug}\")");
         assert_masked_at_every_split(&secrets, input.as_bytes(), br#"t=Some("[REDACTED]")"#);
+    }
+    /// Many held pushes in a row (one byte each) and every two-piece split mask like one pass.
+    fn assert_streaming_matches_one_pass(secrets: &Secrets, input: &[u8]) {
+        let mut redactor = secrets.redactor().expect("redactor");
+        let expected = redactor.push(input, true);
+        let mut out = Vec::new();
+        for byte in input {
+            out.extend(redactor.push(std::slice::from_ref(byte), false));
+        }
+        out.extend(redactor.push(&[], true));
+        assert_eq!(out, expected, "byte stream {input:?}");
+        for split in 0..=input.len() {
+            let mut out = redactor.push(&input[..split], false);
+            out.extend(redactor.push(&input[split..], true));
+            assert_eq!(out, expected, "split {split} of {input:?}");
+        }
+    }
+    #[test]
+    fn streamed_redaction_matches_one_pass_for_nested_and_overlapping_secrets() {
+        let plain = Secrets::parse(b"A=owned-token\0B=multi\nline\0C=owned\0").expect("secrets");
+        assert_streaming_matches_one_pass(&plain, b"before owned-token multi\nline owned after");
+        let (escaped, json, debug) = escaped_secret_inputs();
+        let input = format!("{{\"t\":\"{json}\"}} t=Some(\"{debug}\")");
+        assert_streaming_matches_one_pass(&escaped, input.as_bytes());
+        // Every input up to six bytes over a small alphabet: nested, self- and cross-overlapping.
+        let nested = Secrets::parse(b"A=ab\0B=abcd\0C=bca\0D=abab\0").expect("secrets");
+        for len in 0..=6 {
+            for index in 0..4usize.pow(len) {
+                let input: Vec<u8> = (0..len)
+                    .map(|digit| b"abcd"[index / 4usize.pow(digit) % 4])
+                    .collect();
+                assert_streaming_matches_one_pass(&nested, &input);
+            }
+        }
+    }
+    #[test]
+    fn redactor_releases_a_shorter_secret_completed_at_the_end_of_a_push() {
+        let secrets = Secrets::parse(b"A=xyz\0B=abcd\0").expect("secrets");
+        assert_eq!(
+            secrets.redactor().expect("redactor").push(b"zxyz", false),
+            b"z[REDACTED]"
+        );
     }
 }

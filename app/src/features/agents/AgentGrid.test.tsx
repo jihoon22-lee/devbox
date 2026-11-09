@@ -1,6 +1,16 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { RpcProvider } from "../../rpc/RpcProvider";
+import { ProjectDataProvider } from "../projects/ProjectData";
+import { ProjectWire, projects } from "../projects/test-wire";
+import { AgentDataProvider } from "./AgentData";
 import { AgentGrid } from "./AgentGrid";
-import { task } from "./test-fixtures";
+import { AgentList } from "./AgentList";
+import { AgentRow } from "./AgentRow";
+import { AgentHeader } from "./detail/AgentHeader";
+import { useAgentsData } from "./hooks";
+import { profiles, task } from "./test-fixtures";
+import { useAgentsUi } from "./ui";
 
 const terminal = vi.fn();
 vi.mock("../terminal/TerminalView", () => ({
@@ -59,14 +69,150 @@ test("tiles retain title and state without a session and observe cell width", ()
   vi.unstubAllGlobals();
 });
 
-test("closed work never appears in grid previews, column counts or the nonempty state", () => {
+test("closed work never appears in grid previews or column counts", () => {
   const tasks = [task("a"), task("b"), task("c"), task("d"), task("closed", "closed")];
-  const view = render(<AgentGrid tasks={tasks} onOpen={() => {}} />);
+  render(<AgentGrid tasks={tasks} onOpen={() => {}} />);
   expect(screen.queryByRole("button", { name: "작업 closed 터미널 미리보기" })).toBeNull();
   expect(screen.getByRole("region", { name: "에이전트 터미널 격자" })).toHaveStyle({
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
   });
-  view.rerender(<AgentGrid tasks={[task("closed", "closed")]} onOpen={() => {}} />);
+});
+
+function Grid() {
+  const data = useAgentsData();
+  return <AgentGrid tasks={data.tasks} onOpen={() => {}} />;
+}
+test.each([
+  { name: "no project", items: [], action: "프로젝트 추가" },
+  { name: "closed work only", items: projects, action: "새 작업" },
+])("빈 격자도 다음 동작을 보인다: $name", async ({ items, action }) => {
+  useAgentsUi.getState().setCreating(false);
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <ProjectDataProvider>
+        <AgentDataProvider>
+          <Grid />
+        </AgentDataProvider>
+      </ProjectDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  // Until both lists arrive the grid decides nothing: no "no work" text and no action.
+  expect(screen.queryAllByRole("button").map((button) => button.textContent)).toEqual(["새 창으로"]);
+  await act(async () => {
+    wire.reply("projects.list", { rev: "1", items });
+    wire.reply("agents.list", { rev: "1", items: [task("closed", "closed", Date.now())] });
+  });
   expect(screen.queryByRole("region", { name: "에이전트 터미널 격자" })).toBeNull();
-  expect(screen.getByText("에이전트 작업이 없습니다")).toBeInTheDocument();
+  await userEvent.click(await screen.findByRole("button", { name: action }));
+  if (action === "새 작업") expect(useAgentsUi.getState().creating).toBe(true);
+  else expect(await screen.findByRole("dialog", { name: "프로젝트 추가" })).toBeInTheDocument();
+});
+
+test("agent_state_mark_matches_across_list_header_and_grid", async () => {
+  const wire = new ProjectWire();
+  const items = [
+    { ...task("w", "waiting"), attention: { kind: "input", message: "Bash: pnpm test", atMs: 1 } },
+    { ...task("i", "idle"), attention: { kind: "idle", message: "다음 지시를 기다립니다", atMs: 1 } },
+    task("r", "running"),
+  ];
+  render(
+    <RpcProvider client={wire.client}>
+      {items.map((item) => (
+        <div key={item.id}>
+          <AgentRow
+            task={item}
+            selected={false}
+            projectName="devbox"
+            toolName="Claude Code"
+            now={1000}
+            onSelect={() => {}}
+          />
+          <AgentHeader task={item} projectName="devbox" toolName="Claude Code" now={1000} />
+        </div>
+      ))}
+      <AgentGrid tasks={items} onOpen={() => {}} />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  const expected = {
+    w: { state: "waiting", name: "입력 대기", tone: "var(--warn)" },
+    i: { state: "idle", name: "다음 지시 대기", tone: "var(--fg-muted)" },
+    r: { state: "running", name: "실행 중", tone: "var(--progress)" },
+  } as const;
+  for (const [id, want] of Object.entries(expected)) {
+    const surfaces = {
+      row: screen.getByRole("button", { name: new RegExp(`작업 ${id}(?! 터미널 미리보기)`) }),
+      header: screen.getByRole("heading", { name: `작업 ${id}` }).closest("header")!,
+      grid: screen.getByRole("button", { name: `작업 ${id} 터미널 미리보기` }),
+    };
+    const seen = Object.entries(surfaces).map(([surface, element]) => {
+      // Each surface shows the state name once, as text.
+      const name = within(element).getByText(want.name, { exact: true });
+      const mark = name.closest<HTMLElement>("[data-state]");
+      const icon = mark?.querySelector("svg");
+      return {
+        surface,
+        state: mark?.dataset.state,
+        name: name.textContent,
+        icon: icon?.getAttribute("class"),
+        hidden: icon?.getAttribute("aria-hidden"),
+        tone: icon?.style.color,
+      };
+    });
+    const icon = seen[0]?.icon;
+    expect(icon).toBeTruthy();
+    expect(seen).toEqual(
+      ["row", "header", "grid"].map((surface) => ({
+        surface,
+        state: want.state,
+        name: want.name,
+        icon,
+        hidden: "true",
+        tone: want.tone,
+      })),
+    );
+  }
+  // The detail header no longer draws a second state picture next to the name.
+  expect(screen.queryAllByRole("img")).toHaveLength(0);
+});
+
+function ListAndGrid() {
+  const data = useAgentsData();
+  return (
+    <>
+      <AgentList data={data} onSelect={() => {}} header={null} />
+      <AgentGrid tasks={data.tasks} onOpen={() => {}} />
+    </>
+  );
+}
+test.each([
+  ["the profile list names the tool", { items: profiles }, "Codex"],
+  ["the profile list has not arrived", undefined, "codex"],
+  ["the profile list has no such tool", { items: profiles.filter((p) => p.id !== "codex") }, "codex"],
+])("row_and_grid_show_project_and_tool: %s", async (_, profileList, tool) => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <ProjectDataProvider>
+        <AgentDataProvider>
+          <ListAndGrid />
+        </AgentDataProvider>
+      </ProjectDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.profiles")).toHaveLength(1));
+  await act(async () => {
+    wire.reply("projects.list", { rev: "1", items: [{ ...projects[0]!, name: "app" }] });
+    wire.reply("agents.list", { rev: "1", items: [{ ...task("c"), profile: "codex" }] });
+    if (profileList) wire.reply("agents.profiles", profileList);
+  });
+  const row = within(await screen.findByRole("region", { name: "실행 중" })).getByRole("button");
+  // The second line of the row: project · tool.
+  expect(row.children[1]).toHaveTextContent(new RegExp(`^app · ${tool}$`));
+  const tile = screen.getByRole("button", { name: "작업 c 터미널 미리보기" });
+  expect(within(tile).getByText(`app · ${tool}`, { exact: true })).toBeInTheDocument();
+  // The tile keeps its name; a screen reader gets the state, project and tool as its description.
+  expect(tile).toHaveAccessibleDescription(`실행 중 app · ${tool}`);
 });

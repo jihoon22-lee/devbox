@@ -82,6 +82,33 @@ export const STATE_LABEL: Record<AgentTask["state"], string> = {
   review: "검토 대기",
   closed: "닫힘",
 };
+/** The state mark's icon colour. Only a waiting task is in the warning colour; the state name stays in text colours. */
+export const STATE_TONE: Record<AgentTask["state"], string> = {
+  preparing: "var(--progress)",
+  running: "var(--progress)",
+  waiting: "var(--warn)",
+  idle: "var(--fg-muted)",
+  failed: "var(--danger)",
+  review: "var(--ok)",
+  closed: "var(--fg-muted)",
+};
+/**
+ * What the daemon writes when it knows no more than the state (`crates/agents/src/events.rs:84-99`). Next to the state
+ * name it only repeats it, so the row and the header leave it out. Notifications keep it as their body.
+ */
+const RESTATED: Partial<Record<AgentTask["state"], string>> = {
+  idle: "다음 지시를 기다립니다",
+  waiting: "입력을 기다립니다",
+};
+/** The task's attention message, or nothing when it only restates the state. */
+export function attentionNote(task: AgentTask) {
+  const message = task.attention?.message;
+  return message && message !== RESTATED[task.state] ? message : undefined;
+}
+/** The tool's name from the profile list, or the task's profile id while the list is missing or lacks it. */
+export function toolLabel(profiles: ToolProfile[] | undefined, profile: string) {
+  return profiles?.find((p) => p.id === profile)?.label ?? profile;
+}
 export function failureLabel(reason: string | null) {
   if (reason === "session_lost") return "WSL이 멈춰 세션이 끊겼습니다";
   if (reason?.startsWith("killed:")) return "외부에서 종료됨(메모리 부족이나 다른 도구가 끝냈을 수 있습니다)";

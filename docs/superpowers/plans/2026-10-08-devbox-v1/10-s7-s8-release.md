@@ -1649,15 +1649,993 @@ S7-15와 같다.
   3. 결과로 노트·PROGRESS·README 문장을 참으로 고칠 계획을 세운다.
   4. v1.0.0 공개 승인을 다시 묻는다.
 
+### S8-5b 1.0.0-rc.3 검토 수정 — 사용자 결정 2026-11-08
+
+- **입력:** main `70b1b4f6`의 세 단계 검토와 실제 도구 직접 시험(Git common-dir `devbox-verification/s8/rc3-review/`).
+  - 범위 초안: `known/scope-draft.md`(A 결함 15 · B 사용성 11 · C 디자인 D1–D12 · D 문서).
+  - 단계별 통합 보고: `known/w1-report.md`(결함), `known/w2-report.md`(사용성·연계), `known/w3-report.md`(디자인), `known/hands-on.md`(직접 시험).
+  - 원 보고(최소 수정·시험 이름): `w1/<ID>/r1.md`·`r2.md`, `w2/…`, `w3/…`. 3단계는 r2(`w3/{CA,CB,X1,X2,X3}/r2.md`)의 보정이 r1보다 앞선다.
+  - 검토자 5명(Claude Opus 5.5 max CA·CB, Codex GPT-6-Astra max X1·X2·X3)이 단계마다 영역별로 보고, 다른 계열이 교차 검증했다.
+  - 결과: 1단계 rc.3 대상 Important 8·Minor 5. 2단계 57건 → 교차 검증 19건(CONFIRMED 17·PARTLY 2) → 11건 + W2-CA-01. 3단계 59건 → 24건(CONFIRMED 21·PARTLY 3) → 묶음 D1–D12 + D13.
+  - 직접 시험: claude 2.1.318·codex 0.167.0, 실행 `70b1b4f6-58f1b658`·`70b1b4f6-8ad0ac09`·`70b1b4f6-a1667181`(Git common-dir `devbox-verification/s7/runs/`). 제품 결함 H-01·H-02를 찾았다.
+  - ID 표기: 단계 번호를 앞에 붙인다(`1:CA-01`, `2:#7`, `3:X1-03`). 같은 번호가 단계마다 다른 항목이다. 직접 시험은 `H-01`·`H-02`다.
+- **사용자 결정(원문, AskUserQuestion, 2026-11-08):**
+  - 범위: "결함+디자인+표시 개선 (권장)" — 1·2단계 결함 전부, 디자인 12묶음, 표시·문구 5건(2:#2·#5·#7·#8·#9), 문서.
+  - 새 기능: "지시 기록·같은 지시로 새 작업 (권장), 작업 폴더 열기 (권장), 검색의 프로젝트 범위, 실패 실행→작업 초안·지난 실행" — 넷 다(2:#1·#3, #4, #6, #10·#11).
+  - H-02: "고친다 (권장)".
+  - 질문에 적은 진행: 이 답 뒤에는 계획 → 구현(과제마다 검토) → PR → 머지 → `v1.0.0-rc.3` prerelease까지 다시 멈추지 않는다. 머지가 새 1.0.0 코드 후보다. 정식 1.0.0은 계속 보류다.
+- **컨트롤러 결정:**
+  - Ruling 157: claude 실제 행의 시험 도구 수정은 더 하지 않는다. claude `?` 도움말과 승인 행은 근거 없이 남는다(harness D13–D15). PROGRESS §4로 옮기고 S8-5 Windows 확인이나 1.0.x에서 다시 돌린다.
+  - Ruling 158: 실행 로그 색은 로그 전용 토큰(`--log-ansi-*`)을 쓴다. 기본 전경 16색이 두 테마의 `--bg-1` 위에서 모두 4.5:1 이상이다. 이미 넘는 색은 `--term-*`을 다시 쓴다. 터미널·편집기 색(3:CB-07)은 바꾸지 않는다(1.0.x).
+  - Ruling 159: 1:X2-02(Codex 안에서 `/resume`·`/new`로 바꾼 대화의 묶임)는 rc.3에서 문서만 고친다. 코드는 1.0.x에서 새 시험 행과 함께 고친다.
+  - Ruling 160: 이 PR의 Windows accept 설치 스모크는 NOT_RUN이다. S8-5에서 최종 후보로 한다. rc.3 prerelease는 사용자가 직접 써 보기 위한 것이다. PR은 S8-4b-13처럼 최종 소스 SHA로 `windows.yml`을 수동 실행하고 산출물을 대조한다(receipt·sha256·source_sha·N1 `-Verify`).
+  - H-01·H-02의 실제 확인(Ruling 163): 머지 뒤 main의 squash SHA로 `windows.yml`을 수동 실행하고, 그 산출물로 S7-14 harness `wsl-fresh` 행 `H1X-TRUST,H1,H2X-TRUST,H2`를 돌린다(S8-5b-28b). H1(b)·H2(b)가 H-02, H1(c)·H2(c)가 H-01을 증명한다. 돌리지 못하면 NOT_RUN이고 PASS로 쓰지 않는다.
+    - 이유: harness는 후보를 `main`의 `workflow_dispatch` run으로만 받고(Git common-dir `devbox-verification/s7/harness/evidence.py:14` `BRANCHES`, `:186` `verify_run`), 산출물 폴더 이름이 `70b1b4f6`으로 고정돼 있다(`:15` `ARTIFACT_DIRS`). PR 브랜치 산출물로는 돌 수 없다.
+    - 그래서 harness 상수 한 줄(`ARTIFACT_DIRS['candidate']`)을 새 폴더로 바꾸는 수정이 필요하다. 구현 → 별도 검토 → `validate.py --write-manifest` → 승인 파일 순서를 지킨다(README §2).
+    - 실제 확인은 태그보다 먼저 한다. 결과는 태그 노트에 그대로 적는다.
+  - Ruling 162: 실제 확인의 폴더 신뢰 수락(Q1·Q2)은 사용자 결정 안에 있다. H-02 답 "고친다 (권장)"의 설명이 "rc.3 후보에서 실제 도구의 재개 행을 다시 돌립니다"였다.
+  - Ruling 161: H-01은 데몬에서 고친다(S8-5b-5b). 턴이 끝나면 열린 작업의 `task.tokens`를 같은 usage 읽기로 갱신한다. 목록 행(`AgentRow.tsx:115`)과 `agents.list`가 함께 고쳐지고, harness H1(c)·H2(c)(`agents.usage` 합계 = `agents.list` 항목 `tokens`)가 그대로 증거가 된다.
+    - 계획 초안의 화면 방식(열린 행마다 `agents.usage` 조회)은 쓰지 않는다. 행 수만큼 데몬 읽기가 늘고, `agents.list`와 수용 기준 (c)는 그대로 FAIL로 남기 때문이다.
+    - 틀렸을 때 비용: 데몬에 백그라운드 경로가 하나 는다. 문제가 생기면 화면 방식으로 되돌린다.
+  - Ruling 164: [기준 반영] 확인 문구는 "에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 옮긴 뒤 이어서 지시하려면 [재개]를 누르세요."다(2026-11-09, S8-5b-4 검토 중). 충돌로 멈춘 뒤에는 [재개]가 되지 않으므로 "옮긴 뒤"를 더했다. 충돌은 충돌 띠가 안내한다.
+  - Ruling 197: 커밋하지 않은 변경 띠의 문구는 "커밋하지 않은 변경 N개가 있어 병합·PR·기준 반영을 진행할 수 없습니다."다(2026-11-09, S8-5b-27 브랜치 검토). S8-5b-4가 [기준 반영]도 같은 깨끗함 검사로 거절하게 했기 때문이다. S8-5b-16의 띠 문구는 이것으로 읽는다.
+  - 버전: rc 빌드는 manifest가 `1.0.0-rc.3`이어야 한다. 태그 `v1.0.0-rc.3`과 같아야 하기 때문이다(`scripts/release.py` preflight). 정식 1.0.0은 뒤에 버전만 `1.0.0`으로 되돌리는 PR이 필요하다(S8-5 0).
+  - main을 고정하던 Ruling 144는 이 PR의 squash 머지로 끝난다.
+- **작업 위치:** `fix/v1-rc3`, `/home/jihoon/projects/devbox-wt/fix-v1-rc3`. origin/main `70b1b4f6`에서 갈라진다.
+  - 이 PR의 squash SHA가 새 1.0.0 코드 후보이자 `v1.0.0-rc.3` 태그 SHA다.
+- **범위 밖(1.0.x):** 세 단계 보고의 1.0.x 항목, harness D11–D15, claude NOT_RUN 행. S8-5b-25에서 PROGRESS §4로 옮긴다. 범위를 더하거나 빼야 하면 멈추고 묻는다.
+- **공통 규칙:** §3 그대로다.
+  - `PROTOCOL_VERSION`은 1로 둔다.
+  - 이 절의 과제는 RPC 타입을 바꾸지 않는다. 바꿔야 하면 그 과제에 적고 `pnpm gen`을 돌린다.
+  - 고지 입력(lock·manifest)이 바뀌면 같은 커밋에서 `cargo run -p xtask -- notices`를 돌린다.
+  - 화면 용어를 더하는 과제는 같은 커밋에서 `docs/ui-terms.md`와 `docs/guide.md`를 고친다.
+  - 컴포넌트 300줄·파일 600줄을 넘기면 그 과제 안에서 나눈다. 이미 큰 파일(2026-11-08 `wc -l`): `AgentActions.tsx` 268, `RunsPage.tsx` 271, `NewTaskDialog.tsx` 258, `EnvEditor.tsx` 286, `actions.rs` 549, `crates/cli/tests/mcp.rs` 552, `correlation_tests.rs` 541.
+  - 보고와 코드가 다르면 코드가 이긴다. 과제의 "(코드 확인)" 줄이 그 보정이다.
+- **시험 실행:** 시험 이름은 필터 문자열이다. Rust는 `cargo test -p <crate> [--test <file>] <이름> -- --test-threads=2`, 화면은 `pnpm --filter app exec vitest run <path>`이고, 둘 다 `scripts/verify-resources.py` 안에서 돌린다.
+  - Playwright 시험은 과제에서 `bash scripts/verify-entry.sh e2e <spec>`로 한 번 돌리고, 전체는 S8-5b-27의 `pnpm check`에서 돈다.
+
+**검토 초점(S8-5b).** 시험이 놓치기 쉬운 실제 조건이다.
+
+1. **보류 경계에서 나뉜 비밀.** 상시 서비스가 비밀 값을 두 번의 쓰기로 나눠 찍고(앞 조각이 보류 꼬리에 걸린다) 계속 돈다. 기대: 비밀 원문은 어느 조각도 로그에 나오지 않는다. 비밀과 상관없는 마지막 줄은 서비스가 도는 동안 로그에 보인다. — S8-5b-1
+2. **[재개] 직후 보내기.** [재개]를 누르고 도구가 아직 뜨는 동안 지시를 보낸다. 기대: 보내기 판정은 지금과 같다. 그 지시의 턴이 끝나기 전에는 '다음 지시 대기'로 바뀌지 않고 그 알림도 없다. — S8-5b-5
+3. **UI 배율 125%·150%, 창 960×600.** 기대: 자동으로 접힌 목록을 [목록 펼치기]로 다시 연다. 신뢰 확인·새 작업·확인 창의 제목과 [시작]·[취소]가 화면 안에 있다. — S8-5b-6·7
+4. **시스템 설정의 밝은 테마.** 앱 테마가 "시스템"이고 Windows가 밝은 모드다. 기대: 눌림·선택 표시, 단축키 칩, 위험 단추 hover, 실행 로그 16색이 밝은 테마 값으로 그려지고 대비 기준을 넘는다. — S8-5b-8·9
+5. **열린 작업 20개.** 목록에 열린 작업이 20개 있고 그중 몇 개가 잇달아 턴을 끝낸다. 기대: 행마다 토큰 합계가 보이고 마지막 턴까지의 값이다. 갱신은 턴을 끝낸 작업만, 끝난 턴마다 많아야 한 번 읽는다. 닫힌 작업의 합계는 바뀌지 않는다. — S8-5b-5b
+
+**순서**(과제당 커밋 하나, 차례로)
+
+| 과제 | 내용 | 커밋 |
+|---|---|---|
+| S8-5b-0 | 이 절 채택 | `docs: plan the 1.0.0-rc.3 review fixes` |
+| S8-5b-1 | A1 1:CA-01=1:X2-03 비밀 가림의 꼬리 | `fix(cli): hold back only output tails that can start a secret` |
+| S8-5b-2 | A2 1:CB-01 + 1:CB-03 MCP 오류의 뜻 | `fix(cli): keep daemon error meanings in MCP tool replies` |
+| S8-5b-3 | A3 1:X1-02 정의가 없어진 서비스 | `fix(runtime): list running services whose definition is gone` |
+| S8-5b-4 | A9 2:W2-CA-01 + B7 2:#7 기준 반영·검토 안내 | `fix(agents): refuse a dirty rebase before stopping the tool and explain review actions` |
+| S8-5b-5 | A11 H-02 재개 뒤 다음 지시 대기 | `fix(agents): show a resumed task as waiting for the next instruction` |
+| S8-5b-5b | A10 H-01 열린 작업의 토큰 합계(Ruling 161) | `fix(agents): refresh an open task's token total when a turn ends` |
+| S8-5b-6 | A8 1:SHOT-01 + 3:X3-01(D13) 접힌 목록 | `fix(app): reopen an auto-collapsed list and offer an expand button` |
+| S8-5b-7 | D8 3:X1-02=3:CB-12 대화상자와 UI 배율 | `fix(app): keep dialog titles and actions in view at any UI scale` |
+| S8-5b-8 | D1(3:CA-08=CB-03=X3-02=X2-03=X1-04, 3:CB-04) + D3(3:CB-02=SHOT-03) | `fix(app): show pressed and selected states and readable action contrast` |
+| S8-5b-9 | D2 3:CB-01=3:X1-03 실행 로그 색(Ruling 158) | `fix(app): theme run log colours with readable contrast` |
+| S8-5b-10 | D9 3:X1-01=SHOT-02 상태 표시줄 | `fix(app): keep the status bar summary on one line` |
+| S8-5b-11 | D4 3:CA-01+3:CB-05 + B5 2:#5(목록·격자) | `feat(app): show agent state, tool and project consistently` |
+| S8-5b-12 | D5 3:CA-02 + D6 3:CA-03 | `feat(app): guide waiting tasks to the terminal and add next steps to empty views` |
+| S8-5b-13 | D7 3:CA-04(+3:CB-10) 새 작업 폼 | `fix(app): label and align the new task form` |
+| S8-5b-14 | B1 2:#1 + B3 2:#3 | `feat(app): add instruction history and start a new task from the same prompt` |
+| S8-5b-15 | B4 2:#4 | `feat(app): open a task worktree in VS Code or a terminal` |
+| S8-5b-16 | B2 2:#2 | `feat(app): warn about uncommitted changes before merge or PR` |
+| S8-5b-17 | B5 2:#5(알림) + D11 3:X2-05 | `feat(app): show tool and project in notifications and mark unread ones` |
+| S8-5b-18 | A6 1:X1-2-01 | `fix(app): open language server problems at their location` |
+| S8-5b-19 | B8 2:#8 + B9 2:#9 + A13 1:CB-04/SHOT-04 | `fix(app): name detected run definitions and services in run messages` |
+| S8-5b-20 | B10 2:#10 + B11 2:#11 | `feat(app): draft an agent task from a failed run and pick a past run` |
+| S8-5b-21 | A4 1:X3-01 + D10 3:X2-02 | `fix(app): keep API secret flags and show the current environment` |
+| S8-5b-22 | D12 3:X2-01 + A15 1:X3-02 | `fix(app): show rejected saves and keep the quick capture draft on quit` |
+| S8-5b-23 | A5 1:X3-03 + A14 SHOT-05 + A12 1:CB-02 | `fix(app): warn before quitting with services and explain terminal and resume failures` |
+| S8-5b-24 | B6 2:#6 | `feat(app): scope search to the current or all projects` |
+| S8-5b-25 | 문서(범위 초안 D, PROGRESS §4 후속) | `docs: document rc.3 limits and follow-ups` |
+| S8-5b-26 | 버전 `1.0.0-rc.3` | `chore(release): prepare 1.0.0-rc.3 prerelease` |
+| S8-5b-27 | 브랜치 전체 검토·전체 검사 | 고칠 것이 있으면 그 수정 커밋 |
+| S8-5b-28 | push·`windows.yml`·산출물 대조·PR·§8 리뷰·CI·squash | — |
+| S8-5b-28b | 머지 뒤 실제 확인(Ruling 163): main `windows.yml`·harness 상수·H1X-TRUST,H1,H2X-TRUST,H2 | harness 수정은 Git common-dir에서(저장소 커밋 없음) |
+| S8-5b-29 | 태그 `v1.0.0-rc.3`·release run·asset SHA-256·`releases/latest` 그대로·인계 | — |
+| S8-5b-30 | 정리와 S8-6 넘길 것 | — |
+
+#### S8-5b-0 채택
+
+- [ ] 이 절을 계획 10에 넣고 S8-5 본문을 새 후보와 버전 되돌림에 맞게 고친다. 다른 파일은 바꾸지 않는다. 링크 검사와 Biome을 돌린다.
+
+#### S8-5b-1 1:CA-01=1:X2-03 — 비밀이 시작될 수 없는 꼬리는 바로 내보낸다
+
+**문제.**
+- 가림(`crates/cli/src/exec/secrets.rs:136-164` `Redactor::push`)은 EOF 전에는 늘 끝의 `longest - 1` 바이트를 붙잡는다(`:141-147`).
+- 비밀이 길면(예: 32바이트 토큰) 상시 서비스의 마지막 줄(`ready` 등)이 프로세스가 끝날 때까지 로그에 나오지 않는다.
+- 스트림마다 가림이 하나이고(`crates/cli/src/exec.rs` `copy_stream`), 시간이 지나 내보내는 길은 없다.
+- PROGRESS §4의 "4b-1 서로 겹치는 두 비밀의 꼬리"와는 다른 문제다. 그 항목은 그대로 둔다.
+
+**파일**
+- 수정: `crates/cli/src/exec/secrets.rs`(`Redactor`, `push`). 시험은 같은 파일의 시험 모듈에 둔다.
+- 통합 시험: `crates/cli/tests/runtime_wrapper.rs`.
+
+**동작**
+- 붙잡는 꼬리는 "어떤 패턴의 진접두사(proper prefix)인 접미사"뿐이다.
+  - 끝에서 `longest - 1` 바이트 안의 시작점 p마다 `pending[p..]`가 어떤 패턴의 앞부분인지 본다. 가장 이른 p부터 붙잡는다.
+  - 그래서 `Redactor`가 패턴을 `Zeroizing`으로 들고 있는다(지금은 matcher와 `longest`만 있다, `:125-129`).
+- 짧은 패턴이 끝난 자리가 긴 패턴의 앞부분이기도 하면 계속 붙잡는다. LeftmostLongest 결과는 바꾸지 않는다.
+- 시간 기반 내보내기는 넣지 않는다. 길이 상한을 둔다면 불확실한 꼬리를 내보내지 않는 쪽으로만 둔다.
+- JSON·Debug 표기 패턴(S8-4b-1)도 같은 규칙을 따른다. 빈 비밀 제외도 그대로다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `redactor_releases_tail_that_cannot_begin_a_secret`
+    - 비밀: `owned-token-for-task3`.
+    - 기대: `push(b"ready\n", false) == b"ready\n"`. 이어서 `push(b"x owned-", false) == b"x "`(뒤의 `owned-`는 붙잡는다).
+  - `redactor_holds_a_short_secret_end_that_can_start_a_longer_one`
+    - 비밀 둘: `ab`, `abcd`. `push(b"zab", false) == b"z"`.
+    - 기대: 이어서 `push(b"cd\n", true) == b"[REDACTED]\n"`.
+  - `safe_nonsecret_line_reaches_log_before_eof`(`runtime_wrapper.rs`)
+    - 32바이트 비밀을 받은 자식이 `ready\n`을 찍고 살아 있다.
+    - 기대: 자식이 끝나기 전에 실행 로그에 `ready`가 있다. 비밀 원문은 없다.
+  - 기존 `secrets_from_stdin_reach_the_child_but_not_argv`는 끝내기 전에 자식의 확인 줄이 로그에 온 것을 기다리게 고친다(지금은 EOF에만 나온다).
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 기존 `secret_redaction_handles_every_chunk_and_multiline_boundary`, `json_escaped_secret_is_masked_at_every_split`, `debug_escaped_secret_is_masked_at_every_split`(모든 분할 위치), `cargo test -p devbox-cli --test runtime_wrapper`가 PASS. ignored `runtime_secrets` 시험은 S8-5b-27에서 돌린다.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-2 1:CB-01 + 1:CB-03 — MCP 답에 데몬 오류의 뜻을 남긴다
+
+**문제.**
+- MCP 도구의 문구 표(`crates/cli/src/mcp/tools.rs:178` `message_for`)에 `agents.delivery_unknown`이 없다. 기본값 "예상하지 못한 문제가 생겼습니다."(`:210`)로 끝난다.
+  - 그래서 MCP를 쓰는 에이전트가 이미 전달됐을 수 있는 지시를 다시 보낼 수 있다(같은 지시 두 번 실행).
+- 기본값은 오류 코드도 버린다. `invalid_params`는 에이전트 문구로 묶여 있다(`:195-196`).
+- 1:CB-03(앱): MCP HTTP 서버가 401·403을 주면 데몬은 `reason: "unauthorized"`를 보낸다(`crates/api/src/mcp/http.rs:276-285`).
+  - 화면 문구(`app/src/rpc/apiMessages.ts:77-80` `api.stream_rejected`)는 `status`·`content_type`만 알아 "(하위 프로토콜 불일치)"를 보인다.
+- 커밋 범위는 `fix(cli)`이지만 앱 파일 하나를 같이 고친다(순서 표 그대로).
+
+**파일**
+- 수정: `crates/cli/src/mcp/tools.rs`(`message_for`와 시험 모듈), `app/src/rpc/apiMessages.ts`.
+- 시험: `crates/cli/src/mcp/tools.rs` 시험 모듈, `app/src/rpc/messages.test.ts`.
+
+**동작**
+- `agents.delivery_unknown`: "전달 결과를 확인하지 못했습니다. 이미 전달됐을 수 있으니 같은 지시를 다시 보내지 말고 devbox_agents로 작업 상태와 터미널을 확인하세요."
+- 표에 없는 코드는 코드를 앞에 붙인다: "`<코드>`: 예상하지 못한 문제가 생겼습니다." 진단 ID가 있으면 붙인다. 원문 detail은 넣지 않는다.
+  - 반환형은 `Cow<'static, str>`로 바꾼다.
+- `invalid_params`는 중립 문구로 나눈다: "요청 값이 올바르지 않습니다. 도구 인자를 확인하세요."
+- 앱: `reason === "unauthorized"`이면 제목에 HTTP 상태를 보인다.
+  - 401: "서버가 인증을 받지 않았습니다(HTTP 401)." 403: "서버가 이 요청을 허락하지 않았습니다(HTTP 403)."
+  - 행동: "인증 설정(토큰·헤더)이나 OAuth 승인을 확인해 주세요."
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `mcp_delivery_unknown_preserves_code_and_warns_against_resend` — 기대: 문구에 "다시 보내지"가 있고 "예상하지 못한"이 없다.
+  - `mcp_unknown_daemon_code_names_the_code` — 표에 없는 코드 `notes.conflict`. 기대: 문구가 `notes.conflict`로 시작한다.
+  - `mcp_http_unauthorized_reports_auth_or_permission`(`messages.test.ts`) — detail `{reason:"unauthorized", status:401}`과 `403`. 기대: 제목에 `HTTP 401`·`HTTP 403`이 있고 "하위 프로토콜"이 없다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `cargo test -p devbox-cli --test mcp`, `vitest run src/rpc`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-3 1:X1-02 — 정의가 없어진 살아 있는 서비스도 목록에 남긴다
+
+**문제.**
+- `runtime.list`(`crates/runtime/src/service.rs:87`)는 현재 정의마다 대표 실행만 붙인다(`:120-138`, `run_store::representative`).
+- 서비스가 도는 동안 정의를 지우면 그 실행이 실행 화면에서 사라진다. 화면은 정의로만 행을 만든다(`app/src/features/runs/RunList.tsx:56`).
+- 사용자는 그 서비스를 멈출 수 없다. 살아 있는 서비스 때문에 프로젝트 제거도 `projects.in_use`로 막힌다.
+- 커밋 범위는 `fix(runtime)`이지만 `RunList.tsx`도 고친다.
+
+**파일**
+- 수정: `crates/runtime/src/service.rs`(`list`), `crates/runtime/src/run_store.rs`(살아 있는 서비스 조회 `live_services` `:78` 재사용), `app/src/features/runs/RunList.tsx`.
+- 시험: `crates/runtime/src/run_ui_tests.rs`, `app/src/features/runs/RunList.test.tsx`.
+
+**동작**
+- 첫 쪽(cursor 없음)만, 정의 id가 현재 정의에 없는 살아 있는(`starting`·`running`·`restarting`) Service 실행을 `runs`에 덧붙인다.
+  - 타입은 그대로다(`DefinitionList.runs`). AgentTest·예약 실행은 넣지 않는다.
+- 화면: 서비스 묶음 아래 "정의 없는 실행" 행. [로그]와 [중지]만 있다.
+  - [중지]는 `runtime.stop({ runId })`다.
+  - [로그]는 다른 행처럼 `Button`과 `aria-pressed`를 쓴다(S8-5b-8의 눌림 표시가 그대로 붙는다).
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `list_includes_live_service_runs_whose_definition_was_removed` — 서비스 `api` 시작 → 정의 삭제 → `list`(cursor 없음). 기대: `runs`에 그 실행이 있고 `defs`에는 없다. 다음 쪽(cursor 있음)에는 없다.
+  - `stopping_an_orphan_service_by_run_id_clears_live_services` — 그 실행을 run id로 멈춘다. 기대: 그 프로젝트의 `live_services`가 비어 프로젝트 제거가 막히지 않는다.
+  - `RunList.test.tsx` "정의 없는 살아 있는 서비스는 [로그]·[중지]만 보인다" — [중지] 클릭. 기대: `runtime.stop {runId}`.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `cargo test -p devbox-runtime`, `cargo test -p devbox-cli --test runtime_definitions`, `vitest run src/features/runs`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-4 2:W2-CA-01 + 2:#7 — 더러운 작업 폴더는 도구를 멈추기 전에 거절하고, 검토 동작의 결과를 알린다
+
+**문제.**
+- `rebase()`(`crates/agents/src/actions.rs`)는 진행 중인 Git 작업만 본 뒤(`:141-158`) 도구를 멈춘다(`:159` `quiesce`). 깨끗한지는 멈춘 뒤에 본다(`:174-179`).
+  - 그래서 커밋하지 않은 변경이 있으면 [기준 반영]은 `WorktreeDirty`로 끝나지만 도구는 이미 멈췄다.
+- 2:#7: PR·병합 확인 창(`app/src/features/agents/detail/useReviewAction.ts:226-243`)은 성공하면 작업이 닫히고 도구가 멈춘다는 것을 말하지 않는다.
+  - [기준 반영]은 확인 없이 도구를 멈춘다(`AgentActions.tsx` `rebase`).
+- (코드 확인, 1단계 X1 r2 보정) 충돌 뒤 "먼저 [재개]" 안내는 틀리다.
+  - 재개는 현재 브랜치가 작업 브랜치여야 한다(`crates/agents/src/resume.rs` `current_branch` 검사). rebase 중의 detached HEAD는 `UnsafeWorktree`다.
+  - 그래서 충돌 안내는 [충돌 해결]·[되돌리기]만 가리킨다. 병합 기준 체크아웃 사전 검사와 충돌 중 재개는 1.0.x다.
+
+**파일**
+- 수정: `crates/agents/src/actions.rs`(`rebase`), `app/src/features/agents/detail/useReviewAction.ts`, `app/src/features/agents/detail/AgentActions.tsx`, `docs/guide.md`.
+- 시험: `crates/agents/src/rebase_review_tests.rs`, `app/src/features/agents/detail/AgentActions.test.tsx`.
+
+**동작**
+- `rebase()`는 `quiesce` 전에 `devbox_git::status(&wt)`를 한 번 본다. 더러우면 `WorktreeDirty { files }`로 끝낸다. 도구·세션·상태는 건드리지 않는다.
+  - 멈춘 뒤의 검사(`:171-182`)는 그대로 둔다.
+- 확인 창 공통 문장(helper 하나): "확인하면 먼저 이 에이전트 도구를 멈춥니다. 성공하면 작업을 닫고, 자동 정리가 켜져 있으면 작업 폴더와 로컬 브랜치도 지웁니다. 닫힌 작업에는 이어서 지시할 수 없습니다."
+  - PR·병합 창 본문 끝에 붙인다. 단추 이름 "PR 만들기"·"`<기준>`에 병합"은 그대로다(기존 시험과 `app/e2e/agents.spec.ts`가 정확한 이름을 본다).
+- [기준 반영]: 도구가 살아 있거나 세션 목록을 아직 모르면(`!task.toolExited && (sessionAlive || !sessionKnown)`) 화면 확인 창을 먼저 연다.
+  - 문구: "에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 옮긴 뒤 이어서 지시하려면 [재개]를 누르세요."
+  - RPC 확인 정책(`agents.rebase` `confirm: none`)은 그대로다.
+- `docs/guide.md` 5. 반영: [기준 반영]이 에이전트 도구를 멈춘다는 것을 더한다.
+- `AgentActions.tsx`가 300줄을 넘으면 확인 창을 새 파일로 나눈다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `rebase_rejects_existing_dirty_without_quiescing` — 커밋하지 않은 파일이 있는 작업 폴더. 기대: `WorktreeDirty`, 터미널 살아 있음, scope 정지 0회, `tool_exited == false`, 상태·HEAD·파일 그대로.
+  - `AgentActions.test.tsx` "PR·병합 확인 창은 성공하면 작업을 닫는다고 알린다" — 기대: 두 창 모두 `toHaveTextContent("성공하면 작업을 닫고")`.
+  - `AgentActions.test.tsx` "도구가 살아 있으면 [기준 반영]은 확인한 뒤에만 보낸다" — 기대: 확인 전 `agents.rebase` 0회, 확인 뒤 1회.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 기존 `rebase_revalidates_committed_head_and_dirty_content_after_stop`, `cargo test -p devbox-agents rebase`, `vitest run src/features/agents/detail`(AgentActions·ReviewRefresh)가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-5 H-02 — 재개한 작업은 도구가 준비되면 '다음 지시 대기'다
+
+**문제.**
+- [재개]는 상태를 `running`으로 두고 턴 정보를 비운다(`crates/agents/src/resume.rs:170-189`, `:183` `AgentState::Running`).
+- 세션을 이어 받는 재개는 지시를 넘기지 않는다(`crates/agents/src/start.rs:97-101`, Claude `--resume`·Codex `resume`). 그래서 턴이 없고 턴 끝 보고도 없다.
+- 직접 시험: Codex는 입력창(`› Ask Codex to do anything`)에서 60초, Claude는 40초 동안 '실행 중'이었다(H2(b)·H1(b)).
+  - Claude의 `Notification idle_prompt`는 이미 턴 끝으로 바뀐다(`crates/agents/src/hooks.rs` "Notification" 갈래). 그 알림은 입력이 오래 비어야 온다. 직접 시험은 그 전에 끝났다.
+- 세션 없이 재개한 작업은 원래 지시로 새로 시작한다(`start.rs:102-106`). 진짜 턴이라 '실행 중'이 맞다.
+
+**파일**
+- 수정: `crates/agents/src/tracker.rs`(`Binding`), `crates/agents/src/resume.rs`(재개 writer), `crates/agents/src/hooks.rs`(Claude `SessionStart`의 `source`), `crates/agents/src/service.rs`(`event`), `crates/agents/src/watch.rs`, `crates/agents/src/send.rs`(`reserve_instruction`), `crates/agents/src/lifecycle.rs`(추적기의 binding 저장).
+- 새 fixture: `crates/agents/tests/fixtures/codex-0.167.0/resume-ready.txt`.
+  - 실제 화면이다: 직접 시험 재실행 `70b1b4f6-8ad0ac09`의 `cases/H2.json` 마지막 캡처. 경로·작업 이름은 가린다. 머리에 출처를 적는다.
+- 시험: 새 `crates/agents/src/resume_ready_tests.rs`(`resume.rs`에 `#[path]`로 단다), `crates/agents/src/watch_tests.rs`, `hooks.rs` 시험.
+
+**동작**
+- 표시: `Binding`에 `#[serde(default)] resumed_session: bool`을 둔다. 재개 writer가 세션 id를 넘긴 Claude·Codex launch에만 켠다. 데몬을 다시 시작해도 남는다.
+- 표시는 이 launch에서 처음 일어난 것 하나로 꺼진다.
+  - Claude `UserPromptSubmit`, 앱·MCP 보내기(`reserve_instruction`의 같은 writer), 준비 판정 한 번.
+  - 추적기 writer(`lifecycle.rs` `refresh_binding_inner`)는 `resources`·`owned_rebase`처럼 이 표시도 현재 binding 값을 따른다. 낡은 binding이 꺼진 표시를 되살리지 않는다.
+- 준비 판정은 기존 사건 `TurnComplete { message: None }`을 쓴다. 상태 표(`state.rs`)는 바꾸지 않는다.
+  - 결과: `idle`, 주의 종류 `idle`, 문구 "다음 지시를 기다립니다"(`crates/agents/src/events.rs:96-99`).
+  - 판정은 같은 writer 안에서 표시·상태 `running`·주의 없음을 보고 한다.
+- Claude: 현재 launch의 `SessionStart` payload에 `source: "resume"`이 있고 표시가 켜져 있으면 준비다. 지금 `hooks.rs`는 `source`를 읽지 않는다.
+- Codex: 감시기(`watch.rs`)가 판정한다. 모두 맞아야 한다.
+  - 표시가 켜져 있고 `binding.turn_id`가 없다.
+  - 2초 이상 화면이 같고(`QUIET`) 대기 패턴이 맞지 않는다.
+  - 끝 줄들에 입력창 줄(`› `)과 `? for shortcuts`가 있고 `Working (`·`esc to interrupt`가 없다. `codex-0.164.0/working.txt`는 일하는 중에도 입력창을 그리기 때문이다.
+- 알림: 이 전환도 턴 끝처럼 주의 알림을 한 번 낸다(`events::changed` → `announce`). 그 작업을 보고 있으면 Windows 알림은 뜨지 않는다(`AttentionBridge.tsx`의 `visible`).
+- 보내기 막힘은 그대로다(`send.rs`는 `waiting`·`closed`·`preparing`만 막는다). 화면 대기 검사(`pane_is_waiting`)도 그대로다.
+- pi는 자기 준비 보고(`ready.rs` `record_ready`)를 그대로 쓴다. opencode 재개(`-s <id>`, 지시 없음)는 바꾸지 않는다(직접 시험 근거 없음). 둘의 재개 뒤 상태는 S8-5b-25에서 PROGRESS §4에 적는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `claude_session_start_source_is_read_without_the_rest`(`hooks.rs`) — 기대: `{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}` → `Some("resume")`, `startup` → `Some("startup")`, 없으면 `None`.
+  - `claude_resume_without_prompt_becomes_idle_on_session_start` — 세션 있는 Claude 작업 재개 → 현재 launch의 `SessionStart`(resume). 기대: `idle`, 주의 `idle`·"다음 지시를 기다립니다", 표시 꺼짐.
+  - `claude_session_start_after_a_prompt_keeps_running` — 재개 → `UserPromptSubmit` → `SessionStart`(resume). 기대: `running`.
+  - `claude_resume_without_session_id_never_marks_ready` — 세션 id 없는 재개(원래 지시로 시작). 기대: 표시 꺼짐, `SessionStart`(resume)에도 `running`.
+  - `send_right_after_resume_clears_the_ready_marker` — 준비 전에 보내기 → 그 뒤 준비 신호. 기대: `running` 그대로, 주의 알림 0회.
+  - `tracker_save_keeps_a_cleared_ready_marker` — 보내기로 꺼진 뒤 낡은 binding으로 추적기가 저장한다. 기대: 표시는 꺼진 채다.
+  - `codex_resumed_ready_screen_sets_idle_once_quiet`(`watch_tests.rs`) — `resume-ready.txt`, 표시 켜짐, `turn_id` 없음, 2초 조용. 기대: `idle` 한 번, 주의 알림 한 번.
+  - `codex_ready_screen_without_marker_or_after_a_turn_keeps_running` — 표시 꺼짐(첫 실행), 또는 `turn_id` 있음. 기대: 바뀌지 않는다.
+  - `codex_working_screen_is_not_ready` — `codex-0.164.0/working.txt`. 기대: 바뀌지 않는다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `cargo test -p devbox-agents`(재개 rollback·correlation·watch·ready 시험 포함)가 PASS. pi 시험(`ready_tests.rs`, `start_pi_tests.rs`)이 그대로 PASS.
+- [ ] 5. 검토 뒤 커밋한다. 실제 도구 확인은 S8-5b-28의 H1(b)·H2(b)다.
+
+#### S8-5b-5b H-01 — 턴이 끝나면 열린 작업의 토큰 합계를 갱신한다(Ruling 161)
+
+**문제.**
+- 목록 행은 `task.tokens`를 보인다(`app/src/features/agents/AgentRow.tsx:115`). 그 값은 닫을 때만 채운다(`crates/agents/src/closed_review.rs:94`).
+- 그래서 열린 작업의 행과 `agents.list`에는 토큰 합계가 없다. 머리줄은 `agents.usage`로 바로 읽는다(`detail/AgentHeader.tsx:25`).
+- 직접 시험: Claude `agents.usage` 51,863·목록 null(H1(c)), Codex 33,705·null(H2(c)). 설계 01-design:97은 행마다 토큰 합계를 요구한다.
+
+**파일**
+- 수정: `crates/agents/src/metrics.rs`(갱신 함수), `crates/agents/src/service.rs`(턴 끝 뒤 갱신 시작: 훅 사건 경로와 `complete_codex`), `crates/agents/src/closed_review.rs`(닫을 때 값 지키기).
+- 새 시험: `crates/agents/src/token_refresh_tests.rs`(`metrics.rs`에 `#[path]`로 단다).
+- 화면은 바꾸지 않는다. 행은 지금처럼 `task.tokens`를 읽는다.
+
+**동작**
+- 턴 끝(`TurnComplete`)이 현재 launch의 작업을 `idle`로 바꾸는 쓰기가 끝나면, 그 작업의 갱신을 백그라운드(`self.background`)로 시작한다.
+  - 대상 경로: 훅 사건(`record`의 `update_bound`), Codex 완료(`complete_codex`), opencode·pi의 턴 끝 보고. S8-5b-5의 준비 판정(`TurnComplete { message: None }`)도 같다.
+- 갱신은 `read_usage(id, false)`와 같은 읽기를 쓴다(제한 시간·잘림 표시 포함). 필요하면 `&self` 없이 부를 수 있게 필드 복제로 나눈다.
+- 쓰기는 한 writer 안에서 다시 읽고 확인한다.
+  - 작업이 없거나 `closed`면 아무것도 하지 않는다. 닫을 때의 값을 덮지 않는다.
+  - 읽은 `tokens`가 없으면 이전 값을 그대로 둔다.
+  - 아니면 `tokens`·`tokens_truncated`를 쓰고 `agents.changed`를 낸다. 상태·주의·`activity_seq`는 바꾸지 않는다.
+- 같은 작업의 갱신은 겹치지 않는다. 읽는 중에 턴이 또 끝나면 끝난 뒤 한 번만 더 읽는다.
+- 닫을 때(`closed_review.rs:94`) 닫는 읽기에 토큰이 없으면(`closure_usage`의 실패) 마지막으로 갱신한 값을 남긴다. 잘림 표시는 `true`로 둔다.
+- opencode의 export 캐시(`usage_plugins.rs` `ExportCache`)는 턴 끝마다 이미 비운다. 갱신은 그 뒤 한 번 읽는다. 행 수와 상관없다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `turn_end_refreshes_open_task_tokens` — 토큰을 아는 Claude 대화 기록 fixture, `Stop` 훅 사건. 기대: 갱신 뒤 `agents.list` 항목 `tokens` 합계 = `agents.usage` 합계, `agents.changed` 한 번.
+  - `codex_turn_completion_refreshes_tokens` — `complete_codex` 경로. 기대: 같다.
+  - `token_refresh_never_touches_a_closed_task` — 읽는 사이에 작업을 닫는다. 기대: 닫힌 작업의 `tokens`가 닫을 때 값 그대로다.
+  - `token_refresh_keeps_the_last_total_when_the_read_has_none` — 기대: 이전 합계가 남는다.
+  - `token_refreshes_coalesce_per_task` — 읽는 중에 턴 끝 두 번. 기대: 읽기는 많아야 두 번이다.
+  - `close_keeps_the_refreshed_total_when_the_closing_read_fails` — 기대: 닫힌 작업에 마지막 합계가 있고 `tokens_truncated`가 `true`다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `cargo test -p devbox-agents`(usage·close·correlation 시험 포함)가 PASS. 실제 도구 확인은 S8-5b-28b의 H1(c)·H2(c)다.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-6 1:SHOT-01 + 3:X3-01(D13) — 자동으로 접힌 목록을 다시 열고 펼치기 단추를 둔다
+
+**문제.**
+- 창이 좁아지면 목록을 접는다(`app/src/shell/useAutoCollapse.ts:9`, `app/src/shell/layout.ts:83-84` `width < 1100`).
+- 그 값은 사용자가 접은 것과 같은 `listCollapsed`이고 `localStorage`(`devbox.layout`, `layout.ts:56-64`)에 남는다. 창을 다시 넓혀도 열리지 않는다.
+- 접힌 목록에는 여는 단추가 없다(`app/src/shell/SectionLayout.tsx:14` `0 0 minmax(0, 1fr)`). 팔레트 이름은 "목록 접기"뿐이다(`app/src/shell/uiShortcuts.ts:28`).
+- UI 배율 125%에서는 1280×800 창도 틀 폭이 1024라 접힌다(3단계 E13).
+
+**파일**
+- 수정: `app/src/shell/layout.ts`, `app/src/shell/useAutoCollapse.ts`, `app/src/shell/SectionLayout.tsx`·`SectionLayout.module.css`, `app/src/shell/uiShortcuts.ts`, `docs/ui-terms.md`·`docs/guide.md`([목록 펼치기]).
+- 시험: `app/src/shell/Shell.layout.test.tsx`.
+
+**동작**
+- 자동 접힘은 저장하지 않는 따로 된 값이다. 창이 다시 넓어지면 자동 접힘만 되돌린다. 사용자가 접은 것은 그대로 둔다.
+- 접힌 목록 자리에 28px 열(`0 28px minmax(0, 1fr)`)과 IconButton [목록 펼치기]를 둔다. 아이콘은 `PanelLeftOpen`이다.
+  - `aria-expanded="false"`, `aria-controls`는 목록, 도움말에 Ctrl+Shift+B.
+- 자동으로 접힐 때 목록 안에 포커스가 있었으면 [목록 펼치기]로 옮긴다.
+- 팔레트 이름은 "목록 접기·펴기"다.
+- 3:X3-05(`useNarrow`가 UI 배율을 모른다)는 1.0.x다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다(`Shell.layout.test.tsx`).
+  - "목록이 접히면 '목록 펼치기' 단추가 보이고, 누르면 목록이 열린다" — `useLayout.setState({ listCollapsed: true })` → 단추 클릭. 기대: `listCollapsed === false`.
+  - "자동으로 접힌 목록은 창이 넓어지면 다시 열리고 저장되지 않는다" — 틀 폭 1000 → 1200. 기대: 열림, `devbox.layout`의 `listCollapsed`는 false 그대로.
+  - "사용자가 접은 목록은 창이 넓어져도 접힌 채다".
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/shell`이 PASS. 검토자는 UI 배율 125%의 960×600 창을 한 번 본다(검토 초점 3).
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-7 3:X1-02=3:CB-12 — 대화상자의 제목과 단추는 어느 UI 배율에서도 화면 안에 있다
+
+**문제.**
+- 대화상자(`app/src/ui/Dialog.module.css:6-20`)는 위 여백 `18dvh`, 최대 높이 `100dvh` 기준이고 내용 전체가 스크롤된다(`:14`).
+  - 바닥줄(`Dialog.tsx`의 `footer`)도 그 스크롤 안에 있다.
+- UI 배율은 루트 `zoom`이다(`app/src/features/settings/preferences.ts:65`). zoom 안의 `dvh`·`vw`는 배율만큼 커진다.
+- 그래서 150%·높이 600px에서 창이 162–876px에 그려진다. [시작]·[취소]가 화면 밖이다(3단계 E05·E06·E14).
+- 열 때 취소 단추에 포커스를 주며 스크롤한다(`app/src/features/projects/ProjectTrustDialog.tsx:35`, `app/src/ui/ConfirmDialog.tsx:22`).
+
+**파일**
+- 수정: `app/src/ui/Dialog.module.css`, `app/src/ui/Dialog.tsx`(본문에 `data-dialog-body`), `app/src/features/settings/preferences.ts`, `app/src/ui/ConfirmDialog.tsx`, `app/src/features/projects/ProjectTrustDialog.tsx`.
+- 시험: `app/src/ui/ui.test.tsx`.
+
+**동작**
+- `.content`는 세로 flex이고 `overflow: hidden`이다. 본문만 `flex: 1; min-height: 0; overflow-y: auto`로 스크롤한다.
+  - 제목·설명·바닥줄은 본문 밖에 고정이다.
+- `setUiScale`이 루트에 `--ui-zoom`(배율 값)을 둔다. 대화상자의 위치·크기는 `calc(… / var(--ui-zoom, 1))`로 배율을 되돌려 화면 안에 맞춘다.
+- 처음 포커스는 `focus({ preventScroll: true })`다.
+- S8-5b-13(새 작업 폼)은 이 바닥줄을 쓴다. 폼이 자기 바닥줄을 따로 만들지 않는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다(`ui.test.tsx`).
+  - "Dialog 바닥줄과 제목은 스크롤 본문 밖에 있다" — 기대: `[data-dialog-body]`가 바닥줄의 취소 단추를 `.not.toContainElement`.
+  - "setUiScale(1.5)는 --ui-zoom을 1.5로 둔다".
+  - "ConfirmDialog는 스크롤 없이 취소에 포커스를 준다" — 기대: `focus`가 `{ preventScroll: true }`로 불린다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/ui src/features/projects src/features/settings`가 PASS. 실제 배율 화면은 검토 초점 3이다.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-8 D1 + D3 — 눌림·선택 상태를 보이고 동작의 대비를 맞춘다
+
+**문제.**
+- `aria-pressed="true"` 단추에 모양이 없다(`app/src/ui/Button.module.css`에 규칙이 없다).
+  - 쓰는 곳: 활동 막대, 에이전트 [목록]·[격자], 실행 [로그] 단추(`RunList.tsx:82`), 노트 보기, 변경 목록.
+- 소스 탭(`app/src/features/source/SourceNavigation.tsx:20-30`)은 선택이 포커스 고리로만 보인다. 소스 패널 단추 6개(`app/src/features/source/SourcePage.tsx:193-200`)는 선택을 알리지 않는다.
+- 팔레트의 고른 줄은 `--bg-3`뿐이다(`app/src/shell/CommandPalette.module.css:22-24`, 대비 1.25/1.12).
+- D3: 주 단추 안 단축키 칩이 inline style로 `--fg-muted`를 쓴다(`app/src/ui/Kbd.tsx:4-11`). 예: [새 작업]의 Ctrl+Shift+N.
+  - 주 단추 hover는 두 테마 모두 흰색을 섞는다(`Button.module.css:31-33`). 밝은 테마에서 대비가 떨어진다.
+  - 위험 단추와 메뉴 위험 항목의 hover·강조는 대비가 낮다.
+
+**파일**
+- 수정: `app/src/ui/Button.module.css`, `app/src/ui/Kbd.tsx`, `app/src/ui/Menu.module.css`, `app/src/ui/tokens.css`(`--accent-hover`), `app/src/shell/CommandPalette.module.css`, `app/src/features/source/SourceNavigation.tsx`·`source.module.css`, `app/src/features/source/SourcePage.tsx`.
+- 시험: `app/src/features/source/SourcePage.test.tsx`, 새 Playwright `app/e2e/contrast.spec.ts`(두 테마, 계산된 스타일).
+
+**동작**
+- `.button[aria-pressed="true"]`: `background: var(--selection); border-color: var(--accent); color: var(--fg)`.
+  - hover에서도 유지되게 규칙을 따로 둔다. forced-colors에서 `border-color: Highlight`.
+  - box-shadow는 쓰지 않는다. 포커스 고리(`--focus-ring`, box-shadow)를 덮기 때문이다(3단계 r2 보정).
+- 소스 탭: `.sectionTab`을 둔다. 평소 테두리 없음·밑줄 투명·`--fg-muted`. `[aria-selected="true"]`는 `--bg-0` 바탕·`--accent` 밑줄 2px·`--fg`.
+  - role·tabIndex·화살표 이동·`aria-controls`는 그대로다.
+- 소스 패널 단추 6개에 `aria-pressed={panel === …}`를 단다([선택한 변경]은 `"diff"`).
+- 팔레트 고른 줄: `background: var(--selection); outline: 2px solid var(--accent); outline-offset: -2px`. forced-colors도 둔다.
+- D3: `Kbd`는 `color: var(--kbd-color, var(--fg-muted))`, `border: 1px solid var(--kbd-border, var(--border))`다. `.primary`가 두 변수를 둔다.
+  - `--accent-hover`: 밝은 테마 accent 88%+검정(`#295ed3`, 5.76:1), 어두운 테마 88%+흰색(7.03:1).
+  - `.danger:hover:not(:disabled)`와 메뉴 위험 항목 강조: `background: var(--danger); color: var(--accent-fg)`(5.28/6.04:1).
+- 1.0.x: 표 행 강조(DataTable), 활동 막대 세로 표시.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `SourcePage.test.tsx` "[커밋 기록]을 누르면 그 단추만 눌림이다" — 기대: [커밋 기록] `aria-pressed="true"`, [편집기] `"false"`.
+  - `pressed-selection-survives-hover-and-blur`(Playwright) — [목록]과 [격자]의 테두리 색이 다르고, hover·blur 뒤에도 다르다.
+  - `source-view-selection-persists-after-focus-leaves`(Playwright) — 고른 소스 탭의 밑줄이 포커스를 옮긴 뒤에도 `--accent`다.
+  - `palette_active_option_has_visible_outline_in_each_theme`(Playwright) — 두 테마에서 고른 줄의 outline이 바탕과 3:1 이상이다.
+  - `primary-kbd-and-danger-highlight-meet-contrast`(Playwright) — 주 단추 안 칩 글자, 주 단추 hover, 위험 hover가 두 테마에서 4.5:1 이상이다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/ui src/features/source src/shell`, `bash scripts/verify-entry.sh e2e e2e/contrast.spec.ts`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-9 D2 — 실행 로그 색을 테마 토큰으로 바꿔 읽히게 한다(Ruling 158)
+
+**문제.**
+- 실행 로그의 ANSI 16색은 고정 hex다(`app/src/features/runs/model.ts:8-25`). 테마를 모른다.
+- 바탕 `--bg-1`(밝은 `#f6f7f9`, 어두운 `#12161c`) 위에서 여럿이 4.5:1 미만이다.
+  - 예: 밝은 테마 노랑 `#e5e510` 1.26, 흰색 `#e5e5e5` 1.18, 녹색 `#0dbc79` 2.31. 어두운 테마 회색 `#666666` 3.16.
+- 배경색(40–47·100–107)도 같은 표를 쓴다(`:50-51`).
+- 이 로그는 실행 화면·하단 로그·에이전트 실행 탭·소스 화면이 같이 쓴다(`LogView`).
+
+**파일**
+- 수정: `app/src/features/runs/model.ts`, `app/src/ui/tokens.css`(`--log-ansi-*`, 두 테마), 필요하면 `app/src/features/runs/LogView.module.css`.
+- 시험: `app/src/features/runs/model.test.ts`, `app/e2e/contrast.spec.ts`(S8-5b-8).
+
+**동작**
+- 전경 16색은 `var(--log-ansi-<이름>)`이다(`black`…`bright-white`). 두 테마의 `--bg-1` 위에서 모두 4.5:1 이상이다.
+  - 이미 넘는 색은 `--term-*`을 다시 쓴다. 넘지 못하는 색만 로그 전용 값을 둔다.
+  - 밝은 테마 예: 빨강 `#cd3131` 그대로(4.80), 녹색 `#3e7d3d`(4.66), 노랑 `#966701`(4.62), 파랑 `#2665f0`(4.66), 청록 `#0178aa`(4.59), 흰색 `#6f7077`(4.60). 어두운 테마 예: 검정·회색 `#8e95a2`(6.02).
+- 배경 ANSI는 따로 된 배경 토큰을 쓴다. 배경 위 글자의 대비는 주장하지 않는다.
+- 256색·truecolor(`38;5`·`38;2`)는 그대로다. 대비를 주장하지 않는다.
+- `--term-*`(터미널·편집기, 3:CB-07)는 바꾸지 않는다. [출력 색상 끄기]는 1.0.x다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `model.test.ts` — 기대: `ansiToSpans("\x1b[33mW")[0]!.style.color === "var(--log-ansi-yellow)"`. 기존 `"#cd3131"` 기대(`:7`)는 `"var(--log-ansi-red)"`로 고친다.
+  - `model.test.ts` "16 log colours meet 4.5:1 on --bg-1 in both themes" — `tokens.css`를 `?raw`로 읽어 두 테마 값을 계산한다.
+  - `ansi16-log-contrast-survives-theme-switch`(Playwright) — 테마를 바꾸면 로그 span의 계산된 색이 새 테마 값이고 4.5:1 이상이다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/runs`, `bash scripts/verify-entry.sh e2e e2e/contrast.spec.ts`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-10 D9 — 상태 표시줄 요약은 한 줄이다
+
+**문제.**
+- 상태 표시줄(`app/src/shell/StatusBar.tsx:30-41`)은 줄바꿈을 막지 않는다.
+- 포트는 모든 포트를 숫자 순으로 이어 붙인다(`:25`, `:63`). 포트가 많거나 창이 좁으면 두 줄이 되어 아래가 잘린다(3단계 SHOT-02).
+- 실행이 소유한 포트도 다른 포트와 섞인다.
+
+**파일**
+- 수정: `app/src/shell/StatusBar.tsx`, 필요하면 `app/src/shell/Frame.module.css`.
+- 시험: `app/src/shell/StatusBar.test.tsx`.
+
+**동작**
+- 표시줄은 `white-space: nowrap`이다. 넘치는 칸(Git 등)은 말줄임이다.
+- 포트: 소유 포트(`PortInfo`의 `runId`·`containerId`·`projectId`가 있는 것)를 먼저, 그다음 숫자 순이다.
+  - 3개까지 보이고 나머지는 "외 N개"다. 전체 목록은 `title`에 둔다.
+- 단추 이름은 보이는 글과 같다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - "포트가 많으면 소유 포트 먼저 3개와 '외 N개'만 보인다" — 소유 5173, 소유 아님 22·53·8080·9000. 기대: 단추 이름 "포트 5173, 22, 53 외 2개".
+  - 기존 "포트 5173, 8080"(`StatusBar.test.tsx:56`)은 그대로 PASS다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/shell`이 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-11 D4 + 2:#5(목록·격자) — 에이전트 상태·도구·프로젝트를 같은 모양으로 보인다
+
+**문제.**
+- 상태 표시가 셋이고 서로 다르다.
+  - 목록 행: 아이콘 색만(`app/src/features/agents/AgentRow.tsx:21-38`, `:98`). `waiting`과 `idle`이 같은 `--warn`이다(`:33-34`).
+  - 행의 상태 이름은 주의 문구가 있으면 사라진다(`:104`).
+  - 머리줄: 점과 이름(`detail/AgentHeader.tsx:27-36`, `:42-43`). 격자: 이름 글자만(`AgentGrid.tsx:39-42`).
+- 목록 행은 도구를 보이지 않는다. 격자는 도구도 프로젝트도 없다(2:#5).
+- 토큰 합계(H-01)는 데몬이 채운다(S8-5b-5b). 이 과제는 행이 지금처럼 `task.tokens`를 보이는 것만 지킨다.
+
+**파일**
+- 새: `app/src/features/agents/AgentStateMark.tsx`(행·머리줄·격자가 같이 쓴다).
+- 수정: `AgentRow.tsx`, `detail/AgentHeader.tsx`, `AgentGrid.tsx`, `model.ts`, `Agents.module.css`, `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: `AgentRow.test.tsx`, `AgentGrid.test.tsx`.
+
+**동작**
+- `AgentStateMark` 하나: 아이콘과 늘 보이는 상태 이름(`STATE_LABEL`)이다.
+  - 색: `waiting` `--warn`, `idle` `--fg-muted`, `running`·`preparing` `--progress`, `failed` `--danger`, `review` `--ok`, `closed` `--fg-muted`.
+  - 글자는 `--fg`·`--fg-muted`다(선택 행에서 13.0/5.66:1).
+- `waiting` 행의 띠는 `::before`(또는 `border-inline-start`)로 그린다. box-shadow는 쓰지 않는다(S8-5b-8).
+- 주의 문구는 상태 이름 옆에 따로 보인다. 상태 이름을 대신하지 않는다.
+- 행 둘째 줄: "프로젝트 · 도구". 도구 이름은 `agents.profiles`(`AgentData.tsx:19`)에서, 없으면 `task.profile`이다. 격자 칸에도 도구를 보인다.
+- 활동 막대 배지(입력 대기 수)는 바꾸지 않는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `waiting_and_idle_rows_keep_visible_status_with_messages`(`AgentRow.test.tsx`) — 주의 문구가 있는 `waiting`·`idle` 행. 기대: "입력 대기"·"다음 지시 대기"가 보이고 두 표시의 `data-state`·색이 다르다.
+  - `agent_state_mark_matches_across_list_header_and_grid` — 기대: 같은 작업의 행·머리줄·격자가 같은 `data-state`와 이름을 쓴다.
+  - `row_and_grid_show_project_and_tool` — 기대: 행 둘째 줄 "app · Codex". 프로필 목록이 없으면 `codex`.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/agents src/shell`이 PASS. 행의 토큰 칸(`TokenMetrics`)은 바꾸지 않는다.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-12 D5 + D6 — 입력 대기 작업은 터미널로 안내하고, 빈 화면에 다음 동작을 둔다
+
+**문제.**
+- D5: `waiting` 작업의 상세는 보내기 입력란이 주 동작처럼 보이지만 보내기는 막힌다. 터미널로 가는 길이 흩어져 있다.
+  - 터미널 탭에 [새 창으로]가 있고(`detail/AgentDetail.tsx:85`), [더 보기]에도 같은 [새 창으로]가 있다(`detail/AgentActions.tsx:182`).
+- D6: 본문의 빈 상태는 작업이 0개여도 "에이전트 작업을 고르세요"다(`AgentsPage.tsx:86`). 격자의 빈 상태에는 동작이 없다(`AgentGrid.tsx:64-65`).
+  - 목록을 접으면 목록 쪽 빈 상태의 [프로젝트 추가](`AgentList.tsx:51-56`, S8-4b-8)도 보이지 않는다.
+
+**파일**
+- 수정: `detail/AgentDetail.tsx`, `detail/AgentActions.tsx`, `detail/Compose.tsx`, `AgentsPage.tsx`, `AgentGrid.tsx`, `AgentList.tsx`, `docs/guide.md`(4. 검토의 [더 보기] 목록).
+- 시험: `detail/AgentDetail.test.tsx`, `AgentList.test.tsx`, `AgentGrid.test.tsx`, 새 `AgentsPage.test.tsx`.
+
+**동작**
+- D5: `sessionAlive && !task.toolExited && task.state === "waiting"`이면 주 동작은 [터미널에서 응답]이다.
+  - 누르면 터미널 탭을 열고 포커스를 준다(`showTerminal`). 아무것도 보내지 않는다.
+  - 경고 띠: "터미널에서 선택하거나 응답해 주세요." 단추는 동작 줄에만 둔다.
+  - [더 보기]의 겹치는 [새 창으로]는 뺀다. 터미널 탭의 단추는 그대로다.
+- D6: 질의가 끝난 뒤 열린 작업이 0개면 본문이 상황에 맞는 설명과 주 동작 하나를 보인다.
+  - 프로젝트 0개: [프로젝트 추가]. 프로젝트가 있으면: [새 작업].
+  - 열린 작업이 있는데 고른 작업이 없으면: 첫 입력 대기 작업이 있을 때 [첫 입력 대기 작업 열기].
+  - 격자도 같은 규칙이다.
+- 목록의 빈 제목 "에이전트 작업이 없습니다"는 그대로다(`Shell.timing.test.tsx`, `AgentList.test.tsx:36`이 본다).
+  - S8-4b-8이 목록에 둔 [프로젝트 추가]는 본문으로 옮긴다. 그 두 시험(`AgentList.test.tsx:30-38`, `hides_add_project_when_projects_exist` 포함)도 새 `AgentsPage.test.tsx`로 옮긴다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `waiting_primary_action_opens_and_focuses_terminal_without_sending`(`AgentDetail.test.tsx`) — `waiting`, 세션 살아 있음 → [터미널에서 응답]. 기대: 터미널 탭 선택·포커스, `agents.send` 0회.
+  - `agent_empty_body_keeps_next_action_available_without_list`(`AgentsPage.test.tsx`) — 목록을 접은 채. 기대: 프로젝트 0개면 본문에 [프로젝트 추가], 프로젝트 1개·작업 0개면 [새 작업]이 새 작업 창을 연다.
+  - `AgentGrid.test.tsx` "빈 격자도 다음 동작을 보인다"(`:71` 갱신).
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/agents src/shell`이 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-13 D7(+3:CB-10) — 새 작업 폼의 칸 이름과 정렬
+
+**문제.**
+- 새 작업 창(`app/src/features/agents/NewTaskDialog.tsx`)의 칸 이름이 보이지 않거나 자리 표시 글에 기댄다(프로젝트·도구 `Select`는 `:174-196`, 기준 브랜치는 `:201` 자리 표시 글).
+- 템플릿 도움말은 템플릿이 없어도 보인다. Ctrl+Enter 안내가 그 도움말 문장 안에 묻혀 있다(`:243`).
+- 칸 높이·테두리가 서로 다르다(`app/src/ui/Select.tsx`, `Select.module.css`, `TextArea.module.css`).
+- (코드 확인) 지시문 칸은 3줄 고정이 아니고 10줄까지 자란다(`:240` `maxRows={10}`). 그대로 둔다.
+
+**파일**
+- 수정: `NewTaskDialog.tsx`, `app/src/ui/Select.tsx`·`Select.module.css`, `app/src/ui/TextArea.module.css`, `Agents.module.css`.
+- 시험: `app/src/features/agents/NewTaskDialog.test.tsx`.
+
+**동작**
+- 칸마다 보이는 이름이 있다: 제목, 프로젝트, 도구, 기준 브랜치, 지시문.
+- 프로젝트·도구는 두 열 한 줄이다. 입력 칸은 높이 32px, `--border-strong`, `--bg-0` 바탕이다. `Select`는 `className`을 받는다.
+- 템플릿 도움말은 템플릿이 1개 이상일 때만 보인다.
+- "Ctrl+Enter로 시작" 도움말을 지시문 아래에 늘 보인다. 자리 표시 글이나 주 단추 안 `Kbd`가 아니다.
+- 바닥줄은 S8-5b-7의 대화상자 바닥줄을 쓴다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `new_task_form_shows_field_labels_and_only_relevant_template_help` — 기대: `getByLabelText`로 "프로젝트"·"도구"·"기준 브랜치"·"지시문"을 찾는다(보이는 `<label>`). 템플릿 0개면 템플릿 도움말이 없다. "Ctrl+Enter로 시작"이 보인다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/agents src/ui`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-14 2:#1 + 2:#3 — 지시 기록과 같은 지시로 새 작업
+
+**문제.**
+- 작업에는 처음 지시(`task.prompt`)와 이어서 보낸 지시가 있다. 이어서 보낸 지시는 시각과 전달 상태를 가진다(`crates/agents/src/model.rs:26-43` `FollowUp`·`InstructionDelivery`, `:66` `follow_ups`).
+- 화면에서는 볼 수 없다. 상세 탭은 터미널·변경·커밋·실행뿐이다(`detail/AgentDetail.tsx:19-24`).
+- 같은 지시로 새 작업을 시작하는 길이 없다(2:#3). 새 작업 초안은 지시문만 받는다(`app/src/features/agents/ui.ts` `AgentDraft`).
+
+**파일**
+- 새: `app/src/features/agents/detail/InstructionsTab.tsx`.
+- 수정: `detail/AgentDetail.tsx`(탭 `{ id: "instructions", label: "지시" }`), `detail/AgentHeader.tsx`([같은 지시로 새 작업]), `agents/ui.ts`, `NewTaskDialog.tsx`(초안 받기), `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: 새 `detail/InstructionsTab.test.tsx`, `app/src/shell/Shell.agents.test.tsx`.
+
+**동작**
+- 지시 탭: "처음 지시"(전달 표시 없음), 그다음 이어서 보낸 지시를 시각 순으로 보인다.
+  - 전달 표시: `delivered` "전달됨", `pending` "보내는 중", `unknown`·없음 "전달 확인 안 됨".
+  - 항목마다 [복사]. 닫힌 작업도 보인다. 아무것도 보내지 않는다.
+- [같은 지시로 새 작업](머리줄, 열린·닫힌 작업 모두): 새 작업 창을 열고 지시문과 프로젝트를 채운다. 시작은 사용자가 [시작]을 눌러야만 한다.
+  - `AgentDraft`에 `title?`·`projectId?`·`baseBranch?`·`worktree?`를 더한다. S8-5b-20이 같은 초안을 쓴다.
+- [초안으로 가져오기]는 1.0.x다. RPC는 바꾸지 않는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `InstructionsTab.test.tsx` "lists prompt then follow-ups by time and labels only delivered ones 전달됨".
+  - `instruction_history_shows_closed_task_and_delivery_states_without_sending` — 닫힌 작업, 세 전달 상태. 기대: 세 표시, `agents.send` 0회.
+  - `duplicates_closed_task_from_its_project_only_after_explicit_start`(`Shell.agents.test.tsx`) — 닫힌 작업에서 [같은 지시로 새 작업]. 기대: 창의 지시문·프로젝트가 채워지고 `agents.create` 0회. [시작] 뒤 1회이고 `prompt`가 원래 지시다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/agents src/shell`이 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-15 2:#4 — 작업 폴더를 VS Code나 터미널로 연다
+
+**문제.**
+- 프로젝트 카드는 VS Code·탐색기·터미널로 연다(`app/src/features/projects/ProjectCard.tsx:44-46` `invoke("open_external", { kind, path })`).
+- 에이전트 작업의 작업 폴더(`task.worktreePath`)는 열 길이 없다.
+- 새 터미널은 늘 현재 프로젝트에서 연다(`app/src/features/terminal/TerminalCommands.tsx:29-35`).
+
+**파일**
+- 새: `app/src/features/agents/detail/workspaceActions.ts`.
+- 수정: `detail/AgentActions.tsx`([더 보기] 항목 둘), `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: `detail/AgentActions.test.tsx`.
+
+**동작**
+- [더 보기]에 [VS Code로 작업 폴더 열기](Windows 앱에서만)와 [작업 폴더 터미널]을 더한다. `worktreePath`가 있는 열린 작업에만 보인다.
+- VS Code: `invoke("open_external", { kind: "vscode", path: task.worktreePath })`. 카드와 같은 명령과 같은 경로 검사다.
+- 터미널: `terminal.create({ projectId: task.projectId, cwd: task.worktreePath, title: null, command: null, attachZellij: null })` 뒤 `openPopout("terminal", session.id)`. 전역 현재 프로젝트는 바꾸지 않는다.
+- S8-5b-12가 겹치는 [새 창으로]를 뺀 뒤의 [더 보기]에 더한다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `opens_task_worktree_without_switching_global_project` — [작업 폴더 터미널]. 기대: `terminal.create`의 `cwd`가 `worktreePath`이고 현재 프로젝트가 그대로다. VS Code 항목은 `open_external {kind:"vscode", path: worktreePath}`다.
+  - "작업 폴더가 없는 작업에는 두 항목이 없다".
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/agents/detail`이 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-16 2:#2 — 병합·PR 전에 커밋하지 않은 변경을 알린다
+
+**문제.**
+- 병합·PR은 작업 폴더가 깨끗해야 한다(`crates/agents/src/actions.rs` `WorktreeDirty`). 사용자는 확인 창을 연 뒤에야 거절을 본다.
+- (보고 범위 축소) 커밋 지시를 대신 보내지 않는다. 초안만 만든다.
+
+**파일**
+- 새: `app/src/features/agents/detail/UncommittedNotice.tsx`.
+- 수정: `detail/AgentActions.tsx`(동작 줄 근처), `detail/drafts.ts`(초안 덧붙이기), `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: 새 `detail/UncommittedNotice.test.tsx`.
+
+**동작**
+- 작업 폴더가 있는 열린 작업은 `git.status({ target: { projectId, worktreeId: task.id } })`(기존 RPC)로 변경 수를 본다.
+- 변경이 있으면 띠: "커밋하지 않은 변경 N개가 있어 병합·PR을 진행할 수 없습니다."
+  - [커밋 지시 작성]은 지시 초안에 커밋 지시를 덧붙이고 입력란에 포커스를 준다. 보내지 않는다.
+- 불러오는 중·실패는 "변경 없음"으로 보지 않는다. 실패는 "변경을 확인하지 못했습니다"다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `shows_task_worktree_changes_and_prepares_commit_instruction_without_sending` — 변경 2개. 기대: 띠에 "2개", [커밋 지시 작성] 뒤 초안에 커밋 지시, `agents.send` 0회.
+  - "status를 읽지 못하면 '변경 없음'으로 보이지 않는다".
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/agents/detail`이 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-17 2:#5(알림) + 3:X2-05 — 알림에 도구·프로젝트를 보이고 안 읽은 알림을 표시한다
+
+**문제.**
+- 에이전트 알림 제목은 "작업 제목 · 상태"뿐이다(`app/src/features/notifications/AttentionBridge.tsx:53`). 제목이 같은 작업 둘은 구분되지 않는다.
+- 목록 캐시가 없으면 제목이 "에이전트 작업"이 된다(`:51-53`).
+- 3:X2-05: 알림 센터는 읽은 알림과 안 읽은 알림이 같아 보인다(`NotificationCenter.tsx`, `NotificationCenter.module.css`).
+
+**파일**
+- 수정: `AttentionBridge.tsx`, `NotificationCenter.tsx`, `NotificationCenter.module.css`(모두 `app/src/features/notifications/`), `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: `AttentionBridge.native.test.tsx`, `NotificationCenter.test.tsx`.
+
+**동작**
+- 본문 앞에 "프로젝트 · 도구 — "를 붙인다(Windows 알림과 알림 센터 모두).
+  - 이름은 캐시(`["projects.list", {}]`, `["agents.profiles", {}]`)에서 찾는다. 없으면 프로필 id로 대신한다. 빈칸으로 두지 않는다.
+  - 알림은 캐시가 없어도 나간다.
+  - opencode·pi 본문은 이미 도구 이름으로 시작한다(`crates/agents/src/plugin_event.rs`). 그때는 도구를 겹쳐 붙이지 않는다.
+- 안 읽은 알림: 제목 앞 점 `<span role="img" aria-label="읽지 않음">`(상태 표시 3:1 이상, 4.10/5.35:1).
+  - 읽은 알림 제목은 굵기 400·`--fg-muted`다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `same_title_agent_notices_keep_tool_identity_and_deliver_without_cache`(`AttentionBridge.native.test.tsx`) — 제목이 같은 Claude·Codex 작업. 기대: 두 본문이 "app · Claude Code — "와 "app · Codex — "로 시작한다. 캐시를 비워도 알림이 나간다.
+  - `NotificationCenter.test.tsx` "안 읽은 알림에만 '읽지 않음' 표시가 있다" — 기대: 안 읽은 줄은 `toHaveAccessibleName(/^읽지 않음/)`, 읽은 줄은 아니다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/notifications`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-18 1:X1-2-01 — 언어 서버 문제를 그 위치에서 연다
+
+**문제.**
+- 문제 목록의 링크는 출처가 실행(`run:<id>`)인 것만 연다(`app/src/features/problems/ProblemsPanel.tsx:56`).
+- 언어 서버 문제(`lsp:` 출처)는 늘 "문제의 원본 실행을 찾을 수 없습니다."다(`:67`).
+
+**파일**
+- 수정: `ProblemsPanel.tsx`. 여는 길은 기존 `app/src/features/source/openLocation.ts`·`app/src/shell/fileLocation.ts`를 쓴다.
+- 시험: `app/src/features/problems/ProblemsPanel.test.tsx`.
+
+**동작**
+- `lsp:` 출처는 문제의 파일 경로·줄로 연다. 고른 편집기(앱 편집기·VS Code·Cursor)를 따른다.
+- 경로는 프로젝트 안이어야 한다. 데몬의 파일 위치 규칙(`crates/cli/src/daemon/locations.rs` `LogSource::File`)과 같다. 밖이면 여는 대신 이유를 보인다.
+- 모르는 출처는 지금처럼 거절한다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `lsp_problem_opens_the_project_file_in_each_editor` — `lsp:` 문제. 기대: 세 편집기 설정에서 각각 그 파일·줄을 연다. "원본 실행" 문구가 없다.
+  - "프로젝트 밖 경로의 lsp 문제는 열지 않고 이유를 보인다".
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/problems`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-19 2:#8 + 2:#9 + 1:CB-04/SHOT-04 — 실행 문구에 정의와 서비스 이름을 넣는다
+
+**문제.**
+- 2:#8: 자동 감지 제안으로 정의를 만들면 id가 무작위 UUID다(`app/src/features/runs/definition-form.ts:43`).
+  - 저장한 뒤 제안 목록(`RunsPage.tsx:162-182`)이 갱신되지 않는다. `DefineDialog`(`:261-268`)에 저장 뒤 알림이 없다.
+- 2:#9: 재시작 한도 알림에 서비스 이름이 없다(`crates/runtime/src/reconcile.rs:133-139`, `task: None`).
+- 1:CB-04·SHOT-04: `runtime.not_ready` 문구는 늘 "선행 서비스"를 보라고 한다(`app/src/rpc/systemMessages.ts:33`). 서비스 자신이 준비되지 않은 경우도 같다. detail의 `id`를 쓰지 않는다.
+- 커밋 범위는 `fix(app)`이지만 `reconcile.rs`도 고친다.
+
+**파일**
+- 수정: `definition-form.ts`, `RunsPage.tsx`, `DefineDialog.tsx`(`onSaved`), `crates/runtime/src/reconcile.rs`, `app/src/rpc/systemMessages.ts`.
+- 시험: `app/src/features/runs/definition-form.test.ts`, `app/src/features/runs/RunsNavigation.test.tsx`, `reconcile.rs` 시험 모듈, `app/src/rpc/messages.test.ts`.
+
+**동작**
+- 2:#8: 정의 id는 `def?.id ?? suggestion?.id ?? crypto.randomUUID()`다. 같은 id가 이미 있을 때는 지금의 정의 저장 검사를 따른다.
+  - `DefineDialog`에 `onSaved`를 주고, 저장 뒤 `suggestions.refetch()`를 부른다.
+- 2:#9: `fn start_limit_notification(run: &Run) -> Notification`으로 뽑고 `task: Some(run.def_id.clone())`이다. id 규칙(`run-<id>-start-limit-<started>`)은 그대로다.
+- 1:CB-04: 제목 "서비스 {id}가 준비 시한 안에 준비되지 않았습니다." 행동 "그 서비스의 ports_hint·준비 시한과 로그를 확인해 주세요." 선행 서비스를 단정하지 않는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `definition-form.test.ts` "제안에서 만든 정의는 제안 id를 쓴다" — 기대: id `build`.
+  - `RunsNavigation.test.tsx` "정의를 저장하면 자동 감지 제안을 다시 읽는다" — 기대: `runtime.detect` 2회.
+  - `start_limit_notification_names_the_definition` — 기대: `task == Some("api")`, id 형식 그대로.
+  - `not_ready_identifies_the_requested_service_without_implying_dependencies`(`messages.test.ts`) — 기대: 제목에 `api`가 있고 "선행"이 없다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `cargo test -p devbox-runtime reconcile`, `vitest run src/features/runs src/rpc`가 PASS. CI가 돌리지 않는 `runtime_lifecycle` ignored 시험은 건드리지 않는다.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-20 2:#10 + 2:#11 — 실패한 실행으로 에이전트 작업 초안을 만들고 지난 실행을 고른다
+
+**문제.**
+- 2:#10: 실패한 실행의 로그를 에이전트에게 넘기려면 손으로 복사해야 한다. 에이전트 상세에는 실패 로그 묶기(`app/src/features/agents/detail/failureLogs.ts`)가 있지만 실행 화면에는 없다.
+- 2:#11: 실행 화면은 정의마다 대표 실행 하나만 보인다(`RunsPage.tsx:74-78`). 지난 실행을 고를 수 없다.
+- `RunsPage.tsx`는 271줄이다. 두 기능을 새 컴포넌트로 나눠 300줄을 넘기지 않는다.
+
+**파일**
+- 새: `app/src/features/runs/RunFailureTaskAction.tsx`, `app/src/features/runs/PastRunPicker.tsx`.
+- 수정: `RunsPage.tsx`(머리 `:208-246`에 둘을 둔다), `detail/failureLogs.ts`(재사용할 부분만 내보낸다), `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: 새 `app/src/features/runs/RunFailureTaskAction.test.tsx`, `RunsNavigation.test.tsx`.
+
+**동작**
+- 2:#10: 실패한 실행(종료 코드 ≠ 0)의 머리에 [에이전트로 고치기]가 있다.
+  - 누르면 새 작업 창을 연다(S8-5b-14의 초안). 제목 `Fix failed run <정의 id>`, 프로젝트, 지시문 = 실패 요약 + 로그 끝.
+  - 명령 원문은 넣지 않는다. 지시문 전체가 만들기 한도(`crates/agents/src/limits.rs`) 안이다. 넘으면 로그 끝을 줄인다.
+  - 고른 실행이 바뀐 뒤 도착한 로그 응답은 버린다.
+- 2:#11: 머리에 `<select aria-label="지난 실행">`이 있다.
+  - `runtime.runs({ projectId, limit: 100 })`에서 그 정의의 실행만 보인다. "최근 100개 실행 중" 안내를 둔다.
+  - 고르면 `runtime.get { runId }`로 그 실행의 로그를 본다. `runtime.changed`로 무효화한다.
+  - 고르기는 `<select>`다. S8-5b-8의 `aria-pressed` 단추 규칙은 여기에 쓰지 않는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `failed_run_handoff_drops_late_logs_after_target_change` — 실행 A의 로그 응답이 실행 B를 고른 뒤 온다. 기대: 초안에 A의 로그가 없다.
+  - `failed_run_draft_has_summary_and_log_tail_within_the_create_limit` — 기대: 지시문 바이트 수가 한도 안이고 명령 원문이 없다. `agents.create`는 [시작] 전 0회다.
+  - `RunsNavigation.test.tsx` "지난 실행에서 old를 고르면 그 실행을 연다" — 기대: `runtime.get {runId:"old"}`.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/runs src/features/agents`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-21 1:X3-01 + 3:X2-02 — API 환경의 비밀 표시를 지키고 지금 환경을 보인다
+
+**문제.**
+- API 환경 편집기는 파일을 읽을 때 `secret`을 버린다(`app/src/features/tools/api/EnvEditor.tsx:129`). 행 타입에 그 칸이 없다(`model/draft.ts:18-23` `Row`).
+  - 저장도 `secret` 없이 쓴다(`EnvEditor.tsx:173-181`).
+  - 그래서 값이 빈 비밀에 새 값을 넣고 저장하면, `serializeEnvFile`(`model/envFile.ts:55-73`)이 이름·값 모양만으로 판단한다. 비밀 표시가 사라지고 평문이 저장소 파일에 남을 수 있다.
+- 3:X2-02: 요청 편집기와 도구 목록이 지금 고른 환경을 보이지 않는다(`RequestEditor.tsx`, `app/src/features/tools/ToolsList.tsx`).
+
+**파일**
+- 수정: `EnvEditor.tsx`, `RequestEditor.tsx`, `ToolsList.tsx`.
+- 시험: `app/src/features/tools/api/EnvEditor.test.tsx`, `app/src/features/tools/api/RequestEditor.test.tsx`.
+
+**동작**
+- `Row`는 그대로 두고 `Editing`에 비밀 행 id 집합을 둔다. 읽을 때 채우고, 저장할 때 그 행에 `secret: true`를 다시 붙인다.
+  - 비밀 행에 넣은 평문은 `serializeEnvFile`이 지우고 `cleared`에 넣는다. 저장 알림이 그 이름을 말한다.
+- 요청 머리에 "환경: {이름|없음}"을 보인다. 검토가 필요하면 " · 검토 필요"를 붙인다. 도구 목록 요약은 "환경 · {이름|없음}"이다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `EnvEditor.test.tsx` "비밀 표시는 읽기와 저장을 지나도 남는다" — 파일 `{"name":"opaque","value":"","secret":true}`에 `hunter2`를 넣고 저장. 기대: 저장된 파일이 `value:""`·`secret:true`이고 알림이 `opaque`를 말한다. 손대지 않고 저장해도 `secret`이 남는다.
+  - `RequestEditor.test.tsx` "고른 환경이 요청 머리에 보인다".
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/tools`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-22 3:X2-01 + 1:X3-02 — 저장 거절을 보이고, 종료할 때 빠른 캡처 초안을 지킨다
+
+**문제.**
+- 3:X2-01(D12): 노트·코드 저장이 거절되면(예: `documents.too_large`) 머리 표시가 "저장 중"으로 남는다(`app/src/features/notes/saveLabel.ts:32-37`). 이유 띠도 없다.
+- 1:X3-02: 숨긴 빠른 캡처 창의 초안은 앱을 끄면 사라진다(`app/src/features/capture/capture.ts`, `CaptureWindow.tsx`). 자료 손실이다.
+  - 종료 확인(`app/src/shell/NativeMainController.tsx:40-48`)은 에이전트 작업만 센다. 업데이트 설치의 종료 준비(`app/src-tauri/src/platform/update_install.rs`)도 캡처를 보지 않는다.
+
+**파일**
+- 수정: `saveLabel.ts`, `app/src/features/notes/NoteView.tsx`, `app/src/features/source/editor/CodeEditor.tsx`, `capture.ts`, `CaptureWindow.tsx`, `app/src-tauri/src/platform/capture.rs`, `app/src-tauri/src/platform/quit.rs`, `update_install.rs`, `NativeMainController.tsx`.
+- 시험: `app/src/features/notes/saveLabel.test.ts`, `app/src/shell/NativeMainController.test.tsx`, `update_install.rs` 시험 모듈.
+
+**동작**
+- D12: `saveLabel`은 `doc.error`가 있고 연결 끊김 오류가 아니면 "저장 실패"다. 노트와 코드 편집기에 이유 띠(`messageFor`)를 보인다.
+  - `ReadOnlyBar`의 [다시 시도](닫고 다시 열기)는 쓰지 않는다. 저장·재시도 정책은 그대로다.
+- 1:X3-02(1단계 CA r2): 캡처 창이 초안 있음·없음을 네이티브 `Capture` 상태에 알린다. 디스크에 저장하지 않는다.
+  - 사용자가 끌 때(트레이 → `devbox://quit`) 초안이 있으면 확인 창이 [캡처 열기]·[버리고 종료]를 묻는다.
+  - 업데이트 설치의 종료 준비는 초안이 있으면 `QuitRejected`로 멈춘다.
+- S8-5b-23이 같은 종료 확인 창에 이유를 더한다. 이 과제가 먼저다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `saveLabel.test.ts` — `Dirty`와 `error: "documents.too_large"`. 기대: "저장 실패".
+  - `NativeMainController.test.tsx` "캡처 초안이 있으면 종료를 묻고 quit_app을 부르지 않는다" — 기대: `devbox://quit` 뒤 창이 뜨고 `quit_app` 0회.
+  - `update_quit_is_rejected_while_a_capture_draft_exists`(`update_install.rs`) — 기대: `UpdateError::QuitRejected`.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/notes src/features/capture src/shell`, `app/src-tauri`의 종료·업데이트 시험이 PASS. Windows 전용 코드는 `Rust (Windows)` CI에서 돈다(S8-4b-10 선례).
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-23 1:X3-03 + SHOT-05 + 1:CB-02 — 서비스가 돌 때도 종료를 묻고, 터미널·재개 실패의 이유를 알린다
+
+**문제.**
+- 1:X3-03: 열린 에이전트 작업이 0개면 확인 없이 끈다(`NativeMainController.tsx:42-43`). 서비스만 돌 때도 WSL이 멈추며 함께 끝날 수 있다.
+- SHOT-05: 현재 프로젝트가 없을 때 [새 터미널]이 "터미널을 만들지 못했습니다. 다시 시도하세요"로만 끝난다.
+  - (코드 확인) 데몬은 프로젝트가 없으면 홈에서 연다(`crates/terminal/src/service.rs:189-193`). "홈에서 열기"는 이미 있다.
+  - 화면이 오류를 버린다(`app/src/features/terminal/TerminalCommands.tsx:39-40`, `TerminalPage.tsx:81-82`). 저장된 현재 프로젝트 id가 낡으면 `terminal.project_not_found`일 수 있다. 구현 전에 SHOT-05의 전제를 다시 본다.
+- 1:CB-02: Codex 재개의 영구 실패(`agents.session_metadata`)에 "잠시 뒤 상태를 다시 확인해 주세요."만 보인다(`app/src/rpc/agentMessages.ts:231-234`).
+
+**파일**
+- 수정: `NativeMainController.tsx`, `TerminalCommands.tsx`, `TerminalPage.tsx`, `agentMessages.ts`.
+- 시험: `NativeMainController.test.tsx`, `app/src/features/terminal/TerminalPage.test.tsx`, `app/src/rpc/messages.test.ts`.
+
+**동작**
+- 1:X3-03: 사용자가 끌 때(트레이 [종료] → `devbox://quit` → `requestQuit`)는 늘 확인 창을 연다.
+  - 문구: "에이전트 작업·서비스·터미널이 WSL과 함께 종료될 수 있습니다." 개수를 모르면 "실행 중인 작업을 확인하지 못했습니다."를 앞에 둔다.
+  - 업데이트 설치의 종료 경로는 이 창을 거치지 않는다(S8-5b-22의 `QuitRejected` 규칙만 따른다). 두 번 누름 막기는 그대로다.
+  - 서비스 수를 `runtime.summary`로 세는 것은 1.0.x다.
+- SHOT-05: 두 곳의 `catch`가 `messageFor(code, detail)`의 제목과 행동을 토스트에 보인다.
+- 1:CB-02: 행동을 "Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다. 작업 폴더와 파일은 그대로 있으니 [같은 지시로 새 작업]으로 다시 시작하세요."로 바꾼다. `codex resume`을 약속하지 않는다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `NativeMainController.test.tsx` "열린 작업이 0개여도 종료를 확인한다" — `openTasks: 0`, `snapshotCurrent: true`. 기대: 창이 뜨고 `quit_app` 0회. 0개면 바로 끄던 기존 시험은 고친다.
+  - "개수를 모르면 '확인하지 못했습니다' 창이 뜬다".
+  - `TerminalPage.test.tsx` "터미널을 만들지 못하면 오류의 이유를 보인다" — `terminal.create`가 `terminal.project_not_found`로 실패. 기대: 토스트에 그 코드의 문구.
+  - `resume_metadata_failure_explains_record_recovery`(`messages.test.ts`) — 기대: "잠시 뒤"가 없고 [같은 지시로 새 작업]이 있다.
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/shell src/features/terminal src/rpc`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-24 2:#6 — 검색을 현재 프로젝트나 전체로 좁힌다
+
+**문제.**
+- 통합 검색은 늘 모든 프로젝트를 찾는다(`app/src/features/search/SearchPage.tsx:16` `projectIds: null`).
+- 코드 결과에 프로젝트 이름이 없다(`SearchResults.tsx`, `CodePreview.tsx`).
+
+**파일**
+- 수정: `SearchPage.tsx`, `SearchResults.tsx`, `CodePreview.tsx`, `SavedSearches.tsx`(모두 `app/src/features/search/`), `docs/ui-terms.md`·`docs/guide.md`.
+- 시험: `app/src/features/search/SearchTab.test.tsx`.
+
+**동작**
+- 체크 칸 [현재 프로젝트만: <이름>]을 둔다. 기본은 켬이다. 켜면 `projectIds: [현재 id]`다.
+  - 현재 프로젝트가 없으면 칸이 없고 전체를 찾는다.
+- 노트는 vault 전체를 찾는다는 안내를 둔다. 노트는 프로젝트에 속하지 않는다.
+- 코드 결과마다 프로젝트 이름을 보인다.
+- 저장된 검색은 저장할 때의 범위를 따른다.
+
+**단계**
+- [ ] 1. 실패 시험을 쓴다.
+  - `SearchTab.test.tsx` "current project scope sends projectIds [current], keeps notes, and labels code hits with the project" — 기대: 요청의 `projectIds`가 `[현재 id]`, 노트 범위가 그대로, 코드 결과에 프로젝트 이름.
+  - "칸을 끄면 projectIds가 null이다".
+- [ ] 2. 시험이 실패하는 것을 본다.
+- [ ] 3. 구현한다.
+- [ ] 4. 확인한다: 위 시험과 `vitest run src/features/search`가 PASS.
+- [ ] 5. 검토 뒤 커밋한다.
+
+#### S8-5b-25 문서 — rc.3의 제한과 후속을 적는다
+
+**파일**
+- 수정: `README.md`, `docs/config.md`, `docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md`.
+- 저장소 밖: 태그 노트 초안(Git common-dir `devbox-verification/s8/sdd-10-s7-s8-release/rc3-tag-notes-draft.md`).
+
+**할 일**
+- [ ] 1. README 알려진 제한과 `docs/config.md` `[launch]`: Codex 에이전트에는 `worktree = true`가 필요하다(1:X2-01).
+  - 같은 자리에 적는다: Codex 안에서 `/resume`·`/new`로 대화를 바꾸면 완료 보고와 [재개]가 처음 대화에 묶인다(1:X2-02, Ruling 159).
+- [ ] 2. README 설치(rc.3, 1:CA-02): rc.2에서 올릴 때는 트레이에서 끄기 전에 Devbox가 쓰는 배포판의 WSL 셸을 Windows Terminal 등에서 하나 열어 둔다. 새 앱이 연결된 뒤 닫는다.
+- [ ] 3. PROGRESS(200줄을 넘기지 않는다):
+  - §1: S8-4b 기록(16–20줄)을 짧게 줄이고, 이 브랜치와 S8-5b 줄을 쓴다.
+  - §2 ②와 §3 2행: 2026-11-08 직접 시험(사용자 승인으로 폴더 신뢰 수락, H1·H2 (a)(d) PASS, (b)(c) FAIL → H-01·H-02)에 맞게 고친다.
+  - §4 1.0.x 후속: 단계마다 한 줄, 158줄처럼 ID와 짧은 이름만 적는다.
+    - 1단계: X1-01 · X2-01(코드) · X1-03 · X2-04 · X3-04 · X3-05 · CB-05–CB-09 · X2-02(코드, Ruling 159).
+    - 2단계: X3-01 · X3-02 · X3-04 · X1-03 · X1-04 · 병합 기준 체크아웃 사전 검사 · 충돌 중 재개 · 나머지 38건(`known/w2-report.md`).
+    - 3단계: X1-05 · X3-03 · X3-05 · X2-04 · CB-07(Ruling 158) · [출력 색상 끄기] · 표 행 강조 · 활동 막대 세로 표시 · 나머지 35건(`known/w3-report.md`).
+    - S8-5b-5에서 바꾸지 않은 opencode·pi의 재개 뒤 상태.
+  - §4 harness·실기: harness D11–D15(D11 claude 블록 `main()`이 신뢰 화면을 한 번만 찍음 — `trust_row`처럼 기다려야 함, D12 초안·Escape를 입력창 확인 없이 보냄, D13 P1 사유 문장이 원인을 가르지 않음, D14 입력·`C-u` 직후 4ms 캡처, D15 셸 모드를 끄지 않음; 실행 기록 `devbox-verification/s8/harness-1.0.0/wsl-fresh/triage-run-70b1b4f6-*.md`). claude NOT_RUN 행 H1X-HELP·P1·SN2(부분)과 환경 NOT_RUN CL3·P1X(Ruling 157).
+  - §6: 근거 위치 `devbox-verification/s8/rc3-review/`를 더한다.
+- [ ] 4. 태그 노트 초안: rc.2 이후 바뀐 것, 알려진 제한과 NOT_RUN, RC는 손으로 설치한다(앱 업데이트 꺼짐).
+- [ ] 5. 링크 검사와 Biome을 돌린다. 검토 뒤 커밋한다.
+
+#### S8-5b-26 버전 `1.0.0-rc.3`
+
+**문제.** rc 태그는 manifest 버전과 같아야 한다. `scripts/release.py` preflight가 `app/package.json`·`app/src-tauri/tauri.conf.json`의 버전을 태그와 비교한다.
+
+**파일**(버전 선례 `a6f75a68`, rc 선례 `28eb2a91`)
+- 수정: `Cargo.toml:7`, `app/package.json:4`, `app/src-tauri/Cargo.toml:3`, `app/src-tauri/tauri.conf.json:4`, `Cargo.lock`, `app/src-tauri/Cargo.lock`, `THIRD_PARTY_NOTICES.md`(고지 입력 지문).
+- (코드 확인) `28eb2a91`의 `scripts/release.py`·`scripts/tests/test_release.py` 변경은 rc 태그 지원이었고 이미 있다. 그 시험은 `1.2.3`·`1.2.3-rc.1` 같은 고정 값을 써서 바꿀 것이 없다. `.github`+`scripts` 줄 수는 그대로다.
+- 시험 속 `1.0.0`(예: `app/src-tauri/src/core/update/service_tests.rs`의 `Service::new(…, "1.0.0", …)`)은 입력 값이다. 바꾸지 않는다.
+
+**단계**
+- [ ] 1. 네 manifest를 `1.0.0-rc.3`으로 바꾼다.
+- [ ] 2. 두 manifest에 `cargo update --workspace --offline`을 돌린다. `pnpm install --frozen-lockfile --offline`이 통과한다.
+- [ ] 3. 같은 커밋에서 `cargo run -p xtask -- notices`를 돌리고 `cargo test -p xtask notices`가 PASS다.
+- [ ] 4. 실행 경로에 옛 제품 버전 `1.0.0` 문자열이 manifest 밖에 0건이다.
+- [ ] 5. `scripts/tests/test_release.py`가 PASS다.
+- [ ] 6. 검토 뒤 커밋한다.
+
+#### S8-5b-27 브랜치 전체 검토·전체 검사
+
+- [ ] 1. 다른 에이전트가 `70b1b4f6..HEAD` 전체를 검토한다. 과제별 검토로 대신하지 않는다. 결과는 SDD 폴더(`devbox-verification/s8/sdd-10-s7-s8-release/`)에 남긴다.
+- [ ] 2. 고칠 것이 있으면 과제와 같은 방식(실패 시험 → 구현 → 검토 → 커밋)으로 고친다.
+- [ ] 3. `pnpm check`를 한 번 돌린다(clippy·build·E2E 포함, `--wait`). 새 Playwright 시험(S8-5b-8·9)이 여기서 전체와 함께 돈다.
+- [ ] 4. CI가 돌리지 않는 ignored 시험 가운데 이 PR이 닿는 것(비밀 가림, S8-4b-12 선례)을 한 번 돌린다. 통과할 수 없는 T1b 4개(PROGRESS §4)는 NOT_RUN 그대로다.
+- [ ] 5. Biome CI를 돌린다.
+- [ ] 6. 태그 노트 초안에 이 PR의 수정과 새 알려진 제한을 더한다.
+
+#### S8-5b-28 push·`windows.yml`·PR·리뷰·머지
+
+- S8-4b-13과 같다:
+  - 최종 소스 SHA를 push한다.
+  - 그 SHA의 브랜치에서 `windows.yml`을 수동으로 실행하고 산출물을 대조한다(receipt version `1.0.0-rc.3`·sha256·source_sha·N1 `-Verify`).
+- 실제 도구 확인(H-01·H-02)은 머지 뒤 S8-5b-28b에서 한다(Ruling 163). PR 본문에는 "머지 뒤 main SHA로 확인하고 결과를 태그 노트에 적는다"고 쓴다.
+- Windows accept 설치 스모크는 NOT_RUN이다(Ruling 160). S8-5에서 최종 후보로 한다. PR 본문과 PROGRESS에 이유를 적는다(CONVENTIONS §5의 accept 수용 예외).
+- PR을 한 번 연다. 본문: 범위·사용자 결정·Ruling 157–163, 과제 커밋, 검사 결과, 실제 확인 계획(S8-5b-28b), NOT_RUN 이유, 리뷰 상태.
+- CONVENTIONS §8의 자동 리뷰 판정을 따른다.
+  - 10분 안에 요약 댓글(한도 안내 제외)이 오면 켜짐이다. 최대 3회 반영하고, 4회째부터는 실제 데이터 손실·비밀 유출·승인하지 않은 실행만 고친다.
+  - 아니면 꺼짐이다. 독립 코드·보안 검토를 한 번 한다.
+- 필수 CI 3개(`Frontend (pnpm)`·`Rust (Cargo workspace)`·`Rust (Windows)`)가 통과한 뒤 squash 머지한다. Ruling 144는 여기서 끝난다.
+- 머지 뒤: main CI를 본다. 원래 checkout에서 `git pull --ff-only`를 한다. 검증한 tree와 머지 tree를 대조한다.
+
+#### S8-5b-28b 머지 뒤 실제 확인 — H-01·H-02(Ruling 163)
+
+- [ ] 1. main의 squash SHA로 `windows.yml`을 수동 실행한다(`workflow_dispatch`, branch `main`). 산출물을 Git common-dir `devbox-verification/s7/windows-run-1.0.0-rc.3-<sha 앞 8자리>/artifacts`에 받는다. `artifact_check`·`receipt_check`(SDD `tools/`)가 PASS다(version `1.0.0-rc.3`, source_sha, run id).
+- [ ] 2. harness는 2026-11-08 직접 시험 판을 그대로 쓴다(Git common-dir `devbox-verification/s7/harness/`). 먼저 파일 해시가 `runs/70b1b4f6-a1667181/review-approval-used.json`의 `helperSha256`과 같은지 본다. 2026-10-26 보관본은 다시 풀지 않는다(D7·D8·D10 수정이 없다).
+- [ ] 3. harness 수정은 하나다: `evidence.py:15` `ARTIFACT_DIRS['candidate']`를 1의 폴더로 바꾸고, 옆 주석(`:13`)을 새 후보로 고친다.
+  - 순서: 구현 → 별도 검토 → `validate.py --worktree <후보 worktree> --source-sha <squash SHA> --powershell-parse --write-manifest`(잠금 안) → 검토자가 `review-approval.json`을 쓴다(README §2.3, binding cases `H1X-TRUST,H1,H2X-TRUST,H2`).
+  - 후보 worktree는 squash SHA에 detached·clean이어야 한다(`driver.py:1015`). `/home/jihoon/projects/devbox-wt/v1-s8-5`를 그 SHA로 옮겨 쓴다.
+- [ ] 4. `wsl-fresh` 행 `H1X-TRUST,H1,H2X-TRUST,H2`를 `--lock windows-acceptance` 안에서 돌린다. 폴더 신뢰 수락은 Ruling 162 범위다.
+- [ ] 5. 판정한다(triage 파일을 `devbox-verification/s8/harness-1.0.0/wsl-fresh/`에 둔다).
+  - H1(b)·H2(b): H-02다. 재개 뒤 같은 세션으로 시간 안에 `idle`.
+  - H1(c)·H2(c): H-01이다. `agents.list` 항목 합계 = `agents.usage` 합계.
+  - (a)·(d)와 신뢰 행은 지금처럼 본다.
+  - 시험 도구 탓의 실패(harness D 계열)는 제품 FAIL로 세지 않고 NOT_RUN(harness)으로 적는다.
+- [ ] 6. 결과를 태그 노트에 그대로 적는다. FAIL이면 그 결함을 알려진 제한으로 적고, README·PROGRESS 고침은 S8-5 0의 PR로 넘긴다. 돌리지 못하면 NOT_RUN이고 PASS로 쓰지 않는다.
+- 운영 쪽(prod)이 바뀌지 않았고(`prodUnchanged`) 남은 자원이 없는지 driver 결과로 확인한다. VMBus 채널 수를 실행 앞뒤로 적는다.
+
+#### S8-5b-29 `v1.0.0-rc.3` 태그·prerelease
+
+- 태그 push와 prerelease는 rc.3에 한해 사용자 결정(2026-11-08)으로 승인됐다. 공식 `v1.0.0` 승인이 아니다.
+- [ ] 1. 태그 노트 파일을 확정한다(rc.2 이후 바뀐 것, 알려진 제한·NOT_RUN, RC는 손으로 설치한다).
+- [ ] 2. `git tag -a v1.0.0-rc.3 <squash SHA> -F <노트 파일>`, `git push origin v1.0.0-rc.3`. 태그 SHA는 S8-5b-28b에서 확인한 squash SHA다.
+- [ ] 3. release run이 40분 안에 SUCCESS이고 prerelease로 올라갔는지 본다.
+- [ ] 4. asset SHA-256을 세 곳에서 대조한다(S7-16 선례).
+- [ ] 5. `gh api repos/jihoon22-lee/devbox/releases/latest`가 여전히 `v0.9.0`이다.
+- [ ] 6. 인계: 결과는 SDD 원장에 남긴다. PROGRESS에는 다음 PR(S8-5 0의 버전 되돌림 PR)에서 옮긴다(Ruling 91 선례). 사용자는 prod rc.3을 직접 설치해 써 본다. S7-14 사용자 행(5–12)은 그대로 사용자 몫이다.
+
+#### S8-5b-30 정리와 S8-6에 넘길 것
+
+- [ ] 1. `fix/v1-rc3`를 정리한다: clean·merged 확인 → worktree remove → prune → 로컬 브랜치 → 원격 브랜치.
+- [ ] 2. 소유한 harness 임시 폴더(`/tmp/devbox-s7-acceptance-<난수>/`)만 지운다. 공유 cache·사용자 자료·보관은 그대로 둔다.
+- [ ] 3. S8-5·S8-6에 넘길 것을 SDD 원장에 적는다: rc.3 공개 결과, 실제 확인 결과, 버전 되돌림 PR, accept 설치 스모크·I1 W1·S8-4b-10 확인, Ruling 157의 claude 행.
+
 ### S8-5 1.0.0 공개 — 별도 승인
 
+- [ ] 0. 후보와 버전(S8-5b 뒤, 2026-11-08).
+  - 코드 후보는 S8-5b PR의 squash SHA다. 그 manifest 버전은 `1.0.0-rc.3`이다.
+  - 그래서 먼저 버전만 `1.0.0`으로 되돌리는 PR을 연다(`release/1.0.0`, #649 선례). 바꾸는 파일은 S8-5b-26과 같다: 네 manifest, 두 lock, 고지 지문(`cargo run -p xtask -- notices`).
+  - 같은 PR에 rc.3 공개 결과 기록(S8-5b-29)을 문서로만 더한다. 제품 코드는 버전 말고 바뀌지 않는다.
+  - S8-5의 Windows 확인과 태그는 그 PR의 squash SHA로 한다. S8-3의 "(S8-4b squash SHA로)"도 이 SHA로 읽는다.
+  - 그 SHA에서 할 것: interop 한 번 확인(반복 감시 없음), accept 설치 스모크(첫 화면·버전 표시 1.0.0·H1 하나·N1), I1 W1, S8-4b-10 업데이트 중 WSL 유지, H-01 화면 확인(열린 작업 행에 마지막 턴까지의 토큰 합계가 보인다), Ruling 157의 claude 행(도움말·승인 화면), PROGRESS §3의 S8-5b Windows 행(빠른 캡처·종료·화면).
 - [ ] 1. 사용자에게 제시한다: 공개 준비 결과, SC1–10, 13개 확인 결과, I1, 릴리스 노트. 그리고 **v1.0.0 공개 승인**을 묻는다. 사용자는 목록을 모두 직접 실행하지 않고도 승인할 수 있다(07c).
 - [ ] 2. 승인 뒤에만 아래를 한다.
-  1. main SHA에 주석 태그 `v1.0.0`을 만들고 push한다.
+  1. main SHA(위 0의 버전 되돌림 squash SHA)에 주석 태그 `v1.0.0`을 만들고 push한다.
   2. release run이 40분 안에 SUCCESS인지 본다.
   3. asset SHA-256을 확인한다.
   4. `gh api repos/jihoon22-lee/devbox/releases/latest`가 `v1.0.0`인지 확인한다.
-- [ ] 3. 사용자가 prod rc.2 위에 1.0.0을 직접 설치한다.
+- [ ] 3. 사용자가 prod rc.3 위에 1.0.0을 직접 설치한다.
   - 설정 → 정보 → 앱 업데이트 [새 버전 확인]이 "최신 버전"을 보이는지 확인한다. stable 경로의 첫 실제 실행이다(PROGRESS §4 ci-docs M2).
   - 공개 버전 사이의 실제 업데이트는 다음 patch 때까지 NOT_RUN이다.
 

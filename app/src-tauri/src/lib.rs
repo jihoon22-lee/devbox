@@ -87,6 +87,9 @@ pub fn run() {
             platform::activity::activity_ack,
             platform::capture::capture_hide,
             platform::capture::capture_ready,
+            platform::capture::capture_draft,
+            platform::capture::capture_has_draft,
+            platform::capture::capture_open,
             platform::paint_trace::palette_painted,
             platform::paint_trace::first_data_painted,
             platform::activity::activity_tray,
@@ -153,6 +156,12 @@ pub fn run() {
                 platform::quit::destroyed(window.app_handle(), window.label());
                 if window.label() == "main" {
                     platform::intents::disconnect(window.app_handle());
+                }
+                if window.label() == platform::capture::LABEL {
+                    window
+                        .app_handle()
+                        .state::<platform::capture::Capture>()
+                        .clear_draft();
                 }
                 window
                     .app_handle()

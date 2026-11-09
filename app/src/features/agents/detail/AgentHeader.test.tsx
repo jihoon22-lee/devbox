@@ -1,9 +1,49 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { METHOD_INFO } from "../../../rpc/gen/rpc";
 import { RpcProvider } from "../../../rpc/RpcProvider";
 import { ProjectWire } from "../../projects/test-wire";
 import { task } from "../test-fixtures";
+import { useAgentsUi } from "../ui";
 import { AgentHeader } from "./AgentHeader";
+
+test.each(["running", "idle", "closed"] as const)(
+  "[같은 지시로 새 작업] on a %s task opens the new task form with only its first prompt and project",
+  async (state) => {
+    useAgentsUi.getState().setCreating(false);
+    const wire = new ProjectWire();
+    render(
+      <RpcProvider client={wire.client}>
+        <AgentHeader
+          task={{
+            ...task("a", state, 1000),
+            projectId: "b",
+            prompt: "원래 지시",
+            followUps: [{ atMs: 2000, text: "이어서 보낸 지시", delivery: "delivered" }],
+          }}
+          projectName="family"
+          toolName="Codex"
+          now={999999}
+        />
+      </RpcProvider>,
+    );
+    try {
+      await userEvent.click(screen.getByRole("button", { name: "같은 지시로 새 작업" }));
+      // Title, base branch and work folder keep the form's own defaults; nothing is started from here.
+      expect(useAgentsUi.getState()).toMatchObject({ creating: true, draft: { prompt: "원래 지시", projectId: "b" } });
+      expect(Object.keys(useAgentsUi.getState().draft ?? {}).sort()).toEqual(["projectId", "prompt"]);
+      expect(
+        wire.sent.filter(
+          (message) =>
+            typeof message.method === "string" &&
+            METHOD_INFO[message.method as keyof typeof METHOD_INFO]?.kind === "mutation",
+        ),
+      ).toEqual([]);
+    } finally {
+      useAgentsUi.getState().setCreating(false);
+    }
+  },
+);
 
 test("header shows raw overlapping token counters, fixed closed age and cleanup diagnostics", async () => {
   const wire = new ProjectWire();

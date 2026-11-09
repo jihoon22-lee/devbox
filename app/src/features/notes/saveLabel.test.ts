@@ -33,6 +33,15 @@ test("a clean note while offline is still saved; states shown elsewhere have no 
   expect(saveLabel(doc({ state: "Loading" }), true)).toBeNull();
 });
 
+test("a save the daemon refused says so instead of saving, unless the connection explains it", () => {
+  const refused = { state: "Dirty", editSeq: 2, savedSeq: 1, error: "documents.too_large" } as const;
+  expect(saveLabel(doc(refused), true)).toBe("저장 실패");
+  expect(saveLabel(doc({ ...refused, policy: { kind: "code" } }), true)).toBe("저장 실패");
+  expect(saveLabel(doc(refused), false)).toBe("연결 끊김 · 이 기기에 임시 저장");
+  expect(saveLabel(doc({ ...refused, retry: true }), true)).toBe("연결 끊김 · 이 기기에 임시 저장");
+  expect(saveLabel(doc({ ...refused, error: "internal" }), true)).toBe("연결 끊김 · 이 기기에 임시 저장");
+});
+
 test("manual code buffers say unsaved until a save starts", () => {
   expect(saveLabel(doc({ policy: { kind: "code" }, state: "Dirty", editSeq: 1 }), true)).toBe("저장하지 않음 · Ctrl+S");
   expect(saveLabel(doc({ policy: { kind: "code" }, state: "Saving", editSeq: 1 }), true)).toBe("저장 중");

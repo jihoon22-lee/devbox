@@ -2,11 +2,12 @@ import type { ReactNode } from "react";
 import { messageFor } from "../../rpc/messages";
 import { useFirstDataPaint } from "../../shell/paintTrace";
 import { Button, EmptyState, ErrorState } from "../../ui";
-import { AddProjectAction, useNoRegisteredProjects } from "../projects/AddProjectAction";
+import { useNoRegisteredProjects } from "../projects/AddProjectAction";
 import { useProjectData } from "../projects/ProjectData";
 import { AgentRow } from "./AgentRow";
 import s from "./Agents.module.css";
 import type { useAgentsData } from "./hooks";
+import { toolLabel } from "./model";
 export function AgentList({
   data,
   selected,
@@ -48,11 +49,13 @@ export function AgentList({
           {messageFor(metricsError.code, metricsError.detail).title} 자원과 변경 정보는 다시 확인됩니다.
         </p>
       )}
+      {/* [프로젝트 추가] and [새 작업] are the body's action (AgentEmpty), so a collapsed list does not hide them. */}
       {data.list.data && !error && data.groups.length === 0 && (
         <EmptyState
-          title={noProjects ? "등록된 프로젝트가 없습니다" : "에이전트 작업이 없습니다"}
-          body="새 작업으로 도구와 지시문을 선택하세요."
-          action={noProjects ? <AddProjectAction /> : undefined}
+          title="에이전트 작업이 없습니다"
+          body={
+            noProjects ? "프로젝트를 추가한 뒤 새 작업을 만들 수 있습니다." : "새 작업으로 도구와 지시문을 선택하세요."
+          }
         />
       )}
       {data.groups.map((group) => (
@@ -67,6 +70,7 @@ export function AgentList({
               selected={task.id === selected}
               now={data.now}
               projectName={names.get(task.projectId) ?? "프로젝트를 찾을 수 없음"}
+              toolName={toolLabel(data.profiles.data?.items, task.profile)}
               stats={data.stats.get(task.id)}
               resources={data.resources.get(task.id)}
               onSelect={onSelect}

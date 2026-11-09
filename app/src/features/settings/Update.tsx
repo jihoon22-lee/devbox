@@ -15,7 +15,8 @@ const messages: Record<UpdateIssue, string> = {
   staleOperation: "업데이트 작업이 바뀌었습니다. 현재 상태를 다시 불러오세요.",
   nativeActive: "앱에서 실행한 Windows 작업 때문에 설치할 수 없습니다. 작업이 끝나거나 직접 중지한 뒤 다시 시도하세요.",
   nativeUnknown: "Windows 작업 상태를 확인하지 못해 설치할 수 없습니다. 실행 상태를 확인한 뒤 다시 시도하세요.",
-  quitRejected: "열린 창의 저장 준비가 끝나지 않아 설치를 취소했습니다. 문서 상태를 확인하고 다시 시도하세요.",
+  quitRejected:
+    "열린 창의 저장 준비가 끝나지 않았거나 빠른 캡처에 저장하지 않은 초안이 있어 설치를 취소했습니다. 문서와 빠른 캡처를 확인하고 다시 시도하세요.",
   runner: "업데이트 설치 준비에 실패했습니다. 앱 상태를 확인한 뒤 다시 시도하세요.",
   installFailed: "업데이트 설치에 실패했습니다. 현재 앱 버전과 업데이트 정보를 다시 확인하세요.",
   relaunchFailed: "업데이트 뒤 앱을 다시 열지 못했습니다. 시작 메뉴에서 Devbox를 열어 설치 상태를 확인하세요.",
@@ -145,22 +146,34 @@ export function Update() {
 export function UpdateStatus() {
   const { native, snapshot, issue } = useNativeUpdate();
   if (!native || (!snapshot && !issue)) return null;
+  const label = issue
+    ? "업데이트 조회 실패"
+    : snapshot?.phase === "installing" || (snapshot?.enabled && snapshot.phase !== "idle")
+      ? snapshot.error === "recoveryRequired"
+        ? "업데이트 설치 상태 확인 필요"
+        : snapshot.error === "runner"
+          ? "업데이트 준비 상태 확인 중"
+          : phaseLabel(snapshot)
+      : `앱 ${snapshot?.currentVersion}`;
+  // A long phase sentence shortens with an ellipsis (whole in the title) before the daemon version beside it.
   return (
     <button
       type="button"
       aria-label="앱 업데이트 정보"
+      title={label}
       onClick={() => openSettings("about")}
-      style={{ background: "transparent", border: 0, cursor: "pointer", color: "inherit" }}
+      style={{
+        background: "transparent",
+        border: 0,
+        cursor: "pointer",
+        color: "inherit",
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
     >
-      {issue
-        ? "업데이트 조회 실패"
-        : snapshot?.phase === "installing" || (snapshot?.enabled && snapshot.phase !== "idle")
-          ? snapshot.error === "recoveryRequired"
-            ? "업데이트 설치 상태 확인 필요"
-            : snapshot.error === "runner"
-              ? "업데이트 준비 상태 확인 중"
-              : phaseLabel(snapshot)
-          : `앱 ${snapshot?.currentVersion}`}
+      {label}
     </button>
   );
 }

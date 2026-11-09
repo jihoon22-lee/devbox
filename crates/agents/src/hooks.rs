@@ -159,6 +159,21 @@ pub(crate) fn claude_event(payload: &str) -> Option<String> {
         .map(|event| event.hook_event_name)
 }
 
+/// How Claude's `SessionStart` says the session began: "startup", "resume", "clear" or "compact".
+/// Only the event name and the source are read; the rest of the payload is skipped without being
+/// built.
+pub(crate) fn claude_session_source(payload: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Start {
+        hook_event_name: String,
+        source: Option<String>,
+    }
+    let start = serde_json::from_str::<Start>(payload).ok()?;
+    (start.hook_event_name == "SessionStart")
+        .then_some(start.source)
+        .flatten()
+}
+
 /// Claude sends one of these for every tool call that ends.
 pub(crate) fn ends_tool_call(event: &str) -> bool {
     matches!(
@@ -291,6 +306,35 @@ mod tests {
                 None
             )
             .is_empty()
+        );
+    }
+    #[test]
+    fn claude_session_start_source_is_read_without_the_rest() {
+        let source = |payload: &str| claude_session_source(payload);
+        assert_eq!(
+            source(r#"{"hook_event_name":"SessionStart","session_id":"s1","source":"resume"}"#)
+                .as_deref(),
+            Some("resume")
+        );
+        assert_eq!(
+            source(r#"{"hook_event_name":"SessionStart","session_id":"s1","source":"startup"}"#)
+                .as_deref(),
+            Some("startup")
+        );
+        assert_eq!(
+            source(r#"{"hook_event_name":"SessionStart","session_id":"s1"}"#),
+            None
+        );
+        // The other fields of the payload are not read, whatever they hold.
+        assert_eq!(
+            source(r#"{"session_id":7,"transcript_path":["/owned"],"cwd":{"owned":true},"hook_event_name":"SessionStart","source":"resume"}"#)
+                .as_deref(),
+            Some("resume")
+        );
+        // Only SessionStart says how the session began.
+        assert_eq!(
+            source(r#"{"hook_event_name":"UserPromptSubmit","session_id":"s1","source":"resume"}"#),
+            None
         );
     }
     #[test]

@@ -1,9 +1,11 @@
 import type { Methods } from "../../../rpc/gen/rpc";
 import { useRpcQuery } from "../../../rpc/query";
-import { Button, StatusDot } from "../../../ui";
+import { Button } from "../../../ui";
+import { AgentStateMark } from "../AgentStateMark";
 import type { AgentTask } from "../model";
-import { failureLabel, STATE_LABEL } from "../model";
+import { attentionNote, failureLabel } from "../model";
 import { TokenMetrics } from "../TokenMetrics";
+import { useAgentsUi } from "../ui";
 import { CleanupNotice } from "./CleanupNotice";
 import s from "./Detail.module.css";
 import { openAgentPr } from "./links";
@@ -14,6 +16,7 @@ export function AgentHeader({
   now,
   resource,
   behind,
+  popout = false,
 }: {
   task: AgentTask;
   projectName: string;
@@ -21,26 +24,31 @@ export function AgentHeader({
   now: number;
   resource?: Methods["agents.resources"]["result"]["items"][number];
   behind?: number;
+  /** Shown in a popout window, where [같은 지시로 새 작업] is left out. */
+  popout?: boolean;
 }) {
   const usage = useRpcQuery("agents.usage", { id: task.id });
   const seconds = Math.max(0, Math.floor(((task.closedMs ?? now) - task.createdMs) / 1000));
-  const tone =
-    task.state === "failed"
-      ? "danger"
-      : task.state === "waiting"
-        ? "warn"
-        : task.state === "running" || task.state === "preparing"
-          ? "progress"
-          : task.state === "review"
-            ? "ok"
-            : "idle";
   const tokens = usage.data ? usage.data.tokens : task.tokens;
+  const note = attentionNote(task);
   return (
     <header className={s.header}>
-      <h1>{task.title}</h1>
+      <div className={s.heading}>
+        <h1>{task.title}</h1>
+        {/* Open or closed: only fills the new task form with the first prompt and the project. [시작] starts it.
+            Not in a popout: the form opens the new task in the window it started from, which would turn the
+            popout into the agents page. */}
+        {!popout && (
+          <Button
+            size="sm"
+            onClick={() => useAgentsUi.getState().setCreating(true, { prompt: task.prompt, projectId: task.projectId })}
+          >
+            같은 지시로 새 작업
+          </Button>
+        )}
+      </div>
       <div className={s.metrics}>
-        <StatusDot tone={tone} label={STATE_LABEL[task.state]} />
-        <span>{STATE_LABEL[task.state]}</span>
+        <AgentStateMark state={task.state} />
         <span>{projectName}</span>
         <span>{task.branch ?? task.baseBranch}</span>
         <span>{toolName}</span>
@@ -58,7 +66,7 @@ export function AgentHeader({
       </div>
       {usage.error && <p role="status">토큰 기록을 다시 확인하지 못했습니다.</p>}
       {task.state === "failed" && <p role="alert">{failureLabel(task.reason)}</p>}
-      {task.attention?.message && <p>{task.attention.message}</p>}
+      {note && <p>{note}</p>}
       {task.state === "closed" && (
         <p>
           닫힘 · {task.closedHow === "merged" ? "병합됨" : task.closedHow === "pullRequest" ? "PR" : "폐기"} ·{" "}

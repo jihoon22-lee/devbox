@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
+import { restoreUiScale, setUiScale } from "../features/settings/preferences";
+import dialogStyles from "./Dialog.module.css";
 import {
   Banner,
   Button,
@@ -124,6 +129,94 @@ test.each(["button", "escape", "backdrop"])(
     await waitFor(() => expect(trigger).toHaveFocus());
   },
 );
+
+test("Dialog 바닥줄과 제목은 스크롤 본문 밖에 있다", () => {
+  render(
+    <Dialog
+      open
+      onOpenChange={() => {}}
+      title="프로젝트 명령 실행 승인"
+      description="명령을 확인하세요"
+      footer={<Button>취소</Button>}
+    >
+      <p>실행할 명령</p>
+    </Dialog>,
+  );
+  const body = document.querySelector("[data-dialog-body]");
+  expect(body).not.toBeNull();
+  expect(body).not.toContainElement(screen.getByRole("button", { name: "취소" }));
+  expect(body).not.toContainElement(screen.getByRole("heading", { name: "프로젝트 명령 실행 승인" }));
+  expect(body).toContainElement(screen.getByText("명령을 확인하세요"));
+  expect(body).toContainElement(screen.getByText("실행할 명령"));
+  expect(screen.getByRole("dialog")).toContainElement(screen.getByRole("button", { name: "취소" }));
+});
+
+test("setUiScale(1.5)는 --ui-zoom을 1.5로 둔다", () => {
+  const root = document.documentElement;
+  try {
+    setUiScale(1.5);
+    expect(root.style.zoom).toBe("1.5");
+    expect(root.style.getPropertyValue("--ui-zoom")).toBe("1.5");
+  } finally {
+    root.style.zoom = "";
+    root.style.removeProperty("--ui-zoom");
+    localStorage.removeItem("devbox.uiScale");
+  }
+});
+
+test("restoreUiScale은 저장된 배율로 --ui-zoom을 둔다", () => {
+  const root = document.documentElement;
+  try {
+    localStorage.setItem("devbox.uiScale", "1.25");
+    restoreUiScale();
+    expect(root.style.zoom).toBe("1.25");
+    expect(root.style.getPropertyValue("--ui-zoom")).toBe("1.25");
+  } finally {
+    root.style.zoom = "";
+    root.style.removeProperty("--ui-zoom");
+    localStorage.removeItem("devbox.uiScale");
+  }
+});
+
+test("ConfirmDialog는 스크롤 없이 취소에 포커스를 준다", () => {
+  const focus = vi.spyOn(HTMLElement.prototype, "focus");
+  render(
+    <ConfirmDialog
+      open
+      title="프로젝트 제거"
+      body="목록에서만 지웁니다"
+      confirmLabel="프로젝트 제거"
+      onConfirm={() => {}}
+      onCancel={() => {}}
+    />,
+  );
+  const cancel = screen.getByRole("button", { name: "취소" });
+  expect(cancel).toHaveFocus();
+  // Radix calls focus({ preventScroll: true }) itself, so only calls on [취소] count.
+  expect(focus.mock.calls.filter((_, index) => focus.mock.contexts[index] === cancel)).toEqual([
+    [{ preventScroll: true }],
+  ]);
+});
+
+test("ConfirmDialog 본문의 줄바꿈은 설명에서 줄로 남는다", () => {
+  render(
+    <ConfirmDialog
+      open
+      title="PR 만들기"
+      body={"기준 main · 브랜치 fix\nPR 제목: 고침"}
+      confirmLabel="PR 만들기"
+      tone="primary"
+      onConfirm={() => {}}
+      onCancel={() => {}}
+    />,
+  );
+  const description = document.getElementById(screen.getByRole("dialog").getAttribute("aria-describedby") ?? "");
+  expect(description?.textContent).toBe("기준 main · 브랜치 fix\nPR 제목: 고침");
+  expect(description).toHaveClass(dialogStyles.description as string);
+  // Vitest does not load CSS here, so check the rule the class carries in the source.
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "Dialog.module.css"), "utf8");
+  expect(css).toMatch(/\.description\s*\{[^}]*white-space:\s*pre-line;/);
+});
 
 test("confirm invokes only the named action", async () => {
   const user = userEvent.setup();

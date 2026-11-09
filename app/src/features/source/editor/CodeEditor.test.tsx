@@ -38,6 +38,26 @@ test("the source editor uses the code document policy and Ctrl+S writes its buff
   });
   expect(daemon.of("documents.save")).toEqual([expect.objectContaining({ text: "const a = 2;\n" })]);
 });
+test("a save the daemon refuses says 저장 실패 and why, and the edit stays in the editor", async () => {
+  daemon.failing.set("documents.save", "documents.too_large");
+  render(<CodeEditor docKey={key} />);
+  const input = await screen.findByRole("textbox", { name: "코드 편집기" });
+  await waitFor(() => expect(input).toHaveAttribute("contenteditable", "true"));
+  const view = EditorView.findFromDOM(input)!;
+  act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "const a = 2;\n" } }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  await act(async () => {
+    fireEvent.keyDown(input, { key: "s", code: "KeyS", ctrlKey: true });
+    await useDocuments.getState().settled();
+  });
+  expect(daemon.count("documents.save")).toBe(1);
+  expect(screen.getByRole("status", { name: "저장 상태" })).toHaveTextContent("저장 실패");
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "문서가 허용 크기를 넘었습니다. 내용을 줄인 뒤 다시 시도해 주세요.",
+  );
+  expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+  expect(view.state.doc.toString()).toBe("const a = 2;\n");
+});
 test("Ctrl+H and Ctrl+G open editor-local replace and line panels", async () => {
   render(<CodeEditor docKey={key} />);
   const input = await screen.findByRole("textbox", { name: "코드 편집기" });

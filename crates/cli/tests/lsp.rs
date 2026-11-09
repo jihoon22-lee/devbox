@@ -98,9 +98,9 @@ async fn lsp_rpc_relay_uses_document_authority_and_replaces_problem_diagnostics(
     let owner = open(&a, &id).await;
     let reader = open(&b, &id).await;
     let uri = devbox_lsp::uri::file_uri(&root.join(file)).expect("URI");
-    for (stream, lease) in [(&owner, Some(lease.as_str())), (&reader, None)] {
-        send(stream,json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"languageId":"rust","version":1,"text":"fn main() {}"}}}),lease).await;
-    }
+    // The owner opens first: a reader-first open makes the relay sync the server with a didChange
+    // whose diagnostics would race the replies.
+    send(&owner,json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"languageId":"rust","version":1,"text":"fn main() {}"}}}),Some(&lease)).await;
     send(
         &owner,
         json!({"jsonrpc":"2.0","id":2,"method":"test/state"}),
@@ -108,8 +108,16 @@ async fn lsp_rpc_relay_uses_document_authority_and_replaces_problem_diagnostics(
     )
     .await;
     assert_eq!(response(&owner).await["result"]["opens"], 1);
+    send(&reader,json!({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":uri,"languageId":"rust","version":1,"text":"fn main() {}"}}}),None).await;
     send(&reader,json!({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":uri,"version":2},"contentChanges":[{"text":"not owner"}]}}),None).await;
     assert!(reader.wait_end(Duration::from_secs(3)).await);
+    send(
+        &owner,
+        json!({"jsonrpc":"2.0","id":3,"method":"test/state"}),
+        None,
+    )
+    .await;
+    assert_eq!(response(&owner).await["result"]["opens"], 1);
     send(&owner,json!({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":uri,"version":2},"contentChanges":[{"text":"fn broken()"}]}}),Some(&lease)).await;
     assert_eq!(
         response(&owner).await["method"],

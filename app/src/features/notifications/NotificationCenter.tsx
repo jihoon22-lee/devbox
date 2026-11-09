@@ -72,7 +72,10 @@ export function NotificationCenter() {
                     });
                 }}
               >
-                <strong>{item.title}</strong>
+                <strong>
+                  {!item.read && <span role="img" aria-label="읽지 않음" className={s.dot} />}
+                  {item.title}
+                </strong>
                 {item.body && <span>{item.body}</span>}
                 <time dateTime={new Date(item.atMs).toISOString()}>{relativeTime(item.atMs, now)}</time>
               </button>

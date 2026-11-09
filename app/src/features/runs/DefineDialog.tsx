@@ -6,7 +6,7 @@ import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { Banner, Button, Dialog, ErrorState, TextArea } from "../../ui";
 import { KeyValueEditor } from "../../ui/KeyValueEditor";
 import s from "./DefineDialog.module.css";
-import { buildDefinition, type DefinitionForm, initialDefinitionForm, upsertDefinition } from "./definition-form";
+import { buildChecked, type DefinitionForm, initialDefinitionForm, upsertDefinition } from "./definition-form";
 
 export function DefineDialog({
   projectId,
@@ -30,6 +30,7 @@ export function DefineDialog({
   const mutation = useRpcMutation("runtime.define");
   const list = useRpcQuery("runtime.list", { projectId, cursor: null });
   const qc = useQueryClient();
+  const defs = list.data?.defs ?? []; // read in render: the dialog re-renders when the list arrives
   const queryKey = ["runtime.list", { projectId, cursor: null }];
   const update = <K extends keyof DefinitionForm>(key: K, value: DefinitionForm[K]) => {
     mutation.reset();
@@ -39,9 +40,9 @@ export function DefineDialog({
   };
   const save = () => {
     if (locked.current) return;
-    let def: ReturnType<typeof buildDefinition>;
+    let def: ReturnType<typeof buildChecked>;
     try {
-      def = buildDefinition(form);
+      def = buildChecked(form, suggestion, editing, defs);
     } catch (error) {
       setValidation(error instanceof Error ? error.message : "입력을 확인하세요.");
       return;
@@ -86,7 +87,7 @@ export function DefineDialog({
       {savedNotice && <p role="status">저장했습니다.</p>}
       {savedNotice &&
         form.saveTo === "thisPc" &&
-        list.data?.defs.some(({ def, source }) => def.id === form.id && source === "projectFile") && (
+        defs.some(({ def, source }) => def.id === form.id && source === "projectFile") && (
           <Banner tone="info">같은 이름의 프로젝트 파일 정의가 우선합니다. 이 PC 정의는 저장되어 있습니다.</Banner>
         )}
       {list.error && (

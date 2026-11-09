@@ -74,10 +74,23 @@ export const API_MESSAGES: Messages<Domain> = {
     action: "주소·네트워크·인증서와 요청 시간 제한을 확인해 주세요.",
   },
   "api.stream_unsupported": { title: "이 연결에서는 요청을 보낼 수 없습니다." },
-  "api.stream_rejected": (d) => ({
-    title: `서버가 연결을 받지 않았습니다${field(d, "reason") === "status" ? `(HTTP ${field(d, "status")})` : field(d, "reason") === "content_type" ? "(이벤트 스트림 아님)" : "(하위 프로토콜 불일치)"}.`,
-    action: "주소·헤더·하위 프로토콜을 확인해 주세요.",
-  }),
+  "api.stream_rejected": (d) => {
+    const reason = field(d, "reason");
+    const status = field(d, "status");
+    if (reason === "unauthorized") {
+      return {
+        title:
+          String(status) === "403"
+            ? "서버가 이 요청을 허락하지 않았습니다(HTTP 403)."
+            : `서버가 인증을 받지 않았습니다(HTTP ${status ?? 401}).`,
+        action: "인증 설정(토큰·헤더)이나 OAuth 승인을 확인해 주세요.",
+      };
+    }
+    return {
+      title: `서버가 연결을 받지 않았습니다${reason === "status" ? `(HTTP ${status})` : reason === "content_type" ? "(이벤트 스트림 아님)" : "(하위 프로토콜 불일치)"}.`,
+      action: "주소·헤더·하위 프로토콜을 확인해 주세요.",
+    };
+  },
   "api.too_many_streams": {
     title: "동시에 열 수 있는 실시간 연결 수를 넘었습니다.",
     action: "다른 연결을 닫은 뒤 다시 시도해 주세요.",

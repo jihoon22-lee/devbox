@@ -3,6 +3,16 @@
   overflow: auto;
   padding: var(--space-2);
 }
+/* The body with nothing picked: a failed project list's error on top, the empty state centred in the rest. */
+.emptyBody {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.emptyBody > :last-child {
+  flex: 1;
+  min-height: 0;
+}
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -18,6 +28,7 @@
   margin: var(--space-2);
 }
 .row {
+  position: relative;
   padding: var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
@@ -25,6 +36,18 @@
 .row[data-selected] {
   background: var(--selection);
   border-color: var(--accent);
+}
+/* A task blocked on an answer gets a band on its leading edge. Not a box-shadow: that is the focus ring. */
+.row[data-state="waiting"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-start-radius: calc(var(--radius-sm) - 1px);
+  border-end-start-radius: calc(var(--radius-sm) - 1px);
+  background: var(--warn);
+  pointer-events: none;
 }
 .open {
   border: 0;
@@ -52,9 +75,35 @@
   color: var(--fg-muted);
   font-size: var(--text-xs);
 }
-.message {
+/* The state mark: the icon carries the state colour, the name stays in text colour. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  white-space: nowrap;
+}
+.state svg {
+  flex: none;
+}
+.stateName {
+  color: var(--fg);
+  font-weight: 600;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
+}
+.message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
 }
 .metrics {
   display: flex;
@@ -66,11 +115,32 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.form input:not([type="checkbox"]) {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  padding: var(--space-2);
+.form input:not([type="checkbox"]),
+.form .control {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--bg-0);
+  border: 1px solid var(--border-strong);
+  padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
+}
+.form input:not([type="checkbox"]),
+.form button.control {
+  height: var(--control-lg);
+}
+.form textarea.control {
+  padding: 6px var(--space-2);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
 }
 .form p {
   margin: 0;
@@ -104,4 +174,11 @@
 }
 .preview h1 {
   font-size: var(--text-lg);
+}
+@media (forced-colors: active) {
+  /* Forced colours drop backgrounds: keep the waiting band. */
+  .row[data-state="waiting"]::before {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }

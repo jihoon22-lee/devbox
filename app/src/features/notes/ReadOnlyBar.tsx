@@ -1,8 +1,10 @@
 import type { DocKey } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageFor, messageText } from "../../rpc/messages";
+import { useRpcSession } from "../../rpc/RpcProvider";
 import { Banner, Button } from "../../ui";
 import { keyId } from "../documents/offlineJournal";
 import { useDocuments } from "../documents/store";
+import { saveFailed } from "./saveLabel";
 
 const REASONS = {
   leased_elsewhere: "다른 창에서 편집 중입니다.",
@@ -59,4 +61,16 @@ export function OpenError({ docKey }: { docKey: DocKey }) {
       {message.title}
     </Banner>
   );
+}
+
+/**
+ * A save the daemon refused (too large, …) while the header says "저장 실패": what happened and,
+ * when the message has one, what to do. No retry button: the next edit (a note) or Ctrl+S (code)
+ * saves again as usual.
+ */
+export function SaveError({ docKey }: { docKey: DocKey }) {
+  const { state } = useRpcSession();
+  const doc = useDocuments((st) => Object.values(st.docs).find((d) => keyId(d.key) === keyId(docKey)));
+  if (!doc?.error || !saveFailed(doc, state === "ready")) return null;
+  return <Banner tone="danger">{messageText(doc.error)}</Banner>;
 }

@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { RpcProvider } from "../../rpc/RpcProvider";
@@ -8,6 +8,7 @@ import { buildRouter } from "../../shell/router";
 import { TooltipProvider } from "../../ui";
 import { useAgentsUi } from "../agents/ui";
 import { memoryJournal } from "../documents/offlineJournal";
+import { useDocuments } from "../documents/store";
 import { openPopout } from "../terminal/popout";
 import { NotesPage } from "./NotesPage";
 import { PopoutNote } from "./PopoutNote";
@@ -143,6 +144,26 @@ test("a note that cannot be opened says why and opens on [다시 시도]", async
   await userEvent.click(retry);
   await waitFor(() => expect(editor()).toHaveTextContent("alpha body"));
   expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+});
+
+test("a note save the daemon refuses says 저장 실패 and why, without a retry button", async () => {
+  wire.docs.failing.set("documents.save", "documents.too_large");
+  show();
+  await userEvent.click(await screen.findByRole("button", { name: "Alpha" }));
+  await waitFor(() => expect(editor()).toHaveAttribute("aria-readonly", "false"));
+  const view = EditorView.findFromDOM(editor());
+  act(() => view?.dispatch({ changes: { from: 0, insert: "long " } }));
+  await act(async () => {
+    fireEvent.keyDown(editor(), { key: "s", code: "KeyS", ctrlKey: true });
+    await useDocuments.getState().settled();
+  });
+  expect(wire.docs.count("documents.save")).toBe(1);
+  expect(screen.getByRole("status", { name: "저장 상태" })).toHaveTextContent("저장 실패");
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "문서가 허용 크기를 넘었습니다. 내용을 줄인 뒤 다시 시도해 주세요.",
+  );
+  expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+  expect(editor()).toHaveTextContent("long alpha body");
 });
 
 test("note selection opens a draft agent task without executing it", async () => {

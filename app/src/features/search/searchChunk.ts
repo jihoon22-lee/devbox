@@ -40,3 +40,7 @@ export function readSearchChunk(line: string): SearchChunk {
   return chunk;
 }
 export const hitKey = (hit: SearchHit) => JSON.stringify([hit.root, hit.path, hit.line]);
+/** The project a code or file-name hit lives in (`project:<id>` roots), by name; notes have none. */
+export function projectOf(hit: SearchHit, nameOf: (id: string) => string): string | undefined {
+  return hit.root.startsWith("project:") ? nameOf(hit.root.slice("project:".length)) : undefined;
+}

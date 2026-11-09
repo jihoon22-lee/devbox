@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { ApiBackendProvider } from "./backend";
 import { EnvEditor, resetEnvDrafts } from "./EnvEditor";
+import { looksLikeSecret } from "./lib/secretPatterns";
 import { useApiTabs } from "./store";
 import { FakeBackend } from "./test-backend";
 
@@ -111,4 +112,62 @@ it("unchecked_row_stays_unchecked_after_save_and_reopen", async () => {
   expect(screen.getByLabelText("변수 1 사용")).not.toBeChecked();
   expect(screen.getByLabelText("변수 2 사용")).toBeChecked();
   expect(useApiTabs.getState().environment?.variables).toEqual([{ name: "host", value: "dev.test" }]);
+});
+
+it("비밀 표시는 읽기와 저장을 지나도 남는다", async () => {
+  const user = userEvent.setup();
+  const { backend } = setup((b) =>
+    b.seed(
+      personal,
+      "env/sec.json",
+      JSON.stringify({ version: 1, name: "sec", variables: [{ name: "opaque", value: "", secret: true }] }),
+    ),
+  );
+  await screen.findByRole("option", { name: "sec" });
+  await user.selectOptions(screen.getByLabelText("환경"), "env/sec.json");
+  await waitFor(() => expect(screen.getByLabelText("변수 1 이름")).toHaveValue("opaque"));
+  const written = () => JSON.parse(backend.write.mock.calls.at(-1)![2] as string).variables;
+
+  // 손대지 않고 저장해도 secret이 남는다.
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.write).toHaveBeenCalledOnce());
+  expect(written()).toEqual([{ name: "opaque", value: "", secret: true }]);
+
+  // 평문을 넣고 저장하면 지우고, 알림이 그 이름을 말한다.
+  await user.type(screen.getByLabelText("변수 1 값"), "hunter2");
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.write).toHaveBeenCalledTimes(2));
+  expect(written()).toEqual([{ name: "opaque", value: "", secret: true }]);
+  expect(JSON.stringify(backend.write.mock.calls.at(-1))).not.toContain("hunter2");
+  expect(await screen.findByRole("status")).toHaveTextContent("opaque");
+});
+
+it("a row the save cleared as a secret stays secret for the rest of the draft", async () => {
+  const user = userEvent.setup();
+  const token = "ghp_abcdefghijklmnop1234";
+  const credential = "Basic dXNlcjpwYXNz";
+  expect(looksLikeSecret(token)).toBe(true);
+  expect(looksLikeSecret(credential)).toBe(false);
+  const { backend } = setup((b) =>
+    b.seed(
+      personal,
+      "env/auth.json",
+      JSON.stringify({ version: 1, name: "auth", variables: [{ name: "AUTH", value: token }] }),
+    ),
+  );
+  await screen.findByRole("option", { name: "auth" });
+  await user.selectOptions(screen.getByLabelText("환경"), "env/auth.json");
+  await waitFor(() => expect(screen.getByLabelText("변수 1 값")).toHaveValue(token));
+  const written = () => JSON.parse(backend.write.mock.calls.at(-1)![2] as string).variables;
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.write).toHaveBeenCalledTimes(1));
+  expect(written()).toEqual([{ name: "AUTH", value: "", secret: true }]);
+
+  // The same draft: a credential that does not look like a token is still not written.
+  await user.clear(screen.getByLabelText("변수 1 값"));
+  await user.type(screen.getByLabelText("변수 1 값"), credential);
+  await user.click(screen.getByRole("button", { name: "환경 저장" }));
+  await waitFor(() => expect(backend.write).toHaveBeenCalledTimes(2));
+  expect(written()).toEqual([{ name: "AUTH", value: "", secret: true }]);
+  expect(JSON.stringify(backend.write.mock.calls.at(-1))).not.toContain("dXNlcjpwYXNz");
 });

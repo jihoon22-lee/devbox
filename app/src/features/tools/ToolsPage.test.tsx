@@ -114,3 +114,10 @@ it("grpc_and_mcp_tools_open_from_the_list_and_search", async () => {
     expect(await screen.findByLabelText(label)).toBeInTheDocument();
   }
 });
+
+it("tools_list_environment_summary_names_the_current_environment", () => {
+  setup();
+  expect(screen.getByText("환경 · 없음")).toBeInTheDocument();
+  act(() => useApiTabs.getState().setEnvironment({ name: "dev", variables: [] }));
+  expect(screen.getByText("환경 · dev")).toBeInTheDocument();
+});

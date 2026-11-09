@@ -161,6 +161,13 @@ impl AgentsService {
         let key = task.id.clone();
         let launch = now_ms();
         let says_ready = profile.hooks == crate::profile::Hooks::Pi;
+        // Claude and Codex continue the session without an instruction and say nothing until
+        // the user gives one, so the launch begins waiting for it (see `Binding::resumed_session`).
+        let resumed_session = session_id.is_some()
+            && matches!(
+                profile.hooks,
+                crate::profile::Hooks::Claude | crate::profile::Hooks::Codex
+            );
         let initial_session = session_id.clone();
         let hub = self.hub.clone();
         let approvals = self.approvals.clone();
@@ -176,6 +183,7 @@ impl AgentsService {
                     let previous_binding = binding.clone();
                     binding.launch_ms = launch;
                     binding.launch_id = Some(generation);
+                    binding.resumed_session = resumed_session;
                     binding.turn_id = None;
                     binding.turn_started_ms = None;
                     current.session_id = initial_session;
@@ -299,3 +307,6 @@ impl AgentsService {
         Ok(())
     }
 }
+#[cfg(all(test, unix))]
+#[path = "resume_ready_tests.rs"]
+mod ready_tests;

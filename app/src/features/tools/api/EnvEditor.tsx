@@ -13,7 +13,14 @@ import { Banner, Button, ConfirmDialog } from "../../../ui";
 import s from "./Api.module.css";
 import { SendFailure, useApiBackend } from "./backend";
 import { type Row, row } from "./model/draft";
-import { type EnvFile, envFilePath, isEnvPath, parseEnvFile, serializeEnvFile } from "./model/envFile";
+import {
+  type EnvFile,
+  envFilePath,
+  isEnvPath,
+  markClearedSecrets,
+  parseEnvFile,
+  serializeEnvFile,
+} from "./model/envFile";
 import { ParamTable } from "./ParamTable";
 import { DirtyMark } from "./RequestTabs";
 import { rootKey, useApiTabs } from "./store";
@@ -30,6 +37,8 @@ interface Editing {
   digest: string | null;
   name: string;
   rows: Row[];
+  /** 파일에서 비밀로 표시된 행의 id. 저장할 때 `secret: true`를 다시 붙인다(행 이름을 바꿔도 유지). */
+  secretIds: string[];
   /** 읽거나 저장한 때의 내용(dirty 판정 기준). */
   baseline: string;
   /** 이 PC에서 검토하지 않은 프로젝트 환경 파일. 검토 확인 전에는 송신·실행에 쓰지 않는다. */
@@ -127,6 +136,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       if (!ownsRead()) return;
       const file = parseEnvFile(read.text);
       const rows = file.variables.map((v) => row(v.name, v.value, v.enabled !== false));
+      const secretIds = rows.filter((_, i) => file.variables[i]!.secret === true).map((r) => r.id);
       const unreviewed = root.kind === "project" && !read.reviewed;
       apply({
         draft: newDraft(),
@@ -134,6 +144,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
         digest: read.digest,
         name: file.name,
         rows,
+        secretIds,
         baseline: snapshot(file.name, rows),
         unreviewed,
       });
@@ -161,6 +172,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       digest: null,
       name: "새 환경",
       rows: [],
+      secretIds: [],
       baseline: snapshot("새 환경", []),
     });
 
@@ -176,6 +188,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
       variables: target.rows.map((r) => ({
         name: r.name,
         value: r.value,
+        ...(target.secretIds.includes(r.id) && { secret: true as const }),
         ...(r.enabled ? {} : { enabled: false as const }),
       })),
     };
@@ -196,6 +209,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
           path,
           digest: written.digest,
           baseline: snapshot(target.name, target.rows),
+          secretIds: markClearedSecrets(latest.secretIds, target.rows, cleared),
           unreviewed: false,
         });
       patch({ notice: savedNotice(cleared, current ? undefined : target.name) });

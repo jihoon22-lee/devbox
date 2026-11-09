@@ -8,7 +8,7 @@ test("links file locations across ANSI spans while retaining their styles", () =
   const open = vi.fn();
   render(<LogBody line={{ ...line, text: "\x1b[36msrc/app.ts\x1b[0m:12:3 error" }} onOpenLocation={open} />);
   const link = screen.getByRole("button", { name: "src/app.ts:12:3" });
-  expect(screen.getByText("src/app.ts")).toHaveStyle({ color: "#11a8cd" });
+  expect(screen.getByText("src/app.ts").style.color).toBe("var(--log-ansi-cyan)");
   fireEvent.click(link);
   expect(open).toHaveBeenCalledWith({ path: "src/app.ts", line: 12, column: 3, source });
 });

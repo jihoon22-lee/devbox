@@ -63,6 +63,8 @@ export function setUiScale(scale: number) {
   const uiScale = Math.round(bounded(scale, 1, 0.9, 1.5) * 100) / 100;
   usePreferences.setState({ uiScale });
   document.documentElement.style.zoom = String(uiScale);
+  // Zoom also scales vw/dvh; viewport-bound overlays (Dialog) divide by this value.
+  document.documentElement.style.setProperty("--ui-zoom", String(uiScale));
   save("devbox.uiScale", String(uiScale));
 }
 export function restoreUiScale() {

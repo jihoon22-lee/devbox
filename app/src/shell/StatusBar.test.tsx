@@ -4,7 +4,7 @@ import { useCurrentProject } from "../features/projects/store";
 import { ProjectWire } from "../features/projects/test-wire";
 import * as settings from "../features/settings/open";
 import { RpcProvider } from "../rpc/RpcProvider";
-import { StatusBar } from "./StatusBar";
+import { portSummary, StatusBar } from "./StatusBar";
 
 const navigate = vi.hoisted(() => vi.fn());
 const native = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
@@ -186,9 +186,75 @@ test("Git chip shows current branch counts and isolates a late former-project st
     });
     wire.reply("git.status", { summary: { branch: "current", ahead: 2, behind: 3 }, files: [{}, {}] });
   });
-  const chip = await screen.findByRole("button", { name: "Git 상태 · 소스로 이동" });
+  const chip = await screen.findByRole("button", { name: "Git current ↑2 ↓3 · 변경 2 · 소스로 이동" });
   expect(chip).toHaveTextContent("current ↑2 ↓3 · 변경 2");
   expect(chip).not.toHaveTextContent("old");
   fireEvent.click(chip);
   expect(navigate).toHaveBeenCalledWith({ to: "/source" });
+});
+
+test("many ports show owned ones first, three at most, with the full list in the title", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <StatusBar />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("observe.ports")).toHaveLength(1));
+  await act(async () => {
+    wire.reply("runtime.summary", { rev: "1", active: 1 });
+    wire.reply(
+      "observe.ports",
+      [9000, 8080, 53, 5173, 22].map((port) => ({ port, runId: port === 5173 ? "r1" : null })),
+    );
+    wire.reply("observe.system", { memoryTotalBytes: 20 * gib, memoryAvailableBytes: 13.9 * gib });
+  });
+  const button = await screen.findByRole("button", { name: "포트 5173, 22, 53 외 2개" });
+  expect(button).toHaveAttribute("title", "포트 5173, 22, 53, 8080, 9000");
+});
+
+test("a long Git cell shrinks with an ellipsis and keeps its full text in the title", async () => {
+  useCurrentProject.setState({ id: "p" });
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <StatusBar />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("git.status")).toHaveLength(1));
+  const branch = "feature/a-very-long-branch-name-that-would-push-the-other-cells-out";
+  await act(async () => wire.reply("git.status", { summary: { branch, ahead: 1, behind: 0 }, files: [] }));
+  const chip = await screen.findByRole("button", { name: `Git ${branch} ↑1 ↓0 · 변경 0 · 소스로 이동` });
+  expect(chip).toHaveStyle({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: "0" });
+  expect(chip).toHaveAttribute("title", `Git ${branch} ↑1 ↓0 · 변경 0`);
+  expect(screen.getByRole("contentinfo")).toHaveStyle({ whiteSpace: "nowrap" });
+});
+
+test("portSummary dedupes by port, keeps owned, and only abbreviates beyond three", () => {
+  expect(portSummary([{ port: 80 }, { port: 80, runId: "r" }, { port: 22 }])).toEqual({
+    shown: "80, 22",
+    all: "80, 22",
+  });
+  expect(portSummary([{ port: 3 }, { port: 1 }, { port: 2 }]).shown).toBe("1, 2, 3");
+  expect(portSummary([{ port: 4 }, { port: 3 }, { port: 1 }, { port: 2 }])).toEqual({
+    shown: "1, 2, 3 외 1개",
+    all: "1, 2, 3, 4",
+  });
+  expect(portSummary([])).toEqual({ shown: "", all: "" });
+});
+
+test("an empty port list shows 포트 없음", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <StatusBar />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("observe.ports")).toHaveLength(1));
+  await act(async () => {
+    wire.reply("runtime.summary", { rev: "1", active: 1 });
+    wire.reply("observe.ports", []);
+    wire.reply("observe.system", { memoryTotalBytes: 20 * gib, memoryAvailableBytes: 13.9 * gib });
+  });
+  expect(await screen.findByRole("button", { name: "포트 없음" })).toBeInTheDocument();
 });

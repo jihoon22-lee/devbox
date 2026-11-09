@@ -12,7 +12,122 @@ fn rebase_stop_failure_blocks_git_mutation() {
 fn rebase_revalidates_committed_head_and_dirty_content_after_stop() {
     cases(&["rebase-late-head", "rebase-late-dirty"]);
 }
+#[test]
+fn rebase_rejects_existing_dirty_without_quiescing() {
+    cases(&["rebase-existing-dirty"]);
+}
+/// A folder that was dirty before the rebase is refused while its tool still runs: the terminal,
+/// the scope, the task row, the head and the edit are all as they were.
+async fn existing_dirty() {
+    let (mut fixture, task, wt) = action_fixture().await;
+    Arc::get_mut(&mut fixture.svc)
+        .expect("owned service")
+        .use_scope = true;
+    fs::write(
+        fixture.svc.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .expect("owned tmux configuration");
+    fs::write(
+        std::env::var_os("DEVBOX_CLOSE_TMUX_OWNER").expect("owner path"),
+        fixture.svc.terminal.tmux().socket(),
+    )
+    .expect("owned socket receipt");
+    let terminal = fixture
+        .svc
+        .terminal
+        .create_internal(
+            devbox_terminal::SessionKind::Agent,
+            Some(fixture.project.clone()),
+            wt.clone(),
+            "Owned rebase fixture".into(),
+            "cat".into(),
+            &[],
+        )
+        .await
+        .expect("owned agent terminal");
+    let terminal_id = terminal.id.clone();
+    fixture
+        .svc
+        .update(&task.id, move |task| {
+            task.state = AgentState::Running;
+            task.terminal_id = Some(terminal_id);
+            true
+        })
+        .await
+        .expect("live owned task");
+    fs::write(fixture.repo.join("host"), "host edit\n").expect("base advancement");
+    git(&fixture.repo, &["add", "host"]);
+    git(&fixture.repo, &["commit", "-qm", "host base advancement"]);
+    fs::write(wt.join("tracked"), "existing uncommitted edit\n").expect("existing edit");
+    let before = fixture.svc.get(&task.id).await.expect("task");
+    let head = devbox_git::run::resolve(&wt, "HEAD")
+        .await
+        .expect("source head");
+    let result = fixture.svc.rebase(&task.id).await;
+    assert!(
+        matches!(&result, Err(Fail::Domain(AgentsError::WorktreeDirty { files })) if files == &["tracked"]),
+        "{result:?}"
+    );
+    let stops = std::env::var_os("DEVBOX_CLOSE_SCOPE_MARKER").expect("marker");
+    assert!(
+        !Path::new(&stops).exists(),
+        "a refused rebase may not stop the tool scope: {:?}",
+        fs::read_to_string(&stops)
+    );
+    let sessions = fixture
+        .svc
+        .terminal
+        .list(devbox_terminal::ListSessions {
+            project_id: Some(fixture.project.clone()),
+            after_id: None,
+        })
+        .await
+        .expect("terminal records");
+    assert!(
+        sessions
+            .items
+            .iter()
+            .any(|item| item.id == terminal.id && item.alive),
+        "a refused rebase keeps the agent terminal: {:?}",
+        sessions.items
+    );
+    let current = fixture.svc.get(&task.id).await.expect("task");
+    assert_eq!(current.state, AgentState::Running);
+    assert!(!current.tool_exited);
+    assert_eq!(
+        current, before,
+        "a refused rebase leaves the task as it was"
+    );
+    assert!(
+        !fixture
+            .svc
+            .launch_binding(&task.id)
+            .await
+            .expect("binding")
+            .owned_rebase
+    );
+    assert_eq!(
+        devbox_git::run::resolve(&wt, "HEAD").await.expect("source"),
+        head
+    );
+    assert_eq!(
+        fs::read_to_string(wt.join("tracked")).expect("retained edit"),
+        "existing uncommitted edit\n"
+    );
+    // The fixture's own terminal: the parent kills the tmux server only if this is not reached.
+    fixture
+        .svc
+        .terminal
+        .close_internal(&terminal.id)
+        .await
+        .expect("close owned terminal");
+}
 pub(super) async fn case(mode: &str) {
+    if mode == "rebase-existing-dirty" {
+        existing_dirty().await;
+        return;
+    }
     let (mut fixture, task, wt) = action_fixture().await;
     Arc::get_mut(&mut fixture.svc)
         .expect("owned service")

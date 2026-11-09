@@ -161,6 +161,25 @@ test("select supports keyboard selection and disabled options", async () => {
   expect(change).toHaveBeenCalledWith("c");
 });
 
+test("select trigger carries the whole chosen label in its title", async () => {
+  const user = userEvent.setup();
+  const options = [
+    { value: "a", label: "Fake agent tool with a deliberately long display name" },
+    { value: "b", label: "짧은 도구" },
+  ];
+  const controlled = render(<Select label="도구" value="a" options={options} />);
+  expect(screen.getByRole("combobox", { name: "도구" })).toHaveAttribute("title", options[0]!.label);
+  controlled.unmount();
+  render(<Select label="도구" defaultValue="a" options={options} />);
+  const trigger = screen.getByRole("combobox", { name: "도구" });
+  expect(trigger).toHaveAttribute("title", options[0]!.label);
+  await user.tab();
+  await user.keyboard("{Enter}");
+  expect(await screen.findByRole("listbox")).toBeInTheDocument();
+  await user.keyboard("{End}{Enter}");
+  expect(trigger).toHaveAttribute("title", "짧은 도구");
+});
+
 test("split accepts custom minimum ratios below the default", () => {
   const change = vi.fn();
   render(

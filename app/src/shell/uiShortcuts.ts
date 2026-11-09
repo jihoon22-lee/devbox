@@ -25,7 +25,7 @@ export function uiBindings(): Binding[] {
       ctrl: true,
       shift: true,
       scope: "app",
-      label: "목록 접기",
+      label: "목록 접기·펴기",
       run: () => useLayout.getState().toggleList(),
     },
     {

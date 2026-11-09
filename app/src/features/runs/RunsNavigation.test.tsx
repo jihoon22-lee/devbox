@@ -1,7 +1,8 @@
 import { createMemoryHistory, Outlet, RouterProvider } from "@tanstack/react-router";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
+import type { Run } from "../../rpc/gen/rpc";
 import { RpcProvider } from "../../rpc/RpcProvider";
 import { buildRouter } from "../../shell/router";
 import { NotificationCenter } from "../notifications/NotificationCenter";
@@ -124,4 +125,103 @@ test("run navigation exposes process observation using the selected project", as
   expect(wire.request("observe.processes", -1).params).toEqual({ projectId: "p" });
   await userEvent.click(screen.getByRole("button", { name: "포트 목록" }));
   expect(await screen.findByRole("heading", { name: "포트 목록" })).toBeVisible();
+});
+test("saving a definition reads the auto-detected suggestions again", async () => {
+  const wire = new RunWire();
+  wire.suggestions = [{ id: "build", command: "pnpm build", kind: "task", from: "package.json" }];
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  await userEvent.click(await screen.findByRole("button", { name: "작업 추가 ▾" }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: "자동 감지 제안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "명령 확인 후 추가" }));
+  await waitFor(() => expect(wire.requests("runtime.detect")).toHaveLength(1));
+  await userEvent.click(await screen.findByRole("button", { name: "저장" }));
+  await waitFor(() => expect(wire.requests("runtime.define")).toHaveLength(1));
+  const params = wire.request("runtime.define").params as { def: { id: string } };
+  expect(params.def.id).toBe("build");
+  await act(async () =>
+    wire.reply("runtime.define", {
+      rev: "2",
+      definition: { source: "projectFile", def: { ...serviceDefinition.def, id: "build" } },
+    }),
+  );
+  await waitFor(() => expect(wire.requests("runtime.detect")).toHaveLength(2));
+});
+test("지난 실행에서 old를 고르면 그 실행을 연다", async () => {
+  const wire = new RunWire();
+  const latest: Run = { ...runFixture, id: "new", startedMs: 3_000 };
+  const old: Run = {
+    ...runFixture,
+    id: "old",
+    state: "exited",
+    exit: { attemptId: "attempt-old", code: 0, endedMs: 1_500, by: "wrapper" },
+    startedMs: 1_000,
+    endedMs: 1_500,
+    pid: 222,
+  };
+  wire.runs = [latest];
+  wire.selected = latest;
+  // The project's latest runs of every definition; only web's are offered.
+  wire.history = [latest, { ...runFixture, id: "api-run", defId: "api", startedMs: 2_000 }, old];
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const picker = await screen.findByRole("combobox", { name: "지난 실행" });
+  expect(wire.request("runtime.runs").params).toEqual({ projectId: "p", limit: 100 });
+  expect(screen.getByText("최근 100개 실행 중")).toBeVisible();
+  const options = within(picker).getAllByRole("option");
+  expect(options.map((option) => option.getAttribute("value"))).toEqual(["new", "old"]);
+  expect(options[1]).toHaveTextContent(/ · 종료 코드 0 · old$/);
+  expect(picker).toHaveValue("new");
+  wire.selected = old;
+  picker.focus();
+  await userEvent.selectOptions(picker, "old");
+  await waitFor(() => expect(wire.request("runtime.get", -1).params).toEqual({ runId: "old" }));
+  expect(await screen.findByText("PID 222")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "web" })).toBeVisible();
+  // The select stays in place while the picked run loads, so the keyboard can step on from it.
+  expect(screen.getByRole("combobox", { name: "지난 실행" })).toBe(picker);
+  expect(document.activeElement).toBe(picker);
+  expect(picker).toHaveValue("old");
+});
+test("지난 실행은 같은 초에 시작한 실행을 실행 ID 앞 8자로 구별한다", async () => {
+  const wire = new RunWire();
+  const ended = (id: string): Run => ({
+    ...runFixture,
+    id,
+    state: "exited",
+    exit: { attemptId: `attempt-${id}`, code: 3, endedMs: 2_500, by: "wrapper" },
+    startedMs: 2_000,
+    endedMs: 2_500,
+  });
+  const latest = ended("750832aa1b2c4d5e8f90a1b2c3d4e5f6");
+  wire.runs = [latest];
+  wire.selected = latest;
+  wire.history = [latest, ended("1f0e2d3c4b5a69788796a5b4c3d2e1f0")];
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const picker = await screen.findByRole("combobox", { name: "지난 실행" });
+  const time = new Date(2_000).toLocaleString("ko-KR");
+  expect(
+    within(picker)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual([`${time} · 종료 코드 3 · 750832aa`, `${time} · 종료 코드 3 · 1f0e2d3c`]);
+});
+test("지난 실행 목록을 읽지 못하면 그 자리에서 다시 불러온다", async () => {
+  const wire = new RunWire();
+  wire.history = [{ ...runFixture }, { ...runFixture, id: "old", startedMs: 0 }];
+  wire.historyFails = true;
+  useCurrentProject.getState().set("p");
+  const router = setup(wire);
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("지난 실행 목록을 불러오지 못했습니다.");
+  expect(screen.queryByRole("combobox", { name: "지난 실행" })).toBeNull();
+  wire.historyFails = false;
+  await userEvent.click(within(alert).getByRole("button", { name: "다시 불러오기" }));
+  expect(await screen.findByRole("combobox", { name: "지난 실행" })).toHaveValue("run-1");
+  expect(screen.queryByRole("alert")).toBeNull();
 });

@@ -29,6 +29,8 @@ pub struct CommitFence<'a> {
     pub labels: &'a [String],
     pub native: (Option<u64>, u64),
     pub expected_native_epoch: u64,
+    /// The hidden quick capture window holds text the inbox does not have; exiting drops it.
+    pub capture_draft: bool,
 }
 pub struct InstallWork {
     pub generation: u64,
@@ -156,6 +158,9 @@ impl Service {
             } else {
                 UpdateError::NativeActive
             })
+        } else if fence.capture_draft {
+            // Exiting would drop the quick capture draft; refuse before the seal approves anything.
+            Err(UpdateError::QuitRejected)
         } else if !quit.seal(fence.round, fence.labels) {
             Err(UpdateError::QuitRejected)
         } else {

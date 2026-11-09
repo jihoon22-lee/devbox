@@ -19,7 +19,7 @@ export function ConfirmDialog(props: {
       open={props.open}
       onOpenAutoFocus={(event) => {
         event.preventDefault();
-        cancel.current?.focus();
+        cancel.current?.focus({ preventScroll: true });
       }}
       onOpenChange={(o) => !o && props.onCancel()}
       title={props.title}

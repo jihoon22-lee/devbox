@@ -111,3 +111,15 @@ test("a late save response does not overwrite a newer authoritative list", () =>
   const changed = { ...service, def: { ...service.def, command: "old command" } } as Definition;
   expect(upsertDefinition(old, { rev: "9007199254740993", definition: changed })).toBe(old);
 });
+test("a definition made from a suggestion uses the suggestion id", () => {
+  const form = initialDefinitionForm(undefined, {
+    id: "build",
+    command: "pnpm build",
+    kind: "task",
+    from: "package.json",
+  });
+  expect(form.id).toBe("build");
+  expect(initialDefinitionForm(service, { id: "build", command: "x", kind: "task", from: "package.json" }).id).toBe(
+    "web",
+  );
+});

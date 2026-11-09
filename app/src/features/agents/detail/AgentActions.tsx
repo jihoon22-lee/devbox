@@ -3,22 +3,24 @@ import { RpcError } from "../../../rpc/client";
 import { messageFor } from "../../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
-import { Banner, Button, Dialog, Menu, Tooltip } from "../../../ui";
+import { Banner, Button, ConfirmDialog, Dialog, Menu, Tooltip } from "../../../ui";
 import { useProjectTrust } from "../../projects/useProjectTrust";
 import { MergePanel } from "../../source/merge/MergePanel";
-import { openPopout } from "../../terminal/popout";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
 import { useAgentRefresh, useAgentResult } from "./data";
 import { QueryError } from "./QueryError";
 import { type EditIntent, ReviewDialogs } from "./ReviewDialogs";
+import { UncommittedNotice } from "./UncommittedNotice";
 import { useReviewAction } from "./useReviewAction";
+import { useWorkspaceItems } from "./workspaceActions";
 export function AgentActions({
   task,
   sessionAlive,
   sessionKnown = true,
   onInstruct,
   onResume,
+  onShowTerminal,
   onTest,
 }: {
   task: AgentTask;
@@ -26,6 +28,7 @@ export function AgentActions({
   sessionKnown?: boolean;
   onInstruct?: () => void;
   onResume?: () => void;
+  onShowTerminal?: () => void;
   onTest?: (id: string) => void;
 }) {
   const resume = useRpcMutation("agents.resume"),
@@ -54,10 +57,12 @@ export function AgentActions({
     rebaseStatus.isFetchedAfterMount && !rebaseStatus.isFetching && !rebaseStatus.error && rebaseStatus.data?.owned;
   const conflict = rebaseConflict ? rebaseStatus.data?.files : preflightConflict;
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [rebaseAsked, setRebaseAsked] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [edit, setEdit] = useState<EditIntent>();
   const guard = useRef(false);
+  const workspace = useWorkspaceItems(task);
   const destructive = useReviewAction(task, (files) => {
     setConflict(files);
   });
@@ -94,6 +99,10 @@ export function AgentActions({
       setConflict(undefined);
       refresh();
     });
+  // A rebase stops the agent tool first, so a tool that may still run stops only once the user
+  // agrees. Until the session list is known, a running tool cannot be ruled out.
+  const toolMayRun = !task.toolExited && (sessionAlive || !sessionKnown);
+  const askReflect = () => (toolMayRun ? setRebaseAsked(true) : void reflect());
   const runTest = () =>
     run(async () => {
       if (
@@ -119,11 +128,18 @@ export function AgentActions({
       });
     });
   const hasTest = !!config.data?.config.agent.test && !config.data.error;
+  // The live tool waits for a choice or an answer in its terminal; the answer goes there, never through a send.
+  const respond = sessionAlive && !task.toolExited && task.state === "waiting";
   if (task.state === "closed") return null;
   return (
     <>
+      {respond && <Banner tone="warn">터미널에서 선택하거나 응답해 주세요.</Banner>}
       <div className={s.actions}>
-        {sessionAlive && !task.toolExited ? (
+        {respond ? (
+          <Button variant="primary" disabled={blocked} onClick={onShowTerminal}>
+            터미널에서 응답
+          </Button>
+        ) : sessionAlive && !task.toolExited ? (
           <Button disabled={blocked} onClick={onInstruct}>
             이어서 지시
           </Button>
@@ -142,7 +158,7 @@ export function AgentActions({
         )}
         {task.worktreePath && (
           <>
-            <Button disabled={blocked} onClick={() => void reflect()}>
+            <Button disabled={blocked} onClick={askReflect}>
               기준 반영
             </Button>
             <Menu
@@ -178,13 +194,7 @@ export function AgentActions({
                   apply(await review.mutateAsync({ id: task.id }));
                 }),
             },
-            {
-              label: "새 창으로",
-              onSelect: () =>
-                void run(async () => {
-                  await openPopout("agent", task.id);
-                }),
-            },
+            ...workspace,
             {
               label: task.worktreePath ? "폐기" : "세션 끝내기",
               danger: true,
@@ -199,6 +209,8 @@ export function AgentActions({
           </Tooltip>
         )}
       </div>
+      {/* Known and not owned: during the task's own rebase the conflict banner says what to do. */}
+      {rebaseStatus.data?.owned === false && <UncommittedNotice task={task} onCompose={onInstruct} />}
       {trust.dialog}
       {trust.notice && <Banner tone="danger">{trust.notice}</Banner>}
       {error && <Banner tone="danger">{error}</Banner>}
@@ -242,7 +254,7 @@ export function AgentActions({
                 </Button>
               </>
             ) : (
-              <Button disabled={blocked} onClick={() => void reflect()}>
+              <Button disabled={blocked} onClick={askReflect}>
                 기준 반영 실행
               </Button>
             )
@@ -254,6 +266,19 @@ export function AgentActions({
             : "변경 내용을 확인해 충돌을 해결하세요."}
         </Banner>
       )}
+      <ConfirmDialog
+        open={rebaseAsked}
+        title={`기준 반영 · ${task.title}`}
+        body="에이전트 도구를 멈추고 브랜치를 기준 위로 옮깁니다. 옮긴 뒤 이어서 지시하려면 [재개]를 누르세요."
+        confirmLabel="기준 반영"
+        tone="primary"
+        disabled={blocked}
+        onConfirm={() => {
+          setRebaseAsked(false);
+          void reflect();
+        }}
+        onCancel={() => setRebaseAsked(false)}
+      />
       <Dialog open={mergeOpen} onOpenChange={setMergeOpen} title="충돌 해결" width={1100}>
         {mergeOpen && (
           <MergePanel

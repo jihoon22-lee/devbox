@@ -228,10 +228,18 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     action: "입력한 값을 확인해 주세요.",
   },
   "agents.session_missing": { title: "에이전트 실행이 끊겼습니다.", action: "에이전트 작업을 재개해 주세요." },
-  "agents.session_metadata": {
-    title: "에이전트의 대화 기록을 확인하지 못했습니다.",
-    action: "잠시 뒤 상태를 다시 확인해 주세요.",
-  },
+  "agents.session_metadata": (d) =>
+    field(d, "diagnostic") === "unavailable"
+      ? {
+          title: "에이전트의 대화 기록을 읽지 못했습니다.",
+          action:
+            "잠시 뒤 [재개]를 다시 눌러 주세요. 계속 실패하면 작업 폴더와 파일은 그대로 있으니 [같은 지시로 새 작업]으로 다시 시작하세요.",
+        }
+      : {
+          title: "에이전트의 대화 기록을 확인하지 못했습니다.",
+          action:
+            "Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다. 작업 폴더와 파일은 그대로 있으니 [같은 지시로 새 작업]으로 다시 시작하세요.",
+        },
   "projects.path_invalid": (d) => ({
     title: `경로를 열 수 없습니다: ${path(d)}`,
     action: "WSL 안의 절대 경로(/home/...)를 입력해 주세요.",

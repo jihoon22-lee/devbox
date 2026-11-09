@@ -1,41 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  CircleCheck,
-  CircleX,
-  LoaderCircle,
-  MessageCircleQuestion,
-  PauseCircle,
-  PlayCircle,
-  XCircle,
-} from "lucide-react";
 import { useRef } from "react";
 import type { Methods } from "../../rpc/gen/rpc";
 import { messageFor } from "../../rpc/messages";
 import { useRpcMutation } from "../../rpc/query";
 import { Button } from "../../ui";
 import { AGENT_KEYS } from "./AgentData";
+import { AgentStateMark } from "./AgentStateMark";
 import s from "./Agents.module.css";
-import { type AgentTask, failureLabel, STATE_LABEL } from "./model";
+import { type AgentTask, attentionNote, failureLabel } from "./model";
 import { TokenMetrics } from "./TokenMetrics";
 
-const ICON = {
-  preparing: LoaderCircle,
-  running: PlayCircle,
-  waiting: MessageCircleQuestion,
-  idle: PauseCircle,
-  failed: CircleX,
-  review: CircleCheck,
-  closed: XCircle,
-};
-const TONE = {
-  preparing: "var(--info)",
-  running: "var(--info)",
-  waiting: "var(--warn)",
-  idle: "var(--warn)",
-  failed: "var(--danger)",
-  review: "var(--ok)",
-  closed: "var(--fg-muted)",
-};
 const relative = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });
 function age(createdMs: number, now: number) {
   const seconds = Math.max(0, Math.floor((now - createdMs) / 1000));
@@ -49,6 +23,7 @@ export function AgentRow({
   task,
   selected,
   projectName,
+  toolName,
   now,
   stats,
   resources,
@@ -57,12 +32,12 @@ export function AgentRow({
   task: AgentTask;
   selected: boolean;
   projectName: string;
+  toolName: string;
   now: number;
   stats?: Methods["agents.git_stats"]["result"]["items"][number];
   resources?: Methods["agents.resources"]["result"]["items"][number];
   onSelect: (id: string) => void;
 }) {
-  const Icon = ICON[task.state];
   const resume = useRpcMutation("agents.resume"),
     qc = useQueryClient(),
     pending = useRef(false);
@@ -86,8 +61,11 @@ export function AgentRow({
     }
   };
   const error = resume.error && messageFor(resume.error.code, resume.error.detail);
+  // What the task waits on (unless that only restates the state), or why it failed. It sits next to the state
+  // name, never in its place, on one line; the title keeps the whole text for when the line cuts it short.
+  const note = task.state === "failed" ? failureLabel(task.reason) : attentionNote(task);
   return (
-    <div className={s.row} data-selected={selected || undefined}>
+    <div className={s.row} data-selected={selected || undefined} data-state={task.state}>
       <button
         type="button"
         className={s.open}
@@ -95,13 +73,19 @@ export function AgentRow({
         onClick={() => onSelect(task.id)}
       >
         <span className={s.title}>
-          <Icon size={16} aria-label={STATE_LABEL[task.state]} style={{ color: TONE[task.state] }} />
           <strong>{task.title}</strong>
           <span className={s.muted}>{age(task.createdMs, now)}</span>
         </span>
-        <span className={s.muted}>{projectName}</span>
-        <span className={s.message}>
-          {task.state === "failed" ? failureLabel(task.reason) : task.attention?.message || STATE_LABEL[task.state]}
+        <span className={s.muted}>
+          {projectName} · {toolName}
+        </span>
+        <span className={s.status}>
+          <AgentStateMark state={task.state} />
+          {note && (
+            <span className={s.message} title={note}>
+              {note}
+            </span>
+          )}
         </span>
         <span className={s.metrics}>
           {stats && (

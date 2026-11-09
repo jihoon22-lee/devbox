@@ -3,7 +3,15 @@ import { messageText } from "../../rpc/messages";
 import { useRpcQuery } from "../../rpc/query";
 import { Button } from "../../ui";
 import { CodeView } from "../../ui/code/CodeView";
-export function CodePreview({ hit, onOpen }: { hit: SearchHit; onOpen?: (hit: SearchHit) => void }) {
+export function CodePreview({
+  hit,
+  projectName,
+  onOpen,
+}: {
+  hit: SearchHit;
+  projectName?: string;
+  onOpen?: (hit: SearchHit) => void;
+}) {
   const query = useRpcQuery("documents.read", { key: { root: hit.root, path: hit.path }, policy: { kind: "code" } });
   if (query.error)
     return <p role="alert">{messageText(query.error.code, query.error.detail, query.error.diagnosticId)}</p>;
@@ -11,6 +19,7 @@ export function CodePreview({ hit, onOpen }: { hit: SearchHit; onOpen?: (hit: Se
   return (
     <section aria-label="코드 미리보기">
       <h3>
+        {projectName && `${projectName} · `}
         {hit.path}
         {hit.line ? `:${hit.line}` : ""} · 읽기 전용
       </h3>

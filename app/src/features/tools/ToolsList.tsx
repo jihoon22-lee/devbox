@@ -26,6 +26,7 @@ export function ToolsList({
   const personal: CollectionRoot = { kind: "personal" };
   const project: CollectionRoot | undefined = projectId ? { kind: "project", projectId } : undefined;
   const activeRoot = useApiTabs((state) => state.tabs.find((tab) => tab.key === state.active)?.root);
+  const environment = useApiTabs((state) => state.environment);
   const envRoot = environmentRoot ?? activeRoot ?? project ?? personal;
   return (
     <div>
@@ -76,7 +77,7 @@ export function ToolsList({
           </>
         )}
         <details>
-          <summary>환경</summary>
+          <summary>환경 · {environment?.name ?? "없음"}</summary>
           {/* 편집 상태는 루트별로 EnvEditor store에 남으므로 루트가 바뀌어 다시 그려져도 잃지 않는다. */}
           <EnvEditor key={JSON.stringify(envRoot)} root={envRoot} />
         </details>

@@ -7,12 +7,14 @@ import { openPopout } from "../../terminal/popout";
 import { TerminalView } from "../../terminal/TerminalView";
 import { useSessions } from "../../terminal/useSessions";
 import { useAgentsData } from "../hooks";
+import { toolLabel } from "../model";
 import { AgentActions } from "./AgentActions";
 import { AgentHeader } from "./AgentHeader";
 import { ChangesTab } from "./ChangesTab";
 import { CommitsTab } from "./CommitsTab";
 import { Compose } from "./Compose";
 import s from "./Detail.module.css";
+import { InstructionsTab } from "./InstructionsTab";
 import { QueryError } from "./QueryError";
 import { RunTab, useAgentRuns } from "./RunTab";
 
@@ -21,8 +23,18 @@ const tabs = [
   { id: "changes", label: "변경" },
   { id: "commits", label: "커밋" },
   { id: "run", label: "실행" },
+  { id: "instructions", label: "지시" },
 ];
-export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof useAgentsData> }) {
+export function AgentDetail({
+  id,
+  data,
+  popout = false,
+}: {
+  id: string;
+  data: ReturnType<typeof useAgentsData>;
+  /** Shown in its own popout window rather than the agents page. */
+  popout?: boolean;
+}) {
   const detail = useRpcQuery("agents.get", { id });
   const listed = data.tasks.find((task) => task.id === id);
   const task = detail.data ?? listed;
@@ -51,10 +63,11 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         projectName={
           projects.data?.items.find((project) => project.id === task.projectId)?.name ?? "프로젝트를 찾을 수 없음"
         }
-        toolName={data.profiles.data?.items.find((profile) => profile.id === task.profile)?.label ?? task.profile}
+        toolName={toolLabel(data.profiles.data?.items, task.profile)}
         now={data.now}
         resource={data.resources.get(id)}
         behind={data.stats.get(id)?.behind}
+        popout={popout}
       />
       <QueryError query={detail} />
       <QueryError query={sessions} />
@@ -64,6 +77,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         sessionKnown={!!sessions.data}
         onInstruct={instruct}
         onResume={showTerminal}
+        onShowTerminal={showTerminal}
         onTest={(runId) => {
           useAgentRuns.getState().set(id, runId);
           setTab("run");
@@ -101,6 +115,7 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
         {tab === "changes" && <ChangesTab agentId={id} closed={task.state === "closed"} onQuote={instruct} />}
         {tab === "commits" && <CommitsTab agentId={id} />}
         {tab === "run" && <RunTab task={task} />}
+        {tab === "instructions" && <InstructionsTab task={task} />}
       </div>
       {task.state !== "closed" && (
         <Compose
@@ -117,5 +132,9 @@ export function AgentDetail({ id, data }: { id: string; data: ReturnType<typeof 
 export function PopoutAgent() {
   const data = useAgentsData();
   const { id } = useParams({ strict: false }) as { id?: string };
-  return id ? <AgentDetail key={id} id={id} data={data} /> : <EmptyState title="에이전트 작업을 찾을 수 없습니다" />;
+  return id ? (
+    <AgentDetail key={id} id={id} data={data} popout />
+  ) : (
+    <EmptyState title="에이전트 작업을 찾을 수 없습니다" />
+  );
 }

@@ -1,14 +1,28 @@
-import { useEffect, useRef, useState } from "react";
-import { Button, EmptyState, useToasts } from "../../ui";
+import { useEffect, useId, useRef, useState } from "react";
+import { Button, useToasts } from "../../ui";
+import { useOptionalProjectData } from "../projects/ProjectData";
 import { openPopout } from "../terminal/popout";
 import { TerminalView } from "../terminal/TerminalView";
-import { useAgentData } from "./AgentData";
+import { useAgentData, useAgentSummary } from "./AgentData";
+import { AgentEmpty } from "./AgentEmpty";
 import s from "./AgentGrid.module.css";
+import { AgentStateMark } from "./AgentStateMark";
 import { QueryError } from "./detail/QueryError";
-import { type AgentTask, STATE_LABEL } from "./model";
+import { type AgentTask, toolLabel } from "./model";
 
-function Tile({ task, onOpen }: { task: AgentTask; onOpen: (id: string) => void }) {
+function Tile({
+  task,
+  projectName,
+  toolName,
+  onOpen,
+}: {
+  task: AgentTask;
+  projectName: string;
+  toolName: string;
+  onOpen: (id: string) => void;
+}) {
   const cell = useRef<HTMLDivElement>(null);
+  const id = useId();
   const [width, setWidth] = useState(1000);
   useEffect(() => {
     const el = cell.current;
@@ -30,21 +44,33 @@ function Tile({ task, onOpen }: { task: AgentTask; onOpen: (id: string) => void 
           <p>{task.state === "preparing" ? "터미널을 준비하는 중…" : "연결된 터미널이 없습니다"}</p>
         )}
       </div>
+      {/* The name is what tiles are found by; the state and project · tool reach a screen reader as the
+          description, from two ids so that the title is not read twice. */}
       <button
         type="button"
         className={s.cover}
         aria-label={`${task.title} 터미널 미리보기`}
+        aria-describedby={`${id}-state ${id}-source`}
         onClick={() => onOpen(task.id)}
       >
         <span className={s.caption}>
-          <strong>{task.title}</strong>
-          <span>{STATE_LABEL[task.state]}</span>
+          <span className={s.heading}>
+            <strong>{task.title}</strong>
+            <AgentStateMark id={`${id}-state`} state={task.state} />
+          </span>
+          <span id={`${id}-source`} className={s.source}>
+            {projectName} · {toolName}
+          </span>
         </span>
       </button>
     </div>
   );
 }
 export function AgentGrid({ tasks, onOpen }: { tasks: AgentTask[]; onOpen: (id: string) => void }) {
+  // The shell's shared project and profile lists, with the agent list's fallbacks when one is missing.
+  const projects = useOptionalProjectData();
+  const profiles = useAgentSummary()?.profiles.data?.items;
+  const names = new Map((projects?.data?.items ?? []).map((project) => [project.id, project.name]));
   const openTasks = tasks.filter((task) => task.state !== "closed");
   const columns = openTasks.length < 5 ? 2 : openTasks.length < 10 ? 3 : 4;
   return (
@@ -62,7 +88,8 @@ export function AgentGrid({ tasks, onOpen }: { tasks: AgentTask[]; onOpen: (id: 
         </Button>
       </div>
       {!openTasks.length ? (
-        <EmptyState title="에이전트 작업이 없습니다" />
+        // The same next action as the list view's body; it reads the shared lists, so only an empty grid needs them.
+        <AgentEmpty onOpen={onOpen} />
       ) : (
         <section
           aria-label="에이전트 터미널 격자"
@@ -70,7 +97,13 @@ export function AgentGrid({ tasks, onOpen }: { tasks: AgentTask[]; onOpen: (id: 
           style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
         >
           {openTasks.map((task) => (
-            <Tile key={task.id} task={task} onOpen={onOpen} />
+            <Tile
+              key={task.id}
+              task={task}
+              projectName={names.get(task.projectId) ?? "프로젝트를 찾을 수 없음"}
+              toolName={toolLabel(profiles, task.profile)}
+              onOpen={onOpen}
+            />
           ))}
         </section>
       )}

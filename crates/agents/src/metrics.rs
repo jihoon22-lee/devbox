@@ -1,14 +1,143 @@
 use crate::{
     model::*,
-    service::{AgentsService, Result},
+    service::{AgentsService, Result, changed},
     state::AgentState,
     store,
 };
 use devbox_protocol::{Fail, Internal};
 use futures::{StreamExt, stream};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
+};
+/// The token refreshes that run, by task, each with whether a turn ended since its read began.
+/// A task has one refresh at a time; a turn that ends during it has it read once more.
+#[derive(Default)]
+pub(crate) struct TokenRefreshes(Mutex<HashMap<String, bool>>);
+impl TokenRefreshes {
+    fn tasks(&self) -> MutexGuard<'_, HashMap<String, bool>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+    /// Whether a refresh of `task` starts now. One that runs is asked to read once more instead.
+    fn start(&self, task: &str) -> bool {
+        let mut tasks = self.tasks();
+        if let Some(again) = tasks.get_mut(task) {
+            *again = true;
+            return false;
+        }
+        tasks.insert(task.to_owned(), false);
+        true
+    }
+    /// Whether the refresh of `task` reads once more: a turn ended during its read. When it does
+    /// not, it has ended, and the next turn's end starts another.
+    fn again(&self, task: &str) -> bool {
+        let mut tasks = self.tasks();
+        if tasks.get_mut(task).is_some_and(std::mem::take) {
+            return true;
+        }
+        tasks.remove(task);
+        false
+    }
+    fn end(&self, task: &str) {
+        self.tasks().remove(task);
+    }
+}
+/// The refresh of `task` while it runs. Dropped before the refresh ended itself (`again`), on
+/// shutdown or a panic, it ends the refresh, so the task's next turn end starts another.
+struct Running<'a> {
+    refreshes: &'a TokenRefreshes,
+    task: &'a str,
+    ended: bool,
+}
+impl Running<'_> {
+    /// Whether the refresh reads once more; when it does not, it has ended
+    /// (see `TokenRefreshes::again`).
+    fn again(&mut self) -> bool {
+        let again = self.refreshes.again(self.task);
+        self.ended = !again;
+        again
+    }
+}
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            self.refreshes.end(self.task);
+        }
+    }
+}
 impl AgentsService {
     pub async fn usage(&self, id: &str) -> Result<AgentUsage> {
         self.read_usage(id, false).await
+    }
+    /// A turn of task `id` ended and may have added tokens: its stored total, which the list
+    /// shows, is read again in the background as `agents.usage` reads it.
+    pub(crate) fn refresh_tokens(self: &Arc<Self>, id: &str) {
+        if self.stop.is_cancelled() || !self.token_refreshes.start(id) {
+            return;
+        }
+        let (service, id) = (self.clone(), id.to_owned());
+        self.background.spawn(async move {
+            let mut running = Running {
+                refreshes: &service.token_refreshes,
+                task: &id,
+                ended: false,
+            };
+            loop {
+                tokio::select! {
+                    _ = service.stop.cancelled() => return,
+                    () = service.store_tokens(&id) => {}
+                }
+                if !running.again() {
+                    return;
+                }
+            }
+        });
+    }
+    /// Reads the usage of open task `id` and stores its total. A read without one leaves the
+    /// stored total, and a closed task keeps the total read when it closed.
+    async fn store_tokens(&self, id: &str) {
+        let usage = match self.read_usage(id, false).await {
+            Ok(usage) => usage,
+            Err(error) => {
+                tracing::debug!(?error, agent = id, "agent token total not read");
+                return;
+            }
+        };
+        let Some(tokens) = usage.tokens else {
+            return;
+        };
+        let truncated = usage.truncated;
+        let (key, hub, stop) = (id.to_owned(), self.hub.clone(), self.stop.clone());
+        let stored = self
+            .db
+            .write_checked_with_commit(
+                move |tx| {
+                    // Nothing is written once the daemon shuts down.
+                    if stop.is_cancelled() {
+                        return Ok(Err(()));
+                    }
+                    let Some(mut task) = store::get(tx, &key)? else {
+                        return Ok(Err(()));
+                    };
+                    if task.state == AgentState::Closed
+                        || (task.tokens.as_ref() == Some(&tokens)
+                            && task.tokens_truncated == truncated)
+                    {
+                        return Ok(Err(()));
+                    }
+                    // Only the total: the state, its attention, the activity epoch and the update
+                    // time, which orders the list, stay.
+                    task.tokens = Some(tokens);
+                    task.tokens_truncated = truncated;
+                    store::put(tx, &task)?;
+                    Ok(Ok(task))
+                },
+                move |task, rev| changed(&hub, task, rev, false),
+            )
+            .await;
+        if let Err(error) = stored {
+            tracing::warn!(?error, agent = id, "agent token total not stored");
+        }
     }
     /// `closing` reads for a task about to close, which keeps that usage for good.
     async fn read_usage(&self, id: &str, closing: bool) -> Result<AgentUsage> {
@@ -179,3 +308,6 @@ impl AgentsService {
         Ok(AgentResources { items })
     }
 }
+#[cfg(test)]
+#[path = "token_refresh_tests.rs"]
+mod token_refresh_tests;

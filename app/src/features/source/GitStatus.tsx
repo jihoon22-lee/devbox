@@ -15,19 +15,29 @@ function ProjectGitStatus({ projectId }: { projectId: string }) {
     { enabled: visible, staleTime: 0, refetchInterval: visible ? 15000 : false },
   );
   const summary = status.data?.summary;
+  const text = status.error
+    ? "조회 실패"
+    : summary
+      ? `${summary.branch ?? "분리된 HEAD"} ↑${summary.ahead} ↓${summary.behind} · 변경 ${status.data!.files.length}`
+      : "불러오는 중…";
   return (
     <button
       type="button"
-      style={{ background: "transparent", border: 0, color: "inherit", cursor: "pointer" }}
+      title={`Git ${text}`}
+      style={{
+        background: "transparent",
+        border: 0,
+        color: "inherit",
+        cursor: "pointer",
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
       onClick={() => void navigate({ to: "/source" })}
-      aria-label="Git 상태 · 소스로 이동"
+      aria-label={`Git ${text} · 소스로 이동`}
     >
-      Git{" "}
-      {status.error
-        ? "조회 실패"
-        : summary
-          ? `${summary.branch ?? "분리된 HEAD"} ↑${summary.ahead} ↓${summary.behind} · 변경 ${status.data!.files.length}`
-          : "불러오는 중…"}
+      Git {text}
     </button>
   );
 }

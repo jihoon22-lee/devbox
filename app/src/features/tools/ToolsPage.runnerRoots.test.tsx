@@ -57,7 +57,7 @@ async function setup(tabRoot: CollectionRoot = project) {
   }
   render(<Harness />);
   const user = userEvent.setup();
-  await user.click(screen.getByText("환경", { selector: "summary" }));
+  await user.click(screen.getByText(/^환경 · /, { selector: "summary" }));
   return { backend, user, route: (search: ToolsSearch) => act(() => navigate(search)) };
 }
 async function select(root: CollectionRoot, review = true) {

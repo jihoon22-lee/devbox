@@ -60,14 +60,14 @@ export function useRunActions(projectId: string, onRun: (run: Run) => void) {
         await refresh();
       }
     });
-  const stopRun = (run: Run) =>
+  const stopRun = (run: Run, undoable = true) =>
     perform(async () => {
       const result = await stop.mutateAsync({ runId: run.id });
       onRun(result);
       useToasts.getState().push({
         tone: "info",
         title: `${run.defId} 중지됨`,
-        ...(run.kind === "service" && liveRun(run)
+        ...(undoable && run.kind === "service" && liveRun(run)
           ? { undo: () => requestRunStopUndo({ run: result, client, generation }) }
           : {}),
       });
@@ -109,6 +109,8 @@ export function useRunActions(projectId: string, onRun: (run: Run) => void) {
     });
   return {
     action,
+    // Undo restarts from the definition, so a run whose definition is gone has none.
+    stopOrphan: (run: Run) => void stopRun(run, false),
     containerAction,
     busy: busy || trust.pending,
     feedback: (

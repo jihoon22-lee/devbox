@@ -73,6 +73,17 @@ export function serializeEnvFile(file: EnvFile): { text: string; cleared: string
   return { text: `${JSON.stringify({ version: 1, name: file.name, variables }, null, 2)}\n`, cleared };
 }
 
+/** The ids of rows a save wrote as secrets (cleared by name) join the draft's secret ids, once each. */
+export function markClearedSecrets(
+  secretIds: string[],
+  rows: { id: string; name: string }[],
+  cleared: string[],
+): string[] {
+  const ids = new Set(secretIds);
+  for (const row of rows) if (cleared.includes(row.name)) ids.add(row.id);
+  return [...ids];
+}
+
 export function envFilePath(name: string, used: Set<string>): string {
   const base = safeFileName(name);
   for (let n = 1; ; n++) {

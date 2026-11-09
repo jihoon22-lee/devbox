@@ -382,6 +382,8 @@ os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
     } else if modes[0].starts_with("rebase") {
         if modes[0].ends_with("fails") {
             "rebase_review_tests::rebase_stop_failure_blocks_git_mutation"
+        } else if modes[0] == "rebase-existing-dirty" {
+            "rebase_review_tests::rebase_rejects_existing_dirty_without_quiescing"
         } else if modes[0].contains("-late-") {
             "rebase_review_tests::rebase_revalidates_committed_head_and_dirty_content_after_stop"
         } else {
@@ -483,6 +485,11 @@ os.execv('/bin/bash',['bash','--noprofile','--norc',*args])
             assert!(
                 owner.scope.try_wait().expect("scope state").is_none(),
                 "rejected title must leave owned process alive"
+            );
+        } else if mode == &"rebase-existing-dirty" {
+            assert!(
+                owner.scope.try_wait().expect("scope state").is_none(),
+                "a refused dirty rebase must leave owned process alive"
             );
         } else if !mode.ends_with("fails") {
             assert!(

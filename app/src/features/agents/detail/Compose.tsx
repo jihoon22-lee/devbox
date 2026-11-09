@@ -35,6 +35,8 @@ export function Compose({
   const lifetime = useRef(0);
   // Pasted text and Enter could answer the tool's approval prompt. The draft stays editable.
   const waiting = agentState === "waiting";
+  // Waiting with a live tool, the action row's [터미널에서 응답] is the one primary action: [보내기] does not look like one.
+  const answerInTerminal = waiting && !disabled;
   // biome-ignore lint/correctness/useExhaustiveDependencies: Changing the target cancels its queued composition intent.
   useEffect(() => {
     lifetime.current++;
@@ -135,7 +137,7 @@ export function Compose({
       />
       <Button
         type="submit"
-        variant="primary"
+        variant={answerInTerminal ? "secondary" : "primary"}
         disabled={disabled || waiting || state !== "ready" || !text.trim() || send.isPending}
       >
         보내기 <Kbd keys={["Ctrl", "Enter"]} />

@@ -32,7 +32,7 @@ export function ProjectTrustDialog({
       onOpenChange={(open) => !open && onCancel()}
       onOpenAutoFocus={(event) => {
         event.preventDefault();
-        cancel.current?.focus();
+        cancel.current?.focus({ preventScroll: true });
       }}
       footer={
         <>

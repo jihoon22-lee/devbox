@@ -1,8 +1,8 @@
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { RpcProvider } from "../../rpc/RpcProvider";
+import { RpcProvider, useRpcSession } from "../../rpc/RpcProvider";
 import { AgentDataProvider } from "../agents/AgentData";
-import { task } from "../agents/test-fixtures";
-import { ProjectWire } from "../projects/test-wire";
+import { profiles, task } from "../agents/test-fixtures";
+import { ProjectWire, projects } from "../projects/test-wire";
 import { AttentionBridge } from "./AttentionBridge";
 import { useNotifications } from "./store";
 
@@ -44,7 +44,7 @@ test("attention uses current visible list detail and task counts, and hidden gri
   expect(mocks.attention).toHaveBeenLastCalledWith({
     id: "a",
     title: "작업 a · 입력 대기",
-    body: "입력 확인",
+    body: "claude — 입력 확인",
     visible: false,
   });
   location = { pathname: "/agents", search: { id: "a", view: "list" } };
@@ -158,4 +158,105 @@ test("preflight and trust failures retain the exact project and task without inv
     </RpcProvider>,
   );
   expect(wire.sent).toContainEqual({ type: "unsubscribe", subId: sub.id });
+});
+
+type Seeds = { projectsCache: boolean; profilesCache: boolean };
+const customProfile = {
+  id: "opencode-work",
+  label: "OpenCode Work",
+  command: "opencode",
+  hooks: "opencode" as const,
+  waitingPatterns: [],
+};
+function Seed({ projectsCache, profilesCache }: Seeds) {
+  const { qc } = useRpcSession();
+  if (projectsCache) qc.setQueryData(["projects.list", {}], { rev: "1", items: [{ ...projects[0], name: "app" }] });
+  if (profilesCache) qc.setQueryData(["agents.profiles", {}], { items: [...profiles, customProfile] });
+  return null;
+}
+/** Delivers one attention event per [profile, message]; the last arg is a missing task. */
+async function attentionBodies(seed: Seeds, events: [string, string][], projectId = "a") {
+  mocks.attention.mockReset();
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <Seed {...seed} />
+        <AttentionBridge />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  const items = events.map(([profile], index) => ({
+    ...task(`t${index}`, "waiting"),
+    title: "같은 제목",
+    profile,
+    projectId,
+  }));
+  await act(async () => wire.reply("agents.list", { rev: "1", items }));
+  const sub = wire.sent.find((message) => message.topic === "agents.attention")!;
+  for (const [index, [, message]] of events.entries())
+    await act(async () =>
+      wire.deliver({
+        type: "event",
+        subId: sub.id,
+        rev: String(index + 2),
+        payload: { id: `t${index}`, state: "waiting", message },
+      }),
+    );
+  return mocks.attention.mock.calls.map((call) => (call[0] as { body: string }).body);
+}
+const PI_TRUST = "pi가 이 폴더의 프로젝트 설정을 신뢰할지 묻고 있습니다.";
+const both = { projectsCache: true, profilesCache: true };
+test("same_title_agent_notices_keep_tool_identity_and_deliver_without_cache", async () => {
+  expect(
+    await attentionBodies(both, [
+      ["claude", "입력 확인"],
+      ["codex", "입력 확인"],
+      ["opencode", "opencode 승인 요청: bash"],
+      ["pi", "pi 승인 요청"],
+      ["pi", PI_TRUST],
+    ]),
+  ).toEqual([
+    "app · Claude Code — 입력 확인",
+    "app · Codex — 입력 확인",
+    "app — opencode 승인 요청: bash",
+    "app — pi 승인 요청",
+    `app — ${PI_TRUST}`,
+  ]);
+  expect(useNotifications.getState().items.find((item) => item.key === "agent:t1")?.body).toBe(
+    "app · Codex — 입력 확인",
+  );
+  cleanup();
+  useNotifications.getState().clear();
+  expect(
+    await attentionBodies({ projectsCache: false, profilesCache: false }, [
+      ["claude", "입력 확인"],
+      ["opencode", "opencode 승인 요청"],
+      ["pi", PI_TRUST],
+      ["pirate", "pirate 요청"],
+    ]),
+  ).toEqual(["claude — 입력 확인", "opencode 승인 요청", PI_TRUST, "pirate — pirate 요청"]);
+});
+test("a custom opencode profile takes its plugin family from hooks, not its id", async () => {
+  expect(
+    await attentionBodies(both, [
+      ["opencode-work", "opencode 승인 요청: bash"],
+      ["opencode-work", "opencodex 요청"],
+    ]),
+  ).toEqual(["app — opencode 승인 요청: bash", "app · OpenCode Work — opencodex 요청"]);
+});
+test("project and profile cache combinations never leave an empty segment", async () => {
+  expect(await attentionBodies({ projectsCache: false, profilesCache: true }, [["claude", "확인"]])).toEqual([
+    "Claude Code — 확인",
+  ]);
+  cleanup();
+  mocks.attention.mockReset();
+  expect(await attentionBodies({ projectsCache: true, profilesCache: false }, [["codex", "확인"]])).toEqual([
+    "app · codex — 확인",
+  ]);
+  cleanup();
+  expect(await attentionBodies({ projectsCache: true, profilesCache: true }, [["pi", "pi 승인 요청"]], "none")).toEqual(
+    ["pi 승인 요청"],
+  );
 });

@@ -36,7 +36,7 @@ test("attention owns one subscription, reads current cache titles and counts tas
   );
   expect(useNotifications.getState().items[0]).toMatchObject({
     title: "작업 a · 입력 대기",
-    body: "needs Bash",
+    body: "claude — needs Bash",
     target: { to: "/agents", search: { id: "a", view: "list" } },
   });
   act(() => useNotifications.getState().markAllRead());

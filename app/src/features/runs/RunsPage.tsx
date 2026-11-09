@@ -13,11 +13,13 @@ import { visibleTrustText } from "../projects/visibleTrustText";
 import { DefineDialog } from "./DefineDialog";
 import { LogView } from "./LogView";
 import { ObservationNavigation } from "./ObservationNavigation";
+import { PastRunPicker } from "./PastRunPicker";
 import { usePinnedLogSources } from "./pinnedSources";
 import { RunChips } from "./RunChips";
+import { RunFailureTaskAction } from "./RunFailureTaskAction";
 import { RunList, type RunSelection } from "./RunList";
 import s from "./RunsPage.module.css";
-import { resultLabel, runStateLabel } from "./runPresentation";
+import { failedRun, resultLabel, runStateLabel } from "./runPresentation";
 import { SystemOverview } from "./SystemOverview";
 import { type RunsSearch, runsSearch } from "./search";
 import { useRunActions } from "./useRunActions";
@@ -86,6 +88,8 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
     if (!selection && list.data?.defs[0]) setSelection({ definitionId: list.data.defs[0].def.id });
   }, [selection, list.data]);
   const run = detail.data?.run;
+  // Known from the selection before a picked run's detail arrives.
+  const defId = run?.defId ?? definition?.def.id;
   useEffect(() => {
     if (run && selection && "definitionId" in selection && !selection.definitionId && selection.runId === run.id)
       setSelection({ definitionId: run.defId, runId: run.id });
@@ -196,6 +200,7 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                 busy={actions.busy}
                 onSelect={setSelection}
                 onAction={actions.action}
+                onStopOrphan={actions.stopOrphan}
                 onEdit={(definition) => setEditor({ definition })}
                 onContainerAction={actions.containerAction}
               />
@@ -208,16 +213,29 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
           <header className={s.detailHeader}>
             <h2>{definition?.def.id ?? run?.defId ?? container?.name ?? "실행 로그"}</h2>
             {run && (
+              <div className={s.metadata}>
+                <span>상태 {runStateLabel[run.state]}</span>
+                <span>
+                  실행 ID <code>{run.id}</code>
+                </span>
+                <span>PID {run.pid ?? "—"}</span>
+                <span>재시작 {run.restarts}회</span>
+                <span>{resultLabel(run)}</span>
+              </div>
+            )}
+            {/* Outside the run's blocks: it stays mounted while a picked run loads, so the select keeps focus. */}
+            {defId && runId && (
+              <PastRunPicker
+                projectId={projectId}
+                defId={defId}
+                value={runId}
+                shown={run}
+                onPick={(id) => setSelection({ definitionId: defId, runId: id })}
+              />
+            )}
+            {run && (
               <>
-                <div className={s.metadata}>
-                  <span>상태 {runStateLabel[run.state]}</span>
-                  <span>
-                    실행 ID <code>{run.id}</code>
-                  </span>
-                  <span>PID {run.pid ?? "—"}</span>
-                  <span>재시작 {run.restarts}회</span>
-                  <span>{resultLabel(run)}</span>
-                </div>
+                {failedRun(run) && <RunFailureTaskAction key={`fix-${run.id}`} run={run} />}
                 <RunChips key={run.id} run={run} />
                 {run.windows && (
                   <Banner tone="info">
@@ -264,6 +282,9 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
           projectId={projectId}
           {...editor}
           onClose={() => setEditor(undefined)}
+          onSaved={() => {
+            if (detect) void suggestions.refetch();
+          }}
         />
       )}
     </>

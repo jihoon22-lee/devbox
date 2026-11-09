@@ -33,6 +33,14 @@ pub(crate) struct Binding {
     pub owned_rebase: bool,
     #[serde(default)]
     pub resources: Resources,
+    /// The launch resumed the tool's session (Claude `--resume`, Codex `resume`), which hands the
+    /// tool no instruction: it starts at its prompt with no turn to report. A send, Claude's first
+    /// prompt, or the judgement that the tool is ready clears it; a send that never reached the
+    /// tool puts it back. A Codex turn found in its metadata (a prompt typed in the pane) ends the
+    /// wait through `turn_id` instead and may leave this set: every reader also requires `turn_id`
+    /// to be `None`, and nothing clears `turn_id` within a launch.
+    #[serde(default)]
+    pub resumed_session: bool,
     pub thread_id: Option<String>,
     pub turn_id: Option<String>,
     pub rollout: Option<PathBuf>,
@@ -45,6 +53,7 @@ impl Binding {
             launch_id: None,
             owned_rebase: false,
             resources: Resources::Planned,
+            resumed_session: false,
             thread_id: None,
             turn_id: None,
             rollout: None,
@@ -53,6 +62,14 @@ impl Binding {
     }
     pub fn matches(&self, thread: &str, turn: &str) -> bool {
         self.thread_id.as_deref() == Some(thread) && self.turn_id.as_deref() == Some(turn)
+    }
+    /// Whether `task`, on this launch, resumed a session and still waits at the tool's prompt for
+    /// its first instruction: no turn began, and the task runs with nothing asked of the user.
+    pub(crate) fn awaits_first_instruction(&self, task: &crate::model::AgentTask) -> bool {
+        self.resumed_session
+            && self.turn_id.is_none()
+            && task.state == crate::state::AgentState::Running
+            && task.attention.is_none()
     }
 }
 #[derive(

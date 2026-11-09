@@ -1,5 +1,4 @@
 pub(crate) use crate::events::{apply_event, changed};
-#[cfg(test)]
 use crate::tracker::Binding;
 use crate::{
     model::*,
@@ -58,12 +57,23 @@ pub struct AgentsService {
     pub(crate) launches: Arc<crate::ready::Launches>,
     /// When this daemon started: it may have missed the reports of launches from before.
     pub(crate) started_ms: i64,
+    /// The token totals read again after a turn's end (see `refresh_tokens`).
+    pub(crate) token_refreshes: crate::metrics::TokenRefreshes,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+/// What shows that a Codex turn ended (see `AgentsService::complete_codex`).
+pub(crate) enum CodexTurnEnd {
+    /// Codex's `notify` named this thread and turn.
+    Reported(crate::hooks::CodexCompletionCandidate),
+    /// A launch that resumed Codex's session, before any turn, sat at Codex's prompt (see
+    /// `watch::shows_prompt`) while the task and binding were as the output watcher saw them.
+    /// Codex waits for the next instruction and has no message of its own.
+    Ready(Box<crate::watch::Snapshot>),
 }
 impl AgentsService {
     pub fn new(
@@ -98,6 +108,7 @@ impl AgentsService {
             waiting_patterns: OnceLock::new(),
             launches: Arc::default(),
             started_ms: now_ms(),
+            token_refreshes: Default::default(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -128,19 +139,24 @@ impl AgentsService {
     where
         F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
     {
-        self.update_bound(id, None, false, f).await
+        let (done, _) = self
+            .update_bound(id, None, false, move |task, _| f(task))
+            .await?;
+        Ok(done)
     }
-    /// `announce_later` holds back the notice of a wait the update enters (see
-    /// `announce_later`); the task still changes at once.
+    /// `launch`, when given, must be the task's current launch: `f` then also gets that launch's
+    /// binding, which is saved with the task when `f` changes it. `announce_later` holds back the
+    /// notice of a wait the update enters (see `announce_later`); the task still changes at once.
+    /// Also says whether the update turned the task idle: one of its turns ended.
     async fn update_bound<F>(
         &self,
         id: &str,
         launch: Option<String>,
         announce_later: bool,
         f: F,
-    ) -> Result<Done>
+    ) -> Result<(Done, bool)>
     where
-        F: FnOnce(&mut AgentTask) -> bool + Send + 'static,
+        F: FnOnce(&mut AgentTask, Option<&mut Binding>) -> bool + Send + 'static,
     {
         let id = id.to_owned();
         let hub = self.hub.clone();
@@ -152,17 +168,22 @@ impl AgentsService {
                     let Some(mut task) = store::get(tx, &id)? else {
                         return Ok(Err(Some(AgentsError::NotFound { id })));
                     };
-                    if let Some(launch) = launch
-                        && store::binding(tx, &id)?
-                            .and_then(|b| b.launch_id)
-                            .as_deref()
+                    let mut binding = None;
+                    if let Some(launch) = launch {
+                        binding = store::binding(tx, &id)?;
+                        if binding.as_ref().and_then(|b| b.launch_id.as_deref())
                             != Some(launch.as_str())
-                    {
+                        {
+                            return Ok(Err(None));
+                        }
+                    }
+                    let stored = binding.clone();
+                    let previous_state = task.state;
+                    if !f(&mut task, binding.as_mut()) {
                         return Ok(Err(None));
                     }
-                    let previous_state = task.state;
-                    if !f(&mut task) {
-                        return Ok(Err(None));
+                    if let Some(binding) = binding.filter(|b| Some(b) != stored.as_ref()) {
+                        store::put_binding(tx, &id, &binding)?;
                     }
                     if task.state != AgentState::Waiting {
                         approvals.forget(&task.id);
@@ -178,20 +199,25 @@ impl AgentsService {
             .internal("update agent")?;
         match result {
             Ok(((task, previous), rev)) => {
+                let turned_idle = task.state == AgentState::Idle && previous != AgentState::Idle;
                 if announce_later && task.state != previous && task.state == AgentState::Waiting {
                     self.announce_later(task);
                 }
-                Ok(Done {
+                let done = Done {
                     rev: rev.to_string(),
-                })
+                };
+                Ok((done, turned_idle))
             }
             Err(Some(e)) => Err(e.into()),
-            Err(None) => Ok(Done {
-                rev: self.db.rev().to_string(),
-            }),
+            Err(None) => Ok((
+                Done {
+                    rev: self.db.rev().to_string(),
+                },
+                false,
+            )),
         }
     }
-    pub async fn event(&self, p: AgentEventParams) -> Result<Done> {
+    pub async fn event(self: &Arc<Self>, p: AgentEventParams) -> Result<Done> {
         let lifecycle = matches!(
             p.source,
             crate::hooks::HookSource::Setup | crate::hooks::HookSource::Exit
@@ -272,7 +298,9 @@ impl AgentsService {
                     rev: self.db.rev().to_string(),
                 });
             }
-            return self.complete_codex(&task.id, candidate).await;
+            return self
+                .complete_codex(&task.id, CodexTurnEnd::Reported(candidate))
+                .await;
         } else {
             crate::hooks::parse(p.source, &p.payload, p.code)
         };
@@ -321,12 +349,28 @@ impl AgentsService {
             }
             _ => launch.clone(),
         };
+        // A launch that resumed Claude's session begins at Claude's prompt with no turn (see
+        // `Binding::resumed_session`). Claude says it is there by starting the resumed session.
+        let resumed = launch.is_some()
+            && crate::hooks::claude_session_source(&p.payload).as_deref() == Some("resume");
         let approvals = self.approvals.clone();
-        self.update_bound(&p.agent_id, bound, trust, move |t| {
+        let update = self.update_bound(&p.agent_id, bound, trust, move |t, binding| {
             if let Some(exports) = exports {
                 exports.turn_completed(&t.id);
             }
             if let Some(launch) = &launch {
+                let mut events = events;
+                // The launch's first prompt ends its wait for one. Before it, the resumed session's
+                // start ends the wait as a finished turn does, once: Claude waits for the next
+                // instruction.
+                if let Some(binding) = binding {
+                    if events.contains(&AgentEvent::PromptSubmitted) {
+                        binding.resumed_session = false;
+                    } else if resumed && binding.awaits_first_instruction(t) {
+                        binding.resumed_session = false;
+                        events.push(AgentEvent::TurnComplete { message: None });
+                    }
+                }
                 return approvals.apply(t, launch, approval, events);
             }
             let mut changed = false;
@@ -334,13 +378,20 @@ impl AgentsService {
                 changed |= apply_event(t, &event, now_ms())
             }
             changed
-        })
-        .await
+        });
+        let (done, turned_idle) = update.await?;
+        // The turn that ended may have added tokens. The stored total is read again, after the
+        // opencode export read before it was dropped above.
+        if turned_idle {
+            self.refresh_tokens(&task.id);
+        }
+        Ok(done)
     }
-    async fn complete_codex(
-        &self,
+    /// Ends a Codex turn as `end` shows it, checked against the task and its binding in the writer.
+    pub(crate) async fn complete_codex(
+        self: &Arc<Self>,
         id: &str,
-        candidate: crate::hooks::CodexCompletionCandidate,
+        end: CodexTurnEnd,
     ) -> Result<Done> {
         let id = id.to_owned();
         let hub = self.hub.clone();
@@ -351,23 +402,37 @@ impl AgentsService {
                     let Some(mut task) = store::get(tx, &id)? else {
                         return Ok(Err(Some(AgentsError::NotFound { id })));
                     };
-                    let Some(binding) = store::binding(tx, &id)? else {
-                        return Ok(Err(None));
-                    };
-                    if task.state == AgentState::Closed
-                        || !binding.matches(&candidate.thread_id, &candidate.turn_id)
-                        || candidate.cwd != task.workdir
-                    {
+                    let binding = store::binding(tx, &id)?;
+                    if task.state == AgentState::Closed {
                         return Ok(Err(None));
                     }
+                    let message = match end {
+                        CodexTurnEnd::Reported(candidate) => {
+                            if !binding.as_ref().is_some_and(|b| {
+                                b.matches(&candidate.thread_id, &candidate.turn_id)
+                            }) || candidate.cwd != task.workdir
+                            {
+                                return Ok(Err(None));
+                            }
+                            candidate.message
+                        }
+                        // Judged once: the launch no longer waits for its first instruction.
+                        CodexTurnEnd::Ready(seen) => {
+                            if !seen.current(&task, &binding) || !crate::watch::eligible(&task) {
+                                return Ok(Err(None));
+                            }
+                            let Some(mut binding) =
+                                binding.filter(|b| b.awaits_first_instruction(&task))
+                            else {
+                                return Ok(Err(None));
+                            };
+                            binding.resumed_session = false;
+                            store::put_binding(tx, &id, &binding)?;
+                            None
+                        }
+                    };
                     let previous_state = task.state;
-                    if !apply_event(
-                        &mut task,
-                        &AgentEvent::TurnComplete {
-                            message: candidate.message,
-                        },
-                        now_ms(),
-                    ) {
+                    if !apply_event(&mut task, &AgentEvent::TurnComplete { message }, now_ms()) {
                         return Ok(Err(None));
                     }
                     store::put(tx, &task)?;
@@ -378,9 +443,15 @@ impl AgentsService {
             .await
             .internal("complete Codex turn")?;
         match result {
-            Ok((_, rev)) => Ok(Done {
-                rev: rev.to_string(),
-            }),
+            Ok(((task, _), rev)) => {
+                // Every write here ends a turn: the reported one, also on a task still idle from
+                // the turn before (a turn typed in the pane can end before a poll sees it start),
+                // or the resumed session's ready judgement. A repeated report writes nothing.
+                self.refresh_tokens(&task.id);
+                Ok(Done {
+                    rev: rev.to_string(),
+                })
+            }
             Err(Some(e)) => Err(e.into()),
             Err(None) => Ok(Done {
                 rev: self.db.rev().to_string(),

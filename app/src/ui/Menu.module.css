@@ -26,6 +26,17 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/*
+ * Danger text on the selection tint is under 4.5:1, so a highlighted danger item fills instead. The fill
+ * carries the highlight, so the outline takes its colour, and a Kbd chip uses the filled-button colours.
+ */
+.item[data-danger][data-highlighted]:not([data-disabled]) {
+  background: var(--danger);
+  color: var(--accent-fg);
+  outline-color: var(--danger);
+  --kbd-color: var(--accent-fg);
+  --kbd-border: color-mix(in srgb, var(--accent-fg) 45%, transparent);
+}
 .item[data-disabled] {
   color: var(--fg-subtle);
 }
@@ -33,10 +44,19 @@
   .content {
     border-color: ButtonBorder;
   }
-  .item[data-highlighted] {
+  /*
+   * Repeats the danger selector so its higher specificity cannot replace the system highlight. The item
+   * opts out of the Canvas backplate, which would hide HighlightText (CommandPalette.module.css).
+   */
+  .item[data-highlighted],
+  .item[data-danger][data-highlighted]:not([data-disabled]) {
+    forced-color-adjust: none;
     color: HighlightText;
     background: Highlight;
     outline-color: Highlight;
+    box-shadow: none;
+    --kbd-color: HighlightText;
+    --kbd-border: HighlightText;
   }
   .item[data-disabled] {
     color: GrayText;

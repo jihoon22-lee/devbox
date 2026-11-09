@@ -25,7 +25,8 @@
   margin: 0;
   font-size: var(--text-md);
 }
-.listGroups h3 {
+.listGroups h3,
+.listGroups h4 {
   margin: var(--space-3) var(--space-2) var(--space-1);
   font-size: var(--text-sm);
 }

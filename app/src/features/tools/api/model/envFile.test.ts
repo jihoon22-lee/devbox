@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { envFilePath, environmentFromPreview, parseEnvFile, serializeEnvFile } from "./envFile";
+import { envFilePath, environmentFromPreview, markClearedSecrets, parseEnvFile, serializeEnvFile } from "./envFile";
 
 describe("environment files", () => {
   it("secret_values_are_cleared_and_references_kept", () => {
@@ -86,4 +86,15 @@ describe("environment files", () => {
     expect(file.variables).toEqual([{ name: "a", value: "1" }]);
     expect(file.variables[0]).not.toHaveProperty("enabled");
   });
+});
+
+it("markClearedSecrets adds the rows the save cleared once", () => {
+  const rows = [
+    { id: "a", name: "AUTH" },
+    { id: "b", name: "host" },
+    { id: "c", name: "AUTH" },
+  ];
+  expect(markClearedSecrets(["b"], rows, ["AUTH"])).toEqual(["b", "a", "c"]);
+  expect(markClearedSecrets(["a"], rows, ["AUTH"])).toEqual(["a", "c"]);
+  expect(markClearedSecrets(["a"], rows, [])).toEqual(["a"]);
 });

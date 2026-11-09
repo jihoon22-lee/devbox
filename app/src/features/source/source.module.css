@@ -26,6 +26,29 @@
   flex-wrap: wrap;
   padding: var(--space-2);
 }
+/* Source view tabs. The underline is a border, not a box-shadow, so the :focus-visible ring stays. */
+.sectionTab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.sectionTab[aria-selected="true"] {
+  background: var(--bg-0);
+  border-bottom-color: var(--accent);
+  color: var(--fg);
+}
+/* Forced colours turn the transparent underline into CanvasText, so unselected tabs paint it as Canvas. */
+@media (forced-colors: active) {
+  .sectionTab[aria-selected="true"] {
+    border-bottom-color: Highlight;
+  }
+  .sectionTab:not([aria-selected="true"]) {
+    border-bottom-color: Canvas;
+  }
+}
 .editorHeader {
   justify-content: space-between;
   font-size: var(--text-sm);
