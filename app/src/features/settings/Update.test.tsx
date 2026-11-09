@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { UpdateSnapshot } from "./nativeUpdate";
-import { Update } from "./Update";
+import { Update, UpdateStatus } from "./Update";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn(), off: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
@@ -145,3 +145,30 @@ test("Rust chooses the retry action and an unknown download length stays indeter
   expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
   expect(screen.getByText("25바이트")).toBeVisible();
 });
+
+test.each([
+  ["idle", {}, "앱 1.2.3"],
+  [
+    "available",
+    { phase: "available", availableVersion: "1.3.0", nextAction: "download" },
+    "새 업데이트를 내려받을 수 있습니다.",
+  ],
+  ["unreadable", null, "업데이트 조회 실패"],
+] as const)(
+  "the %s status bar chip repeats its label as a title so a narrow bar can cut it short",
+  async (_, value, label) => {
+    if (value) native.invoke.mockResolvedValue({ ...initial, ...value });
+    else native.invoke.mockRejectedValue(new Error("offline"));
+    render(<UpdateStatus />);
+    const chip = await screen.findByRole("button", { name: "앱 업데이트 정보" });
+    expect(chip).toHaveTextContent(label);
+    expect(chip).toHaveAttribute("title", label);
+    const { minWidth, overflow, textOverflow, whiteSpace } = chip.style;
+    expect({ minWidth, overflow, textOverflow, whiteSpace }).toEqual({
+      minWidth: "0",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    });
+  },
+);

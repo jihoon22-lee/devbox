@@ -29,9 +29,14 @@ textarea {
   font: inherit;
   color: inherit;
 }
+/*
+ * Forced colours drop author shadows, but not inside an opted-out item (forced-color-adjust: none, such
+ * as a highlighted Menu or Select row that Radix focuses), which would keep the theme focus ring.
+ */
 @media (forced-colors: active) {
   :focus-visible {
     outline: 2px solid CanvasText;
+    box-shadow: none;
   }
 }
 /*

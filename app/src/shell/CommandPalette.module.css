@@ -27,7 +27,8 @@
 }
 /*
  * Forced colours paint a Canvas backplate behind text, and HighlightText can equal Canvas, so the label
- * would vanish. The current option opts out and sets the system pair itself, its Kbd chip included.
+ * would vanish. The current option opts out and sets the system pair itself, its Kbd chip included. The
+ * opt-out also keeps author shadows, so it drops the theme focus ring itself.
  */
 @media (forced-colors: active) {
   .option[aria-selected="true"] {
@@ -35,6 +36,7 @@
     color: HighlightText;
     background: Highlight;
     outline-color: Highlight;
+    box-shadow: none;
     --kbd-color: HighlightText;
     --kbd-border: HighlightText;
   }

@@ -402,6 +402,7 @@ test("forced-colors-keep-highlight-on-pressed-selected-and-highlighted-items", a
       expect(await look(trash), "highlighted danger menu item").toMatchObject({
         background: highlight,
         color: highlightText,
+        boxShadow: "none",
       });
       await expectPaintedLabel(page, trash.locator("span").first(), trash, "highlighted danger menu item");
       const rename = page.getByRole("menuitem", { name: "이름 바꾸기", exact: true });
@@ -420,6 +421,7 @@ test("forced-colors-keep-highlight-on-pressed-selected-and-highlighted-items", a
       expect(await look(lit), "highlighted Select option").toMatchObject({
         background: highlight,
         color: highlightText,
+        boxShadow: "none",
       });
       await expectPaintedLabel(page, lit.locator("span").first(), lit, "highlighted Select option");
       const unlit = listbox.locator('[role="option"]:not([data-highlighted])').first();

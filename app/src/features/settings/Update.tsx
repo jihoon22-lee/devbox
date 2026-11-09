@@ -146,22 +146,34 @@ export function Update() {
 export function UpdateStatus() {
   const { native, snapshot, issue } = useNativeUpdate();
   if (!native || (!snapshot && !issue)) return null;
+  const label = issue
+    ? "업데이트 조회 실패"
+    : snapshot?.phase === "installing" || (snapshot?.enabled && snapshot.phase !== "idle")
+      ? snapshot.error === "recoveryRequired"
+        ? "업데이트 설치 상태 확인 필요"
+        : snapshot.error === "runner"
+          ? "업데이트 준비 상태 확인 중"
+          : phaseLabel(snapshot)
+      : `앱 ${snapshot?.currentVersion}`;
+  // A long phase sentence shortens with an ellipsis (whole in the title) before the daemon version beside it.
   return (
     <button
       type="button"
       aria-label="앱 업데이트 정보"
+      title={label}
       onClick={() => openSettings("about")}
-      style={{ background: "transparent", border: 0, cursor: "pointer", color: "inherit" }}
+      style={{
+        background: "transparent",
+        border: 0,
+        cursor: "pointer",
+        color: "inherit",
+        minWidth: 0,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
     >
-      {issue
-        ? "업데이트 조회 실패"
-        : snapshot?.phase === "installing" || (snapshot?.enabled && snapshot.phase !== "idle")
-          ? snapshot.error === "recoveryRequired"
-            ? "업데이트 설치 상태 확인 필요"
-            : snapshot.error === "runner"
-              ? "업데이트 준비 상태 확인 중"
-              : phaseLabel(snapshot)
-          : `앱 ${snapshot?.currentVersion}`}
+      {label}
     </button>
   );
 }
