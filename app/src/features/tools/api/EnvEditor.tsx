@@ -13,7 +13,14 @@ import { Banner, Button, ConfirmDialog } from "../../../ui";
 import s from "./Api.module.css";
 import { SendFailure, useApiBackend } from "./backend";
 import { type Row, row } from "./model/draft";
-import { type EnvFile, envFilePath, isEnvPath, parseEnvFile, serializeEnvFile } from "./model/envFile";
+import {
+  type EnvFile,
+  envFilePath,
+  isEnvPath,
+  markClearedSecrets,
+  parseEnvFile,
+  serializeEnvFile,
+} from "./model/envFile";
 import { ParamTable } from "./ParamTable";
 import { DirtyMark } from "./RequestTabs";
 import { rootKey, useApiTabs } from "./store";
@@ -202,6 +209,7 @@ export function EnvEditor({ root }: { root: CollectionRoot }) {
           path,
           digest: written.digest,
           baseline: snapshot(target.name, target.rows),
+          secretIds: markClearedSecrets(latest.secretIds, target.rows, cleared),
           unreviewed: false,
         });
       patch({ notice: savedNotice(cleared, current ? undefined : target.name) });

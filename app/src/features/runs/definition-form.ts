@@ -34,6 +34,26 @@ export interface DefinitionForm {
   missed: MissedPolicy;
   saveTo: SaveTo;
 }
+/** The dialog still holds the untouched suggestion id of a definition the list already has. */
+export const staleSuggestion = (
+  form: DefinitionForm,
+  suggestion: Suggestion | undefined,
+  editing: boolean,
+  defs: Definition[],
+) => !editing && suggestion?.id === form.id && defs.some(({ def }) => def.id === form.id);
+
+/** `buildDefinition`, but not for a suggestion's untouched id that the list already has. */
+export function buildChecked(
+  form: DefinitionForm,
+  suggestion: Suggestion | undefined,
+  editing: boolean,
+  defs: Definition[],
+) {
+  if (staleSuggestion(form, suggestion, editing, defs))
+    throw new Error("같은 이름(식별자)의 작업이 이미 있습니다. 이름을 바꾸거나 목록에서 그 작업을 수정하세요.");
+  return buildDefinition(form);
+}
+
 export function initialDefinitionForm(definition?: Definition, suggestion?: Suggestion): DefinitionForm {
   const def = definition?.def;
   const executable = def && def.kind !== "schedule" ? def : undefined;

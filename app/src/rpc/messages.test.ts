@@ -192,3 +192,16 @@ test("resume_metadata_failure_explains_record_recovery", () => {
   expect(action).toContain("[같은 지시로 새 작업]");
   expect(action).toContain("Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다.");
 });
+
+test("a transient Codex record read error asks to retry the resume", () => {
+  const { title, action } = messageFor("agents.session_metadata", { diagnostic: "unavailable" });
+  expect(title).toBe("에이전트의 대화 기록을 읽지 못했습니다.");
+  expect(action).toBe(
+    "잠시 뒤 [재개]를 다시 눌러 주세요. 계속 실패하면 작업 폴더와 파일은 그대로 있으니 [같은 지시로 새 작업]으로 다시 시작하세요.",
+  );
+  for (const detail of [{ diagnostic: "missing" }, { diagnostic: "bogus" }, {}, undefined]) {
+    const old = messageFor("agents.session_metadata", detail);
+    expect(old.title).toBe("에이전트의 대화 기록을 확인하지 못했습니다.");
+    expect(old.action).toContain("Codex 대화 기록을 찾지 못해 이 작업은 재개할 수 없습니다.");
+  }
+});

@@ -165,3 +165,56 @@ test("authoritative same-revision refresh updates trust after a successful proje
   await waitFor(() => expect(screen.getByLabelText("목록 신뢰 상태")).toHaveTextContent(/^approved$/));
   expect(screen.getByRole("heading", { name: "작업 수정" })).toBeVisible();
 });
+
+const suggestion = { id: "test", command: "pnpm test", kind: "task", from: "package.json" } as const;
+const listWith = (id: string): DefinitionList => ({
+  ...emptyList,
+  defs: [
+    {
+      source: "projectFile",
+      def: {
+        id,
+        kind: "task",
+        command: "old",
+        cwd: null,
+        worktree: null,
+        target: "linux",
+        env: {},
+        dependsOn: [],
+        secrets: [],
+      } as unknown as DefinitionList["defs"][number]["def"],
+    },
+  ],
+});
+async function openSuggestion(existing: string) {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <DefineDialog projectId="project-1" suggestion={suggestion} onClose={() => {}} />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("runtime.list")).toHaveLength(1));
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  await act(async () => wire.reply("runtime.list", listWith(existing)));
+  return wire;
+}
+test("a stale suggestion cannot replace an existing definition", async () => {
+  const wire = await openSuggestion("test");
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(
+    await screen.findByText("같은 이름(식별자)의 작업이 이미 있습니다. 이름을 바꾸거나 목록에서 그 작업을 수정하세요."),
+  ).toBeVisible();
+  expect(wire.requests("runtime.define")).toHaveLength(0);
+  const name = screen.getByRole("textbox", { name: "작업 이름 (식별자)" });
+  await userEvent.clear(name);
+  await userEvent.type(name, "test-2");
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(wire.requests("runtime.define")).toHaveLength(1));
+  expect((wire.request("runtime.define").params as DefineRun).def.id).toBe("test-2");
+});
+test("a suggestion whose id is not listed saves with the suggestion's id", async () => {
+  const wire = await openSuggestion("other");
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(wire.requests("runtime.define")).toHaveLength(1));
+  expect((wire.request("runtime.define").params as DefineRun).def.id).toBe("test");
+});
