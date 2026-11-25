@@ -359,3 +359,31 @@ fn a_codex_screen_where_a_send_still_reaches_the_prompt_is_not_waiting() {
     }
     assert!(held.is_empty(), "waiting: {held:#?}");
 }
+
+#[test]
+fn the_real_codex_0_172_0_feedback_list_is_waiting_and_not_a_ready_prompt() {
+    let patterns = codex_patterns();
+    // A real capture: /feedback's list of kinds, open over the prompt box of a task whose turn
+    // ended. Enter would pick "1. bug".
+    let list = screen(include_str!(
+        "../tests/fixtures/codex-0.172.0/feedback-list.txt"
+    ));
+    assert_eq!(list.lines().count(), 50);
+    assert!(list.ends_with("  enter select · esc back\n"), "{list}");
+    // The fixture's rows lost their trailing spaces (see its header). tmux gives a blank row as
+    // one space and may pad the others (codex-0.167.0/resume-ready.txt).
+    let padded = list
+        .lines()
+        .map(|row| match row {
+            "" => " \n".to_owned(),
+            row => format!("{row:<200}\n"),
+        })
+        .collect::<String>();
+    for (name, shown) in [("as stored", list), ("padded", padded.as_str())] {
+        assert!(matches_waiting(&patterns, shown), "{name}");
+        // The selected choice starts with "› " as the prompt box does: the list is no ready
+        // prompt, whatever the waiting patterns say.
+        assert!(shown.contains("\n› 1. bug "), "{name}");
+        assert!(!shows_prompt(shown), "{name}");
+    }
+}
