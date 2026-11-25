@@ -1,6 +1,6 @@
 import type { PortInfo, ProcessInfo } from "../../rpc/gen/rpc";
 import { openExternal } from "../../shell/external";
-import { Button, useToasts } from "../../ui";
+import { Badge, Button, useToasts } from "../../ui";
 import { type ProcessTarget, TerminateButton } from "./ProcessTermination";
 
 type Actions = { busy: boolean; request: (target: ProcessTarget) => void };
@@ -17,7 +17,10 @@ export function portBrowserUrl(port: Pick<PortInfo, "proto" | "addr" | "port">):
     return;
   }
 }
-export function PortsTable({ ports, actions }: { ports: PortInfo[]; actions: Actions }) {
+/** The current project's ports first; the snapshot's order is kept inside each group. */
+export function PortsTable({ ports, actions, projectId }: { ports: PortInfo[]; actions: Actions; projectId?: string }) {
+  const mine = (port: PortInfo) => projectId !== undefined && port.projectId === projectId;
+  const ordered = [...ports].sort((a, b) => Number(mine(b)) - Number(mine(a)));
   return (
     <table>
       <thead>
@@ -32,7 +35,7 @@ export function PortsTable({ ports, actions }: { ports: PortInfo[]; actions: Act
         </tr>
       </thead>
       <tbody>
-        {ports.map((port, index) => {
+        {ordered.map((port, index) => {
           const url = portBrowserUrl(port);
           const target =
             port.pid && port.pid > 1 && port.startTimeMs != null && !port.containerId
@@ -40,7 +43,15 @@ export function PortsTable({ ports, actions }: { ports: PortInfo[]; actions: Act
               : undefined;
           return (
             <tr key={`${port.proto}:${port.addr}:${port.port}:${port.pid}:${index}`}>
-              <td>{port.port}</td>
+              <td>
+                {port.port}
+                {mine(port) && (
+                  <>
+                    {" "}
+                    <Badge tone="info">현재 프로젝트</Badge>
+                  </>
+                )}
+              </td>
               <td>{port.proto}</td>
               <td>{port.addr}</td>
               <td>{port.process ?? "—"}</td>

@@ -17,12 +17,15 @@ impl ObserveService {
         let work = tokio::task::spawn_blocking(move || {
             (
                 crate::ports::ports_snapshot(&proc, &projects, &runs),
+                projects,
                 permit,
             )
         });
-        let (rows, _permit) = work.await.internal("read host ports")?;
+        let (rows, projects, _permit) = work.await.internal("read host ports")?;
         let mut rows = rows?;
-        rows.extend(crate::docker_ports::snapshot(&self.docker).await);
+        let published = crate::docker_ports::snapshot(&self.docker, &projects).await;
+        crate::docker_ports::inherit_projects(&mut rows, &published);
+        rows.extend(published);
         rows.sort_by(|a, b| {
             (a.port, &a.addr, &a.container_id).cmp(&(b.port, &b.addr, &b.container_id))
         });

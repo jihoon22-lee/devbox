@@ -1,5 +1,5 @@
 import { decodeFrame } from "../../rpc/frame";
-import type { Definition, DefinitionList, Run, Suggestion } from "../../rpc/gen/rpc";
+import type { ContainerInfo, Definition, DefinitionList, Run, Suggestion } from "../../rpc/gen/rpc";
 import { ProjectWire } from "../projects/test-wire";
 export const serviceDefinition: Definition = {
   source: "thisPc",
@@ -46,8 +46,16 @@ export class RunWire extends ProjectWire {
   historyFails = false;
   trust: DefinitionList["trust"] = "not_required";
   suggestions: Suggestion[] = [];
-  containers = [
-    { id: "a".repeat(64), name: "owned-container", image: "fake", state: "running", status: "Up", ports: "" },
+  containers: ContainerInfo[] = [
+    {
+      id: "a".repeat(64),
+      name: "owned-container",
+      image: "fake",
+      state: "running",
+      status: "Up",
+      ports: "",
+      projectId: "p",
+    },
   ];
   override send(frame: Uint8Array) {
     super.send(frame);

@@ -131,7 +131,11 @@ export type ContainerAction = "start" | "stop" | "restart";
 export type ContainerActionParams = { id: string, action: ContainerAction, };
 export type ContainerActionResult = { id: string, action: ContainerAction, undo: ContainerActionParams | null, };
 export type ContainerError = { "code": "runtime.container_invalid_id" } | { "code": "runtime.container_unavailable" } | { "code": "runtime.container_failed" } | { "code": "runtime.container_timeout" } | { "code": "runtime.container_output_limit" } | { "code": "runtime.container_invalid_output" } | { "code": "runtime.container_cancelled" };
-export type ContainerInfo = { id: string, name: string, image: string, state: string, status: string, ports: string, composeProject?: string, };
+export type ContainerInfo = { id: string, name: string, image: string, state: string, status: string, ports: string, composeProject?: string, 
+/**
+ * The registered project whose folder holds the container's Compose working directory.
+ */
+projectId?: string, };
 export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
 export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };

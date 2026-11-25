@@ -35,6 +35,10 @@ pub struct ContainerInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub compose_project: Option<String>,
+    /// The registered project whose folder holds the container's Compose working directory.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

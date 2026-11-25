@@ -1,5 +1,6 @@
 //! Bounded Docker CLI calls. No shell and no Docker daemon ownership.
 use crate::*;
+use devbox_core::project_root::ProjectRoot;
 use devbox_protocol::{Fail, Internal};
 use serde::Deserialize;
 use std::{path::PathBuf, process::Stdio, time::Duration};
@@ -30,7 +31,13 @@ impl DockerContainers {
             action_timeout: Duration::from_secs(30),
         }
     }
-    pub async fn list(&self, cancel: CancellationToken) -> R<ContainersResult> {
+    /// `roots` is composition input: each container is attributed to the project that holds
+    /// its Compose working directory.
+    pub async fn list(
+        &self,
+        roots: &[ProjectRoot],
+        cancel: CancellationToken,
+    ) -> R<ContainersResult> {
         let output = self
             .run(
                 vec!["ps".into(), "-a".into(), "--format".into(), "json".into()],
@@ -43,7 +50,7 @@ impl DockerContainers {
             CliOutput::Finished { success: false, .. } => {
                 Ok(unavailable(ContainerUnavailableReason::DaemonUnavailable))
             }
-            CliOutput::Finished { stdout, .. } => parse_ps(&stdout),
+            CliOutput::Finished { stdout, .. } => parse_ps(&stdout, roots),
         }
     }
     pub async fn action(
@@ -124,10 +131,10 @@ struct DockerRow {
     state: String,
     status: String,
     ports: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "devbox_core::project_root::docker_labels")]
     labels: String,
 }
-pub(crate) fn parse_ps(bytes: &[u8]) -> R<ContainersResult> {
+pub(crate) fn parse_ps(bytes: &[u8], roots: &[ProjectRoot]) -> R<ContainersResult> {
     if bytes.len() > OUTPUT_LIMIT {
         return Err(ContainerError::OutputLimit.into());
     }
@@ -148,6 +155,7 @@ pub(crate) fn parse_ps(bytes: &[u8]) -> R<ContainersResult> {
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned)
         });
+        let project_id = devbox_core::project_root::compose_project(&row.labels, roots);
         items.push(ContainerInfo {
             id: row.id,
             name: row.names,
@@ -156,6 +164,7 @@ pub(crate) fn parse_ps(bytes: &[u8]) -> R<ContainersResult> {
             status: row.status,
             ports: row.ports,
             compose_project,
+            project_id: project_id.map(str::to_owned),
         });
     }
     Ok(ContainersResult {

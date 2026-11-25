@@ -18,10 +18,84 @@ fn containers_argv_and_json_compose_fixture() {
         container_args("abc", ContainerAction::Stop),
         ["stop", "abc"]
     );
-    let parsed = parse_ps(ROW.as_bytes()).expect("fixture result");
+    let parsed = parse_ps(ROW.as_bytes(), &[]).expect("fixture result");
     assert_eq!(parsed.items[0].compose_project.as_deref(), Some("owned"));
     assert_eq!(parsed.items[0].ports, "127.0.0.1:8080->80/tcp");
     assert!(parsed.available);
+}
+
+// The column set of one `docker ps -a --format json` line for a Compose service.
+const COMPOSE_ROW: &str = r#"{"Command":"\"/docker-entrypoint.…\"","CreatedAt":"2026-01-01 00:00:00 +0000 UTC","ID":"0123456789ab","Image":"nginx:alpine","Labels":"com.docker.compose.config-hash=0f0f,com.docker.compose.container-number=1,com.docker.compose.depends_on=db:service_started:false,cache:service_started:false,com.docker.compose.oneoff=False,com.docker.compose.project=app,com.docker.compose.project.config_files=/home/u/projects/app/compose.yaml,com.docker.compose.project.working_dir=/home/u/projects/app,com.docker.compose.service=web,com.docker.compose.version=2.29.0","LocalVolumes":"0","Mounts":"","Names":"app-web-1","Networks":"app_default","Ports":"0.0.0.0:8080->80/tcp, [::]:8080->80/tcp","RunningFor":"2 hours ago","Size":"0B","State":"running","Status":"Up 2 hours"}"#;
+fn roots() -> Vec<devbox_core::project_root::ProjectRoot> {
+    [
+        ("app", "/home/u/projects/app"),
+        ("api", "/home/u/projects/app/services/api"),
+    ]
+    .map(|(id, path)| devbox_core::project_root::ProjectRoot {
+        id: id.into(),
+        path: path.into(),
+    })
+    .into()
+}
+#[test]
+fn containers_take_the_project_of_the_compose_working_dir_label() {
+    let project = |row: &str| {
+        let parsed = parse_ps(row.as_bytes(), &roots()).expect("fixture result");
+        assert_eq!(parsed.items.len(), 1);
+        parsed.items[0].project_id.clone()
+    };
+    let in_dir = |dir: &str| {
+        COMPOSE_ROW.replace(
+            "working_dir=/home/u/projects/app,",
+            &format!("working_dir={dir},"),
+        )
+    };
+    assert_eq!(project(COMPOSE_ROW).as_deref(), Some("app"));
+    assert_eq!(
+        project(&in_dir("/home/u/projects/app/services/api")).as_deref(),
+        Some("api"),
+        "nested projects: the longest root wins"
+    );
+    assert_eq!(
+        project(&in_dir("/home/u/projects/app2")),
+        None,
+        "sibling with a common prefix"
+    );
+    assert_eq!(project(&in_dir("/home/u/projects/app/../other")), None);
+    assert_eq!(
+        project(ROW),
+        None,
+        "a container without the label stays unattributed"
+    );
+    // Without registered projects the rest of the row is unchanged.
+    let parsed = parse_ps(COMPOSE_ROW.as_bytes(), &[]).expect("fixture result");
+    assert_eq!(parsed.items[0].project_id, None);
+    assert_eq!(parsed.items[0].name, "app-web-1");
+    assert_eq!(parsed.items[0].compose_project.as_deref(), Some("app"));
+}
+#[test]
+fn containers_wire_shape_has_an_optional_project_id_and_no_labels() {
+    let parsed =
+        parse_ps(format!("{COMPOSE_ROW}\n{ROW}\n").as_bytes(), &roots()).expect("fixture result");
+    let json = serde_json::to_value(&parsed).expect("fixture result");
+    assert_eq!(json["items"][0]["projectId"], "app");
+    assert!(json["items"][1].get("projectId").is_none());
+    let text = json.to_string();
+    assert!(!text.contains("working_dir") && !text.contains("/home/u/projects/app"));
+}
+#[test]
+fn containers_labels_that_are_not_text_do_not_fail_the_listing() {
+    for odd in ["null", "7", r#"["a=b"]"#, r#"{"a":"b"}"#] {
+        let rows = format!(
+            "{}\n{COMPOSE_ROW}\n",
+            ROW.replace(r#""Labels":"other=hello,com.docker.compose.project=owned,com.docker.compose.service=web""#, &format!(r#""Labels":{odd}"#))
+        );
+        let parsed = parse_ps(rows.as_bytes(), &roots()).expect("the listing survives odd labels");
+        assert_eq!(parsed.items.len(), 2, "{odd}");
+        assert_eq!(parsed.items[0].compose_project, None);
+        assert_eq!(parsed.items[0].project_id, None);
+        assert_eq!(parsed.items[1].project_id.as_deref(), Some("app"));
+    }
 }
 
 #[tokio::test]
@@ -29,7 +103,7 @@ async fn containers_missing_cli_is_unavailable_not_empty() {
     let dir = tempfile::tempdir().expect("fixture result");
     let adapter = DockerContainers::new(dir.path().join("missing"));
     let result = adapter
-        .list(CancellationToken::new())
+        .list(&[], CancellationToken::new())
         .await
         .expect("fixture result");
     assert!(!result.available);
@@ -80,7 +154,7 @@ async fn containers_fake_argv_actions_and_stop_undo() {
         );
     }
     let result = adapter
-        .list(CancellationToken::new())
+        .list(&[], CancellationToken::new())
         .await
         .expect("fixture result");
     assert!(result.available && result.reason.is_none() && result.items.is_empty());
@@ -96,20 +170,24 @@ async fn containers_fake_argv_actions_and_stop_undo() {
 #[tokio::test]
 async fn containers_fake_ndjson_unavailable_and_failure() {
     let dir = tempfile::tempdir().expect("fixture result");
-    std::fs::write(dir.path().join("rows"), format!("{ROW}\n\n{ROW}\n")).expect("fixture result");
+    std::fs::write(dir.path().join("rows"), format!("{ROW}\n\n{COMPOSE_ROW}\n"))
+        .expect("fixture result");
     let adapter = fake(dir.path(), "/bin/cat rows");
+    let listed = adapter
+        .list(&roots(), CancellationToken::new())
+        .await
+        .expect("fixture result");
+    assert_eq!(listed.items.len(), 2);
+    assert_eq!(listed.items[0].project_id, None);
+    assert_eq!(listed.items[1].project_id.as_deref(), Some("app"));
     assert_eq!(
-        adapter
-            .list(CancellationToken::new())
-            .await
-            .expect("fixture result")
-            .items
-            .len(),
-        2
+        std::fs::read_to_string(dir.path().join("args")).expect("fixture result"),
+        "ps\n-a\n--format\njson\n",
+        "labels come from the one existing call"
     );
     let adapter = fake(dir.path(), "echo private-diagnostic >&2; exit 1");
     let result = adapter
-        .list(CancellationToken::new())
+        .list(&[], CancellationToken::new())
         .await
         .expect("fixture result");
     assert!(!result.available);
@@ -159,18 +237,18 @@ async fn containers_malformed_and_output_bounds() {
     ] {
         std::fs::write(dir.path().join("rows"), bytes).expect("fixture result");
         assert!(matches!(
-            adapter.list(CancellationToken::new()).await,
+            adapter.list(&[], CancellationToken::new()).await,
             Err(devbox_protocol::Fail::Domain(ContainerError::InvalidOutput))
         ));
     }
     std::fs::write(dir.path().join("rows"), vec![b' '; OUTPUT_LIMIT + 1]).expect("fixture result");
     assert!(matches!(
-        adapter.list(CancellationToken::new()).await,
+        adapter.list(&[], CancellationToken::new()).await,
         Err(devbox_protocol::Fail::Domain(ContainerError::OutputLimit))
     ));
     let adapter = fake(dir.path(), "exec /bin/cat rows >&2");
     assert!(matches!(
-        adapter.list(CancellationToken::new()).await,
+        adapter.list(&[], CancellationToken::new()).await,
         Err(devbox_protocol::Fail::Domain(ContainerError::OutputLimit))
     ));
 }
@@ -204,7 +282,7 @@ async fn containers_timeouts_kill_and_reap_owned_child() {
     adapter.list_timeout = std::time::Duration::from_millis(100);
     adapter.action_timeout = std::time::Duration::from_millis(100);
     assert!(matches!(
-        adapter.list(CancellationToken::new()).await,
+        adapter.list(&[], CancellationToken::new()).await,
         Err(devbox_protocol::Fail::Domain(ContainerError::Timeout))
     ));
     reaped(pid(dir.path()).await).await;
@@ -224,7 +302,7 @@ async fn containers_cancellation_and_dropped_future_reap_owned_child() {
         let adapter = fake(dir.path(), "echo $$ > pid; exec /bin/sleep 60");
         let cancel = CancellationToken::new();
         let token = cancel.clone();
-        let task = tokio::spawn(async move { adapter.list(token).await });
+        let task = tokio::spawn(async move { adapter.list(&[], token).await });
         let owned = pid(dir.path()).await;
         if drop_future {
             task.abort();
@@ -252,7 +330,7 @@ async fn containers_output_limit_kills_and_reaps_owned_child() {
             ),
         );
         assert!(matches!(
-            adapter.list(CancellationToken::new()).await,
+            adapter.list(&[], CancellationToken::new()).await,
             Err(devbox_protocol::Fail::Domain(ContainerError::OutputLimit))
         ));
         reaped(pid(dir.path()).await).await;

@@ -33,6 +33,7 @@ export function SystemOverview({ view, projectId }: { view: ObservationView; pro
             : "CPU 사용량 상위 50개 프로세스를 표시합니다."}
         </p>
       )}
+      {view === "ports" && projectId && <p>현재 프로젝트 관련 포트를 먼저 표시합니다.</p>}
       {query.isError ? (
         <ErrorState
           title={
@@ -74,7 +75,7 @@ export function SystemOverview({ view, projectId }: { view: ObservationView; pro
           <p>프로세스가 없습니다.</p>
         )
       ) : ports.data?.length ? (
-        <PortsTable ports={ports.data} actions={actions} />
+        <PortsTable ports={ports.data} actions={actions} projectId={projectId} />
       ) : (
         <p>열린 포트가 없습니다.</p>
       )}

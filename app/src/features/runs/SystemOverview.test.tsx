@@ -66,3 +66,31 @@ test("ports overview lists owners and retries failures without querying system m
   expect(screen.getByText("123")).toBeInTheDocument();
   expect(wire.requests("observe.system")).toHaveLength(0);
 });
+
+test("ports overview of a project says its ports come first and marks them", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <SystemOverview view="ports" projectId="p" />
+    </RpcProvider>,
+  );
+  expect(screen.getByText("현재 프로젝트 관련 포트를 먼저 표시합니다.")).toBeVisible();
+  await waitFor(() => expect(wire.requests("observe.ports")).toHaveLength(1));
+  const row = (port: number, projectId: string | null) => ({
+    port,
+    proto: "tcp",
+    addr: "127.0.0.1",
+    pid: null,
+    process: null,
+    startTimeMs: null,
+    runId: null,
+    containerId: projectId ? "abc" : null,
+    projectId,
+  });
+  await act(async () => wire.reply("observe.ports", [row(3000, null), row(8080, "p")]));
+  const rows = await screen.findAllByRole("row");
+  expect(rows[1]).toHaveTextContent("8080");
+  expect(rows[1]).toHaveTextContent("현재 프로젝트");
+  expect(rows[2]).toHaveTextContent("3000");
+  expect(rows[2]).not.toHaveTextContent("현재 프로젝트");
+});

@@ -137,6 +137,46 @@ async fn owned_tcp_listener_is_observed_with_pid_without_docker() {
     );
     service.shutdown().await;
 }
+#[tokio::test]
+async fn published_port_and_its_host_listener_take_the_container_project() {
+    use std::os::unix::fs::PermissionsExt;
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("fixture result");
+    let port = listener.local_addr().expect("fixture result").port();
+    let temp = tempfile::tempdir().expect("fixture result");
+    // The fake CLI publishes the endpoint this test owns; no real Docker is contacted.
+    let docker = temp.path().join("docker");
+    fs::write(
+        &docker,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' '{{\"ID\":\"fake\",\"Labels\":\"com.docker.compose.project.working_dir=/home/u/projects/app\",\"Ports\":\"127.0.0.1:{port}->80/tcp\"}}'\n"
+        ),
+    )
+    .expect("fixture result");
+    fs::set_permissions(&docker, fs::Permissions::from_mode(0o700)).expect("fixture result");
+    let service = crate::ObserveService::new(docker);
+    // The root does not hold this process's cwd: only the label can attribute the listener.
+    let roots = vec![crate::ProjectRoot {
+        id: "app".into(),
+        path: "/home/u/projects/app".into(),
+    }];
+    let rows = service.ports(roots, vec![]).await.expect("fixture result");
+    let rows: Vec<_> = rows.iter().filter(|r| r.port == port).collect();
+    let published = rows
+        .iter()
+        .find(|r| r.container_id.as_deref() == Some("fake"))
+        .expect("fixture value");
+    assert_eq!(published.project_id.as_deref(), Some("app"));
+    let host = rows
+        .iter()
+        .find(|r| r.pid == Some(std::process::id()))
+        .expect("fixture value");
+    assert_eq!(host.project_id.as_deref(), Some("app"));
+    assert_eq!(
+        host.container_id, None,
+        "a host process stays a host process"
+    );
+    service.shutdown().await;
+}
 
 #[test]
 fn run_readiness_requires_owned_inodes_for_every_ipv4_and_ipv6_hint() {

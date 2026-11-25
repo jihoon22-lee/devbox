@@ -5,6 +5,7 @@ pub mod input;
 pub mod log;
 pub mod notify;
 pub mod paths;
+pub mod project_root;
 #[cfg(unix)]
 pub mod systemd;
 pub use hub::{Hub, HubMessage, HubReceiver};

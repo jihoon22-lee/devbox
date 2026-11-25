@@ -15,6 +15,7 @@ cd -- "${0%/*}" || exit 91
 printf '%s\n' "$@" > args
 [ ! -e failed ] || { echo private-diagnostic >&2; exit 1; }
 if [ "$1" = ps ]; then
+  [ ! -e rows ] || exec /bin/cat rows
   printf '%s\n' '{"ID":"abc","Names":"owned","Image":"fake","State":"running","Status":"Up","Ports":"","Labels":"com.docker.compose.project=owned"}'
 fi
 "##).expect("fixture result");
@@ -36,6 +37,41 @@ fi
         std::fs::read_to_string(bin.join("args")).expect("fixture result"),
         "ps\n-a\n--format\njson\n"
     );
+    assert_eq!(result.items[0].project_id, None);
+    // The route hands the registered project folders to the listing: a container whose Compose
+    // working directory is inside one belongs to that project.
+    let folder = daemon.home.path().join("app");
+    std::fs::create_dir(&folder).expect("fixture result");
+    let project = client
+        .call::<devbox_projects::ProjectsAdd>(&devbox_projects::AddProject {
+            path: folder.to_string_lossy().into_owned(),
+        })
+        .await
+        .expect("fixture result");
+    let row = |id: &str, dir: &str| {
+        format!(
+            r#"{{"ID":"{id}","Names":"{id}","Image":"fake","State":"running","Status":"Up","Ports":"","Labels":"com.docker.compose.project=app,com.docker.compose.project.working_dir={dir},com.docker.compose.service=web"}}"#
+        )
+    };
+    std::fs::write(
+        bin.join("rows"),
+        format!(
+            "{}\n{}\n",
+            row("inside", &format!("{}/deploy", project.path)),
+            row("sibling", &format!("{}2", project.path))
+        ),
+    )
+    .expect("fixture result");
+    let result = client
+        .call::<RuntimeContainers>(&ContainersQuery {})
+        .await
+        .expect("fixture result");
+    assert_eq!(
+        result.items[0].project_id.as_deref(),
+        Some(project.id.as_str())
+    );
+    assert_eq!(result.items[1].project_id, None);
+    std::fs::remove_file(bin.join("rows")).expect("fixture result");
     for action in [
         ContainerAction::Start,
         ContainerAction::Stop,
