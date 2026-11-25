@@ -1,11 +1,13 @@
 use crate::core::{
     deploy::{
-        STARTUP_DOCTOR_ARGS, SetupTrigger, digest, exec_script, install_script, redeploy_failed,
-        setup_args,
+        STARTUP_DOCTOR_ARGS, SetupTrigger, digest, exec_script, install_script, offer,
+        redeploy_failed, setup_args,
     },
     diagnostics::{ReportKind, describe},
+    paint_trace::StartPhase,
     process::{self, ShellError},
 };
+use crate::platform::paint_trace::start_phase;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -15,9 +17,12 @@ pub async fn install(
     cancel: CancellationToken,
 ) -> Result<(), ShellError> {
     let sha = digest(&bytes);
+    start_phase(StartPhase::BundleHash);
     let mut cmd = crate::platform::wsl::command(distro);
     cmd.args(["--exec", "sh", "-c", &install_script(), "sh", &sha]);
-    process::run(cmd, bytes, Duration::from_secs(120), cancel).await?;
+    // The binary crosses into WSL only when the installed one does not already have this hash.
+    let transfer = offer(cmd, bytes, Duration::from_secs(120), cancel).await?;
+    start_phase(transfer.phase());
     Ok(())
 }
 pub async fn setup(
@@ -40,6 +45,7 @@ pub async fn setup(
     process::run(cmd, vec![], Duration::from_secs(90), cancel.clone())
         .await
         .map_err(|e| describe(e, ReportKind::Setup))?;
+    start_phase(StartPhase::Setup);
     let mut doctor = crate::platform::wsl::command(distro);
     doctor
         .args([
@@ -55,6 +61,7 @@ pub async fn setup(
     process::run(doctor, vec![], Duration::from_secs(30), cancel)
         .await
         .map_err(|e| describe(e, ReportKind::Doctor))?;
+    start_phase(StartPhase::Doctor);
     Ok(())
 }
 

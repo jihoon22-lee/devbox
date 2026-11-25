@@ -331,7 +331,13 @@ mod tests {
         publish(dir.path(), b, &digest(b)).await.unwrap();
         let bin = dir.path().join(".local/share/devbox/bin");
         assert_eq!(std::fs::read(bin.join("devbox")).unwrap(), b);
-        assert!(publish(dir.path(), a, &digest(b)).await.is_err());
+        // Bytes for a hash that is not installed must match it. (For the installed hash the
+        // script reads nothing; see deploy_install_tests.rs.)
+        assert!(
+            publish(dir.path(), a, &digest(b"never installed"))
+                .await
+                .is_err()
+        );
         assert_eq!(std::fs::read(bin.join("devbox")).unwrap(), b);
         assert!(std::fs::read_dir(&bin).unwrap().all(|p| {
             !p.unwrap()
@@ -358,7 +364,11 @@ mod tests {
     }
 }
 
-use super::channel::{AppChannel, CHANNEL};
+use super::{
+    channel::{AppChannel, CHANNEL},
+    paint_trace::StartPhase,
+    process::{self, ShellError},
+};
 use sha2::{Digest, Sha256};
 pub fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -432,6 +442,11 @@ fn exec_script_for(channel: AppChannel) -> String {
     format!("{paths}\nexec \"$d/devbox\" \"$@\"")
 }
 
+/// The script says on stdout, before it reads stdin, what it does with the offered binary:
+/// `kept` when a regular file with the expected SHA-256 (`$1`) is already installed, so stdin is
+/// never read and only the link may change; `send` when it wants the binary, and then it
+/// publishes it as before. Every check on the directory runs first on both paths, under the
+/// lock, and a damaged install is refused with the same exit (64 linked, 66 stored) as before.
 const INSTALL_SCRIPT: &str = r#"umask 077
 case "$1" in *[!0-9a-f]*|'') exit 61;; esac
 [ "${#1}" = 64 ] || exit 61
@@ -442,6 +457,7 @@ if mkdir "$d" 2>/dev/null; then printf '%s\n' 'devbox-desktop-bin-v1' > "$d/.own
 [ ! -L "$d/.owner" ] && [ -f "$d/.owner" ] && [ "$(cat "$d/.owner")" = devbox-desktop-bin-v1 ] || exit 63
 exec 9<"$d"
 flock -x -w 15 9
+old=
 if [ -e "$d/devbox" ] || [ -L "$d/devbox" ]; then
  [ -L "$d/devbox" ] || exit 64
  old=$(readlink "$d/devbox")
@@ -450,24 +466,70 @@ if [ -e "$d/devbox" ] || [ -L "$d/devbox" ]; then
  [ "${#h}" = 64 ] && [ -f "$d/$old" ] && [ ! -L "$d/$old" ] || exit 64
  [ "$(sha256sum "$d/$old" | cut -d ' ' -f1)" = "$h" ] || exit 64
 fi
+if [ "$old" = "devbox-$1" ]; then printf '%s\n' kept; exit 0; fi
+target="$d/devbox-$1"
 t=$(mktemp -d "$d/.install-XXXXXXXXXX")
 trap 'rm -rf -- "$t"' EXIT HUP INT TERM
-cat > "$t/binary"
-[ "$(sha256sum "$t/binary" | cut -d ' ' -f1)" = "$1" ] || exit 65
-chmod 755 "$t/binary"
-target="$d/devbox-$1"
-if [ -e "$target" ] || [ -L "$target" ]; then
- [ ! -L "$target" ] && [ -f "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = "$1" ] || exit 66
+if [ -f "$target" ] && [ ! -L "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = "$1" ]; then
+ printf '%s\n' kept
 else
- ln "$t/binary" "$target"
+ printf '%s\n' send
+ cat > "$t/binary"
+ [ "$(sha256sum "$t/binary" | cut -d ' ' -f1)" = "$1" ] || exit 65
+ chmod 755 "$t/binary"
+ if [ -e "$target" ] || [ -L "$target" ]; then
+  [ ! -L "$target" ] && [ -f "$target" ] && [ "$(sha256sum "$target" | cut -d ' ' -f1)" = "$1" ] || exit 66
+ else
+  ln "$t/binary" "$target"
+ fi
 fi
 ln -s "devbox-$1" "$t/link"
 mv -Tf "$t/link" "$d/devbox"
 "#;
 
+/// What the install script did with the offered binary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transfer {
+    /// The installed file already had the expected SHA-256: nothing was sent.
+    Kept,
+    /// The script asked for the binary, verified it and published it.
+    Sent,
+}
+impl Transfer {
+    fn parse(line: &[u8]) -> Option<Self> {
+        match line {
+            b"kept" => Some(Self::Kept),
+            b"send" => Some(Self::Sent),
+            _ => None,
+        }
+    }
+    pub fn phase(self) -> StartPhase {
+        match self {
+            Self::Kept => StartPhase::InstallKept,
+            Self::Sent => StartPhase::InstallSent,
+        }
+    }
+}
+/// Runs the install script and writes `bytes` to it only after it asks with `send`. Whatever
+/// else it says first, stdin is closed unwritten, and only a script that exits 0 after one of
+/// its two answers counts as installed.
+pub async fn offer(
+    command: tokio::process::Command,
+    bytes: Vec<u8>,
+    deadline: std::time::Duration,
+    cancel: tokio_util::sync::CancellationToken,
+) -> Result<Transfer, ShellError> {
+    let output = process::run_answering(command, deadline, cancel, move |line| {
+        (Transfer::parse(line) == Some(Transfer::Sent)).then_some(bytes)
+    })
+    .await?;
+    Transfer::parse(process::first_line(&output.stdout))
+        .ok_or_else(|| ShellError::Invalid("WSL 설치 결과를 확인하지 못했습니다".into()))
+}
+
 /// [다시 설정]'s failure: the fixed message, with the described failed step as its detail. That
 /// is the text the connection screen's [자세히] shows when the same setup fails at launch.
-pub fn redeploy_failed(error: super::process::ShellError) -> super::connection::IpcError {
+pub fn redeploy_failed(error: ShellError) -> super::connection::IpcError {
     super::connection::IpcError::new("WSL 다시 설정을 완료하지 못했습니다")
         .with_detail(error.to_string())
 }
@@ -482,3 +544,7 @@ where
     install().await?;
     setup().await
 }
+
+#[cfg(all(test, unix))]
+#[path = "deploy_install_tests.rs"]
+mod install_tests;

@@ -1,8 +1,9 @@
-use super::{connection::Connection, deploy, wsl};
+use super::{connection::Connection, deploy, paint_trace::start_phase, wsl};
 use crate::core::{
     bridge::{self, Event},
     connection::{INSTANCE, IpcError},
     deploy::SetupTrigger,
+    paint_trace::StartPhase,
     process::ShellError,
     secrets::{self, NativeSecrets},
     settings, wsl as selection,
@@ -32,6 +33,7 @@ pub async fn run(
     cancel: CancellationToken,
 ) {
     conn.gate(app, generation, "checking", None, None);
+    start_phase(StartPhase::Supervise);
     let list = match wsl::distros() {
         Ok(list) => list
             .into_iter()
@@ -94,6 +96,7 @@ pub async fn run(
         );
         return;
     }
+    start_phase(StartPhase::Distro);
     if let Err(e) = wsl::systemd(&distro, cancel.clone()).await {
         if !cancel.is_cancelled() {
             conn.gate(
@@ -118,6 +121,7 @@ pub async fn run(
     let setup = async {
         let _guard = deploy::maintenance_wait(cancel.clone()).await?;
         let bytes = deploy::bundled_binary(app)?;
+        start_phase(StartPhase::BundleRead);
         deploy::apply(&distro, INSTANCE, bytes, trigger, cancel.clone()).await
     }
     .await;
@@ -241,6 +245,7 @@ async fn bridge_once(
                         native.abort();
                     }
                     ready=true;conn.gate(app,generation,"ready",None,None);conn.broadcast(app);
+                    start_phase(StartPhase::Bridge);
                 }
                 Some(Event::Frame(mut frame))=>{
                     if secrets::is_native(&frame) {
