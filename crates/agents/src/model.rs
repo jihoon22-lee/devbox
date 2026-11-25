@@ -40,6 +40,31 @@ pub enum InstructionDelivery {
     Pending,
     Delivered,
     Unknown,
+    /// A first instruction devbox sends itself once the tool shows its prompt (`first_instruction`).
+    Queued,
+    /// A queued first instruction that will not be sent: the tool got another one first, or ended.
+    NotSent,
+}
+
+/// How the task's prompt reaches a tool that takes no prompt argument (see `first_instruction`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FirstInstruction {
+    pub delivery: InstructionDelivery,
+    /// When `delivery` last changed.
+    pub at_ms: i64,
+    /// Why it was not sent, where the task's own record does not show it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<FirstInstructionReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum FirstInstructionReason {
+    /// The daemon was not running for part of the launch, and came back to a pane that may
+    /// already have had a prompt typed into it.
+    Unobserved,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -89,6 +114,12 @@ pub struct AgentTask {
     /// through devbox's extension, so other tools never have it.
     #[serde(default)]
     pub starting_since_ms: Option<i64>,
+    /// The delivery of the task's prompt as its first instruction, for a tool that takes no
+    /// prompt argument (Antigravity). Tasks of the other tools, and ones started without a
+    /// prompt, have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub first_instruction: Option<FirstInstruction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -360,6 +391,15 @@ domain_error! {
         ListChanged = "agents.list_changed",
         ProjectTrustRequired { id: String } = "agents.project_trust_required",
         ToolMissing { command: String } = "agents.tool_missing",
+        // The profile's tool family keeps its connection beside the task's work folder, so a task
+        // without one is refused before anything starts. `tool` is the profile's label.
+        WorkFolderRequired { tool: String } = "agents.work_folder_required",
+        // A folder of the hooks folder's name is beside the work folder and is not this task's.
+        // `path` is that folder, for the user to remove or rename.
+        HooksFolderExists { path: String } = "agents.hooks_folder_exists",
+        // The prompt of a task whose tool gets it pasted starts with `!` or `/`, which the tool
+        // would run as a shell or tool command. `tool` is the profile's label.
+        FirstInstructionCommand { tool: String } = "agents.first_instruction_command",
     }
 }
 

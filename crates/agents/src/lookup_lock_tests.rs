@@ -51,6 +51,7 @@ async fn held_fixture() -> (Fixture, Arc<Held>) {
         command: format!("{HELD} --flag"),
         hooks: crate::profile::Hooks::None,
         waiting_patterns: vec![],
+        prompt_arg: None,
     }];
     (f, held.expect("held probe"))
 }

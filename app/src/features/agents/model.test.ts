@@ -50,8 +50,23 @@ test("counts attention and detects missing hooks of every hooked profile after 9
   expect(hookMissing([missing], profiles, 90_001)).toBe(true);
   const hooked = [
     ...profiles,
-    { id: "opencode", label: "opencode", command: "opencode", hooks: "opencode" as const, waitingPatterns: [] },
-    { id: "plain", label: "Plain", command: "plain", hooks: "none" as const, waitingPatterns: [] },
+    {
+      id: "opencode",
+      label: "opencode",
+      command: "opencode",
+      hooks: "opencode" as const,
+      waitingPatterns: [],
+      promptArg: null,
+    },
+    { id: "plain", label: "Plain", command: "plain", hooks: "none" as const, waitingPatterns: [], promptArg: null },
+    {
+      id: "antigravity",
+      label: "Antigravity",
+      command: "agy",
+      hooks: "antigravity" as const,
+      waitingPatterns: [],
+      promptArg: null,
+    },
   ];
   for (const profile of ["codex", "opencode"]) {
     expect(hookMissing([{ ...missing, profile }], hooked, 91_000)).toBe(true);
@@ -59,6 +74,27 @@ test("counts attention and detects missing hooks of every hooked profile after 9
   // A profile without hooks never reports a session, and a reported session is enough.
   expect(hookMissing([{ ...missing, profile: "plain" }], hooked, 91_000)).toBe(false);
   expect(hookMissing([{ ...missing, profile: "opencode", sessionId: "ses_1" }], hooked, 91_000)).toBe(false);
+  // Antigravity gets no prompt argument: its hooks report a session only with the first instruction
+  // the user sends, whenever that is, so a launch without one is not a missing connection.
+  const agy = { ...missing, profile: "antigravity" };
+  expect(hookMissing([agy], hooked, 91_000)).toBe(false);
+  expect(hookMissing([agy], hooked, 24 * 3600_000)).toBe(false);
+  // devbox sends its first instruction once agy shows its input box, however long the folder-trust
+  // question took. While it is queued, or was never sent, there is no report to miss.
+  for (const delivery of ["queued", "pending", "unknown", "notSent"] as const) {
+    const held = { ...agy, firstInstruction: { delivery, atMs: 1_000 } };
+    expect(hookMissing([held], hooked, 24 * 3600_000)).toBe(false);
+  }
+  // From its delivery, it has the same 90 seconds as the others.
+  const delivered = { ...agy, firstInstruction: { delivery: "delivered" as const, atMs: 500_000 } };
+  expect(hookMissing([delivered], hooked, 590_000)).toBe(false);
+  expect(hookMissing([delivered], hooked, 590_001)).toBe(true);
+  expect(hookMissing([{ ...delivered, sessionId: "conversation" }], hooked, 590_001)).toBe(false);
+  // Without one of its own (started without a prompt, or resumed), from the first instruction sent to it.
+  const instructed = { ...agy, followUps: [{ atMs: 500_000, text: "fix it" }] };
+  expect(hookMissing([instructed], hooked, 590_000)).toBe(false);
+  expect(hookMissing([instructed], hooked, 590_001)).toBe(true);
+  expect(hookMissing([{ ...instructed, sessionId: "conversation" }], hooked, 590_001)).toBe(false);
   // Only Claude reports a session before a prompt: the others wait for the first one.
   for (const prompt of ["", " \n"]) {
     for (const profile of ["codex", "opencode"]) {
@@ -69,7 +105,10 @@ test("counts attention and detects missing hooks of every hooked profile after 9
 });
 
 test("a pi launch that has not said it is ready after 90 seconds is missing its extension", () => {
-  const hooked = [...profiles, { id: "pi", label: "pi", command: "pi", hooks: "pi" as const, waitingPatterns: [] }];
+  const hooked = [
+    ...profiles,
+    { id: "pi", label: "pi", command: "pi", hooks: "pi" as const, waitingPatterns: [], promptArg: null },
+  ];
   // pi has its session from the start, and says it is ready once per launch, prompt or not.
   const starting = { ...task("p", "running", 0), profile: "pi", prompt: "", startingSinceMs: 0 };
   expect(hookMissing([starting], hooked, 90_000)).toBe(false);
@@ -124,4 +163,10 @@ test("failure reasons display session loss, external kill, exit and setup", () =
   expect(failureLabel("killed:9")).toContain("외부");
   expect(failureLabel("exit:2")).toContain("2");
   expect(failureLabel("setup:1")).toContain("준비");
+  // The tool opened another conversation than the task's: what happened, and what to do.
+  expect(failureLabel("session_mismatch")).toBe(
+    "도구가 이 작업의 대화가 아닌 다른 대화를 열었습니다. 이 작업은 처음 대화만 따르므로, 이어 가려면 [같은 지시로 새 작업]으로 다시 시작하세요.",
+  );
+  expect(failureLabel("resume_failed")).toBe("에이전트 작업이 실패했습니다");
+  expect(failureLabel(null)).toBe("에이전트 작업이 실패했습니다");
 });

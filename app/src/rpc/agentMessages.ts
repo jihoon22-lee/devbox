@@ -2,11 +2,15 @@ import {
   cloneMessage,
   field,
   files,
+  firstInstructionCommand,
+  hooksFolderExists,
+  launchWorkFolderRequired,
   type Message,
   type Messages,
   path,
   shellQuote,
   toolMissing,
+  workFolderRequired,
 } from "./messageDetail";
 
 type Domain = "agents" | "projects" | "terminal";
@@ -135,6 +139,9 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
   },
   "agents.tool_missing": toolMissing,
+  "agents.work_folder_required": workFolderRequired,
+  "agents.hooks_folder_exists": hooksFolderExists,
+  "agents.first_instruction_command": firstInstructionCommand,
   "projects.trust_required": {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",
@@ -256,6 +263,7 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     action: "프로젝트 시작 구성과 도구 프로필을 확인해 주세요.",
   },
   "projects.launch_tool_missing": toolMissing,
+  "projects.launch_work_folder_required": launchWorkFolderRequired,
   "projects.launch_failed": {
     title: "시작 구성을 일부 실행하지 못했습니다.",
     action: "이미 시작한 터미널·에이전트·서비스를 확인한 뒤 다시 시도해 주세요.",

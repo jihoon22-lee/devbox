@@ -34,6 +34,41 @@ test("agent errors use actual generated file details and terminal codes", () => 
   }
 });
 
+test("a tool that needs a work folder says so and where to turn one on", () => {
+  // The new task window: the checkbox is right there.
+  expect(messageFor("agents.work_folder_required", { tool: "Antigravity" })).toEqual({
+    title: "Antigravity 작업에는 작업 폴더가 필요합니다.",
+    action: "[작업 폴더 만들기]를 켜고 다시 시작하세요.",
+  });
+  // A project's start configuration: the entry is in the project's file.
+  expect(messageFor("projects.launch_work_folder_required", { tool: "Antigravity" })).toEqual({
+    title: "시작 구성의 Antigravity 에이전트에는 작업 폴더가 필요합니다.",
+    action: ".devbox/devbox.toml의 [launch] agents에서 그 항목에 worktree = true를 적은 뒤 다시 시작하세요.",
+  });
+  // Without a name in the detail the sentence still reads.
+  expect(messageFor("agents.work_folder_required", {}).title).toBe("이 도구의 작업에는 작업 폴더가 필요합니다.");
+  expect(messageFor("projects.launch_work_folder_required").title).toBe(
+    "시작 구성의 이 도구 에이전트에는 작업 폴더가 필요합니다.",
+  );
+});
+
+test("a first instruction the tool would run as a command says why it is not sent and what to do", () => {
+  expect(messageFor("agents.first_instruction_command", { tool: "Antigravity" })).toEqual({
+    title:
+      "`!`나 `/`로 시작하는 지시는 Antigravity가 셸 명령이나 도구 명령으로 실행할 수 있어 첫 지시로 보내지 않습니다.",
+    action: "앞에 다른 말을 붙이거나, 작업을 만든 뒤 터미널에서 직접 입력하세요.",
+  });
+  expect(messageFor("agents.first_instruction_command").title).toContain("이 도구가 셸 명령이나");
+});
+
+test("a leftover hooks folder beside the work folder is named, with what to do about it", () => {
+  const path = "/home/u/projects/web-agents/fix.agy-hooks";
+  expect(messageFor("agents.hooks_folder_exists", { path })).toEqual({
+    title: `작업 폴더 옆에 이 작업의 것이 아닌 폴더가 이미 있어 시작하지 못했습니다: ${path}`,
+    action: "그 폴더를 지우거나 이름을 바꾼 뒤 다시 시도하세요.",
+  });
+});
+
 test("a failed teardown names which command of [agent] teardown to run in the work folder, and how it ended", () => {
   // The index is 1-based, as the daemon sends it. The command's text is not in the error.
   expect(messageFor("agents.teardown_failed", { index: 2, exit_code: 3 })).toEqual({

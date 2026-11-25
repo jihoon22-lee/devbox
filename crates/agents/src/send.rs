@@ -1,6 +1,7 @@
 //! A provisional instruction precedes synchronous hooks; completion compensates only its own epoch.
 use crate::{
     actions::open,
+    first_instruction,
     model::*,
     service::{AgentsService, Result, apply_event, changed, now_ms},
     state::{AgentEvent, AgentState},
@@ -21,6 +22,8 @@ struct Reservation {
     before: AgentTask,
     /// The reserve cleared the launch's ready marker (`Binding::resumed_session`).
     cleared_marker: bool,
+    /// The instruction is the task's queued first one (`first_instruction`), not a follow-up.
+    first: bool,
 }
 impl Reservation {
     /// Whether nothing reached `task` since the reserve: no hook, turn or launch moved it on.
@@ -36,6 +39,16 @@ impl AgentsService {
         // Before the task, its pane or tmux is touched: the app and MCP alike.
         crate::limits::pasted(&p.text)?;
         let _guard = self.actions.lock().await;
+        self.send_guarded(&p, None).await
+    }
+    /// The guarded path of every paste into a task's pane, under the action lock. With `first`,
+    /// the text is the task's queued first instruction and `first` is the watcher's pass that
+    /// saw the tool ready for it (`first_instruction`): the same checks, and stricter ones.
+    pub(crate) async fn send_guarded(
+        &self,
+        p: &SendToAgent,
+        first: Option<&crate::watch::Snapshot>,
+    ) -> Result<AgentTask> {
         let task = self.get(&p.id).await?;
         open(&task)?;
         if task.tool_exited
@@ -70,10 +83,15 @@ impl AgentsService {
         // The stored state below only turns to Waiting once the watcher has seen the prompt sit
         // still. Read the pane now, so Enter cannot answer a prompt that is up but not yet
         // reported (Codex's trust prompt rests on "Trust and continue"). Nothing is reserved yet.
-        if self.pane_is_waiting(&task, session).await? {
+        // A first instruction goes in only at the empty prompt box the watcher saw, read again.
+        let blocked = match first {
+            Some(_) => !self.shows_ready_prompt(&task, session).await?,
+            None => self.pane_is_waiting(&task, session).await?,
+        };
+        if blocked {
             return Err(AgentsError::AwaitingInput.into());
         }
-        let reservation = self.reserve_instruction(&p, &task).await?;
+        let reservation = self.reserve_instruction(p, &task, first.cloned()).await?;
         match self
             .terminal
             .tmux()
@@ -116,6 +134,7 @@ impl AgentsService {
         &self,
         p: &SendToAgent,
         checked: &AgentTask,
+        first: Option<crate::watch::Snapshot>,
     ) -> Result<Reservation> {
         let id = p.id.clone();
         let text = p.text.clone();
@@ -143,16 +162,35 @@ impl AgentsService {
                         return Ok(Err(AgentsError::AwaitingInput));
                     }
                     let binding = store::binding(tx, &id)?;
+                    // Still queued, on the launch and at the moment the watcher judged: a hook,
+                    // a send or a resume since then ends it here.
+                    if first.as_ref().is_some_and(|seen| {
+                        !seen.current(&task, &binding)
+                            || !first_instruction::is(&task, InstructionDelivery::Queued)
+                            || !binding
+                                .as_ref()
+                                .is_some_and(|b| b.awaits_first_instruction(&task))
+                    }) {
+                        return Ok(Err(AgentsError::BadState {
+                            state: "changed".into(),
+                        }));
+                    }
                     let launch = binding
                         .as_ref()
                         .and_then(|binding| binding.launch_id.clone());
                     let before = task.clone();
-                    task.follow_ups.push(FollowUp {
-                        at_ms: now_ms(),
-                        text,
-                        instruction_id: Some(instruction.clone()),
-                        delivery: Some(InstructionDelivery::Pending),
-                    });
+                    if first.is_some() {
+                        first_instruction::set(&mut task, InstructionDelivery::Pending, now_ms());
+                    } else {
+                        task.follow_ups.push(FollowUp {
+                            at_ms: now_ms(),
+                            text,
+                            instruction_id: Some(instruction.clone()),
+                            delivery: Some(InstructionDelivery::Pending),
+                        });
+                        // The user's own instruction takes the queued one's place.
+                        first_instruction::cancel(&mut task, now_ms());
+                    }
                     apply_event(&mut task, &AgentEvent::UserInstructed, now_ms());
                     if let Err(error) =
                         crate::limits::serialized(&task, crate::limits::TASK_BYTES - 4096)
@@ -178,6 +216,7 @@ impl AgentsService {
                         epoch: task.activity_seq,
                         before,
                         cleared_marker,
+                        first: first.is_some(),
                     };
                     store::put(tx, &task)?;
                     Ok(Ok((reservation, task)))
@@ -198,6 +237,13 @@ impl AgentsService {
     ) -> Result<()> {
         let id = id.to_owned();
         let hub = self.hub.clone();
+        // For the log: a send that got through took the queued first instruction's place, and a
+        // send of the first instruction itself that the task outran leaves it unsent.
+        let queued = reservation.first || first_instruction::is_queued(&reservation.before);
+        let why = match reservation.first {
+            true => "the task changed during the send",
+            false => "an instruction was sent",
+        };
         let _ = self
             .db
             .write_checked_with_commit(
@@ -218,7 +264,10 @@ impl AgentsService {
                     store::put(tx, &task)?;
                     Ok(Ok((task, previous)))
                 },
-                move |(task, previous), rev| changed(&hub, task, rev, task.state != *previous),
+                move |(task, previous), rev| {
+                    first_instruction::log_cancelled(queued, task, why);
+                    changed(&hub, task, rev, task.state != *previous)
+                },
             )
             .await
             .internal("finish agent instruction")?;
@@ -235,6 +284,21 @@ fn finish_row(
     if launch != &reservation.launch {
         return false;
     }
+    if reservation.first {
+        if !first_instruction::is(task, InstructionDelivery::Pending) {
+            return false;
+        }
+        // Nothing left devbox: the instruction is queued again, for the watcher's next pass,
+        // unless a hook or a launch moved the task on meanwhile.
+        let delivery = delivery.unwrap_or(if reservation.untouched(task) {
+            InstructionDelivery::Queued
+        } else {
+            InstructionDelivery::NotSent
+        });
+        first_instruction::set(task, delivery, now_ms());
+        task.updated_ms = now_ms();
+        return true;
+    }
     let Some(index) = task
         .follow_ups
         .iter()
@@ -250,6 +314,7 @@ fn finish_row(
             task.state = reservation.before.state;
             task.reason = reservation.before.reason.clone();
             task.attention = reservation.before.attention.clone();
+            task.first_instruction = reservation.before.first_instruction;
             task.activity_seq = task.activity_seq.wrapping_add(1);
         }
     }
@@ -298,6 +363,7 @@ mod tests {
             epoch: task.activity_seq,
             before,
             cleared_marker: false,
+            first: false,
         };
         (task, reservation)
     }
@@ -325,6 +391,43 @@ mod tests {
         // A send that cleared no marker never sets one.
         reservation.cleared_marker = false;
         assert_eq!(restore_marker(&reservation, true, Some(binding)), None);
+    }
+    #[test]
+    fn a_first_instruction_is_finished_on_the_task_and_queued_again_only_when_nothing_moved() {
+        let reserved = || {
+            let (mut task, mut reservation) = provisional();
+            task.follow_ups.clear();
+            first_instruction::set(&mut task, InstructionDelivery::Pending, 2);
+            reservation.first = true;
+            (task, reservation)
+        };
+        let launch = Some("launch".to_owned());
+        for outcome in [InstructionDelivery::Delivered, InstructionDelivery::Unknown] {
+            let (mut task, reservation) = reserved();
+            assert!(finish_row(&mut task, &reservation, &launch, Some(outcome)));
+            assert!(first_instruction::is(&task, outcome));
+            assert_eq!(task.follow_ups, []);
+        }
+        // Nothing left devbox and nothing touched the task: the watcher tries again.
+        let (mut task, reservation) = reserved();
+        assert!(finish_row(&mut task, &reservation, &launch, None));
+        assert!(first_instruction::is(&task, InstructionDelivery::Queued));
+        // A hook moved the task on meanwhile: agy has an instruction, so this one never goes.
+        let (mut task, reservation) = reserved();
+        apply_event(&mut task, &AgentEvent::PromptSubmitted, 3);
+        assert!(finish_row(&mut task, &reservation, &launch, None));
+        assert!(first_instruction::is(&task, InstructionDelivery::NotSent));
+        // Another launch, or an instruction no longer being sent, is left as it is.
+        let (mut task, reservation) = reserved();
+        let before = task.clone();
+        let other = Some("new-launch".to_owned());
+        assert!(!finish_row(&mut task, &reservation, &other, None));
+        first_instruction::set(&mut task, InstructionDelivery::Unknown, 2);
+        let settled = task.clone();
+        let delivered = Some(InstructionDelivery::Delivered);
+        assert!(!finish_row(&mut task, &reservation, &launch, delivered));
+        assert_eq!(task, settled);
+        assert_ne!(settled, before);
     }
     #[test]
     fn unsent_compensation_preserves_a_newer_permission_hook() {

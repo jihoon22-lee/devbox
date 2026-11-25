@@ -12,7 +12,9 @@ fn config_root(agent: AgentTool) -> Probed<PathBuf> {
         AgentTool::Claude => ("CLAUDE_CONFIG_DIR", ".claude"),
         AgentTool::Codex => ("CODEX_HOME", ".codex"),
         // Their sign-in files are not checked.
-        AgentTool::Opencode | AgentTool::Pi => return Err(ProbeIssue::Unavailable),
+        AgentTool::Opencode | AgentTool::Pi | AgentTool::Antigravity => {
+            return Err(ProbeIssue::Unavailable);
+        }
     };
     config_root_from(&home, std::env::var_os(key).map(PathBuf::from), default)
 }

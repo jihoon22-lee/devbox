@@ -188,3 +188,44 @@ test("instruction_history_shows_closed_task_and_delivery_states_without_sending"
   // A closed task has no composer to send from.
   expect(screen.queryByLabelText("에이전트에게 보낼 지시")).toBeNull();
 });
+
+test("a first instruction devbox sends itself shows where its delivery stands", () => {
+  // Antigravity gets no prompt argument: devbox sends the prompt once the tool shows its input box.
+  const sent = (delivery: "queued" | "pending" | "delivered" | "unknown" | "notSent") => ({
+    ...task("a", "running", 50),
+    prompt: "로그인 버그를 고쳐 주세요",
+    firstInstruction: { delivery, atMs: 70 },
+  });
+  const { rerender } = render(<InstructionsTab task={sent("queued")} />);
+  const first = () => rows()[0]!;
+  expect(first()).toHaveTextContent("처음 지시");
+  expect(first()).toHaveTextContent("로그인 버그를 고쳐 주세요");
+  // Still to come: it is sent when the tool shows its input box, after its folder-trust question.
+  expect(within(first()).getByText("도구가 입력창을 보이면 보냅니다")).toBeInTheDocument();
+  expect(within(first()).getByRole("button", { name: "복사" })).toBeEnabled();
+  for (const [delivery, label] of [
+    ["pending", "보내는 중"],
+    ["delivered", "전달됨"],
+    ["unknown", "전달 확인 안 됨"],
+    // Cancelled: the tool got another instruction first, or ended. Nothing is pasted later.
+    ["notSent", "보내지 않음"],
+  ] as const) {
+    rerender(<InstructionsTab task={sent(delivery)} />);
+    expect(within(first()).getByText(label)).toBeInTheDocument();
+    expect(within(first()).queryByText("도구가 입력창을 보이면 보냅니다")).not.toBeInTheDocument();
+  }
+  // Not sent because the daemon was down for part of the launch: the record cannot show that, so the tab says it.
+  rerender(
+    <InstructionsTab
+      task={{ ...sent("notSent"), firstInstruction: { delivery: "notSent", atMs: 70, reason: "unobserved" } }}
+    />,
+  );
+  expect(
+    within(first()).getByText(
+      "보내지 않음: Devbox가 꺼져 있던 동안의 입력을 알 수 없어 보내지 않았습니다. 필요하면 직접 보내세요.",
+    ),
+  ).toBeInTheDocument();
+  // The other tools take the prompt as an argument: their first instruction has no delivery mark.
+  rerender(<InstructionsTab task={{ ...task("a", "running", 50), prompt: "고쳐 주세요" }} />);
+  expect(first()).not.toHaveTextContent(/전달|보내는 중|보내지 않음|보냅니다/);
+});

@@ -1,0 +1,5 @@
+# 실제 녹화. Antigravity CLI(agy) 1.5.17, 2026-11-25. PreToolUse hook 명령이 stdin으로 받은 payload 한 줄이다. spike의 hook 기록 q1a-hook-log-adddir-full.jsonl(devbox가 등록하지 않는 이벤트).
+# 정리: 대화 id는 00000000-0000-4000-8000-000000000001로, 홈 경로는 /owned/home으로, 소유 경로는 /owned/project/fixture-task(hook 폴더는 /owned/project/fixture-task.agy-hooks)로 바꿨다. 나머지 키와 값은 그대로다. 계정·이메일·요금제·사용량 한도는 없다.
+# 아래 --- 줄 뒤가 payload다.
+---
+{"artifactDirectoryPath":"/owned/home/.gemini/antigravity-cli/brain/00000000-0000-4000-8000-000000000001","conversationId":"00000000-0000-4000-8000-000000000001","cwd":"/owned/project/fixture-task.agy-hooks","hookEventName":"PreToolUse","lastUserInput":"Run the shell command `echo devbox-spike` and then reply with OK.","modelName":"gemini-3.8-flash-high","stepIdx":4,"toolCall":{"args":{"CommandLine":"echo devbox-spike","WaitMsBeforeAsync":5000,"toolSummary":"Echo devbox-spike"},"id":"call_18398676000724598104","name":"run_command"},"transcriptPath":"/owned/home/.gemini/antigravity-cli/brain/00000000-0000-4000-8000-000000000001/.system_generated/logs/transcript_full.jsonl","workspacePaths":["/owned/project/fixture-task.agy-hooks","/owned/project/fixture-task"]}

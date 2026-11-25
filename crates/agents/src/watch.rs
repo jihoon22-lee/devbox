@@ -1,6 +1,6 @@
 //! Quiet terminal output is secondary evidence; hook attention always wins.
 use crate::{
-    model::AgentTask,
+    model::{AgentTask, InstructionDelivery},
     profile::{self, ProfileError},
     service::{AgentsService, CodexTurnEnd, Result, apply_event, changed, now_ms},
     state::{AgentEvent, AgentState},
@@ -10,14 +10,14 @@ use crate::{
 use devbox_protocol::Internal;
 use regex::Regex;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
 const QUIET: Duration = Duration::from_secs(2);
 /// Rows of pane history captured per read, by the watcher and by a send alike. The capture also
 /// holds every visible row: `capture_tail` reads from that far above the screen to its bottom.
-const TAIL_ROWS: u32 = 15;
+pub(crate) const TAIL_ROWS: u32 = 15;
 
 /// The compiled waiting patterns of one profile.
 #[derive(Debug, Clone, Default)]
@@ -188,9 +188,12 @@ impl AgentsService {
 /// What the output watcher keeps between its reads of the panes.
 pub(crate) struct Watcher {
     patterns: Arc<HashMap<String, WaitingPatterns>>,
-    /// The profiles of the Codex family, whose pane shows when a resumed launch is ready.
-    codex: HashSet<String>,
+    /// The profiles whose pane shows when a launch that waits for its first instruction is
+    /// ready, with how their family's pane shows it: Codex and Antigravity.
+    ready: HashMap<String, fn(&str) -> bool>,
     observations: HashMap<String, Observation>,
+    /// The first instructions found at the daemon's start are settled (see [`Watcher::pass`]).
+    settled: bool,
 }
 impl Watcher {
     /// Compiles the profiles' waiting patterns and publishes them for sends.
@@ -199,16 +202,23 @@ impl Watcher {
         let compiled = Arc::new(profile::compiled(&profiles)?);
         // Profiles do not change while the service lives, so the first publication stays valid.
         let patterns = service.waiting_patterns.get_or_init(|| compiled).clone();
-        let codex = profiles
+        let ready = profiles
             .items
             .into_iter()
-            .filter(|p| p.hooks == profile::Hooks::Codex)
-            .map(|p| p.id)
+            .filter_map(|p| {
+                let shows: fn(&str) -> bool = match p.hooks {
+                    profile::Hooks::Codex => shows_prompt,
+                    profile::Hooks::Antigravity => crate::antigravity::shows_prompt,
+                    _ => return None,
+                };
+                Some((p.id, shows))
+            })
             .collect();
         Ok(Self {
             patterns,
-            codex,
+            ready,
             observations: HashMap::new(),
+            settled: false,
         })
     }
     /// Whether the panes of `profile`'s tasks are read: only for a profile with waiting patterns.
@@ -238,6 +248,22 @@ impl Watcher {
         else {
             return;
         };
+        if crate::first_instruction::is(&snapshot.task, InstructionDelivery::Queued) {
+            let id = &snapshot.task.id;
+            // The daemon's first sight of this pane since it started (see `first_sight`).
+            let before = crate::antigravity::shows_before_first_prompt(&tail);
+            if !service.first_sight(id, before).await.unwrap_or(false) {
+                return;
+            }
+            // agy got another prompt first, and its hooks were lost: a turn runs, or a prompt
+            // is already echoed above the box.
+            if crate::antigravity::shows_turn(&tail)
+                || crate::antigravity::shows_earlier_prompt(&tail)
+            {
+                let _ = service.first_instruction_superseded(id).await;
+                return;
+            }
+        }
         let Some(observation) = self.observations.get_mut(&snapshot.task.id) else {
             let id = snapshot.task.id.clone();
             let observation = Observation {
@@ -253,17 +279,28 @@ impl Watcher {
             return;
         }
         let waiting = matches_waiting(patterns, &observation.tail);
-        // Codex reports only finished turns, and a resumed session has none until the user
-        // gives an instruction.
+        // Codex and agy report only turns, and a launch that got no instruction has none until
+        // the user gives one: a resumed session, and any launch of agy.
         if !waiting
-            && self.codex.contains(&snapshot.task.profile)
             && snapshot
                 .binding
                 .as_ref()
                 .is_some_and(|binding| binding.awaits_first_instruction(&snapshot.task))
-            && shows_prompt(&observation.tail)
+            && self
+                .ready
+                .get(&snapshot.task.profile)
+                .is_some_and(|shows_prompt| shows_prompt(&observation.tail))
         {
             let id = snapshot.task.id.clone();
+            // agy's prompt, held until now, goes in as the launch's first instruction.
+            if crate::first_instruction::is(&snapshot.task, InstructionDelivery::Queued) {
+                if let Err(error) = service.send_first_instruction(snapshot).await {
+                    tracing::debug!(agent = %id, ?error, "first instruction not sent");
+                    // Still queued: the pane is judged afresh, as on a first pass.
+                    self.observations.remove(&id);
+                }
+                return;
+            }
             let _ = service
                 .complete_codex(&id, CodexTurnEnd::Ready(Box::new(snapshot)))
                 .await;
@@ -274,6 +311,63 @@ impl Watcher {
         }
     }
 }
+impl Watcher {
+    /// The pane of `task` could not be read on this pass. A first sight that shows nothing is
+    /// not a screen before any prompt (see `first_sight`).
+    pub(crate) async fn unread(&mut self, service: &AgentsService, task: &AgentTask) {
+        self.observations.remove(&task.id);
+        if crate::first_instruction::is(task, InstructionDelivery::Queued) {
+            let _ = service.first_sight(&task.id, false).await;
+        }
+    }
+}
+impl Watcher {
+    /// One pass of the watcher's loop over every watched pane, each read at `now()`. Says `false`
+    /// when the service stops meanwhile.
+    ///
+    /// No pane is read, so nothing is sent, until the first instructions the daemon found at its
+    /// start are settled (`settle_first_instructions`): a pass on which that fails ends there, and
+    /// the next tries again. A queued one is never sent by a daemon that has not noted it for the
+    /// restart rule.
+    pub(crate) async fn pass(
+        &mut self,
+        svc: &Arc<AgentsService>,
+        now: impl Fn() -> Instant,
+    ) -> bool {
+        if !self.settled {
+            if let Err(error) = svc.settle_first_instructions().await {
+                tracing::warn!(
+                    ?error,
+                    "first instructions not settled: no pane is read yet"
+                );
+                return true;
+            }
+            self.settled = true;
+        }
+        let Ok(tasks) = svc.watched_tasks().await else {
+            return true;
+        };
+        self.keep(&tasks);
+        for task in tasks {
+            if !self.reads(&task.profile) {
+                continue;
+            }
+            let id = task.id.clone();
+            let Ok(binding) = svc.db.read(move |tx| store::binding(tx, &id)).await else {
+                continue;
+            };
+            let session = task.terminal_id.as_deref().expect("eligible terminal");
+            let tail = tokio::select! { _ = svc.stop.cancelled() => return false, tail = svc.terminal.tmux().capture_tail(session, TAIL_ROWS) => tail };
+            let Ok(tail) = tail else {
+                self.unread(svc, &task).await;
+                continue;
+            };
+            let snapshot = Snapshot { task, binding };
+            self.read(svc, snapshot, tail, now()).await;
+        }
+        true
+    }
+}
 pub(crate) fn spawn(service: &Arc<AgentsService>) -> std::result::Result<(), ProfileError> {
     let mut watcher = Watcher::new(service)?;
     let svc = service.clone();
@@ -281,26 +375,8 @@ pub(crate) fn spawn(service: &Arc<AgentsService>) -> std::result::Result<(), Pro
         let mut interval = tokio::time::interval(QUIET);
         loop {
             tokio::select! { _ = svc.stop.cancelled() => break, _ = interval.tick() => {} }
-            let Ok(tasks) = svc.watched_tasks().await else {
-                continue;
-            };
-            watcher.keep(&tasks);
-            for task in tasks {
-                if !watcher.reads(&task.profile) {
-                    continue;
-                }
-                let id = task.id.clone();
-                let Ok(binding) = svc.db.read(move |tx| store::binding(tx, &id)).await else {
-                    continue;
-                };
-                let session = task.terminal_id.as_deref().expect("eligible terminal");
-                let tail = tokio::select! { _ = svc.stop.cancelled() => return, tail = svc.terminal.tmux().capture_tail(session, TAIL_ROWS) => tail };
-                let Ok(tail) = tail else {
-                    watcher.observations.remove(&task.id);
-                    continue;
-                };
-                let snapshot = Snapshot { task, binding };
-                watcher.read(&svc, snapshot, tail, Instant::now()).await;
+            if !watcher.pass(&svc, Instant::now).await {
+                break;
             }
         }
     });

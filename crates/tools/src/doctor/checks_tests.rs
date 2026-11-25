@@ -169,7 +169,7 @@ fn agent_checks_use_daemon_path_even_without_saved_environment() {
 }
 
 #[test]
-fn reports_all_four_agent_tools_with_versions() {
+fn reports_all_five_agent_tools_with_versions() {
     let checks = checks(&Fake {
         available: true,
         env_path_valid: true,
@@ -195,6 +195,10 @@ fn reports_all_four_agent_tools_with_versions() {
                 AgentTool::Pi,
                 found("/home/u/.npm/bin/pi", true, "1.3.0", None),
             ),
+            (
+                AgentTool::Antigravity,
+                found("/home/u/.local/bin/agy", false, "1.5.17", None),
+            ),
         ],
         ..Fake::default()
     });
@@ -218,6 +222,7 @@ fn reports_all_four_agent_tools_with_versions() {
             "로그인 셸",
         ),
         ("tool.pi", "1.3.0", "/home/u/.npm/bin/pi", "대화형 셸"),
+        ("tool.agy", "1.5.17", "/home/u/.local/bin/agy", "로그인 셸"),
     ] {
         let found = check(&checks, id);
         assert_eq!(found.status, Status::Ok, "{id}");
@@ -237,7 +242,18 @@ fn reports_all_four_agent_tools_with_versions() {
     assert!(at("tool.claude") < at("tool.codex"));
     assert!(at("tool.codex") < at("tool.opencode"));
     assert!(at("tool.opencode") < at("tool.pi"));
-    assert!(at("tool.pi") < at("tool.gh"));
+    assert!(at("tool.pi") < at("tool.agy"));
+    assert!(at("tool.agy") < at("tool.gh"));
+    // The Antigravity CLI's row is named after its executable, and has no sign-in row.
+    assert_eq!(
+        check(&checks, "tool.agy").message,
+        "agy 1.5.17 · 로그인 셸 · /home/u/.local/bin/agy"
+    );
+    assert!(
+        !order
+            .iter()
+            .any(|id| id.contains("antigravity") || *id == "auth.agy")
+    );
 }
 
 #[test]
@@ -252,6 +268,9 @@ fn low_opencode_or_pi_version_warns() {
         (AgentTool::Claude, "2.1.299", true),
         (AgentTool::Claude, "2.1.300", false),
         (AgentTool::Codex, "0.1.0", false),
+        (AgentTool::Antigravity, "1.5.16", true),
+        (AgentTool::Antigravity, "1.5.17", false),
+        (AgentTool::Antigravity, "1.10.0", false),
     ] {
         let checks = checks(&Fake {
             available: true,
@@ -301,6 +320,7 @@ fn the_startup_check_leaves_out_only_the_rows_that_look_up_an_agent_cli() {
         "tool.codex",
         "tool.opencode",
         "tool.pi",
+        "tool.agy",
         "auth.claude",
         "auth.codex",
     ];

@@ -164,6 +164,9 @@ domain_error! {
         ConfigurationInvalid { message: String } = "projects.configuration_invalid",
         LaunchProfileNotFound { id: String } = "projects.launch_profile_not_found",
         LaunchToolMissing { command: String } = "projects.launch_tool_missing",
+        // An agent entry of a tool family that needs a work folder has `worktree = false`.
+        // `tool` is the profile's label.
+        LaunchWorkFolderRequired { tool: String } = "projects.launch_work_folder_required",
         LaunchFailed { terminals: u32, agents: u32, services: u32, run_ids: Vec<String>, message: String } = "projects.launch_failed",
         CloneInvalidUrl = "projects.clone_invalid_url",
         CloneTargetExists { path: String } = "projects.clone_target_exists",

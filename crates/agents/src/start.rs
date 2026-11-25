@@ -16,8 +16,11 @@ pub struct StartPlan {
     /// name. A shared folder such as `/usr/bin` goes last instead, and the CLI runs by its path.
     pub tool_dir: Option<String>,
     pub hooks: Hooks,
+    /// The file the tool loads devbox's connection from. For Antigravity, the hooks folder.
     pub hook_file: Option<String>,
     pub prompt_file: Option<String>,
+    /// How a `hooks = "none"` profile gets the prompt as an argument (see `prompt_arg`).
+    pub prompt_arg: Option<String>,
     pub resume_session: Option<String>,
     /// The session a new launch starts in when devbox chose it: pi creates it with this id.
     pub session_id: Option<String>,
@@ -92,6 +95,12 @@ pub fn render_start_script(p: &StartPlan) -> String {
                 tool.push_str(&format!(" -e {}", sh_quote(f)));
             }
         }
+        // agy reads the hooks from this folder, one more workspace folder of the run.
+        Hooks::Antigravity => {
+            if let Some(dir) = &p.hook_file {
+                tool.push_str(&format!(" --add-dir {}", sh_quote(dir)));
+            }
+        }
         Hooks::Opencode | Hooks::None => {}
     }
     match (&p.resume_session, p.hooks) {
@@ -99,6 +108,20 @@ pub fn render_start_script(p: &StartPlan) -> String {
         (Some(id), Hooks::Codex) => tool.push_str(&format!(" resume {}", sh_quote(id))),
         (Some(id), Hooks::Opencode) => tool.push_str(&format!(" -s {}", sh_quote(id))),
         (Some(id), Hooks::Pi) => tool.push_str(&format!(" --session-id {}", sh_quote(id))),
+        (Some(id), Hooks::Antigravity) => {
+            tool.push_str(&format!(" --conversation {}", sh_quote(id)))
+        }
+        // agy gets no prompt argument. With `-i` in a folder the user has not trusted yet, agy
+        // 1.5.17 runs the prompt's turn while its trust screen is up, and that turn's hooks report
+        // the hooks folder as the only workspace and as the command folder (`cwd`), which it
+        // stays for the conversation's later turns. devbox sends the prompt itself once agy shows
+        // its prompt box (`first_instruction`).
+        (None, Hooks::Antigravity) => {}
+        (None, Hooks::None) => {
+            if let (Some(flag), Some(f)) = (&p.prompt_arg, &p.prompt_file) {
+                tool.push_str(&crate::prompt_arg::rendered(flag, f));
+            }
+        }
         (None, Hooks::Claude | Hooks::Codex) => {
             if let Some(f) = &p.prompt_file {
                 tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
@@ -120,7 +143,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
                 tool.push_str(&format!(" -- \"$(cat {})\"", sh_quote(f)));
             }
         }
-        _ => {}
+        (Some(_), Hooks::None) => {}
     }
     if p.use_scope {
         let unit = format!("devbox-{}-agent-{}", p.instance, p.agent_id);
@@ -178,6 +201,7 @@ mod tests {
             hooks: Hooks::Claude,
             hook_file: Some("/d/claude.json".into()),
             prompt_file: Some("/d/prompt.md".into()),
+            prompt_arg: None,
             resume_session: None,
             session_id: None,
             use_scope: true,
@@ -446,6 +470,9 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+#[path = "start_antigravity_tests.rs"]
+mod antigravity_tests;
 #[cfg(test)]
 #[path = "start_pi_tests.rs"]
 mod pi_tests;

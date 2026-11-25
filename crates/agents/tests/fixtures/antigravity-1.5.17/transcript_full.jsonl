@@ -1,0 +1,28 @@
+# 실제 녹화. Antigravity CLI(agy) 1.5.17, 2026-11-25. hook payload의 transcriptPath가 가리키는 파일이다(spike 대화의 q6-transcript_full-*.jsonl, 24단계, 모델 호출 10번).
+# 정리: 단계마다 content·thinking·error는 fixture로, tool_calls는 이름만 남기고 바꿨다. step_index·source·type·status·created_at·토큰 수·모델 이름과 줄 순서는 그대로다. 계정·이메일·경로는 없다.
+# 아래 --- 줄 뒤가 파일 내용이다(agy의 파일에는 이 머리말이 없다).
+---
+{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:38:43Z","content":"fixture"}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:38:43Z","model":"gemini-3.8-flash-high","input_tokens":20223,"cache_read_tokens":0,"output_tokens":209,"content":"fixture","thinking":"fixture"}
+{"step_index":2,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:39:09Z","content":"fixture"}
+{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:39:10Z","model":"gemini-3.8-flash-high","input_tokens":2350,"cache_read_tokens":18204,"output_tokens":152,"tool_calls":[{"name":"run_command","args":{}}]}
+{"step_index":4,"source":"MODEL","type":"GENERIC","status":"ERROR","error":"fixture","created_at":"2026-11-25T12:39:14Z","content":"fixture"}
+{"step_index":5,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:39:15Z","model":"gemini-3.8-flash-high","input_tokens":2233,"cache_read_tokens":18504,"output_tokens":872,"thinking":"fixture","tool_calls":[{"name":"run_command","args":{}}]}
+{"step_index":6,"source":"MODEL","type":"GENERIC","status":"ERROR","error":"fixture","created_at":"2026-11-25T12:39:24Z","content":"fixture"}
+{"step_index":7,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-25T12:39:25Z","content":"fixture"}
+{"step_index":8,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:39:25Z","model":"gemini-3.8-flash-high","input_tokens":3076,"cache_read_tokens":18691,"output_tokens":695,"content":"fixture","thinking":"fixture"}
+{"step_index":9,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:39:33Z","content":"fixture"}
+{"step_index":10,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:39:34Z","model":"gemini-3.8-flash-high","input_tokens":2497,"cache_read_tokens":20184,"output_tokens":23,"content":"fixture"}
+{"step_index":11,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:40:00Z","content":"fixture"}
+{"step_index":12,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:40:01Z","model":"gemini-3.8-flash-high","input_tokens":2614,"cache_read_tokens":20173,"output_tokens":102,"tool_calls":[{"name":"run_command","args":{}}]}
+{"step_index":14,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:40:30Z","content":"fixture"}
+{"step_index":15,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:40:30Z","model":"gemini-3.8-flash-high","input_tokens":2270,"cache_read_tokens":20718,"output_tokens":80,"tool_calls":[{"name":"run_command","args":{}}]}
+{"step_index":16,"source":"MODEL","type":"GENERIC","status":"ERROR","error":"fixture","created_at":"2026-11-25T12:40:36Z","content":"fixture"}
+{"step_index":17,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:41:11Z","content":"fixture"}
+{"step_index":18,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-25T12:41:11Z","content":"fixture"}
+{"step_index":19,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:41:11Z","model":"gemini-3.8-flash-high","input_tokens":2447,"cache_read_tokens":20921,"output_tokens":373,"thinking":"fixture","tool_calls":[{"name":"run_command","args":{}}]}
+{"step_index":20,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-11-25T12:41:18Z","content":"fixture"}
+{"step_index":21,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:41:25Z","model":"gemini-3.8-flash-high","input_tokens":2520,"cache_read_tokens":21311,"output_tokens":52,"content":"fixture"}
+{"step_index":22,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-25T12:43:11Z","content":"fixture"}
+{"step_index":23,"source":"SYSTEM","type":"SYSTEM_MESSAGE","status":"DONE","created_at":"2026-11-25T12:43:11Z","content":"fixture"}
+{"step_index":24,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-25T12:43:11Z","model":"gemini-3.8-flash-high","input_tokens":2316,"cache_read_tokens":21773,"output_tokens":24,"content":"fixture"}

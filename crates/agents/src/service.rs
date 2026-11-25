@@ -1,6 +1,7 @@
 pub(crate) use crate::events::{apply_event, changed};
 use crate::tracker::Binding;
 use crate::{
+    first_instruction,
     model::*,
     profile::ToolProfile,
     state::{AgentEvent, AgentState},
@@ -59,6 +60,9 @@ pub struct AgentsService {
     pub(crate) started_ms: i64,
     /// The token totals read again after a turn's end (see `refresh_tokens`).
     pub(crate) token_refreshes: crate::metrics::TokenRefreshes,
+    /// Tasks whose first instruction was queued when this daemon started, until the watcher's
+    /// first sight of their pane (see `first_instruction`).
+    pub(crate) unobserved: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -109,6 +113,7 @@ impl AgentsService {
             launches: Arc::default(),
             started_ms: now_ms(),
             token_refreshes: Default::default(),
+            unobserved: Default::default(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {
@@ -148,7 +153,7 @@ impl AgentsService {
     /// binding, which is saved with the task when `f` changes it. `announce_later` holds back the
     /// notice of a wait the update enters (see `announce_later`); the task still changes at once.
     /// Also says whether the update turned the task idle: one of its turns ended.
-    async fn update_bound<F>(
+    pub(crate) async fn update_bound<F>(
         &self,
         id: &str,
         launch: Option<String>,
@@ -161,6 +166,7 @@ impl AgentsService {
         let id = id.to_owned();
         let hub = self.hub.clone();
         let approvals = self.approvals.clone();
+        let hook = launch.is_some();
         let result = self
             .db
             .write_checked_with_commit(
@@ -168,6 +174,7 @@ impl AgentsService {
                     let Some(mut task) = store::get(tx, &id)? else {
                         return Ok(Err(Some(AgentsError::NotFound { id })));
                     };
+                    let queued = first_instruction::is_queued(&task);
                     let mut binding = None;
                     if let Some(launch) = launch {
                         binding = store::binding(tx, &id)?;
@@ -189,16 +196,18 @@ impl AgentsService {
                         approvals.forget(&task.id);
                     }
                     store::put(tx, &task)?;
-                    Ok(Ok((task, previous_state)))
+                    Ok(Ok((task, previous_state, queued)))
                 },
-                move |(task, previous), rev| {
+                move |(task, previous, queued), rev| {
+                    let why = first_instruction::why(task, hook);
+                    first_instruction::log_cancelled(*queued, task, why);
                     changed(&hub, task, rev, !announce_later && task.state != *previous)
                 },
             )
             .await
             .internal("update agent")?;
         match result {
-            Ok(((task, previous), rev)) => {
+            Ok(((task, previous, _), rev)) => {
                 let turned_idle = task.state == AgentState::Idle && previous != AgentState::Idle;
                 if announce_later && task.state != previous && task.state == AgentState::Waiting {
                     self.announce_later(task);
@@ -254,6 +263,9 @@ impl AgentsService {
         }
         if crate::plugin_event::is_ready_report(p.source, &p.payload) {
             return self.record_ready(&task.id, p.launch_id).await;
+        }
+        if p.source == crate::hooks::HookSource::Antigravity {
+            return self.antigravity_event(p).await;
         }
         let launch = if p.source == crate::hooks::HookSource::Claude {
             let Some(launch) = p.launch_id.clone().filter(|id| !id.is_empty()) else {

@@ -18,6 +18,7 @@ async fn codex_fixture() -> Fixture {
         command: "owned-fake-codex".into(),
         hooks: crate::profile::Hooks::Codex,
         waiting_patterns: vec![],
+        prompt_arg: None,
     }];
     fs::create_dir(&f.workdir).expect("owned work directory");
     let project = devbox_projects::Project {

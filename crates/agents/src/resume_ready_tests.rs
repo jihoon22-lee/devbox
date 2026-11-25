@@ -544,5 +544,9 @@ fn with_fake_tmux<F: std::future::Future<Output = ()>>(test: &str, body: impl Fn
     );
 }
 
+#[path = "send_antigravity_pane_tests.rs"]
+mod antigravity_pane;
+#[path = "first_instruction_tests.rs"]
+mod first_instruction;
 #[path = "send_idle_pane_tests.rs"]
 mod idle_pane;

@@ -24,18 +24,32 @@ pub enum CloseHow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentEvent {
     SetupOk,
-    SetupFailed { code: i32 },
-    SessionStarted { session_id: String },
+    SetupFailed {
+        code: i32,
+    },
+    SessionStarted {
+        session_id: String,
+    },
     PromptSubmitted,
-    NeedsInput { message: String },
-    TurnComplete { message: Option<String> },
+    NeedsInput {
+        message: String,
+    },
+    TurnComplete {
+        message: Option<String>,
+    },
     OutputWaiting,
     OutputResumed,
-    Exited { code: i32 },
+    Exited {
+        code: i32,
+    },
     SessionLost,
+    /// The tool runs another conversation than the task's (see `antigravity_service`).
+    SessionMismatch,
     UserInstructed,
     UserReview,
-    Closed { how: CloseHow },
+    Closed {
+        how: CloseHow,
+    },
 }
 
 pub fn next(s: AgentState, e: &AgentEvent) -> Option<AgentState> {
@@ -57,6 +71,7 @@ pub fn next(s: AgentState, e: &AgentEvent) -> Option<AgentState> {
         E::Exited { code: 0 } if live || s == S::Preparing => S::Review,
         E::Exited { .. } if live || s == S::Preparing => S::Failed,
         E::SessionLost if live || s == S::Preparing => S::Failed,
+        E::SessionMismatch if live => S::Failed,
         E::UserInstructed if matches!(s, S::Idle | S::Waiting | S::Failed | S::Review) => {
             S::Running
         }
@@ -86,6 +101,7 @@ pub fn fail_reason(e: &AgentEvent) -> Option<String> {
         AgentEvent::Exited { code } if *code != 0 => Some(format!("exit:{code}")),
         AgentEvent::SetupFailed { code } => Some(format!("setup:{code}")),
         AgentEvent::SessionLost => Some("session_lost".into()),
+        AgentEvent::SessionMismatch => Some("session_mismatch".into()),
         _ => None,
     }
 }
@@ -137,6 +153,10 @@ mod tests {
             (S::Running, E::Exited { code: 0 }, Some(S::Review)),
             (S::Waiting, E::Exited { code: 2 }, Some(S::Failed)),
             (S::Idle, E::SessionLost, Some(S::Failed)),
+            (S::Running, E::SessionMismatch, Some(S::Failed)),
+            (S::Idle, E::SessionMismatch, Some(S::Failed)),
+            (S::Failed, E::SessionMismatch, None),
+            (S::Preparing, E::SessionMismatch, None),
             (S::Failed, E::UserInstructed, Some(S::Running)),
             (S::Review, E::UserInstructed, Some(S::Running)),
             (S::Idle, E::UserReview, Some(S::Review)),
@@ -250,6 +270,10 @@ mod transition_tests {
         assert_eq!(
             fail_reason(&E::SessionLost).as_deref(),
             Some("session_lost")
+        );
+        assert_eq!(
+            fail_reason(&E::SessionMismatch).as_deref(),
+            Some("session_mismatch")
         );
         for (code, reason) in [
             (129, "killed:1"),

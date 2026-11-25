@@ -9,7 +9,19 @@ const DELIVERY: Record<Delivery, string> = {
   delivered: "전달됨",
   pending: "보내는 중",
   unknown: "전달 확인 안 됨",
+  // Only a first instruction devbox sends itself (Antigravity): held until the tool shows its input box, or never
+  // sent because the tool got another instruction first or ended.
+  queued: "도구가 입력창을 보이면 보냅니다",
+  notSent: "보내지 않음",
 };
+
+/** A first instruction's delivery, with why it was not sent where the task's own record does not show it. */
+function firstDelivery(first: NonNullable<AgentTask["firstInstruction"]>) {
+  const label = DELIVERY[first.delivery];
+  return first.reason === "unobserved"
+    ? `${label}: Devbox가 꺼져 있던 동안의 입력을 알 수 없어 보내지 않았습니다. 필요하면 직접 보내세요.`
+    : label;
+}
 
 function copy(text: string) {
   void Promise.resolve()
@@ -53,7 +65,8 @@ function Entry({
 }
 
 /**
- * What the task was asked: its first prompt, then each follow-up in the order it was sent, with its delivery.
+ * What the task was asked: its first prompt, then each follow-up in the order it was sent, with its delivery. The
+ * first prompt has a delivery only where devbox sends it itself instead of handing it to the tool as an argument.
  * Only reads the task, so a closed task shows it too; nothing here sends. The detail re-renders every second for its
  * clock while the task object stays the same, so the tab renders again only when the task does.
  */
@@ -65,7 +78,13 @@ export const InstructionsTab = memo(function InstructionsTab({ task }: { task: A
   return (
     <div className={s.instructions}>
       <ol aria-label="지시 기록">
-        <Entry label="처음 지시" atMs={task.createdMs} text={task.prompt} empty="지시문 없이 시작했습니다." />
+        <Entry
+          label="처음 지시"
+          atMs={task.createdMs}
+          text={task.prompt}
+          delivery={task.firstInstruction && firstDelivery(task.firstInstruction)}
+          empty="지시문 없이 시작했습니다."
+        />
         {followUps.map(({ followUp, index }) => (
           <Entry
             key={index}

@@ -34,7 +34,8 @@ pub(crate) struct Binding {
     #[serde(default)]
     pub resources: Resources,
     /// The launch resumed the tool's session (Claude `--resume`, Codex `resume`), which hands the
-    /// tool no instruction: it starts at its prompt with no turn to report. A send, Claude's first
+    /// tool no instruction: it starts at its prompt with no turn to report. Every launch of agy is
+    /// one too, since agy gets no prompt argument. A send, Claude's first
     /// prompt, or the judgement that the tool is ready clears it; a send that never reached the
     /// tool puts it back. A Codex turn found in its metadata (a prompt typed in the pane) ends the
     /// wait through `turn_id` instead and may leave this set: every reader also requires `turn_id`
@@ -45,6 +46,13 @@ pub(crate) struct Binding {
     pub turn_id: Option<String>,
     pub rollout: Option<PathBuf>,
     pub turn_started_ms: Option<i64>,
+    /// The transcript file agy's hooks named for the task's conversation (see `usage_antigravity`).
+    #[serde(default)]
+    pub transcript: Option<PathBuf>,
+    /// The launch resumed agy's conversation and none of its hooks has named a conversation yet:
+    /// the first must name the task's (see `antigravity_service`).
+    #[serde(default)]
+    pub unconfirmed_session: bool,
 }
 impl Binding {
     pub fn new(launch_ms: i64) -> Self {
@@ -58,6 +66,8 @@ impl Binding {
             turn_id: None,
             rollout: None,
             turn_started_ms: None,
+            transcript: None,
+            unconfirmed_session: false,
         }
     }
     pub fn matches(&self, thread: &str, turn: &str) -> bool {

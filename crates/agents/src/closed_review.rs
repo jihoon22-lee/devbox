@@ -1,5 +1,6 @@
 //! Keep the confirmed review independent of the eventual checkout and ref lifecycle.
 use crate::{
+    first_instruction,
     model::*,
     service::{AgentsService, Result, apply_event, changed, now_ms},
     state::{AgentEvent, AgentState, CloseHow},
@@ -109,13 +110,17 @@ impl AgentsService {
                     // base branch, so it is part of the close, not a later write.
                     task.closed_merge_oid = merge;
                     task.pr_url = url;
+                    let queued = first_instruction::is_queued(&task);
                     apply_event(&mut task, &AgentEvent::Closed { how }, now_ms());
                     approvals.forget(&id);
                     store::put_closed_review(tx, &id, &review)?;
                     store::put(tx, &task)?;
-                    Ok(Ok((task, previous)))
+                    Ok(Ok((task, previous, queued)))
                 },
-                move |(task, previous), rev| changed(&hub, task, rev, task.state != *previous),
+                move |(task, previous, queued), rev| {
+                    first_instruction::log_ended(*queued, task);
+                    changed(&hub, task, rev, task.state != *previous)
+                },
             )
             .await
             .internal("freeze closed agent record")?

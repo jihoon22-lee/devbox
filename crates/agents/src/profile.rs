@@ -11,6 +11,8 @@ pub enum Hooks {
     Codex,
     Opencode,
     Pi,
+    /// The Antigravity CLI (`agy`): hooks from a folder devbox adds to the run (see `antigravity`).
+    Antigravity,
     None,
 }
 
@@ -24,22 +26,28 @@ pub struct ToolProfile {
     // `waiting_patterns` is accepted too, the way the rest of `config.toml` is spelled.
     #[serde(default, alias = "waiting_patterns")]
     pub waiting_patterns: Vec<String>,
+    /// How a `hooks = "none"` profile gets the task's prompt as an argument (see `prompt_arg`).
+    /// Without it the prompt is not passed.
+    #[serde(default, alias = "prompt_arg")]
+    pub prompt_arg: Option<String>,
 }
 
 /// 기본 프로필. 입력 대기 화면 패턴은 프로필이 아니라 `hooks`를 따라 붙는다(`family_patterns`).
 pub fn builtin() -> Vec<ToolProfile> {
-    let profile = |id: &str, label: &str, hooks| ToolProfile {
+    let profile = |id: &str, label: &str, command: &str, hooks| ToolProfile {
         id: id.into(),
         label: label.into(),
-        command: id.into(),
+        command: command.into(),
         hooks,
         waiting_patterns: Vec::new(),
+        prompt_arg: None,
     };
     vec![
-        profile("claude", "Claude Code", Hooks::Claude),
-        profile("codex", "Codex", Hooks::Codex),
-        profile("opencode", "opencode", Hooks::Opencode),
-        profile("pi", "pi", Hooks::Pi),
+        profile("claude", "Claude Code", "claude", Hooks::Claude),
+        profile("codex", "Codex", "codex", Hooks::Codex),
+        profile("opencode", "opencode", "opencode", Hooks::Opencode),
+        profile("pi", "pi", "pi", Hooks::Pi),
+        profile("antigravity", "Antigravity", "agy", Hooks::Antigravity),
     ]
 }
 
@@ -149,6 +157,7 @@ mod tests {
             command: "first".into(),
             hooks: Hooks::Codex,
             waiting_patterns: vec!["first".into()],
+            prompt_arg: None,
         };
         let mut second = first.clone();
         second.command = "second".into();
@@ -265,7 +274,7 @@ mod tests {
         assert_eq!(problems[1].1, "entry 2 (id \"custom\"): duplicate id");
     }
     #[test]
-    fn builtin_profiles_are_claude_codex_opencode_pi_in_order() {
+    fn builtin_profiles_are_claude_codex_opencode_pi_antigravity_in_order() {
         let builtin = builtin();
         let order: Vec<_> = builtin
             .iter()
@@ -278,6 +287,7 @@ mod tests {
                 ("codex", "Codex", "codex", Hooks::Codex),
                 ("opencode", "opencode", "opencode", Hooks::Opencode),
                 ("pi", "pi", "pi", Hooks::Pi),
+                ("antigravity", "Antigravity", "agy", Hooks::Antigravity),
             ]
         );
         // Their waiting patterns come with their family, the same for any profile of it.
@@ -293,6 +303,7 @@ mod tests {
         assert!(!family(Hooks::Codex).screen.is_empty());
         assert!(!family(Hooks::Pi).tail.is_empty());
         assert!(!family(Hooks::Opencode).tail.is_empty());
+        assert!(!family(Hooks::Antigravity).tail.is_empty());
         let none = family(Hooks::None);
         assert!(none.tail.is_empty() && none.screen.is_empty());
     }
@@ -304,6 +315,7 @@ mod tests {
             ("none", Hooks::None),
             ("opencode", Hooks::Opencode),
             ("pi", Hooks::Pi),
+            ("antigravity", Hooks::Antigravity),
         ] {
             let config = config(&format!(
                 "[[agents.profiles]]\nid='x'\nlabel='X'\ncommand='x'\nhooks='{value}'\n"
@@ -348,6 +360,11 @@ pub enum ProfileError {
         #[source]
         source: regex::Error,
     },
+    #[error("invalid promptArg for profile {profile}: {reason}")]
+    PromptArg {
+        profile: String,
+        reason: &'static str,
+    },
 }
 /// The waiting patterns of each profile, by id: those of its tool family, then its own
 /// `waiting_patterns`. A profile's own patterns add to its family's and never replace them.
@@ -366,6 +383,7 @@ pub(crate) fn compiled(
         .items
         .iter()
         .map(|p| {
+            crate::prompt_arg::check(p)?;
             let regex = |text: &str| {
                 regex::Regex::new(text).map_err(|source| ProfileError::WaitingPattern {
                     profile: p.id.clone(),

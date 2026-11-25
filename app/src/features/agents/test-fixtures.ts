@@ -1,7 +1,7 @@
 import type { Methods } from "../../rpc/gen/rpc";
 export const profiles: Methods["agents.profiles"]["result"]["items"] = [
-  { id: "claude", label: "Claude Code", command: "claude", hooks: "claude", waitingPatterns: [] },
-  { id: "codex", label: "Codex", command: "codex", hooks: "codex", waitingPatterns: [] },
+  { id: "claude", label: "Claude Code", command: "claude", hooks: "claude", waitingPatterns: [], promptArg: null },
+  { id: "codex", label: "Codex", command: "codex", hooks: "codex", waitingPatterns: [], promptArg: null },
 ];
 export function task(
   id: string,

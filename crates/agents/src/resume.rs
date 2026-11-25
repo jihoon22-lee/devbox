@@ -120,7 +120,7 @@ impl AgentsService {
             .internal("resume hooks")?;
             Some(path.to_string_lossy().into_owned())
         } else {
-            self.hook_file(profile.hooks).await?
+            self.connection(&task, &profile, false).await?
         };
         let plan = crate::start::StartPlan {
             devbox: self.devbox_bin.clone(),
@@ -141,6 +141,7 @@ impl AgentsService {
             // devbox knows, or starts pi fresh without one: pi may have run the prompt already.
             prompt_file: (profile.hooks != crate::profile::Hooks::Pi)
                 .then(|| prompt.to_string_lossy().into_owned()),
+            prompt_arg: crate::prompt_arg::for_launch(&profile, &task.prompt),
             resume_session: session_id.clone(),
             session_id: None,
             use_scope: self.use_scope,
@@ -163,11 +164,16 @@ impl AgentsService {
         let says_ready = profile.hooks == crate::profile::Hooks::Pi;
         // Claude and Codex continue the session without an instruction and say nothing until
         // the user gives one, so the launch begins waiting for it (see `Binding::resumed_session`).
-        let resumed_session = session_id.is_some()
-            && matches!(
-                profile.hooks,
-                crate::profile::Hooks::Claude | crate::profile::Hooks::Codex
-            );
+        // agy gets no prompt argument at all, so it waits with or without a conversation to continue.
+        let resumed_session = match profile.hooks {
+            crate::profile::Hooks::Claude | crate::profile::Hooks::Codex => session_id.is_some(),
+            crate::profile::Hooks::Antigravity => true,
+            _ => false,
+        };
+        // agy opens a new conversation without a word when it does not know the id it is given,
+        // so the launch's first hook must name this one (`antigravity_service`).
+        let unconfirmed_session =
+            session_id.is_some() && profile.hooks == crate::profile::Hooks::Antigravity;
         let initial_session = session_id.clone();
         let hub = self.hub.clone();
         let approvals = self.approvals.clone();
@@ -184,6 +190,9 @@ impl AgentsService {
                     binding.launch_ms = launch;
                     binding.launch_id = Some(generation);
                     binding.resumed_session = resumed_session;
+                    binding.unconfirmed_session = unconfirmed_session;
+                    // A resume never sends the first launch's queued prompt.
+                    let queued = crate::first_instruction::cancel(&mut current, launch);
                     binding.turn_id = None;
                     binding.turn_started_ms = None;
                     current.session_id = initial_session;
@@ -202,9 +211,12 @@ impl AgentsService {
                         current,
                         previous,
                         previous_binding,
+                        queued,
                     )))
                 },
-                move |(current, previous, _), rev| {
+                move |(current, previous, _, queued), rev| {
+                    let why = "the task was resumed";
+                    crate::first_instruction::log_cancelled(*queued, current, why);
                     changed(&hub, current, rev, current.state != *previous)
                 },
             )

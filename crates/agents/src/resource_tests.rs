@@ -2,6 +2,9 @@ use super::*;
 use devbox_core::{Instance, Migration, paths::Env};
 use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
 
+#[path = "antigravity_service_tests.rs"]
+mod antigravity_service_tests;
+
 #[path = "resource_checkout_fixture.rs"]
 mod checkout_fixture;
 
@@ -477,6 +480,13 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
             .into_owned(),
     );
     unmade.workdir = unmade.worktree_path.clone().expect("owned fixture");
+    // An Antigravity launch left its hooks folder beside the work folder that is gone, and
+    // another task's folder sits there too.
+    let hooks = crate::antigravity::hooks_dir(&unmade.workdir);
+    let foreign = hooks.with_file_name("other.agy-hooks");
+    for (dir, owner) in [(&hooks, "unmade"), (&foreign, "another-task")] {
+        crate::antigravity::write_hooks_dir(dir, "/owned/devbox", owner, true).expect("hooks");
+    }
     fixture
         .svc
         .db
@@ -518,6 +528,10 @@ async fn restart_reconciles_exact_preparing_resources_without_touching_review_or
     assert!(unmade.branch.is_none());
     assert!(unmade.worktree_path.is_none());
     assert_eq!(unmade.workdir, fixture.repo.to_string_lossy());
+    // The record of the path is gone, and with it the folder that named this task: a later task
+    // on that path does not find it in its way. A folder that names another task stays.
+    assert!(!hooks.exists());
+    assert!(foreign.join(".agents/hooks.json").is_file());
     assert_eq!(
         fs::read_to_string(
             Path::new(recovered.worktree_path.as_deref().expect("owned fixture"))
