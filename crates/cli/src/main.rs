@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "devbox", version)]
 struct Cli {
+    /// 쓸 인스턴스 이름. 없으면 DEVBOX_INSTANCE, 그것도 없으면 prod다.
     #[arg(long, global = true)]
     instance: Option<String>,
     #[command(subcommand)]
@@ -98,8 +99,29 @@ enum Cmd {
         #[command(subcommand)]
         cmd: NoteCmd,
     },
+    /// 등록한 프로젝트를 보거나 폴더를 프로젝트로 등록한다.
+    Project {
+        #[command(subcommand)]
+        cmd: ProjectCmd,
+    },
     /// 버전만 출력한다.
     Version,
+}
+
+#[derive(Subcommand)]
+enum ProjectCmd {
+    /// 등록한 프로젝트를 한 줄에 하나씩 이름과 경로로 쓴다.
+    List {
+        /// 프로젝트 목록을 JSON으로 쓴다.
+        #[arg(long)]
+        json: bool,
+    },
+    /// 폴더를 프로젝트로 등록한다. 이미 등록한 폴더는 건너뛴다.
+    Add {
+        /// 등록할 폴더 경로(여러 개 가능).
+        #[arg(required = true)]
+        paths: Vec<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -216,6 +238,12 @@ fn main() -> anyhow::Result<()> {
             Cmd::Note {
                 cmd: NoteCmd::Add { daily, text },
             } => devbox_cli::note::add(daily, text).await,
+            Cmd::Project {
+                cmd: ProjectCmd::List { json },
+            } => devbox_cli::project::list(json).await,
+            Cmd::Project {
+                cmd: ProjectCmd::Add { paths },
+            } => devbox_cli::project::add(paths).await,
             Cmd::Version => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 Ok(())

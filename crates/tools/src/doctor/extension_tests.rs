@@ -226,3 +226,25 @@ fn global_hook_warning_is_gone() {
         }
     }
 }
+
+#[test]
+fn wsl_idle_without_the_windows_reader_names_it_and_where_to_look() {
+    let all = checks(&FakeProbe {
+        issue: Some(ProbeIssue::Missing),
+        ..Default::default()
+    });
+    let idle = find(&all, "wsl.idle");
+    assert_eq!(idle.status, Status::Warn);
+    assert_eq!(
+        idle.message,
+        "확인하지 못함: 점검한 PATH에 powershell.exe가 없어 Windows의 .wslconfig를 읽지 못했습니다"
+    );
+    let fix = idle.fix.as_deref().unwrap_or_default();
+    assert!(fix.contains("%USERPROFILE%\\.wslconfig"), "{fix}");
+    assert!(fix.contains("appendWindowsPath"), "{fix}");
+    // Other rows keep the general wording: only this row knows what was missing.
+    assert_eq!(
+        find(&all, "tool.docker").message,
+        "확인하지 못함: 필요한 파일이나 명령을 찾지 못했습니다"
+    );
+}

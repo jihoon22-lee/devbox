@@ -131,7 +131,11 @@ export type ContainerAction = "start" | "stop" | "restart";
 export type ContainerActionParams = { id: string, action: ContainerAction, };
 export type ContainerActionResult = { id: string, action: ContainerAction, undo: ContainerActionParams | null, };
 export type ContainerError = { "code": "runtime.container_invalid_id" } | { "code": "runtime.container_unavailable" } | { "code": "runtime.container_failed" } | { "code": "runtime.container_timeout" } | { "code": "runtime.container_output_limit" } | { "code": "runtime.container_invalid_output" } | { "code": "runtime.container_cancelled" };
-export type ContainerInfo = { id: string, name: string, image: string, state: string, status: string, ports: string, composeProject?: string, };
+export type ContainerInfo = { id: string, name: string, image: string, state: string, status: string, ports: string, composeProject?: string, 
+/**
+ * The registered project whose folder holds the container's Compose working directory.
+ */
+projectId?: string, };
 export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
 export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
@@ -769,7 +773,29 @@ export type TrustPreview = { status: TrustPreviewStatus, projectId: string, proj
 export type TrustPreviewParams = { id: string, operation: TrustOperation, agentId: string | null, worktrees: Array<string>, worktree: boolean | null, };
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
+export type UnitsResult = { available: boolean, reason?: UnitsUnavailableReason, items: Array<UserUnitInfo>, 
+/**
+ * More units were loaded than one query shows.
+ */
+truncated: boolean, };
+export type UnitsUnavailableReason = "cliMissing" | "managerUnavailable";
 export type Upstream = { remote: string, destinationRef: string, };
+export type UserUnitInfo = { name: string, description: string, loadState: string, activeState: string, subState: string, kind: UserUnitKind, 
+/**
+ * A timer's next run. One that counts from boot or from its last run is converted to
+ * wall-clock time with the daemon's clocks. Absent when nothing is scheduled.
+ */
+nextElapseMs?: number, 
+/**
+ * The unit a timer starts.
+ */
+triggers?: string, 
+/**
+ * The registered project whose folder holds a service's `WorkingDirectory`. A timer has
+ * the project of the listed unit it triggers.
+ */
+projectId?: string, };
+export type UserUnitKind = "service" | "timer";
 export type VarOrigin = "environment" | "capture";
 export type WebhookEmpty = Record<symbol, never>;
 export type WebhookFixture = { id: string, name: string, request: WebhookReceivedDetail, };
@@ -932,6 +958,7 @@ export interface Methods {
   "observe.processes": { kind: "query"; confirm: "none"; params: ProcessesQuery; result: Array<ProcessInfo>; error: ObserveError };
   "observe.resolve_location": { kind: "query"; confirm: "none"; params: ResolveFileLocation; result: FileLocation; error: ObserveError };
   "observe.system": { kind: "query"; confirm: "none"; params: ObserveQuery; result: SystemInfo; error: ObserveError };
+  "observe.units": { kind: "query"; confirm: "none"; params: ObserveQuery; result: UnitsResult; error: ObserveError };
   "projects.add": { kind: "mutation"; confirm: "none"; params: AddProject; result: Project; error: ProjectsError };
   "projects.clone": { kind: "mutation"; confirm: "none"; params: CloneProject; result: Project; error: ProjectsError };
   "projects.config": { kind: "query"; confirm: "none"; params: GetProjectConfig; result: ProjectConfigResult; error: ProjectsError };
@@ -1144,6 +1171,7 @@ export const METHOD_INFO = {
   "observe.processes": { kind: "query", confirm: "none" },
   "observe.resolve_location": { kind: "query", confirm: "none" },
   "observe.system": { kind: "query", confirm: "none" },
+  "observe.units": { kind: "query", confirm: "none" },
   "projects.add": { kind: "mutation", confirm: "none" },
   "projects.clone": { kind: "mutation", confirm: "none" },
   "projects.config": { kind: "query", confirm: "none" },

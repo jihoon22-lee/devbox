@@ -7,6 +7,7 @@ pub mod exec;
 pub mod gateway;
 pub mod mcp;
 pub mod note;
+pub mod project;
 pub mod run_exited;
 pub mod setup;
 

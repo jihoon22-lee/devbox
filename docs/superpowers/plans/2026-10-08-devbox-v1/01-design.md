@@ -114,9 +114,10 @@
 | 실행 | 서비스 준비 상태: `ports_hint` 포트가 수신 중이면 "준비됨"(관찰만). Windows 대상 서비스는 port마다 그 실행의 소유 Windows Job 안 프로세스가 연 loopback·wildcard listener가 있을 때만 준비됨이며, 무관 listener·조회 실패는 미준비다. port가 없는 Windows 서비스는 시작 시 준비됨(S6-4a). 서비스 의존 순서는 앞 서비스의 준비됨을 기다린다(기본 60초, 넘으면 실패). health 실패로 재시작하지 않는다 | 단순화 | v0.9.0 health probe·유예·health 재시작 폐기(AR-F02, IR-4) |
 | 실행 | 작업 자동 감지(package.json·Makefile·justfile·Cargo·docker compose) | 유지 | tasks ImportDialog |
 | 실행 | 로그: 실시간 tail, 검색·필터, 여러 소스 병합 보기. 소스는 devbox 실행·파일 tail·Docker/Podman 컨테이너 | 유지 | `logs-engine` |
-| 실행 | Docker 컨테이너 목록·상태·시작/중지/재시작, 포트의 컨테이너 표시 | 유지 | `terminal-engine` docker_ps·docker_action |
-| 실행 | 포트: 수신 포트 → 프로세스·실행·컨테이너 연결, 브라우저로 열기, 점유 프로세스 종료 | 유지 | `ports-engine` |
+| 실행 | Docker 컨테이너 목록·상태·시작/중지/재시작, 포트의 컨테이너 표시. Compose 작업 폴더가 등록한 프로젝트 폴더 안이면 그 프로젝트의 컨테이너로 보고, 실행 목록은 현재 프로젝트의 컨테이너만 펴고 나머지는 '다른 컨테이너 N개'로 접는다 | 유지 | `terminal-engine` docker_ps·docker_action |
+| 실행 | 포트: 수신 포트 → 프로세스·실행·컨테이너 연결, 브라우저로 열기, 점유 프로세스 종료. 컨테이너가 연 포트는 그 컨테이너의 프로젝트를 따르고, 현재 프로젝트의 포트를 먼저 보인다 | 유지 | `ports-engine` |
 | 실행 | 프로세스: 프로젝트 관련 우선 목록, 종료 | 유지 | |
+| 실행 | 사용자 서비스: `~/.config/systemd/user`의 `systemctl --user` 서비스·타이머를 읽기 전용으로 보인다(상태·다음 실행·현재 프로젝트 먼저). 시작·중지 없음 | 신규 | 1.0.1, #675 |
 | 실행 | 문제: 로그·빌드 출력·LSP 진단에서 file:line 추출 → 편집기로 | 유지 | `problems_host` |
 | 실행 | WSL 상태 요약: 메모리·스왑·PSI·디스크 | 단순화 | wsl-resource-guard와 겹쳐 요약만 |
 | 실행 | Windows에서 실행: `target = "windows"` 작업은 Windows 사본 폴더(`windows_dir`)로 동기화한 뒤 PowerShell로 실행 | 신규 | `cmd.exe`는 UNC 작업 폴더 불가, WSL `node_modules`는 Linux용(FS-14) |
@@ -220,7 +221,7 @@ Windows 11                                        WSL2 (배포판 하나, system
 | `devbox bridge` | stdio ↔ unix socket 바이트 중계 | 메시지 해석 |
 | `devbox exec` | 실행 래퍼: 자식 출력에 줄별 시각·스트림 표시, 로그 회전, 종료 코드를 파일과 데몬에 보고 | 상태 저장 |
 | `devbox mcp` | MCP stdio 서버, 데몬 RPC 호출 | 자체 상태 |
-| `devbox <명령>` | CLI(`run`, `agent new`, `agent event`, `note add`, `doctor`, `setup`, `secrets export-key` 등) | |
+| `devbox <명령>` | CLI(`run`, `agent new`, `agent event`, `note add`, `project list`, `project add`, `doctor`, `setup`, `secrets export-key` 등) | |
 | `devbox dev-gateway` | 개발·E2E 전용 WebSocket ↔ unix socket | 배포 환경에서 실행 |
 | `Devbox.exe` | 창·트레이·단축키·알림·활동 수집·외부 열기·업데이트, 데몬 배치·기동, 프레임 라우팅 | 도메인 로직, 데이터 저장 |
 
@@ -338,7 +339,7 @@ set -g allow-passthrough on
 - 기록하는 것: 메서드·소요 시간·오류 코드·진행 작업 ID. 인자·본문·비밀·파일 내용은 기록하지 않는다.
 - panic hook: 버전·스레드·위치·최근 이벤트 50개를 `crash-<시각>.log`로 남긴다.
 - 릴리스 빌드는 `debug = "line-tables-only"`로 한다.
-- `devbox doctor`와 앱 진단 화면은 같은 점검 목록을 쓴다.
+- `devbox doctor`와 앱 진단 화면은 같은 점검 목록을 쓴다(손으로 실행한 doctor는 데몬 환경 파일의 PATH로 찾는다).
 
 ### 4.6 업데이트·재시작
 
@@ -607,7 +608,7 @@ Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.d
 |---|---|---|
 | 에이전트 | [목록 \| 격자] 전환. 목록: 긴급순 그룹(입력 대기·실패·검토 대기·실행 중·준비 중·닫힘 24시간), 행에 hook 메시지 한 줄. 상세: 머리줄(작업·프로젝트·브랜치·도구·상태·경과·CPU·메모리·토큰·뒤처짐) + 동작 버튼 + 탭(터미널·변경·커밋·실행) + 지시 작성란(Enter 줄바꿈, Ctrl+Enter 보내기) | 새 작업(Ctrl+Shift+N), 다음 입력 대기로(Ctrl+Shift+J), 이어서 지시, 테스트 실행, 기준 반영, 병합▾·PR·폐기, 재개, 새 창 |
 | 터미널 | 목록: 프로젝트별 세션. 본문: 탭 + 분할(칸마다 tmux 세션) | 새 세션, 분할, 분리 창, 검색, 선택을 변환 도구로 |
-| 실행 | 목록: 서비스·작업·예약·컨테이너 그룹(상태 점). 본문: 선택한 실행의 로그(가상 스크롤, 시각·스트림 열) + 위쪽 포트·자원 칩 | 시작·중지·재시작, 로그 검색·필터·소스 병합, 포트 열기·점유 종료, 문제 이동 |
+| 실행 | 목록: 서비스·작업·예약·컨테이너 그룹(상태 점. 컨테이너 그룹은 현재 프로젝트의 컨테이너 + 접힌 '다른 컨테이너'). 목록 위 [포트 목록]·[프로세스 목록]·[사용자 서비스]·[WSL 리소스]. 본문: 선택한 실행의 로그(가상 스크롤, 시각·스트림 열) + 위쪽 포트·자원 칩 | 시작·중지·재시작, 로그 검색·필터·소스 병합, 포트 열기·점유 종료, 문제 이동 |
 | 소스 | 목록 위 [파일 \| 변경 \| 브랜치] 전환. 본문: 편집기 탭·diff 탭·충돌 해결 | 파일 편집, stage/commit/push, 충돌 해결, 정리, 미리보기 |
 | 노트 | 목록: 폴더 트리 + 태그 + 활동(일·주). 본문: 편집기(미리보기 분할), 오른쪽 백링크(접기) | 새 노트, 일일 기록(Ctrl+Alt+D), 빠른 캡처, 노트에서 에이전트 작업 |
 | 도구 | 목록: API 컬렉션 트리 · 웹훅 · 변환 도구 · 개발 환경 점검. 본문: 요청 \| 응답 2분할(1100px 미만이면 응답이 아래로), 요청 종류에 맞는 패널만 | 보내기(Ctrl+Enter), 저장, 코드 생성, 가져오기, 응답을 노트에 |
@@ -781,7 +782,7 @@ Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.d
 | `terminal` | tmux 서버·세션 관리, PTY attach 스트림, 스크롤백 선채움, 격자용 읽기 전용 attach, 프로필, OSC 7 | `terminal.list/create/attach/resize/close` | `terminal.changed`, 스트림 |
 | `agents` | 에이전트 작업 상태 기계(§9.2), 준비·hook·재개·기록 고정·기준 반영·정리, 자원·토큰, 도구 프로필·템플릿·포트 | `agents.create/list/send/resume/rebase/merge/pr/discard/cleanup` | `agents.changed`, `agents.attention` |
 | `runtime` | 작업·서비스·예약 정의(DB + toml 병합), `systemd-run` 실행, 실행 래퍼 보고, cron(DST), 놓친 예약, Windows 대상 동기화·실행, Docker 컨테이너 | `runtime.list/start/stop/restart/logs/containers` | `runtime.changed`, 로그 스트림 |
-| `observe` | 포트(`/proc/net/tcp*`)·프로세스(`/proc`)·문제 추출·WSL 자원(PSI·meminfo·df)·로그 소스(파일 tail·컨테이너 로그) | `observe.ports/processes/problems/system` | `observe.problems.changed` |
+| `observe` | 포트(`/proc/net/tcp*`)·프로세스(`/proc`)·사용자 systemd unit 목록(읽기 전용)·문제 추출·WSL 자원(PSI·meminfo·df)·로그 소스(파일 tail·컨테이너 로그) | `observe.ports/processes/units/problems/system` | `observe.problems.changed` |
 | `lsp` | 서버 수명(프로젝트·언어별, 세션 0개부터 15분 유휴 종료), 메시지 단위 중계(데몬이 Content-Length 프레이밍을 벗기고 붙여 JSON 문자열을 주고받음, `@codemirror/lsp-client`의 `Transport`와 맞춤) + `publishDiagnostics` 엿보기, URI 권위, UTF-16 위치만 광고, 재시작 백오프(5분 3회 초과면 실패), 서버 감지·설치 명령. `/mnt/c`의 Windows 쪽 변경은 inotify가 감지하지 못함 | `lsp.open/close/servers/install` | 스트림, `lsp.restarted` |
 | `documents` | 문서 lease·읽기·저장(CAS·원자적 교체·mode/EOL/BOM 보존)·저널·rename·외부 변경 감시. 저널은 데이터 폴더(`<data>/journals/`)에만 둔다. 원자적 교체의 같은 폴더 임시 파일은 `.devbox-tmp-<난수>` 이름을 쓰고, 트리·감시·색인·링크 재작성에서 제외하며, 데몬 시작 때 1시간 넘은 것을 지운다(CV-F06) | `documents.claim/release/save/journal/rename` | `documents.changed` |
 | `notes` | vault·frontmatter·위키링크·백링크·템플릿·첨부·링크 재작성·일일 기록·살균 HTML | `notes.tree/daily/render/links/...` | `notes.changed` |

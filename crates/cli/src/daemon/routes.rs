@@ -88,6 +88,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_observe::ObserveSystem, _, _>(|s, _, _| async move {
             s.observe.system(s.paths.home.clone()).await
         })
+        .register::<devbox_observe::ObserveUnits, _, _>(|s, _, _| async move {
+            super::observe::units(s).await
+        })
         .register::<devbox_observe::LogsOpen, _, _>(|s, ctx, p| async move {
             super::logs::open(s, ctx, p).await
         })
@@ -95,7 +98,7 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
             super::logs::search(s, ctx, p).await
         })
         .register::<devbox_runtime::RuntimeContainers, _, _>(|s, ctx, _| async move {
-            s.containers.list(ctx.cancel).await
+            super::observe::containers(s, ctx.cancel).await
         })
         .register::<devbox_runtime::RuntimeContainerAction, _, _>(|s, ctx, p| async move {
             s.containers.action(p, ctx.cancel).await

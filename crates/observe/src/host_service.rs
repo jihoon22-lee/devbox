@@ -6,6 +6,24 @@ impl ObserveService {
         self.proc = proc;
         self
     }
+    /// The `systemctl` that `units` queries. Tests point it at a fake.
+    pub fn with_systemctl(mut self, systemctl: PathBuf) -> Self {
+        self.systemctl = systemctl;
+        self
+    }
+    /// The user's own services and timers. `unit_dir` is the user's systemd unit directory.
+    pub async fn units(&self, projects: Vec<ProjectRoot>, unit_dir: PathBuf) -> R<UnitsResult> {
+        // The slot of the sibling host queries: polling clients cannot pile up children.
+        let _permit = self
+            .host_slots
+            .clone()
+            .acquire_owned()
+            .await
+            .internal("acquire host query")?;
+        // A list should not stall the Runs screen.
+        let timeout = std::time::Duration::from_secs(3);
+        crate::units::snapshot(&self.systemctl, timeout, &unit_dir, &projects).await
+    }
     pub async fn ports(&self, projects: Vec<ProjectRoot>, runs: Vec<UnitRun>) -> R<Vec<PortInfo>> {
         let permit = self
             .host_slots
@@ -17,12 +35,15 @@ impl ObserveService {
         let work = tokio::task::spawn_blocking(move || {
             (
                 crate::ports::ports_snapshot(&proc, &projects, &runs),
+                projects,
                 permit,
             )
         });
-        let (rows, _permit) = work.await.internal("read host ports")?;
+        let (rows, projects, _permit) = work.await.internal("read host ports")?;
         let mut rows = rows?;
-        rows.extend(crate::docker_ports::snapshot(&self.docker).await);
+        let published = crate::docker_ports::snapshot(&self.docker, &projects).await;
+        crate::docker_ports::inherit_projects(&mut rows, &published);
+        rows.extend(published);
         rows.sort_by(|a, b| {
             (a.port, &a.addr, &a.container_id).cmp(&(b.port, &b.addr, &b.container_id))
         });

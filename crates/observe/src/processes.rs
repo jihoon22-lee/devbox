@@ -32,12 +32,7 @@ pub(crate) fn parse_stat(text: &str) -> Option<Stat> {
     })
 }
 pub(crate) fn project_for<'a>(cwd: Option<&Path>, projects: &'a [ProjectRoot]) -> Option<&'a str> {
-    let cwd = cwd?;
-    projects
-        .iter()
-        .filter(|p| cwd.starts_with(&p.path))
-        .max_by_key(|p| p.path.components().count())
-        .map(|p| p.id.as_str())
+    devbox_core::project_root::owning_root(cwd?, projects)
 }
 #[derive(Default)]
 pub(crate) struct ProcessSampler {

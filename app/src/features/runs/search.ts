@@ -8,7 +8,7 @@ export function runNavigationState() {
   return { runActivation: crypto.randomUUID() };
 }
 export type RunsSearch = {
-  view?: "ports" | "system" | "processes";
+  view?: "ports" | "system" | "processes" | "units";
   projectId?: string;
   runId?: string;
   task?: string;
@@ -18,6 +18,7 @@ export function runsSearch(search: Record<string, unknown>): RunsSearch {
   for (const key of ["projectId", "runId", "task"] as const) {
     if (typeof search[key] === "string" && search[key].trim()) result[key] = search[key];
   }
-  if (search.view === "ports" || search.view === "system" || search.view === "processes") result.view = search.view;
+  if (search.view === "ports" || search.view === "system" || search.view === "processes" || search.view === "units")
+    result.view = search.view;
   return result;
 }

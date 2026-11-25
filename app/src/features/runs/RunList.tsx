@@ -1,6 +1,7 @@
 import type { ContainerInfo, Definition, Run, ScheduleStatus, TrustPreviewStatus } from "../../rpc/gen/rpc";
 import { Button, StatusDot } from "../../ui";
 import { DataTable } from "../../ui/DataTable";
+import { ContainerList } from "./ContainerList";
 import s from "./RunsPage.module.css";
 import { liveRun, resultLabel, runStateLabel, runTone, scheduleResultLabel } from "./runPresentation";
 export type RunSelection = { definitionId: string; runId?: string } | { containerId: string };
@@ -20,6 +21,7 @@ export function definitionNeedsTrust(definition: Definition, definitions: Defini
   return check(definition);
 }
 export function RunList({
+  projectId,
   definitions,
   runs,
   containers,
@@ -33,6 +35,7 @@ export function RunList({
   onEdit,
   onContainerAction,
 }: {
+  projectId: string;
   definitions: Definition[];
   runs: Run[];
   containers: ContainerInfo[];
@@ -161,75 +164,14 @@ export function RunList({
           </section>
         );
       })}
-      <section aria-label="컨테이너">
-        <h3>
-          컨테이너 <small>{containers.length}</small>
-        </h3>
-        {containers.length === 0 ? (
-          <p className={s.muted}>컨테이너 없음</p>
-        ) : (
-          <DataTable
-            label="컨테이너 목록"
-            rows={containers}
-            rowKey={(row) => row.id}
-            columns={[
-              {
-                key: "name",
-                title: "이름 · 상태",
-                render: (row) => (
-                  <div className={s.rowSummary}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`${row.name} 로그`}
-                      aria-pressed={selected && "containerId" in selected && selected.containerId === row.id}
-                      onClick={() => onSelect({ containerId: row.id })}
-                    >
-                      <StatusDot tone={row.state === "running" ? "ok" : "idle"} label={row.state} />
-                      {row.name}
-                    </Button>
-                    <span>
-                      {row.status} · {row.image}
-                    </span>
-                  </div>
-                ),
-              },
-              {
-                key: "actions",
-                title: "동작",
-                render: (row) => (
-                  <div className={s.actions}>
-                    <Button
-                      size="sm"
-                      disabled={busy || row.state === "running"}
-                      onClick={() => onContainerAction("start", row)}
-                      aria-label={`${row.name} 시작`}
-                    >
-                      시작
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={busy || row.state !== "running"}
-                      onClick={() => onContainerAction("stop", row)}
-                      aria-label={`${row.name} 중지`}
-                    >
-                      중지
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => onContainerAction("restart", row)}
-                      aria-label={`${row.name} 재시작`}
-                    >
-                      재시작
-                    </Button>
-                  </div>
-                ),
-              },
-            ]}
-          />
-        )}
-      </section>
+      <ContainerList
+        containers={containers}
+        projectId={projectId}
+        selected={selected}
+        busy={busy}
+        onSelect={onSelect}
+        onAction={onContainerAction}
+      />
     </div>
   );
 }

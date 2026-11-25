@@ -8,6 +8,8 @@ pub trait Probe {
     fn which(&self, tool: &str, path: &str) -> Probed<bool>;
     fn daemon_path(&self) -> String;
     fn hook_executable(&self) -> Probed<bool>;
+    /// Windows' `.wslconfig`, `Ok(None)` when there is none. `Missing` means its reader (Windows'
+    /// `powershell.exe`) is not in the checked `PATH`.
     fn wsl_config(&self) -> Probed<Option<String>> {
         Err(ProbeIssue::Unavailable)
     }

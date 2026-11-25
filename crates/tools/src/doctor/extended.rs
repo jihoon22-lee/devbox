@@ -77,6 +77,15 @@ pub(super) fn checks(p: &dyn Probe, scope: Scope) -> Vec<Check> {
             ),
             (value.instance_ms != -1).then_some(idle_fix),
         ),
+        // The one thing this probe can lack is its reader: Windows' `powershell.exe`.
+        Err(ProbeIssue::Missing) => check(
+            "wsl.idle",
+            Status::Warn,
+            "확인하지 못함: 점검한 PATH에 powershell.exe가 없어 Windows의 .wslconfig를 읽지 못했습니다",
+            Some(
+                "Windows의 %USERPROFILE%\\.wslconfig에서 [general] instanceIdleTimeout을 직접 확인하세요. 여기서 보려면 WSL의 PATH에 Windows 폴더가 있어야 합니다(/etc/wsl.conf의 [interop] appendWindowsPath를 끄지 않았는지 확인한 뒤 셸 환경 다시 읽기)",
+            ),
+        ),
         Err(issue) => unknown("wsl.idle", issue, idle_fix),
     };
     let rust_fix = "rustup 공식 설치 안내를 확인하고 cargo·rustc가 PATH에 있는지 확인하세요";

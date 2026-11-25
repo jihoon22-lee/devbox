@@ -1,4 +1,5 @@
 mod agent_cli;
+mod environment;
 mod os;
 mod runner;
 use devbox_protocol::system::{DoctorReport, Status};
@@ -7,6 +8,9 @@ pub use devbox_tools::doctor::{Probe, Scope, checks, checks_for};
 pub struct OsProbe {
     pub env_file: std::path::PathBuf,
     pub hook_binary: std::path::PathBuf,
+    /// Set over the process environment for tool lookups and the commands this check starts.
+    /// Empty for the daemon and the app's start-up check, whose own environment is the answer.
+    vars: Vec<(String, String)>,
     /// This check's look at the agent CLIs, made once, on first use.
     agents: std::sync::OnceLock<
         devbox_tools::doctor::Probed<Vec<Option<devbox_tools::doctor::AgentCommand>>>,
@@ -18,8 +22,16 @@ impl OsProbe {
         Self {
             env_file,
             hook_binary,
+            vars: Vec::new(),
             agents: std::sync::OnceLock::new(),
         }
+    }
+    /// A hand-run check looks in the environment selected for it.
+    fn looking_in(mut self, lookup: environment::Lookup) -> Self {
+        if let environment::Lookup::Instance(vars) = lookup {
+            self.vars = vars;
+        }
+        self
     }
 }
 #[allow(unsafe_code)]
@@ -35,19 +47,29 @@ fn executable(path: &std::path::Path) -> bool {
     // this read-only syscall. AT_EACCESS checks effective credentials and ACLs.
     unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
-/// `startup` is the app's check after each setup: see [`Scope::Startup`].
+/// `startup` is the app's check after each setup: see [`Scope::Startup`]. Any other run is made
+/// by hand and looks tools up in the instance's saved environment ([`environment::select`]).
 pub async fn run(json: bool, startup: bool) -> anyhow::Result<()> {
-    let probe = OsProbe::new(
-        crate::paths()?.instance_config_dir.join("env"),
-        crate::paths()?.bin_dir.join("devbox"),
-    );
+    let paths = crate::paths()?;
+    let env_file = paths.instance_config_dir.join("env");
+    let hook_binary = paths.bin_dir.join("devbox");
     let scope = if startup { Scope::Startup } else { Scope::Full };
-    let report = DoctorReport {
-        checks: tokio::task::spawn_blocking(move || checks_for(&probe, scope)).await?,
-    };
+    let (used, checks) = tokio::task::spawn_blocking(move || {
+        let lookup = environment::select(&env_file, startup);
+        let used = environment::Used::of(&lookup, &env_file);
+        let probe = OsProbe::new(env_file, hook_binary).looking_in(lookup);
+        (used, checks_for(&probe, scope))
+    })
+    .await?;
+    let report = DoctorReport { checks };
     if json {
-        println!("{}", serde_json::to_string(&report)?);
+        let output = environment::Output {
+            environment: &used,
+            report: &report,
+        };
+        println!("{}", serde_json::to_string(&output)?);
     } else {
+        println!("{}", used.line());
         for c in &report.checks {
             println!(
                 "{:?} {} {}{}",

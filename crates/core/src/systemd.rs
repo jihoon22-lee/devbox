@@ -106,15 +106,15 @@ fn parse_state(bytes: &[u8]) -> Result<UnitState, CoreError> {
 fn invocation(program: &str) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
     if matches!(program, "systemctl" | "systemd-run") {
-        // The manager belongs to the login session, even for an instance whose
-        // socket and unit Environment= use a private runtime directory.
-        use crate::Env;
-        command.env(
-            "XDG_RUNTIME_DIR",
-            format!("/run/user/{}", crate::OsEnv.uid()),
-        );
+        command.env("XDG_RUNTIME_DIR", login_runtime_dir());
     }
     command
+}
+/// Where the user manager's bus lives. The manager belongs to the login session, even for an
+/// instance whose socket and unit Environment= use a private runtime directory.
+pub fn login_runtime_dir() -> String {
+    use crate::Env;
+    format!("/run/user/{}", crate::OsEnv.uid())
 }
 async fn output(program: &str, args: &[&str]) -> Result<Output, CoreError> {
     let mut command = invocation(program);

@@ -191,6 +191,7 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
               <p role="status">실행 불러오는 중…</p>
             ) : (
               <RunList
+                projectId={projectId}
                 definitions={list.data?.defs ?? []}
                 runs={list.data?.runs ?? []}
                 containers={containers.data?.items ?? []}

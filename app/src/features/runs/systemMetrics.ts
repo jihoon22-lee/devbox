@@ -2,7 +2,7 @@ import type { SystemInfo } from "../../rpc/gen/rpc";
 import { useRpcQuery } from "../../rpc/query";
 import { usePageVisible } from "../../shell/visibility";
 
-export function useSystemMetrics(view: "system" | "ports" | "processes" | "all" = "all") {
+export function useSystemMetrics(view: "system" | "ports" | "processes" | "units" | "all" = "all") {
   const visible = usePageVisible();
   const options = {
     enabled: visible,

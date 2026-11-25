@@ -125,6 +125,10 @@ test("run navigation exposes process observation using the selected project", as
   expect(wire.request("observe.processes", -1).params).toEqual({ projectId: "p" });
   await userEvent.click(screen.getByRole("button", { name: "포트 목록" }));
   expect(await screen.findByRole("heading", { name: "포트 목록" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "사용자 서비스" }));
+  expect(await screen.findByRole("heading", { name: "사용자 서비스" })).toBeVisible();
+  expect(router.state.location.search).toMatchObject({ view: "units" });
+  await waitFor(() => expect(wire.requests("observe.units").length).toBeGreaterThan(0));
 });
 test("saving a definition reads the auto-detected suggestions again", async () => {
   const wire = new RunWire();

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use ts_rs::TS;
 
 #[derive(Debug, Default, Serialize, Deserialize, TS)]
@@ -94,11 +93,7 @@ pub struct SystemInfo {
     pub home_filesystem: Option<FilesystemInfo>,
 }
 /// Composition input: observe never reads another domain's database.
-#[derive(Debug, Clone)]
-pub struct ProjectRoot {
-    pub id: String,
-    pub path: PathBuf,
-}
+pub use devbox_core::project_root::ProjectRoot;
 #[derive(Debug, Clone)]
 pub struct UnitRun {
     pub unit: String,

@@ -33,7 +33,12 @@ fn doctor_accepts_version_line_endings_but_rejects_old_and_malformed_versions() 
     }
     let config = home.join(".config/devbox-accept/accept");
     fs::create_dir_all(&config).expect("owned config directory");
-    fs::write(config.join("env"), "PATH=\"/owned/tools\"\n").expect("owned saved environment");
+    // The saved environment is the one a hand-run doctor looks tools up in.
+    fs::write(
+        config.join("env"),
+        format!("PATH=\"{}\"\n", tools.display()),
+    )
+    .expect("owned saved environment");
     let bin = home.join(".local/share/devbox-accept/bin");
     fs::create_dir_all(&bin).expect("owned binary directory");
     executable(&bin.join("devbox"), "exit 0");
@@ -111,7 +116,12 @@ fn the_startup_doctor_asks_no_shell_and_starts_no_agent_cli() {
     }
     let config = home.join(".config/devbox-accept/accept");
     fs::create_dir_all(&config).expect("owned config directory");
-    fs::write(config.join("env"), "PATH=\"/owned/tools\"\n").expect("owned saved environment");
+    // The saved environment is the one a hand-run doctor looks tools up in.
+    fs::write(
+        config.join("env"),
+        format!("PATH=\"{}\"\n", tools.display()),
+    )
+    .expect("owned saved environment");
     let bin = home.join(".local/share/devbox-accept/bin");
     fs::create_dir_all(&bin).expect("owned binary directory");
     executable(&bin.join("devbox"), "exit 0");
