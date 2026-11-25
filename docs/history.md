@@ -1,11 +1,11 @@
 # 끝난 계획과 이전 기록
 
-v1 재구축의 끝난 계획 문서와 줄이기 전 진행 원장 전문을 가리킨다. 현재 규칙은 [CONVENTIONS](../CONVENTIONS.md), 설계는 [01-design](superpowers/plans/2026-10-08-devbox-v1/01-design.md), 진행 상태는 [PROGRESS](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md), 지금 계획은 [10-s7-s8-release](superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md)다.
+v1 재구축의 끝난 계획 문서와 줄이기 전 진행 원장 전문을 가리킨다. 현재 규칙은 [CONVENTIONS](../CONVENTIONS.md), 설계는 [01-design](superpowers/plans/2026-10-08-devbox-v1/01-design.md), 진행 상태는 [PROGRESS](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)다. 진행 중인 계획 문서는 없다. 다음 작업 후보는 PROGRESS §1과 [GitHub 이슈](https://github.com/jihoon22-lee/devbox/issues)에 있다(착수는 사용자 지시와 승인된 계획만).
 
-- 아래 계획 문서는 S8-2(2026-11-03)가 트리에서 지웠다(사용자 결정 4). 내용은 S7 머지 커밋 `842fa82e`(#651)와 같다.
+- 아래 계획 문서 가운데 `00`·`02`–`09`는 S8-2(2026-11-03)가 트리에서 지웠다(사용자 결정 4). 내용은 S7 머지 커밋 `842fa82e`(#651)와 같다.
+- 계획 10(`10-s7-s8-release.md`)은 1.0.0 공개 뒤 S8-6(2026-11-25)이 트리에서 지웠다. 내용은 `v1.0.0` 태그가 가리키는 main `a09a9966`(#656)과 같다. 위 `842fa82e`가 아니다.
 - 원문은 고정 링크로 보거나 저장소에서 `git show <커밋>:<경로>`로 읽는다.
 - 기록의 PASS·FAIL·NOT_RUN은 그 기록이 적은 source SHA의 결과다. 지금 상태로 읽지 않는다.
-- 지금 계획 10은 1.0.0 공개 기록 뒤(S8-6) 여기로 옮긴다.
 
 ## v1 계획 문서
 
@@ -27,13 +27,14 @@ v1 재구축의 끝난 계획 문서와 줄이기 전 진행 원장 전문을 �
 | `07c-s6-release.md` | S6 마무리·출시(#648, 임시 RC #649). §14 성공 기준 판정 원장, §16 S6-6c 공개 직전 13개 확인(PROGRESS §3으로 옮김) | [고정 링크](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/07c-s6-release.md) · `git show 842fa82e:docs/superpowers/plans/2026-10-08-devbox-v1/07c-s6-release.md` |
 | `08-review-record.md` | 01-design 초안 검토와 세 계획 통합·검수(§8·§9) | [고정 링크](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md) · `git show 842fa82e:docs/superpowers/plans/2026-10-08-devbox-v1/08-review-record.md` |
 | `09-s0a-results.md` | S0a 구조 확인 결과(ADR 0017의 근거) | [고정 링크](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/09-s0a-results.md) · `git show 842fa82e:docs/superpowers/plans/2026-10-08-devbox-v1/09-s0a-results.md` |
+| `10-s7-s8-release.md` | S7 rc.2 과제, S8 1.0.0 준비, S8-4b 최종 교차 검토 수정, S8-5b rc.3 검토 수정, S8-5 공개, S7-14 Windows 수용 표. 이 행만 `a09a9966`(#656)의 내용이다 | [고정 링크](https://github.com/jihoon22-lee/devbox/blob/a09a9966602249e41bc25df8a094666746718241/docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md) · `git show a09a9966:docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md` |
 
 ## 줄이기 전 진행 원장
 
 S8-2가 [PROGRESS](superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md)를 200줄 이하로 줄였다(사용자 결정 4). 이전 전문은 아래에 있다.
 
 - S0–S7-13: S7 머지 `842fa82e`. [고정 링크](https://github.com/jihoon22-lee/devbox/blob/842fa82e403231e67fc4dfb7e0d64b2ecc2af1d2/docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) · `git show 842fa82e:docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md`
-- S7-14–S7-16과 S8 착수(S8-0이 이 브랜치에 기록): S8-2a 첫 커밋 `71b42eb4`(전문을 담은 마지막 PROGRESS). [고정 링크](https://github.com/jihoon22-lee/devbox/blob/71b42eb44b663e193d32f49f5759d27771a05e25/docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) · `git show 71b42eb4:docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md`. S8 PR은 squash로 머지하므로 이 커밋은 PR에만 남는다. S8 PR의 영구 링크는 S8-6에서 더한다.
+- S7-14–S7-16과 S8 착수(S8-0이 이 브랜치에 기록): S8-2a 첫 커밋 `71b42eb4`(전문을 담은 마지막 PROGRESS). [고정 링크](https://github.com/jihoon22-lee/devbox/blob/71b42eb44b663e193d32f49f5759d27771a05e25/docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) · `git show 71b42eb4:docs/superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md`. S8 PR은 squash로 머지했으므로 이 커밋은 PR [#653](https://github.com/jihoon22-lee/devbox/pull/653)(squash `08dffcd3`)에만 남는다.
 
 ## v0.9 기록
 
