@@ -418,7 +418,7 @@ test("forced-colors-keep-highlight-on-pressed-selected-and-highlighted-items", a
       await page.keyboard.press("ArrowDown");
       const lit = listbox.locator('[role="option"][data-highlighted]');
       await expect(lit).toHaveCount(1);
-      // CI once read the option before its highlight colours applied (#656, cause not isolated): poll.
+      // On CI the single read once saw an unhighlighted option (#656, cause not isolated): poll.
       await expect
         .poll(() => look(lit), { message: "highlighted Select option" })
         .toMatchObject({
