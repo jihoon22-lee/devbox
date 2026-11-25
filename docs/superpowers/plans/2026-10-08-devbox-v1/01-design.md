@@ -31,6 +31,8 @@
 | D15 | 앱 identifier는 `io.github.jihoon22lee.devbox`, 노트 vault 기본 위치는 `~/notes`다. | Q3·Q4 확정 |
 | D16 | 계획은 subagent-driven-development로 실행한다(과제별 구현 + 검토 하위 에이전트). | 권장안 확정 |
 
+1.0.0 뒤의 D3·D5 적용(F·G 동결, Windows 실행은 실험 기능)과 1.0.0 공개 기준은 [ADR 0018](../../../adr/0018-v1-release-gate-and-scope.md)이 정한다(사용자 결정 2026-11-25).
+
 ### 0.1 점진 개선 의견과의 관계
 
 다른 세션의 검토(CV·AR)는 "현 구조를 유지하고 결함과 흐름을 단계적으로 고치자"고 권고했다. 그 판단의 전제는 네 가지였다.

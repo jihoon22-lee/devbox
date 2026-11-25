@@ -27,7 +27,7 @@ tracing 로그·TanStack 등 v1 설계가 승인한 스택은 해당 단계에�
 전체 검증·clippy·build·E2E·Windows/WSL 실기는 PR 모든 과제 완료 뒤 한 번 모아 실행한다. Windows 설치본 스모크는 01 §11과 아래 "Windows 수용"대로 에이전트가 수행한다.
 실패를 고친 뒤 실패·영향 범위만 재실행한다. 통과한 무관한 검사는 반복하지 않는다.
 완료 커밋·push 전 `pnpm exec biome ci .`를 실행한다. flaky 테스트는 해당 PR에서 수정하거나 제거한다.
-`.github`+`scripts`는 합계 2,000줄 이하, 워크플로는 3개 이하를 유지한다(2026-10-26 사용자 추가 승인).
+`.github`+`scripts`는 합계 2,000줄 이하, 워크플로는 3개 이하를 유지한다(2026-10-26 사용자 추가 승인). 수용 harness(`acceptance/harness/`)는 이 합계에 넣지 않는다(사용자 결정 2026-11-25, [ADR 0018](docs/adr/0018-v1-release-gate-and-scope.md)).
 
 로컬 검증은 Cargo jobs 2·Vitest workers 2·Rust test threads 2, CPU 4개·nice +10으로 제한한다.
 사용 가능한 cgroup에서 memory high 6GiB/max 8GiB·swap max 1GiB를 적용한다.
@@ -52,6 +52,7 @@ Windows 수용(사용자 결정 2026-10-13·2026-10-14):
 - 설치본은 prod와 겹치지 않는 `accept` 채널(별도 identifier·설치 폴더·앱 데이터·프로토콜·자동 시작 이름, WSL `devbox@accept` 인스턴스와 채널 전용 바이너리·unit 템플릿)만 쓴다. prod 설치본과 `devbox@prod`는 사용자의 실사용 자원이라 수용 검증이 바꾸지 않으며(불변 확인용 읽기 전용 해시·상태 비교만 한다), 있다고 멈추지 않는다. `accept` 채널 자원이 소유 표식 없이 이미 있을 때만 멈춰 묻는다.
 - 수용은 한 번에 하나만 한다(Windows 데스크톱·UI 자동화·`accept` 채널이 하나라서). 설치→검증→제거·소유 자원 정리 전체 동안 `windows-acceptance` 잠금(`scripts/verify-resources.py --wait --lock windows-acceptance`)을 잡는다.
 - 이번 수용이 만든 설치 경로·데이터·WSL unit·소켓만 제거한다. v0.9.0(`com.devbox.*`, DevboxSuite)과 기존 devbox 데이터는 보존한다. UAC·재부팅·사용자 클릭이 필요하면 멈추고 보고한다.
+- 수용 harness의 원본은 저장소의 `acceptance/harness/`다(사용자 결정 2026-11-25). 실행은 Git common-dir의 실행 사본(`devbox-verification/s7/harness/`)에서 하고, 실행 상태 파일(사용자 답·실행 입력 묶음·승인)은 그 사본에만 둔다. 실행 전에 사본의 코드가 저장소와 같은지 확인하고, 다르면 그 차이를 독립 검토자가 실행 입력과 함께 검토한다([acceptance/harness/README.md](acceptance/harness/README.md)). harness만 바꾼 PR은 `code=true`라 필수 CI는 돌지만 제품 입력이 같으므로 Windows 수용을 "NOT_RUN(제품 입력 불변)"으로 적는다.
 - 그 작업이 더한 Windows 기능을 확인한다. 앱·데몬 로그, user unit 상태, 진단, 필요하면 스크린샷을 근거로 PASS·FAIL·NOT_RUN을 PROGRESS와 PR 본문에 구분해 적는다. UI 자동화 수단이 없으면 해당 항목만 NOT_RUN으로 남긴다.
 
 ## 8. Git
@@ -64,7 +65,7 @@ Windows 수용(사용자 결정 2026-10-13·2026-10-14):
 main은 squash만 사용한다. PR 최종 변경의 `Frontend (pnpm)`, `Rust (Cargo workspace)`, `Rust (Windows)` CI 성공이 필수다.
 작업의 마지막 과제가 끝나면 브랜치 전체 검토·최종 로컬 검사·Biome CI 뒤 최종 소스 SHA를 push한다. `windows.yml`을 그 SHA의 브랜치에서 수동 실행해 검증된 설치본으로 스모크(§5 Windows 수용)를 수행한 뒤 PR을 한 번 연다. 문서 전용 PR(`code=false`)은 수동 실행·스모크 없이 연다(§5 Windows 수용).
 브랜치 전체 검토는 PR 전에 별도로 수행하고 결과를 PROGRESS에 남긴다. 과제별 검토로 대신하지 않으며, 기록이 없으면 수행하지 않은 것으로 본다.
-최종 SHA 원칙: 실패 수정으로 SHA가 바뀌면 새 SHA 산출물로 필요한 스모크를 다시 수행한다. 문서만 바뀌어도 이 원칙을 유지한다. 최종 스모크 결과는 PR 본문과 PROGRESS 작업 사본에 기록하고, 결과 기록만 담은 PROGRESS 변경은 다음 작업 브랜치의 문서 커밋으로 인계하여 검증한 소스 SHA를 바꾸지 않는다. 검증 뒤 현재 브랜치에 추가 커밋을 만들면 그 SHA의 설치본을 다시 확인한다.
+최종 SHA 원칙: 실패 수정으로 SHA가 바뀌면 새 SHA 산출물로 필요한 스모크를 다시 수행한다. 문서 전용 커밋(`scripts/ci-scope.sh`가 `code=false`로 보는 변경)은 검증한 소스를 바꾸지 않는 것으로 본다: 결과 기록을 같은 브랜치에 바로 커밋하고 설치본을 다시 확인하지 않는다(사용자 결정 2026-11-25, [ADR 0018](docs/adr/0018-v1-release-gate-and-scope.md). 그 전에는 다음 작업 브랜치로 인계했다). 최종 스모크 결과는 PR 본문과 PROGRESS에 기록한다. 검증 뒤 현재 브랜치에 `code=true` 커밋을 만들면 그 SHA의 설치본을 다시 확인한다. 버전 문자열과 문서·시험·harness만 바꾸는 릴리스 PR은 직전 코드 후보의 수용 결과를 쓰고, 새 squash SHA에서 accept 설치 스모크를 한 번 한 뒤 태그를 만든다(ADR 0018 결정 1).
 
 lock·생성 파일 병합(00 §3.3·§3.6에서 옮김):
 - clone마다 한 번 `git config merge.lockfile.driver true && git config rerere.enabled true`를 한다. `.gitattributes`가 `Cargo.lock`(루트와 `app/src-tauri`)·`pnpm-lock.yaml`·`app/src/rpc/gen/rpc.ts`를 `merge=lockfile`로 둔다. `rerere`는 반복 충돌 해결에 활용한다.
@@ -103,11 +104,12 @@ PR 리뷰(사용자 결정 2026-10-27):
 
 추가 스택은 구체적인 사용자 필요·대안·배포/CI 영향을 확인한다. UI는 Tauri v2 하나다.
 v0.9 데이터 이전은 하지 않는다. 기존 버전은 태그와 Git 이력으로 참조한다.
+1.0.0부터 API·웹훅·변환 도구(01-design D3의 F·G)는 결함 수정만 하고 새 기능은 사용자가 요청할 때만 더한다. Windows에서 실행(`target = "windows"`)은 실험 기능이다(사용자 결정 2026-11-25, [ADR 0018](docs/adr/0018-v1-release-gate-and-scope.md)).
 
 ## 11. 기록과 인계
 
 PROGRESS.md가 진행 상태의 유일한 원장이다. 결정·검증·미실행 항목은 현재 계획과 단일 PR 본문·artifact에 기록한다.
-PROGRESS는 지금 상태만 200줄 이하로 적는다(구성은 그 파일 §0, 사용자 결정 4). 줄이기 전 전문과 끝난 계획은 [docs/history.md](docs/history.md)가 가리킨다.
+PROGRESS는 지금 상태만 200줄 이하로 적는다(구성은 그 파일 §0, 사용자 결정 4). 열린 후속은 GitHub 이슈로 관리하고 PROGRESS §4에는 [차단] 항목과 이슈 링크만 둔다(사용자 결정 2026-11-25, 1.0.0 기록 PR에서 옮긴다). 줄이기 전 전문과 끝난 계획은 [docs/history.md](docs/history.md)가 가리킨다.
 새 workthrough·날짜별 복제 보고서를 만들지 않는다. 닫힌 이슈 #580(v0.9.0 출시 후 이슈·실사용 추적 원장)을 재오픈하거나 사용자 실기 요청을 만들지 않는다.
 인계에는 목표·범위·branch/worktree·결정·검증·다음 과제를 남기고 재개 시 실제 Git/CI와 대조한다.
 일반 개발은 별도 스킬을 요구하지 않는다. 승인된 계획은 과제별 구현 → 별도 검토 → 다음 과제 순서로 실행한다.
