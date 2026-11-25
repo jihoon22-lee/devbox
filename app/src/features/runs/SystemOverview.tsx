@@ -5,6 +5,7 @@ import { ObservationNavigation, type ObservationView, observationLabels } from "
 import { PortsTable, ProcessesTable } from "./ObservationTables";
 import { useProcessTermination } from "./ProcessTermination";
 import { gigabytes, memoryLabel, useSystemMetrics } from "./systemMetrics";
+import { UserUnits } from "./UserUnits";
 
 export function SystemOverview({ view, projectId }: { view: ObservationView; projectId?: string }) {
   const { system, ports } = useSystemMetrics(view);
@@ -19,8 +20,20 @@ export function SystemOverview({ view, projectId }: { view: ObservationView; pro
       staleTime: 0,
     },
   );
+  const units = useRpcQuery(
+    "observe.units",
+    {},
+    {
+      enabled: visible && view === "units",
+      refetchInterval: visible ? 3000 : false,
+      refetchIntervalInBackground: true,
+      staleTime: 0,
+    },
+  );
   const actions = useProcessTermination();
-  const query = view === "system" ? system : view === "ports" ? ports : processes;
+  const query = view === "system" ? system : view === "ports" ? ports : view === "units" ? units : processes;
+  // The code's central message is shared by every observation; here its cause is the user manager.
+  const managerSilent = view === "units" && units.error?.code === "observe.source_unavailable";
   return (
     <section style={{ padding: "var(--space-4)", overflow: "auto" }} aria-label={observationLabels[view]}>
       <ObservationNavigation view={view} />
@@ -41,9 +54,22 @@ export function SystemOverview({ view, projectId }: { view: ObservationView; pro
               ? "WSL 리소스를 불러오지 못했습니다"
               : view === "ports"
                 ? "포트를 불러오지 못했습니다"
-                : "프로세스를 불러오지 못했습니다"
+                : managerSilent
+                  ? "systemd 사용자 관리자가 제때 답하지 않았거나 답을 읽지 못해 사용자 서비스를 불러오지 못했습니다"
+                  : view === "units"
+                    ? "사용자 서비스를 불러오지 못했습니다"
+                    : "프로세스를 불러오지 못했습니다"
           }
-          action={<Button onClick={() => void query.refetch()}>다시 시도</Button>}
+          action={
+            <>
+              {managerSilent && (
+                <span>
+                  다시 시도하고, 계속되면 터미널에서 <code>systemctl --user status</code>를 확인하세요.
+                </span>
+              )}
+              <Button onClick={() => void query.refetch()}>다시 시도</Button>
+            </>
+          }
         />
       ) : query.isPending ? (
         <p role="status">불러오는 중…</p>
@@ -68,6 +94,8 @@ export function SystemOverview({ view, projectId }: { view: ObservationView; pro
               : "정보 없음"}
           </dd>
         </dl>
+      ) : view === "units" ? (
+        units.data && <UserUnits result={units.data} projectId={projectId} />
       ) : view === "processes" ? (
         processes.data?.length ? (
           <ProcessesTable processes={processes.data} actions={actions} />

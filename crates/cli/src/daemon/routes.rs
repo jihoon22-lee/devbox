@@ -88,6 +88,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_observe::ObserveSystem, _, _>(|s, _, _| async move {
             s.observe.system(s.paths.home.clone()).await
         })
+        .register::<devbox_observe::ObserveUnits, _, _>(|s, _, _| async move {
+            super::observe::units(s).await
+        })
         .register::<devbox_observe::LogsOpen, _, _>(|s, ctx, p| async move {
             super::logs::open(s, ctx, p).await
         })

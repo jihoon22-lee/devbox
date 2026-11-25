@@ -13,6 +13,7 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 pub struct ObserveService {
     pub(crate) docker: PathBuf,
+    pub(crate) systemctl: PathBuf,
     pub(crate) proc: ProcFs,
     pub(crate) host_slots: Arc<tokio::sync::Semaphore>,
     pub(crate) process_sampler: Arc<std::sync::Mutex<crate::processes::ProcessSampler>>,
@@ -31,6 +32,7 @@ impl ObserveService {
     pub fn new(docker: PathBuf) -> Self {
         Self {
             docker,
+            systemctl: "systemctl".into(),
             proc: ProcFs::default(),
             host_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             process_sampler: Arc::default(),

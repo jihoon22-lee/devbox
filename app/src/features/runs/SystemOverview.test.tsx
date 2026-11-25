@@ -94,3 +94,86 @@ test("ports overview of a project says its ports come first and marks them", asy
   expect(rows[2]).toHaveTextContent("3000");
   expect(rows[2]).not.toHaveTextContent("현재 프로젝트");
 });
+
+test("user units overview polls only its own read-only query and retries a failure", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <SystemOverview view="units" projectId="p" />
+    </RpcProvider>,
+  );
+  expect(screen.getByRole("heading", { name: "사용자 서비스" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "사용자 서비스" })).toHaveAttribute("aria-current", "page");
+  await waitFor(() => expect(wire.requests("observe.units")).toHaveLength(1));
+  expect(wire.request("observe.units").params).toEqual({});
+  await act(async () => wire.fail("observe.units"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("사용자 서비스를 불러오지 못했습니다");
+  fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+  await waitFor(() => expect(wire.requests("observe.units")).toHaveLength(2));
+  await act(async () =>
+    wire.reply("observe.units", {
+      available: true,
+      truncated: false,
+      items: [
+        {
+          name: "app-backup.timer",
+          description: "Nightly app backup",
+          loadState: "loaded",
+          activeState: "active",
+          subState: "waiting",
+          kind: "timer",
+        },
+        {
+          name: "app-web.service",
+          description: "App web server",
+          loadState: "loaded",
+          activeState: "active",
+          subState: "running",
+          kind: "service",
+          projectId: "p",
+        },
+      ],
+    }),
+  );
+  const rows = await screen.findAllByRole("row");
+  expect(rows[1]).toHaveTextContent("app-web.service 현재 프로젝트");
+  expect(rows[2]).toHaveTextContent("app-backup.timer");
+  for (const method of ["observe.system", "observe.ports", "observe.processes"])
+    expect(wire.requests(method)).toHaveLength(0);
+  // Navigation and nothing else: no button acts on a unit.
+  expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+    "실행 목록",
+    "포트 목록",
+    "프로세스 목록",
+    "사용자 서비스",
+    "WSL 리소스",
+  ]);
+});
+
+test("a user manager that does not answer in time is named as the cause, with the next step", async () => {
+  const wire = new ProjectWire();
+  render(
+    <RpcProvider client={wire.client}>
+      <SystemOverview view="units" />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("observe.units")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({
+      type: "response",
+      id: wire.request("observe.units").id,
+      error: { code: "observe.source_unavailable" },
+    }),
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(
+    "systemd 사용자 관리자가 제때 답하지 않았거나 답을 읽지 못해 사용자 서비스를 불러오지 못했습니다",
+  );
+  expect(alert).toHaveTextContent("다시 시도하고, 계속되면 터미널에서 systemctl --user status를 확인하세요.");
+  fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+  await waitFor(() => expect(wire.requests("observe.units")).toHaveLength(2));
+  // Another failure keeps the plain title and no systemd hint.
+  await act(async () => wire.fail("observe.units"));
+  await waitFor(() => expect(screen.getByRole("alert")).not.toHaveTextContent("systemctl"));
+  expect(screen.getByRole("alert")).toHaveTextContent("사용자 서비스를 불러오지 못했습니다");
+});

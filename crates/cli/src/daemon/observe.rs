@@ -48,6 +48,16 @@ pub(super) async fn containers(
     });
     s.containers.list(&projects, cancel).await
 }
+/// The user's own systemd user units. Like containers, they are listed without attribution
+/// when the projects cannot be read.
+pub(super) async fn units(s: Arc<Services>) -> R<devbox_observe::UnitsResult> {
+    let projects = project_roots::<ObserveError>(&s).await.unwrap_or_else(|_| {
+        tracing::warn!("user units listed without projects");
+        vec![]
+    });
+    let unit_dir = s.paths.xdg_config_home.join("systemd/user");
+    s.observe.units(projects, unit_dir).await
+}
 pub(super) async fn ports(s: Arc<Services>) -> R<Vec<PortInfo>> {
     let (projects, runs) = context(&s).await?;
     s.observe.ports(projects, runs).await
@@ -79,7 +89,7 @@ pub fn readiness() -> devbox_runtime::Readiness {
 }
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+    use std::{os::unix::fs::PermissionsExt, path::PathBuf, sync::Arc};
 
     /// A fake CLI that prints one Compose container whose working directory is `dir`.
     fn fake_docker(home: &std::path::Path, dir: &str) -> devbox_runtime::DockerContainers {
@@ -94,6 +104,75 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
             .expect("owned fixture");
         devbox_runtime::DockerContainers::new(path)
+    }
+    /// A fake `systemctl` with one user unit file whose working directory is `dir`, next to a
+    /// packaged unit and Devbox's own. The real one is never run by a test.
+    fn fake_systemctl(home: &std::path::Path, unit_dir: &std::path::Path, dir: &str) -> PathBuf {
+        let path = home.join("fake-systemctl");
+        let unit_dir = unit_dir.display();
+        std::fs::write(
+            &path,
+            format!(
+                r#"#!/bin/sh
+case "$*" in
+  '--user list-units --type=service,timer --all --no-pager --output=json')
+    printf '%s' '[{{"unit":"app-web.service"}},{{"unit":"dbus.service"}},{{"unit":"devbox@test-r.service"}}]' ;;
+  '--user show --no-pager --property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,Triggers -- app-web.service dbus.service')
+    printf '%s\n' 'Id=app-web.service' 'Description=App web server' 'LoadState=loaded' 'ActiveState=active' 'SubState=running' 'FragmentPath={unit_dir}/app-web.service' 'WorkingDirectory={dir}/web' '' 'Id=dbus.service' 'LoadState=loaded' 'FragmentPath=/usr/lib/systemd/user/dbus.service' ;;
+  *) exit 9 ;;
+esac
+"#
+            ),
+        )
+        .expect("owned fixture");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+            .expect("owned fixture");
+        path
+    }
+    #[tokio::test]
+    async fn user_units_are_listed_read_only_with_the_project_of_their_working_directory() {
+        let temp = tempfile::tempdir().expect("owned fixture");
+        let folder = temp.path().join("app");
+        std::fs::create_dir(&folder).expect("owned fixture");
+        let mut services = crate::daemon::build_services_for_test(temp.path());
+        let project = services
+            .projects
+            .add(devbox_projects::AddProject {
+                path: folder.to_string_lossy().into_owned(),
+            })
+            .await
+            .expect("owned fixture");
+        let unit_dir = services.paths.xdg_config_home.join("systemd/user");
+        let systemctl = fake_systemctl(temp.path(), &unit_dir, &project.path);
+        Arc::get_mut(&mut services).expect("owned fixture").observe =
+            Arc::new(devbox_observe::ObserveService::default().with_systemctl(systemctl));
+        let listed = super::units(services.clone()).await.expect("listing");
+        assert!(listed.available && listed.reason.is_none() && !listed.truncated);
+        assert_eq!(listed.items.len(), 1, "only the user's own unit file");
+        assert_eq!(listed.items[0].name, "app-web.service");
+        assert_eq!(
+            listed.items[0].project_id.as_deref(),
+            Some(project.id.as_str())
+        );
+        // Without a readable projects table the units are still listed.
+        services
+            .db
+            .write(|tx| tx.execute("ALTER TABLE projects_projects RENAME TO gone", []))
+            .await
+            .expect("owned fixture");
+        let listed = super::units(services.clone()).await.expect("listing");
+        assert_eq!(listed.items.len(), 1);
+        assert_eq!(listed.items[0].project_id, None);
+        // No systemctl: a typed reason, not an error.
+        Arc::get_mut(&mut services).expect("owned fixture").observe = Arc::new(
+            devbox_observe::ObserveService::default().with_systemctl(temp.path().join("missing")),
+        );
+        let listed = super::units(services).await.expect("typed");
+        assert!(!listed.available && listed.items.is_empty());
+        assert_eq!(
+            listed.reason,
+            Some(devbox_observe::UnitsUnavailableReason::CliMissing)
+        );
     }
     #[tokio::test]
     async fn containers_are_listed_without_attribution_when_projects_cannot_be_read() {
