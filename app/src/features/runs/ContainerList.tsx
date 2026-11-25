@@ -24,7 +24,7 @@ export function ContainerList({
         컨테이너 <small>{mine.length}</small>
       </h3>
       {mine.length === 0 ? (
-        <p className={s.muted}>{others.length ? "이 프로젝트의 컨테이너 없음" : "컨테이너 없음"}</p>
+        <p className={s.muted}>{others.length ? "현재 프로젝트의 컨테이너 없음" : "컨테이너 없음"}</p>
       ) : (
         <ContainerTable label="컨테이너 목록" rows={mine} {...row} />
       )}

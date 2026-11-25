@@ -67,7 +67,7 @@ test("a project without containers shows its empty state and keeps the others fo
   const section = await screen.findByRole("region", { name: "컨테이너" });
   const summary = await within(section).findByText("다른 컨테이너 2개", { selector: "summary" });
   expect(within(section).getByRole("heading", { name: "컨테이너 0" })).toBeVisible();
-  expect(within(section).getByText("이 프로젝트의 컨테이너 없음")).toBeVisible();
+  expect(within(section).getByText("현재 프로젝트의 컨테이너 없음")).toBeVisible();
   expect(within(section).queryByRole("table", { name: "컨테이너 목록" })).not.toBeInTheDocument();
   expect(summary.closest("details")).not.toHaveAttribute("open");
   expect(within(section).getByText("other-db-1")).not.toBeVisible();
@@ -85,7 +85,7 @@ test("a machine without containers keeps the plain empty state", async () => {
   expect(await within(section).findByText("컨테이너 없음")).toBeVisible();
   expect(within(section).getByRole("heading", { name: "컨테이너 0" })).toBeVisible();
   expect(within(section).queryByText(/다른 컨테이너/)).not.toBeInTheDocument();
-  expect(within(section).queryByText("이 프로젝트의 컨테이너 없음")).not.toBeInTheDocument();
+  expect(within(section).queryByText("현재 프로젝트의 컨테이너 없음")).not.toBeInTheDocument();
 });
 
 test("a project that owns every container shows no folded group", async () => {
