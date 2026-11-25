@@ -2,6 +2,8 @@ mod core;
 #[cfg(windows)]
 mod platform;
 #[cfg(windows)]
+use crate::core::presence::Signal;
+#[cfg(windows)]
 use platform::{connection, window};
 #[cfg(windows)]
 use tauri::Manager;
@@ -51,6 +53,7 @@ pub fn run() {
         .manage(platform::activity::Activity::default())
         .manage(platform::capture::Capture::default())
         .manage(platform::paint_trace::PaintTrace::new(started))
+        .manage(platform::presence::Presence::default())
         .invoke_handler(tauri::generate_handler![
             connection::gate_status,
             connection::gate_retry,
@@ -99,7 +102,8 @@ pub fn run() {
             platform::update::update_cancel,
             platform::update_install::update_install_summary,
             platform::update_install::update_install_confirm,
-            platform::popout::popout_create
+            platform::popout::popout_create,
+            platform::presence::window_shown
         ])
         .setup(|app| {
             #[cfg(debug_assertions)]
@@ -122,6 +126,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            platform::presence::window_event(window, event);
             // Keep note buffers alive even before the renderer's listener is ready.
             // Its explicit destroy happens only after the latest save has completed.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
@@ -135,6 +140,7 @@ pub fn run() {
                 && window.hide().is_ok()
             {
                 api.prevent_close();
+                platform::presence::report(window.app_handle(), window.label(), Signal::Hidden);
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == "main"
@@ -142,7 +148,14 @@ pub fn run() {
                 api.prevent_close();
                 if platform::tray::available(window.app_handle(), window.label()) {
                     match window.hide() {
-                        Ok(()) => platform::tray::show_notice(window.app_handle()),
+                        Ok(()) => {
+                            platform::presence::report(
+                                window.app_handle(),
+                                window.label(),
+                                Signal::Hidden,
+                            );
+                            platform::tray::show_notice(window.app_handle());
+                        }
                         Err(error) => eprintln!("Cannot hide main window: {error}"),
                     }
                 } else {

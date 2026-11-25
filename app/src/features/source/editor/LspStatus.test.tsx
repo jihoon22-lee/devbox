@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { LspStatus } from "./LspStatus";
 
@@ -57,3 +57,26 @@ test.each(["starting", "ready", "failed", "idle_stopped"])(
     );
   },
 );
+test("the status poll stops while the window is hidden, keeps its text and asks at once when shown", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  let state: DocumentVisibilityState = "visible";
+  vi.spyOn(document, "visibilityState", "get").mockImplementation(() => state);
+  rpc.call.mockResolvedValue(result("ready"));
+  render(<LspStatus projectId="p" language="typescript" />);
+  await screen.findByText(/PID 42/);
+  expect(rpc.call).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    state = "hidden";
+    fireEvent(document, new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(rpc.call).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(/PID 42/)).toBeInTheDocument();
+  await act(async () => {
+    state = "visible";
+    fireEvent(document, new Event("visibilitychange"));
+  });
+  expect(rpc.call).toHaveBeenCalledTimes(2);
+  expect(screen.getByText(/PID 42/)).toBeInTheDocument();
+  vi.useRealTimers();
+});

@@ -7,12 +7,12 @@ export function useAgentsData() {
   const stats = useRpcQuery(
     "agents.git_stats",
     {},
-    { enabled: visible, refetchInterval: visible ? 10_000 : false, refetchIntervalInBackground: true },
+    { enabled: visible, staleTime: 0, refetchInterval: visible ? 10_000 : false, refetchIntervalInBackground: true },
   );
   const resources = useRpcQuery(
     "agents.resources",
     {},
-    { enabled: visible, refetchInterval: visible ? 3_000 : false, refetchIntervalInBackground: true },
+    { enabled: visible, staleTime: 0, refetchInterval: visible ? 3_000 : false, refetchIntervalInBackground: true },
   );
   return {
     ...data,

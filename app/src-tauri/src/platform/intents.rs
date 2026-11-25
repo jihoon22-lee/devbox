@@ -1,6 +1,7 @@
 use crate::core::{
     connection::IpcError,
     intents::{AppIntent, PendingIntents},
+    presence::Signal,
 };
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
@@ -87,5 +88,7 @@ pub fn hide_main(app: AppHandle, window: WebviewWindow) -> Result<(), IpcError> 
         .get_webview_window("main")
         .ok_or_else(|| IpcError::new("메인 창 없음"))?;
     main.hide()
-        .map_err(|error| IpcError::new(error.to_string()))
+        .map_err(|error| IpcError::new(error.to_string()))?;
+    super::presence::report(&app, "main", Signal::Hidden);
+    Ok(())
 }

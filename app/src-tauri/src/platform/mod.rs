@@ -29,6 +29,7 @@ pub mod quit;
 pub mod update;
 
 pub mod popout;
+pub mod presence;
 
 pub mod update_install;
 

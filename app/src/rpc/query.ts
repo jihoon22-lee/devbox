@@ -1,5 +1,6 @@
 import { hashKey, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { usePageVisible } from "../shell/visibility";
 import { readAgentList } from "./agentPages";
 import { type RpcClient, RpcError } from "./client";
 import { METHOD_INFO, type Methods, type Topics } from "./gen/rpc";
@@ -25,14 +26,35 @@ export function useRpcQuery<M extends QueryMethod>(
   } = {},
 ) {
   const { client, state, generation } = useRpcSession();
+  const enabled = (opts.enabled ?? true) && state === "ready";
+  // An interval query is a display poll: it stops while the user cannot see this window.
+  // `refetchIntervalInBackground: true` leaves the hidden behaviour to the caller.
+  const polls = typeof opts.refetchInterval === "number" && !opts.refetchIntervalInBackground;
+  const paused = !usePageVisible(polls);
+  const qc = useQueryClient();
+  const keyHash = hashKey([method, params]);
+  // A shown window does not wait one interval for fresh numbers. Observers of one key share the
+  // request. The client refetches: reading the result here would end React Query's "no property
+  // read, so every change renders" default for callers that read it after render.
+  const wasPaused = useRef(paused);
+  useEffect(() => {
+    if (paused) wasPaused.current = true;
+    else if (wasPaused.current && enabled) {
+      wasPaused.current = false;
+      void qc.refetchQueries(
+        { predicate: (query) => query.queryHash === keyHash, type: "active" },
+        { cancelRefetch: false },
+      );
+    }
+  }, [paused, enabled, qc, keyHash]);
   return useQuery<Methods[M]["result"], RpcError>({
     queryKey: [method, params],
-    enabled: (opts.enabled ?? true) && state === "ready",
+    enabled,
     // Local RPC readiness is independent of the browser's internet connection.
     networkMode: "always",
     retry: false,
     ...(opts.staleTime === undefined ? {} : { staleTime: opts.staleTime }),
-    refetchInterval: opts.refetchInterval,
+    refetchInterval: paused ? false : opts.refetchInterval,
     refetchIntervalInBackground: opts.refetchIntervalInBackground,
     ...(opts.refetchOnWindowFocus === undefined ? {} : { refetchOnWindowFocus: opts.refetchOnWindowFocus }),
     meta: { generation },

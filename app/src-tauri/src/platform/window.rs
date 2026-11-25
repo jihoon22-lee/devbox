@@ -2,7 +2,10 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize};
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
 use windows::core::Interface;
 
-use crate::core::geometry::{initial_size, minimum_size};
+use crate::core::{
+    geometry::{initial_size, minimum_size},
+    presence::Signal,
+};
 
 pub fn configure_main(app: &AppHandle, focus: bool, minimized: bool) -> tauri::Result<()> {
     let window = app
@@ -58,28 +61,40 @@ pub(crate) fn disable_browser_accelerators_and_show(
             ready_window.app_handle().exit(1);
             return;
         }
-        if reveal && let Err(error) = ready_window.show() {
-            eprintln!("Cannot show main window: {error}");
-            ready_window.app_handle().exit(1);
-            return;
+        if reveal {
+            if let Err(error) = ready_window.show() {
+                eprintln!("Cannot show main window: {error}");
+                ready_window.app_handle().exit(1);
+                return;
+            }
+            let minimized = ready_window.is_minimized().unwrap_or(false);
+            report(&ready_window, Signal::Revealed { minimized });
         }
-        if focus
-            && let Err(error) = ready_window
+        if focus {
+            match ready_window
                 .unminimize()
                 .and_then(|()| ready_window.set_focus())
-        {
-            eprintln!("Cannot focus window: {error}");
+            {
+                Ok(()) => report(&ready_window, Signal::Focused),
+                Err(error) => eprintln!("Cannot focus window: {error}"),
+            }
         }
     })
 }
 
 pub fn focus_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main")
-        && let Err(error) = window
+    if let Some(window) = app.get_webview_window("main") {
+        match window
             .unminimize()
             .and_then(|()| window.show())
             .and_then(|()| window.set_focus())
-    {
-        eprintln!("Cannot focus main window: {error}");
+        {
+            Ok(()) => report(&window, Signal::Focused),
+            Err(error) => eprintln!("Cannot focus main window: {error}"),
+        }
     }
+}
+/// Tells the window's page what was just done to the window.
+fn report(window: &tauri::WebviewWindow, signal: Signal) {
+    super::presence::report(window.app_handle(), window.label(), signal);
 }
