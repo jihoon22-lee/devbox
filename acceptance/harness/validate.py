@@ -2,8 +2,9 @@
 """S7-14 static/pure validation (changes §13). Never stages, installs, launches or creates WSL/Windows resources.
 
 Checks: the forbidden strings, the tool-config path scan, RPC/tmux/MCP allowlist consistency, WSL purity,
-the scratch path, the pure fixture plans for both modes, and (only with --powershell-parse, which needs
-interop) the Windows PowerShell parser over every .ps1. Without that flag the parse is NOT_RUN.
+the scratch path, the pure fixture plans for both modes, the .ps1 encoding and launch rules (1.0.1), and (only
+with --powershell-parse, which needs interop) the Windows PowerShell parser over every .ps1. Without that flag
+the parse is NOT_RUN.
 Exits 0 with no source binding (UNBOUND); prints one JSON report.
 """
 import argparse
@@ -43,7 +44,8 @@ PURE_WSL = ('wsl_daemon.py', 'agents_live.py', 'daemon_rows.py')
 NATIVE_NAMES = {'ps_command', 'PS', 'native', 'run_probe', 'stop_exact', 'identity_states', 'LineProcess', 'native_class_source',
                 'interop_probe', 'IDENTITY_TYPE', 'STOP_TYPE', 'NativeOps', 'windows_flow', 'native_teardown', 'native_absent',
                 'native_command', 'console_watch', 'console_windows'}
-NATIVE_MODULES = {'a4_windows_service', 'w1_windows', 'g1_live_member', 'g2_probe_timing'}
+NATIVE_MODULES = {'a4_windows_service', 'w1_windows', 'g1_live_member', 'g2_probe_timing', 'update_flow'}
+UTF8_BOM = b'\xef\xbb\xbf'
 NATIVE_TEXT = re.compile(r'(?i)\.ps1\b|powershell\.exe|/mnt/c/Windows')
 # The driver's WSL-only paths (changes §13): reachable from these Session methods, with `if native_flow:`
 # branches pruned, nothing may name native code.
@@ -103,6 +105,40 @@ def scan_gh(sources):
                       and isinstance(third.values[0], ast.Constant) and str(third.values[0].value).startswith('repos/'))
                 if not ok or len(item.elts) != 3:
                     findings.append('%s:%d: gh other than the read-only `gh api repos/...`' % (name, item.lineno))
+    return findings
+
+
+def scan_ps1_encoding(base=BASE):
+    """1.0.1 (D4): Windows PowerShell 5.1 reads a .ps1 without a BOM in the ANSI code page (CP949 on the acceptance PC), so
+    a non-ASCII character in such a file silently becomes other characters. Every helper .ps1 must be pure ASCII, or
+    start with the UTF-8 BOM and be valid UTF-8."""
+    findings = []
+    for path in sorted(Path(base).glob('*.ps1')):
+        data = path.read_bytes()
+        if data.startswith(UTF8_BOM):
+            try:
+                data[len(UTF8_BOM):].decode('utf-8')
+            except UnicodeDecodeError as error:
+                findings.append('%s: has a UTF-8 BOM but is not valid UTF-8 (byte %d)' % (path.name, error.start + len(UTF8_BOM)))
+            continue
+        offset = next((i for i, byte in enumerate(data) if byte >= 0x80), None)
+        if offset is not None:
+            findings.append('%s:%d: non-ASCII byte 0x%02x in a .ps1 without a UTF-8 BOM' % (path.name, data.count(b'\n', 0, offset) + 1, data[offset]))
+    return findings
+
+
+def scan_ps1_launch(sources):
+    """1.0.1 (D3): no helper starts a process with redirected output through Start-Process. That call creates the child
+    with every inheritable handle of the PowerShell process, the WSL interop pipes included, so the calling WSL command
+    does not return before the child exits. The owned executable starts only through process-launch.ps1's handle list."""
+    findings = []
+    for name, text in sources.items():
+        if not name.endswith('.ps1'):
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            code = line.split('#', 1)[0]
+            if 'Start-Process' in code and ('-Redirect' in code or '-NoNewWindow' in code or '-UseNewEnvironment' in code):
+                findings.append('%s:%d: Start-Process that hands this shell\'s handles to the child' % (name, number))
     return findings
 
 
@@ -303,7 +339,8 @@ def main(argv=None):
     import agents_live
     import mcp_stdio
     findings = (scan_forbidden(sources) + scan_gh(sources) + scan_tool_paths(sources)
-                + scan_allowlists(sources, wsl_owned.READ_ONLY | wsl_owned.OWNED_MUTATIONS) + scan_wsl_modules(sources))
+                + scan_allowlists(sources, wsl_owned.READ_ONLY | wsl_owned.OWNED_MUTATIONS) + scan_wsl_modules(sources)
+                + scan_ps1_encoding() + scan_ps1_launch(sources))
     driver_findings, wsl_methods = scan_driver_wsl_paths(sources['driver.py'])
     findings += driver_findings
     if set(agents_live.TMUX_READ) | set(agents_live.TMUX_MUTATE) != TMUX_SUBCOMMANDS or agents_live.TMUX != ('/usr/bin/tmux', '-L', 'devbox-accept'):
@@ -319,6 +356,7 @@ def main(argv=None):
               'PowerShellParse': 'NOT_RUN: needs interop; run with --powershell-parse in a Windows flow',
               'lockFile': 'present' if lock.is_file() else 'absent (created by verify-resources.py --lock windows-acceptance)',
               'forbidden': 'none', 'toolConfigPaths': 'trust_probe only', 'allowlists': 'consistent', 'wslPurity': 'PASS',
+              'ps1Encoding': 'ASCII or UTF-8 BOM', 'ps1Launch': 'no Start-Process with redirection',
               'driverWslMethods': wsl_methods, 'scratch': 'none', 'fixture': check_fixture(), 'helperSha256': helper_hashes(BASE),
               'sourceBinding': 'UNBOUND' if not BINDING_FILE.exists() else {side: (config.get(side) or {}).get('sha') for side in ('candidate', 'baseline')}}
     if args.powershell_parse:

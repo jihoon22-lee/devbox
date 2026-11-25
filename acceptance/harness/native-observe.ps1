@@ -125,7 +125,7 @@ if ($Action -eq 'console-watch') {
   exit
 }
 if ($Action -eq 'console-windows') {
-  # Read-only (changes §8.3): visible top-level console windows by class, and the process rows whose
+  # Read-only (changes section 8.3): visible top-level console windows by class, and the process rows whose
   # command line holds the owned nonce or the probe marker. Only booleans leave; command lines do not.
   if ($Nonce -notmatch '^[0-9a-z-]{6,64}$' -or $ProbeMarker -notmatch '^[\x20-\x7e]{16,96}$') { throw 'Owned nonce and probe marker required' }
   Add-Type -TypeDefinition $consoleType
@@ -146,11 +146,24 @@ $installs=@($prod | ForEach-Object { $_.InstallLocation } | Where-Object { $_ })
 $files=@()
 foreach ($dir in ($installs | Select-Object -Unique)) { $files+= @{root=$dir;exists=(Test-Path -LiteralPath $dir);files=@(Tree $dir 4000)} }
 $legacy=@(Get-ChildItem -LiteralPath $local,$roaming -Directory -Force -Filter 'com.devbox.*' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+# 1.0.1: the running prod app is part of prod. Every process whose image is Devbox.exe in a prod install folder is
+# recorded by PID and start time (read-only), so a prod app that was stopped or restarted during a run shows.
+$prodExes=@($installs | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim('"').TrimEnd('\')+'\Devbox.exe' } | Select-Object -Unique)
+$processes=@(Get-Process -Name 'Devbox' -ErrorAction SilentlyContinue | Where-Object {
+    $image=$_.Path
+    $image -and @($prodExes | Where-Object { [string]::Equals($image,$_,[StringComparison]::OrdinalIgnoreCase) }).Count
+  } | Sort-Object Id | ForEach-Object { @{pid=$_.Id;path=$_.Path;startedUtc=$_.StartTime.ToUniversalTime().ToString('o')} })
+# The command Windows runs for a devbox:// link, as text: a rewritten command shows even while the key still exists.
+$protocolCommand=$null
+$protocolKey='HKCU:\Software\Classes\devbox\shell\open\command'
+if (Test-Path -LiteralPath $protocolKey) { $key=Get-Item -LiteralPath $protocolKey; $protocolCommand=[string]$key.GetValue(''); $key.Close() }
 @{channel='prod';
   installs=$files;
   appData=@((Fingerprint "$local\$prodId"),(Fingerprint "$roaming\$prodId"),(Fingerprint "$local\$prodId\settings.json"));
   registration=@($prod | Select-Object DisplayName,DisplayVersion,InstallLocation,UninstallString);
   protocol=(Test-Path -LiteralPath 'HKCU:\Software\Classes\devbox');
+  protocolCommand=$protocolCommand;
+  processes=$processes;
   aumid=(Test-Path -LiteralPath "HKCU:\Software\Classes\AppUserModelId\$prodId");
   autostart=[string](Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $prodId -ErrorAction SilentlyContinue).$prodId;
   legacyV09Names=$legacy} | ConvertTo-Json -Depth 8

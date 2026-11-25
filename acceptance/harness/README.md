@@ -12,11 +12,23 @@ common-dir of one PC.
   `review-approval.json` and `helper-manifest.json`. Those files are not in the repository.
 - **Before a run:** copy the code from here to the run copy, or confirm with `diff -r` that it is the same. Any
   difference is reviewed by the independent reviewer together with the binding (§2.3).
-- **Known divergence.** `evidence.py` names the candidate's artifact folder as a literal (`ARTIFACT_DIRS`). Each new
-  candidate therefore needs a one-line edit in the run copy, reviewed with that run's binding. Deriving the folder from
-  the run arguments is an open follow-up, as are the tool-screen rows that send keys right after Escape.
 - **Not wired into CI.** `test_s7_harness.py` runs by hand (`python3 -B -m unittest test_s7_harness`), as §1 says.
 - The text below still says rc.2 in places and uses that run's paths; it is kept as written.
+
+### Changes for 1.0.1 (the code here differs from the imported run copy)
+
+Each item is a lesson of the 1.0.0 acceptance. The helper hashes changed, so the first 1.0.1 run needs a full code
+review again (§2.3).
+
+- **Artifact folders and branches are run arguments.** `--candidate-artifacts <name>` (and `--baseline-artifacts`) name
+  the folder under the evidence root; `--candidate-branch` and `--baseline-branch` name the dispatch branch (defaults
+  `main` and `v1/s7-rc1-accept`). All four are in the approval's `binding`, so the reviewer still pins them. No helper
+  names a candidate any more.
+- **Keys settle before the next input.** codex 0.172.0 lost the first character of text typed 4–8 ms after Escape. See
+  "Keys and typed commands" under the rules.
+- **One launcher for the owned executable.** See "Starting the owned app" under the rules.
+- **PowerShell helpers are pure ASCII.** `validate.py` fails on a non-ASCII byte in a `.ps1` without a UTF-8 BOM.
+- **The app's own update, and foreign files.** The new `update` flow and the cases UP1, UP2 and A7 (§7).
 
 This harness accepts the 1.0.0-rc.2 candidate on this PC. It is built from the reviewed S6-6b harness and follows
 `.superpowers/sdd/10-s7-s8-release/s7-14-harness-changes.md` and `s7-14-matrix.md`. Only the controller runs it, and
@@ -36,6 +48,11 @@ only after an independent review of these files.
     `*.target.wants` folder) are recorded as `absentParentsBefore`. Cleanup removes only those, and only when empty.
   - The evidence stays under `$S7/runs/`.
 - **Prod is read-only.** WSL prod (and Windows prod in the Windows flows) is fingerprinted before and after.
+  - Since 1.0.1 the Windows fingerprint also holds the running prod app (PID and start time of every `Devbox.exe` in a
+    prod install folder) and the `devbox://` open command as text. A prod process that is gone, restarted or new is the
+    difference kind `prodProcessChanged`; a changed command is `prodProtocolChanged`. Each fails the comparison (M4, A6
+    and every check during a flow), with both sides kept in `prodComparison`. The harness never starts or stops a prod
+    app, so a prod app the user starts or quits during a run also shows there: the controller reads the two sides.
 - **Parameters, not literals.** The candidate and the baseline are arguments, never literals in helper code.
 - **Two-part approval.** `helperSha256` covers the code. `binding` covers the run inputs: source binding, flow,
   cases, answers, SHAs, runs, artifact bytes and LocalAppData.
@@ -131,6 +148,41 @@ only after an independent review of these files.
   `agents.get` and captures the pane again; it sends only while the state is `waiting` and no stop pattern shows,
   and records each check as `sendGate`. A screen that appears after that re-check and before the send is still not
   seen. The re-check narrows the window; it does not close it.
+- **Keys and typed commands (1.0.1).**
+  - After any key or paste, the next text, key or paste to the same pane first waits until 0.6 s (`KEY_SETTLE`) have
+    passed, then re-captures until two captures in a row are equal, at most 3 s after the key (`KEY_SETTLE_MAX`).
+    `Pane` does this itself, so no row can skip it. `Live.press` settles right after a key that is not Enter, so a
+    product send (`agents.send`, MCP) that follows a key waits too. The case keeps `keySettles`: the count, the longest
+    wait, and the waits that ended without two equal captures.
+  - The Enter of a typed command (rule (i)) needs a capture taken after the text, whose **input row is exactly the
+    text**. The input row is the last captured line that starts with the tool's prompt marker (`❯` for claude, `›` for
+    codex). `quit/quit`, `quit`, or the text anywhere else on the screen do not pass. `Pane.enter_allowed` checks it,
+    so every caller is covered; `Live.command` checks the same before it asks.
+  - opencode and pi have no known marker (no capture of their input row exists yet). For them one more whole line must
+    equal the text than in the capture taken right before typing, and no line may hold the text inside other text.
+    The first live run that reaches H3, H3X-ENV or H4 must read `noEcho` and `inputRows` in the case file.
+  - A command whose row never was the text gets no Enter. On a known input row the harness clears what its own typing
+    left with C-u (`cleared`), so the next command does not land on it. The case keeps `noEcho` and `inputRows`.
+  - CL3's shell command is typed only once the new terminal shows a prompt on two captures in a row (at most 10 s). It
+    gets its Enter only once the last line ends with the command; above it the command may stand at most once more, as a
+    whole line (the terminal's echo of text that arrived before the prompt). Without that the row keeps `echoed: false`
+    and (b) fails. CL3 now captures its shell terminal, so the stop patterns apply to that screen too.
+- **Starting the owned app (1.0.1).**
+  - The owned executable starts only through `process-launch.ps1`: `CreateProcess` with a handle list of exactly NUL and
+    the two log files (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`), so the app inherits nothing else. That covers the launch
+    and, since 1.0.1, the installed self-check (`Invoke-OwnedLoggedProcess`: a bounded wait and the exit code on the
+    creation handle).
+  - Never start a program with `Start-Process -RedirectStandardOutput/-RedirectStandardError` (or `-NoNewWindow`) from a
+    PowerShell that WSL started. That call creates the child with every inheritable handle of the PowerShell process,
+    the WSL interop pipes included, and the calling WSL command does not return before the child exits. `validate.py`
+    fails on such a line in a helper.
+  - The installers and the uninstaller start with a plain `Start-Process -PassThru` (ShellExecute: no handle is
+    inherited) and are waited for with a bound.
+  - `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (the debug port) and `DEVBOX_UPDATE_FIXTURE` are set only in the launching
+    helper's own environment block and restored right after the start; never a user or machine variable.
+- **PowerShell helper encoding (1.0.1).** Windows PowerShell 5.1 reads a `.ps1` without a BOM in the ANSI code page
+  (CP949 on the acceptance PC), so a non-ASCII character silently becomes other characters. Every helper `.ps1` is pure
+  ASCII; `validate.py` (`scan_ps1_encoding`) allows only pure ASCII or a UTF-8 BOM with valid UTF-8.
 - **Things it never does:**
   - download, dispatch or select a workflow run, or write through `gh`;
   - install or run the prod installer;
@@ -159,8 +211,12 @@ only after an independent review of these files.
 | `a4_windows_service.py` | A4 Windows service readiness. |
 | `g1_live_member.py`, `g2_probe_timing.py` | G1 and G2 interop gates. The driver runs them in the `fresh` flow. |
 | `native-observe.ps1` | Read-only: preflight, prod fingerprint, identity, residue, `console-windows`, `console-watch`. |
-| `native-lifecycle.ps1` | Install from the owned stage, upgrade, launch, stop, uninstall with the 30 s registration poll. |
-| `process-launch.ps1` | Handle-list launcher. |
+| `native-lifecycle.ps1` | Install from the owned stage, upgrade, launch, stop, uninstall with the 30 s registration poll; `update-begin`, `update-observe`, `update-adopt` and `-Foreign` for the update flow. |
+| `process-launch.ps1` | Handle-list launcher (start, and start-and-wait for the self-check). |
+| `native-cdp.ps1` | The one client of the owned app's WebView2 debug port: five update commands, bounded waits. |
+| `update_fixture.py` | The accept update fixture as the product reads it, and the update shape. Pure. |
+| `update_flow.py` | The `update` flow: the app's commands in the screen's order, the runner watch, the connection gap, UP1 and UP2. |
+| `foreign_files.py` | The owned marker files of UP2 and A7: plant, read back, compare, remove. Pure. |
 | `teardown.py` | Failure-tolerant finalize, prod comparison, stage cleanup. |
 | `coordinator.py`, `installed_binary.py` | Phase gates; the pinned Linux binary. |
 | `validate.py` | Static checks. `--write-manifest` writes `helper-manifest.json`. |
@@ -179,6 +235,9 @@ H=$S7/harness
 ENVV="XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus DEVBOX_VERIFY_CGROUP=required"
 CANDRUN=41423905881                       # windows.yml run of v1/s7-rc2
 RC1RUN=41374466543                        # windows.yml run of v1/s7-rc1-accept (success)
+CANDART=windows-run-rc2                   # the candidate's folder name under $S7 (--candidate-artifacts)
+RC1ART=windows-run-rc1                    # the baseline's folder name under $S7 (--baseline-artifacts)
+CANDBRANCH=v1/s7-rc2                      # the branch of the candidate's dispatch (--candidate-branch; default main)
 RC1=$(git -C $W rev-parse 'v1.0.0-rc.1^{commit}')   # must print 28eb2a9111c83f4345e1b7ed2ae04d6849fa116e
 WINLOCAL=/mnt/c/Users/<windows user>/AppData/Local # see `ls /mnt/c/Users`; no Windows program is needed
 ```
@@ -199,10 +258,12 @@ WINLOCAL=/mnt/c/Users/<windows user>/AppData/Local # see `ls /mnt/c/Users`; no W
    `$S7/windows-run-rc1/artifacts/`.
 
    ```sh
-   gh run download $CANDRUN -R jihoon22-lee/devbox -D $S7/windows-run-rc2/artifacts
+   gh run download $CANDRUN -R jihoon22-lee/devbox -D $S7/$CANDART/artifacts
    ```
 
    Each `artifacts/` directory must hold exactly `devbox-setup/`, `devbox-setup-accept/` and `devbox-linux/`.
+   The folder name is one plain path component (letters, digits, `.`, `_`, `-`; not `runs` or `harness`), a real
+   directory directly under `$S7`, never a symlink. The driver refuses anything else before the lock.
 3. **Make the evidence root private.** `evidence_root` refuses an `s7/` that is not mode 0700. Today it is 0755.
 
    ```sh
@@ -231,12 +292,12 @@ WINLOCAL=/mnt/c/Users/<windows user>/AppData/Local # see `ls /mnt/c/Users`; no W
 Step 4, the artifact check:
 
 ```sh
-python3 -B - "$H" "$S7" "$CAND" "$RC1" <<'EOF'
+python3 -B - "$H" "$S7" "$CAND" "$RC1" "$CANDART" "$RC1ART" <<'EOF'
 import sys; sys.path.insert(0, sys.argv[1])
 import evidence
-s7, cand, rc1 = sys.argv[2:]
-for d, sha, run, version in ((s7 + '/windows-run-rc2/artifacts', cand, 41423905881, '1.0.0-rc.2'),
-                             (s7 + '/windows-run-rc1/artifacts', rc1, 41374466543, '1.0.0-rc.1')):
+s7, cand, rc1, candart, rc1art = sys.argv[2:]
+for name, sha, run, version in ((candart, cand, 41423905881, '1.0.0-rc.2'), (rc1art, rc1, 41374466543, '1.0.0-rc.1')):
+    d = evidence.artifact_dir(s7, name)
     chain = evidence.verify_artifact_dir(d, sha, run, version)
     print(version, chain['installerName'], chain['installerSha256'], evidence.artifact_digest(d))
 EOF
@@ -288,8 +349,9 @@ Today Q0–Q4 are false, Q5 is true (Ruling 79) and `interopBroken` is true. The
 {"status": "APPROVE",
  "helperSha256": {"<file>": "<sha256>", "...": "..."},
  "binding": {"sourceBindingSha256": "...", "flow": "...", "cases": ["..."], "answersSha256": "...",
-             "windowsLocal": "/mnt/c/Users/<user>/AppData/Local",
-             "candidate": {"sha": "...", "runId": 41423905881, "artifactSha256": "..."},
+             "windowsLocal": "/mnt/c/Users/<user>/AppData/Local", "distro": null,
+             "candidate": {"sha": "...", "runId": 41423905881, "branch": "v1/s7-rc2", "artifacts": "windows-run-rc2",
+                           "artifactSha256": "..."},
              "baseline": null}}
 ```
 
@@ -299,14 +361,20 @@ Today Q0–Q4 are false, Q5 is true (Ruling 79) and `interopBroken` is true. The
   - `sourceBindingSha256` is `sha256sum $H/source-binding.json`;
   - `answersSha256` is `sha256sum $H/answers.json`;
   - `cases` is the flow's list from `evidence.FLOWS`, or the `--cases` subset in run order;
+  - `branch` is that side's `--candidate-branch`/`--baseline-branch` (the run's `head_branch` must equal it);
+  - `artifacts` is that side's folder name under the evidence root (`--candidate-artifacts`/`--baseline-artifacts`);
   - `artifactSha256` is `evidence.artifact_digest` of that side's `artifacts/` directory;
-  - `baseline` is `null` for the fresh flows, or `{sha: RC1, runId: 41374466543, artifactSha256}` for the upgrade
+  - `baseline` is `null` for the fresh flows, or `{sha: RC1, runId: 41374466543, branch, artifacts, artifactSha256}`
+    for the two-sided flows (`wsl-upgrade`, `upgrade`, `update`);
+  - `updateShape` exists only for the `update` flow (`same-version` or `next-version`, §7);
+  - `distro` is `--distro` for the Windows flows (the WSL distro the owned app is pointed at) and `null` for the WSL
     flows.
 
 The next command prints the values the driver will compute for one flow. Pass the same arguments as the run.
 
 ```sh
-python3 -B - "$H" --flow wsl-fresh --candidate-sha "$CAND" --candidate-run $CANDRUN --windows-local "$WINLOCAL" <<'EOF'
+python3 -B - "$H" --flow wsl-fresh --candidate-sha "$CAND" --candidate-run $CANDRUN --candidate-artifacts $CANDART \
+  --candidate-branch $CANDBRANCH --windows-local "$WINLOCAL" <<'EOF'
 import json, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
@@ -315,11 +383,12 @@ args = driver.parse(sys.argv[2:])
 root = driver.evidence_root(args.evidence_root, create=False)
 sides = driver.sides_of(args)
 for side, row in sides.items():
-    row['artifactSha256'] = evidence.artifact_digest(root / evidence.ARTIFACT_DIRS[side] / 'artifacts')
+    row['artifactSha256'] = evidence.artifact_digest(evidence.artifact_dir(root, row['artifacts']))
 print(json.dumps({'helperSha256': evidence.helper_hashes(driver.BASE),
                   'binding': evidence.approval_binding(driver.BINDING_FILE.read_bytes(), args.flow, args.cases,
                                                        Path(args.answers).read_bytes(), sides['candidate'],
-                                                       sides.get('baseline'), args.windows_local)}, indent=2))
+                                                       sides.get('baseline'), args.windows_local,
+                                                       update_shape=args.update_shape, distro=args.distro)}, indent=2))
 EOF
 ```
 
@@ -329,32 +398,44 @@ This printout is not an approval. The reviewer:
    the answers;
 3. only then writes the file with `"status": "APPROVE"`.
 
-After the first review, a new flow, SHA, run, case list or answer changes only `binding`, which is a small diff
-to re-review. The driver refuses before the lock when either part differs. The message starts with
+After the first review, a new flow, SHA, run, branch, artifact folder, case list or answer changes only `binding`,
+which is a small diff to re-review. For the `update` flow this printout leaves the version pair unchecked; the driver's
+gates check it (`update_fixture.check_shape`). The driver refuses before the lock when either part differs. The message starts with
 `helperSha256:` or `binding:`.
 
 ### 2.4 Run
 
 Each run is one command under one lock, from the worktree, with no `__pycache__` in `$H`. Every flow needs
-`--windows-local`. The Windows flows also need `--distro`.
+`--candidate-artifacts` and `--windows-local`. The two-sided flows also need `--baseline-artifacts`. The Windows flows
+also need `--distro`. `--candidate-branch` defaults to `main`. `--baseline-branch` defaults to `v1/s7-rc1-accept` for the
+upgrade flows and has no default for `update`, which refuses to start without it.
 
 ```sh
 cd $W
 # wsl-fresh
 env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --lock windows-acceptance -- \
-  python3 -B $H/driver.py --flow wsl-fresh --candidate-sha "$CAND" --candidate-run $CANDRUN --windows-local "$WINLOCAL"
+  python3 -B $H/driver.py --flow wsl-fresh --candidate-sha "$CAND" --candidate-run $CANDRUN --candidate-artifacts $CANDART \
+    --candidate-branch $CANDBRANCH --windows-local "$WINLOCAL"
 # wsl-upgrade
 env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --lock windows-acceptance -- \
-  python3 -B $H/driver.py --flow wsl-upgrade --candidate-sha "$CAND" --candidate-run $CANDRUN \
-    --baseline-sha "$RC1" --baseline-run $RC1RUN --windows-local "$WINLOCAL"
+  python3 -B $H/driver.py --flow wsl-upgrade --candidate-sha "$CAND" --candidate-run $CANDRUN --candidate-artifacts $CANDART \
+    --candidate-branch $CANDBRANCH --baseline-sha "$RC1" --baseline-run $RC1RUN --baseline-artifacts $RC1ART \
+    --windows-local "$WINLOCAL"
 # fresh (only with Q0 true): Wave 1
 env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --lock windows-acceptance -- \
-  python3 -B $H/driver.py --flow fresh --candidate-sha "$CAND" --candidate-run $CANDRUN \
-    --windows-local "$WINLOCAL" --distro "$WSL_DISTRO_NAME"
+  python3 -B $H/driver.py --flow fresh --candidate-sha "$CAND" --candidate-run $CANDRUN --candidate-artifacts $CANDART \
+    --candidate-branch $CANDBRANCH --windows-local "$WINLOCAL" --distro "$WSL_DISTRO_NAME"
 # upgrade (only with Q0, Q1 and Q2 true): Wave 2
 env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --lock windows-acceptance -- \
-  python3 -B $H/driver.py --flow upgrade --candidate-sha "$CAND" --candidate-run $CANDRUN \
-    --baseline-sha "$RC1" --baseline-run $RC1RUN --windows-local "$WINLOCAL" --distro "$WSL_DISTRO_NAME"
+  python3 -B $H/driver.py --flow upgrade --candidate-sha "$CAND" --candidate-run $CANDRUN --candidate-artifacts $CANDART \
+    --candidate-branch $CANDBRANCH --baseline-sha "$RC1" --baseline-run $RC1RUN --baseline-artifacts $RC1ART \
+    --windows-local "$WINLOCAL" --distro "$WSL_DISTRO_NAME"
+# update (only with Q0 true; 1.0.1, §7): the baseline accept install updates itself to the candidate installer.
+# $BASE, $BASERUN and $BASEART are the baseline build's SHA, run and folder; both builds are on main here.
+env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --lock windows-acceptance -- \
+  python3 -B $H/driver.py --flow update --candidate-sha "$CAND" --candidate-run $CANDRUN --candidate-artifacts $CANDART \
+    --baseline-sha "$BASE" --baseline-run $BASERUN --baseline-artifacts $BASEART --baseline-branch main \
+    --update-shape same-version --windows-local "$WINLOCAL" --distro "$WSL_DISTRO_NAME"
 ```
 
 **What the driver checks:**
@@ -367,7 +448,8 @@ env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --loc
 
 **`--cases`** picks a subset in the flow's order. The subset is bound, so it needs its own approved binding.
 - `fresh --cases G1,G2` exercises only the interop gates.
-- In `fresh`, every installed case needs A1 and A2, and A6 and M4 need A1.
+- In `fresh`, every installed case needs A1 and A2, and A6, A7 and M4 need A1.
+- In `update`, UP2 needs UP1.
 
 **Rows already passed.** Rows that passed with `surface: "wsl-artifact"` are not repeated on `installed-native`
 (Ruling 79 D3).
@@ -456,8 +538,8 @@ The driver prints `{status, evidenceDirectory, cases}` at the end.
          python3 -B $H/wsl-owned.py cleanup --ownership $S7/runs/<run>/ownership-owned-<token>.json
        ```
 
-     - If it has `sealedPaths` but no `resealed` key, and its `flow` is an upgrade flow (`wsl-upgrade` or `upgrade`),
-       reseal first, then clean up, each under the lock (review 5, R5-M1). The run stopped between the rc.2 install and
+     - If it has `sealedPaths` but no `resealed` key, and its `flow` is an upgrade flow (`wsl-upgrade` or `upgrade`,
+       or `update` once its update began: the run folder has `native-update-begin.json`), reseal first, then clean up, each under the lock (review 5, R5-M1). The run stopped between the rc.2 install and
        its reseal, and cleanup alone refuses at a unit file or accept path that the rc.2 phase changed or created.
        Reseal is not a second seal: it accepts a changed file only as a setup-managed unit that starts with the setup
        marker.
@@ -485,6 +567,24 @@ The driver prints `{status, evidenceDirectory, cases}` at the end.
 - **There is no standalone native cleanup entry point.** Removing Windows residue needs the controller's
   decision.
 
+**After a killed `update` run (1.0.1).** If the run folder has `native-update-begin.json`, the product's update may
+have replaced the owned executable and relaunched the app with the debug port open, so the plain stop alone refuses
+(the executable pin). With the controller's decision, run these four in this order, each under the lock, and stop at the
+first one that fails (everything is then retained and reported):
+
+```sh
+PSX=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
+HW=$(wslpath -w $H); OWN=$(wslpath -w $S7/runs/<run>/ownership-owned-<token>.json)
+L="[Console]::OutputEncoding=New-Object Text.UTF8Encoding; & ([ScriptBlock]::Create([IO.File]::ReadAllText('$HW\native-lifecycle.ps1'))) -Ownership '$OWN' -HelperRoot '$HW'"
+$PSX -NoProfile -NonInteractive -Command "$L -Action 'update-adopt' -WaitSeconds '600'"   # waits for the runner, records the relaunched app
+$PSX -NoProfile -NonInteractive -Command "$L -Action 'stop-owned'"                        # exact PID, path and start time only
+$PSX -NoProfile -NonInteractive -Command "$L -Action 'assert-stopped'"                    # no owned app, runner or debug port left
+$PSX -NoProfile -NonInteractive -Command "$L -Action 'uninstall'"
+```
+
+If `stop-owned` reports an app that started after it, repeat `update-adopt` and `stop-owned` before `assert-stopped`
+(the driver's own teardown does this up to three times). Then the WSL steps of item 1 follow.
+
 The read-only residue report (step 2):
 
 ```sh
@@ -500,10 +600,137 @@ The suite skips the live-artifact test unless both of these are present:
 - `$S7/test-binding.json`.
 
 ```json
-{"candidate": {"sha": "<CAND>", "runId": 41423905881, "version": "1.0.0-rc.2"},
- "baseline": {"sha": "<RC1>", "runId": 41374466543, "version": "1.0.0-rc.1"}}
+{"candidate": {"sha": "<CAND>", "runId": 41423905881, "version": "1.0.0-rc.2", "artifacts": "windows-run-rc2"},
+ "baseline": {"sha": "<RC1>", "runId": 41374466543, "version": "1.0.0-rc.1", "artifacts": "windows-run-rc1"}}
 ```
 
 ```sh
 (cd $H && S7_LIVE_ARTIFACTS=1 python3 -B -m unittest test_s7_harness.Provenance.test_live_artifacts -v)
 ```
+
+## 7. The update flow and the foreign files (1.0.1)
+
+Two release gates of 1.0.1 have never run on an installed app: the app's own update, and what the installer and
+the uninstaller do to files they did not install.
+
+### 7.1 What the product allows (read from the source; re-check the lines against the bound SHA)
+
+- **The fixture.** An accept build (`cfg devbox_update_fixture`, `app/src-tauri/build.rs:19-30`) reads the environment
+  variable `DEVBOX_UPDATE_FIXTURE` once at start (`app/src-tauri/src/platform/update.rs:26-48`) and opens that folder
+  with `Fixture::open(path, source)` (`app/src-tauri/src/core/update/fixture.rs:35-95`). `source` is the 40-hex
+  `SOURCE_SHA` the build was compiled with. The folder holds:
+  - `owner.json` (at most 2048 bytes, exactly these keys): `schema` 1, `channel` `"accept"`, `sourceSha` equal to the
+    **running** build's `SOURCE_SHA`, a stable `currentVersion`, `metadataSha256`, `installerSha256`;
+  - `metadata.json` (at most 1 MiB): a GitHub release. `release::select` (`release.rs:46-100`) needs a tag `v<stable>`
+    above `currentVersion`, not a draft or prerelease, and exactly one asset: id above 0, name
+    `devbox-<version>-setup.exe`, state `uploaded`, the exact API and download URLs, a size of 1 byte to 256 MiB, and a
+    digest `sha256:<64 hex>`;
+  - `installer.exe`: exactly that size and sha256.
+- **The source SHA.** `Fixture::open` compares only `owner.json`'s `sourceSha` with the running build
+  (`fixture.rs:48`). Nothing names the installer's source SHA: the installer is bound by size and sha256 only. So a
+  version-N build can be given the installer of another source SHA.
+- **The version.** After the installer ran, the runner (a copy of the old executable) starts the app again only when
+  the installed `devbox-version.txt` equals `expected_version` (`platform/update_runner/execute.rs:315-324`,
+  `core/self_check.rs:4-20`). For an accept fixture install that is the **runner's own** `CARGO_PKG_VERSION`, not the
+  release version (`execute.rs:221-227`). An installer of another version ends `relaunch` / `failed`, and no app
+  starts. So the accept channel cannot run N to N+1; the closest shape is **the same version from two source SHAs**
+  (`--update-shape same-version`). The driver refuses a pair with different bound versions before the lock.
+  `--update-shape next-version` exists for a product build that compares against the release version; today it fails.
+- **The commands.** The Settings screen calls, in this order (`app/src/features/settings/nativeUpdate.ts:155-162,
+  202-226`, `Update.tsx:96-113`, `UpdateConfirmation.tsx:97, 124-128`): `update_status` (and the `devbox://update`
+  event), `update_check`, `update_download {generation}`, `update_install_summary {generation}`,
+  `update_install_confirm {generation, confirmationId}`.
+- **No user gesture is needed.** No update command checks the calling window or a gesture
+  (`platform/update.rs:93-142`, `platform/update_install.rs:15-47`). The quit approval is not a click either:
+  `update_install_confirm` starts a quit round, the app sends `devbox://prepare-quit` to every document window
+  (`platform/quit.rs:138-175`), and each window's own code answers with `quit_prepared`. The harness calls the five
+  commands in the main window and never `quit_prepared`, `quit_window_ready` or `quit_app`: every window approves
+  through its real code. The dialog's own rule that the daemon counts must have loaded
+  (`UpdateConfirmation.tsx:117-123`) is screen-only; the harness records that `agents.list` answered instead.
+
+### 7.2 What the `update` flow does
+
+1. The gates, the prod fingerprints and the stage, as in `upgrade`. Both sides are bound; the baseline is the running
+   build.
+2. `native-lifecycle install` of the baseline, then `update_fixture.build_fixture` writes `<owned stage>\update\`
+   (`installer.exe` is a byte copy of the candidate's accept installer, checked against its receipt).
+3. `native-lifecycle launch -CdpPort <port> -UpdateFixture <owned stage>\update`. The port is 39000–39899, derived from
+   the run token; the launch refuses an occupied port.
+4. One owned shell task (`s7-shell`: bash, no tool) is created; its tmux session identity is read. With UP2 selected the
+   `update` set of foreign files is planted in the install folder.
+5. `update-begin`, then the five commands through `native-cdp.ps1`, then `update-observe` about once a second until the
+   product's runner has ended and the relaunched app runs; `update-adopt` records that app and pins the installed bytes.
+6. The instance proof and the reseal for the candidate, `update_status` on the new app (its `currentVersion`),
+   `installed-identity` (the bundled Linux binary equals the candidate's artifact) and the prod comparison.
+
+Guards before the update can change anything: `update-begin` refuses unless NSIS's memory of the product (the default
+value of `HKCU\Software\github\Devbox Accept`, as every earlier run recorded it) is this run's owned install path
+and `%LOCALAPPDATA%\Devbox Accept` does not exist; the launch refuses unless the fixture's `installer.exe` is byte for
+byte the staged candidate installer. If `%LOCALAPPDATA%\Devbox Accept` exists afterwards, `update-adopt` and
+`assert-stopped` fail and everything is retained.
+
+The watch ends as a success only on the runner's own `installed` record, or when the relaunched app has removed the
+stage folder it read (the product does that only for an installed record); a `failed`, `unknown` or `cancelled`
+record is read first.
+
+**UP1** passes only when all of these hold: the installed executable changed and the runner recorded the install
+(`installerRan`); exactly one relaunched app answers in its `main` window (`newAppStarted`); the reported version,
+`devbox-version.txt` and the bundled version equal the candidate's bound version (`version`); the relaunched build is
+the candidate (`identity`); the WSL boot id and PID 1 are unchanged (`distroUp`); the tmux session, pane and task are
+the same (`tmuxSurvived`); the connection gap was measured (`connectionGapMeasured`); prod is unchanged.
+
+`identity` and `installerRan` decide which build runs. The product shows its source SHA nowhere at run time, so
+`identity` is three facts together (`identityHow` in `cases/UP1.json`): the installed `devbox-linux` is byte for byte
+the candidate run's Linux artifact, whose receipt names the candidate SHA; the daemon the relaunched app deployed and
+runs is that same artifact (the instance proof of the candidate phase); and the relaunched app refuses the fixture it
+inherited, whose `owner.json` names the baseline SHA, so its compiled `SOURCE_SHA` is not the baseline's. In the shape
+`same-version` both builds report the same version, so `version` is recorded and must hold but is left out of
+`decidingParts`. The gap is a measurement without a threshold: inside WSL, every 100 ms,
+from the first sample without the old app's `devbox bridge` process to the first sample with a new one.
+
+**UP2** reads the `update` set back after the installer ran and removes exactly that set. **A7** (also in `fresh`)
+plants the `uninstall` set before the plain uninstall; `native-lifecycle uninstall -Foreign` reads it back before the
+owned tree removal, and removes exactly that set. Both pass only when every file is still there with the same length
+and sha256.
+
+A7's read counts only after the uninstaller's own end. The NSIS uninstaller goes on in a copy of itself after
+`uninstall.exe` returned, so the helper first waits (read-only, at most 30 s) until `uninstall.exe` is gone and the
+uninstaller removed its `Uninstall\Devbox Accept` registration, then reads the files twice, 1 s apart. A7 fails when
+that end was not seen (`uninstallerEnded`) or the two reads differ (`stable`), whatever the files looked like.
+
+Limits to state with a result:
+- `distroUp` is weak evidence for the product's keep-alive: the harness itself runs inside the distro. The observed
+  `wsl.exe ... --exec sleep 900` child of the runner (`keepAlive`) is the direct evidence. It ends by itself within
+  15 minutes and is recorded, not stopped.
+- The debug-port app is ended in teardown: `update-adopt` (it waits up to 600 s for the product's runner and installer,
+  then records the relaunched app), `stop-owned`, then `update-observe` again; the round repeats, at most three times,
+  while a runner, an installer or an owned app process is present. `assert-stopped` then requires that no process runs
+  the owned executable, no update runner or installer runs, and the debug port is closed. If any of that fails,
+  nothing is uninstalled, the stage is kept whole, the resources are retained and the run is FAIL.
+
+### 7.3 The first live run must check
+
+- `validate.py --powershell-parse` passes for `native-cdp.ps1`, `native-lifecycle.ps1` and `process-launch.ps1`. The
+  parse does not compile the C# in `process-launch.ps1`: the first `install` does (the self-check runs through it).
+- `native-install-*.json` shows `installedSelfCheck: PASS` and a self-check record with `startedUtc`.
+- `cases/UP1.json`: `commands` reached `update_install_confirm`; `runner.runnerSeen` and `installerSeen`; whether the
+  runner could start at all (it needs `CREATE_BREAKAWAY_FROM_JOB`; a WSL-started PowerShell may put the app in a job).
+- The debug port listener descends from the owned app (the helper refuses otherwise), and the relaunched `--minimized`
+  app still has a main window page.
+- `connection.gapSeconds` is not null (the bridge process must match `devbox bridge` with `DEVBOX_INSTANCE=accept`).
+- Whether the product's installer kept the owner marker in the install folder (`adoption.markerRecreated`).
+- That the relaunched app really started. A new build reads the old build's `updates\install-*\owner.json`, `spawn.json`
+  and `outcome.json` before anything else (`core/update/runner_recovery.rs:61-130`, `platform/update_runner.rs:309-338`).
+  If it cannot read them (a record field the two source SHAs do not share, `runner_files.rs:46-57`), it shows a message
+  box and exits with 3. The harness then sees a process without a page: `newAppStarted` fails, and teardown records and
+  stops that process, so no dialog is left on the desktop.
+- A7's `comparison.uninstallerEnded` and `waitMs`: whether the 30 s wait for the uninstaller's end is enough on this PC.
+
+### 7.4 Choosing the baseline
+
+The baseline must be an accept build with the candidate's version from another source SHA. What the run then proves
+is the **baseline's** runner (prepare, quit round, commit, installer, relaunch) and the **candidate's** start after it.
+To cover the released 1.0.0 as far as this channel allows, take as the baseline the earliest commit that already has
+the candidate's version and still has 1.0.0's update code (`app/src-tauri/src/core/update/`,
+`app/src-tauri/src/platform/update*`): then the runner that executes is 1.0.0's code. The N to N+1 version check itself
+(`execute.rs:221-227`) cannot be exercised on the accept channel; it stays a prod-only path.

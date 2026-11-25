@@ -6,10 +6,12 @@ Flows (changes §1.1, §6, §7, §8.0):
   own install/exec scripts and setup/doctor argv. These paths never start a Windows program and never
   call native() or the interop probe.
 - `fresh`, `upgrade`: the accept NSIS installer(s) on Windows; they need Q0 and a passing interop probe.
+- `update` (1.0.1): the baseline accept install updates itself to the candidate installer with the app's own
+  update commands (update_flow.py); the same needs as the other Windows flows.
 
 Never downloads, dispatches or selects a workflow run. Fails closed before the lock unless the
 two-part approval binds every helper byte (helperSha256) and this run's inputs (binding: source
-binding, flow, cases, answers, SHAs, runs, artifact digests, windowsLocal).
+binding, flow, cases, answers, SHAs, runs, branches, artifact folders and digests, windowsLocal).
 """
 import argparse
 import importlib.util
@@ -39,9 +41,10 @@ if __name__ == '__main__':
 
 from common import (BASE, PS, cgroup_evidence, dump, error_evidence, evidence_root, git, interop_probe, redact_text, require_lock, run_checked,
                     update_manifest)
+import foreign_files
 from coordinator import Coordinator
 import evidence as ev
-from evidence import (ARTIFACT_DIRS, BRANCHES, FLOWS, NEEDS, REPO, UPGRADE_FLOWS, WINDOWS_FLOWS, WSL_FLOWS, Unavailable, approval_binding,
+from evidence import (BRANCHES, FLOWS, NEEDS, REPO, UPGRADE_FLOWS, WINDOWS_FLOWS, WSL_FLOWS, Unavailable, approval_binding,
                       artifact_digest, initial, parse_answers, parse_sc2, record, verify_artifact_dir, verify_review, verify_run)
 from fixture import BINDING_FILE, MARKER, delegate_windows, inspect_accept_absent, stage, verify_source
 from teardown import cleanup_stage, compare_prod, finalize
@@ -116,6 +119,14 @@ def parse(argv=None):
     parser.add_argument('--candidate-run', required=True, type=int)
     parser.add_argument('--baseline-sha')
     parser.add_argument('--baseline-run', type=int)
+    # 1.0.1 (D1): each side's artifact folder (<evidence root>/<name>/artifacts) and dispatch branch are run arguments
+    # that the approval binding pins; no helper names a candidate.
+    parser.add_argument('--candidate-artifacts', required=True)
+    parser.add_argument('--baseline-artifacts')
+    parser.add_argument('--candidate-branch', default=BRANCHES['candidate'])
+    parser.add_argument('--baseline-branch')
+    # 1.0.1 (D5): the update flow's version pair, bound by the approval. `same-version` is what the accept runner accepts.
+    parser.add_argument('--update-shape', choices=list(ev.UPDATE_SHAPES))
     parser.add_argument('--evidence-root')
     parser.add_argument('--worktree', default=WORKTREE)
     parser.add_argument('--cases')
@@ -133,6 +144,28 @@ def parse(argv=None):
         problems.append('--baseline-sha/--baseline-run are required for the upgrade flows and refused for the others')
     elif upgrade and (not SHA.fullmatch(args.baseline_sha) or args.baseline_run <= 0 or args.baseline_sha == args.candidate_sha):
         problems.append('exact 40-hex baseline SHA (not the candidate) and a positive run')
+    if upgrade != (args.baseline_artifacts is not None):
+        problems.append('--baseline-artifacts is required for the two-sided flows and refused for the others')
+    if not upgrade and args.baseline_branch is not None:
+        problems.append('--baseline-branch is refused for a flow without a baseline')
+    if args.flow == 'update' and args.baseline_branch is None:
+        problems.append('--baseline-branch is required for the update flow (its baseline is not the upgrade flows\' rc.1 branch)')
+    if args.flow == 'update':
+        args.update_shape = args.update_shape or ev.UPDATE_SHAPES[0]
+    elif args.update_shape is not None:
+        problems.append('--update-shape is only for the update flow')
+    if upgrade and args.baseline_branch is None:
+        args.baseline_branch = BRANCHES['baseline']
+    try:
+        ev.artifact_dir_name(args.candidate_artifacts)
+        ev.branch_name(args.candidate_branch)
+        if upgrade and args.baseline_artifacts is not None:
+            ev.artifact_dir_name(args.baseline_artifacts)
+            ev.branch_name(args.baseline_branch)
+            if args.baseline_artifacts == args.candidate_artifacts:
+                raise ValueError('The baseline and the candidate need different artifact folders')
+    except ValueError as error:
+        problems.append(str(error))
     if args.flow in WINDOWS_FLOWS and (not args.distro or not DISTRO.fullmatch(args.distro)):
         problems.append('--distro is required for the Windows flows')
     if not wsl_daemon.WINDOWS_LOCAL.fullmatch(args.windows_local):
@@ -151,9 +184,11 @@ def parse(argv=None):
 
 
 def sides_of(args):
-    sides = {'candidate': {'sha': args.candidate_sha, 'runId': args.candidate_run}}
+    sides = {'candidate': {'sha': args.candidate_sha, 'runId': args.candidate_run, 'branch': args.candidate_branch,
+                           'artifacts': args.candidate_artifacts}}
     if args.flow in UPGRADE_FLOWS:
-        sides['baseline'] = {'sha': args.baseline_sha, 'runId': args.baseline_run}
+        sides['baseline'] = {'sha': args.baseline_sha, 'runId': args.baseline_run, 'branch': args.baseline_branch,
+                             'artifacts': args.baseline_artifacts}
     return sides
 
 
@@ -172,9 +207,14 @@ def gates(args, root=None):
     answers = parse_answers(answers_bytes)
     for side, row in sides.items():
         row['version'] = binding[side]['version']
-        row['dir'] = str(Path(root) / ARTIFACT_DIRS[side] / 'artifacts')
+        row['dir'] = str(ev.artifact_dir(root, row['artifacts']))  # D1: the bound folder name, checked under the evidence root
         row['artifactSha256'] = artifact_digest(row['dir'])
-    approval = approval_binding(binding_bytes, args.flow, args.cases, answers_bytes, sides['candidate'], sides.get('baseline'), args.windows_local)
+    shape = None
+    if args.flow == 'update':
+        import update_fixture  # pure; the version pair is refused here, before the lock
+        shape = update_fixture.check_shape(args.update_shape, sides['baseline']['version'], sides['candidate']['version'])
+    approval = approval_binding(binding_bytes, args.flow, args.cases, answers_bytes, sides['candidate'], sides.get('baseline'), args.windows_local,
+                                update_shape=shape, distro=args.distro)
     review = verify_review(BASE, args.review, approval)
     return {'binding': binding, 'answers': answers, 'sides': sides, 'approval': approval, 'review': review, 'root': str(root)}
 
@@ -371,6 +411,8 @@ class Session:
         self.legacy_prefixes = []
         self.local = None
         self.phase_started = time.time()
+        # 1.0.1 (D5): set once the update flow recorded update-begin; A7's planted set or its plant error.
+        self.update_begun, self.a7 = False, None
 
     # --- evidence ----------------------------------------------------------------------------------
     def save(self):
@@ -476,7 +518,7 @@ class Session:
             run = json.loads(command([GH, 'api', f'repos/{REPO}/actions/runs/{row["runId"]}'], timeout=60).stdout)
         except Exception as error:
             raise Unavailable('Read-only GitHub run metadata unavailable; provenance unproven: ' + str(error)[:300])
-        verify_run(run, row['sha'], row['runId'], BRANCHES[side])
+        verify_run(run, row['sha'], row['runId'], row['branch'])
         return {k: run.get(k) for k in ('id', 'head_sha', 'head_branch', 'path', 'event', 'status', 'conclusion', 'html_url', 'created_at', 'updated_at')}
 
     def installer_gate(self):
@@ -722,6 +764,9 @@ class Session:
         self.probe_marker = probe_marker(script)
         if self.flow_name == 'fresh':
             self.fresh_flow(a4_windows_service, w1_windows)
+        elif self.flow_name == 'update':
+            import update_flow
+            update_flow.run(self)
         else:
             self.upgrade_flow()
 
@@ -763,10 +808,11 @@ class Session:
             raise RuntimeError('Prod fingerprint changed (' + name + '); stopping before the next mutation')
         return comparison
 
-    def launch_and_prove(self, side, reseal=False):
+    def launch_and_prove(self, side, reseal=False, **launch_params):
+        """`launch_params` (1.0.1, the update flow): CdpPort and UpdateFixture of native-lifecycle's launch action."""
         def launch():
             self.launched = True
-            value = self.native('native-lifecycle.ps1', Action='launch', Ownership=self.windows(self.ownership))
+            value = self.native('native-lifecycle.ps1', Action='launch', Ownership=self.windows(self.ownership), **launch_params)
             value['stderrWsl'] = command(['wslpath', '-u', value['stderr']]).stdout.strip()
             return value
         launch_row = self.observed('native-launch-' + side, launch)
@@ -774,6 +820,21 @@ class Session:
         # S8-5 (Ruling 147): prove the instance first: the daemon answering means the app's setup wrote the units.
         # Sealing right after the launch missed the unit files written 3 s later (run 70b1b4f6-e228bf7f).
         proof = self.instance(side)
+        self.seal_after_launch(reseal)
+        sc2 = {'firstDataPainted': []}
+        stderr_path = Path(launch_row['stderrWsl'])
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            text = stderr_path.read_text(errors='replace')[:1024 * 1024] if stderr_path.exists() else ''
+            sc2 = parse_sc2(text)
+            if sc2['firstDataPainted']:
+                break
+            time.sleep(1)
+        dump(self.evidence / ('sc2-' + side + '.json'), sc2)
+        return proof, sc2
+
+    def seal_after_launch(self, reseal):
+        """Seal (or reseal) once the started app has deployed and run its setup; retried for at most 120 s."""
         deadline = time.monotonic() + 120
         while True:  # the app deploys and runs setup first
             try:
@@ -786,17 +847,6 @@ class Session:
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(2)
-        sc2 = {'firstDataPainted': []}
-        stderr_path = Path(launch_row['stderrWsl'])
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            text = stderr_path.read_text(errors='replace')[:1024 * 1024] if stderr_path.exists() else ''
-            sc2 = parse_sc2(text)
-            if sc2['firstDataPainted']:
-                break
-            time.sleep(1)
-        dump(self.evidence / ('sc2-' + side + '.json'), sc2)
-        return proof, sc2
 
     def fresh_flow(self, a4_windows_service, w1_windows):
         identity, comparison = self.install('candidate')
@@ -921,11 +971,13 @@ class Session:
         """Seal (or, after an upgrade's candidate phase, reseal) what the run created, so cleanup removes it by the rule."""
         attempted = {row['name'] for row in self.outcome['phases']}
         completed = self.coordinator.completed
-        if not self.ownership or not any(n.startswith(('install-', 'setup-', 'native-install-', 'native-launch-', 'native-upgrade')) for n in attempted):
+        if not self.ownership or not any(n.startswith(('install-', 'setup-', 'native-install-', 'native-launch-', 'native-upgrade', 'native-update'))
+                                         for n in attempted):
             return
         if 'seal-owned-resources' not in completed:
             name, action = 'seal-owned-resources', wsl_owned.seal
-        elif self.flow_name in UPGRADE_FLOWS and {'install-candidate', 'native-upgrade'} & attempted and 'reseal-owned-resources' not in completed:
+        elif (self.flow_name in UPGRADE_FLOWS and {'install-candidate', 'native-upgrade', 'native-update-begin', 'native-update'} & attempted
+              and 'reseal-owned-resources' not in completed):
             name, action = 'reseal-owned-resources', wsl_owned.reseal
         else:
             return
@@ -952,6 +1004,7 @@ class Session:
             windows_resources = self.native_teardown(operations, m)
         context = {'ownership': str(self.ownership) if self.ownership else None, 'launched': self.launched and bool(self.ownership),
                    'installed': self.installed and bool(self.ownership), 'staged': self.stage_dir is not None,
+                   'stageDirectory': str(self.stage_dir) if self.stage_dir is not None else None,
                    'retainedResources': [*wsl_resources, *windows_resources], 'wslResources': wsl_resources, 'windowsResources': windows_resources,
                    'legacyExternalPrefixes': self.legacy_prefixes, 'sides': ('wsl', 'windows') if native_flow else ('wsl',)}
         finalize(self.outcome, context, self.before, operations, lambda name, value: dump(self.evidence / (name + '.json'), value))
@@ -960,10 +1013,30 @@ class Session:
     def native_teardown(self, operations, m):
         """Windows flows only: quit, the stopped proof, the uninstall (§5 poll), the Windows fingerprint, the stage."""
         ownership = lambda: self.windows(self.ownership)
+
+        def quit_owned():
+            return quit_after_update(lambda timeout=200, **params: self.native('native-lifecycle.ps1', timeout=timeout, Ownership=ownership(), **params),
+                                     self.update_begun, lambda rows: dump(self.evidence / 'teardown-update-adopt.json', rows))
+
+        def uninstall_owned():
+            # 1.0.1 (D5, A7): with A7 selected, plant the `uninstall` foreign file set first. native-lifecycle reads it back
+            # between the uninstaller's exit and the owned tree removal, and removes exactly that set.
+            params = {}
+            if 'A7' in self.cases and m:
+                try:
+                    import w1_windows
+                    planted = foreign_files.plant(w1_windows.drvfs(m['nativePreflight']['installPath']), m['token'], 'uninstall', m['sourceSha'])
+                    dump(self.evidence / 'foreign-uninstall-planted.json', planted)
+                    self.a7 = {'planted': planted}
+                    params['Foreign'] = self.windows(self.evidence / 'foreign-uninstall-planted.json')
+                except Exception as error:
+                    self.a7 = {'plantError': redact_text(str(error), 300)}
+            return self.native('native-lifecycle.ps1', timeout=300, Action='uninstall', Ownership=ownership(), **params)
+
         operations.update({
-            'quit': lambda: self.native('native-lifecycle.ps1', Action='stop-owned', Ownership=ownership()),
+            'quit': quit_owned,
             'assert_stopped': lambda: self.native('native-lifecycle.ps1', Action='assert-stopped', Ownership=ownership()),
-            'windows_cleanup': lambda: self.native('native-lifecycle.ps1', timeout=300, Action='uninstall', Ownership=ownership()),
+            'windows_cleanup': uninstall_owned,
             'fingerprint_windows': lambda: self.native('native-observe.ps1', Action='fingerprint'),
         })
         if m:
@@ -985,6 +1058,19 @@ class Session:
         return self.native('native-observe.ps1', Action='preflight', SourceSha=self.args.candidate_sha,
                            WindowsRoot='C:\\dev\\devbox-s7-accept-' + fresh, InstallPath=self.local + '\\DevboxAccept-s7-' + fresh)
 
+    def a7_result(self, out):
+        """Pure reads only: teardown's `windows` row and the native record this run's helper wrote in the evidence folder."""
+        recorded = None
+        try:
+            token = json.loads(Path(self.ownership).read_text())['token']
+            recorded = json.loads((self.evidence / ('native-' + token + '.json')).read_text(encoding='utf-8-sig'))
+        except Exception:
+            recorded = None
+        row = next((r for r in out.get('cleanup', []) if r.get('action') == 'windows'), None)
+        status, reason, comparison = a7_decision(self.a7, row, recorded)
+        dump(self.evidence / 'cases' / 'A7.json', {'case': 'A7', 'status': status, 'reason': reason, 'state': self.a7, 'comparison': comparison})
+        self.case_result('A7', status, ['cases/A7.json', 'teardown-windows.json'], reason, surface='installed-native', comparison=comparison)
+
     def after_teardown(self, native_flow):
         out = self.outcome
         files = ['driver-result.json', 'prod-after.json']
@@ -992,6 +1078,8 @@ class Session:
             status, reason = a6_decision(out)
             self.case_result('A6', status, files, reason, surface='installed-native', retainedResources=out.get('retainedResources'),
                              prodComparison=out.get('prodComparison'), acceptAbsentAfter=out.get('acceptAbsentAfter'))
+        if 'A7' in self.cases:
+            self.a7_result(out)
         if 'M4' in self.cases:
             status, reason, partial = m4_decision(out, native_flow)
             self.case_result('M4', status, files, reason, partial=partial, surface='installed-native' if native_flow else 'wsl-artifact',
@@ -1001,6 +1089,76 @@ class Session:
             dump(self.evidence / 'r-sc2.json', {'wave': label, 'firstDataPainted': first})
             self.case_result('R-SC2', 'NOT_RUN', ['r-sc2.json'], 'Record only: this wave measured the %s cold value; the other wave records the other '
                              'value and the controller shows both side by side' % label, partial=[label])
+
+
+QUIT_ROUNDS = 3
+ADOPT_WAIT_SECONDS = 600  # native-lifecycle's own upper bound for update-adopt's wait
+ADOPT_RETRY_SECONDS = 120
+
+
+def quit_after_update(lifecycle, update_begun, save=lambda rows: None, rounds=QUIT_ROUNDS):
+    """Teardown's quit (1.0.1). Without an update: the exact stop of the recorded processes, as before.
+
+    Once an update began, each round first waits (at most ADOPT_WAIT_SECONDS, then ADOPT_RETRY_SECONDS, inside the helper) until the product's
+    update runner and installer have ended, records the app the runner relaunched and pins the installed bytes
+    (update-adopt), then stops every recorded process exactly (PID, executable path and start time). A relaunch can
+    arrive after a stop, so update-observe is read again and the round repeats while a runner, an installer or an
+    owned app process is present, at most `rounds` times. A failing adopt never skips the stop. The result is FAIL
+    when a round's adopt or stop failed for good or a process is left: a debug-port app or a runner must never be left
+    running unreported. `lifecycle(timeout=..., **params)` runs one native-lifecycle action."""
+    if not update_begun:
+        return lifecycle(Action='stop-owned')
+    rows, left, error = [], None, None
+    for number in range(1, rounds + 1):
+        row = {'round': number}
+        rows.append(row)
+        error = None
+        wait = ADOPT_WAIT_SECONDS if number == 1 else ADOPT_RETRY_SECONDS
+        for name, call in (('adopt', lambda: lifecycle(timeout=wait + 80, Action='update-adopt', WaitSeconds=wait)),
+                           ('stop', lambda: lifecycle(Action='stop-owned'))):
+            try:
+                row[name] = call()
+            except Exception as failure:
+                row[name + 'Error'] = redact_text(str(failure), 600)
+                error = error or row[name + 'Error']
+        try:
+            seen = lifecycle(Action='update-observe')
+            left = {key: seen.get(key) or [] for key in ('oldAlive', 'newApps', 'staged')}
+        except Exception as failure:
+            row['observeError'] = redact_text(str(failure), 600)
+            error, left = error or row['observeError'], None
+        row['left'] = left
+        save(rows)
+        if left is not None and not any(left.values()) and error is None:
+            return {'status': 'PASS', 'stopped': True, 'rounds': rows}
+    save(rows)
+    raise RuntimeError('After %d rounds of update-adopt and stop-owned an owned process may still run (%s); retained'
+                       % (rounds, error or 'left: ' + json.dumps(left)))
+
+
+def a7_decision(state, cleanup_row, recorded):
+    """A7 (1.0.1): the `uninstall` foreign file set after the product's uninstaller, before the owned tree removal.
+    `state` is the planted set or its plant error, `cleanup_row` teardown's `windows` row, and `recorded` native-lifecycle's
+    own record (used when the action failed after the read). Returns (status, reason, comparison)."""
+    if not state:
+        return 'NOT_RUN', 'The owned uninstall did not run, so no foreign file was planted', None
+    if 'plantError' in state:
+        return 'FAIL', ev.ROW_TEXT['A7.noplant'] + ' (' + state['plantError'] + ')', None
+    result = (cleanup_row or {}).get('result')
+    if not isinstance(result, dict) or result.get('foreignAfterUninstall') is None:
+        result = recorded
+    if not isinstance(result, dict) or result.get('foreignAfterUninstall') is None:
+        return 'FAIL', 'The uninstall ended before the planted files were read back; they are retained with the owned install', None
+    comparison = foreign_files.compare(state['planted'], result['foreignAfterUninstall'])
+    # The read counts only after the uninstaller's own end (uninstall.exe and its Uninstall registration gone), and
+    # only when two reads 1 s apart agree: a read during its file work could pass on files it was still going to remove.
+    comparison.update(uninstallerEnded=result.get('foreignUninstallerEnded'), stable=result.get('foreignStable'), waitMs=result.get('foreignWaitMs'))
+    if result.get('foreignUninstallerEnded') is not True:
+        return 'FAIL', 'The uninstaller had not finished within 30 s of its exit when the planted files were read; the read proves nothing', comparison
+    if result.get('foreignStable') is not True:
+        return 'FAIL', 'Two reads of the planted files 1 s apart differ: the install folder was still changing', comparison
+    status, reason = foreign_files.decision(comparison)
+    return status, reason, comparison
 
 
 def main(argv=None):
