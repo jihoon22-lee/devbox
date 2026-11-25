@@ -148,7 +148,7 @@ mod tests {
 case "$*" in
   '--user list-units --type=service,timer --all --no-pager --output=json')
     printf '%s' '[{{"unit":"app-web.service"}},{{"unit":"dbus.service"}},{{"unit":"devbox@test-r.service"}}]' ;;
-  '--user show --no-pager --property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,Triggers -- app-web.service dbus.service')
+  '--user show --no-pager --property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,NextElapseUSecMonotonic,Triggers -- app-web.service dbus.service')
     printf '%s\n' 'Id=app-web.service' 'Description=App web server' 'LoadState=loaded' 'ActiveState=active' 'SubState=running' 'FragmentPath={unit_dir}/app-web.service' 'WorkingDirectory={dir}/web' '' 'Id=dbus.service' 'LoadState=loaded' 'FragmentPath=/usr/lib/systemd/user/dbus.service' ;;
   *) exit 9 ;;
 esac

@@ -26,8 +26,8 @@ pub struct UserUnitInfo {
     pub active_state: String,
     pub sub_state: String,
     pub kind: UserUnitKind,
-    /// A timer's next wall-clock elapse. Absent for a timer that only counts from boot or
-    /// from its last run.
+    /// A timer's next run. One that counts from boot or from its last run is converted to
+    /// wall-clock time with the daemon's clocks. Absent when nothing is scheduled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub next_elapse_ms: Option<u64>,
@@ -35,7 +35,8 @@ pub struct UserUnitInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub triggers: Option<String>,
-    /// The registered project whose folder holds a service's `WorkingDirectory`.
+    /// The registered project whose folder holds a service's `WorkingDirectory`. A timer has
+    /// the project of the listed unit it triggers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub project_id: Option<String>,

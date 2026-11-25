@@ -39,7 +39,9 @@ test("the current project's units come first, marked, and every group keeps its 
     "app-worker.service",
   ]);
   expect(screen.getByText("app-web.service 설명")).toBeVisible();
-  expect(screen.getByText("작업 폴더가 현재 프로젝트 안인 서비스를 먼저 표시합니다.")).toBeVisible();
+  expect(
+    screen.getByText("작업 폴더가 현재 프로젝트 안인 서비스와 그 서비스를 시작하는 타이머를 먼저 표시합니다."),
+  ).toBeVisible();
 
   // Without a current project nothing is reordered or marked.
   rerender(<UserUnits result={listed(items)} />);
@@ -65,11 +67,25 @@ test("a timer shows its next run in local time and the unit it starts; a service
   expect(time).toHaveAttribute("datetime", "2026-01-01T03:00:00.000Z");
   expect(within(backup!).getAllByRole("cell")[1]).toHaveTextContent("타이머 → app-backup.service");
   expect(within(backup!).getAllByRole("cell")[2]).toHaveTextContent("대기 중 (active/waiting)");
-  // A timer that only counts from boot or its last run has no wall-clock time to show.
+  // A timer with nothing scheduled has no time to show.
   expect(within(health!).getAllByRole("cell")[1]).toHaveTextContent(/^타이머$/);
   expect(within(health!).getAllByRole("cell")[3]).toHaveTextContent(/^—$/);
   expect(within(web!).getAllByRole("cell")[1]).toHaveTextContent(/^서비스$/);
   expect(within(web!).getAllByRole("cell")[3]).toHaveTextContent(/^—$/);
+});
+
+test("a timer of the current project is grouped with the service it starts", () => {
+  render(
+    <UserUnits
+      result={listed([
+        unit("app-backup.service", { projectId: "p", activeState: "inactive", subState: "dead" }),
+        unit("app-backup.timer", { projectId: "p", subState: "waiting", triggers: "app-backup.service" }),
+        unit("other.timer", { subState: "waiting" }),
+      ])}
+      projectId="p"
+    />,
+  );
+  expect(shownNames()).toEqual(["app-backup.service 현재 프로젝트", "app-backup.timer 현재 프로젝트", "other.timer"]);
 });
 
 test.each([
@@ -98,7 +114,7 @@ test("nothing can be done to a unit here, and the screen says how they are manag
   expect(screen.queryAllByRole("button")).toHaveLength(0);
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
   expect(screen.getByRole("note")).toHaveTextContent(
-    "Devbox가 시작하지 않은, ~/.config/systemd/user의 서비스와 타이머를 보여 주기만 합니다. 시작·중지·수정은 터미널에서 systemctl --user로 합니다.",
+    "Devbox가 시작하지 않은, ~/.config/systemd/user의 서비스와 타이머를 보여 주기만 합니다. 사용자 관리자가 불러온 것(실행 중이거나 실패한 것, 켜 둔 것, 타이머처럼 다른 unit이 시작하는 것)만 나오고, 켜 두지도 시작하지도 않은 unit 파일은 나오지 않습니다. 시작·중지·수정은 터미널에서 systemctl --user로 합니다.",
   );
   expect(screen.queryByText(/일부만/)).not.toBeInTheDocument();
 });

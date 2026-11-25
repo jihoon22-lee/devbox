@@ -1,14 +1,14 @@
 use crate::{units::*, *};
 use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
-const UNIT_DIR: &str = "/home/u/.config/systemd/user";
+pub(crate) const UNIT_DIR: &str = "/home/u/.config/systemd/user";
 const HEX: &str = "0123456789abcdef0123456789abcdef";
 // `systemctl --user list-units --type=service,timer --all --output=json`: systemd 249 also
 // prints a `job` column, and a newer one may add keys.
 const LIST: &str = r#"[{"unit":"app-backup.service","load":"loaded","active":"inactive","sub":"dead","description":"Back up the app data"},{"unit":"app-backup.timer","load":"loaded","active":"active","sub":"waiting","job":null,"description":"Nightly app backup"},{"unit":"app-web.service","load":"loaded","active":"active","sub":"running","job":"","description":"App web server"},{"unit":"dbus.service","load":"loaded","active":"active","sub":"running","description":"D-Bus User Message Bus"},{"unit":"devbox-tmux@prod.service","load":"loaded","active":"active","sub":"running","description":"own"},{"unit":"devbox@prod.service","load":"loaded","active":"active","sub":"running","description":"own"},{"unit":"devbox-prod-run-0123456789abcdef0123456789abcdef.service","load":"loaded","active":"active","sub":"running","description":"own run"},{"unit":"mydevbox-tool.service","load":"loaded","active":"failed","sub":"failed","description":"A tool"},{"unit":null},{"unit":"-o.service; rm.mount"},{"unit":"gone.service","load":"not-found","active":"inactive","sub":"dead","description":"gone.service"}]"#;
 // `systemctl --user show --property=…` prints one block per unit in the manager's own property
 // order and leaves out what a unit type does not have.
-const SHOW: &str = "\
+pub(crate) const SHOW: &str = "\
 Id=app-backup.service
 Triggers=
 Description=Back up the app data
@@ -60,22 +60,27 @@ SubState=dead
 FragmentPath=
 ";
 
-fn roots() -> Vec<ProjectRoot> {
+pub(crate) fn roots() -> Vec<ProjectRoot> {
     vec![ProjectRoot {
         id: "app".into(),
         path: "/home/u/projects/app".into(),
     }]
 }
-fn shown(text: &str) -> Vec<UserUnitInfo> {
-    parse_show(text, Path::new(UNIT_DIR), &roots())
+/// One hour after boot, at 2026-01-01T00:00:00Z.
+pub(crate) const CLOCK: Clock = Clock {
+    monotonic_us: 3_600_000_000,
+    realtime_ms: 1_767_225_600_000,
+};
+pub(crate) fn shown(text: &str) -> Vec<UserUnitInfo> {
+    parse_show(text, Path::new(UNIT_DIR), &roots(), Some(CLOCK))
 }
 /// One block of a unit file in the user's own unit directory.
-fn block(id: &str, lines: &str) -> String {
+pub(crate) fn block(id: &str, lines: &str) -> String {
     format!(
         "Id={id}\nLoadState=loaded\nActiveState=active\nSubState=running\nFragmentPath={UNIT_DIR}/{id}\n{lines}\n"
     )
 }
-fn names(items: &[UserUnitInfo]) -> Vec<&str> {
+pub(crate) fn names(items: &[UserUnitInfo]) -> Vec<&str> {
     items.iter().map(|unit| unit.name.as_str()).collect()
 }
 
@@ -282,11 +287,6 @@ fn a_service_takes_the_project_of_its_working_directory() {
         None,
         "a sibling that shares a string prefix"
     );
-    assert_eq!(
-        project("app-backup.timer"),
-        None,
-        "a timer has no directory"
-    );
     for none in [
         "WorkingDirectory=",
         "WorkingDirectory=~",
@@ -301,69 +301,9 @@ fn a_service_takes_the_project_of_its_working_directory() {
     }
     let long = format!("WorkingDirectory=/home/u/projects/app/{}", "a".repeat(4096));
     assert_eq!(shown(&block("app.service", &long))[0].project_id, None);
-    // A timer never takes a project, whatever the block says.
+    // A timer has no directory of its own, whatever the block says.
     let timer = shown(&block("app.timer", "WorkingDirectory=/home/u/projects/app"));
     assert_eq!(timer[0].project_id, None);
-}
-
-#[test]
-fn a_timer_reports_what_it_triggers_and_a_next_elapse_only_from_a_utc_timestamp() {
-    let items = shown(SHOW);
-    let timer = &items[1];
-    assert_eq!(timer.kind, UserUnitKind::Timer);
-    assert_eq!(timer.triggers.as_deref(), Some("app-backup.service"));
-    // 2026-01-01T03:00:00Z
-    assert_eq!(timer.next_elapse_ms, Some(1_767_236_400_000));
-    let next = |value: &str| {
-        shown(&block(
-            "app.timer",
-            &format!("NextElapseUSecRealtime={value}"),
-        ))[0]
-            .next_elapse_ms
-    };
-    assert_eq!(next("Thu 1970-01-01 00:00:01 UTC"), Some(1000));
-    assert_eq!(
-        next("Thu 2026-01-01 03:00:00.123456 UTC"),
-        Some(1_767_236_400_123),
-        "systemd prints microseconds when asked to"
-    );
-    for unknown in [
-        // A timer of OnBootSec=/OnUnitActiveSec= has no wall-clock elapse.
-        "",
-        "n/a",
-        "0",
-        // Another zone cannot be converted without its rules.
-        "Thu 2026-01-01 12:00:00 KST",
-        "Thu 2026-01-01 03:00:00",
-        "2026-01-01 03:00:00 UTC",
-        "Thu 2026-13-01 03:00:00 UTC",
-        "Thu 2026-01-01 25:00:00 UTC",
-        "Thu 1969-12-31 23:59:59 UTC",
-        "@1767236400",
-        "Thu 2026-01-01 03:00:00 UTC extra",
-    ] {
-        assert_eq!(next(unknown), None, "{unknown:?}");
-    }
-    let triggers = |value: &str| {
-        shown(&block("app.timer", &format!("Triggers={value}")))[0]
-            .triggers
-            .clone()
-    };
-    assert_eq!(triggers("").as_deref(), None);
-    assert_eq!(
-        triggers("app.service other.service").as_deref(),
-        Some("app.service")
-    );
-    assert_eq!(triggers("not\u{1b}a-unit").as_deref(), None);
-    // A service reports neither.
-    let service = shown(&block(
-        "app.service",
-        "Triggers=x.service\nNextElapseUSecRealtime=Thu 2026-01-01 03:00:00 UTC",
-    ));
-    assert_eq!(
-        (service[0].next_elapse_ms, service[0].triggers.as_deref()),
-        (None, None)
-    );
 }
 
 #[test]
@@ -452,7 +392,7 @@ async fn fake_systemctl_gets_exactly_two_read_only_calls_in_the_login_environmen
 [ "$TZ" = UTC ] && [ "$LC_ALL" = C ] && [ "$XDG_RUNTIME_DIR" = "/run/user/$(id -u)" ] || exit 8
 case "$*" in
   '--user list-units --type=service,timer --all --no-pager --output=json') cat '{here}/list' ;;
-  '--user show --no-pager --property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,Triggers -- app-backup.service app-backup.timer app-web.service dbus.service mydevbox-tool.service gone.service') cat '{here}/show' ;;
+  '--user show --no-pager --property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,NextElapseUSecMonotonic,Triggers -- app-backup.service app-backup.timer app-web.service dbus.service mydevbox-tool.service gone.service') cat '{here}/show' ;;
   *) exit 9 ;;
 esac"#
         ),

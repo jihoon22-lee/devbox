@@ -57,8 +57,9 @@ export function UserUnits({ result, projectId }: { result: UnitsResult; projectI
   return (
     <>
       <p role="note">
-        Devbox가 시작하지 않은, <code>~/.config/systemd/user</code>의 서비스와 타이머를 보여 주기만 합니다.
-        시작·중지·수정은 터미널에서 <code>systemctl --user</code>로 합니다.
+        Devbox가 시작하지 않은, <code>~/.config/systemd/user</code>의 서비스와 타이머를 보여 주기만 합니다. 사용자
+        관리자가 불러온 것(실행 중이거나 실패한 것, 켜 둔 것, 타이머처럼 다른 unit이 시작하는 것)만 나오고, 켜 두지도
+        시작하지도 않은 unit 파일은 나오지 않습니다. 시작·중지·수정은 터미널에서 <code>systemctl --user</code>로 합니다.
       </p>
       {result.truncated && <p>서비스와 타이머가 많아 일부만 표시합니다.</p>}
       {ordered.length === 0 ? (
@@ -68,7 +69,9 @@ export function UserUnits({ result, projectId }: { result: UnitsResult; projectI
         </p>
       ) : (
         <>
-          {projectId !== undefined && <p>작업 폴더가 현재 프로젝트 안인 서비스를 먼저 표시합니다.</p>}
+          {projectId !== undefined && (
+            <p>작업 폴더가 현재 프로젝트 안인 서비스와 그 서비스를 시작하는 타이머를 먼저 표시합니다.</p>
+          )}
           <table>
             <thead>
               <tr>

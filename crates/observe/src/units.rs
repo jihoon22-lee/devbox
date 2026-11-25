@@ -19,6 +19,10 @@ pub(crate) const MAX_STATE_CHARS: usize = 32;
 /// systemd's own limits for a unit name and a path.
 const MAX_NAME_BYTES: usize = 255;
 const MAX_DIR_BYTES: usize = 4096;
+/// Triggered units looked at for a timer's project.
+const MAX_TRIGGERS: usize = 8;
+/// The latest time a screen can show (the range of an ECMAScript date).
+const MAX_DATE_MS: u64 = 8_640_000_000_000_000;
 
 // systemd 249 (Ubuntu 22.04) already prints `list-units` as JSON. Only names are read from it,
 // so every state comes from one source.
@@ -34,7 +38,7 @@ const SHOW: [&str; 5] = [
     "--user",
     "show",
     "--no-pager",
-    "--property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,Triggers",
+    "--property=Id,Description,LoadState,ActiveState,SubState,FragmentPath,WorkingDirectory,NextElapseUSecRealtime,NextElapseUSecMonotonic,Triggers",
     "--",
 ];
 
@@ -123,6 +127,83 @@ fn utc_ms(value: &str) -> Option<u64> {
             .ok()?;
     u64::try_from(at.and_utc().timestamp_millis()).ok()
 }
+/// One reading of the two clocks that turn a point on CLOCK_MONOTONIC into a wall-clock time.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Clock {
+    pub monotonic_us: u64,
+    pub realtime_ms: u64,
+}
+impl Clock {
+    pub(crate) fn now() -> Option<Self> {
+        let monotonic = nix::time::clock_gettime(nix::time::ClockId::CLOCK_MONOTONIC).ok()?;
+        let realtime = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?;
+        Some(Self {
+            monotonic_us: u64::try_from(monotonic.tv_sec())
+                .ok()?
+                .checked_mul(1_000_000)?
+                .checked_add(u64::try_from(monotonic.tv_nsec()).ok()? / 1000)?,
+            realtime_ms: u64::try_from(realtime.as_millis()).ok()?,
+        })
+    }
+}
+/// A time span as systemd's `format_timespan` prints it, `1w 5d 12min 13.049512s`, in
+/// microseconds. The units have fixed lengths, so this is exact. `0` and `infinity` are no span.
+pub(crate) fn timespan_us(value: &str) -> Option<u64> {
+    const UNITS: [(&str, u64); 10] = [
+        ("y", 31_557_600_000_000),
+        ("month", 2_629_800_000_000),
+        ("w", 604_800_000_000),
+        ("d", 86_400_000_000),
+        ("h", 3_600_000_000),
+        ("min", 60_000_000),
+        ("s", 1_000_000),
+        ("ms", 1_000),
+        ("us", 1),
+        ("μs", 1),
+    ];
+    let mut total = 0_u64;
+    let mut parts = 0;
+    for part in value.split(' ') {
+        parts += 1;
+        let (number, unit) = part.split_at(part.find(|c: char| c != '.' && !c.is_ascii_digit())?);
+        let scale = UNITS.iter().find(|(name, _)| *name == unit)?.1;
+        let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
+        if parts > UNITS.len() - 1 || whole.is_empty() || fraction.len() > 6 {
+            return None;
+        }
+        let fraction = match fraction {
+            "" => 0,
+            digits => {
+                digits.parse::<u64>().ok()?.checked_mul(scale)? / 10_u64.pow(digits.len() as u32)
+            }
+        };
+        total = total
+            .checked_add(whole.parse::<u64>().ok()?.checked_mul(scale)?)?
+            .checked_add(fraction)?;
+    }
+    (total > 0).then_some(total)
+}
+/// A timer's next run: the earlier of its wall-clock elapse and its monotonic one. `show` gives
+/// the monotonic elapse (`OnBootSec=`, `OnUnitActiveSec=`) as a point on CLOCK_MONOTONIC, which
+/// this process shares with the manager; `systemctl list-timers` converts it the same way, the
+/// wall clock plus what is left on the monotonic clock.
+fn next_elapse_ms(realtime: &str, monotonic: &str, clock: Option<Clock>) -> Option<u64> {
+    let converted = clock.zip(timespan_us(monotonic)).and_then(|(clock, next)| {
+        match next.checked_sub(clock.monotonic_us) {
+            Some(left) => clock.realtime_ms.checked_add(left / 1000),
+            None => clock
+                .realtime_ms
+                .checked_sub((clock.monotonic_us - next) / 1000),
+        }
+    });
+    [utc_ms(realtime), converted]
+        .into_iter()
+        .flatten()
+        .filter(|ms| *ms <= MAX_DATE_MS)
+        .min()
+}
 /// Shown are the units the user wrote: the unit file is directly in the user's own unit
 /// directory (`~/.config/systemd/user`; a linked file keeps the link's path there). Packaged
 /// (`/usr/lib`), generated and transient (`/run`) units and names without a file are plumbing.
@@ -130,6 +211,7 @@ fn unit(
     block: &HashMap<&str, &str>,
     unit_dir: &Path,
     projects: &[ProjectRoot],
+    clock: Option<Clock>,
 ) -> Option<UserUnitInfo> {
     let field = |key| block.get(key).copied().unwrap_or_default();
     let name = field("Id");
@@ -149,7 +231,13 @@ fn unit(
         sub_state: text(field("SubState"), MAX_STATE_CHARS),
         kind,
         next_elapse_ms: timer
-            .then(|| utc_ms(field("NextElapseUSecRealtime")))
+            .then(|| {
+                next_elapse_ms(
+                    field("NextElapseUSecRealtime"),
+                    field("NextElapseUSecMonotonic"),
+                    clock,
+                )
+            })
             .flatten(),
         triggers: field("Triggers")
             .split(' ')
@@ -165,21 +253,38 @@ fn unit(
 /// `show` prints one `Key=Value` block per unit, separated by an empty line, in the manager's
 /// property order. Blocks are keyed by `Id`, never by position. A description is one line in a
 /// unit file; a line break in one could at worst add or shadow a row of this read-only list.
+/// A timer has no directory: it takes the project of the first listed unit it triggers that
+/// has one, so a project's schedule is grouped with the service it starts.
 pub(crate) fn parse_show(
     text: &str,
     unit_dir: &Path,
     projects: &[ProjectRoot],
+    clock: Option<Clock>,
 ) -> Vec<UserUnitInfo> {
     let mut units = BTreeMap::new();
+    let mut timers = vec![];
     let mut block = HashMap::new();
     for line in text.lines().chain([""]) {
         if let Some((key, value)) = line.split_once('=') {
             block.entry(key).or_insert(value);
         } else if line.is_empty() {
-            if let Some(unit) = unit(&block, unit_dir, projects) {
+            if let Some(unit) = unit(&block, unit_dir, projects, clock) {
+                if unit.kind == UserUnitKind::Timer {
+                    let triggered = block.get("Triggers").copied().unwrap_or_default();
+                    timers.push((unit.name.clone(), triggered));
+                }
                 units.entry(unit.name.clone()).or_insert(unit);
             }
             block.clear();
+        }
+    }
+    for (timer, triggered) in timers {
+        let project_id = triggered
+            .split(' ')
+            .take(MAX_TRIGGERS)
+            .find_map(|name| units.get(name)?.project_id.clone());
+        if let Some(unit) = units.get_mut(&timer) {
+            unit.project_id = project_id;
         }
     }
     units.into_values().collect()
@@ -280,6 +385,7 @@ pub(crate) async fn snapshot(
     else {
         return Err(ObserveError::SourceUnavailable.into());
     };
-    result.items = parse_show(&String::from_utf8_lossy(&stdout), unit_dir, projects);
+    let shown = String::from_utf8_lossy(&stdout);
+    result.items = parse_show(&shown, unit_dir, projects, Clock::now());
     Ok(result)
 }

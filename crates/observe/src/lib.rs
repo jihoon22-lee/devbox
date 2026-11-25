@@ -73,6 +73,8 @@ mod processes_tests;
 #[cfg(test)]
 mod system_tests;
 #[cfg(test)]
+mod unit_timer_tests;
+#[cfg(test)]
 mod units_tests;
 
 #[cfg(test)]

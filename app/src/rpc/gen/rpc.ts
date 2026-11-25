@@ -782,8 +782,8 @@ export type UnitsUnavailableReason = "cliMissing" | "managerUnavailable";
 export type Upstream = { remote: string, destinationRef: string, };
 export type UserUnitInfo = { name: string, description: string, loadState: string, activeState: string, subState: string, kind: UserUnitKind, 
 /**
- * A timer's next wall-clock elapse. Absent for a timer that only counts from boot or
- * from its last run.
+ * A timer's next run. One that counts from boot or from its last run is converted to
+ * wall-clock time with the daemon's clocks. Absent when nothing is scheduled.
  */
 nextElapseMs?: number, 
 /**
@@ -791,7 +791,8 @@ nextElapseMs?: number,
  */
 triggers?: string, 
 /**
- * The registered project whose folder holds a service's `WorkingDirectory`.
+ * The registered project whose folder holds a service's `WorkingDirectory`. A timer has
+ * the project of the listed unit it triggers.
  */
 projectId?: string, };
 export type UserUnitKind = "service" | "timer";
