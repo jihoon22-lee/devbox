@@ -23,9 +23,18 @@ fn config_root_from(home: &Path, override_path: Option<PathBuf>, default: &str) 
         None => Ok(home.join(default)),
     }
 }
+impl OsProbe {
+    /// A bounded probe whose commands are found and run in this check's environment.
+    fn run<T>(&self, future: impl std::future::Future<Output = Probed<T>>) -> Probed<T> {
+        runner::run(runner::with_vars(self.vars.clone(), future))
+    }
+}
 impl Probe for OsProbe {
     fn daemon_path(&self) -> String {
-        std::env::var("PATH").unwrap_or_default()
+        match self.vars.iter().find(|(key, _)| key == "PATH") {
+            Some((_, path)) => path.clone(),
+            None => std::env::var("PATH").unwrap_or_default(),
+        }
     }
     fn hook_executable(&self) -> Probed<bool> {
         runner::run(runner::is_executable(self.hook_binary.clone()))
@@ -37,7 +46,7 @@ impl Probe for OsProbe {
         runner::run(runner::read_text("/proc/1/comm".into()))
     }
     fn user_manager_available(&self) -> Probed<bool> {
-        runner::run(async {
+        self.run(async {
             Ok(runner::command(
                 "systemctl",
                 &["--user", "show", "--property=Version", "--value"],
@@ -49,7 +58,7 @@ impl Probe for OsProbe {
     }
     fn linger(&self) -> Probed<String> {
         let user = std::env::var("USER").unwrap_or_default();
-        runner::run(async {
+        self.run(async {
             let output =
                 runner::command("loginctl", &["show-user", &user, "-p", "Linger"], true).await?;
             if output.success {
@@ -60,7 +69,7 @@ impl Probe for OsProbe {
         })
     }
     fn tmux_version(&self) -> Probed<Option<String>> {
-        runner::run(runner::version("tmux", &["-V"]))
+        self.run(runner::version("tmux", &["-V"]))
     }
     fn inotify_instances(&self) -> Probed<String> {
         runner::run(runner::read_text(
@@ -77,7 +86,7 @@ impl Probe for OsProbe {
         })
     }
     fn wsl_config(&self) -> Probed<Option<String>> {
-        runner::run(async {
+        self.run(async {
             let output = runner::command(
                 "powershell.exe",
                 &["-NoProfile", "-NonInteractive", "-Command", WSL_CONFIG],
@@ -94,7 +103,7 @@ impl Probe for OsProbe {
         })
     }
     fn rust_versions(&self) -> Probed<RustVersions> {
-        runner::run(async {
+        self.run(async {
             Ok(RustVersions {
                 cargo: runner::version("cargo", &["--version"]).await?,
                 rustc: runner::version("rustc", &["--version"]).await?,
@@ -102,7 +111,7 @@ impl Probe for OsProbe {
         })
     }
     fn docker(&self) -> Probed<DockerProbe> {
-        runner::run(async {
+        self.run(async {
             let version = runner::version("docker", &["--version"]).await?;
             let responsive = if version.is_some() {
                 runner::command("docker", &["info", "--format", "{{.ServerVersion}}"], false)
@@ -118,7 +127,7 @@ impl Probe for OsProbe {
         })
     }
     fn gh_authenticated(&self) -> Probed<bool> {
-        runner::run(gh_auth_status("gh"))
+        self.run(gh_auth_status("gh"))
     }
     fn agent_auth(&self, agent: AgentTool) -> Probed<AgentAuth> {
         let root = config_root(agent)?;

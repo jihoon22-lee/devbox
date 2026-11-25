@@ -36,6 +36,17 @@ pub(super) fn run<T>(future: impl Future<Output = Probed<T>>) -> Probed<T> {
             .map_err(|_| ProbeIssue::Timeout)?
     })
 }
+tokio::task_local! {
+    /// Variables set over the process environment for the commands of the probe being run.
+    static VARS: Vec<(String, String)>;
+}
+/// Every [`command`] `future` starts is found in these variables' `PATH` and gets them.
+pub(super) fn with_vars<T>(
+    vars: Vec<(String, String)>,
+    future: impl Future<Output = T>,
+) -> impl Future<Output = T> {
+    VARS.scope(vars, future)
+}
 fn io_issue(error: std::io::Error) -> ProbeIssue {
     if error.kind() == std::io::ErrorKind::NotFound {
         ProbeIssue::Missing
@@ -65,6 +76,15 @@ pub(super) async fn file_exists(path: PathBuf) -> Probed<bool> {
         Ok(meta) => Ok(meta.is_file()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(io_issue(error)),
+    })
+    .await
+}
+/// Whether `path` itself is a regular file: a link is not followed. `Missing` when nothing is there.
+pub(super) async fn is_regular_file(path: PathBuf) -> Probed<bool> {
+    io_task(move || {
+        std::fs::symlink_metadata(path)
+            .map(|meta| meta.file_type().is_file())
+            .map_err(io_issue)
     })
     .await
 }
@@ -120,6 +140,11 @@ impl Drop for OwnedGroup {
 }
 pub(super) async fn command(program: &str, args: &[&str], capture: bool) -> Probed<Output> {
     let mut command = tokio::process::Command::new(program);
+    // A `PATH` set here is also where the program's name is looked up. The daemon's checks have
+    // no variables, so its commands keep the process environment.
+    let _ = VARS.try_with(|vars| {
+        command.envs(vars.iter().map(|(key, value)| (key, value)));
+    });
     command
         .args(args)
         .stdin(Stdio::null())

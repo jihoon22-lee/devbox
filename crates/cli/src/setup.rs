@@ -103,7 +103,7 @@ fn unquote(value: &str) -> Option<String> {
     (!out.chars().any(char::is_control)).then_some(out)
 }
 /// The allowlisted variables of an env file, decoded; the last line for a key wins.
-fn env_entries(text: &str) -> std::collections::BTreeMap<&str, String> {
+pub(crate) fn env_entries(text: &str) -> std::collections::BTreeMap<&str, String> {
     text.lines()
         .filter_map(|line| line.split_once('='))
         .filter(|(key, _)| ALLOWED.contains(key) || key.starts_with("LC_"))
