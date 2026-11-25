@@ -36,8 +36,11 @@ import daemon_rows
 import driver
 import evidence
 import fixture
+import foreign_files
 import mcp_stdio
 import teardown
+import update_fixture
+import update_flow
 import validate
 import w1_windows
 import wsl_daemon
@@ -165,8 +168,13 @@ class Provenance(unittest.TestCase):
             bad = dict(self.run_record(), **{field: value})
             with self.assertRaises(ValueError, msg=field):
                 evidence.verify_run(bad, C_SHA, 17, evidence.BRANCHES['candidate'])
+        # 1.0.1 (D1): the branch is a run argument the approval binds; the run's head_branch must equal it, and only a plain name passes.
+        evidence.verify_run(self.run_record(branch='release/1.0.1'), C_SHA, 17, 'release/1.0.1')
         with self.assertRaises(ValueError):
-            evidence.verify_run(self.run_record(branch='v1/s7-rc2'), C_SHA, 17, 'v1/s7-rc2')  # S8-5: rc.2's branch is no longer an artifact branch
+            evidence.verify_run(self.run_record(branch='main'), C_SHA, 17, 'release/1.0.1')
+        for bad in ('', '../main', 'a b', 'main/', '-x', 'a//b', 'x.lock', 'a..b', None):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                evidence.verify_run(self.run_record(branch=bad), C_SHA, 17, bad)
 
     def test_artifact_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -201,7 +209,7 @@ class Provenance(unittest.TestCase):
             row = binding.get(side)
             if not row:
                 continue
-            directory = common.verification_root() / 's7' / evidence.ARTIFACT_DIRS[side] / 'artifacts'
+            directory = evidence.artifact_dir(common.verification_root() / 's7', row['artifacts'])
             chain = evidence.verify_artifact_dir(directory, row['sha'], row['runId'], row['version'])
             self.assertEqual(chain['installerSha256'], row.get('installerSha256', chain['installerSha256']))
 
@@ -249,17 +257,17 @@ class Approval(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.tmp = Path(tmp.name)
         self.s7 = self.tmp / 's7'
-        make_artifacts(self.s7 / evidence.ARTIFACT_DIRS['candidate'] / 'artifacts', C_SHA, 7, '1.0.0-rc.2')
+        make_artifacts(self.s7 / 'cand-art' / 'artifacts', C_SHA, 7, '1.0.0-rc.2')
         self.binding = self.tmp / 'source-binding.json'
         self.binding.write_text(json.dumps({'schema': 2, 'candidate': {'sha': C_SHA, 'version': '1.0.0-rc.2', 'files': {}}, 'baseline': None}))
         self.answers = self.tmp / 'answers.json'
         self.answers.write_text(json.dumps(answers()))
         self.review = self.tmp / 'review-approval.json'
-        self.argv = ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL,
-                     '--answers', str(self.answers), '--review', str(self.review)]
+        self.argv = ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--candidate-artifacts', 'cand-art',
+                     '--windows-local', LOCAL, '--answers', str(self.answers), '--review', str(self.review)]
         args = driver.parse(self.argv)
         sides = driver.sides_of(args)
-        sides['candidate']['artifactSha256'] = evidence.artifact_digest(self.s7 / evidence.ARTIFACT_DIRS['candidate'] / 'artifacts')
+        sides['candidate']['artifactSha256'] = evidence.artifact_digest(evidence.artifact_dir(self.s7, 'cand-art'))
         binding = evidence.approval_binding(self.binding.read_bytes(), 'wsl-fresh', args.cases, self.answers.read_bytes(), sides['candidate'], None, LOCAL)
         self.good = {'status': 'APPROVE', 'helperSha256': evidence.helper_hashes(BASE), 'binding': binding}
         self.review.write_text(json.dumps(self.good))
@@ -339,24 +347,25 @@ class Approval(unittest.TestCase):
 
     def test_arguments(self):
         self.assertEqual(driver.parse(self.argv).answers, str(self.answers))
-        defaults = driver.parse(['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL])
+        art, base_art = ['--candidate-artifacts', 'cand-art'], ['--baseline-artifacts', 'base-art']
+        defaults = driver.parse(['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL] + art)
         self.assertEqual((defaults.answers, defaults.review), (str(BASE / 'answers.json'), str(BASE / 'review-approval.json')))
         self.assertEqual(defaults.worktree, WORKTREE)
-        bad = [['--flow', 'wsl-upgrade', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL],
+        bad = [['--flow', 'wsl-upgrade', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL] + art + base_art,
                ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--baseline-sha', B_SHA, '--baseline-run', '5',
-                '--windows-local', LOCAL],
-               ['--flow', 'wsl-fresh', '--candidate-sha', 'C' * 40, '--candidate-run', '7', '--windows-local', LOCAL],
-               ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '0', '--windows-local', LOCAL],
-               ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', '/mnt/c/Users/u'],
-               ['--flow', 'fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL, '--distro', 'a b'],
+                '--windows-local', LOCAL] + art,
+               ['--flow', 'wsl-fresh', '--candidate-sha', 'C' * 40, '--candidate-run', '7', '--windows-local', LOCAL] + art,
+               ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '0', '--windows-local', LOCAL] + art,
+               ['--flow', 'wsl-fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', '/mnt/c/Users/u'] + art,
+               ['--flow', 'fresh', '--candidate-sha', C_SHA, '--candidate-run', '7', '--windows-local', LOCAL, '--distro', 'a b'] + art,
                ['--flow', 'upgrade', '--candidate-sha', C_SHA, '--candidate-run', '7', '--baseline-sha', C_SHA, '--baseline-run', '5',
-                '--windows-local', LOCAL, '--distro', 'Ubuntu']]
+                '--windows-local', LOCAL, '--distro', 'Ubuntu'] + art + base_art]
         for argv in bad:
             with self.assertRaises(SystemExit, msg=repr(argv)):
                 with patch('sys.stderr'):
                     driver.parse(argv)
         up = driver.parse(['--flow', 'wsl-upgrade', '--candidate-sha', C_SHA, '--candidate-run', '7', '--baseline-sha', B_SHA,
-                           '--baseline-run', '5', '--windows-local', LOCAL])
+                           '--baseline-run', '5', '--windows-local', LOCAL] + art + base_art)
         self.assertEqual(sorted(driver.sides_of(up)), ['baseline', 'candidate'])
 
 
@@ -916,7 +925,13 @@ class PaneGuards(unittest.TestCase):
         with self.assertRaises(agents_live.Refused):
             pane.key('t1', 'Enter', 'command')
         for text in ('/exit', '!echo s7'):
+            self.tmux.screen = ' transcript\n\u203a Ask Codex to do anything\n'
+            pane.capture('t1', 'codex')
             pane.type_text('t1', text)
+            with self.assertRaises(agents_live.Refused):
+                pane.key('t1', 'Enter', 'command')  # 1.0.1 (D2): typed, but no capture after it
+            self.tmux.screen = ' transcript\n\u203a ' + text + '\n'
+            pane.capture('t1', 'codex')
             pane.key('t1', 'Enter', 'command')
         pane.key('t1', 'Down')
         with self.assertRaises(agents_live.Refused):
@@ -933,6 +948,10 @@ class PaneGuards(unittest.TestCase):
             with self.assertRaises(agents_live.Refused):
                 pane.type_text('t1', text, folder)
         pane.type_text('t1', command, '/f/P-SUB-agents/y')
+        with self.assertRaises(agents_live.Refused):
+            pane.key('t1', 'Enter', 'command')  # 1.0.1 (D2): the shell has not shown the command yet
+        self.tmux.screen = 'u@h:/f/P-SUB$ ' + command + '\n'
+        pane.capture('t1')
         pane.key('t1', 'Enter', 'command')
 
     def test_trust_enter(self):
@@ -1515,7 +1534,9 @@ class Attribution(unittest.TestCase):
 class Answers(unittest.TestCase):
     def test_answers_file(self):
         # M2: the controller owns the values (Ruling 79 set Q5 true); the file must parse, every answer is a bool, and it is the user's.
-        value = evidence.parse_answers((BASE / 'answers.json').read_bytes())
+        # 1.0.1 (D6): answers.json is run state. It exists only in the run copy, so the repository copy checks a sample.
+        path = BASE / 'answers.json'
+        value = evidence.parse_answers(path.read_bytes() if path.is_file() else json.dumps(answers()))
         self.assertTrue(all(type(value[q]) is bool for q in evidence.ANSWER_KEYS))
         self.assertIs(type(value['interopBroken']), bool)
         self.assertEqual((value['source'], value['recordedBy']), ('user', 'controller'))
@@ -1762,10 +1783,55 @@ class A4NonBlockingStart(unittest.TestCase):
 class ProdScope(unittest.TestCase):
     LEGACY = 'C:\\Users\\U\\AppData\\Local\\Devbox\\integration'
 
-    def fingerprint(self, legacy_hash='A', core_hash='B'):
-        return {'wsl': {'files': [1]}, 'windows': {'installs': [{'root': 'C:\\Users\\U\\AppData\\Local\\Devbox', 'exists': True, 'files': [
+    PROD_EXE = 'C:\\Users\\U\\AppData\\Local\\Devbox\\Devbox.exe'
+    RUNNING = ({'pid': 4120, 'path': PROD_EXE, 'startedUtc': '2026-11-25T01:02:03.0000000Z'},)
+    COMMAND = '"' + PROD_EXE + '" "%1"'
+
+    def fingerprint(self, legacy_hash='A', core_hash='B', processes=RUNNING, command=COMMAND, live=True):
+        windows = {'installs': [{'root': 'C:\\Users\\U\\AppData\\Local\\Devbox', 'exists': True, 'files': [
             {'path': 'C:\\Users\\U\\AppData\\Local\\Devbox\\catalog.json', 'sha256': core_hash},
-            {'path': 'C:\\Users\\U\\AppData\\Local\\Devbox\\integration\\wsl-desktop\\v1\\summary.json', 'sha256': legacy_hash}]}], 'protocol': False}}
+            {'path': 'C:\\Users\\U\\AppData\\Local\\Devbox\\integration\\wsl-desktop\\v1\\summary.json', 'sha256': legacy_hash}]}], 'protocol': True}
+        if live:
+            windows.update(processes=[dict(row) for row in processes], protocolCommand=command)
+        return {'wsl': {'files': [1]}, 'windows': windows}
+
+    def test_prod_process_and_protocol_are_their_own_difference_kinds(self):
+        """1.0.1: the user's running prod app is prod. A prod process that is gone, restarted or new, and a changed
+        devbox:// command, each fail the comparison under their own name, with both sides kept."""
+        same = teardown.compare_prod(self.fingerprint(), self.fingerprint())
+        self.assertEqual((same['prodUnchanged'], same['differenceKinds'], same['prodProcessChanged'], same['prodProtocolChanged']), (True, [], False, False))
+        self.assertTrue(teardown.compare_prod(self.fingerprint(processes=()), self.fingerprint(processes=()))['prodUnchanged'])  # no prod app at all
+        restarted = dict(self.RUNNING[0], startedUtc='2026-11-25T09:00:00.0000000Z')
+        other = {'pid': 9001, 'path': self.PROD_EXE, 'startedUtc': '2026-11-25T09:30:00.0000000Z'}
+        for after, gone, started in (((), 1, 0), ((restarted,), 1, 1), ((self.RUNNING[0], other), 0, 1), ((other,), 1, 1)):
+            result = teardown.compare_prod(self.fingerprint(), self.fingerprint(processes=after))
+            self.assertEqual((result['prodUnchanged'], result['differenceKinds']), (False, ['prodProcessChanged']), after)
+            self.assertEqual((len(result['prodProcesses']['gone']), len(result['prodProcesses']['started'])), (gone, started), after)
+            self.assertEqual((result['prodProcesses']['before'], result['prodProcesses']['after']), ([dict(self.RUNNING[0])], [dict(r) for r in after]))
+        command = teardown.compare_prod(self.fingerprint(), self.fingerprint(command='"C:\\other\\Devbox.exe" "%1"'))
+        self.assertEqual((command['prodUnchanged'], command['differenceKinds']), (False, ['prodProtocolChanged']))
+        self.assertEqual(command['prodProtocolCommand']['before'], self.COMMAND)
+        self.assertEqual(teardown.compare_prod(self.fingerprint(), self.fingerprint(command=None))['differenceKinds'], ['prodProtocolChanged'])
+        # A fingerprint without the two fields (an older helper) proves nothing about the running prod app.
+        for before, after in ((self.fingerprint(live=False), self.fingerprint(live=False)), (self.fingerprint(), self.fingerprint(live=False))):
+            old = teardown.compare_prod(before, after)
+            self.assertEqual((old['prodUnchanged'], old['differenceKinds']), (False, ['prodProcessChanged', 'prodProtocolChanged']))
+        wsl_only = teardown.compare_prod({'wsl': {'files': [1]}}, {'wsl': {'files': [1]}})
+        self.assertTrue(wsl_only['prodUnchanged'])  # the WSL-only flows have no Windows side
+        # M4 and A6 read it through finalize; the update flow's check through Session.prod_compare.
+        ops = {'quit': lambda: {'stopped': True}, 'assert_stopped': lambda: {'stopped': True}, 'wsl_cleanup': lambda: {'status': 'PASS'},
+               'windows_cleanup': lambda: {'state': 'ok'}, 'fingerprint_wsl': lambda: {'files': [1]},
+               'fingerprint_windows': lambda: self.fingerprint(processes=())['windows'], 'stage_cleanup': lambda: {'status': 'PASS'}}
+        out = teardown.finalize({'status': 'EXECUTED'}, {'ownership': 'o', 'launched': True, 'installed': True, 'staged': True}, self.fingerprint(), ops,
+                                lambda n, v: None)
+        self.assertEqual((out['status'], out['prodComparison']['status'], out['prodComparison']['differenceKinds']), ('FAIL', 'FAIL', ['prodProcessChanged']))
+        self.assertEqual(driver.m4_decision(out, True)[0], 'FAIL')
+        stub = Fake(before=self.fingerprint(), native=lambda script, **kw: self.fingerprint(processes=())['windows'], evidence=Path(tempfile.mkdtemp()),
+                    legacy_prefixes=[])
+        self.addCleanup(shutil.rmtree, str(stub.evidence))
+        with patch.object(driver.wsl_owned, 'fingerprint', lambda: {'files': [1]}):
+            with self.assertRaisesRegex(RuntimeError, 'Prod fingerprint changed .after-update.'):
+                driver.Session.prod_compare(stub, 'after-update')
 
     def test_legacy_writer_reported_not_dropped(self):
         result = teardown.compare_prod(self.fingerprint(), self.fingerprint(legacy_hash='C'), [self.LEGACY])
@@ -1784,9 +1850,44 @@ class ProdScope(unittest.TestCase):
         out = teardown.finalize({'status': 'EXECUTED'}, context, self.fingerprint(), ops, lambda n, v: None)
         self.assertEqual((out['status'], out['prodComparison']['status'], out['legacyExternalWriterChanged']), ('EXECUTED', 'PASS', True))
         ops['assert_stopped'] = lambda: (_ for _ in ()).throw(RuntimeError('alive'))
-        out = teardown.finalize({'status': 'EXECUTED'}, dict(context, retainedResources=['r']), self.fingerprint(), ops, lambda n, v: None)
+        ops['stage_cleanup'] = lambda: self.fail('the stage is never touched without a proven stop')
+        out = teardown.finalize({'status': 'EXECUTED'}, dict(context, retainedResources=['r'], stageDirectory='/mnt/c/stage-x'), self.fingerprint(), ops,
+                                lambda n, v: None)
         self.assertEqual(out['status'], 'FAIL')
-        self.assertEqual([r['status'] for r in out['cleanup'] if r['action'] in ('wsl', 'windows')], ['NOT_RUN', 'NOT_RUN'])
+        self.assertEqual([r['status'] for r in out['cleanup'] if r['action'] in ('wsl', 'windows', 'stage')], ['NOT_RUN', 'NOT_RUN', 'NOT_RUN'])
+        self.assertEqual((out['stageCleanup']['removed'], out['stageCleanup']['retained']), (False, True))
+        self.assertIn('/mnt/c/stage-x', out['retainedResources'])
+
+    def test_finalize_after_a_failing_quit_in_the_update_flow(self):
+        """Item 13: the update flow's quit (adopt, stop, observe) failed. With a stop that cannot be proven nothing is
+        uninstalled or removed; with a proven stop the cleanup goes on, and the run is FAIL either way."""
+        calls = []
+
+        def op(name, value=None, error=None):
+            def run():
+                calls.append(name)
+                if error:
+                    raise RuntimeError(error)
+                return value
+            return run
+        base = {'quit': op('quit', error='After 3 rounds of update-adopt and stop-owned an owned process may still run'),
+                'wsl_cleanup': op('wsl', {'status': 'PASS'}), 'windows_cleanup': op('windows', {'state': 'ok'}), 'fingerprint_wsl': lambda: {'files': [1]},
+                'fingerprint_windows': lambda: self.fingerprint()['windows'], 'stage_cleanup': op('stage', {'status': 'PASS'})}
+        context = {'ownership': 'o', 'launched': True, 'installed': True, 'staged': True, 'stageDirectory': '/mnt/c/stage-x', 'retainedResources': ['install'],
+                   'windowsResources': ['install']}
+        unproven = dict(base, assert_stopped=op('assert', error='An update runner or installer of the owned app is still running; preserve and report'))
+        out = teardown.finalize({'status': 'EXECUTED'}, context, self.fingerprint(), unproven, lambda n, v: None)
+        self.assertEqual(calls, ['quit', 'assert'])
+        self.assertEqual({r['action']: r['status'] for r in out['cleanup'] if r['action'] in ('quit', 'native-stopped-precondition', 'wsl', 'windows', 'stage')},
+                         {'quit': 'FAIL', 'native-stopped-precondition': 'FAIL', 'wsl': 'NOT_RUN', 'windows': 'NOT_RUN', 'stage': 'NOT_RUN'})
+        self.assertEqual(out['status'], 'FAIL')
+        self.assertTrue({'install', '/mnt/c/stage-x'} <= set(out['retainedResources']))
+        self.assertEqual(driver.m4_decision(out, True)[0], 'FAIL')
+        del calls[:]
+        proven = dict(base, assert_stopped=op('assert', {'stopped': True}))
+        out = teardown.finalize({'status': 'EXECUTED'}, context, self.fingerprint(), proven, lambda n, v: None)
+        self.assertEqual(calls, ['quit', 'assert', 'wsl', 'windows', 'stage'])
+        self.assertEqual(out['status'], 'FAIL')  # the failed quit row stays a FAIL
 
 
 
@@ -3162,7 +3263,8 @@ class FixR2ClRows(unittest.TestCase):
             typed.append(key)
             holder['daemon'].registered.discard(holder['tree'])
             shutil.rmtree(holder['tree'])
-        pane = Fake(begin=lambda case: typed.append(case), type_text=lambda tid, text, cl3_folder=None: typed.append(text), key=enter)
+        pane = Fake(begin=lambda case: typed.append(case), type_text=lambda tid, text, cl3_folder=None: typed.append(text), key=enter,
+                    capture=lambda tid, tool=None: [], enter_allowed=lambda tid, rule: rule == 'command')
         original = FakeClose.agents_create
 
         def create(self, params):
@@ -3177,7 +3279,8 @@ class FixR2ClRows(unittest.TestCase):
         self.assertEqual(row['candidates']['submodules'], [folder])
         self.assertEqual(row['cleanup']['code'], 'agents.worktree_has_submodules')
         self.assertIn("git worktree remove --force '%s'" % folder, row['cleanup']['appMessage'])
-        self.assertEqual(row['shell'], {'before': {'folderExists': True, 'listed': True}, 'listedAfter': False, 'folderExists': False})
+        self.assertEqual(row['shell'], {'before': {'folderExists': True, 'listed': True}, 'typed': True, 'echoed': True, 'listedAfter': False,
+                                        'folderExists': False})
         self.assertEqual((row['status'], row['parts']), ('NOT_RUN', {'a': True, 'b': True, 'c': True}))
         methods = [c[0] for c in daemon.calls]
         self.assertNotIn('agents.discard', methods)
@@ -3901,6 +4004,7 @@ class FixS85Round1(unittest.TestCase):
                             windows=lambda path: 'C:\\owned\\ownership.json', observed=lambda name, operation, needs=(): operation(),
                             native=lambda script, timeout=200, **params: order.append('launch') or {'stderr': 'C:\\owned\\stderr.log'},
                             set_phase=lambda side: order.append('phase'), instance=lambda side: order.append('instance') or {'status': 'PASS'})
+                stub.seal_after_launch = lambda reseal, stub=stub: driver.Session.seal_after_launch(stub, reseal)
                 with patch.object(driver, 'command', lambda argv, **kwargs: Fake(stdout=str(stderr) + '\n')), \
                         patch.object(driver.wsl_owned, 'seal', lambda *args: order.append('seal') or {}), \
                         patch.object(driver.wsl_owned, 'reseal', lambda *args: order.append('reseal') or {}):
@@ -4035,14 +4139,14 @@ class FixS85Round2(unittest.TestCase):
         self.assertGreaterEqual(live.clock.now - 1000.0, agents_live.TIMEOUTS['trustSelect'])
 
     def test_command_waits_before_enter(self):
-        live, pane = self.live(lambda n, events: ['› /quit'] if any(e[0] == 'type' for e in pane.events) and not any(e[0] == 'key' for e in pane.events) else ['idle'])
+        live, pane = self.live(lambda n, events: ['❯ /quit'] if any(e[0] == 'type' for e in pane.events) and not any(e[0] == 'key' for e in pane.events) else ['idle'])
         self.assertTrue(live.command('H1', 't2', '/quit', 'claude'))
         kinds = [e[0] for e in pane.events]
         typed, enter = kinds.index('type'), kinds.index('key')
         between = pane.events[typed + 1:enter]
         self.assertEqual(pane.events[enter][3], 'command')
         self.assertEqual(between[0][0], 'capture')
-        self.assertIn('› /quit', between[0][2])
+        self.assertIn('❯ /quit', between[0][2])
         self.assertEqual(between[-1][0], 'capture')
         self.assertGreaterEqual(pane.events[enter][1] - between[0][1], agents_live.COMMAND_SETTLE)
         self.assertGreaterEqual(pane.events[enter][1] - between[-1][1], 0)
@@ -4056,11 +4160,12 @@ class FixS85Round2(unittest.TestCase):
         self.assertNotIn('leftover', live.data['H1'])
 
     def test_command_clears_a_codex_leftover(self):
-        stuck, pane = self.live(lambda n, events: ['› /quit'])
+        typed = lambda events: any(e[0] == 'type' for e in events)
+        stuck, pane = self.live(lambda n, events: ['› /quit'] if typed(events) else ['› '])
         self.assertFalse(stuck.command('H1', 't2', '/quit', 'codex'))
         self.assertEqual([e[2] for e in pane.events if e[0] == 'key'], ['Enter', 'C-u'])
         self.assertEqual(stuck.data['H1']['leftover'], ['/quit'])
-        clear, pane = self.live(lambda n, events: ['› /quit'] if not any(e[0] == 'key' for e in events) else ['› '])
+        clear, pane = self.live(lambda n, events: ['› /quit'] if typed(events) and not any(e[0] == 'key' for e in events) else ['› '])
         self.assertTrue(clear.command('H1', 't2', '/quit', 'codex'))
         self.assertEqual([e[2] for e in pane.events if e[0] == 'key'], ['Enter'])
         self.assertNotIn('leftover', clear.data['H1'])
@@ -4155,6 +4260,1332 @@ class FixS85Round3(unittest.TestCase):
         text = (BASE / 'README.md').read_text()
         self.assertIn('⚠ Your login expires in <N> days · run /login to renew', text)
         self.assertIn('New version <x.y.z> is available. Run pi update', text)
+
+
+# --- 1.0.1 harness changes (D1-D5) ---------------------------------------------------------------------------
+class V101Artifacts(unittest.TestCase):
+    """D1: the artifact folder and the branch of each side are run arguments, checked strictly and bound by the approval."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.s7 = self.tmp / 's7'
+        for name, sha, run in (('cand-art', C_SHA, 7), ('base-art', B_SHA, 5)):
+            make_artifacts(self.s7 / name / 'artifacts', sha, run, '1.0.1')
+        self.binding = self.tmp / 'source-binding.json'
+        self.binding.write_text(json.dumps({'schema': 2, 'candidate': {'sha': C_SHA, 'version': '1.0.1', 'files': {}},
+                                            'baseline': {'sha': B_SHA, 'version': '1.0.1', 'files': {}}}))
+        self.answers = self.tmp / 'answers.json'
+        self.answers.write_text(json.dumps(answers()))
+        self.review = self.tmp / 'review-approval.json'
+
+    def argv(self, flow='update', **changes):
+        values = {'--flow': flow, '--candidate-sha': C_SHA, '--candidate-run': '7', '--candidate-artifacts': 'cand-art', '--baseline-sha': B_SHA,
+                  '--baseline-run': '5', '--baseline-artifacts': 'base-art', '--baseline-branch': 'main', '--windows-local': LOCAL,
+                  '--distro': 'Ubuntu', '--answers': str(self.answers), '--review': str(self.review)}
+        values.update(changes)
+        return [word for key, value in values.items() if value is not None for word in (key, value)]
+
+    def gates(self, argv):
+        with patch.object(driver, 'BINDING_FILE', self.binding):
+            return driver.gates(driver.parse(argv), root=self.s7)
+
+    def approve(self, argv):
+        """Write the approval a reviewer would write for argv: the values computed as README section 2.3 prints them."""
+        args = driver.parse(argv)
+        sides = driver.sides_of(args)
+        for row in sides.values():
+            row['artifactSha256'] = evidence.artifact_digest(evidence.artifact_dir(self.s7, row['artifacts']))
+        binding = evidence.approval_binding(self.binding.read_bytes(), args.flow, args.cases, self.answers.read_bytes(), sides['candidate'],
+                                            sides.get('baseline'), LOCAL, update_shape=args.update_shape, distro=args.distro)
+        self.review.write_text(json.dumps({'status': 'APPROVE', 'helperSha256': evidence.helper_hashes(BASE), 'binding': binding}))
+        return binding
+
+    def test_binding_pins_the_distro(self):
+        binding = self.approve(self.argv())
+        self.assertEqual(binding['distro'], 'Ubuntu')
+        self.gates(self.argv())
+        with self.assertRaisesRegex(ValueError, '^binding:'):
+            self.gates(self.argv(**{'--distro': 'Ubuntu-24.04'}))
+        wsl = self.argv('wsl-upgrade', **{'--baseline-branch': None})  # a WSL-only flow starts no Windows program: the distro is dropped and bound as null
+        self.assertIsNone(self.approve(wsl)['distro'])
+        side = binding['candidate']
+        for flow, shape, distro in (('fresh', None, None), ('wsl-fresh', None, 'Ubuntu'), ('update', 'same-version', None)):
+            with self.assertRaises(ValueError, msg=(flow, distro)):
+                evidence.approval_binding(b'{}', flow, [], b'{}', side, None, LOCAL, update_shape=shape, distro=distro)
+
+    def test_no_helper_names_an_artifact_folder(self):
+        self.assertFalse(hasattr(evidence, 'ARTIFACT_DIRS'))
+        for name, text in validate.helpers().items():
+            self.assertNotIn('windows-run-', text, name)
+
+    def test_folder_name_is_one_plain_component(self):
+        for bad in ('', '.', '..', 'a/b', 'a\\b', '/abs', 'runs', 'harness', '-x', 'x.', 'a b', 'a..b', 'x' * 129, None, 7):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                evidence.artifact_dir_name(bad)
+        self.assertEqual(evidence.artifact_dir_name('windows-run-1.0.1-0a1b2c3d'), 'windows-run-1.0.1-0a1b2c3d')
+
+    def test_folder_must_be_a_real_directory_under_the_root(self):
+        self.assertEqual(evidence.artifact_dir(self.s7, 'cand-art'), self.s7 / 'cand-art' / 'artifacts')
+        with self.assertRaises(ValueError):
+            evidence.artifact_dir(self.s7, 'absent')
+        (self.s7 / 'link').symlink_to(self.s7 / 'cand-art')
+        with self.assertRaises(ValueError):
+            evidence.artifact_dir(self.s7, 'link')
+        (self.s7 / 'bare').mkdir()
+        with self.assertRaises(ValueError):
+            evidence.artifact_dir(self.s7, 'bare')  # no artifacts/ inside
+        (self.s7 / 'inner').mkdir()
+        (self.s7 / 'inner' / 'artifacts').symlink_to(self.s7 / 'cand-art' / 'artifacts')
+        with self.assertRaises(ValueError):
+            evidence.artifact_dir(self.s7, 'inner')
+        (self.s7 / 'file').write_text('x')
+        with self.assertRaises(ValueError):
+            evidence.artifact_dir(self.s7, 'file')
+
+    def test_arguments(self):
+        args = driver.parse(self.argv())
+        self.assertEqual((args.candidate_artifacts, args.baseline_artifacts, args.candidate_branch, args.baseline_branch, args.update_shape),
+                         ('cand-art', 'base-art', 'main', 'main', 'same-version'))
+        self.assertEqual(driver.sides_of(args)['baseline'], {'sha': B_SHA, 'runId': 5, 'branch': 'main', 'artifacts': 'base-art'})
+        upgrade = driver.parse(self.argv('upgrade', **{'--baseline-branch': None}))
+        self.assertEqual(upgrade.baseline_branch, evidence.BRANCHES['baseline'])  # the upgrade flows keep their rc.1 default
+        bad = [self.argv(**{'--candidate-artifacts': None}), self.argv(**{'--baseline-artifacts': None}),
+               self.argv(**{'--baseline-branch': None}),  # the update flow's baseline branch is never guessed
+               self.argv(**{'--candidate-artifacts': '../x'}), self.argv(**{'--baseline-artifacts': 'cand-art'}),
+               self.argv(**{'--candidate-artifacts': 'runs'}), self.argv(**{'--candidate-branch': 'a b'}), self.argv(**{'--baseline-branch': '../x'}),
+               self.argv('fresh', **{'--baseline-sha': None, '--baseline-run': None, '--baseline-branch': None}),  # a baseline folder without a baseline
+               self.argv('fresh', **{'--baseline-sha': None, '--baseline-run': None, '--baseline-artifacts': None}),  # a baseline branch without a baseline
+               self.argv('upgrade', **{'--update-shape': 'same-version'}), self.argv(**{'--update-shape': 'other'})]
+        for argv in bad:
+            with self.assertRaises(SystemExit, msg=repr(argv)):
+                with patch('sys.stderr'):
+                    driver.parse(argv)
+        fresh = driver.parse(self.argv('fresh', **{'--baseline-sha': None, '--baseline-run': None, '--baseline-artifacts': None, '--baseline-branch': None}))
+        self.assertEqual((fresh.baseline_branch, fresh.update_shape, sorted(driver.sides_of(fresh))), (None, None, ['candidate']))
+
+    def test_binding_pins_the_folder_the_branch_and_the_shape(self):
+        argv = self.argv()
+        binding = self.approve(argv)
+        self.assertEqual(binding['candidate'], {'sha': C_SHA, 'runId': 7, 'branch': 'main', 'artifacts': 'cand-art',
+                                                'artifactSha256': evidence.artifact_digest(self.s7 / 'cand-art' / 'artifacts')})
+        self.assertEqual((binding['baseline']['artifacts'], binding['baseline']['branch'], binding['updateShape']), ('base-art', 'main', 'same-version'))
+        ctx = self.gates(argv)
+        self.assertEqual(ctx['sides']['candidate']['dir'], str(self.s7 / 'cand-art' / 'artifacts'))
+        # The same bytes under another folder name, another branch or another shape are another binding.
+        shutil.copytree(self.s7 / 'cand-art', self.s7 / 'cand-copy')
+        for change in ({'--candidate-artifacts': 'cand-copy'}, {'--candidate-branch': 'release/1.0.1'}, {'--baseline-branch': 'release/1.0.0'}):
+            with self.assertRaisesRegex(ValueError, '^binding:', msg=repr(change)):
+                self.gates(self.argv(**change))
+        with self.assertRaisesRegex(ValueError, 'existing real directory'):
+            self.gates(self.argv(**{'--candidate-artifacts': 'gone'}))
+        wsl = self.argv('wsl-upgrade', **{'--distro': None, '--baseline-branch': None})
+        self.assertNotIn('updateShape', self.approve(wsl))
+        with self.assertRaises(ValueError):
+            evidence.approval_binding(b'{}', 'upgrade', [], b'{}', binding['candidate'], binding['baseline'], LOCAL, update_shape='same-version', distro='Ubuntu')
+        with self.assertRaises(ValueError):
+            evidence.approval_binding(b'{}', 'update', [], b'{}', binding['candidate'], binding['baseline'], LOCAL, distro='Ubuntu')
+
+    def test_update_shape_is_refused_before_the_lock(self):
+        self.approve(self.argv())
+        self.binding.write_text(json.dumps({'schema': 2, 'candidate': {'sha': C_SHA, 'version': '1.0.1', 'files': {}},
+                                            'baseline': {'sha': B_SHA, 'version': '1.0.0', 'files': {}}}))
+        with self.assertRaisesRegex(ValueError, r'same-version needs equal bound versions.*execute\.rs:221-227'):
+            self.gates(self.argv())
+        with self.assertRaisesRegex(ValueError, '^binding:'):
+            self.gates(self.argv(**{'--update-shape': 'next-version'}))  # allowed to be asked for, and it is another binding
+
+
+class CodexTmux(FakeTmux):
+    """A codex-like composer on a virtual clock (D2). Text that arrives within `window` seconds of an Escape loses its first
+    character, as codex 0.172.0 did 4-8 ms after one. Enter submits the composer; C-u clears it."""
+
+    PLACEHOLDER = 'Ask Codex to do anything'
+
+    def __init__(self, clock, composer='', window=0.05, spinner=False, transcript=('\u203a Reply with OK and stop.', '\u2022 OK')):
+        super().__init__()
+        self.clock, self.composer, self.window, self.spinner = clock, composer, window, spinner
+        self.transcript, self.escaped, self.submitted, self.times, self.captures = list(transcript), None, [], [], 0
+
+    def __call__(self, argv, capture_output=True, timeout=10):
+        sub = argv[3]
+        self.times.append((self.clock.now, sub, argv[-1]))
+        if sub == 'send-keys' and '-l' in argv:
+            text = argv[-1]
+            if self.escaped is not None and self.clock.now - self.escaped < self.window:
+                text = text[1:]
+            self.composer += text
+        elif sub == 'send-keys':
+            key = argv[-1]
+            if key == 'Escape':
+                self.escaped = self.clock.now
+            elif key == 'Enter':
+                self.submitted.append(self.composer)
+                self.transcript.append('\u203a ' + self.composer)
+                self.composer = ''
+            elif key == 'C-u':
+                self.composer = ''
+        elif sub == 'capture-pane':
+            self.captures += 1
+        popup = ['\u203a %s  exit Codex' % self.composer, ''] if self.composer == '/quit' else []
+        tail = ['  frame %d' % self.captures] if self.spinner else []
+        self.screen = '\n'.join(self.transcript + [''] + popup + ['\u203a ' + (self.composer or self.PLACEHOLDER), '', '  gpt \u00b7 status line'] + tail) + '\n'
+        return super().__call__(argv, capture_output, timeout)
+
+    def keys(self):
+        return [call[-1] for call in self.sent() if call[0] == 'send-keys']
+
+
+class V101Keys(unittest.TestCase):
+    """D2: nothing is typed right after a key, and a command's Enter needs the input row to be exactly the command."""
+
+    def live(self, **tmux):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.clock = FakeClock()
+        self.tmux = CodexTmux(self.clock, **tmux)
+        self.m = {'nonce': NONCE, 'terminalIds': [], 'agents': {'a1': {'terminalIds': ['t2'], 'profile': 'codex'}}}
+        self.pane = agents_live.Pane(lambda: self.m, answers(), NONCE, run=self.tmux, clock=self.clock)
+        self.pane.begin('H2X-RESUME')
+        return agents_live.Live(lambda method, params: {}, lambda: self.m, lambda *a, **k: None, Path(tmp.name), answers(), NONCE, self.pane, None,
+                                clock=self.clock, home=Path(tmp.name))
+
+    def test_the_fake_loses_the_first_character_right_after_escape(self):
+        """The defect itself, on the raw tmux calls: Escape, then `/quit` 4 ms later arrives as `quit`."""
+        self.live()
+        self.tmux([*agents_live.TMUX, 'send-keys', '-t', '=t2:', 'Escape'])
+        self.clock.now += 0.004
+        self.tmux([*agents_live.TMUX, 'send-keys', '-t', '=t2:', '-l', '--', '/quit'])
+        self.assertEqual(self.tmux.composer, 'quit')
+
+    def test_text_after_escape_waits_for_the_pane(self):
+        live = self.live()
+        live.press('H2X-RESUME', 't2', 'Escape')
+        self.assertEqual(self.pane.keyed, {})  # settled right after the key, before anything else can follow
+        escaped = self.tmux.escaped
+        self.assertGreaterEqual(self.clock.now - escaped, agents_live.KEY_SETTLE)
+        self.assertTrue(live.command('H2X-RESUME', 't2', '/quit', 'codex'))
+        self.assertEqual(self.tmux.submitted, ['/quit'])
+        typed = next(t for t, sub, last in self.tmux.times if sub == 'send-keys' and last == '/quit')
+        between = [sub for t, sub, last in self.tmux.times if escaped < t <= typed]
+        self.assertGreaterEqual(typed - escaped, agents_live.KEY_SETTLE)
+        self.assertGreaterEqual(between.count('capture-pane'), 2)  # two equal captures before the text
+        self.assertEqual(live.data['H2X-RESUME'].get('noEcho'), None)
+
+    def test_the_pane_settles_by_itself(self):
+        """A caller that goes around Live (a direct pane.key or pane.paste) is covered too: the next text waits."""
+        self.live()
+        self.pane.key('t2', 'Escape')
+        self.assertIn('t2', self.pane.keyed)
+        self.pane.type_text('t2', '/quit')
+        self.assertEqual((self.tmux.composer, self.pane.keyed), ('/quit', {}))
+        self.assertEqual(self.pane.settles[-1]['after'], 'Escape')
+        self.assertTrue(self.pane.settles[-1]['stable'])
+        self.pane.paste('t2', '!')
+        started = self.clock.now
+        self.pane.key('t2', 'C-u')  # a key after a paste waits as well
+        self.assertGreaterEqual(self.clock.now - started, agents_live.KEY_SETTLE)
+
+    def test_a_lost_character_gets_no_enter(self):
+        """If the first character is lost all the same (the window outlasts the settle), the row is `quit`: no Enter."""
+        live = self.live(window=30.0)
+        live.press('H2X-RESUME', 't2', 'Escape')
+        self.assertFalse(live.command('H2X-RESUME', 't2', '/quit', 'codex'))
+        self.assertEqual(self.tmux.submitted, [])
+        self.assertNotIn('Enter', self.tmux.keys())
+        data = live.data['H2X-RESUME']
+        self.assertEqual((data['noEcho'], data['cleared']), (['/quit'], ['/quit']))
+        self.assertEqual(data['inputRows'], [{'text': '/quit', 'before': CodexTmux.PLACEHOLDER, 'after': 'quit'}])
+        self.assertEqual((self.tmux.keys()[-1], self.tmux.composer), ('C-u', ''))  # the harness's own residue is cleared
+
+    def test_quit_on_top_of_a_leftover_is_not_submitted(self):
+        """Run cc704e6f-282b323d: `quit` stayed in the composer, the next `/quit` made `quit/quit`, and the old check
+        (the text anywhere in the last 60 lines) pressed Enter on it."""
+        live = self.live(composer='quit')
+        self.assertFalse(live.command('H2X-RESUME1S', 't2', '/quit', 'codex'))
+        shown = [line for capture in live.data['H2X-RESUME1S']['captures'] for line in capture['lines']]
+        self.assertTrue(any('/quit' in line and 'quit/quit' in line for line in shown))  # the old rule's condition (the text anywhere) did hold
+        self.assertEqual(self.tmux.submitted, [])
+        self.assertNotIn('Enter', self.tmux.keys())
+        self.assertEqual(live.data['H2X-RESUME1S']['inputRows'][0]['after'], 'quit/quit')
+        self.assertEqual(agents_live.input_echo(['\u203a /quit', '\u2022 old', '\u203a quit/quit', '  status'], 'codex', '/quit'), (False, 'quit/quit'))
+        # After the clear the next command lands on an empty composer and is submitted as itself.
+        self.assertTrue(live.command('H2X-RESUME1S', 't2', '/quit', 'codex'))
+        self.assertEqual(self.tmux.submitted, ['/quit'])
+
+    def test_enter_rule_needs_the_exact_input_row(self):
+        self.live()
+        pane, tmux = self.pane, self.tmux
+        pane.capture('t2', 'codex')
+        tmux.composer = 'quit'
+        pane.type_text('t2', '/quit')  # composer: quit/quit
+        pane.capture('t2', 'codex')
+        with self.assertRaises(agents_live.Refused):
+            pane.key('t2', 'Enter', 'command')
+        self.assertEqual(tmux.submitted, [])
+        tmux.composer = '/quit'  # the popup row above the composer starts with the marker too; the last marker row decides
+        pane.capture('t2', 'codex')
+        self.assertIn('\u203a /quit  exit Codex', pane.captured['t2'][1])
+        pane.key('t2', 'Enter', 'command')
+        self.assertEqual(tmux.submitted, ['/quit'])
+
+    def test_a_stale_row_equal_to_the_command_gets_no_enter(self):
+        """The last marker row already reads `/quit` before anything is typed (a transcript row that looks like the input
+        row, or a draft), and the typing changes nothing on the screen: the row is no proof, so no Enter."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        clock, tmux = FakeClock(), FakeTmux()
+        tmux.screen = '\u203a Reply with OK and stop.\n\u2022 OK\n\u203a /quit\n  status line\n'
+        m = {'nonce': NONCE, 'terminalIds': [], 'agents': {'a1': {'terminalIds': ['t2'], 'profile': 'codex'}}}
+        pane = agents_live.Pane(lambda: m, answers(), NONCE, run=tmux, clock=clock)
+        pane.begin('H2')
+        live = agents_live.Live(lambda method, params: {}, lambda: m, lambda *a, **k: None, Path(tmp.name), answers(), NONCE, pane, None, clock=clock,
+                                home=Path(tmp.name))
+        self.assertFalse(live.command('H2', 't2', '/quit', 'codex'))
+        self.assertEqual([call for call in tmux.sent() if call[0] == 'send-keys' and call[-1] in agents_live.KEYS], [])  # no Enter, and no C-u on an unchanged row
+        self.assertEqual(live.data['H2']['inputRows'], [{'text': '/quit', 'before': '/quit', 'after': '/quit'}])
+        pane.capture('t2', 'codex')
+        with self.assertRaises(agents_live.Refused):
+            pane.key('t2', 'Enter', 'command')  # the pane's own rule refuses the same screen
+        fresh = agents_live.Pane(lambda: m, answers(), NONCE, run=tmux, clock=clock)
+        fresh.type_text('t2', '/quit')  # typed without a capture before it
+        fresh.capture('t2', 'codex')
+        with self.assertRaises(agents_live.Refused):
+            fresh.key('t2', 'Enter', 'command')
+
+    def test_input_row_rules(self):
+        echo = agents_live.input_echo
+        empty = ['\u276f ', '\u203a Ask Codex to do anything']  # the capture before the typing, for both markers
+        self.assertEqual(echo(['\u276f /exit                    Exit the CLI', '  /context', '\u2500' * 20, '\u276f /exit', '\u2500' * 20], 'claude', '/exit', empty),
+                         (True, '/exit'))
+        self.assertEqual(echo(['\u276f /exit', '\u276f /exit   Exit the CLI'], 'claude', '/exit', empty)[0], False)  # the list row is last: unknown layout, no Enter
+        self.assertEqual(echo(['\u2502 \u203a /feedback \u2502'], 'codex', '/feedback', empty), (True, '/feedback'))
+        self.assertEqual(echo(['nothing here'], 'codex', '/quit', empty), (False, None))
+        self.assertEqual(echo(['\u203a !echo s7'], 'codex', '!echo s7', empty)[0], True)
+        # The row before the typing: none known, or already the command, never justifies an Enter.
+        self.assertEqual(echo(['\u203a /quit'], 'codex', '/quit'), (False, '/quit'))
+        self.assertEqual(echo(['\u203a /quit'], 'codex', '/quit', ['\u2022 old', '\u203a /quit']), (False, '/quit'))
+        self.assertEqual(echo(['\u203a echo s7'], 'codex', '!echo s7', ['\u203a echo s7'])[0], False)  # either form of a `!` command
+        self.assertEqual(echo(['\u203a /quit'], 'codex', '/quit', ['no marker row at all']), (True, '/quit'))
+        self.assertEqual(agents_live.echo_forms("!env | grep '^DEVBOX_'"), {"!env | grep '^DEVBOX_'", "env | grep '^DEVBOX_'"})
+        # No known marker (opencode, pi): one more whole line equals the text than before, and the text is inside no other text.
+        before = ['  some transcript', '']
+        self.assertEqual(echo(['  some transcript', '\u2503  /exit', '\u2503'], 'opencode', '/exit', before), (True, '/exit'))
+        self.assertEqual(echo(['  /exit    Exit the app', '\u2503  /exit'], 'opencode', '/exit', before)[0], True)  # a list row for the command
+        self.assertEqual(echo(['\u2192 /quit   Quit pi', '/quit'], 'pi', '/quit', before)[0], True)
+        self.assertEqual(echo(['\u2503  /exit'], 'opencode', '/exit', None)[0], False)  # no capture before the text
+        self.assertEqual(echo(['\u2503  exit/exit'], 'opencode', '/exit', before), (False, 'exit/exit'))
+        self.assertEqual(echo(['\u2503  /exit/exit'], 'opencode', '/exit', before)[0], False)
+        self.assertEqual(echo(['/quit', '\u2503  quit'], 'pi', '/quit', ['/quit'])[0], False)  # an old line, and the composer lost a character
+        self.assertEqual(echo(["\u2503  env | grep '^DEVBOX_'"], 'opencode', "!env | grep '^DEVBOX_'", before)[0], True)
+        self.assertTrue(agents_live.shell_echo(['u@h:~/p$ git worktree remove --force \'/f/y\''], "git worktree remove --force '/f/y'"))
+        for lines in (['$ git worktree remove --force \'/f/y\'', 'error'], ['$ x', "git worktree remove --force '/f/y' && rm"],
+                      ["$ git worktree remove --force '/f/y'", "$ git worktree remove --force '/f/y'"], [],
+                      ["git worktree remove --force '/f/y'", "git worktree remove --force '/f/y'", "$ git worktree remove --force '/f/y'"],
+                      ["$ git worktree remove --force '/f/y'git worktree remove --force '/f/y'"]):
+            self.assertFalse(agents_live.shell_echo(lines, "git worktree remove --force '/f/y'"), lines)
+        # Text that arrived before the prompt: the terminal echoed it once, then the shell shows it after its prompt.
+        self.assertTrue(agents_live.shell_echo(["git worktree remove --force '/f/y'", "u@h:~/p$ git worktree remove --force '/f/y'", ''],
+                                               "git worktree remove --force '/f/y'"))
+        self.assertTrue(agents_live.shell_ready(['u@h:~/p$ '], ['u@h:~/p$ ']))
+        for previous, lines in ((None, ['u@h:~/p$ ']), ([''], ['u@h:~/p$ ']), (['', ''], ['', ''])):
+            self.assertFalse(agents_live.shell_ready(previous, lines))
+
+    def test_settle_is_bounded_on_a_screen_that_never_rests(self):
+        self.live(spinner=True)
+        self.pane.key('t2', 'Escape')
+        sent = self.clock.now
+        lines = self.pane.settle('t2', 'codex')
+        self.assertIsNotNone(lines)
+        waited = self.clock.now - sent
+        self.assertGreaterEqual(waited, agents_live.KEY_SETTLE_MAX)
+        self.assertLess(waited, agents_live.KEY_SETTLE_MAX + 2 * agents_live.POLL + 0.01)
+        self.assertEqual((self.pane.settles[-1]['stable'], self.pane.keyed), (False, {}))
+        self.assertIsNone(self.pane.settle('t2'))  # nothing waits any more
+
+    def test_a_stop_screen_during_the_settle_ends_the_keys(self):
+        self.live()
+        self.pane.key('t2', 'Escape')
+        self.tmux.transcript.append('Update available! Run codex update')
+        with self.assertRaises(agents_live.StopPrompt):
+            self.pane.type_text('t2', '/quit')
+        self.assertEqual(self.tmux.composer, '')
+        with self.assertRaises(agents_live.Refused):
+            self.pane.type_text('t2', '/quit')
+
+    def test_no_row_types_or_enters_around_the_guard(self):
+        """Every typed command's Enter goes through Live.command, and CL3's through the pane's rule on a capture."""
+        tree = ast.parse((BASE / 'agents_live.py').read_text())
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == 'press'
+                 and len(node.args) >= 4 and isinstance(node.args[3], ast.Constant) and node.args[3].value == 'command']
+        self.assertEqual([call.lineno for call in calls if not any(isinstance(f, ast.FunctionDef) and f.name == 'command' and f.lineno <= call.lineno <= f.end_lineno
+                                                                   for f in ast.walk(tree))], [])
+        cl3 = (BASE / 'daemon_rows.py').read_text()
+        self.assertLess(cl3.index("self.pane.enter_allowed(tid, 'command')"), cl3.index("self.pane.key(tid, 'Enter', 'command')"))
+
+    def test_cl3_types_only_after_the_shell_prompt(self):
+        """The command is typed once the new terminal shows a prompt on two captures in a row, not into an empty pane."""
+        events, screens = [], [[''], [''], ['u@h:~/p$ '], ['u@h:~/p$ ']]
+        holder = {}
+
+        def capture(tid, tool=None):
+            lines = screens.pop(0) if len(screens) > 1 else screens[0]
+            events.append(('capture', list(lines)))
+            return lines
+
+        def enter(tid, key, rule=None, project=None):
+            events.append(('key', key))
+            holder['daemon'].registered.discard(holder['tree'])
+            shutil.rmtree(holder['tree'])
+        pane = Fake(begin=lambda case: None, type_text=lambda tid, text, cl3_folder=None: events.append(('type', text)), key=enter, capture=capture,
+                    enter_allowed=lambda tid, rule: True)
+        original = FakeClose.agents_create
+
+        def create(self, params):
+            reply = original(self, params)
+            holder.update(daemon=self, tree=reply['worktreePath'])
+            return reply
+        helper = FixR2ClRows('test_cl3_keeps_its_folder_for_the_refusal')
+        try:
+            with patch.object(FakeClose, 'agents_create', create):
+                daemon, row, root = helper.run_rows('cl3', pane=pane)
+        finally:
+            helper.doCleanups()
+        typed = next(i for i, event in enumerate(events) if event[0] == 'type')
+        self.assertEqual([event for event in events[:typed]][-2:], [('capture', ['u@h:~/p$ ']), ('capture', ['u@h:~/p$ '])])
+        self.assertGreaterEqual(typed, 4)  # the two empty captures did not count as a prompt
+        self.assertEqual(events[-1], ('key', 'Enter'))
+        self.assertEqual((row['shell']['echoed'], row['parts']['b']), (True, True))
+
+    def test_cl3_without_the_echo_presses_no_enter(self):
+        typed = []
+        pane = Fake(begin=lambda case: None, type_text=lambda tid, text, cl3_folder=None: typed.append(text), key=lambda *a, **k: typed.append('key'),
+                    capture=lambda tid, tool=None: [], enter_allowed=lambda tid, rule: False)
+        helper = FixR2ClRows('test_cl3_keeps_its_folder_for_the_refusal')
+        try:
+            daemon, row, root = helper.run_rows('cl3', pane=pane)
+        finally:
+            helper.doCleanups()
+        self.assertEqual(len(typed), 1)  # the command was typed, and no key followed
+        self.assertEqual((row['shell']['typed'], row['shell']['echoed'], row['shell']['folderExists']), (True, False, True))
+        self.assertEqual((row['status'], row['parts']['b']), ('FAIL', False))
+
+
+class V101Scripts(unittest.TestCase):
+    """D3 and D4, static: the launch paths and the encoding of the PowerShell helpers."""
+
+    def test_every_ps1_is_pure_ascii(self):
+        names = sorted(path.name for path in BASE.glob('*.ps1'))
+        self.assertEqual(names, ['native-cdp.ps1', 'native-lifecycle.ps1', 'native-observe.ps1', 'process-launch.ps1'])
+        for name in names:
+            data = (BASE / name).read_bytes()
+            self.assertEqual([byte for byte in data if byte >= 0x80], [], name)
+        self.assertEqual(validate.scan_ps1_encoding(), [])
+
+    def test_encoding_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / 'ascii.ps1').write_bytes(b"$a='x'\n")
+            (base / 'bom.ps1').write_bytes(b'\xef\xbb\xbf' + "# \uc124\uce58\n".encode('utf-8'))
+            (base / 'not-a-script.txt').write_bytes("\uc124\uce58".encode('utf-8'))
+            self.assertEqual(validate.scan_ps1_encoding(base), [])
+            (base / 'bare.ps1').write_bytes(b"$a=1\n$b=2\n# " + "\u00a7".encode('utf-8') + b"5\n")
+            (base / 'broken.ps1').write_bytes(b'\xef\xbb\xbf# \xff\n')
+            findings = validate.scan_ps1_encoding(base)
+            self.assertEqual(len(findings), 2)
+            self.assertIn('bare.ps1:3: non-ASCII byte 0xc2 in a .ps1 without a UTF-8 BOM', findings)
+            self.assertTrue(any(f.startswith('broken.ps1: has a UTF-8 BOM but is not valid UTF-8') for f in findings))
+        # The validator's own run fails on it too.
+        with patch.object(validate, 'scan_ps1_encoding', lambda base=None: ['x.ps1:1: non-ASCII byte 0xc2 in a .ps1 without a UTF-8 BOM']), \
+                patch('sys.stdout', io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'non-ASCII byte'):
+                validate.main(['--worktree', '/nonexistent'])
+
+    def test_no_start_process_with_redirection(self):
+        self.assertEqual(validate.scan_ps1_launch(validate.helpers()), [])
+        bad = {'x.ps1': "$a=1\n$p=Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $o -RedirectStandardError $e\n# Start-Process -RedirectStandardOutput\n"
+                        "Start-Process $exe -NoNewWindow\nStart-Process -FilePath $setup -ArgumentList '/S' -PassThru\n", 'x.py': 'Start-Process -RedirectStandardOutput'}
+        self.assertEqual([f.split(':')[1] for f in validate.scan_ps1_launch(bad)], ['2', '4'])
+
+    def test_the_owned_executable_starts_only_through_the_handle_list(self):
+        lifecycle = (BASE / 'native-lifecycle.ps1').read_text()
+        launcher = (BASE / 'process-launch.ps1').read_text()
+        self.assertNotIn('-RedirectStandard', lifecycle)
+        self.assertEqual(lifecycle.count("Invoke-OwnedLoggedProcess -Executable $exe -Arguments '--self-check --channel accept'"), 2)
+        self.assertEqual(lifecycle.count('. (Load-Launcher)'), 3)  # install, upgrade, launch
+        self.assertIn('Start-OwnedLoggedProcess -Executable $exe -StandardOutput $stdout -StandardError $stderr', lifecycle)
+        # The only other starts are the installers and the uninstaller: ShellExecute, no redirection, a bounded wait.
+        starts = [line.strip() for line in lifecycle.splitlines() if 'Start-Process' in line.split('#', 1)[0]]
+        self.assertEqual(len(starts), 3)
+        self.assertTrue(all('-PassThru' in line and ('$setup' in line or '$staged.setup' in line or '$uninstall' in line) for line in starts))
+        self.assertIn('new IntPtr(0x20002)', launcher)  # PROC_THREAD_ATTRIBUTE_HANDLE_LIST
+        self.assertIn('Marshal.AllocHGlobal(IntPtr.Size*3)', launcher)  # exactly NUL and the two logs
+        self.assertIn('public static long[] Run(', launcher)
+        self.assertIn('WaitForSingleObject(info.process,(uint)wait)', launcher)
+        self.assertFalse(launcher.encode().startswith(b'\xef\xbb\xbf'))
+
+    def test_launch_environment_is_per_process_and_restored(self):
+        block = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'launch')
+        self.assertIn('$env:DEVBOX_UPDATE_FIXTURE=$UpdateFixture', block)
+        self.assertIn('} finally {$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$old;$env:DEVBOX_UPDATE_FIXTURE=$oldFixture}', block)
+        self.assertLess(block.index("throw 'The update fixture must be the update folder of the owned stage'"), block.index('$env:DEVBOX_UPDATE_FIXTURE=$UpdateFixture'))
+        self.assertIn("-ne 'installer.exe|metadata.json|owner.json'", block)
+        self.assertIn("--remote-debugging-port=$CdpPort --remote-debugging-address=127.0.0.1", block)
+
+    def test_cdp_helper_is_bounded_and_owned(self):
+        text = (BASE / 'native-cdp.ps1').read_text()
+        self.assertIn("[ValidateSet('update_status','update_check','update_download','update_install_summary','update_install_confirm')][string]$Command", text)
+        for bound in ('$request.Timeout=5000', '$request.ReadWriteTimeout=5000', "5000 'Debug socket connect'", "5000 'Debug socket send'",
+                      "Await $receive $left 'Debug socket reply'", '$TimeoutMs -lt 1000 -or $TimeoutMs -gt 60000', '$cancel.CancelAfter($TimeoutMs+15000)'):
+            self.assertIn(bound, text)
+        for rule in ("throw 'The debug port does not belong to exactly one running owned app'", "throw 'The debug port listens beyond 127.0.0.1'",
+                     "throw 'The debug port listener does not descend from the owned app'", "throw 'The page debugger address is not on the owned port'",
+                     "'http://127.0.0.1:'+$Port+'/json/list'"):
+            self.assertIn(rule, text)
+        for verb in ('Start-Process', 'Stop-Process', 'Remove-Item', 'Set-Content', 'Input.dispatch', 'quit_prepared', 'quit_app', '.Kill('):
+            self.assertNotIn(verb, text)
+        self.assertRegex(text, r'finally \{\s+\$cancel\.Cancel\(\)\s+\$socket\.Abort\(\)')
+        stopped = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'assert-stopped')
+        self.assertIn("throw ('An owned debug port is still listening; preserve and report: '", stopped)
+        self.assertIn("throw 'An update runner or installer of the owned app is still running; preserve and report'", stopped)
+
+    def test_prod_fingerprint_reads_the_running_app_and_the_protocol_command(self):
+        text = (BASE / 'native-observe.ps1').read_text()
+        block = text[text.index('# fingerprint: prod channel identity only, read-only.'):]
+        self.assertIn("[string]::Equals($image,$_,[StringComparison]::OrdinalIgnoreCase)", block)
+        self.assertIn("@{pid=$_.Id;path=$_.Path;startedUtc=$_.StartTime.ToUniversalTime().ToString('o')}", block)
+        self.assertIn("$protocolKey='HKCU:\\Software\\Classes\\devbox\\shell\\open\\command'", block)
+        self.assertIn('protocolCommand=$protocolCommand;', block)
+        self.assertIn('processes=$processes;', block)
+        self.assertIn("$_+'\\Devbox.exe'", block)
+        # One row per install folder: the registry's quoted InstallLocation and the plain default folder are the same folder.
+        trim = block.index("$root=([string]$dir).Trim().Trim('\"').TrimEnd('\\')")
+        unique = block.index("if ($root -and -not @($installs | Where-Object { [string]::Equals($_,$root,[StringComparison]::OrdinalIgnoreCase) }).Count) { $installs+=$root }")
+        self.assertLess(trim, unique)
+        self.assertLess(unique, block.index('foreach ($dir in $installs) { $files+= @{root=$dir;'))
+        self.assertNotIn('Select-Object -Unique', block)
+        self.assertFalse(any(verb in block for verb in ('Remove-', 'Set-', 'New-Item', 'Stop-', 'Start-', '.Kill(', 'Add-Type')))  # read-only
+
+    def test_update_install_target_is_guarded(self):
+        lifecycle = (BASE / 'native-lifecycle.ps1').read_text()
+        self.assertIn("$nsisKey='HKCU:\\Software\\github\\Devbox Accept'", lifecycle)
+        self.assertIn('$defaultInstall="$local\\Devbox Accept"', lifecycle)
+        memory = lifecycle[lifecycle.index('function Test-InstallMemory {'):lifecycle.index('function Remove-OwnedNsisKey {')]
+        self.assertIn("$value=$key.GetValue('')", memory)  # the (default) value, as every earlier run recorded it
+        self.assertIn("[string]::Equals($value.TrimEnd('\\'),$install.TrimEnd('\\'),[StringComparison]::OrdinalIgnoreCase)", memory)
+        block = lifecycle[lifecycle.index("if ($Action -like 'update-*') {"):lifecycle.index("$exe=Check-Exe $native")]
+        begin = block[block.index("if ($Action -eq 'update-begin')"):block.index("if (-not $native.update) {throw 'No update was begun in this run'}")]
+        recorded = begin.index('Add-Member -NotePropertyName update ')
+        self.assertLess(begin.index("if (-not (Test-InstallMemory)) {throw"), recorded)  # before the update is even recorded as begun
+        self.assertLess(begin.index("if (Test-Path -LiteralPath $defaultInstall) {throw"), recorded)
+        adopt = block[block.index("if ($Action -eq 'update-adopt')"):]
+        saved = adopt.index('Save-Native $native')
+        self.assertLess(saved, adopt.index("if ($row.defaultInstallPresent) {throw"))  # the relaunched app is recorded first, so it can be stopped
+        self.assertLess(adopt.index("if ($row.defaultInstallPresent) {throw"), adopt.index('$row | ConvertTo-Json'))
+        stopped = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'assert-stopped')
+        self.assertIn("if (Test-Path -LiteralPath $defaultInstall) {throw", stopped)
+        launch = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'launch')
+        tie = launch.index("throw 'The update fixture installer is not the staged candidate installer'")
+        self.assertLess(launch.index("$candidate=Check-Stage (Join-Path $stageRoot 'candidate')"), tie)
+        self.assertLess(tie, launch.index('$env:DEVBOX_UPDATE_FIXTURE=$UpdateFixture'))
+        uninstall = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'uninstall')
+        self.assertLess(uninstall.index("throw 'Unexpected foreign file name'"), uninstall.index("Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru"))
+        self.assertLess(uninstall.index("throw 'Foreign file plan belongs to another run'"), uninstall.index("Start-Process -FilePath $uninstall"))
+
+    def test_a_self_check_that_does_not_end_is_stopped_on_its_own_handle(self):
+        launcher = (BASE / 'process-launch.ps1').read_text()
+        self.assertIn('else if(state==0x102) { code=(TerminateProcess(info.process,1)&&WaitForSingleObject(info.process,10000)==0)?-2:-1; }', launcher)
+        self.assertIn('stoppedOnTimeout=($row[2] -eq -2)', launcher)
+        lifecycle = (BASE / 'native-lifecycle.ps1').read_text()
+        self.assertEqual(lifecycle.count('stoppedOnTimeout=$self.stoppedOnTimeout'), 2)
+        self.assertEqual(lifecycle.count("{'NOT stopped: retain and report'}"), 2)
+
+    def test_readme_names_the_recovery_after_an_update(self):
+        text = (BASE / 'README.md').read_text()
+        section = text[text.index('## 5. If a run is interrupted'):text.index('## 6. ')]
+        order = [section.index("-Action 'update-adopt'"), section.index("-Action 'stop-owned'"), section.index("-Action 'assert-stopped'"),
+                 section.index("-Action 'uninstall'")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("-WaitSeconds '600'", section)
+
+    def test_update_actions_never_stop_a_process(self):
+        lifecycle = (BASE / 'native-lifecycle.ps1').read_text()
+        block = lifecycle[lifecycle.index("if ($Action -like 'update-*') {"):lifecycle.index("$exe=Check-Exe $native")]
+        self.assertNotIn('Stop-Process', block)
+        self.assertNotIn('Remove-Item', block)
+        self.assertIn("throw 'The update runner or installer is still running; nothing is adopted; retain and report'", block)
+        self.assertLess(block.index("if ($Action -eq 'update-begin')"), block.index("if ($Action -eq 'update-observe')"))
+        self.assertIn("if ($apps.Count -ne 1) {throw 'Exactly one running owned app with a debug port and the update fixture is required'}", block)
+        self.assertEqual(block.count('Save-Native $native'), 2)  # begin and adopt; observe writes nothing
+
+    def test_uninstall_reads_the_foreign_files_before_the_owned_removal(self):
+        block = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'uninstall')
+        read, removal = block.index('$foreignFirst=Foreign-Rows'), block.index('Remove-Item -LiteralPath $owned -Recurse -Force')
+        self.assertLess(block.index("throw 'Uninstaller left installed executable; preserve and report'"), read)
+        self.assertLess(read, removal)
+        # The read waits (read-only, bounded) for the uninstaller's own end, and is taken twice.
+        wait = block.index('while (((Test-Path -LiteralPath $uninstall) -or (Test-Path -LiteralPath $foreignKey)) -and [DateTime]::UtcNow -lt $deadline)')
+        self.assertLess(block.index("$foreignKey='HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Devbox Accept'"), wait)
+        self.assertLess(wait, block.index('$foreignEnded=-not'))
+        self.assertLess(block.index('$foreignEnded=-not'), read)
+        self.assertLess(read, block.index('Start-Sleep -Milliseconds 1000'))
+        self.assertLess(block.index('Start-Sleep -Milliseconds 1000'), block.index('$foreignRows=Foreign-Rows'))
+        for name in ('foreignAfterUninstall', 'foreignUninstallerEnded', 'foreignStable', 'foreignWaitMs'):
+            self.assertIn('Add-Member -NotePropertyName ' + name + ' ', block)
+        first_removal = block.index('foreach ($row in $foreignRows) { if ($row.exists) { Remove-Item')
+        self.assertLess(block.index('Add-Member -NotePropertyName foreignStable '), first_removal)  # recorded before anything is removed
+        pattern = re.search(r"\(\$prefix\+'([^']+)'\)\) \{throw 'Unexpected foreign file name'\}", block).group(1)
+        token = 'owned-0123456789ab'
+        for kind in foreign_files.SETS:
+            for name, _ in foreign_files.plan(token, kind):
+                self.assertRegex(name, '^' + re.escape(foreign_files.prefix(token)) + pattern, name)
+            self.assertRegex(foreign_files.directory_name(token, kind), '^' + re.escape(foreign_files.prefix(token)) + '[a-z0-9]+$')
+        for bad in ('s7-foreign-%s-../x.txt' % token, 's7-foreign-%s-a/b/c.txt' % token, 'Devbox.exe', 's7-foreign-owned-ffffffffffff-u1.txt'):
+            self.assertNotRegex(bad, '^' + re.escape(foreign_files.prefix(token)) + pattern)
+
+
+def release_fixture(tmp, source=B_SHA, baseline='1.0.1', candidate='1.0.1', data=b'accept installer bytes'):
+    installer = Path(tmp) / 'Devbox Accept_setup.exe'
+    installer.write_bytes(data)
+    return update_fixture.build_fixture(Path(tmp) / 'update', source, installer, hashlib.sha256(data).hexdigest(), baseline, candidate)
+
+
+class V101UpdateFixture(unittest.TestCase):
+    """D5: the fixture the accept build reads (fixture.rs, release.rs), mirrored, and the version pair it can run."""
+
+    def test_built_fixture_is_what_the_product_accepts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = release_fixture(tmp)
+            folder = Path(tmp) / 'update'
+            self.assertEqual(sorted(p.name for p in folder.iterdir()), ['installer.exe', 'metadata.json', 'owner.json'])
+            owner = json.loads((folder / 'owner.json').read_text())
+            self.assertEqual(set(owner), {'schema', 'channel', 'sourceSha', 'currentVersion', 'metadataSha256', 'installerSha256'})
+            self.assertEqual((owner['schema'], owner['channel'], owner['sourceSha'], owner['currentVersion']), (1, 'accept', B_SHA, '0.0.0'))
+            self.assertLessEqual(len((folder / 'owner.json').read_bytes()), 2048)
+            release = json.loads((folder / 'metadata.json').read_text())
+            asset = release['assets'][0]
+            self.assertEqual((release['tag_name'], release['draft'], release['prerelease'], len(release['assets'])), ('v1.0.1', False, False, 1))
+            self.assertEqual((asset['name'], asset['state'], asset['size']), ('devbox-1.0.1-setup.exe', 'uploaded', len(b'accept installer bytes')))
+            self.assertEqual(asset['url'], 'https://api.github.com/repos/jihoon22-lee/devbox/releases/assets/1')
+            self.assertEqual(asset['browser_download_url'], 'https://github.com/jihoon22-lee/devbox/releases/download/v1.0.1/devbox-1.0.1-setup.exe')
+            self.assertEqual(asset['digest'], 'sha256:' + hashlib.sha256(b'accept installer bytes').hexdigest())
+            self.assertEqual((record['targetVersion'], record['currentVersion'], record['accepted']['version']), ('1.0.1', '0.0.0', '1.0.1'))
+            # The running build is the one named in owner.json; a build of another source SHA refuses the same folder.
+            self.assertEqual(update_fixture.check_fixture(folder, B_SHA)['sourceSha'], B_SHA)
+            with self.assertRaisesRegex(ValueError, 'sourceSha'):
+                update_fixture.check_fixture(folder, C_SHA)
+
+    def test_fixture_refusals(self):
+        def broken(change):
+            with tempfile.TemporaryDirectory() as tmp:
+                release_fixture(tmp)
+                folder = Path(tmp) / 'update'
+                change(folder)
+                with self.assertRaises((ValueError, KeyError)):
+                    update_fixture.check_fixture(folder, B_SHA)
+
+        def edit(name, mutate, rehash=True):
+            def change(folder):
+                value = json.loads((folder / name).read_text())
+                mutate(value)
+                data = json.dumps(value).encode()
+                (folder / name).write_bytes(data)
+                if name == 'metadata.json' and rehash:
+                    owner = json.loads((folder / 'owner.json').read_text())
+                    owner['metadataSha256'] = hashlib.sha256(data).hexdigest()
+                    (folder / 'owner.json').write_text(json.dumps(owner))
+            return change
+        broken(lambda folder: (folder / 'installer.exe').write_bytes(b'other bytes, same folder'))
+        broken(lambda folder: (folder / 'extra.txt').write_text('x'))
+        broken(lambda folder: (folder / 'installer.exe').unlink())
+        broken(edit('owner.json', lambda v: v.update(extra=1)))
+        broken(edit('owner.json', lambda v: v.update(schema=2)))
+        broken(edit('owner.json', lambda v: v.update(channel='prod')))
+        broken(edit('owner.json', lambda v: v.update(currentVersion='1.0.0-rc.1')))
+        broken(edit('owner.json', lambda v: v.update(currentVersion='1.0.1')))  # the release is not newer
+        broken(edit('owner.json', lambda v: v.update(installerSha256='0' * 64)))
+        broken(edit('owner.json', lambda v: v.update(padding='x' * 3000)))
+        broken(edit('metadata.json', lambda v: v.update(draft=True)))
+        broken(edit('metadata.json', lambda v: v.update(draft=False), rehash=False))  # the bytes changed, the hash did not
+        broken(edit('metadata.json', lambda v: v.update(prerelease=True)))
+        broken(edit('metadata.json', lambda v: v.update(tag_name='1.0.1')))
+        broken(edit('metadata.json', lambda v: v.update(tag_name='v1.0.1-rc.1')))
+        broken(edit('metadata.json', lambda v: v['assets'].append(dict(v['assets'][0]))))
+        broken(edit('metadata.json', lambda v: v['assets'][0].update(name='Devbox Accept_1.0.1_x64-setup.exe')))
+        broken(edit('metadata.json', lambda v: v['assets'][0].update(state='new')))
+        broken(edit('metadata.json', lambda v: v['assets'][0].update(id=0)))
+        broken(edit('metadata.json', lambda v: v['assets'][0].update(size=v['assets'][0]['size'] + 1)))
+        broken(edit('metadata.json', lambda v: v['assets'][0].update(digest='sha1:' + '0' * 40)))
+        broken(edit('metadata.json', lambda v: v['assets'][0].update(browser_download_url='https://example.invalid/x')))
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, 'receipt sha256'):
+                installer = Path(tmp) / 'setup.exe'
+                installer.write_bytes(b'x')
+                update_fixture.build_fixture(Path(tmp) / 'update', B_SHA, installer, '0' * 64, '1.0.1', '1.0.1')
+            with self.assertRaises(FileExistsError):
+                release_fixture(tmp)  # the folder exists: never written into twice
+
+    def test_versions_and_shape(self):
+        self.assertEqual(update_fixture.fixture_versions('1.0.1', '1.0.1'), ('0.0.0', '1.0.1'))
+        self.assertEqual(update_fixture.fixture_versions('1.0.0', '1.0.1'), ('1.0.0', '1.0.1'))
+        self.assertEqual(update_fixture.fixture_versions('1.0.1-rc.1', '1.0.1-rc.2'), ('0.0.0', '1.0.1'))
+        self.assertEqual(update_fixture.fixture_versions('1.0.2', '1.0.1'), ('0.0.0', '1.0.1'))
+        with self.assertRaises(ValueError):
+            update_fixture.fixture_versions('0.0.0', '0.0.0')
+        self.assertEqual(update_fixture.check_shape('same-version', '1.0.1', '1.0.1'), 'same-version')
+        with self.assertRaisesRegex(ValueError, r'execute\.rs:221-227, 315-324'):
+            update_fixture.check_shape('same-version', '1.0.0', '1.0.1')
+        self.assertEqual(update_fixture.check_shape('next-version', '1.0.0', '1.0.1'), 'next-version')
+        for baseline, candidate in (('1.0.1', '1.0.1'), ('1.0.1', '1.0.0'), ('1.0.0', '1.0.1-rc.1')):
+            with self.assertRaises(ValueError, msg=(baseline, candidate)):
+                update_fixture.check_shape('next-version', baseline, candidate)
+        with self.assertRaises(ValueError):
+            update_fixture.check_shape('any', '1.0.1', '1.0.1')
+        ports = {update_fixture.debug_port('%08x-%08x' % (i, i * 7)) for i in range(200)}
+        self.assertTrue(all(39000 <= port < 39900 for port in ports))
+        self.assertGreater(len(ports), 50)
+
+    def test_stage_cleanup_knows_the_fixture_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp) / 'stage'
+            stage.mkdir()
+            (stage / teardown.MARKER).write_text(json.dumps({'token': 'owned-0123456789ab', 'sourceSha': C_SHA}))
+            release_fixture(stage)
+            (stage / 'Devbox Accept_setup.exe').unlink()
+            (stage / 'update' / 'more.txt').write_text('x')
+            refused = teardown.cleanup_stage(stage, 'owned-0123456789ab', C_SHA)
+            self.assertEqual((refused['status'], stage.exists()), ('FAIL', True))
+            (stage / 'update' / 'more.txt').unlink()
+            self.assertEqual(teardown.cleanup_stage(stage, 'owned-0123456789ab', C_SHA)['status'], 'PASS')
+            self.assertFalse(stage.exists())
+
+
+class UpdateApp:
+    """The app's update service as the five commands see it (service.rs, install.rs), for drive_update and the run."""
+
+    def __init__(self, version='1.0.1', enabled=True, phase='idle', blocked=None, target='1.0.1', download_polls=2):
+        self.snapshot = {'enabled': enabled, 'disabledReason': None if enabled else 'channel', 'phase': phase, 'generation': 0, 'revision': 0,
+                         'currentVersion': version, 'availableVersion': None, 'receivedBytes': 0, 'totalBytes': None, 'error': None, 'nextAction': 'check'}
+        self.blocked, self.target, self.download_polls, self.calls, self.ticket, self.exited = blocked, target, download_polls, [], None, False
+
+    def bump(self, **values):
+        self.snapshot.update(values, generation=self.snapshot['generation'] + 1, revision=self.snapshot['revision'] + 1)
+
+    def __call__(self, command, **integers):
+        self.calls.append((command, integers))
+        snapshot = self.snapshot
+        if self.exited:
+            raise RuntimeError('The owned debug port is not listening')
+        if command == 'update_status':
+            if snapshot['phase'] == 'checking':
+                snapshot.update(phase='available', availableVersion=self.target, totalBytes=22, nextAction='download', revision=snapshot['revision'] + 1)
+            elif snapshot['phase'] == 'downloading':
+                self.download_polls -= 1
+                if self.download_polls <= 0:
+                    snapshot.update(phase='ready', receivedBytes=22, nextAction='install', revision=snapshot['revision'] + 1)
+        elif command == 'update_check':
+            if snapshot['enabled'] and snapshot['phase'] in ('idle', 'failed', 'available'):
+                self.bump(phase='checking', nextAction='cancel', availableVersion=None)
+        elif command == 'update_download':
+            if integers.get('Generation') != snapshot['generation']:
+                return {'ok': False, 'label': 'main', 'error': 'staleOperation'}
+            self.bump(phase='downloading', nextAction='cancel')
+        elif command == 'update_install_summary':
+            snapshot['revision'] += 1
+            self.ticket = None if self.blocked else snapshot['revision']
+            return {'ok': True, 'label': 'main', 'value': {'generation': integers.get('Generation'), 'confirmationId': self.ticket, 'version': self.target,
+                                                           'nativeActive': 0 if not self.blocked else 1, 'blocked': self.blocked}}
+        elif command == 'update_install_confirm':
+            if integers.get('Generation') != snapshot['generation'] or integers.get('ConfirmationId') != self.ticket or snapshot['phase'] != 'ready':
+                return {'ok': False, 'label': 'main', 'error': 'staleOperation'}
+            self.bump(phase='installing', nextAction='cancel')
+        return {'ok': True, 'label': 'main', 'value': dict(snapshot)}
+
+
+class V101UpdateCommands(unittest.TestCase):
+    """D5: the screen's command order, the wait for the product's runner, the connection gap and the decision."""
+
+    def test_commands_follow_the_settings_screen(self):
+        app, clock, steps = UpdateApp(), FakeClock(), []
+        update_flow.drive_update(app, '1.0.1', clock, steps)
+        order = [command for command, _ in app.calls]
+        compact = [command for i, command in enumerate(order) if command != 'update_status' or i == 0 or order[i - 1] != 'update_status']
+        self.assertEqual(compact, ['update_status', 'update_check', 'update_status', 'update_download', 'update_status', 'update_install_summary',
+                                   'update_install_confirm'])
+        download = next(args for command, args in app.calls if command == 'update_download')
+        confirm = next(args for command, args in app.calls if command == 'update_install_confirm')
+        self.assertEqual(set(download), {'Generation'})
+        self.assertEqual((confirm['Generation'], confirm['ConfirmationId']), (app.snapshot['generation'] - 1, app.ticket))
+        self.assertEqual(app.snapshot['phase'], 'installing')
+        self.assertEqual(len(steps), len(app.calls))
+        # The automatic check may already have found the release: no second check, the same download.
+        found = UpdateApp(phase='checking')
+        update_flow.drive_update(found, '1.0.1', FakeClock())
+        self.assertNotIn('update_check', [command for command, _ in found.calls])
+
+    def test_refusals_never_reach_the_confirm(self):
+        for app, message in ((UpdateApp(enabled=False), 'did not take the update fixture'), (UpdateApp(blocked='nativeActive'), 'does not allow the install'),
+                             (UpdateApp(target='9.9.9'), 'offers 9.9.9')):
+            with self.assertRaisesRegex(update_flow.UpdateFailed, message):
+                update_flow.drive_update(app, '1.0.1', FakeClock())
+            self.assertNotIn('update_install_confirm', [command for command, _ in app.calls])
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'rejected'):
+            update_flow.snapshot_of({'ok': False, 'label': 'main', 'error': 'staleOperation'}, 'update_download')
+        for label in ('popout-capture', None, ''):  # a window that does not name itself `main` is not accepted
+            with self.assertRaisesRegex(update_flow.UpdateFailed, 'not answered by the main window', msg=repr(label)):
+                update_flow.snapshot_of({'ok': True, 'label': label, 'value': UpdateApp().snapshot}, 'update_status')
+        unnamed = UpdateApp()
+        original = unnamed.__call__
+
+        def without_label(command, **integers):
+            reply = original(command, **integers)
+            return dict(reply, label=None) if command == 'update_install_summary' else reply
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'update_install_summary was not answered by the main window'):
+            update_flow.drive_update(without_label, '1.0.1', FakeClock())
+        self.assertNotIn('update_install_confirm', [command for command, _ in unnamed.calls])
+        slow = UpdateApp(download_polls=10 ** 6)
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'The download ended in phase downloading'):
+            update_flow.drive_update(slow, '1.0.1', FakeClock())
+
+    def rows(self, *rows):
+        rows = list(rows)
+        return lambda: rows.pop(0) if len(rows) > 1 else rows[0]
+
+    def test_watch_follows_the_runner_to_the_new_app(self):
+        runner, installer = {'pid': 5, 'name': 'runner.exe', 'startedUtc': 'a'}, {'pid': 6, 'name': 'installer.exe', 'startedUtc': 'b'}
+        keep = {'pid': 9, 'creation': '1', 'parentPid': 5, 'sleep900': True}
+        observe = self.rows({'oldAlive': [1], 'staged': [runner], 'newApps': [], 'outcomes': [{'outcome': 'armed', 'error': ''}]},
+                            {'oldAlive': [], 'staged': [runner, installer], 'newApps': [], 'keepAlive': [keep], 'outcomes': [{'outcome': 'running', 'error': ''}]},
+                            {'oldAlive': [], 'staged': [runner], 'newApps': [{'pid': 7}], 'outcomes': [{'outcome': 'installed', 'error': ''}]},
+                            {'oldAlive': [], 'staged': [], 'newApps': [{'pid': 7}], 'outcomes': []})
+        kept = []
+        summary = update_flow.watch_update(observe, lambda: {'phase': 'installing', 'error': None}, FakeClock(), rows=kept)
+        self.assertEqual((summary['runnerSeen'], summary['installerSeen'], summary['keepAlive'], summary['outcomes']),
+                         (True, True, [keep], ['armed:', 'running:', 'installed:']))
+        self.assertEqual((summary['oldExitedAfter'], summary['newAppAfter'], len(kept), summary['installed']), (1.0, 3.0, 4, 'recorded'))
+
+    def test_watch_needs_the_runners_installed_record(self):
+        running = {'oldAlive': [], 'staged': [{'name': 'installer.exe'}], 'newApps': [], 'outcomes': [{'outcome': 'running', 'error': ''}]}
+        app_only = {'oldAlive': [], 'staged': [], 'newApps': [{'pid': 7}], 'outcomes': []}
+        # The relaunched app removed the stage folder it had read: the product only does that for an installed record.
+        summary = update_flow.watch_update(self.rows(running, app_only), lambda: None, FakeClock())
+        self.assertEqual(summary['installed'], 'acknowledged')
+        # A new app process and no record at all (the folder was never seen): not a success, however long it runs.
+        clock = FakeClock()
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'did not finish within 20 s') as caught:
+            update_flow.watch_update(self.rows(app_only), lambda: None, clock, bound=20)
+        self.assertEqual((caught.exception.detail['installed'], caught.exception.detail['stageSeen']), (None, False))
+        # A stage folder that still holds another record, with a new app process: still no success.
+        waiting = {'oldAlive': [], 'staged': [], 'newApps': [{'pid': 7}], 'outcomes': [{'outcome': 'committed', 'error': ''}]}
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'did not finish within 20 s'):
+            update_flow.watch_update(self.rows(running, waiting), lambda: None, FakeClock(), bound=20)
+        # A failed record is read first: a process that runs the owned executable does not turn it into a success.
+        failed = {'oldAlive': [], 'staged': [], 'newApps': [{'pid': 7}], 'outcomes': [{'outcome': 'failed', 'error': 'relaunch'}]}
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'failed:relaunch'):
+            update_flow.watch_update(self.rows(running, failed), lambda: None, FakeClock())
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'failed:installer'):
+            update_flow.watch_update(self.rows({'oldAlive': [], 'staged': [], 'newApps': [{'pid': 7}], 'outcomes': [{'outcome': 'installed', 'error': ''},
+                                                                                                                    {'outcome': 'failed', 'error': 'installer'}]}),
+                                     lambda: None, FakeClock())
+
+    def test_watch_ends_on_a_failed_or_abandoned_install(self):
+        failed = self.rows({'oldAlive': [], 'staged': [{'name': 'runner.exe'}], 'newApps': [], 'outcomes': [{'outcome': 'running', 'error': ''}]},
+                           {'oldAlive': [], 'staged': [], 'newApps': [], 'outcomes': [{'outcome': 'failed', 'error': 'relaunch'}]})
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'failed:relaunch') as caught:
+            update_flow.watch_update(failed, lambda: None, FakeClock())
+        self.assertTrue(caught.exception.detail['runnerSeen'])
+        left = self.rows({'oldAlive': [1], 'staged': [], 'newApps': [], 'outcomes': []})
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'left the install .phase ready, error quitRejected'):
+            update_flow.watch_update(left, lambda: {'phase': 'ready', 'error': 'quitRejected'}, FakeClock())
+        clock = FakeClock()
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'did not exit for the install within 120 s'):
+            update_flow.watch_update(left, lambda: None, clock)  # the app cannot be asked and never exits
+        self.assertLess(clock.now - 1000.0, 130)
+        never = self.rows({'oldAlive': [], 'staged': [{'name': 'installer.exe'}], 'newApps': [], 'outcomes': []})
+        clock = FakeClock()
+        with self.assertRaisesRegex(update_flow.UpdateFailed, 'did not finish within 30 s'):
+            update_flow.watch_update(never, lambda: None, clock, bound=30)
+
+    def test_connection_gap(self):
+        old, new = (10, '500'), (20, '900')
+        gap = update_flow.connection_gap
+        self.assertEqual(gap([(1.0, {old}), (4.0, set()), (9.5, {new})])['gapSeconds'], 5.5)
+        self.assertEqual(gap([(1.0, {old}), (4.0, {new})])['gapSeconds'], 0.0)  # replaced between two samples
+        self.assertEqual(gap([(1.0, {old}), (2.0, {old, new}), (4.0, {new})])['gapSeconds'], 0.0)
+        for changes, why in (([], 'no sample'), ([(1.0, set()), (2.0, {new})], 'no accept bridge was connected at the start'),
+                             ([(1.0, {old})], 'the old bridge never went'), ([(1.0, {old}), (3.0, set())], 'no new bridge connected')):
+            self.assertEqual((gap(changes)['gapSeconds'], gap(changes)['why']), (None, why))
+        clock, script = FakeClock(), [{old}, {old}, set(), set(), {new}, {new}]
+        sampler = update_flow.BridgeSampler(read=lambda: script.pop(0), clock=clock)
+        last = None
+        for _ in range(6):
+            last = sampler.sample(last)
+            clock.sleep(0.1)
+        result = sampler.result()
+        self.assertEqual((result['loops'], result['changes'], result['gapSeconds']), (6, 3, 0.2))
+        self.assertAlmostEqual(result['maxStepSeconds'], 0.1, places=3)
+
+    def test_bridge_processes_are_read_from_proc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = Path(tmp)
+
+            def process(pid, argv, environ):
+                folder = proc / str(pid)
+                folder.mkdir()
+                (folder / 'cmdline').write_bytes(b'\0'.join(argv) + b'\0')
+                (folder / 'environ').write_bytes(b'\0'.join(environ) + b'\0')
+                (folder / 'stat').write_text('%d (devbox) S 1 %s\n' % (pid, ' '.join(str(n) for n in range(4, 30))))
+            process(11, [b'/home/u/.local/share/devbox-desktop-accept/bin/devbox', b'bridge'], [b'A=1', b'DEVBOX_INSTANCE=accept'])
+            process(12, [b'/home/u/.local/share/devbox-desktop/bin/devbox', b'bridge'], [b'DEVBOX_INSTANCE=prod'])  # the user's own app
+            process(13, [b'/x/devbox', b'bridge', b'extra'], [b'DEVBOX_INSTANCE=accept'])
+            process(14, [b'sh', b'-c', b'devbox bridge'], [b'DEVBOX_INSTANCE=accept'])
+            process(15, [b'/x/devbox', b'mcp'], [b'DEVBOX_INSTANCE=accept'])
+            (proc / 'self').mkdir()
+            self.assertEqual(update_flow.accept_bridges(proc), {(11, '21')})
+            self.assertEqual(update_flow.accept_bridges(proc, uid=os.getuid() + 1), set())
+
+    def test_witness_and_decision(self):
+        before = {'bootId': 'b1', 'uptimeSeconds': 100.0, 'pid1Start': '7'}
+        self.assertTrue(update_flow.distro_stayed_up(before, dict(before, uptimeSeconds=160.0)))
+        for after in (dict(before, bootId='b2', uptimeSeconds=160.0), dict(before, pid1Start='8', uptimeSeconds=160.0), dict(before, uptimeSeconds=3.0), {}):
+            self.assertFalse(update_flow.distro_stayed_up(before, after))
+        whole = {'installerRan': True, 'identity': True, 'version': True, 'newAppStarted': True}
+        self.assertEqual(update_flow.decide(whole, 'same-version'), ('PASS', None))
+        self.assertEqual(update_flow.decide(dict(whole, identity=None, newAppStarted=False)), ('FAIL', 'Failed or unobserved parts: identity, newAppStarted'))
+        for key in ('installerRan', 'identity'):  # the two parts that say which build runs must be there
+            self.assertEqual(update_flow.decide({k: v for k, v in whole.items() if k != key})[0], 'FAIL', key)
+            self.assertEqual(update_flow.decide(dict(whole, **{key: False}))[0], 'FAIL', key)
+        self.assertEqual(update_flow.decide(dict(whole, version=False), 'same-version')[0], 'FAIL')  # recorded, and it must still hold
+        self.assertEqual(update_flow.deciding(whole, 'same-version'), ['identity', 'installerRan', 'newAppStarted'])
+        self.assertEqual(update_flow.deciding(whole, 'next-version'), ['identity', 'installerRan', 'newAppStarted', 'version'])
+        witness = update_flow.wsl_witness()
+        self.assertRegex(witness['bootId'], '^[0-9a-f-]{36}$')
+
+
+class V101ForeignFiles(unittest.TestCase):
+    """D5 (G2): the owned marker files across the update (UP2) and the uninstall (A7)."""
+    TOKEN = 'owned-0123456789ab'
+
+    def install(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        install = Path(tmp.name) / 'DevboxAccept-s7-x'
+        install.mkdir()
+        (install / foreign_files.MARKER).write_bytes(b'\xef\xbb\xbf' + json.dumps({'token': self.TOKEN, 'sourceSha': C_SHA}).encode())
+        (install / 'Devbox.exe').write_bytes(b'product')
+        return install
+
+    def test_plant_read_back_and_remove(self):
+        install = self.install()
+        planted = foreign_files.plant(install, self.TOKEN, 'update', C_SHA)
+        names = [entry['relative'] for entry in planted['files']]
+        self.assertEqual(len(names), 4)
+        self.assertTrue(all(name.startswith('s7-foreign-%s-u' % self.TOKEN) for name in names))
+        self.assertEqual(sum('/' in name for name in names), 1)  # one file in the one folder
+        self.assertEqual(planted, foreign_files.manifest(self.TOKEN, 'update'))
+        rows = foreign_files.observe(install, planted)
+        comparison = foreign_files.compare(planted, rows)
+        self.assertEqual((comparison['status'], comparison['missing'], comparison['changed']), ('PASS', [], []))
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            foreign_files.plant(install, self.TOKEN, 'update', C_SHA)
+        uninstall = foreign_files.plant(install, self.TOKEN, 'uninstall', C_SHA)  # the two sets never share a name
+        self.assertFalse({e['relative'] for e in uninstall['files']} & set(names))
+        cleanup = foreign_files.remove(install, planted)
+        self.assertEqual((cleanup['status'], len(cleanup['removed']), cleanup['left']), ('PASS', 5, []))
+        self.assertEqual(foreign_files.decision(comparison, cleanup), ('PASS', None))
+        left = sorted(p.name for p in install.iterdir())
+        self.assertEqual([n for n in left if n.startswith('s7-foreign-%s-u' % self.TOKEN)], [])
+        self.assertIn('Devbox.exe', left)  # only the planted names are removed
+        self.assertEqual(foreign_files.compare(uninstall, foreign_files.observe(install, uninstall))['status'], 'PASS')
+
+    def test_changed_missing_and_replaced_files_fail(self):
+        install = self.install()
+        planted = foreign_files.plant(install, self.TOKEN, 'update', C_SHA)
+        text, binary, empty, inner = [install / entry['relative'] for entry in planted['files']]
+        binary.write_bytes(binary.read_bytes()[:-1] + b'x')  # same length, other bytes
+        empty.unlink()
+        inner.unlink()
+        inner.symlink_to(text)
+        comparison = foreign_files.compare(planted, foreign_files.observe(install, planted))
+        self.assertEqual(comparison['status'], 'FAIL')
+        self.assertEqual((comparison['missing'], comparison['changed']), ([planted['files'][2]['relative']], [planted['files'][1]['relative'], planted['files'][3]['relative']]))
+        self.assertEqual(foreign_files.decision(comparison)[0], 'FAIL')
+        self.assertEqual(foreign_files.compare(planted, None)['status'], 'FAIL')
+        self.assertEqual(foreign_files.compare(planted, [])['status'], 'FAIL')
+        # The Windows helper's rows: upper-case hashes compare equal; a reparse point does not.
+        rows = [{'relative': e['relative'], 'exists': True, 'length': e['length'], 'sha256': e['sha256'].upper()} for e in planted['files']]
+        self.assertEqual(foreign_files.compare(planted, rows)['status'], 'PASS')
+        rows[0]['reparsePoint'] = True
+        self.assertEqual(foreign_files.compare(planted, rows)['changed'], [planted['files'][0]['relative']])
+
+    def test_cleanup_leaves_what_it_did_not_plant(self):
+        install = self.install()
+        planted = foreign_files.plant(install, self.TOKEN, 'uninstall', C_SHA)
+        stranger = install / planted['directory'] / 'not-ours.txt'
+        stranger.write_text('x')
+        cleanup = foreign_files.remove(install, planted)
+        self.assertEqual(cleanup['status'], 'FAIL')
+        self.assertTrue(stranger.is_file())
+        self.assertEqual(foreign_files.decision({'status': 'PASS'}, cleanup)[0], 'FAIL')
+
+    def test_only_the_fixed_plan_of_the_run_is_accepted(self):
+        install = self.install()
+        planted = foreign_files.plant(install, self.TOKEN, 'update', C_SHA)
+        for change in (lambda m: m['files'][0].update(relative='Devbox.exe'), lambda m: m['files'][0].update(relative='../outside.txt'),
+                       lambda m: m.update(directory='resources'), lambda m: m.update(token='owned-ffffffffffff'), lambda m: m['files'].pop()):
+            bad = copy.deepcopy(planted)
+            change(bad)
+            for action in (foreign_files.observe, foreign_files.remove):
+                with self.assertRaises(ValueError):
+                    action(install, bad)
+            with self.assertRaises(ValueError):
+                foreign_files.compare(bad, [])
+        self.assertTrue((install / 'Devbox.exe').is_file())
+        other = self.install()
+        with self.assertRaisesRegex(ValueError, 'owner mismatch'):
+            foreign_files.plant(other, 'owned-ffffffffffff', 'update', C_SHA)
+        with self.assertRaisesRegex(ValueError, 'owner mismatch'):
+            foreign_files.plant(other, self.TOKEN, 'update', B_SHA)
+        for bad in ('owned-xyz', '../x', None):
+            with self.assertRaises(ValueError):
+                foreign_files.plan(bad, 'update')
+        with self.assertRaises(ValueError):
+            foreign_files.plan(self.TOKEN, 'other')
+
+    def test_a7_decision(self):
+        planted = foreign_files.manifest(self.TOKEN, 'uninstall')
+        rows = [{'relative': e['relative'], 'exists': True, 'length': e['length'], 'sha256': e['sha256']} for e in planted['files']]
+        self.assertEqual(driver.a7_decision(None, None, None)[0], 'NOT_RUN')
+        self.assertEqual(driver.a7_decision({'plantError': 'denied'}, None, None)[0], 'FAIL')
+        read = {'foreignAfterUninstall': rows, 'foreignUninstallerEnded': True, 'foreignStable': True, 'foreignWaitMs': 1400}
+        status, reason, comparison = driver.a7_decision({'planted': planted}, {'action': 'windows', 'status': 'PASS', 'result': read}, None)
+        self.assertEqual((status, comparison['uninstallerEnded'], comparison['stable'], comparison['waitMs']), ('PASS', True, True, 1400))
+        self.assertEqual(driver.a7_decision({'planted': planted}, {'action': 'windows', 'status': 'FAIL', 'error': 'x'}, read)[0], 'PASS')  # read before the action failed
+        # Every file read back, but before the uninstaller's end or while the folder still changed: never a PASS.
+        for change, message in (({'foreignUninstallerEnded': False}, 'had not finished within 30 s'), ({'foreignUninstallerEnded': None}, 'had not finished'),
+                                ({'foreignStable': False}, 'differ'), ({'foreignStable': None}, 'differ')):
+            status, reason, comparison = driver.a7_decision({'planted': planted}, {'result': dict(read, **change)}, None)
+            self.assertEqual((status, comparison['status']), ('FAIL', 'PASS'), change)
+            self.assertIn(message, reason)
+        self.assertEqual(driver.a7_decision({'planted': planted}, {'result': {'foreignAfterUninstall': rows}}, None)[0], 'FAIL')  # an older helper's rows
+        status, reason, comparison = driver.a7_decision({'planted': planted}, {'action': 'windows', 'status': 'FAIL', 'error': 'x'}, None)
+        self.assertEqual((status, comparison), ('FAIL', None))
+        self.assertIn('before the planted files were read back', reason)
+        gone = [dict(rows[0], exists=False)] + rows[1:]
+        status, reason, comparison = driver.a7_decision({'planted': planted}, {'result': dict(read, foreignAfterUninstall=gone)}, None)
+        self.assertEqual((status, comparison['missing']), ('FAIL', [planted['files'][0]['relative']]))
+
+
+class V101Flow(unittest.TestCase):
+    """D5: the new flow and cases in the accounting, the teardown order, and the run on a scripted session."""
+
+    def test_cases_are_listed(self):
+        self.assertEqual(evidence.FLOWS['update'], ['UP1', 'UP2', 'A7', 'M4'])
+        self.assertIn('A7', evidence.FLOWS['fresh'])
+        self.assertLess(evidence.FLOWS['fresh'].index('A6'), evidence.FLOWS['fresh'].index('A7'))
+        self.assertEqual((evidence.NEEDS['update'], evidence.NEEDS['fresh']['A7']), ({'UP2': {'UP1'}}, {'A1'}))
+        self.assertTrue({'UP1', 'UP2', 'A7'} <= evidence.REQUIRES_NATIVE)
+        self.assertIn('update', evidence.WINDOWS_FLOWS)
+        self.assertIn('update', evidence.UPGRADE_FLOWS)
+        for case in ('UP1', 'UP2', 'A7'):
+            self.assertRegex(evidence.CASE_ROWS[case], '^1\\.0\\.1 \ubb36\uc74c ')
+        for key in ('UP1.keepalive', 'UP2.noupdate', 'A7.noplant'):
+            self.assertRegex(evidence.ROW_TEXT[key], '[\uac00-\ud7a3]')
+        self.assertEqual(driver.selected_cases('update'), ['UP1', 'UP2', 'A7', 'M4'])
+        self.assertEqual(driver.selected_cases('update', 'A7,M4'), ['A7', 'M4'])
+        with self.assertRaisesRegex(ValueError, 'UP2 requires UP1'):
+            driver.selected_cases('update', 'UP2')
+        self.assertEqual(evidence.gates_for('update', 'UP1'), ['installer', 'native_identity', 'fixture'])
+        self.assertEqual((evidence.gates_for('update', 'A7'), evidence.gates_for('fresh', 'A7')), (['installer'], ['installer']))
+        m = matrix('update', Q0=True)
+        m['gates'].update(installer={'status': 'PASS'}, native_identity={'status': 'PASS'}, fixture={'status': 'PASS'})
+        with self.assertRaises(ValueError):
+            evidence.record(m, 'UP1', 'PASS', ['x.json'], surface='wsl-artifact')
+        evidence.record(m, 'UP1', 'PASS', ['x.json'], surface='installed-native')
+        self.assertEqual(m['cases']['UP1']['status'], 'PASS')
+        self.assertIn('update_flow', validate.NATIVE_MODULES)
+
+    def test_teardown_adopts_before_the_exact_stop_and_plants_before_the_uninstall(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install = root / 'install'
+            install.mkdir()
+            token = 'owned-0123456789ab'
+            (install / foreign_files.MARKER).write_text(json.dumps({'token': token, 'sourceSha': C_SHA}))
+            m = {'token': token, 'sourceSha': C_SHA, 'nativePreflight': {'installPath': 'C:\\i', 'appLocalData': 'C:\\l', 'appRoamingData': 'C:\\r', 'windowsRoot': 'C:\\w'}}
+            calls = []
+
+            def native(script, timeout=200, **params):
+                calls.append((script, params.get('Action'), {k: v for k, v in params.items() if k not in ('Action', 'Ownership')}, timeout))
+                if params.get('Action') == 'uninstall':
+                    planted = json.loads((root / 'foreign-uninstall-planted.json').read_text())
+                    self.assertEqual(foreign_files.compare(planted, foreign_files.observe(install, planted))['status'], 'PASS')  # planted before the action
+                return {'ok': True}
+            stub = Fake(ownership=root / 'ownership.json', evidence=root, cases=['A7', 'M4'], update_begun=True, a7=None, stage_dir=None,
+                        windows=lambda path: 'C:\\e\\' + Path(path).name, native=native)
+            operations = {}
+            with patch.object(w1_windows, 'drvfs', lambda path: install):
+                resources = driver.Session.native_teardown(stub, operations, m)
+                self.assertEqual(operations['quit']()['status'], 'PASS')
+                self.assertEqual([(c[1], c[2]) for c in calls], [('update-adopt', {'WaitSeconds': 600}), ('stop-owned', {}), ('update-observe', {})])
+                self.assertGreater(calls[0][3], 600)  # the helper's own wait fits inside the call's timeout
+                self.assertTrue((root / 'teardown-update-adopt.json').is_file())
+                del calls[:]
+                operations['windows_cleanup']()
+            self.assertEqual(calls[0][1:3], ('uninstall', {'Foreign': 'C:\\e\\foreign-uninstall-planted.json'}))
+            self.assertEqual(stub.a7['planted'], foreign_files.manifest(token, 'uninstall'))
+            self.assertEqual(resources, ['C:\\i', 'C:\\l', 'C:\\r', 'C:\\w'])
+            # Without an update begun and without A7: the plain stop and the plain uninstall, as before.
+            del calls[:]
+            plain = Fake(ownership=root / 'ownership.json', evidence=root, cases=['M4'], update_begun=False, a7=None, stage_dir=None,
+                         windows=lambda path: 'C:\\e\\' + Path(path).name, native=native)
+            operations = {}
+            driver.Session.native_teardown(plain, operations, m)
+            operations['quit']()
+            operations['windows_cleanup']()
+            self.assertEqual([(c[1], c[2]) for c in calls], [('stop-owned', {}), ('uninstall', {})])
+            # A plant that fails is A7's own failure; the uninstall still runs, without the read.
+            del calls[:]
+            failing = Fake(ownership=root / 'ownership.json', evidence=root, cases=['A7'], update_begun=False, a7=None, stage_dir=None,
+                           windows=lambda path: 'C:\\e\\' + Path(path).name, native=lambda script, timeout=200, **params: calls.append(params) or {})
+            operations = {}
+            with patch.object(w1_windows, 'drvfs', lambda path: root / 'absent'):
+                driver.Session.native_teardown(failing, operations, m)
+                operations['windows_cleanup']()
+            self.assertIn('plantError', failing.a7)
+            self.assertNotIn('Foreign', calls[0])
+
+    def quit_script(self, observed, fail=()):
+        calls = []
+
+        def lifecycle(timeout=200, **params):
+            action = params['Action']
+            calls.append((action, params.get('WaitSeconds'), timeout))
+            if action in fail:
+                raise RuntimeError(action + ' failed')
+            if action == 'update-observe':
+                return observed.pop(0) if len(observed) > 1 else observed[0]
+            return {'ok': action}
+        return lifecycle, calls
+
+    def test_quit_repeats_adopt_and_stop_until_nothing_owned_runs(self):
+        clean = {'oldAlive': [], 'newApps': [], 'staged': []}
+        lifecycle, calls = self.quit_script([clean])
+        self.assertEqual(driver.quit_after_update(lifecycle, False), {'ok': 'stop-owned'})
+        self.assertEqual([c[0] for c in calls], ['stop-owned'])  # no update began: the plain exact stop, as before
+        # The runner relaunched the app after the first stop: a second round records and stops it.
+        saved = []
+        lifecycle, calls = self.quit_script([{'oldAlive': [], 'newApps': [{'pid': 7}], 'staged': []}, clean])
+        result = driver.quit_after_update(lifecycle, True, saved.append)
+        self.assertEqual([c[0] for c in calls], ['update-adopt', 'stop-owned', 'update-observe'] * 2)
+        self.assertEqual(([c[1] for c in calls if c[0] == 'update-adopt'], result['status'], len(result['rounds'])), ([600, 120], 'PASS', 2))
+        self.assertTrue(all(c[2] > c[1] for c in calls if c[0] == 'update-adopt'))
+        self.assertEqual(len(saved[-1]), 2)
+        # A runner that never ends: bounded, every round still tries the stop, and the result is an error (retained, FAIL).
+        lifecycle, calls = self.quit_script([{'oldAlive': [], 'newApps': [], 'staged': [{'name': 'runner.exe'}]}])
+        with self.assertRaisesRegex(RuntimeError, 'After 3 rounds .* an owned process may still run .left: .*runner.exe'):
+            driver.quit_after_update(lifecycle, True)
+        self.assertEqual([c[0] for c in calls], ['update-adopt', 'stop-owned', 'update-observe'] * 3)
+        # A failing adopt never skips the stop, and is never a PASS even when nothing is seen running.
+        lifecycle, calls = self.quit_script([clean], fail=('update-adopt',))
+        with self.assertRaisesRegex(RuntimeError, 'update-adopt failed'):
+            driver.quit_after_update(lifecycle, True)
+        self.assertEqual([c[0] for c in calls].count('stop-owned'), 3)
+        lifecycle, calls = self.quit_script([clean], fail=('update-observe',))
+        with self.assertRaisesRegex(RuntimeError, 'update-observe failed'):
+            driver.quit_after_update(lifecycle, True)
+
+    def session(self, exe_changed=True, cases=('UP1', 'UP2', 'A7', 'M4'), app=None, adopted=({'pid': 7},), gap=True, answers_after=True, refuses_fixture=True,
+                daemon_sha=C_SHA, daemon_before=(4242, 'inv-1'), daemon_after=(4242, 'inv-1')):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        token = 'owned-0123456789ab'
+        run, stage, install, project = root / 'run', root / 'stage', root / 'install', root / 'P-U1'
+        for folder in (run, run / 'cases', stage, install, project, project / 'tree'):
+            folder.mkdir()
+        (install / foreign_files.MARKER).write_text(json.dumps({'token': token, 'sourceSha': C_SHA}))
+        (project / 'tree' / '.git').write_text('gitdir: x\n')
+        installer = root / 'Devbox Accept_1.0.1_x64-setup.exe'
+        installer.write_bytes(b'candidate accept installer')
+        linux = 'a' * 64
+        m = {'token': token, 'sourceSha': C_SHA, 'nonce': NONCE, 'nativePreflight': {'installPath': 'C:\\i'}, 'projectIdByName': {'P-U1': 'p1'},
+             'projectPaths': {'P-U1': str(project)}, 'terminalIds': ['t9'], 'agents': {}}
+        app, calls, observed = app or UpdateApp(version='1.0.1'), [], []
+        rows = [{'oldAlive': [1], 'staged': [{'name': 'runner.exe'}], 'newApps': [], 'outcomes': []},
+                {'oldAlive': [], 'staged': [{'name': 'runner.exe'}, {'name': 'installer.exe'}], 'newApps': [], 'outcomes': [{'outcome': 'running', 'error': ''}]},
+                {'oldAlive': [], 'staged': [], 'newApps': [{'pid': 7}], 'outcomes': []}]
+
+        def native(script, timeout=200, **params):
+            action = params.get('Action')
+            calls.append((script, action, params.get('Command')))
+            if script == 'native-cdp.ps1':
+                integers = {k: v for k, v in params.items() if k in ('Generation', 'ConfirmationId')}
+                return {'reply': app(params['Command'], **integers)}
+            if action == 'update-begin':
+                return {'startedUtc': 'x', 'cdpPort': params.get('Port')}
+            if action == 'update-observe':
+                row = rows.pop(0) if len(rows) > 1 else rows[0]
+                observed.append(row)
+                if not row['oldAlive']:
+                    if refuses_fixture:
+                        app.snapshot.update(phase='idle', enabled=False, disabledReason='channel')  # the relaunched app: another source SHA, no fixture
+                    else:
+                        app.snapshot.update(phase='idle')  # an app that still takes the baseline's fixture: the baseline build
+                    app.exited = not answers_after
+                return row
+            if action == 'update-adopt':
+                return {'adopted': list(adopted), 'exeChanged': exe_changed, 'versionAfter': '1.0.1', 'markerRecreated': False}
+            if action == 'installed-identity':
+                return {'bundledLinuxSha256': linux, 'bundledVersion': '1.0.1'}
+            raise AssertionError('unexpected native call: %r' % (params,))
+        pane = Fake(has_session=lambda tid: True, display=lambda fmt, tid=None: '1700000000 4242 77')
+        tasks = {'a1': {'id': 'a1', 'state': 'idle', 'terminalId': 't9', 'worktreePath': str(project / 'tree')}}
+
+        def rpc(method, params=None):
+            if method == 'projects.trust_preview':
+                return {'requiresApproval': False}
+            if method == 'agents.create':
+                return dict(tasks['a1'], state='preparing')
+            if method == 'agents.get':
+                return dict(tasks['a1'])
+            if method == 'agents.list':
+                return {'items': [dict(tasks['a1'])]}
+            raise AssertionError('unexpected rpc: ' + method)
+        sides = {'baseline': {'sha': B_SHA, 'version': '1.0.1'}, 'candidate': {'sha': C_SHA, 'version': '1.0.1'}}
+        s = Fake(cases=list(cases), sides=sides, token='cccccccc-0a1b2c3d', stage_dir=stage, windows_stage='C:\\stage', evidence=run, ownership=run / 'ownership.json',
+                 flow_name='update', args=Fake(update_shape='same-version'), outcome={'phases': []}, update_begun=False, counter=iter(range(1, 99)).__next__,
+                 chains={'candidate': {'installerPath': str(installer), 'installerSha256': hashlib.sha256(installer.read_bytes()).hexdigest(),
+                                       'linux': {'sha256': linux, 'source_sha': C_SHA}}},
+                 matrix=evidence.initial({'candidate': {'sha': C_SHA, 'version': '1.0.1'}, 'baseline': {'sha': B_SHA, 'version': '1.0.1'}}, 'update', list(cases),
+                                         answers(Q0=True)),
+                 load=lambda: m, rpc=rpc, native=native, windows=lambda path: 'C:\\e\\' + Path(path).name, save=lambda: None, journal_since=lambda t0: [],
+                 install=lambda side: calls.append(('install', side, None)), set_phase=lambda side: calls.append(('phase', side, None)),
+                 instance=lambda side: (calls.append(('instance', side, None)), {'status': 'PASS', 'sourceSha': daemon_sha, 'binarySha256': linux,
+                                                                                 **dict(zip(('runningPid', 'invocationId'), daemon_after or ()))})[1],
+                 seal_after_launch=lambda reseal: calls.append(('reseal', reseal, None)),
+                 prod_compare=lambda name: {'prodUnchanged': True}, ended=[])
+        s.matrix['gates']['installer'] = {'status': 'PASS'}
+        s.observed = lambda name, operation, needs=(): (lambda value: (common.dump(run / (name + '.json'), value), value)[1])(operation())
+        baseline_proof = {'status': 'PASS', 'sourceSha': B_SHA, 'binarySha256': linux, **dict(zip(('runningPid', 'invocationId'), daemon_before or ()))}
+        s.launch_and_prove = lambda side, reseal=False, **launch: (calls.append(('launch', side, launch)), (baseline_proof, {}))[1]
+        s.live = lambda: Fake(pane=pane, end=lambda case, agent_id: s.ended.append(agent_id))
+        for name in ('case_result', 'guarded', 'pending', 'run_case'):
+            setattr(s, name, (lambda method: lambda *a, **k: method(s, *a, **k))(getattr(driver.Session, name)))
+        samples = [{(10, '5')}, set(), {(20, '9')}]
+
+        class Sampler:
+            def start(self):
+                return self
+
+            def result(self):
+                changes = [(1.0, samples[0]), (2.0, samples[1]), (4.5, samples[2])]
+                return {'loops': 3, **update_flow.connection_gap(changes if gap else changes[:2])}
+        boots = iter([{'bootId': 'b', 'uptimeSeconds': 10.0, 'pid1Start': '3'}, {'bootId': 'b', 'uptimeSeconds': 70.0, 'pid1Start': '3'}])
+        with patch.object(w1_windows, 'drvfs', lambda path: install), patch.object(daemon_rows, 'require_lock', NO_LOCK):
+            flow = update_flow.run(s, clock=FakeClock(), sampler=Sampler, witness=lambda: next(boots))
+        return s, flow, calls, install, app
+
+    def test_update_run_on_a_scripted_session(self):
+        s, flow, calls, install, app = self.session()
+        self.assertEqual({case: row['status'] for case, row in s.matrix['cases'].items()}, {'UP1': 'PASS', 'UP2': 'PASS', 'A7': 'NOT_RUN', 'M4': 'NOT_RUN'})
+        up1 = s.matrix['cases']['UP1']
+        self.assertEqual(set(up1['parts'].values()), {True})
+        self.assertEqual(sorted(up1['parts']), ['connectionGapMeasured', 'daemonRecorded', 'distroUp', 'identity', 'installerRan', 'newAppStarted',
+                                                'prodUnchanged', 'tmuxSurvived', 'version'])
+        # Both builds bundle the same Linux binary here: the daemon is the same process, which is recorded and said, not failed.
+        self.assertIs(up1['daemonReplaced'], False)
+        self.assertEqual(up1['reason'], update_flow.SAME_DAEMON)
+        kept = json.loads((s.evidence / 'cases' / 'UP1.json').read_text())
+        self.assertEqual((kept['daemonReplaced'], kept['daemon']['before']['runningPid'], kept['daemon']['after']['invocationId']), (False, 4242, 'inv-1'))
+        self.assertNotIn('version', up1['decidingParts'])  # same-version: both builds report 1.0.1
+        self.assertTrue({'installerRan', 'identity'} <= set(up1['decidingParts']))
+        how = json.loads((s.evidence / 'cases' / 'UP1.json').read_text())['identityHow']
+        self.assertEqual((how['candidateLinuxReceiptSourceSha'], how['daemonProofSourceSha'], how['candidateSha'], how['relaunchedAppRefusedBaselineFixture']),
+                         (C_SHA, C_SHA, C_SHA, True))
+        self.assertEqual((up1['measurement']['connectionGapSeconds'], up1['measurement']['reportedVersion'], up1['shape']), (2.5, '1.0.1', 'same-version'))
+        # The order: the baseline install, the launch with the port and the fixture, update-begin, the five commands, the watch, the adoption.
+        names = [(c[0], c[1]) for c in calls]
+        self.assertEqual(names[:2], [('install', 'baseline'), ('launch', 'baseline')])
+        launch = calls[1][2]
+        self.assertEqual((launch['UpdateFixture'], launch['CdpPort']), ('C:\\stage\\update', update_fixture.debug_port('cccccccc-0a1b2c3d')))
+        self.assertEqual(update_fixture.check_fixture(Path(s.stage_dir) / 'update', B_SHA)['version'], '1.0.1')  # the running build is the baseline
+        begin = names.index(('native-lifecycle.ps1', 'update-begin'))
+        commands = [c[2] for c in calls if c[0] == 'native-cdp.ps1']
+        self.assertLess(begin, names.index(('native-cdp.ps1', 'invoke')))
+        self.assertEqual([c for i, c in enumerate(commands) if c != 'update_status' or i == 0 or commands[i - 1] != 'update_status'],
+                         ['update_status', 'update_check', 'update_status', 'update_download', 'update_status', 'update_install_summary',
+                          'update_install_confirm', 'update_status'])
+        confirm = max(i for i, c in enumerate(calls) if c[2] == 'update_install_confirm')
+        adopt = names.index(('native-lifecycle.ps1', 'update-adopt'))
+        self.assertLess(confirm, names.index(('native-lifecycle.ps1', 'update-observe')))
+        self.assertLess(names.index(('native-lifecycle.ps1', 'update-observe')), adopt)
+        self.assertLess(adopt, names.index(('phase', 'candidate')))
+        self.assertLess(names.index(('instance', 'candidate')), names.index(('reseal', True)))
+        self.assertTrue(s.update_begun)
+        self.assertEqual(s.ended, ['a1'])  # the owned task is ended through the product
+        self.assertEqual([p.name for p in install.iterdir() if p.name.startswith('s7-foreign-')], [])  # exactly the planted set is gone
+        for name in ('cases/UP1.json', 'cases/UP2.json', 'update-commands.json', 'update-observe.json', 'update-fixture.json', 'native-update.json',
+                     'foreign-update-planted.json'):
+            self.assertTrue((s.evidence / name).is_file(), name)
+        self.assertEqual(json.loads((s.evidence / 'cases' / 'UP2.json').read_text())['comparison']['status'], 'PASS')
+
+    def test_an_update_that_installed_nothing_fails_up1_and_leaves_up2_unrun(self):
+        s, flow, calls, install, app = self.session(exe_changed=False)
+        cases = s.matrix['cases']
+        self.assertEqual((cases['UP1']['status'], cases['UP2']['status']), ('FAIL', 'NOT_RUN'))
+        self.assertIn('installerRan', cases['UP1']['reason'])
+        self.assertEqual(cases['UP2']['reason'], evidence.ROW_TEXT['UP2.noupdate'])
+        self.assertEqual([p.name for p in install.iterdir() if p.name.startswith('s7-foreign-')], [])
+
+    def test_up1_records_whether_the_daemon_was_replaced(self):
+        replaced = update_flow.daemon_replaced
+        same = {'runningPid': 10, 'invocationId': 'a'}
+        self.assertIs(replaced(same, dict(same)), False)
+        self.assertIs(replaced(same, {'runningPid': 11, 'invocationId': 'a'}), True)
+        self.assertIs(replaced(same, {'runningPid': 10, 'invocationId': 'b'}), True)  # restarted, and the PID came back
+        for before, after in ((same, {}), ({}, same), (same, {'runningPid': 10}), (same, None), ({'runningPid': 0, 'invocationId': ''}, same)):
+            self.assertIsNone(replaced(before, after))
+        # A swapped daemon: recorded true, a PASS without the note.
+        s, flow, calls, install, app = self.session(daemon_after=(5151, 'inv-2'))
+        row = s.matrix['cases']['UP1']
+        self.assertEqual((row['status'], row['daemonReplaced'], row['reason'], row['parts']['daemonRecorded']), ('PASS', True, None, True))
+        # Not recorded (a proof without the PID and InvocationID): never a PASS.
+        for change in ({'daemon_before': None}, {'daemon_after': None}):
+            s, flow, calls, install, app = self.session(**change)
+            row = s.matrix['cases']['UP1']
+            self.assertEqual((row['status'], row['daemonReplaced'], row['parts']['daemonRecorded']), ('FAIL', None, False), change)
+            self.assertIn('daemonRecorded', row['reason'])
+        # A failing run that kept the same daemon says both.
+        s, flow, calls, install, app = self.session(gap=False)
+        reason = s.matrix['cases']['UP1']['reason']
+        self.assertIn('connectionGapMeasured', reason)
+        self.assertTrue(reason.endswith(update_flow.SAME_DAEMON))
+
+    def test_up1_never_passes_on_a_part_that_was_not_seen(self):
+        """Item 13: none or two relaunched apps, an app that does not answer, no measured gap, or a build that cannot be
+        told from the baseline. Each is a FAIL of UP1, never a PASS."""
+        for change, part in (({'adopted': ()}, 'newAppStarted'), ({'adopted': ({'pid': 7}, {'pid': 8})}, 'newAppStarted'),
+                             ({'answers_after': False}, 'newAppStarted'), ({'gap': False}, 'connectionGapMeasured'),
+                             ({'refuses_fixture': False}, 'identity'), ({'daemon_sha': B_SHA}, 'identity'), ({'exe_changed': False}, 'installerRan')):
+            s, flow, calls, install, app = self.session(**change)
+            row = s.matrix['cases']['UP1']
+            self.assertEqual(row['status'], 'FAIL', change)
+            self.assertIs(row['parts'][part], False, change)
+            self.assertIn(part, row['reason'], change)
+            self.assertEqual([p.name for p in install.iterdir() if p.name.startswith('s7-foreign-')], [], change)  # the planted set is removed all the same
+
+    def test_a_refused_fixture_ends_before_any_install(self):
+        s, flow, calls, install, app = self.session(app=UpdateApp(enabled=False))
+        cases = s.matrix['cases']
+        self.assertEqual(cases['UP1']['status'], 'FAIL')
+        self.assertIn('did not take the update fixture', cases['UP1']['reason'])
+        self.assertNotIn('update_install_confirm', [c[2] for c in calls])
+        self.assertNotIn(('native-lifecycle.ps1', 'update-observe'), [(c[0], c[1]) for c in calls])
+        self.assertTrue(s.update_begun)  # teardown still adopts before the stop: update-begin was recorded
+        self.assertEqual(cases['UP2']['status'], 'NOT_RUN')
+        self.assertEqual(s.ended, ['a1'])
 
 
 if __name__ == '__main__':

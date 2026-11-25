@@ -77,12 +77,25 @@ POLL = 0.1
 # waits at most COMMAND_ECHO for the composer line to drop the text, else clears it with C-u.
 COMMAND_SETTLE = 0.5
 COMMAND_ECHO = 2.0
+# 1.0.1 (D2): codex 0.172.0 lost the first character of text typed 4-8 ms after Escape (`/quit` arrived as `quit`, and a later `/quit`
+# on top of it was submitted as the prompt `quit/quit`). After any key or paste, the next text, key or paste to the same pane first waits
+# until KEY_SETTLE has passed and re-captures until two captures in a row are equal, at most KEY_SETTLE_MAX after the key (Pane.settle).
+# Live.press settles right after a key that is not Enter, so a product send that follows a key is covered too.
+KEY_SETTLE = 0.6
+KEY_SETTLE_MAX = 3.0
+# The Enter of rule (i) needs a fresh capture whose input row is exactly the typed command (input_echo). The input row is the last
+# captured line that starts with the tool's prompt marker; the text anywhere else on the screen no longer counts. A tool without a
+# known marker (opencode, pi: no capture of their input row exists yet) uses the stricter whole-line rule of input_echo.
+INPUT_MARKERS = {'claude': ('❯',), 'codex': ('›',)}
+SELECTORS = '›❯>→▶*'  # what a list may put in front of its selected row
+SHELL_ECHO = 10.0  # CL3: how long the owned shell terminal may take to show the typed command
 END_LINE = '[devbox] 에이전트가 끝났습니다(종료 코드'
 
 # --- 8.1.2 Pane. -----------------------------------------------------------------------------------
 TMUX = ('/usr/bin/tmux', '-L', 'devbox-accept')
 TARGET_ID = re.compile('[A-Za-z0-9_-]+')
-DISPLAY_FORMATS = ('#{version}', '#{pane_width}x#{pane_height}')
+# The third format (1.0.1, UP1) identifies one tmux session and its pane across an app update.
+DISPLAY_FORMATS = ('#{version}', '#{pane_width}x#{pane_height}', '#{session_created} #{pane_pid} #{pid}')
 SIZES = ((200, 50), (40, 24), (80, 24))
 PASTE_TEXTS = ('!', 's7-paste-probe')
 TMUX_READ = ('capture-pane', 'has-session', 'list-buffers', 'display-message', 'show-options')
@@ -269,6 +282,70 @@ def stop_reason(lines, tool=None):
     return stop_check(lines, tool)[0]
 
 
+def echo_forms(text):
+    """What an input row may show for a typed command: the text itself and, for a `!` command, the text without the `!`
+    (a tool that switches to its shell mode takes the `!` as the mode key)."""
+    forms = {text}
+    if text.startswith('!') and text[1:].strip():
+        forms.add(text[1:].strip())
+    return forms
+
+
+def input_row(lines, tool):
+    """The text of the tool's input row: the last captured line that starts with its prompt marker (INPUT_MARKERS), with
+    the marker, spaces and box padding stripped. None when the tool has no known marker or no line starts with it."""
+    markers = INPUT_MARKERS.get(tool, ())
+    for row in reversed(banner_rows(lines)):
+        for marker in markers:
+            if row.startswith(marker):
+                return row[len(marker):].strip()
+    return None
+
+
+def plain_row(row, form):
+    """A whole line that is the command, or a list row for it: an optional selector, the command, then nothing or spaces."""
+    row = row[1:].strip() if row[:1] in SELECTORS else row
+    return row == form or row.startswith(form + ' ')
+
+
+def input_echo(lines, tool, text, before=None):
+    """(shown, row): whether the capture shows `text` as exactly the tool's input row, and the row that was read (D2).
+
+    `before` is the capture taken right before the text was typed; without it nothing passes. With a known prompt marker
+    the input row is the last line that starts with it. It must equal the text now, and it must not have equalled it
+    before the typing: a row that already showed the command (a transcript row that looks like the input row, a draft
+    left there) is no proof that this typing arrived, so it never justifies an Enter. `quit/quit`, `quit` or a transcript
+    line that holds the text never pass either. Without a marker, one more whole line must equal the text than in
+    `before`, and no line may hold the text inside other text."""
+    forms = echo_forms(text)
+    if INPUT_MARKERS.get(tool):
+        row = input_row(lines, tool)
+        return before is not None and input_row(before, tool) not in forms and row is not None and row in forms, row
+    rows = banner_rows(lines)
+    exact = [row for row in rows if row in forms]
+    holding = [row for row in rows if any(form in row for form in forms)]
+    inside = [row for row in holding if not any(plain_row(row, form) for form in forms)]
+    was = None if before is None else sum(1 for row in banner_rows(before) if row in forms)
+    shown = was is not None and len(exact) == was + 1 and not inside
+    return shown, (exact[-1] if exact else holding[-1] if holding else None)
+
+
+def shell_echo(lines, command):
+    """CL3's owned shell terminal: the last line that is not empty ends with the command and holds it once. Above it the
+    command may stand at most once more, as a whole line: what the terminal echoed when the text arrived before the
+    shell drew its prompt (the shell then shows the same input again after the prompt)."""
+    rows = [line.rstrip() for line in lines if line.strip()]
+    if not rows or not rows[-1].endswith(command) or rows[-1].count(command) != 1:
+        return False
+    above = [row for row in rows[:-1] if command in row]
+    return len(above) <= 1 and all(row.strip() == command for row in above)
+
+
+def shell_ready(previous, lines):
+    """CL3: the shell has drawn its prompt and rests: two captures in a row are equal and their last line is not empty."""
+    return previous is not None and lines == previous and any(line.strip() for line in lines)
+
+
 def bounded(lines):
     """Stop evidence lines: through redact(), then each cut to STOP_WIDTH characters."""
     return [line[:STOP_WIDTH] for line in redact(lines)]
@@ -341,6 +418,9 @@ class Pane:
         # cut at the capture's top edge (Ruling 87)
         self.notices = []
         self.notices_dropped = {}
+        # D2: `keyed` holds the time of a key or paste the pane has not settled after; `tools` the tool of each pane's last
+        # capture; `before` the capture a text was typed onto; `settles` one row per settle, for the case evidence.
+        self.keyed, self.tools, self.before, self.settles = {}, {}, {}, []
 
     def begin(self, case):
         self.case = case
@@ -384,6 +464,8 @@ class Pane:
         lines = (out.decode('utf-8', 'replace') if isinstance(out, bytes) else out).splitlines()[-CAPTURE_LINES:]
         self.seq += 1
         self.captured[tid] = (self.seq, lines)
+        if tool:
+            self.tools[tid] = tool
         why, hits, notices = stop_check(lines, tool)
         for banner, cut in notices:
             self.notice(banner, cut)
@@ -418,6 +500,35 @@ class Pane:
         self.seq += 1
         self.mutated[tid] = self.seq
         self.last[tid] = what
+        if what[0] in ('key', 'paste'):
+            self.keyed[tid] = self.clock.monotonic()
+
+    def settle(self, tid, tool=None):
+        """D2: after a key or a paste, wait until KEY_SETTLE has passed since it, then re-capture until two captures in a row
+        are equal or KEY_SETTLE_MAX has passed. Returns the last capture, or None when no key is waiting. A stop screen
+        raises as in capture(), and then no further key is sent."""
+        sent = self.keyed.get(tid)
+        if sent is None:
+            return None
+        tool = tool or self.tools.get(tid)
+        wait = sent + KEY_SETTLE - self.clock.monotonic()
+        if wait > 0:
+            self.clock.sleep(wait)
+        previous, stable = self.capture(tid, tool), False
+        while not stable and self.clock.monotonic() < sent + KEY_SETTLE_MAX:
+            self.clock.sleep(POLL)
+            lines = self.capture(tid, tool)
+            stable, previous = lines == previous, lines
+        del self.keyed[tid]
+        last = self.last.get(tid) or ('', '')
+        self.settles.append({'case': self.case, 'after': last[1] if last[0] == 'key' else last[0],
+                             'waited': round(self.clock.monotonic() - sent, 3), 'stable': stable})
+        return previous
+
+    def _settled(self, tid):
+        """Before a text, a key or a paste: settle the pane after the key or paste that came before it."""
+        if tid in self.keyed and not self.stopped:
+            self.settle(tid)
 
     def type_text(self, tid, text, cl3_folder=None):
         target = self.target(tid)
@@ -428,6 +539,8 @@ class Pane:
             if self.case != 'CL3' or not match or cl3_folder is None or match.group(1) != cl3_folder or cl3_folder not in self.load().get('agentWorktrees', []):
                 raise Refused('Only KEY_TEXTS, or in CL3 the exact refusal command for the recorded owned folder')
             what = ('cl3', text)
+        self._settled(tid)
+        self.before[tid] = self.captured[tid][1] if self._fresh(tid) else None
         self._mutate(tid, what, ['send-keys', '-t', target, '-l', '--', text])
 
     def _fresh(self, tid):
@@ -437,7 +550,13 @@ class Pane:
     def enter_allowed(self, tid, rule, project=None):
         last = self.last.get(tid)
         if rule == 'command':
-            return bool(last) and (last[0] == 'cl3' or (last[0] == 'text' and last[1][:1] in ('/', '!')))
+            # D2: the command's Enter needs a capture taken after the text was typed, whose input row is exactly the text.
+            if not last or not self._fresh(tid):
+                return False
+            lines = self.captured[tid][1]
+            if last[0] == 'cl3':
+                return shell_echo(lines, last[1])
+            return last[0] == 'text' and last[1][:1] in ('/', '!') and input_echo(lines, self.tools.get(tid), last[1], self.before.get(tid))[0]
         if not self._fresh(tid):
             return False
         text = '\n'.join(self.captured[tid][1])
@@ -458,8 +577,12 @@ class Pane:
         target = self.target(tid)
         if key not in KEYS:
             raise Refused('Key not allowed: ' + str(key))
+        # D2: the caller's own capture must be newer than the last text, key or paste, as before. The pane then settles after
+        # a key or paste that came before, and the rule is checked on the newest capture.
+        fresh = self._fresh(tid)
+        self._settled(tid)
         if key == 'Enter':
-            if not self.enter_allowed(tid, rule, project):
+            if not fresh or not self.enter_allowed(tid, rule, project):
                 raise Refused('Enter refused: no rule (i)-(iii) holds for ' + str(rule))
             if rule in ('trust-claude', 'trust-codex'):
                 self.trusted[rule.split('-')[1]].add(project)
@@ -471,6 +594,7 @@ class Pane:
         target = self.target(tid)
         if text not in PASTE_TEXTS:
             raise Refused('Paste text not allowed')
+        self._settled(tid)
         name = 's7-%s-%d' % (self.nonce, len(self.buffers) + 1)
         self.buffers.append(name)
         self._mutate(tid, ('paste', text), ['set-buffer', '-b', name, '--', text])
@@ -617,6 +741,11 @@ class Live:
         # round 4 item 1: `cut` on a banner cut at the capture's top edge.
         notices = [{key: n[key] for key in ('lines', 'seen', 'cut') if key in n} for n in getattr(self.pane, 'notices', []) if n['case'] == case]
         dropped = getattr(self.pane, 'notices_dropped', {}).get(case)
+        # D2: how often this case waited for the pane after a key, the longest wait, and the waits that ended without two equal captures.
+        settled = [entry for entry in getattr(self.pane, 'settles', []) if entry.get('case') == case]
+        if settled:
+            row = {**row, 'keySettles': {'count': len(settled), 'maxWaitSeconds': max(entry['waited'] for entry in settled),
+                                         'unstable': [entry for entry in settled if not entry['stable']][-20:]}}
         dump(self.cases / (case + '.json'), {'case': case, 'status': status, 'reason': reason, 'partial': partial, 'surface': self.surface, **row,
                                              **({'tmuxFailures': failed} if failed else {}), **({'passiveNotices': notices} if notices else {}),
                                              **({'passiveNoticesDropped': dropped} if dropped else {}), 'budget': self.budget.snapshot()})
@@ -739,34 +868,63 @@ class Live:
     def press(self, case, tid, key, rule=None, project=None):
         self.pane.key(tid, key, rule, project)
         self.note(case, 'keys', {'t': round(self.clock.monotonic(), 3), 'key': key, 'rule': rule})
+        if key != 'Enter':
+            # D2: nothing follows a key before the pane has settled, a product send (agents.send, MCP) included.
+            self.settle(tid)
+
+    def settle(self, tid, tool=None):
+        """D2: Pane.settle for a key or paste this pane has not settled after; None when there is none."""
+        settle = getattr(self.pane, 'settle', None)
+        return settle(tid, tool) if settle else None
 
     def command(self, case, tid, text, tool):
-        """Type a slash command and submit it once the tool has taken the text (D8, Ruling 153). Returns False when the text was not echoed (no Enter) or codex kept it in the composer."""
+        """Type a command and submit it once the tool's input row is exactly the text (D8, Ruling 153; D2, 1.0.1).
+
+        The pane is settled after any earlier key and captured before the text is typed. Enter is pressed only after a
+        capture, and COMMAND_SETTLE later a second one, show the text as exactly the input row (input_echo); the pane's own
+        Enter rule (i) checks the same on that last capture. Returns False when the row never was the text (no Enter) or
+        codex kept the text in its composer after Enter."""
+        self.settle(tid, tool)
+        before = self.capture(case, tid, tool)
         self.type(case, tid, text)
         deadline = self.clock.monotonic() + COMMAND_ECHO
         while True:
             lines = self.capture(case, tid, tool)
-            if any(text in line for line in lines):
+            shown, row = input_echo(lines, tool, text, before)
+            if shown:
                 break
             if self.clock.monotonic() >= deadline:
-                self.note(case, 'noEcho', text)  # the screen state is unknown: no Enter, no C-u
-                return False
+                return self.no_echo(case, tid, tool, text, before, row)
             self.clock.sleep(POLL)
         self.clock.sleep(COMMAND_SETTLE)
-        self.capture(case, tid, tool)
+        shown, row = input_echo(self.capture(case, tid, tool), tool, text, before)
+        if not shown:
+            return self.no_echo(case, tid, tool, text, before, row)
         self.press(case, tid, 'Enter', 'command')
         if tool != 'codex':
             return True
         deadline = self.clock.monotonic() + COMMAND_ECHO
         while True:
             lines = self.capture(case, tid, tool)
-            if not any(line.lstrip().startswith('›') and text in line for line in lines):
+            if input_row(lines, tool) != text:  # the composer is the last `›` row; a transcript row above it does not count
                 return True
             if self.clock.monotonic() >= deadline:
                 break
             self.clock.sleep(POLL)
         self.press(case, tid, 'C-u')
         self.note(case, 'leftover', text)
+        return False
+
+    def no_echo(self, case, tid, tool, text, before, row):
+        """The input row is not exactly the command: no Enter is sent. What the typing left on a known input row is cleared
+        with C-u, so the next command does not land on it; a screen without a known input row gets no key at all."""
+        was = input_row(before, tool)
+        self.note(case, 'noEcho', text)
+        self.note(case, 'inputRows', {'text': text, 'before': None if was is None else bounded([was])[0],
+                                      'after': None if row is None else bounded([row])[0]})
+        if INPUT_MARKERS.get(tool) and row is not None and row != was:
+            self.press(case, tid, 'C-u')
+            self.note(case, 'cleared', text)
         return False
 
     def tool_of(self, tid):
@@ -1159,15 +1317,20 @@ def opencode_block(live, selected, client):
         lines = live.capture('H3X-ENV', tid, 'opencode')
         names = lambda ls: {n for n in ('DEVBOX_BIN', 'DEVBOX_INSTANCE', 'DEVBOX_AGENT_ID', 'DEVBOX_AGENT_LAUNCH') if any(n + '=' in line or n + ' ' in line or line.strip() == n for line in ls)}
         tool_names = names(lines)
-        live.type('H3X-ENV', tid, "!env | grep '^DEVBOX_'")
-        live.press('H3X-ENV', tid, 'Enter', 'command')
-        shown, _ = live.wait_pane('H3X-ENV', tid, lambda ls: 'DEVBOX_INSTANCE' in '\n'.join(ls[-30:]), TIMEOUTS['screen'], 'opencode')
+        # D2: Enter only after the input row is exactly the command; without that (b) was not run.
+        sent = live.command('H3X-ENV', tid, "!env | grep '^DEVBOX_'", 'opencode')
+        shown = None
+        if sent:
+            shown, _ = live.wait_pane('H3X-ENV', tid, lambda ls: 'DEVBOX_INSTANCE' in '\n'.join(ls[-30:]), TIMEOUTS['screen'], 'opencode')
         shell_names = names(shown or [])
         scope, scope_error = scope_env_names(task['id'])
         live.put('H3X-ENV', 'names', {'tool': sorted(tool_names), 'shell': sorted(shell_names), 'scope': scope, 'scopeError': scope_error})
         parts = {'a': {'DEVBOX_BIN', 'DEVBOX_INSTANCE'} <= tool_names and not tool_names & {'DEVBOX_AGENT_ID', 'DEVBOX_AGENT_LAUNCH'},
-                 'b': shown is not None and shell_names == tool_names, 'c': scope is not None}
-        conclude(live, 'H3X-ENV', parts, [row_text('H3X-ENV.editor')])
+                 'b': (shown is not None and shell_names == tool_names) if sent else None, 'c': scope is not None}
+        reasons = [row_text('H3X-ENV.editor')]
+        if not sent:
+            reasons.append('The shell command was not shown as the input row; no Enter was sent and (b) was not checked')
+        conclude(live, 'H3X-ENV', parts, reasons)
 
     def nest(live, tasks):
         live.budget.nest('opencode')
@@ -1705,8 +1868,8 @@ def codex_block(live, selected, client):
                 live.type('H2X-SHELLMARK', tid, '!echo s7')
                 live.pane.resize(tid, 40, 24)
             elif variant == 'side':
-                live.type('H2X-SHELLMARK', tid, '/side')
-                live.press('H2X-SHELLMARK', tid, 'Enter', 'command')
+                # D2: `/side` goes through Live.command (Enter only on the exact input row); the next text waits for the pane.
+                opened = live.command('H2X-SHELLMARK', tid, '/side', 'codex')
                 live.type('H2X-SHELLMARK', tid, '!echo s7')
             else:
                 live.type('H2X-SHELLMARK', tid, '?')
@@ -1715,7 +1878,7 @@ def codex_block(live, selected, client):
             sent = live.send('H2X-SHELLMARK', 'codex', task['id'], 'P-OK')
             mcp = live.mcp_send('H2X-SHELLMARK', 'codex', client, task['id'], 'P-OK')
             rows.append({'variant': variant, 'shellMode': any(re.search(r'[ \t]{2}Shell mode[ \t]*$', line) for line in lines), 'send': sent['result'],
-                         'code': sent.get('code'), 'mcp': mcp['result']})
+                         'code': sent.get('code'), 'mcp': mcp['result'], **({'sideSubmitted': opened} if variant == 'side' else {})})
             live.press('H2X-SHELLMARK', tid, 'C-u')
             live.press('H2X-SHELLMARK', tid, 'Escape')
             live.pane.resize(tid, 80, 24) if variant == 'narrow' else None

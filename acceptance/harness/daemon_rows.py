@@ -14,7 +14,7 @@ import subprocess
 import threading
 import time
 
-from agents_live import text_for
+from agents_live import SHELL_ECHO, shell_ready, text_for
 from common import dump, ensure_trust, redact_text, require_lock, run_checked, trust_context, with_trust
 from fixture import GIT_ENV, P_CL_FAILING_TOML, P_CL_TOML, systemd_env
 from installed_binary import installed_binary
@@ -616,12 +616,32 @@ class DaemonRows:
             tid = terminal['id']
             try:
                 self.pane.begin('CL3')
+                # 1.0.1 (D2): type only once the new shell has drawn its prompt and rests (bounded), so the text is not
+                # echoed ahead of the prompt; then Enter only once the shell shows the command as its last line (rule (i)).
+                previous, deadline = None, self.clock.monotonic() + SHELL_ECHO
+                while True:
+                    lines = self.pane.capture(tid)
+                    if shell_ready(previous, lines) or self.clock.monotonic() >= deadline:
+                        break
+                    previous = lines
+                    self.clock.sleep(0.2)
                 self.pane.type_text(tid, command, cl3_folder=tree)
-                self.pane.key(tid, 'Enter', 'command')
-                deadline = self.clock.monotonic() + 30
-                while (self.worktree_listed(project, tree) or Path(tree).exists()) and self.clock.monotonic() < deadline:
-                    self.clock.sleep(0.5)
-                row['shell'] = {'before': before, 'listedAfter': self.worktree_listed(project, tree), 'folderExists': Path(tree).exists()}
+                echoed, deadline = False, self.clock.monotonic() + SHELL_ECHO
+                while True:
+                    self.pane.capture(tid)
+                    echoed = self.pane.enter_allowed(tid, 'command')
+                    if echoed or self.clock.monotonic() >= deadline:
+                        break
+                    self.clock.sleep(0.2)
+                if echoed:
+                    self.pane.key(tid, 'Enter', 'command')
+                    deadline = self.clock.monotonic() + 30
+                    while (self.worktree_listed(project, tree) or Path(tree).exists()) and self.clock.monotonic() < deadline:
+                        self.clock.sleep(0.5)
+                row['shell'] = {'before': before, 'typed': True, 'echoed': echoed, 'listedAfter': self.worktree_listed(project, tree),
+                                'folderExists': Path(tree).exists()}
+                if not echoed:
+                    row['shell']['why'] = 'the shell did not show the typed command as its last line; no Enter was sent'
             finally:
                 self.rpc('terminal.close', {'id': tid})
         parts['b'] = all(before.values()) and row['shell'].get('listedAfter') is False and row['shell'].get('folderExists') is False

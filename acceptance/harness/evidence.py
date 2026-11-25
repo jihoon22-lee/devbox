@@ -10,9 +10,14 @@ import re
 
 BASE = Path(__file__).resolve().parent
 REPO = 'jihoon22-lee/devbox'
-# S8-5 (Ruling 146) and S8-5b-28b (Ruling 163): the candidate is main cc704e6f (1.0.0-rc.3), built by the windows.yml dispatch on main.
+# The default branch of each side's windows.yml dispatch (S8-5, Ruling 146: the candidate is built on main). 1.0.1 (D1): a
+# run may name another branch with --candidate-branch/--baseline-branch; the approval binding pins it (`branch`).
 BRANCHES = {'candidate': 'main', 'baseline': 'v1/s7-rc1-accept'}
-ARTIFACT_DIRS = {'candidate': 'windows-run-1.0.0-rc.3-cc704e6f', 'baseline': 'windows-run-rc1'}
+BRANCH_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,127}')
+# 1.0.1 (D1): the artifact folder of each side is a run argument (--candidate-artifacts/--baseline-artifacts), one path
+# component under the evidence root. The approval binding pins the name (`artifacts`) next to the bytes (`artifactSha256`).
+ARTIFACT_DIR_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
+ARTIFACT_DIR_RESERVED = ('runs', 'harness')
 ARTIFACT_ENTRIES = ('devbox-setup', 'devbox-setup-accept', 'devbox-linux')
 WORKFLOW = '.github/workflows/windows.yml'
 SHA = re.compile('[0-9a-f]{40}')
@@ -31,24 +36,32 @@ FLOWS = {
                   'H2X-FEEDBACK', 'H2X-SCREENS', 'H2X-SHELLMARK', 'P1X', 'SN2', 'CL1', 'CL2', 'CL3', 'C1', 'K1X-TMUXUP', 'M4'],
     'wsl-upgrade': ['U1', 'U1X', 'CS5'],
     'fresh': ['G1', 'G2', 'A1', 'A2', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'A4', 'N1-ACCEPT', 'CS3', 'CS10', 'C1', 'A6',
-              'R-SC2', 'M4'],
+              'A7', 'R-SC2', 'M4'],
     'upgrade': ['U1', 'U1X', 'CS5', 'R-SC2'],
+    # 1.0.1 (D5): the app's own update from the baseline install to the candidate installer (UP1), the foreign files
+    # across it (UP2) and across the uninstall (A7).
+    'update': ['UP1', 'UP2', 'A7', 'M4'],
 }
 WSL_FLOWS = ('wsl-fresh', 'wsl-upgrade')
-WINDOWS_FLOWS = ('fresh', 'upgrade')
-UPGRADE_FLOWS = ('upgrade', 'wsl-upgrade')
+WINDOWS_FLOWS = ('fresh', 'upgrade', 'update')
+# The flows with two sides: the baseline is installed first, the candidate over it.
+UPGRADE_FLOWS = ('upgrade', 'wsl-upgrade', 'update')
+# The update flow's version pair (update_flow.check_shape): `same-version` is what the accept update runner accepts.
+UPDATE_SHAPES = ('same-version', 'next-version')
 CASES = list(dict.fromkeys(c for flow in FLOWS.values() for c in flow))
 # Case prerequisites inside one flow (changes §8.0). In the fresh flow every installed case needs the
 # install (A1) and the launch (A2); the WSL flows start their daemon before any case.
 _INSTALLED = {'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'A4', 'N1-ACCEPT', 'CS3', 'CS10', 'C1', 'R-SC2'}
 NEEDS = {
-    'fresh': {'A2': {'A1'}, 'A6': {'A1'}, 'M4': {'A1'}, **{case: {'A1', 'A2'} for case in _INSTALLED}},
+    'fresh': {'A2': {'A1'}, 'A6': {'A1'}, 'A7': {'A1'}, 'M4': {'A1'}, **{case: {'A1', 'A2'} for case in _INSTALLED}},
     'upgrade': {},
+    # The update flow always installs and starts the baseline; UP2 reads what the update of UP1 left.
+    'update': {'UP2': {'UP1'}},
     'wsl-fresh': {},
     'wsl-upgrade': {},
 }
 # Cases that PASS only on the installed Windows app (changes §2, evidence.py:58-69).
-REQUIRES_NATIVE = {'A1', 'A2', 'A4', 'A6', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'CS10', 'N1-ACCEPT', 'R-SC2'}
+REQUIRES_NATIVE = {'A1', 'A2', 'A4', 'A6', 'A7', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'CS10', 'N1-ACCEPT', 'R-SC2', 'UP1', 'UP2'}
 # The user answers a PASS needs (matrix Q1, Q2, Q5); the gate is `trust_answer`.
 TRUST_GATED = {'H1': ('Q1',), 'H1X-SHELL': ('Q1',), 'H1X-HELP': ('Q1',), 'P1': ('Q1',), 'H2': ('Q2',), 'H2X-RESUME': ('Q2',),
                'H2X-RESUME1S': ('Q2',), 'H2X-FEEDBACK': ('Q2',), 'H2X-SCREENS': ('Q2',), 'H2X-SHELLMARK': ('Q2',), 'P1X': ('Q2',),
@@ -92,7 +105,7 @@ def gates_for(flow, case):
         gates = ['installer', 'wsl_identity']
     elif case in ('G1', 'G2'):
         gates = []
-    elif case in ('A1', 'A6', 'M4'):
+    elif case in ('A1', 'A6', 'A7', 'M4'):
         gates = ['installer']
     elif case == 'A2':
         gates = ['installer', 'native_identity']
@@ -179,10 +192,17 @@ def record(matrix, case, status, evidence=(), reason=None, failure=None, partial
     matrix['cases'][case] = row
 
 
+def branch_name(value):
+    """A bound branch name: plain characters only, no `..`, no leading or trailing `/`, no doubled `/`."""
+    if (not isinstance(value, str) or not BRANCH_NAME.fullmatch(value) or '..' in value or '//' in value or value.endswith(('/', '.'))
+            or value.endswith('.lock')):
+        raise ValueError('Branch must be a plain branch name')
+    return value
+
+
 def verify_run(run, sha, expected_run, branch):
-    """The exact windows.yml dispatch run of one artifact: its own branch, success only."""
-    if branch not in BRANCHES.values():
-        raise ValueError('Unknown artifact branch')
+    """The exact windows.yml dispatch run of one artifact: its own bound branch, success only."""
+    branch_name(branch)
     expected = (REPO, REPO, branch, WORKFLOW, sha, 'completed', 'success', 'workflow_dispatch', str(expected_run))
     actual = (run.get('repository', {}).get('full_name'), run.get('head_repository', {}).get('full_name'), run.get('head_branch'),
               run.get('path'), run.get('head_sha'), run.get('status'), run.get('conclusion'), run.get('event'), str(run.get('id')))
@@ -247,6 +267,27 @@ def verify_linux_artifact(directory, source_sha, expected_version):
     return {**proof, 'version': expected_version}
 
 
+def artifact_dir_name(value):
+    """D1: one plain path component, never `.`/`..`, a separator, or one of the evidence root's own folders."""
+    if (not isinstance(value, str) or not ARTIFACT_DIR_NAME.fullmatch(value) or '..' in value or value.endswith('.')
+            or value in ARTIFACT_DIR_RESERVED):
+        raise ValueError('Artifact folder must be one plain path component under the evidence root: ' + repr(value))
+    return value
+
+
+def artifact_dir(root, name):
+    """D1: <evidence root>/<name>/artifacts for a bound folder name. The folder and its `artifacts` child must already
+    exist as real directories (no symlink on either), directly under the evidence root."""
+    root = Path(root)
+    folder = root / artifact_dir_name(name)
+    if folder.parent != root or folder.is_symlink() or not folder.is_dir():
+        raise ValueError('Artifact folder must be an existing real directory under the evidence root: ' + name)
+    artifacts = folder / 'artifacts'
+    if artifacts.is_symlink() or not artifacts.is_dir():
+        raise ValueError('Artifact folder must hold a real `artifacts` directory: ' + name)
+    return artifacts
+
+
 def _artifact_root(artifact_dir):
     root = Path(artifact_dir)
     if root.is_symlink() or not root.is_dir():
@@ -299,11 +340,19 @@ def sha256_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def approval_binding(source_binding, flow, cases, answers, candidate, baseline, windows_local):
-    """What the driver computes for the approval's `binding` part (changes §1.3)."""
-    side = lambda value: None if value is None else {'sha': value['sha'], 'runId': value['runId'], 'artifactSha256': value['artifactSha256']}
+def approval_binding(source_binding, flow, cases, answers, candidate, baseline, windows_local, update_shape=None, distro=None):
+    """What the driver computes for the approval's `binding` part (changes §1.3). The update flow also binds its shape, and
+    every flow the WSL distro the Windows app is pointed at (null for the WSL-only flows, which start no Windows program)."""
+    if (flow in WINDOWS_FLOWS) != (distro is not None):
+        raise ValueError('The distro is bound for the Windows flows only')
+    if (flow == 'update') != (update_shape is not None) or (update_shape is not None and update_shape not in UPDATE_SHAPES):
+        raise ValueError('The update shape is bound for the update flow only')
+    # 1.0.1 (D1): the artifact folder name and the run's branch are run arguments, so the reviewer pins them here.
+    side = lambda value: None if value is None else {'sha': value['sha'], 'runId': value['runId'], 'branch': branch_name(value['branch']),
+                                                     'artifacts': artifact_dir_name(value['artifacts']), 'artifactSha256': value['artifactSha256']}
     return {'sourceBindingSha256': sha256_bytes(source_binding), 'flow': flow, 'cases': list(cases), 'answersSha256': sha256_bytes(answers),
-            'windowsLocal': windows_local, 'candidate': side(candidate), 'baseline': side(baseline)}
+            'windowsLocal': windows_local, 'distro': distro, 'candidate': side(candidate), 'baseline': side(baseline),
+            **({'updateShape': update_shape} if update_shape is not None else {})}
 
 
 def canonical(value):
