@@ -16,4 +16,4 @@
 
 확인하지 못했거나 목표에 못 미친 채 공개하는 주요 항목(릴리스 노트에 적는다. 전체는 PROGRESS §3): 공개 버전 사이의 앱 안 업데이트, Windows 알림, opencode·pi 실제 도구 행, 콜드 스타트 목표 미달(SC2 3초, 실측 5.1초 1표본), PR CI 시간 목표 미달(SC7), codex 0.172.0에서 근거를 얻지 못한 Codex 화면 행, 턴이 끝난 작업의 화면에 뜬 대화상자가 '입력 대기'로 바뀌지 않는 것(H2X-FEEDBACK FAIL(b). 그 화면으로 보내는 지시는 거절된다).
 
-근거: [진행 원장](../superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §3 · [계획 10 §S8-5](../superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md#s8-5-100-공개--별도-승인) · [v1 설계](../superpowers/plans/2026-10-08-devbox-v1/01-design.md).
+근거: [진행 원장](../superpowers/plans/2026-10-08-devbox-v1/PROGRESS.md) §3 · [계획 10 §S8-5](https://github.com/jihoon22-lee/devbox/blob/a09a9966602249e41bc25df8a094666746718241/docs/superpowers/plans/2026-10-08-devbox-v1/10-s7-s8-release.md#s8-5-100-공개--별도-승인) · [v1 설계](../superpowers/plans/2026-10-08-devbox-v1/01-design.md).
