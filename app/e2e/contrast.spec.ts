@@ -418,11 +418,14 @@ test("forced-colors-keep-highlight-on-pressed-selected-and-highlighted-items", a
       await page.keyboard.press("ArrowDown");
       const lit = listbox.locator('[role="option"][data-highlighted]');
       await expect(lit).toHaveCount(1);
-      expect(await look(lit), "highlighted Select option").toMatchObject({
-        background: highlight,
-        color: highlightText,
-        boxShadow: "none",
-      });
+      // On CI the single read once saw an unhighlighted option (#656, cause not isolated): poll.
+      await expect
+        .poll(() => look(lit), { message: "highlighted Select option" })
+        .toMatchObject({
+          background: highlight,
+          color: highlightText,
+          boxShadow: "none",
+        });
       await expectPaintedLabel(page, lit.locator("span").first(), lit, "highlighted Select option");
       const unlit = listbox.locator('[role="option"]:not([data-highlighted])').first();
       expect((await look(unlit)).background, "other Select option fill").not.toBe(highlight);

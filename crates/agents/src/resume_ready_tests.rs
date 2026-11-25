@@ -469,6 +469,7 @@ fn claude_session_start_while_waiting_keeps_waiting() {
 
 const FAKE_TMUX: &str = r#"#!/bin/sh
 live=$DEVBOX_RESUME_READY_LIVE
+printf '%s\n' "$5" >> "$live.calls"
 if [ -f "$live.fail" ] && [ "$(cat "$live.fail")" = "$5" ]; then
   if [ "$5" = load-buffer ]; then cat > /dev/null; fi
   exit 1
@@ -486,6 +487,7 @@ case "$5" in
  list-sessions) if [ -f "$live" ]; then printf '%s\t0\tbash\t/owned\n' "$(cat "$live")"; fi;;
  kill-session) rm -f "$live";;
  load-buffer) cat > /dev/null;;
+ capture-pane) if [ -f "$live.screen" ]; then cat "$live.screen"; fi;;
 esac
 exit 0
 "#;
@@ -541,3 +543,6 @@ fn with_fake_tmux<F: std::future::Future<Output = ()>>(test: &str, body: impl Fn
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[path = "send_idle_pane_tests.rs"]
+mod idle_pane;

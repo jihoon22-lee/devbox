@@ -23,3 +23,4 @@
 | 0015 | [사용자별 백그라운드 agent](0015-devbox-agent.md) | 대체됨(0017) |
 | 0016 | [개인용 보안 범위](0016-personal-security-scope.md) | 채택 · 0017에서 형태 조정(01-design §13) |
 | 0017 | [재구축: 단일 앱 + WSL 데몬](0017-rebuild-single-app-wsl-daemon.md) | 채택 |
+| 0018 | [1.0.0 공개 기준과 그 뒤의 범위·과정](0018-v1-release-gate-and-scope.md) | 채택 |
