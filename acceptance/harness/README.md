@@ -5,20 +5,26 @@
 This folder is the versioned source of the Windows acceptance harness. Until 2026-11-25 it lived only in the Git
 common-dir of one PC.
 
-- **Imported as run.** The code here is byte-for-byte the harness that accepted the 1.0.0 code candidate `cc704e6f`
-  (runs `cc704e6f-a17b22a5` and `cc704e6f-282b323d`); the staged helper hashes equal that run's approved `helperSha256`.
+- **Imported as run.** The import at commit `a09a9966` was byte-for-byte the harness that accepted the 1.0.0 code
+  candidate `cc704e6f` (runs `cc704e6f-a17b22a5` and `cc704e6f-282b323d`); its helper hashes equalled that run's
+  approved `helperSha256`.
+- **Since 1.0.1 the code differs from that copy.** Added: run arguments for the artifact folders, branches and distro
+  in the binding; the key settle and the exact input-row rule; one launcher for every start of the owned executable;
+  ASCII-only PowerShell helpers; the running prod app in the prod fingerprint; the `update` flow with UP1, UP2 and A7
+  (list below). This code was reviewed in full before its first live runs, `a09a9966-fcc46e17` (`fresh`) and
+  `ceda4811-e2f2d5b7` (`update`), both on 2026-11-25.
 - **Run copy.** Runs still happen from the run copy in the Git common-dir (`devbox-verification/s7/harness/`), because
   the driver keeps its run state next to the code: `answers.json` (the user's answers), `source-binding.json`,
   `review-approval.json` and `helper-manifest.json`. Those files are not in the repository.
-- **Before a run:** copy the code from here to the run copy, or confirm with `diff -r` that it is the same. Any
-  difference is reviewed by the independent reviewer together with the binding (§2.3).
+- **Before a run:** the run copy is synced from the repository (copy the code from here, then confirm with `diff -r`
+  that it is the same). A helper that changed since the last approval changes `helperSha256`, which the independent
+  reviewer approves again together with the binding (§2.3).
 - **Not wired into CI.** `test_s7_harness.py` runs by hand (`python3 -B -m unittest test_s7_harness`), as §1 says.
 - The text below still says rc.2 in places and uses that run's paths; it is kept as written.
 
 ### Changes for 1.0.1 (the code here differs from the imported run copy)
 
-Each item is a lesson of the 1.0.0 acceptance. The helper hashes changed, so the first 1.0.1 run needs a full code
-review again (§2.3).
+Each item is a lesson of the 1.0.0 acceptance.
 
 - **Artifact folders and branches are run arguments.** `--candidate-artifacts <name>` (and `--baseline-artifacts`) name
   the folder under the evidence root; `--candidate-branch` and `--baseline-branch` name the dispatch branch (defaults
@@ -239,6 +245,10 @@ CANDART=windows-run-rc2                   # the candidate's folder name under $S
 RC1ART=windows-run-rc1                    # the baseline's folder name under $S7 (--baseline-artifacts)
 CANDBRANCH=v1/s7-rc2                      # the branch of the candidate's dispatch (--candidate-branch; default main)
 RC1=$(git -C $W rev-parse 'v1.0.0-rc.1^{commit}')   # must print 28eb2a9111c83f4345e1b7ed2ae04d6849fa116e
+# The update flow (1.0.1, §7): the baseline accept build that runs first and updates itself to the candidate.
+BASE=<40-hex SHA of the baseline build>   # another source SHA with the candidate's version (§7.4)
+BASERUN=<windows.yml run of $BASE>        # --baseline-run
+BASEART=<its folder name under $S7>       # --baseline-artifacts, e.g. windows-run-1.0.0-a09a9966
 WINLOCAL=/mnt/c/Users/<windows user>/AppData/Local # see `ls /mnt/c/Users`; no Windows program is needed
 ```
 
@@ -309,13 +319,15 @@ Run the flows in this order:
 1. `wsl-fresh`;
 2. `wsl-upgrade`;
 3. after the user restores interop (Q0 yes) and the interop probe passes, `fresh`;
-4. then `upgrade`.
+4. then `upgrade`;
+5. then `update` (1.0.1, §7), which needs Q0 only: it uses no real tool.
 
 With Q0 false, a Windows flow records every case NOT_RUN (R-IOP) and changes nothing.
 
 ### 2.1 Bind the source (one binding per flow)
 
-The fresh flows bind the candidate only (`baseline: null`). The upgrade flows also bind rc.1.
+The fresh flows bind the candidate only (`baseline: null`). The upgrade flows also bind rc.1. The `update` flow binds
+its own baseline, `$BASE` (the build that runs first).
 
 `bind_source.py` refuses to overwrite `source-binding.json`. Before rebinding, move the previous file into the
 run that used it (`runs/<sha8>-<hex8>/`). It is that run's evidence.
@@ -326,6 +338,9 @@ python3 -B $H/bind_source.py --worktree $W --candidate-sha "$CAND"
 # wsl-upgrade and upgrade
 mv $H/source-binding.json $S7/runs/<previous run>/source-binding.json
 python3 -B $H/bind_source.py --worktree $W --candidate-sha "$CAND" --baseline-sha "$RC1"
+# update: the baseline is the build that runs first, not rc.1; the gates then check the two bound versions (§7.1)
+mv $H/source-binding.json $S7/runs/<previous run>/source-binding.json
+python3 -B $H/bind_source.py --worktree $W --candidate-sha "$CAND" --baseline-sha "$BASE"
 ```
 
 A new binding changes `binding.sourceBindingSha256`, so that flow's binding part must be approved again.
@@ -658,8 +673,17 @@ the uninstaller do to files they did not install.
    the run token; the launch refuses an occupied port.
 4. One owned shell task (`s7-shell`: bash, no tool) is created; its tmux session identity is read. With UP2 selected the
    `update` set of foreign files is planted in the install folder.
-5. `update-begin`, then the five commands through `native-cdp.ps1`, then `update-observe` about once a second until the
-   product's runner has ended and the relaunched app runs; `update-adopt` records that app and pins the installed bytes.
+5. `update-begin`, then the screen's commands through `native-cdp.ps1`: `update_status`, `update_check` only while the
+   phase is idle or failed, `update_download`, `update_install_summary`, `update_install_confirm`. The app checks by
+   itself at start, so the release is often already `available` and `update_check` is not sent at all (it was not in
+   run `ceda4811-e2f2d5b7`; see its `update-commands.json`). Then `update-observe` is polled until the product's runner
+   has ended and the relaunched app runs; `update-adopt` records that app and pins the installed bytes.
+   - Each poll is one PowerShell start through WSL interop, so the polls are 4 to 6 s apart (3.4, 9.8, 13.8 and
+     18.9 s after the confirm in that run), not a fixed interval.
+   - `runner.oldExitedAfter` and `runner.newAppAfter` are therefore upper bounds: the time of the first poll that saw
+     the old app gone, or the new app running. `update-observe.json` keeps every poll with its time `t`.
+   - `connection.gapSeconds` does not depend on those polls: it is sampled inside WSL every 100 ms
+     (`connection.maxStepSeconds` is the longest step between two samples).
 6. The instance proof and the reseal for the candidate, `update_status` on the new app (its `currentVersion`),
    `installed-identity` (the bundled Linux binary equals the candidate's artifact) and the prod comparison.
 
@@ -681,12 +705,26 @@ the same (`tmuxSurvived`); the connection gap was measured (`connectionGapMeasur
 
 `identity` and `installerRan` decide which build runs. The product shows its source SHA nowhere at run time, so
 `identity` is three facts together (`identityHow` in `cases/UP1.json`): the installed `devbox-linux` is byte for byte
-the candidate run's Linux artifact, whose receipt names the candidate SHA; the daemon the relaunched app deployed and
-runs is that same artifact (the instance proof of the candidate phase); and the relaunched app refuses the fixture it
-inherited, whose `owner.json` names the baseline SHA, so its compiled `SOURCE_SHA` is not the baseline's. In the shape
-`same-version` both builds report the same version, so `version` is recorded and must hold but is left out of
-`decidingParts`. The gap is a measurement without a threshold: inside WSL, every 100 ms,
-from the first sample without the old app's `devbox bridge` process to the first sample with a new one.
+the candidate run's Linux artifact, whose receipt names the candidate SHA; the running daemon is that same artifact
+(the instance proof of the candidate phase); and the relaunched app refuses the fixture it inherited, whose
+`owner.json` names the baseline SHA, so its compiled `SOURCE_SHA` is not the baseline's. In the shape `same-version`
+both builds report the same version, so `version` is recorded and must hold but is left out of `decidingParts`.
+
+**What UP1 proves about the daemon depends on the two Linux binaries.** The app deploys its bundled `devbox-linux` and
+restarts the daemon only when that binary differs from the installed one.
+- **Same binary in both builds** (run `ceda4811-e2f2d5b7`: one sha256 for both): the daemon is not redeployed and not
+  restarted. The instance proofs before and after show the same PID and the same systemd InvocationID. UP1 then proves
+  the **app** update and restart only: the new app connects to the daemon that was already running. It says nothing
+  about a daemon swap.
+- **Different binaries:** the relaunched app deploys the candidate's binary and restarts the daemon; the candidate
+  instance proof then holds another PID and InvocationID, and UP1 also covers the daemon swap under a running tmux task.
+
+UP1 records which one happened as `daemonReplaced` (true or false, from the two instance proofs; `daemon` keeps both
+sides). It is never judged, because not replacing is correct for equal binaries, but it must be known: a run whose
+proofs lack the PID or InvocationID fails `daemonRecorded`. When it is false, the case's reason says so, also on a PASS.
+
+The gap is a measurement without a threshold: inside WSL, every 100 ms, from the first sample without the old app's
+`devbox bridge` process to the first sample with a new one.
 
 **UP2** reads the `update` set back after the installer ran and removes exactly that set. **A7** (also in `fresh`)
 plants the `uninstall` set before the plain uninstall; `native-lifecycle uninstall -Foreign` reads it back before the
@@ -708,23 +746,42 @@ Limits to state with a result:
   the owned executable, no update runner or installer runs, and the debug port is closed. If any of that fails,
   nothing is uninstalled, the stage is kept whole, the resources are retained and the run is FAIL.
 
-### 7.3 The first live run must check
+### 7.3 What the first live runs showed (2026-11-25)
 
-- `validate.py --powershell-parse` passes for `native-cdp.ps1`, `native-lifecycle.ps1` and `process-launch.ps1`. The
-  parse does not compile the C# in `process-launch.ps1`: the first `install` does (the self-check runs through it).
-- `native-install-*.json` shows `installedSelfCheck: PASS` and a self-check record with `startedUtc`.
-- `cases/UP1.json`: `commands` reached `update_install_confirm`; `runner.runnerSeen` and `installerSeen`; whether the
-  runner could start at all (it needs `CREATE_BREAKAWAY_FROM_JOB`; a WSL-started PowerShell may put the app in a job).
-- The debug port listener descends from the owned app (the helper refuses otherwise), and the relaunched `--minimized`
-  app still has a main window page.
-- `connection.gapSeconds` is not null (the bridge process must match `devbox bridge` with `DEVBOX_INSTANCE=accept`).
-- Whether the product's installer kept the owner marker in the install folder (`adoption.markerRecreated`).
-- That the relaunched app really started. A new build reads the old build's `updates\install-*\owner.json`, `spawn.json`
-  and `outcome.json` before anything else (`core/update/runner_recovery.rs:61-130`, `platform/update_runner.rs:309-338`).
-  If it cannot read them (a record field the two source SHAs do not share, `runner_files.rs:46-57`), it shows a message
-  box and exits with 3. The harness then sees a process without a page: `newAppStarted` fails, and teardown records and
-  stops that process, so no dialog is left on the desktop.
-- A7's `comparison.uninstallerEnded` and `waitMs`: whether the 30 s wait for the uninstaller's end is enough on this PC.
+Run `ceda4811-e2f2d5b7` (`update`, shape `same-version`, baseline `a09a9966`, candidate `ceda4811`, both 1.0.0):
+UP1, UP2, A7 and M4 passed. Run `a09a9966-fcc46e17` (`fresh` with A1, A2, A6, A7, M4) passed before it.
+
+Shown by those runs:
+- The PowerShell helpers parse, and the C# of `process-launch.ps1` compiles: the installed self-check ran through it.
+- The product's runner started from the harness-launched app (`runner.runnerSeen`): its job breakaway works when the
+  app was started by a WSL-started PowerShell. The installer ran from the stage (`installerSeen`), and the relaunched
+  app removed the stage folder (`runner.installed` is `acknowledged`).
+- The debug-port listener descended from the owned app, before and after the update, and the relaunched `--minimized`
+  app had a `main` page that answered `update_status`.
+- The relaunched app read the old build's stage records and started (no blocked-start message box).
+- The connection gap was 19.27 s (`connection.gapSeconds`, 447 samples, longest step 0.15 s). The old app was first
+  seen gone 9.8 s and the new app first seen 18.9 s after the confirm (upper bounds, §7.2).
+- The planted files survived the update (UP2) and the uninstall (A7; the uninstaller's end was seen after about 3 s,
+  `comparison.waitMs` 2961 and 3668). The installer kept the owner marker (`adoption.markerRecreated` false).
+- NSIS's memory was the owned install path, and no default install folder appeared (`defaultInstallPresent` false).
+- The runner's `wsl.exe ... --exec sleep 900` was seen as its child (`runner.keepAlive`) and left to end by itself, as
+  the product designs it (at most 15 minutes).
+- Teardown needed one round: nothing was left to adopt, the exact stop ended the relaunched app, and
+  `assert-stopped` passed (no owned app, runner or open debug port).
+- `update_check` was not sent: the app's own startup check had already reached `available`.
+
+Still unproven:
+- **A daemon swap.** Both builds bundled the same Linux binary, so the daemon kept its PID and InvocationID (§7.2).
+  A run with two builds whose `devbox-linux` differ is needed for that.
+- **The shape `next-version`.** The accept runner refuses it (§7.1); it cannot pass until the product compares against
+  the release version.
+- **Teardown with a runner or installer that never ends.** The bounded wait, the three rounds and the retained result
+  are covered by unit tests with fakes only.
+- **A blocked start.** If the candidate cannot read the baseline's stage records (`core/update/runner_recovery.rs:61-130`,
+  `platform/update_runner.rs:309-338`; a record field the two source SHAs do not share, `runner_files.rs:46-57`), it
+  shows a message box and exits with 3. The harness would see a process without a page (`newAppStarted` fails) and
+  teardown would record and stop it. That path has not run live.
+- **The input rows of opencode and pi** (the rules under "Keys and typed commands"): no live capture yet.
 
 ### 7.4 Choosing the baseline
 

@@ -10,8 +10,14 @@ What the product allows (read from the bound source; README section 7 has the fi
   product build that compares against the release version could pass.
 
 The update is driven with the commands the Settings screen calls, in its order (update_status, update_check,
-update_download, update_install_summary, update_install_confirm), through native-cdp.ps1. No window gets input: the
-confirm command starts the product's own quit round, and every document window's own code answers it.
+update_download, update_install_summary, update_install_confirm), through native-cdp.ps1. update_check is sent only
+while the phase is idle or failed: the app checks by itself at start, so the release is often already `available`
+(run ceda4811-e2f2d5b7 never sent it). No window gets input: the confirm command starts the product's own quit round,
+and every document window's own code answers it.
+
+Each native call is one PowerShell start through WSL interop, so the watch of the product's runner sees the Windows
+side only every 4 to 6 s. Its times (`oldExitedAfter`, `newAppAfter`) are those of the first poll that saw the event:
+upper bounds. The connection gap is measured apart from that, inside WSL, every 100 ms.
 
 This module holds the connection gap, the command order, the decisions and the run itself; update_fixture.py holds
 the fixture and the shape. Windows work goes through the session's reviewed helpers only.
@@ -26,7 +32,7 @@ import foreign_files
 from update_fixture import build_fixture, check_shape, debug_port
 
 PHASES = ('idle', 'checking', 'available', 'downloading', 'ready', 'installing', 'failed')
-# Seconds. Each native call is one PowerShell start, so a poll is about a second apart.
+# Seconds. Each native call is one PowerShell start (measured 4 to 6 s apart in run ceda4811-e2f2d5b7).
 TIMEOUTS = {'check': 60, 'download': 300, 'exit': 120, 'install': 600, 'adoptWait': 60, 'reply': 20, 'newApp': 90}
 CASE = 'UP1'
 PROJECT = 'P-U1'
@@ -132,6 +138,22 @@ def wsl_witness(proc=Path('/proc')):
             'pid1Start': (proc / '1/stat').read_text().rsplit(')', 1)[1].split()[19]}
 
 
+def daemon_replaced(before, after):
+    """Whether the owned daemon after the update is another process than before it: True when the PID or the systemd
+    InvocationID of the two instance proofs differ, False when both are the same, None when a proof lacks them.
+
+    The app deploys and restarts the daemon only when its bundled Linux binary differs from the installed one. With two
+    builds that bundle the same binary the daemon is not touched, and the run proves the app's restart only."""
+    keys = ('runningPid', 'invocationId')
+    if not all(isinstance(proof, dict) and proof.get(key) for proof in (before, after) for key in keys):
+        return None
+    return any(before[key] != after[key] for key in keys)
+
+
+SAME_DAEMON = ('The daemon was not replaced (same PID and InvocationID before and after): both builds bundle the same Linux binary, so this run '
+               'proves the app restart only, not a daemon swap.')
+
+
 def distro_stayed_up(before, after):
     return (bool(before.get('bootId')) and before.get('bootId') == after.get('bootId') and before.get('pid1Start') == after.get('pid1Start')
             and after.get('uptimeSeconds', 0) > before.get('uptimeSeconds', 0))
@@ -159,7 +181,9 @@ def snapshot_of(reply, command):
 def drive_update(call, target_version, clock=time, log=None):
     """The Settings screen's own order (Update.tsx:96-113, nativeUpdate.ts:202-226, UpdateConfirmation.tsx:97, 124-128):
     status, [새 버전 확인] update_check, [업데이트 다운로드] update_download, [업데이트] update_install_summary, [설치하고 다시 시작]
-    update_install_confirm. `call(command, **integers)` returns the page's reply. Returns the step list; raises UpdateFailed."""
+    update_install_confirm. The check is sent only while the phase is idle or failed; a release the app's own startup
+    check already found is downloaded as it is. `call(command, **integers)` returns the page's reply. Returns the step
+    list; raises UpdateFailed."""
     steps = log if log is not None else []
 
     def step(command, **integers):
@@ -204,7 +228,8 @@ def drive_update(call, target_version, clock=time, log=None):
 
 
 def watch_update(observe, status, clock=time, bound=None, rows=None):
-    """Poll update-observe until the product's runner has finished and its relaunched app runs. While the old app still
+    """Poll update-observe (one PowerShell start each, 4 to 6 s apart; the summary's times are those of the first poll that
+    saw the event) until the product's runner has finished and its relaunched app runs. While the old app still
     runs, `status()` (the app's own update_status, or None when it cannot be asked) shows a cancelled or refused install.
     Returns the summary; the rows (bounded) are kept as evidence."""
     rows = rows if rows is not None else []
@@ -321,6 +346,7 @@ class UpdateRun:
         self.port = debug_port(s.token)
         s.outcome['debugPort'] = self.port
         proof, sc2 = s.launch_and_prove('baseline', CdpPort=self.port, UpdateFixture=s.windows_stage + '\\update')
+        self.baseline_instance = proof
         s.matrix['gates']['native_identity'] = {'status': 'PASS', 'evidence': ['native-launch-baseline.json', 'installed-identity-baseline.json']}
         s.matrix['gates']['fixture'] = {'status': 'PASS', 'evidence': ['instance-proof-baseline.json']}
         s.matrix['gates']['trust_answer'] = {'status': 'PASS', 'evidence': ['review-approval-used.json']}
@@ -403,7 +429,13 @@ class UpdateRun:
                                'candidateLinuxReceiptSourceSha': linux.get('source_sha'), 'candidateSha': candidate['sha'],
                                'daemonProofSourceSha': instance.get('sourceSha'), 'daemonProofBinarySha256': instance.get('binarySha256'),
                                'relaunchedAppRefusedBaselineFixture': reported.get('enabled') is False}
+        # Recorded, never judged: whether the daemon is another process after the update. It must be known either way.
+        before = getattr(self, 'baseline_instance', None) or {}
+        data['daemon'] = {side: {key: proof.get(key) for key in ('runningPid', 'invocationId', 'binarySha256')}
+                          for side, proof in (('before', before), ('after', instance))}
+        data['daemonReplaced'] = daemon_replaced(before, instance)
         return {'installerRan': adoption.get('exeChanged') is True and (data.get('runner') or {}).get('installed') in ('recorded', 'acknowledged'),
+                'daemonRecorded': data['daemonReplaced'] is not None,
                 'newAppStarted': len(adoption.get('adopted') or []) == 1 and bool(reported),
                 'version': reported.get('currentVersion') == candidate['version'] and adoption.get('versionAfter') == candidate['version']
                            and identity.get('bundledVersion') == candidate['version'],
@@ -456,11 +488,14 @@ def run(session, clock=time, sampler=BridgeSampler, witness=wsl_witness):
         flow.data['parts'] = parts
         flow.save('cases/' + CASE, flow.data)
         status, reason = decide(parts, flow.data.get('shape'))
+        if flow.data.get('daemonReplaced') is False:
+            reason = ' '.join(filter(None, [reason, SAME_DAEMON]))
         flow.data['decidingParts'] = deciding(parts, flow.data.get('shape'))
         flow.save('cases/' + CASE, flow.data)
         s.case_result(CASE, status, ['cases/%s.json' % CASE, 'update-fixture.json', 'update-commands.json', 'update-observe.json', 'native-update.json',
                                      'installed-identity-candidate.json', 'instance-proof-candidate.json', 'prod-after-update.json'], reason,
                       surface='installed-native', parts=parts, shape=flow.data.get('shape'), decidingParts=flow.data['decidingParts'],
+                      daemonReplaced=flow.data.get('daemonReplaced'),
                       measurement={'connectionGapSeconds': flow.data['connection'].get('gapSeconds'), 'connection': flow.data['connection'],
                                    'runner': flow.data.get('runner'), 'reportedVersion': (flow.data.get('reported') or {}).get('currentVersion')},
                       keepAlive=ev.ROW_TEXT['UP1.keepalive'] if (flow.data.get('runner') or {}).get('keepAlive') else None)

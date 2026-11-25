@@ -142,13 +142,19 @@ if ($Action -eq 'console-windows') {
 # themselves, so only installation files, settings and registrations are hashed. v0.9 (com.devbox.*)
 # directories are recorded by name/existence only and never entered.
 $prod=@(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | Get-ItemProperty | Where-Object {$_.DisplayName -eq 'Devbox'})
-$installs=@($prod | ForEach-Object { $_.InstallLocation } | Where-Object { $_ }) + @("$local\Devbox")
+# The registry's InstallLocation is quoted ("C:\...\Devbox"). Quotes and a trailing backslash are trimmed before the
+# folders are compared, so one install folder is one row (run ceda4811-e2f2d5b7 listed it twice, once as absent).
+$installs=@()
+foreach ($dir in (@($prod | ForEach-Object { $_.InstallLocation } | Where-Object { $_ }) + @("$local\Devbox"))) {
+  $root=([string]$dir).Trim().Trim('"').TrimEnd('\')
+  if ($root -and -not @($installs | Where-Object { [string]::Equals($_,$root,[StringComparison]::OrdinalIgnoreCase) }).Count) { $installs+=$root }
+}
 $files=@()
-foreach ($dir in ($installs | Select-Object -Unique)) { $files+= @{root=$dir;exists=(Test-Path -LiteralPath $dir);files=@(Tree $dir 4000)} }
+foreach ($dir in $installs) { $files+= @{root=$dir;exists=(Test-Path -LiteralPath $dir);files=@(Tree $dir 4000)} }
 $legacy=@(Get-ChildItem -LiteralPath $local,$roaming -Directory -Force -Filter 'com.devbox.*' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
 # 1.0.1: the running prod app is part of prod. Every process whose image is Devbox.exe in a prod install folder is
 # recorded by PID and start time (read-only), so a prod app that was stopped or restarted during a run shows.
-$prodExes=@($installs | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim('"').TrimEnd('\')+'\Devbox.exe' } | Select-Object -Unique)
+$prodExes=@($installs | ForEach-Object { $_+'\Devbox.exe' })
 $processes=@(Get-Process -Name 'Devbox' -ErrorAction SilentlyContinue | Where-Object {
     $image=$_.Path
     $image -and @($prodExes | Where-Object { [string]::Equals($image,$_,[StringComparison]::OrdinalIgnoreCase) }).Count

@@ -4758,7 +4758,13 @@ class V101Scripts(unittest.TestCase):
         self.assertIn("$protocolKey='HKCU:\\Software\\Classes\\devbox\\shell\\open\\command'", block)
         self.assertIn('protocolCommand=$protocolCommand;', block)
         self.assertIn('processes=$processes;', block)
-        self.assertIn("+'\\Devbox.exe'", block)
+        self.assertIn("$_+'\\Devbox.exe'", block)
+        # One row per install folder: the registry's quoted InstallLocation and the plain default folder are the same folder.
+        trim = block.index("$root=([string]$dir).Trim().Trim('\"').TrimEnd('\\')")
+        unique = block.index("if ($root -and -not @($installs | Where-Object { [string]::Equals($_,$root,[StringComparison]::OrdinalIgnoreCase) }).Count) { $installs+=$root }")
+        self.assertLess(trim, unique)
+        self.assertLess(unique, block.index('foreach ($dir in $installs) { $files+= @{root=$dir;'))
+        self.assertNotIn('Select-Object -Unique', block)
         self.assertFalse(any(verb in block for verb in ('Remove-', 'Set-', 'New-Item', 'Stop-', 'Start-', '.Kill(', 'Add-Type')))  # read-only
 
     def test_update_install_target_is_guarded(self):
@@ -5391,7 +5397,7 @@ class V101Flow(unittest.TestCase):
             driver.quit_after_update(lifecycle, True)
 
     def session(self, exe_changed=True, cases=('UP1', 'UP2', 'A7', 'M4'), app=None, adopted=({'pid': 7},), gap=True, answers_after=True, refuses_fixture=True,
-                daemon_sha=C_SHA):
+                daemon_sha=C_SHA, daemon_before=(4242, 'inv-1'), daemon_after=(4242, 'inv-1')):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -5456,12 +5462,14 @@ class V101Flow(unittest.TestCase):
                                          answers(Q0=True)),
                  load=lambda: m, rpc=rpc, native=native, windows=lambda path: 'C:\\e\\' + Path(path).name, save=lambda: None, journal_since=lambda t0: [],
                  install=lambda side: calls.append(('install', side, None)), set_phase=lambda side: calls.append(('phase', side, None)),
-                 instance=lambda side: (calls.append(('instance', side, None)), {'status': 'PASS', 'sourceSha': daemon_sha, 'binarySha256': linux})[1],
+                 instance=lambda side: (calls.append(('instance', side, None)), {'status': 'PASS', 'sourceSha': daemon_sha, 'binarySha256': linux,
+                                                                                 **dict(zip(('runningPid', 'invocationId'), daemon_after or ()))})[1],
                  seal_after_launch=lambda reseal: calls.append(('reseal', reseal, None)),
                  prod_compare=lambda name: {'prodUnchanged': True}, ended=[])
         s.matrix['gates']['installer'] = {'status': 'PASS'}
         s.observed = lambda name, operation, needs=(): (lambda value: (common.dump(run / (name + '.json'), value), value)[1])(operation())
-        s.launch_and_prove = lambda side, reseal=False, **launch: (calls.append(('launch', side, launch)), ({}, {}))[1]
+        baseline_proof = {'status': 'PASS', 'sourceSha': B_SHA, 'binarySha256': linux, **dict(zip(('runningPid', 'invocationId'), daemon_before or ()))}
+        s.launch_and_prove = lambda side, reseal=False, **launch: (calls.append(('launch', side, launch)), (baseline_proof, {}))[1]
         s.live = lambda: Fake(pane=pane, end=lambda case, agent_id: s.ended.append(agent_id))
         for name in ('case_result', 'guarded', 'pending', 'run_case'):
             setattr(s, name, (lambda method: lambda *a, **k: method(s, *a, **k))(getattr(driver.Session, name)))
@@ -5484,8 +5492,13 @@ class V101Flow(unittest.TestCase):
         self.assertEqual({case: row['status'] for case, row in s.matrix['cases'].items()}, {'UP1': 'PASS', 'UP2': 'PASS', 'A7': 'NOT_RUN', 'M4': 'NOT_RUN'})
         up1 = s.matrix['cases']['UP1']
         self.assertEqual(set(up1['parts'].values()), {True})
-        self.assertEqual(sorted(up1['parts']), ['connectionGapMeasured', 'distroUp', 'identity', 'installerRan', 'newAppStarted', 'prodUnchanged', 'tmuxSurvived',
-                                                'version'])
+        self.assertEqual(sorted(up1['parts']), ['connectionGapMeasured', 'daemonRecorded', 'distroUp', 'identity', 'installerRan', 'newAppStarted',
+                                                'prodUnchanged', 'tmuxSurvived', 'version'])
+        # Both builds bundle the same Linux binary here: the daemon is the same process, which is recorded and said, not failed.
+        self.assertIs(up1['daemonReplaced'], False)
+        self.assertEqual(up1['reason'], update_flow.SAME_DAEMON)
+        kept = json.loads((s.evidence / 'cases' / 'UP1.json').read_text())
+        self.assertEqual((kept['daemonReplaced'], kept['daemon']['before']['runningPid'], kept['daemon']['after']['invocationId']), (False, 4242, 'inv-1'))
         self.assertNotIn('version', up1['decidingParts'])  # same-version: both builds report 1.0.1
         self.assertTrue({'installerRan', 'identity'} <= set(up1['decidingParts']))
         how = json.loads((s.evidence / 'cases' / 'UP1.json').read_text())['identityHow']
@@ -5525,6 +5538,30 @@ class V101Flow(unittest.TestCase):
         self.assertIn('installerRan', cases['UP1']['reason'])
         self.assertEqual(cases['UP2']['reason'], evidence.ROW_TEXT['UP2.noupdate'])
         self.assertEqual([p.name for p in install.iterdir() if p.name.startswith('s7-foreign-')], [])
+
+    def test_up1_records_whether_the_daemon_was_replaced(self):
+        replaced = update_flow.daemon_replaced
+        same = {'runningPid': 10, 'invocationId': 'a'}
+        self.assertIs(replaced(same, dict(same)), False)
+        self.assertIs(replaced(same, {'runningPid': 11, 'invocationId': 'a'}), True)
+        self.assertIs(replaced(same, {'runningPid': 10, 'invocationId': 'b'}), True)  # restarted, and the PID came back
+        for before, after in ((same, {}), ({}, same), (same, {'runningPid': 10}), (same, None), ({'runningPid': 0, 'invocationId': ''}, same)):
+            self.assertIsNone(replaced(before, after))
+        # A swapped daemon: recorded true, a PASS without the note.
+        s, flow, calls, install, app = self.session(daemon_after=(5151, 'inv-2'))
+        row = s.matrix['cases']['UP1']
+        self.assertEqual((row['status'], row['daemonReplaced'], row['reason'], row['parts']['daemonRecorded']), ('PASS', True, None, True))
+        # Not recorded (a proof without the PID and InvocationID): never a PASS.
+        for change in ({'daemon_before': None}, {'daemon_after': None}):
+            s, flow, calls, install, app = self.session(**change)
+            row = s.matrix['cases']['UP1']
+            self.assertEqual((row['status'], row['daemonReplaced'], row['parts']['daemonRecorded']), ('FAIL', None, False), change)
+            self.assertIn('daemonRecorded', row['reason'])
+        # A failing run that kept the same daemon says both.
+        s, flow, calls, install, app = self.session(gap=False)
+        reason = s.matrix['cases']['UP1']['reason']
+        self.assertIn('connectionGapMeasured', reason)
+        self.assertTrue(reason.endswith(update_flow.SAME_DAEMON))
 
     def test_up1_never_passes_on_a_part_that_was_not_seen(self):
         """Item 13: none or two relaunched apps, an app that does not answer, no measured gap, or a build that cannot be
