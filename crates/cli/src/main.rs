@@ -98,8 +98,27 @@ enum Cmd {
         #[command(subcommand)]
         cmd: NoteCmd,
     },
+    /// 등록한 프로젝트를 보거나 폴더를 프로젝트로 등록한다.
+    Project {
+        #[command(subcommand)]
+        cmd: ProjectCmd,
+    },
     /// 버전만 출력한다.
     Version,
+}
+
+#[derive(Subcommand)]
+enum ProjectCmd {
+    /// 등록한 프로젝트를 한 줄에 하나씩 이름과 경로로 쓴다.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// 폴더를 프로젝트로 등록한다. 이미 등록한 폴더는 건너뛴다.
+    Add {
+        #[arg(required = true)]
+        paths: Vec<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -216,6 +235,12 @@ fn main() -> anyhow::Result<()> {
             Cmd::Note {
                 cmd: NoteCmd::Add { daily, text },
             } => devbox_cli::note::add(daily, text).await,
+            Cmd::Project {
+                cmd: ProjectCmd::List { json },
+            } => devbox_cli::project::list(json).await,
+            Cmd::Project {
+                cmd: ProjectCmd::Add { paths },
+            } => devbox_cli::project::add(paths).await,
             Cmd::Version => {
                 println!("{}", env!("CARGO_PKG_VERSION"));
                 Ok(())
