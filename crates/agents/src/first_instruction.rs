@@ -4,11 +4,18 @@
 //! empty prompt box sit still on a launch that still waits for its first instruction
 //! (`Binding::awaits_first_instruction`).
 //!
+//! It is pasted without the blank lines before it and the blanks after it ([`to_paste`]) and
+//! without Enter, and Enter goes in only once agy's box starts with the pasted text, or with the
+//! placeholder agy draws for a paste too large to show, of the text's count
+//! (`enter_first_instruction`). Left without Enter, the launch waits for an instruction as before
+//! the paste ([`Entry`]).
+//!
 //! `Queued` → `Pending` (reserved, being pasted) → `Delivered`, or `Unknown` when the paste may
-//! or may not have arrived, or back to `Queued` when nothing left devbox. `Queued` → `NotSent`
-//! when the tool gets another instruction first (a hook of the launch, a send), when the tool
-//! ends or the task closes, and on a resume. The watcher also cancels it when the pane shows a
-//! turn in progress or a prompt already echoed above the box: agy got one whose hooks were lost.
+//! or may not have arrived or got no Enter, or back to `Queued` when nothing left devbox.
+//! `Queued` → `NotSent` when the tool gets another instruction first (a hook of the launch, a
+//! send), when the tool ends or the task closes, and on a resume. The watcher also cancels it
+//! when the pane shows a turn in progress or a prompt already echoed above the box: agy got one
+//! whose hooks were lost.
 //!
 //! Only `Queued` is ever sent, so a daemon that restarts does not send one twice: a `Pending` it
 //! finds is one whose outcome was never recorded, and becomes `Unknown`. And it does not send one
@@ -19,6 +26,7 @@
 //! `NotSent` with the reason `Unobserved` (`AgentsService::first_sight`). A task still
 //! `Preparing` at the start is not held to this: its tool had not started.
 use crate::{
+    antigravity::{self, Pasted},
     model::{
         AgentTask, AgentsError, FirstInstruction, FirstInstructionReason, InstructionDelivery,
         SendToAgent,
@@ -29,6 +37,73 @@ use crate::{
     watch::Snapshot,
 };
 use devbox_protocol::Internal;
+use std::time::Duration;
+
+/// How long agy may take to draw a pasted first instruction in its box, and how often the pane is
+/// read again meanwhile.
+const DRAWN_WITHIN: Duration = Duration::from_secs(2);
+const DRAWN_POLL: Duration = Duration::from_millis(50);
+
+/// The notice of a task whose first instruction devbox left in agy's box without Enter, where the
+/// last read of the pane showed the box starting with it ([`Entry::AtPrompt`]).
+pub(crate) const LEFT_IN_BOX: &str = "처음 지시를 입력창에 붙여 넣었지만 Enter는 누르지 않았습니다. 터미널에서 확인한 뒤 보내거나 지우세요";
+/// The notice of one pasted without Enter where the last read showed agy at rest without the box
+/// starting with it: an empty box, or something else in front of it.
+pub(crate) const NOT_SEEN: &str = "처음 지시를 붙여 넣었지만 입력창에서 확인하지 못해 Enter는 누르지 않았습니다. 터미널에서 입력창을 확인하세요";
+
+/// What came of a first instruction devbox pasted without Enter
+/// ([`AgentsService::enter_first_instruction`]). Without Enter the tool began no turn of it, so
+/// where nothing reached the task meanwhile its launch waits for an instruction as before the
+/// paste (`send::finish_row`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Entry {
+    /// Enter went in: delivered.
+    Entered,
+    /// No Enter, and the last read of the pane showed agy's prompt box with nothing asked or
+    /// running. `ours`: the box started with the prompt, and Enter was held back only because a
+    /// prompt agy took earlier is on screen. The launch's wait ends as at an empty box: the task is
+    /// idle, with [`LEFT_IN_BOX`], or [`NOT_SEEN`] when the box did not start with the prompt.
+    AtPrompt { ours: bool },
+    /// No Enter, and the last read showed a question or a turn, no box, or the pane could not be
+    /// read. The launch waits as before, and the output watcher judges its pane.
+    Elsewhere,
+    /// Enter was sent and tmux failed: it may or may not have gone in.
+    Unconfirmed,
+}
+impl Entry {
+    pub(crate) fn delivery(self) -> InstructionDelivery {
+        match self {
+            Self::Entered => InstructionDelivery::Delivered,
+            Self::AtPrompt { .. } | Self::Elsewhere | Self::Unconfirmed => {
+                InstructionDelivery::Unknown
+            }
+        }
+    }
+}
+
+/// What devbox pastes for the first instruction `prompt`: the prompt from its first line that is
+/// not blank, with that line's own indentation (an indented block of code stays aligned) but
+/// without a byte-order mark in front of it, and without the blanks and line breaks at its end.
+/// A paste that would end with a backslash gets a space after it: some tools read a backslash
+/// and then Enter as a line break, and Enter would not send it. agy's box then starts with the
+/// first line, and the count of a paste agy shows as a placeholder is that of this text
+/// (`antigravity::pasted`).
+pub(crate) fn to_paste(prompt: &str) -> String {
+    let blank = |c: char| c.is_whitespace() || c == '\u{feff}';
+    let start = prompt
+        .find(|c: char| !blank(c))
+        .map_or(prompt.len(), |first| {
+            prompt[..first].rfind(['\n', '\r']).map_or(0, |at| at + 1)
+        });
+    let mut text = prompt[start..]
+        .trim_start_matches('\u{feff}')
+        .trim_end()
+        .to_owned();
+    if text.ends_with('\\') {
+        text.push(' ');
+    }
+    text
+}
 
 /// Whether `profile`'s tool gets its first instruction from devbox instead of an argument.
 fn sends_first(profile: &ToolProfile) -> bool {
@@ -137,13 +212,30 @@ fn cancel_unobserved(task: &mut AgentTask, now: i64) -> bool {
 }
 
 impl AgentsService {
+    /// Notes that this daemon process makes the task `id`, before anything of it is written: the
+    /// restart rule never holds it to a first sight of its pane (`settle_first_instructions`).
+    pub(crate) fn note_created(&self, id: &str) {
+        self.created
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.to_owned());
+    }
+
+    /// Whether this daemon process made the task `id` ([`Self::note_created`]).
+    pub(crate) fn made_here(&self, id: &str) -> bool {
+        self.created
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(id)
+    }
+
     /// Sends the queued first instruction of the task the output watcher saw at its empty prompt
     /// box in `seen`. The send reads the pane again and checks the task again in its writer, so
     /// anything that changed since that pass ends it with nothing pasted.
     pub(crate) async fn send_first_instruction(&self, seen: Snapshot) -> Result<()> {
         let send = SendToAgent {
             id: seen.task.id.clone(),
-            text: seen.task.prompt.clone(),
+            text: to_paste(&seen.task.prompt),
         };
         crate::limits::input(&send.text)?;
         crate::limits::pasted(&send.text)?;
@@ -211,8 +303,77 @@ impl AgentsService {
             .await
             .internal("capture agent pane before first instruction")?;
         Ok(!crate::watch::matches_waiting(patterns, &tail)
-            && crate::antigravity::shows_prompt(&tail)
-            && !crate::antigravity::shows_earlier_prompt(&tail))
+            && antigravity::shows_prompt(&tail)
+            && !antigravity::shows_earlier_prompt(&tail))
+    }
+
+    /// After `prompt`, the first instruction of `task`, was pasted into the pane of `session`
+    /// without Enter. The paste follows the user's answer to agy's trust question in that pane,
+    /// where a key typed before it landed (a `!`) would make Enter run the box as a shell command.
+    /// So Enter goes in only once the pane shows agy's box starting with the prompt, or with agy's
+    /// placeholder of it (`antigravity::pasted`), with no waiting pattern, turn or earlier prompt
+    /// on screen. A first instruction left without Enter is never sent again: the user sees it in
+    /// the box and decides, told whether the last read of the pane showed it there.
+    pub(crate) async fn enter_first_instruction(
+        &self,
+        task: &AgentTask,
+        session: &str,
+        prompt: &str,
+    ) -> Entry {
+        if let Err(left) = self.shows_pasted(task, session, prompt).await {
+            tracing::info!(agent = %task.id, ?left, "first instruction pasted, Enter not pressed");
+            return left;
+        }
+        match self.terminal.tmux().press_enter(session).await {
+            Ok(()) => Entry::Entered,
+            Err(error) => {
+                tracing::warn!(agent = %task.id, ?error, "first instruction pasted, Enter not confirmed");
+                Entry::Unconfirmed
+            }
+        }
+    }
+
+    /// Whether the pane of `session` shows the prompt box starting with `prompt`, or with agy's
+    /// placeholder of it, and nothing a send waits for, or else what its last read showed
+    /// ([`Entry::AtPrompt`] or [`Entry::Elsewhere`]). agy takes a moment to draw a paste: while no
+    /// box is drawn, or the box shows less of the prompt than `antigravity::pasted` needs, the
+    /// pane is read again, for at most [`DRAWN_WITHIN`]. A prompt agy took earlier, on screen,
+    /// ends it at once.
+    async fn shows_pasted(
+        &self,
+        task: &AgentTask,
+        session: &str,
+        prompt: &str,
+    ) -> std::result::Result<(), Entry> {
+        let Some(patterns) = self
+            .waiting_patterns
+            .get()
+            .and_then(|all| all.get(&task.profile))
+        else {
+            return Err(Entry::Elsewhere);
+        };
+        let deadline = tokio::time::Instant::now() + DRAWN_WITHIN;
+        loop {
+            let tmux = self.terminal.tmux();
+            let Ok(tail) = tmux.capture_tail(session, crate::watch::TAIL_ROWS).await else {
+                return Err(Entry::Elsewhere);
+            };
+            if crate::watch::matches_waiting(patterns, &tail) || antigravity::shows_turn(&tail) {
+                return Err(Entry::Elsewhere);
+            }
+            let earlier = antigravity::shows_earlier_prompt(&tail);
+            match antigravity::pasted(&tail, prompt) {
+                Pasted::Leads if !earlier => return Ok(()),
+                Pasted::Leads => return Err(Entry::AtPrompt { ours: true }),
+                Pasted::Drawing | Pasted::NoBox
+                    if !earlier && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(DRAWN_POLL).await;
+                }
+                Pasted::NoBox => return Err(Entry::Elsewhere),
+                Pasted::Drawing | Pasted::Other => return Err(Entry::AtPrompt { ours: false }),
+            }
+        }
     }
 
     /// At the daemon's start, before its watcher reads a pane: the watcher reads none until this
@@ -222,8 +383,10 @@ impl AgentsService {
     /// (`first_sight`). All are noted before anything is written, so a write that fails leaves
     /// none of them out. The start's reconciliation ran before this and made `Running` every task
     /// whose launch says its tool started, so one still `Preparing` here has no tool yet. And a
-    /// task made after this daemon started is one it saw from the start, however late this runs
-    /// (a start that failed once is tried again while the daemon serves).
+    /// task this daemon process made is one it saw from the start, however late this runs (a
+    /// start that failed once is tried again while the daemon serves): it is told by the
+    /// process's own note of it ([`Self::note_created`]), never by the clock, which a WSL clock
+    /// step could move.
     ///
     /// A first instruction left as being pasted is one whose outcome the daemon before never
     /// recorded: it may have arrived, so it is not sent again.
@@ -232,7 +395,7 @@ impl AgentsService {
         let noted = tasks.iter().filter(|task| {
             is(task, InstructionDelivery::Queued)
                 && task.state != AgentState::Preparing
-                && task.created_ms < self.started_ms
+                && !self.made_here(&task.id)
         });
         self.unobserved
             .lock()

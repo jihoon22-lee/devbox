@@ -79,6 +79,7 @@ impl AgentsService {
         let tool = tool?;
         crate::antigravity_service::work_folder_check(&profile, p.worktree)?;
         crate::first_instruction::admit(&profile, &p.prompt)?;
+        crate::prompt_arg::admit(&profile, &p.prompt)?;
         if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
             return Err(AgentsError::UnsafeWorktree.into());
         }
@@ -109,6 +110,8 @@ impl AgentsService {
             .collect();
         let now = now_ms();
         let id = format!("a{}", uuid::Uuid::new_v4().simple());
+        // Before the task is written: a start of the watcher tried again meanwhile must know it.
+        self.note_created(&id);
         // pi starts the session devbox names, so the task has it before anything is launched.
         let session_id = (profile.hooks == crate::profile::Hooks::Pi)
             .then(|| uuid::Uuid::new_v4().hyphenated().to_string());

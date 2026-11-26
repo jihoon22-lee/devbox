@@ -486,7 +486,10 @@ case "$5" in
    done;;
  list-sessions) if [ -f "$live" ]; then printf '%s\t0\tbash\t/owned\n' "$(cat "$live")"; fi;;
  kill-session) rm -f "$live";;
- load-buffer) cat > /dev/null;;
+ load-buffer) cat > "$live.buffer";;
+ paste-buffer)
+   if [ -f "$live.pasted" ]; then cp "$live.pasted" "$live.screen"; fi
+   if [ -f "$live.pasted-fail" ]; then mv "$live.pasted-fail" "$live.fail"; fi;;
  capture-pane) if [ -f "$live.screen" ]; then cat "$live.screen"; fi;;
 esac
 exit 0
@@ -550,3 +553,5 @@ mod antigravity_pane;
 mod first_instruction;
 #[path = "send_idle_pane_tests.rs"]
 mod idle_pane;
+#[path = "resume_prompt_arg_tests.rs"]
+mod prompt_arg;

@@ -1,5 +1,5 @@
-//! A project's start configuration with an Antigravity agent: what its tool family needs is
-//! checked before the first terminal or agent is started.
+//! A project's start configuration with an Antigravity agent, or a tool that gets the prompt as an
+//! argument: what its tool needs is checked before the first terminal or agent is started.
 mod support;
 use devbox_cli::client::Client;
 use serde_json::{Value, json};
@@ -16,12 +16,13 @@ async fn call(c: &Client, method: &str, params: Value) -> Value {
 }
 
 /// A project whose `.devbox/devbox.toml` is `config`, on a daemon with a profile of the
-/// Antigravity family that runs a fixture command.
+/// Antigravity family and one with `promptArg`, each running a fixture command.
 fn fixture(config: &str) -> (TestDaemon, String) {
     let d = TestDaemon::fixture();
     d.write_config(
         "[[agents.profiles]]\nid='fake'\nlabel='Fake'\ncommand='sleep 600'\nhooks='none'\n\
-         [[agents.profiles]]\nid='agy-fixture'\nlabel='Antigravity fixture'\ncommand='sleep 600'\nhooks='antigravity'\n",
+         [[agents.profiles]]\nid='agy-fixture'\nlabel='Antigravity fixture'\ncommand='sleep 600'\nhooks='antigravity'\n\
+         [[agents.profiles]]\nid='fake-arg'\nlabel='Fake with an argument'\ncommand='sleep 600'\nhooks='none'\npromptArg='--prompt'\n",
     );
     let repo = d.git_repo("projects/web");
     std::fs::create_dir_all(Path::new(&repo).join(".devbox")).expect("owned fixture");
@@ -92,6 +93,22 @@ async fn launch_with_an_antigravity_prompt_devbox_would_not_paste_starts_nothing
             "{prompt}"
         );
     }
+}
+
+#[tokio::test]
+async fn launch_with_a_prompt_a_tool_could_read_as_an_option_starts_nothing() {
+    // `promptArg='--prompt'` passes the prompt as the next argument, where one that starts with
+    // `-` could be read as an option.
+    let (mut d, repo) = fixture(
+        "[launch]\nterminals=[{name='must not start',command='sleep 600'}]\nagents=[{tool='fake',worktree=true},{tool='fake-arg',prompt=' --model=unrequested'}]\n",
+    );
+    let (code, detail) = refused(&mut d, &repo).await;
+    assert_eq!(code, "projects.launch_failed");
+    assert_eq!(detail["message"], "agent 2: agents.prompt_option");
+    assert_eq!(
+        (detail["terminals"].clone(), detail["agents"].clone()),
+        (json!(0), json!(0))
+    );
 }
 
 #[tokio::test]

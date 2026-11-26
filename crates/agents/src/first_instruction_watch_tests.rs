@@ -116,7 +116,7 @@ fn the_watcher_never_waits_for_an_action_on_another_task() {
                 start + QUIET * 3,
             )
             .await;
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             assert_eq!(
                 delivery(&f.task().await),
                 Some(InstructionDelivery::Delivered)
@@ -215,7 +215,7 @@ fn a_restart_at_a_screen_before_any_prompt_keeps_the_instruction_queued() {
                 let at = start + QUIET * step;
                 pass(&f, &mut watcher, capture!("idle-after-trust"), at).await;
             }
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             assert_eq!(
                 delivery(&f.task().await),
                 Some(InstructionDelivery::Delivered)
@@ -254,7 +254,7 @@ fn a_restart_at_a_screen_before_any_prompt_keeps_the_instruction_queued() {
                 .expect("tool started");
             let at = start + QUIET * 40;
             settle(&f, &mut watcher, capture!("idle-after-trust"), at).await;
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             f.close().await;
 
             // One whose tool was up, with the report of it lost while no daemon ran, is held to
@@ -342,17 +342,19 @@ fn a_task_made_after_the_daemon_started_is_not_held_to_the_restart_rule() {
         "first_instruction::watching::a_task_made_after_the_daemon_started_is_not_held_to_the_restart_rule",
         || async {
             // A start that failed once is tried again while the daemon serves, so it can find a
-            // task that was made, and whose tool started, under this daemon's eyes.
+            // task that was made, and whose tool started, under this daemon's eyes. Whatever the
+            // clock says: here it says the task is older than the daemon.
             let mut f = launched(Some(InstructionDelivery::Queued)).await;
             f.restart().await;
-            let started = f.svc.started_ms;
+            f.svc.note_created("a");
+            let before = f.svc.started_ms - 3_600_000;
             f.svc
                 .update("a", move |task| {
-                    task.created_ms = started;
+                    task.created_ms = before;
                     true
                 })
                 .await
-                .expect("made now");
+                .expect("made by this daemon");
             let mut watcher = crate::watch::Watcher::new(&f.svc).expect("patterns");
             let start = Instant::now();
             show(capture!("idle-after-trust"));
@@ -364,6 +366,43 @@ fn a_task_made_after_the_daemon_started_is_not_held_to_the_restart_rule() {
                 Some(InstructionDelivery::Delivered)
             );
             assert!(calls().iter().any(|call| call == "paste-buffer"));
+            f.close().await;
+        },
+    );
+}
+
+#[test]
+fn a_task_from_before_the_restart_is_held_to_the_rule_whatever_the_clock_says() {
+    with_fake_tmux(
+        "first_instruction::watching::a_task_from_before_the_restart_is_held_to_the_rule_whatever_the_clock_says",
+        || async {
+            use crate::model::FirstInstructionReason::Unobserved;
+            // The WSL clock stepped back between the two daemons: the task the daemon before
+            // made looks an hour newer than this daemon's start.
+            let mut f = launched(Some(InstructionDelivery::Queued)).await;
+            f.restart().await;
+            let later = f.svc.started_ms + 3_600_000;
+            f.svc
+                .update("a", move |task| {
+                    task.created_ms = later;
+                    true
+                })
+                .await
+                .expect("a clock that stepped back");
+            let mut watcher = crate::watch::Watcher::new(&f.svc).expect("patterns");
+            let start = Instant::now();
+            show(capture!("idle-after-trust"));
+            for step in 0..4 {
+                assert!(watcher.pass(&f.svc, || start + QUIET * step).await);
+            }
+            let cancelled = f.task().await;
+            assert_eq!(delivery(&cancelled), Some(InstructionDelivery::NotSent));
+            assert_eq!(reason(&cancelled), Some(Unobserved));
+            assert!(
+                calls().iter().all(|call| call == "capture-pane"),
+                "{:?}",
+                calls()
+            );
             f.close().await;
         },
     );
@@ -406,7 +445,7 @@ fn a_restart_that_cannot_read_the_pane_does_not_send() {
                 start + QUIET * 10,
             )
             .await;
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             f.close().await;
         },
     );

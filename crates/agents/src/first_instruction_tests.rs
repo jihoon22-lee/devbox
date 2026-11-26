@@ -1,14 +1,16 @@
 //! An Antigravity task's first instruction: agy gets no prompt argument, so devbox sends the
 //! prompt once, through the guarded send path, when agy shows its empty prompt box. The fake
-//! `tmux` of the parent module prints `$live.screen` for `capture-pane` and notes every call.
-use super::antigravity_pane::{calls, ended, hook, show};
+//! `tmux` of the parent module prints `$live.screen` for `capture-pane`, shows `$live.pasted` once
+//! something is pasted, and notes every call.
+use super::antigravity_pane::{after_paste, calls, ended, hook, show};
 use super::*;
 use crate::{model::FirstInstruction, service::apply_event, state::AgentEvent};
 use std::time::{Duration, Instant};
 
 const CONVERSATION: &str = "00000000-0000-4000-8000-000000000001";
 const QUIET: Duration = Duration::from_secs(2);
-/// The calls of one paste: the pane is read, then the text is loaded, pasted and entered.
+/// The calls of a send from the task's screen: the pane is read, then the text is loaded, pasted
+/// and entered.
 const ONE_SEND: [&str; 5] = [
     "list-sessions",
     "capture-pane",
@@ -16,6 +18,18 @@ const ONE_SEND: [&str; 5] = [
     "paste-buffer",
     "send-keys",
 ];
+/// The calls of the first instruction: the pane is read, the text is loaded and pasted without
+/// Enter, the pane is read again, and only then Enter goes in.
+const FIRST_SEND: [&str; 6] = [
+    "list-sessions",
+    "capture-pane",
+    "load-buffer",
+    "paste-buffer",
+    "capture-pane",
+    "send-keys",
+];
+/// The prompt pasted for draft.txt, which recorded how agy's box draws it.
+const DRAFT: &str = "Reply with OK and stop.\nThis is line two of the same pasted prompt.\nLine three: also say how many lines this prompt had.";
 
 macro_rules! capture {
     ($name:literal) => {
@@ -41,8 +55,9 @@ fn pane(fixture: &'static str) -> &'static str {
 }
 
 /// Task `a` on a live launch of agy that waits for its first instruction, as a new task with the
-/// prompt "owned prompt" is after its tool started: no conversation yet, the prompt queued.
-/// `first` is the delivery state stored for it, or none for a task started without a prompt.
+/// prompt [`DRAFT`] is after its tool started: no conversation yet, the prompt queued. A paste
+/// leaves its pane as agy drew that prompt in its box (draft.txt). `first` is the delivery state
+/// stored for it, or none for a task started without a prompt.
 async fn launched(first: Option<InstructionDelivery>) -> Ended {
     let (f, _) = ended(None).await;
     f.svc.resume("a").await.expect("launch");
@@ -54,10 +69,12 @@ async fn launched(first: Option<InstructionDelivery>) -> Ended {
                 at_ms: 1,
                 reason: None,
             });
+            task.prompt = DRAFT.into();
             true
         })
         .await
         .expect("owned first instruction");
+    after_paste(capture!("draft"));
     assert!(f.binding().await.resumed_session);
     let _ = fs::remove_file(format!(
         "{}.calls",
@@ -130,7 +147,7 @@ fn the_first_instruction_is_sent_once_when_agy_shows_its_empty_prompt_box() {
                 start + QUIET * 4,
             )
             .await;
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             let sent = f.task().await;
             assert_eq!(delivery(&sent), Some(InstructionDelivery::Delivered));
             assert_eq!(sent.state, AgentState::Running);
@@ -154,7 +171,7 @@ fn the_first_instruction_is_sent_once_when_agy_shows_its_empty_prompt_box() {
             assert_eq!(idle.state, AgentState::Idle);
             assert_eq!(delivery(&idle), Some(InstructionDelivery::Delivered));
             assert_eq!(idle.session_id.as_deref(), Some(CONVERSATION));
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             f.close().await;
         },
     );
@@ -278,7 +295,7 @@ fn a_prompt_typed_in_the_terminal_first_cancels_the_send() {
             assert_eq!(calls(), Vec::<String>::new());
             let after = f.task().await;
             assert_eq!(delivery(&after), Some(InstructionDelivery::NotSent));
-            assert_eq!(after.prompt, "owned prompt");
+            assert_eq!(after.prompt, DRAFT);
             f.close().await;
         },
     );
@@ -338,7 +355,7 @@ fn a_restart_neither_loses_the_queued_instruction_nor_sends_one_twice() {
                 let at = start + QUIET * step;
                 pass(&f, &mut watcher, capture!("idle-after-trust"), at).await;
             }
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             assert_eq!(
                 delivery(&f.task().await),
                 Some(InstructionDelivery::Delivered)
@@ -444,14 +461,15 @@ fn a_paste_that_never_left_is_tried_again_and_one_that_may_have_is_not() {
                 )
                 .await;
             }
-            assert_eq!(calls(), ONE_SEND);
+            assert_eq!(calls(), FIRST_SEND);
             assert_eq!(
                 delivery(&f.task().await),
                 Some(InstructionDelivery::Delivered)
             );
             f.close().await;
 
-            // The text was pasted and Enter failed: agy may hold it. Not sent again.
+            // The text was pasted, the box showed it, and Enter failed: agy may hold it. Not sent
+            // again.
             let f = launched(Some(InstructionDelivery::Queued)).await;
             let mut watcher = crate::watch::Watcher::new(&f.svc).expect("patterns");
             fail_tmux(Some("send-keys"));
@@ -462,9 +480,7 @@ fn a_paste_that_never_left_is_tried_again_and_one_that_may_have_is_not() {
                 start + QUIET * 10,
             )
             .await;
-            let mut tried = ONE_SEND.to_vec();
-            tried.push("delete-buffer");
-            assert_eq!(calls(), tried);
+            assert_eq!(calls(), FIRST_SEND);
             assert_eq!(
                 delivery(&f.task().await),
                 Some(InstructionDelivery::Unknown)
@@ -544,5 +560,7 @@ fn a_task_without_a_prompt_and_a_resume_send_nothing() {
     );
 }
 
+#[path = "first_instruction_enter_tests.rs"]
+mod entering;
 #[path = "first_instruction_watch_tests.rs"]
 mod watching;

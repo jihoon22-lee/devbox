@@ -61,6 +61,15 @@ test("a first instruction the tool would run as a command says why it is not sen
   expect(messageFor("agents.first_instruction_command").title).toContain("이 도구가 셸 명령이나");
 });
 
+test("a prompt a tool could read as an option says why it is not passed and which forms take it", () => {
+  expect(messageFor("agents.prompt_option", { tool: "Mine" })).toEqual({
+    title: "`-`로 시작하는 지시는 Mine가 옵션으로 읽을 수 있어 인자로 넘기지 않습니다.",
+    action:
+      '앞에 다른 말을 붙여 다시 시작하세요. 도구가 받는다면 도구 프로필의 promptArg를 "--prompt="처럼 =로 끝나게 적거나 "--"로 바꿔도 됩니다.',
+  });
+  expect(messageFor("agents.prompt_option").title).toContain("이 도구가 옵션으로");
+});
+
 test("a leftover hooks folder beside the work folder is named, with what to do about it", () => {
   const path = "/home/u/projects/web-agents/fix.agy-hooks";
   expect(messageFor("agents.hooks_folder_exists", { path })).toEqual({

@@ -117,8 +117,10 @@ async fn an_antigravity_task_starts_beside_its_hooks_folder_and_follows_its_hook
         devbox_terminal::TMUX_CONF,
     )
     .expect("owned tmux config");
-    // In agy's place: it notes how it was started, draws agy's empty prompt box (a rule, `>`, a
-    // rule, a status row) and then notes every line its terminal gets.
+    // In agy's place: it notes how it was started and draws agy's prompt box (a rule, `>` and
+    // what was typed since the last Enter, a rule) over a status row, drawn again once its
+    // terminal has sent nothing for 50 ms, as agy draws a paste in its box. Each line ended with
+    // Enter is noted.
     let tool = d.home.path().join("tool.sh");
     std::fs::write(
         &tool,
@@ -126,8 +128,17 @@ async fn an_antigravity_task_starts_beside_its_hooks_folder_and_follows_its_hook
 printf '%s\n' "$PWD" > "$HOME/tool-cwd"
 printf '%s\n' "$@" > "$HOME/tool-args"
 rule=$(printf '─%.0s' $(seq 1 60))
-printf '%s\n> \n%s\nfixture status\n' "$rule" "$rule"
-while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/tool-input"; done
+draw() { printf '\033[H%s\033[K\n> %s\033[K\n%s\033[K\nfixture status\033[K\n' "$rule" "$1" "$rule"; }
+stty -echo -icanon
+line=
+draw ""
+while IFS= read -r -s -N 1 char; do
+  while :; do
+    if [ "$char" = $'\n' ]; then printf '%s\n' "$line" >> "$HOME/tool-input"; line=; else line+=$char; fi
+    IFS= read -r -s -N 1 -t 0.05 char || break
+  done
+  draw "$line"
+done
 "#,
     )
     .expect("owned tool");
@@ -228,8 +239,21 @@ while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/tool-input"; done
     assert_eq!(idle["attention"]["message"], "다음 지시를 기다립니다");
     assert_eq!(idle["sessionId"], CONVERSATION);
     assert_eq!(idle["firstInstruction"]["delivery"], "delivered");
-    // The user changes conversations inside the tool: the task follows the new one.
+    // Another conversation's report that does not start one changes nothing.
     let other = "11111111-1111-4111-8111-111111111111";
+    hook(
+        "PreInvocation",
+        &pre_invocation().replace(CONVERSATION, other),
+    );
+    let kept = call(&c, "agents.get", json!({"id":id})).await;
+    for field in ["state", "sessionId", "attention", "firstInstruction"] {
+        assert_eq!(kept[field], idle[field], "{field}");
+    }
+    // The user starts a new conversation inside the tool: the task follows it.
+    hook(
+        "SessionStart",
+        &session_start().replace(CONVERSATION, other),
+    );
     hook(
         "PreInvocation",
         &pre_invocation().replace(CONVERSATION, other),
@@ -332,4 +356,84 @@ while IFS= read -r line; do printf '%s\n' "$line" >> "$HOME/tool-input"; done
     let after = call(&c, "agents.get", json!({"id":id})).await;
     assert_eq!(after["firstInstruction"]["delivery"], "notSent");
     assert_eq!(after["prompt"], "fix it");
+}
+
+#[tokio::test]
+async fn a_hook_whose_payload_is_too_long_still_cancels_the_queued_first_instruction() {
+    let mut d = TestDaemon::fixture();
+    d.paths.ensure_dirs().expect("owned paths");
+    std::fs::write(
+        d.paths.instance_config_dir.join("tmux.conf"),
+        devbox_terminal::TMUX_CONF,
+    )
+    .expect("owned tmux config");
+    // In agy's place: it never shows a prompt box, so the first instruction stays queued.
+    let tool = d.home.path().join("tool.sh");
+    std::fs::write(&tool, "#!/usr/bin/env bash\nexec sleep 600\n").expect("owned tool");
+    let command = format!(
+        "bash {}",
+        devbox_core::sh_quote(tool.to_str().expect("path"))
+    );
+    d.write_config(&format!(
+        "[[agents.profiles]]\nid='agy-fixture'\nlabel='Antigravity fixture'\nhooks='antigravity'\ncommand={}\n",
+        serde_json::to_string(&command).expect("command")
+    ));
+    let repo = d.git_repo("projects/agy");
+    d.launch();
+    let c = d.client().await;
+    let project = d.add_project(&c, &repo).await;
+    let id = d.create_agent(&c, &project, "agy-fixture", true).await;
+    let running = d
+        .wait_for(&c, &id, "running", Duration::from_secs(10))
+        .await;
+    assert_eq!(running["firstInstruction"]["delivery"], "queued");
+    let hooks = format!(
+        "{}.agy-hooks",
+        running["worktreePath"].as_str().expect("work folder")
+    );
+    let registered: Value = serde_json::from_str(
+        &std::fs::read_to_string(Path::new(&hooks).join(".agents/hooks.json")).expect("hooks"),
+    )
+    .expect("hooks JSON");
+    // The user typed a long prompt into agy: its hook's payload holds it in `lastUserInput`, over
+    // the hook's 1 MiB limit, and the limit falls inside a character.
+    let limit = 1024 * 1024;
+    let mut payload = format!(
+        "{{\"hookEventName\":\"SessionStart\",\"conversationId\":\"{CONVERSATION}\",\"lastUserInput\":\""
+    );
+    while (limit + 1 - payload.len()) % 3 != 1 {
+        payload.push('x');
+    }
+    payload.push_str(&"가".repeat(limit / 3 + 1));
+    payload.push_str("\"}");
+    assert!(std::str::from_utf8(&payload.as_bytes()[..limit + 1]).is_err());
+    let launch = d.agent_launch(&id).await;
+    let line = registered["devbox"]["SessionStart"][0]["command"]
+        .as_str()
+        .expect("command");
+    let mut command = d.environment("sh");
+    command
+        .args(["-c", line])
+        .current_dir(Path::new(&hooks).join(".agents"))
+        .env("DEVBOX_AGENT_ID", &id)
+        .env("DEVBOX_AGENT_LAUNCH", &launch)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped());
+    let mut child = ChildGuard(command.spawn().expect("owned hook"));
+    let mut stdin = child.0.stdin.take().expect("stdin");
+    // The hook reads only as far as its limit, and may end before the rest is written.
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(payload.as_bytes());
+    });
+    let mut printed = String::new();
+    let mut stdout = child.0.stdout.take().expect("stdout");
+    std::io::Read::read_to_string(&mut stdout, &mut printed).expect("hook output");
+    assert!(support::exits(child).success());
+    writer.join().expect("payload writer");
+    assert_eq!(printed, "{}\n");
+    // The queued instruction will never be sent, and nothing else of the payload was taken.
+    let after = call(&c, "agents.get", json!({"id":id})).await;
+    assert_eq!(after["firstInstruction"]["delivery"], "notSent");
+    assert_eq!(after["sessionId"], Value::Null);
+    assert_eq!(after["state"], "running");
 }

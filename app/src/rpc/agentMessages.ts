@@ -8,6 +8,7 @@ import {
   type Message,
   type Messages,
   path,
+  promptOption,
   shellQuote,
   toolMissing,
   workFolderRequired,
@@ -142,6 +143,7 @@ export const AGENT_MESSAGES: Messages<Domain> = {
   "agents.work_folder_required": workFolderRequired,
   "agents.hooks_folder_exists": hooksFolderExists,
   "agents.first_instruction_command": firstInstructionCommand,
+  "agents.prompt_option": promptOption,
   "projects.trust_required": {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
     action: "명령 내용을 다시 확인하고 승인한 뒤 실행해 주세요.",

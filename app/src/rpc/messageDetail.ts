@@ -53,6 +53,12 @@ export const firstInstructionCommand = (d: unknown) => ({
   title: `\`!\`나 \`/\`로 시작하는 지시는 ${toolLabel(d)}가 셸 명령이나 도구 명령으로 실행할 수 있어 첫 지시로 보내지 않습니다.`,
   action: "앞에 다른 말을 붙이거나, 작업을 만든 뒤 터미널에서 직접 입력하세요.",
 });
+/** A prompt a `promptArg` tool gets as an argument of its own, which it could read as an option. */
+export const promptOption = (d: unknown) => ({
+  title: `\`-\`로 시작하는 지시는 ${toolLabel(d)}가 옵션으로 읽을 수 있어 인자로 넘기지 않습니다.`,
+  action:
+    '앞에 다른 말을 붙여 다시 시작하세요. 도구가 받는다면 도구 프로필의 promptArg를 "--prompt="처럼 =로 끝나게 적거나 "--"로 바꿔도 됩니다.',
+});
 /** A folder of the hooks folder's name beside the work folder that is not this task's. */
 export const hooksFolderExists = (d: unknown) => ({
   title: `작업 폴더 옆에 이 작업의 것이 아닌 폴더가 이미 있어 시작하지 못했습니다: ${path(d)}`,

@@ -58,6 +58,24 @@ pub(crate) fn for_launch(profile: &ToolProfile, prompt: &str) -> Option<String> 
         .flatten()
 }
 
+/// A prompt the profile gets as an argument of its own, the prompt alone (`""`) or the value of a
+/// separate flag (`"--flag"`, `"-f"`), may not start with `-`: the tool could read it as an
+/// option. Leading blanks and line breaks do not hide the first character. The joined form
+/// (`"--flag="`) and `"--"` keep any prompt an argument. Checked before anything is reserved.
+pub(crate) fn admit(profile: &ToolProfile, prompt: &str) -> Result<(), crate::model::AgentsError> {
+    let Some(flag) = for_launch(profile, prompt) else {
+        return Ok(());
+    };
+    let own = flag.is_empty() || (flag != "--" && !flag.ends_with('='));
+    let text = prompt.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    if own && text.starts_with('-') {
+        return Err(crate::model::AgentsError::PromptOption {
+            tool: profile.label.clone(),
+        });
+    }
+    Ok(())
+}
+
 /// What the start script appends for `flag`: the prompt read from `prompt_file`, in double quotes
 /// as one argument, the way the tool families pass it.
 pub(crate) fn rendered(flag: &str, prompt_file: &str) -> String {

@@ -131,6 +131,20 @@ pub(super) fn show(shown: &str) {
     let _ = fs::remove_file(format!("{live}.calls"));
 }
 
+/// From now on, each paste leaves the pane showing the fixture `shown` (a fixture's header and
+/// pane, or a pane alone), whatever it showed before.
+pub(super) fn after_paste(shown: &str) {
+    let live = std::env::var("DEVBOX_RESUME_READY_LIVE").expect("fake");
+    let pane = shown.split_once("\n---\n").map_or(shown, |(_, pane)| pane);
+    fs::write(format!("{live}.pasted"), pane).expect("owned screen after a paste");
+}
+
+/// The next paste makes the fake `tmux` fail `operation` from then on (see `fail_tmux`).
+pub(super) fn fail_after_paste(operation: &str) {
+    let live = std::env::var("DEVBOX_RESUME_READY_LIVE").expect("fake");
+    fs::write(format!("{live}.pasted-fail"), operation).expect("owned fake failure");
+}
+
 #[test]
 fn an_antigravity_resume_names_the_conversation_and_writes_its_hooks_folder_anew() {
     with_fake_tmux(

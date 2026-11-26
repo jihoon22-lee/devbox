@@ -160,6 +160,44 @@ fn an_empty_prompt_or_a_tool_family_gets_no_prompt_argument() {
 }
 
 #[test]
+fn a_prompt_the_tool_could_read_as_an_option_is_refused_where_it_is_an_argument_of_its_own() {
+    use crate::model::AgentsError;
+    let refused = |flag: &str, prompt: &str| {
+        matches!(
+            admit(&profile(Hooks::None, Some(flag)), prompt),
+            Err(AgentsError::PromptOption { tool }) if tool == "Mine"
+        )
+    };
+    // The prompt alone, or the value of a flag in the next argument: a leading `-`, whatever
+    // blanks and line breaks come before it, may be read as an option.
+    for flag in ["", "--prompt", "-p"] {
+        for prompt in ["-x", "--model=unrequested", "--", "-", "  -x", "\n\t -x"] {
+            assert!(refused(flag, prompt), "{flag:?} {prompt:?}");
+        }
+        for prompt in ["fix it", "x -y", "\u{2010}x", "", " ", "\n"] {
+            assert!(
+                admit(&profile(Hooks::None, Some(flag)), prompt).is_ok(),
+                "{flag:?} {prompt:?}"
+            );
+        }
+    }
+    // The joined form and `--` keep any prompt an argument.
+    for flag in ["--prompt=", "-p=", "--"] {
+        assert!(
+            admit(&profile(Hooks::None, Some(flag)), "-x").is_ok(),
+            "{flag:?}"
+        );
+    }
+    // Without the key the prompt is not an argument, and the families pass it their own way.
+    assert!(admit(&profile(Hooks::None, None), "-x").is_ok());
+    assert!(admit(&profile(Hooks::Claude, Some("--prompt")), "-x").is_ok());
+    assert_eq!(
+        devbox_protocol::to_wire(&AgentsError::PromptOption { tool: "x".into() }).code,
+        "agents.prompt_option"
+    );
+}
+
+#[test]
 fn the_start_script_appends_the_prompt_after_the_command_in_each_form() {
     let tool = |prompt_arg: Option<&str>| {
         let script = render_start_script(&plan(prompt_arg));
@@ -186,10 +224,6 @@ fn the_start_script_appends_the_prompt_after_the_command_in_each_form() {
     let mut unchanged = plan(None);
     unchanged.prompt_file = Some("/d/prompt.md".into());
     assert!(!render_start_script(&unchanged).contains("$(cat"));
-    // A resume of a `none` profile runs the command again, with the prompt again.
-    let mut resumed = plan(Some("--prompt"));
-    resumed.resume_session = None;
-    assert!(render_start_script(&resumed).contains(&format!("mine --verbose --prompt {prompt}\n")));
     // The key belongs to `none`: a tool family's own form is never doubled.
     let mut claude = plan(Some("--prompt"));
     claude.hooks = Hooks::Claude;

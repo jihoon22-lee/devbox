@@ -1,7 +1,7 @@
 //! What the service does for the Antigravity family: the hooks folder of a launch, the reports of
 //! its hooks, and the folder's removal with the work folder.
 use crate::{
-    antigravity,
+    antigravity::{self, HookEvent},
     model::{AgentEventParams, AgentTask, AgentsError},
     profile::{Hooks, ToolProfile},
     service::{AgentsService, Result, apply_event, now_ms},
@@ -59,12 +59,16 @@ impl AgentsService {
     }
 
     /// Whether a start of profile `id` would take `prompt`, as a start checks it: a prompt devbox
-    /// pastes itself may hold no control character and may not start with `!` or `/`. A composite
+    /// pastes itself may hold no control character and may not start with `!` or `/`, and one a
+    /// `promptArg` profile gets as an argument of its own may not start with `-`. A composite
     /// launch asks for each of its agents before it starts anything. An unknown profile passes:
     /// the start reports that.
     pub fn admits_prompt(&self, id: &str, prompt: &str) -> Result<()> {
         match crate::profile::resolve(&self.profiles, id) {
-            Some(profile) => crate::first_instruction::admit(&profile, prompt),
+            Some(profile) => {
+                crate::first_instruction::admit(&profile, prompt)?;
+                Ok(crate::prompt_arg::admit(&profile, prompt)?)
+            }
             None => Ok(()),
         }
     }
@@ -108,16 +112,20 @@ impl AgentsService {
 
     /// One report of agy's hooks. It changes the task only while the launch it names is current.
     ///
+    /// Any hook of the launch means agy got an instruction, so a first instruction still queued
+    /// for it is never sent (`first_instruction`): that comes first, whatever the rest of the
+    /// payload holds. A payload without a known event and a conversation (or the empty one
+    /// `devbox agent event` sends for a payload it could not read) changes nothing else, and a
+    /// conversation id that is not an id is still refused.
+    ///
     /// The conversation a report names is the task's session. agy opens a new conversation
     /// without a word when the id a resume names is unknown, so on a resumed launch the first
     /// report must name the task's conversation (`Binding::unconfirmed_session`): another one is
     /// never applied and never becomes the task's session, and fails the task instead
     /// (`session_mismatch`) while the tool goes on in its pane. Once the launch's conversation is
-    /// known, a report of another one means the user changed conversations inside agy: the task
-    /// follows it, with its transcript.
-    ///
-    /// Any report of the launch also means agy got an instruction, so a first instruction still
-    /// queued for it is never sent (`first_instruction`).
+    /// known, only a `SessionStart` of another one, a new conversation the user started inside
+    /// agy, moves the task to it, with its transcript. Another conversation's other reports (a
+    /// sub-agent could report its own) change nothing.
     pub(crate) async fn antigravity_event(self: &Arc<Self>, p: AgentEventParams) -> Result<Done> {
         let unchanged = || Done {
             rev: self.db.rev().to_string(),
@@ -125,10 +133,19 @@ impl AgentsService {
         let Some(launch) = p.launch_id.filter(|id| !id.is_empty()) else {
             return Ok(unchanged());
         };
-        let Some(report) = antigravity::report(&p.payload) else {
-            return Ok(unchanged());
+        let report = antigravity::report(&p.payload);
+        let refused = report
+            .as_ref()
+            .and_then(|report| crate::limits::identity(&report.conversation).err());
+        let Some(report) = report.filter(|_| refused.is_none()) else {
+            let cancel = |task: &mut AgentTask, _: Option<&mut crate::tracker::Binding>| {
+                crate::first_instruction::cancel(task, now_ms())
+            };
+            let (done, _) = self
+                .update_bound(&p.agent_id, Some(launch), false, cancel)
+                .await?;
+            return refused.map_or(Ok(done), Err);
         };
-        crate::limits::identity(&report.conversation)?;
         let events = antigravity::events(&p.payload);
         // The path is the tool's word: kept only when it lies in the user's agy data.
         let transcript = report
@@ -146,17 +163,22 @@ impl AgentsService {
                 }
                 changed
             };
+            // First, whatever the report says: agy got an instruction.
+            let cancelled = crate::first_instruction::cancel(task, now_ms());
             let known = task.session_id.is_some();
             let other = task
                 .session_id
                 .as_deref()
                 .is_some_and(|known| known != report.conversation);
             if other && binding.as_ref().is_some_and(|b| b.unconfirmed_session) {
-                let cancelled = crate::first_instruction::cancel(task, now_ms());
                 let failed = apply_event(task, &AgentEvent::SessionMismatch, now_ms());
                 return say("another conversation than the resumed one", failed) || cancelled;
             }
-            let mut changed = crate::first_instruction::cancel(task, now_ms());
+            if other && report.event != HookEvent::SessionStart {
+                say("another conversation's report ignored", true);
+                return cancelled;
+            }
+            let mut changed = cancelled;
             if let Some(binding) = binding {
                 if binding.unconfirmed_session {
                     binding.unconfirmed_session = false;
@@ -179,7 +201,7 @@ impl AgentsService {
             }
             match (known, other) {
                 (false, _) => say("session recorded", changed),
-                (true, true) => say("session rebound to another conversation", changed),
+                (true, true) => say("session moved to a new conversation", changed),
                 (true, false) => changed,
             }
         });
@@ -198,14 +220,22 @@ impl AgentsService {
     }
 
     /// Removes the hooks folder beside `task`'s work folder, which was just removed or is already
-    /// gone. Only the folder that names this task goes (`antigravity::remove_hooks_dir`). A
-    /// failure is logged and leaves the rest of the cleanup as it is.
+    /// gone. Only the folder that names this task, and holds nothing but what devbox wrote there,
+    /// goes (`antigravity::remove_hooks_dir`). A folder kept and a failure are logged, by the task
+    /// id alone, and leave the rest of the cleanup as it is.
     pub(crate) fn remove_agy_hooks(&self, task: &AgentTask) {
         let Some(workdir) = task.worktree_path.as_deref() else {
             return;
         };
-        if let Err(error) = antigravity::remove_hooks_dir(workdir, &task.id) {
-            tracing::warn!(agent = %task.id, kind = ?error.kind(), "agent hooks folder not removed");
+        match antigravity::remove_hooks_dir(workdir, &task.id) {
+            Ok(antigravity::Removal::Kept) => tracing::warn!(
+                agent = %task.id,
+                "agent hooks folder kept: it holds files devbox did not write"
+            ),
+            Ok(antigravity::Removal::Removed | antigravity::Removal::NotOwned) => {}
+            Err(error) => {
+                tracing::warn!(agent = %task.id, kind = ?error.kind(), "agent hooks folder not removed")
+            }
         }
     }
 }

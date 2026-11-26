@@ -1,0 +1,55 @@
+# 실제 녹화. Antigravity CLI(agy) 1.5.17, 2026-11-26, 소유 임시 git 저장소와 전용 tmux socket. 실제 데몬 확인 캡처 s3-C-after.txt.
+# 실제 devbox 데몬이 45줄짜리 처음 지시(첫 줄 "Tall prompt test: this prompt has 45 short lines. Reply with one word: OK", 이어서 "line 02 of 45"부터 "line 45 of 45 (last line)"까지)를 Enter 없이 붙여 넣은 화면. agy는 큰 붙여 넣기를 입력창에 [Pasted text #1 +45 lines]로만 보인다.
+# 정리: 소유 fixture 경로는 /owned/project/fixture-task로, 브랜치 이름은 agent/fixture-task로 가렸다. 배너 둘째 줄의 계정(이메일)·요금제는 fixture-account (fixture-plan)으로 바꿨고, 사용자 상태 줄(🕒로 시작)에서는 토큰·사용량 한도 칸을 지웠다(그 줄은 짧아졌다).
+# 그 밖의 줄, 줄 수와 빈 줄, 입력창 줄 끝의 빈칸은 capture 그대로다(tmux capture-pane -p -J -S -15, 200x50). 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+      ▄▀▀▄        Antigravity CLI 1.5.17
+     ▀▀▀▀▀▀       fixture-account (fixture-plan)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     /owned/project/fixture-task
+  ▄▀▀      ▀▀▄
+
+
+ ┃ Gemini 4 Carbon now available!
+ ┃ Both Carbon and Argon are now included as part of the entire Gemini entitlement, so you can use them for much longer.
+ ┃ esc to dismiss
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> [Pasted text #1 +45 lines]                                         
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+🕒 09:11:44 │ 🤖 Gemini 3.8 Flash │ ⚡ High │ ● idle │ 🛡️ Auto │ 📁 /owned/project/fixture-task │ 🌿 agent/fixture-task
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

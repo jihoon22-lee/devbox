@@ -63,6 +63,10 @@ pub struct AgentsService {
     /// Tasks whose first instruction was queued when this daemon started, until the watcher's
     /// first sight of their pane (see `first_instruction`).
     pub(crate) unobserved: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// The tasks this daemon process made (`create`): the restart rule holds every other one to
+    /// the watcher's first sight of its pane (see `first_instruction`). Kept in memory, so no
+    /// change of the clock moves a task to either side.
+    pub(crate) created: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -114,6 +118,7 @@ impl AgentsService {
             started_ms: now_ms(),
             token_refreshes: Default::default(),
             unobserved: Default::default(),
+            created: Default::default(),
         }
     }
     pub fn profiles(&self) -> AgentProfiles {

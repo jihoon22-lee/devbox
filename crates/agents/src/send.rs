@@ -1,7 +1,7 @@
 //! A provisional instruction precedes synchronous hooks; completion compensates only its own epoch.
 use crate::{
     actions::open,
-    first_instruction,
+    first_instruction::{self, Entry},
     model::*,
     service::{AgentsService, Result, apply_event, changed, now_ms},
     state::{AgentEvent, AgentState},
@@ -92,16 +92,27 @@ impl AgentsService {
             return Err(AgentsError::AwaitingInput.into());
         }
         let reservation = self.reserve_instruction(p, &task, first.cloned()).await?;
+        // A first instruction is pasted without Enter, which follows only once the pane shows
+        // agy's box starting with it, or with agy's placeholder of it (`enter_first_instruction`).
+        let enter = first.is_none();
         match self
             .terminal
             .tmux()
-            .paste_with_delivery(session, &p.text, true)
+            .paste_with_delivery(session, &p.text, enter)
             .await
         {
-            Ok(()) => self
-                .finish_instruction(&p.id, reservation, Some(InstructionDelivery::Delivered))
-                .await
-                .map_err(|error| after_delivery_failure(&p.id, error))?,
+            Ok(()) => {
+                let entry = match enter {
+                    true => Entry::Entered,
+                    false => self.enter_first_instruction(&task, session, &p.text).await,
+                };
+                self.finish_instruction(&p.id, reservation, Some(entry.delivery()), Some(entry))
+                    .await
+                    .map_err(|error| after_delivery_failure(&p.id, error))?;
+                if entry != Entry::Entered {
+                    return Err(AgentsError::DeliveryUnknown.into());
+                }
+            }
             Err(failure) => {
                 let unsent = failure.delivery == PasteDelivery::Unsent;
                 let completion = self
@@ -113,6 +124,7 @@ impl AgentsService {
                         } else {
                             Some(InstructionDelivery::Unknown)
                         },
+                        None,
                     )
                     .await;
                 if !unsent {
@@ -229,11 +241,14 @@ impl AgentsService {
             .0;
         Ok(reservation)
     }
+    /// Records how the reserved instruction went: `delivery`, or none when nothing left devbox.
+    /// `entry` is what came of a first instruction pasted without Enter.
     async fn finish_instruction(
         &self,
         id: &str,
         reservation: Reservation,
         delivery: Option<InstructionDelivery>,
+        entry: Option<Entry>,
     ) -> Result<()> {
         let id = id.to_owned();
         let hub = self.hub.clone();
@@ -254,11 +269,16 @@ impl AgentsService {
                     let binding = store::binding(tx, &id)?;
                     let launch = binding.as_ref().and_then(|b| b.launch_id.clone());
                     let previous = task.state;
-                    let undone = delivery.is_none() && reservation.untouched(&task);
-                    if !finish_row(&mut task, &reservation, &launch, delivery) {
+                    // The tool still waits for its first instruction: nothing left devbox, or
+                    // devbox pressed no Enter where the pane showed something else than agy at
+                    // rest in its box. The watcher then ends the wait at an empty box, as for any
+                    // launch that got none.
+                    let waits = reservation.untouched(&task)
+                        && (delivery.is_none() || entry == Some(Entry::Elsewhere));
+                    if !finish_row(&mut task, &reservation, &launch, delivery, entry) {
                         return Ok(Err(()));
                     }
-                    if let Some(binding) = restore_marker(&reservation, undone, binding) {
+                    if let Some(binding) = restore_marker(&reservation, waits, binding) {
                         store::put_binding(tx, &id, &binding)?;
                     }
                     store::put(tx, &task)?;
@@ -280,6 +300,7 @@ fn finish_row(
     reservation: &Reservation,
     launch: &Option<String>,
     delivery: Option<InstructionDelivery>,
+    entry: Option<Entry>,
 ) -> bool {
     if launch != &reservation.launch {
         return false;
@@ -288,14 +309,29 @@ fn finish_row(
         if !first_instruction::is(task, InstructionDelivery::Pending) {
             return false;
         }
+        let untouched = reservation.untouched(task);
         // Nothing left devbox: the instruction is queued again, for the watcher's next pass,
         // unless a hook or a launch moved the task on meanwhile.
-        let delivery = delivery.unwrap_or(if reservation.untouched(task) {
+        let delivery = delivery.unwrap_or(if untouched {
             InstructionDelivery::Queued
         } else {
             InstructionDelivery::NotSent
         });
         first_instruction::set(task, delivery, now_ms());
+        // Left without Enter at agy's prompt, and no hook since: agy began no turn, so the launch's
+        // wait ends as at an empty box (`complete_codex`), with a notice of what the last read
+        // showed in the box. A hook since (every one of agy's moves the task's activity on) leaves
+        // its state be.
+        if untouched && let Some(Entry::AtPrompt { ours }) = entry {
+            let notice = match ours {
+                true => first_instruction::LEFT_IN_BOX,
+                false => first_instruction::NOT_SEEN,
+            };
+            let left = AgentEvent::TurnComplete {
+                message: Some(notice.into()),
+            };
+            apply_event(task, &left, now_ms());
+        }
         task.updated_ms = now_ms();
         return true;
     }
@@ -321,16 +357,16 @@ fn finish_row(
     task.updated_ms = now_ms();
     true
 }
-/// The binding to store once an unsent instruction is `undone` (`finish_row` restored the task):
-/// the ready marker its reserve cleared goes back on while the launch is the reserve's and began no
-/// turn. The tool never got the instruction, so it still waits at its prompt for its first one.
+/// The binding to store once the tool `waits` for its first instruction after all (an unsent
+/// instruction `finish_row` restored, or a first one left without Enter): the ready marker its
+/// reserve cleared goes back on while the launch is the reserve's and began no turn.
 fn restore_marker(
     reservation: &Reservation,
-    undone: bool,
+    waits: bool,
     binding: Option<Binding>,
 ) -> Option<Binding> {
     let mut binding = binding.filter(|binding| {
-        undone
+        waits
             && reservation.cleared_marker
             && binding.launch_id == reservation.launch
             && binding.turn_id.is_none()
@@ -339,164 +375,5 @@ fn restore_marker(
     Some(binding)
 }
 #[cfg(test)]
-mod tests {
-    use super::*;
-    fn provisional() -> (AgentTask, Reservation) {
-        let mut task: AgentTask = serde_json::from_value(serde_json::json!({
-            "id":"owned","projectId":"p","title":"fixture","profile":"fixture","baseBranch":"main",
-            "branch":null,"worktreePath":null,"workdir":"/owned","sessionId":"session","terminalId":"terminal",
-            "state":"idle","reason":null,"attention":{"kind":"idle","message":"old attention","atMs":1},
-            "port":20000,"prompt":"prompt","followUps":[],"tokens":null,"prUrl":null,"closedHow":null,
-            "createdMs":0,"updatedMs":1,"closedMs":null,"activitySeq":4
-        })).expect("fixture task");
-        let before = task.clone();
-        task.follow_ups.push(FollowUp {
-            at_ms: 2,
-            text: "instruction".into(),
-            instruction_id: Some("owned-instruction".into()),
-            delivery: Some(InstructionDelivery::Pending),
-        });
-        apply_event(&mut task, &AgentEvent::UserInstructed, 2);
-        let reservation = Reservation {
-            instruction: "owned-instruction".into(),
-            launch: Some("launch".into()),
-            epoch: task.activity_seq,
-            before,
-            cleared_marker: false,
-            first: false,
-        };
-        (task, reservation)
-    }
-    #[test]
-    fn an_undone_instruction_restores_only_the_marker_its_reserve_cleared() {
-        let (_, mut reservation) = provisional();
-        reservation.cleared_marker = true;
-        let mut binding = Binding::new(1);
-        binding.launch_id = Some("launch".into());
-        let restored = restore_marker(&reservation, true, Some(binding.clone()));
-        assert!(restored.expect("restored").resumed_session);
-        // A hook, a turn or a launch moved the task on since the reserve.
-        assert_eq!(
-            restore_marker(&reservation, false, Some(binding.clone())),
-            None
-        );
-        // The launch began a turn, or is not the reserve's.
-        let mut turned = binding.clone();
-        turned.turn_id = Some("turn".into());
-        assert_eq!(restore_marker(&reservation, true, Some(turned)), None);
-        let mut other = binding.clone();
-        other.launch_id = Some("new-launch".into());
-        assert_eq!(restore_marker(&reservation, true, Some(other)), None);
-        assert_eq!(restore_marker(&reservation, true, None), None);
-        // A send that cleared no marker never sets one.
-        reservation.cleared_marker = false;
-        assert_eq!(restore_marker(&reservation, true, Some(binding)), None);
-    }
-    #[test]
-    fn a_first_instruction_is_finished_on_the_task_and_queued_again_only_when_nothing_moved() {
-        let reserved = || {
-            let (mut task, mut reservation) = provisional();
-            task.follow_ups.clear();
-            first_instruction::set(&mut task, InstructionDelivery::Pending, 2);
-            reservation.first = true;
-            (task, reservation)
-        };
-        let launch = Some("launch".to_owned());
-        for outcome in [InstructionDelivery::Delivered, InstructionDelivery::Unknown] {
-            let (mut task, reservation) = reserved();
-            assert!(finish_row(&mut task, &reservation, &launch, Some(outcome)));
-            assert!(first_instruction::is(&task, outcome));
-            assert_eq!(task.follow_ups, []);
-        }
-        // Nothing left devbox and nothing touched the task: the watcher tries again.
-        let (mut task, reservation) = reserved();
-        assert!(finish_row(&mut task, &reservation, &launch, None));
-        assert!(first_instruction::is(&task, InstructionDelivery::Queued));
-        // A hook moved the task on meanwhile: agy has an instruction, so this one never goes.
-        let (mut task, reservation) = reserved();
-        apply_event(&mut task, &AgentEvent::PromptSubmitted, 3);
-        assert!(finish_row(&mut task, &reservation, &launch, None));
-        assert!(first_instruction::is(&task, InstructionDelivery::NotSent));
-        // Another launch, or an instruction no longer being sent, is left as it is.
-        let (mut task, reservation) = reserved();
-        let before = task.clone();
-        let other = Some("new-launch".to_owned());
-        assert!(!finish_row(&mut task, &reservation, &other, None));
-        first_instruction::set(&mut task, InstructionDelivery::Unknown, 2);
-        let settled = task.clone();
-        let delivered = Some(InstructionDelivery::Delivered);
-        assert!(!finish_row(&mut task, &reservation, &launch, delivered));
-        assert_eq!(task, settled);
-        assert_ne!(settled, before);
-    }
-    #[test]
-    fn unsent_compensation_preserves_a_newer_permission_hook() {
-        let (mut task, reservation) = provisional();
-        apply_event(
-            &mut task,
-            &AgentEvent::NeedsInput {
-                message: "new permission".into(),
-            },
-            3,
-        );
-        let attention = task.attention.clone();
-        let epoch = task.activity_seq;
-        assert!(finish_row(
-            &mut task,
-            &reservation,
-            &Some("launch".into()),
-            None
-        ));
-        assert!(task.follow_ups.is_empty());
-        assert_eq!(task.state, AgentState::Waiting);
-        assert_eq!(task.attention, attention);
-        assert_eq!(task.activity_seq, epoch);
-    }
-    #[test]
-    fn completion_never_overwrites_a_new_launch_or_synchronous_completion() {
-        let (mut task, reservation) = provisional();
-        let before = task.clone();
-        assert!(!finish_row(
-            &mut task,
-            &reservation,
-            &Some("new-launch".into()),
-            None
-        ));
-        assert_eq!(task, before);
-        apply_event(
-            &mut task,
-            &AgentEvent::TurnComplete {
-                message: Some("synchronous done".into()),
-            },
-            3,
-        );
-        assert!(finish_row(
-            &mut task,
-            &reservation,
-            &Some("launch".into()),
-            Some(InstructionDelivery::Delivered)
-        ));
-        assert_eq!(task.state, AgentState::Idle);
-        assert_eq!(
-            task.attention.as_ref().expect("attention").message,
-            "synchronous done"
-        );
-        assert_eq!(
-            task.follow_ups[0].delivery,
-            Some(InstructionDelivery::Delivered)
-        );
-    }
-    #[test]
-    fn unchanged_unsent_epoch_restores_attention_with_a_monotonic_epoch() {
-        let (mut task, reservation) = provisional();
-        assert!(finish_row(
-            &mut task,
-            &reservation,
-            &Some("launch".into()),
-            None
-        ));
-        assert_eq!(task.state, reservation.before.state);
-        assert_eq!(task.attention, reservation.before.attention);
-        assert!(task.activity_seq > reservation.epoch);
-    }
-}
+#[path = "send_tests.rs"]
+mod tests;

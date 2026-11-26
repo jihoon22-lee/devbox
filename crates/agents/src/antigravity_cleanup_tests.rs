@@ -1,14 +1,30 @@
 //! The hooks folder devbox puts beside an Antigravity task's work folder goes with that folder:
-//! on discard, on automatic cleanup and on the cleanup list. The list never names it.
+//! on discard, on automatic cleanup and on the cleanup list. The list never names it. A folder
+//! that holds anything devbox did not write there stays whole.
 use super::*;
 
-/// The hooks folder beside `wt`, as the task's first launch made it, with a file agy wrote there.
+/// The hooks folder beside `wt`, as the task's first launch made it.
 fn hooks_beside(task: &AgentTask, wt: &Path) -> PathBuf {
     let hooks = crate::antigravity::hooks_dir(wt.to_str().expect("UTF-8"));
     crate::antigravity::write_hooks_dir(&hooks, "/owned/devbox", &task.id, true)
         .expect("first launch");
+    hooks
+}
+
+/// The same with a file the agent wrote there: agy's workspace holds the folder.
+fn hooks_with_notes(task: &AgentTask, wt: &Path) -> PathBuf {
+    let hooks = hooks_beside(task, wt);
     fs::write(hooks.join("scratch.md"), "written by the agent").expect("owned file");
     hooks
+}
+
+/// The folder and what the agent wrote there are as they were.
+fn kept_whole(hooks: &Path) {
+    assert_eq!(
+        fs::read_to_string(hooks.join("scratch.md")).expect("agent file"),
+        "written by the agent"
+    );
+    assert!(hooks.join(".agents/hooks.json").is_file());
 }
 
 /// A folder of a hooks folder's name that is not this task's.
@@ -76,12 +92,12 @@ async fn discard_removes_the_tasks_hooks_folder_with_the_work_folder() {
 }
 
 #[tokio::test]
-async fn automatic_cleanup_after_a_merge_removes_the_hooks_folder() {
+async fn automatic_cleanup_after_a_merge_keeps_a_hooks_folder_the_agent_wrote_in() {
     let (fixture, task, wt) = action_fixture().await;
-    let hooks = hooks_beside(&task, &wt);
+    let hooks = hooks_with_notes(&task, &wt);
     merged(&fixture, &task).await;
     assert!(!wt.exists());
-    assert!(fs::symlink_metadata(&hooks).is_err(), "left as an orphan");
+    kept_whole(&hooks);
     assert_eq!(reservation(&fixture, &task).await, Resources::Planned);
 }
 
@@ -117,12 +133,12 @@ async fn the_cleanup_list_never_names_the_hooks_folder_and_cleanup_removes_it() 
 }
 
 #[tokio::test]
-async fn cleanup_of_a_branch_whose_work_folder_is_gone_removes_the_hooks_folder_left_behind() {
+async fn cleanup_of_a_branch_whose_work_folder_is_gone_keeps_a_hooks_folder_the_agent_wrote_in() {
     let (mut fixture, task, wt) = action_fixture().await;
     Arc::get_mut(&mut fixture.svc)
         .expect("owned service")
         .cleanup_after_close = false;
-    let hooks = hooks_beside(&task, &wt);
+    let hooks = hooks_with_notes(&task, &wt);
     merged(&fixture, &task).await;
     // The user removed the work folder by hand.
     devbox_git::mutate::worktree_remove(&fixture.repo, &wt, false)
@@ -138,6 +154,6 @@ async fn cleanup_of_a_branch_whose_work_folder_is_gone_removes_the_hooks_folder_
         })
         .await
         .expect("branch cleanup");
-    assert!(fs::symlink_metadata(&hooks).is_err(), "left as an orphan");
+    kept_whole(&hooks);
     assert_eq!(reservation(&fixture, &task).await, Resources::Planned);
 }

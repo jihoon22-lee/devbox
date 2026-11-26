@@ -400,6 +400,10 @@ domain_error! {
         // The prompt of a task whose tool gets it pasted starts with `!` or `/`, which the tool
         // would run as a shell or tool command. `tool` is the profile's label.
         FirstInstructionCommand { tool: String } = "agents.first_instruction_command",
+        // The prompt of a `promptArg` profile that gets it as an argument of its own (`""` or a
+        // separate flag) starts with `-`, which the tool could read as an option. `tool` is the
+        // profile's label.
+        PromptOption { tool: String } = "agents.prompt_option",
     }
 }
 

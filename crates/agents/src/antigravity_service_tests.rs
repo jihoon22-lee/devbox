@@ -174,6 +174,43 @@ async fn a_launch_loads_the_hooks_folder_beside_the_work_folder() {
 }
 
 #[tokio::test]
+async fn a_file_or_a_symlink_of_the_hooks_folders_name_is_named_at_any_launch() {
+    let f = Fixture::new().await;
+    let agy = crate::profile::resolve(&[], "antigravity").expect("builtin profile");
+    let workdir = f.root.path().join("project-agents/fix");
+    fs::create_dir_all(&workdir).expect("owned work folder");
+    let task = reserved("a1", "antigravity", &workdir, true);
+    let hooks = f.root.path().join("project-agents/fix.agy-hooks");
+    let elsewhere = f.root.path().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("owned target");
+    for what in ["a file", "a symlink", "a dangling symlink"] {
+        match what {
+            "a file" => fs::write(&hooks, "user file").expect("owned file"),
+            "a symlink" => std::os::unix::fs::symlink(&elsewhere, &hooks).expect("owned symlink"),
+            _ => std::os::unix::fs::symlink(f.root.path().join("missing"), &hooks)
+                .expect("owned symlink"),
+        }
+        // A resume as well as a first launch: the user removes or renames what is there.
+        for fresh in [false, true] {
+            let refused = f.svc.connection(&task, &agy, fresh).await;
+            assert!(
+                matches!(
+                    &refused,
+                    Err(Fail::Domain(AgentsError::HooksFolderExists { path })) if Path::new(path) == hooks
+                ),
+                "{what} {fresh}: {refused:?}"
+            );
+        }
+        assert_eq!(
+            fs::symlink_metadata(&hooks).expect("kept").is_file(),
+            what == "a file"
+        );
+        fs::remove_file(&hooks).expect("owned name");
+    }
+    assert_eq!(fs::read_dir(&elsewhere).expect("target").count(), 0);
+}
+
+#[tokio::test]
 async fn a_folder_of_the_hooks_folders_name_refuses_the_start_before_anything_exists() {
     let f = Fixture::new().await;
     // Beside where the work folder would go: another task's, or not devbox's at all.
@@ -284,6 +321,9 @@ async fn a_first_launch_queues_its_prompt_and_stops_at_a_folder_that_appeared_me
     );
     let binding = f.svc.launch_binding(&reserved.id).await.expect("binding");
     assert!(binding.resumed_session);
+    // This daemon made it: the restart rule never holds it to a first sight of its pane.
+    assert!(f.svc.made_here(&reserved.id));
+    assert!(!f.svc.made_here("a-task-of-the-daemon-before"));
     f.drain().await;
     // The preparation stopped at the folder, before any terminal or tool was started.
     let failed = f.svc.get(&reserved.id).await.expect("task");
@@ -476,5 +516,7 @@ async fn a_report_of_another_launch_or_none_changes_nothing() {
     assert_eq!(task(&f).await, before.0);
 }
 
+#[path = "antigravity_hook_tests.rs"]
+mod hook_cancel;
 #[path = "antigravity_session_tests.rs"]
 mod session;

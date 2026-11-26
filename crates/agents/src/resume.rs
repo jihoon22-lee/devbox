@@ -141,7 +141,9 @@ impl AgentsService {
             // devbox knows, or starts pi fresh without one: pi may have run the prompt already.
             prompt_file: (profile.hooks != crate::profile::Hooks::Pi)
                 .then(|| prompt.to_string_lossy().into_owned()),
-            prompt_arg: crate::prompt_arg::for_launch(&profile, &task.prompt),
+            // A `promptArg` profile gets the prompt only on its first launch: the tool may have run
+            // it already, and a resume runs the command again without it.
+            prompt_arg: None,
             resume_session: session_id.clone(),
             session_id: None,
             use_scope: self.use_scope,

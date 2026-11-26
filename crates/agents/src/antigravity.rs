@@ -206,22 +206,142 @@ pub(crate) fn shows_before_first_prompt(capture: &str) -> bool {
 /// fixtures.
 pub(crate) fn shows_prompt(capture: &str) -> bool {
     let rows = last_rows(capture);
-    let empty = |row: &str| {
-        let row = row.trim_end();
-        row == ">" || (row.starts_with("> ") && row.ends_with(HINT_END))
-    };
     rows[..rows.len().min(6)]
         .windows(3)
-        .any(|box_rows| rule(box_rows[0]) && empty(box_rows[1]) && rule(box_rows[2]))
+        .any(|box_rows| rule(box_rows[0]) && empty_input(box_rows[1]) && rule(box_rows[2]))
         && !rows.iter().any(|row| spinner(row))
 }
 
-fn real_dir(path: &Path) -> std::io::Result<bool> {
+/// What agy's prompt box shows once devbox pasted a prompt into it without Enter
+/// (`AgentsService::enter_first_instruction`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Pasted {
+    /// The box's input row is `> ` and the start of the prompt's first line, enough of it to tell
+    /// ([`SHOWN_AT_LEAST`]), or the placeholder agy draws for this prompt when it is too large to
+    /// show: nothing was typed into the box before the paste, and the box is not in shell mode.
+    Leads,
+    /// The box is empty, or its input row shows less of the first line than that: agy may not
+    /// have drawn all of the paste yet.
+    Drawing,
+    /// No prompt box: the screen's last two rules are missing, or not of one length.
+    NoBox,
+    /// The box's input row starts otherwise: with text typed before the paste, in shell mode
+    /// (`!`) or with a `/`, or with more than the first line.
+    Other,
+}
+
+/// How much of the prompt's first line the box's input row must show, in characters. A shorter
+/// line shows whole.
+const SHOWN_AT_LEAST: usize = 16;
+
+/// `text` with each run of blanks as one space and none at its end: the box's input row and the
+/// prompt's first line are compared so.
+fn collapsed(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut blank = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            blank = true;
+            continue;
+        }
+        if std::mem::take(&mut blank) {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Whether `row`, the prompt box's input row, is empty: `>` alone, or the hint agy draws before
+/// a launch's first prompt, which ends with `(shift+tab to cycle)`.
+fn empty_input(row: &str) -> bool {
+    let row = row.trim_end();
+    row == ">" || (row.starts_with("> ") && row.ends_with(HINT_END))
+}
+
+/// Whether `shown`, the box's input row after its `> ` and without the blanks at its end, is all
+/// of the placeholder agy draws instead of a paste too large to show, with the count of `prompt`,
+/// the text pasted: `[Pasted text #<n> +<lines> lines]` or `[Pasted text #<n> <characters>
+/// chars]`, where `<n>` numbers the pastes of agy's session. The count is all it shows of the
+/// paste, and a number or count with a leading zero is not one agy draws. Evidence (agy 1.5.17,
+/// a real run): pasted-lines.txt and pasted-chars.txt. Its probes showed 15 lines, a line of
+/// 1000 characters and three of 600 whole, 16 to 20 lines (and the run's 45) as `+<lines>
+/// lines`, and one line of 1500 to 2999 characters as `<characters> chars`, each the exact count
+/// of what was pasted. The probes counted ASCII text: a count agy makes otherwise is not taken,
+/// and the paste gets no Enter.
+fn placeholder(shown: &str, prompt: &str) -> bool {
+    let Some((paste, count)) = shown
+        .strip_prefix("[Pasted text #")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .and_then(|rest| rest.split_once(' '))
+    else {
+        return false;
+    };
+    // agy numbers the pastes of its session from 1, with no leading zero.
+    let numbered = paste
+        .parse::<u64>()
+        .is_ok_and(|n| n > 0 && n.to_string() == paste);
+    let lines = format!("+{} lines", prompt.split('\n').count());
+    let chars = format!("{} chars", prompt.chars().count());
+    numbered && (count == lines || count == chars)
+}
+
+/// What the prompt box in `capture` shows after devbox pasted `prompt` into it. The box is the
+/// screen's last two rules, which agy draws across the pane and so are of one length, and the row
+/// under the upper one is its input row. Only how that row starts counts. A key typed before the
+/// paste landed is in front of the prompt there, and `!` or `/` as the first key of an empty box
+/// also changes the row's marker or first character; a key typed after the paste follows the
+/// prompt. How agy wraps a long line, or fits a prompt taller than the box, does not change how
+/// the row starts, and a paste it shows as a placeholder fills the row alone. Evidence:
+/// draft.txt, shell-mode-draft.txt, slash-draft.txt, pasted-lines.txt and pasted-chars.txt.
+pub(crate) fn pasted(capture: &str, prompt: &str) -> Pasted {
+    let rows: Vec<&str> = capture.lines().map(str::trim_end).collect();
+    let mut rules = (0..rows.len()).rev().filter(|&at| rule(rows[at]));
+    let (Some(bottom), Some(top)) = (rules.next(), rules.next()) else {
+        return Pasted::NoBox;
+    };
+    if rows[top].chars().count() != rows[bottom].chars().count() || bottom == top + 1 {
+        return Pasted::NoBox;
+    }
+    let input = rows[top + 1];
+    if empty_input(input) {
+        return Pasted::Drawing;
+    }
+    let Some(shown) = input.strip_prefix("> ") else {
+        return Pasted::Other;
+    };
+    if placeholder(shown, prompt) {
+        return Pasted::Leads;
+    }
+    let (line, shown) = (
+        collapsed(prompt.lines().next().unwrap_or_default()),
+        collapsed(shown),
+    );
+    if line.is_empty() || !line.starts_with(&shown) {
+        return Pasted::Other;
+    }
+    if shown.chars().count() >= line.chars().count().min(SHOWN_AT_LEAST) {
+        Pasted::Leads
+    } else {
+        Pasted::Drawing
+    }
+}
+
+/// What is at `path`, a symlink never followed: `Some(true)` a real folder, `Some(false)` anything
+/// else (a file, a symlink), `None` nothing.
+fn found(path: &Path) -> std::io::Result<Option<bool>> {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.is_dir() => Ok(true),
-        Ok(_) => Err(std::io::Error::other("not a directory")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Ok(meta) => Ok(Some(meta.is_dir())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
+    }
+}
+
+fn real_dir(path: &Path) -> std::io::Result<bool> {
+    match found(path)? {
+        Some(true) => Ok(true),
+        Some(false) => Err(std::io::Error::other("not a directory")),
+        None => Ok(false),
     }
 }
 
@@ -241,18 +361,18 @@ pub(crate) fn write_hooks_dir(
         .ok_or_else(|| std::io::Error::other("hooks folder without a parent"))?;
     no_symlink_ancestors(parent)?;
     let owner = dir.join(OWNER_FILE);
-    if real_dir(dir)? {
-        // Another task's folder, or one devbox did not make, is never taken over.
-        if fresh || !owned_by(dir, agent) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "hooks folder exists",
-            ));
+    let taken = || std::io::Error::new(std::io::ErrorKind::AlreadyExists, "hooks folder exists");
+    match found(dir)? {
+        // Another task's folder, one devbox did not make, or a file or a symlink of that name,
+        // is never taken over: the user removes or renames it.
+        Some(false) => return Err(taken()),
+        Some(true) if fresh || !owned_by(dir, agent) => return Err(taken()),
+        Some(true) => {}
+        None => {
+            std::fs::create_dir(dir)?;
+            private_dir(dir)?;
+            private_file(&owner, agent, false)?;
         }
-    } else {
-        std::fs::create_dir(dir)?;
-        private_dir(dir)?;
-        private_file(&owner, agent, false)?;
     }
     let agents = dir.join(".agents");
     if !real_dir(&agents)? {
@@ -277,17 +397,70 @@ fn owned_by(dir: &Path, agent: &str) -> bool {
         && std::fs::read_to_string(&owner).is_ok_and(|name| name == agent)
 }
 
-/// Removes the hooks folder of the work folder `workdir` when it names `agent` as its task.
-/// Says whether a folder was removed. Any other folder of that name stays.
-pub(crate) fn remove_hooks_dir(workdir: &str, agent: &str) -> std::io::Result<bool> {
-    let dir = hooks_dir(workdir);
-    if !owned_by(&dir, agent) {
-        return Ok(false);
+/// What [`remove_hooks_dir`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Removal {
+    /// The task's folder held nothing but what devbox writes there, and is gone.
+    Removed,
+    /// Nothing of that name is there, or it is not the task's folder: left as it is.
+    NotOwned,
+    /// The task's folder holds something devbox did not write (the agent can write in it, as in
+    /// any folder of agy's workspace): kept whole.
+    Kept,
+}
+
+/// Whether `dir` holds only real files named in `files` and real folders named in `dirs`, each
+/// of which passes `inside`. Nothing is followed: a symlink is never one of them.
+fn holds_only(
+    dir: &Path,
+    files: &[&str],
+    dirs: &[&str],
+    inside: impl Fn(&Path) -> std::io::Result<bool>,
+) -> std::io::Result<bool> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let name = entry.file_name();
+        let named = |names: &[&str]| names.iter().any(|known| name == **known);
+        let devbox = (kind.is_file() && named(files))
+            || (kind.is_dir() && named(dirs) && inside(&entry.path())?);
+        if !devbox {
+            return Ok(false);
+        }
     }
-    std::fs::remove_dir_all(&dir)?;
     Ok(true)
 }
 
+/// Removes the hooks folder of the work folder `workdir` when it names `agent` as its task and
+/// holds nothing but what devbox writes there: the task's name and `.agents/hooks.json` (or less,
+/// after a write that stopped midway). A folder with anything else in it, a symlink included,
+/// stays whole, and any other folder of that name stays. Each name is removed alone, never a
+/// tree, so what appears meanwhile stops the removal instead of going with it.
+pub(crate) fn remove_hooks_dir(workdir: &str, agent: &str) -> std::io::Result<Removal> {
+    let dir = hooks_dir(workdir);
+    if !owned_by(&dir, agent) {
+        return Ok(Removal::NotOwned);
+    }
+    let agents = dir.join(".agents");
+    let hooks_only = |agents: &Path| holds_only(agents, &["hooks.json"], &[], |_| Ok(false));
+    if !holds_only(&dir, &[OWNER_FILE], &[".agents"], hooks_only)? {
+        return Ok(Removal::Kept);
+    }
+    if real_dir(&agents)? {
+        let file = agents.join("hooks.json");
+        if found(&file)?.is_some() {
+            std::fs::remove_file(&file)?;
+        }
+        std::fs::remove_dir(&agents)?;
+    }
+    std::fs::remove_file(dir.join(OWNER_FILE))?;
+    std::fs::remove_dir(&dir)?;
+    Ok(Removal::Removed)
+}
+
+#[cfg(test)]
+#[path = "antigravity_box_tests.rs"]
+pub(crate) mod box_tests;
 #[cfg(test)]
 #[path = "antigravity_tests.rs"]
 mod tests;

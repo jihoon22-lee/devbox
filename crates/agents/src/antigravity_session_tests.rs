@@ -1,5 +1,5 @@
-//! Which conversation an Antigravity task follows: the one a resume named, a change made inside
-//! agy, and the transcript usage is read from.
+//! Which conversation an Antigravity task follows: the one a resume named, a new one started
+//! inside agy, and the transcript usage is read from.
 use super::*;
 
 #[tokio::test]
@@ -92,7 +92,7 @@ fn payload_of(f: &Fixture, event: &str, id: &str) -> (String, PathBuf) {
 }
 
 #[tokio::test]
-async fn a_conversation_changed_inside_agy_becomes_the_tasks_session() {
+async fn only_a_new_conversation_started_inside_agy_becomes_the_tasks_session() {
     // A first launch: its conversation is recorded by its first hooks.
     let f = Fixture::new().await;
     running(&f, None, true).await;
@@ -105,9 +105,20 @@ async fn a_conversation_changed_inside_agy_becomes_the_tasks_session() {
         (AgentState::Idle, Some(CONVERSATION))
     );
     let binding = f.svc.launch_binding("agy").await.expect("binding");
-    assert_eq!(binding.transcript, Some(first_transcript));
-    // The user starts another conversation inside agy (`/new`, `/resume`): the same launch now
-    // reports that one. The task follows it, with its transcript, and is not failed.
+    assert_eq!(binding.transcript, Some(first_transcript.clone()));
+    // A report of another conversation that does not start one (a sub-agent may report its own,
+    // never seen with agy 1.5.17) changes nothing: not the session, the transcript or the state.
+    let before = (task(&f).await, binding);
+    for event in ["PreInvocation", "Stop"] {
+        hook(&f, &payload_of(&f, event, OTHER).0).await;
+        let after = (
+            task(&f).await,
+            f.svc.launch_binding("agy").await.expect("binding"),
+        );
+        assert_eq!(after, before, "{event}");
+    }
+    // The user starts a new conversation inside agy (`/new`): its `SessionStart` names it. The
+    // task follows it, with its transcript, and is not failed.
     let (second, second_transcript) = payload_of(&f, "SessionStart", OTHER);
     hook(&f, &second).await;
     hook(&f, &payload_of(&f, "PreInvocation", OTHER).0).await;
@@ -121,13 +132,17 @@ async fn a_conversation_changed_inside_agy_becomes_the_tasks_session() {
         (AgentState::Running, Some(OTHER), None)
     );
     let binding = f.svc.launch_binding("agy").await.expect("binding");
-    assert_eq!(binding.transcript, Some(second_transcript));
+    assert_eq!(binding.transcript, Some(second_transcript.clone()));
     hook(&f, &payload_of(&f, "Stop", OTHER).0).await;
     assert_eq!(task(&f).await.state, AgentState::Idle);
-    // A payload of the new conversation that names no usable transcript drops the old one:
-    // usage never reads another conversation's file.
+    // The first conversation's reports are another conversation's now.
+    hook(&f, &first).await;
+    assert_eq!(task(&f).await.state, AgentState::Idle);
+    assert_eq!(task(&f).await.session_id.as_deref(), Some(OTHER));
+    // A new conversation whose payload names no usable transcript drops the old one: usage never
+    // reads another conversation's file.
     let bare =
-        serde_json::json!({ "hookEventName": "PreInvocation", "conversationId": CONVERSATION });
+        serde_json::json!({ "hookEventName": "SessionStart", "conversationId": CONVERSATION });
     hook(&f, &bare.to_string()).await;
     assert_eq!(task(&f).await.session_id.as_deref(), Some(CONVERSATION));
     assert_eq!(
@@ -135,18 +150,20 @@ async fn a_conversation_changed_inside_agy_becomes_the_tasks_session() {
         None
     );
 
-    // A resumed launch, once its first hook confirmed the task's conversation, follows a change
-    // the same way.
+    // A resumed launch, once its first hook confirmed the task's conversation, ignores another
+    // conversation's reports and follows a new one the same way.
     let f = Fixture::new().await;
     running(&f, Some(CONVERSATION), true).await;
     hook(&f, pre_invocation()).await;
     hook(&f, stop()).await;
     hook(&f, &payload_of(&f, "PreInvocation", OTHER).0).await;
-    let moved = task(&f).await;
+    let kept = task(&f).await;
     assert_eq!(
-        (moved.state, moved.session_id.as_deref()),
-        (AgentState::Running, Some(OTHER))
+        (kept.state, kept.session_id.as_deref()),
+        (AgentState::Idle, Some(CONVERSATION))
     );
+    hook(&f, &payload_of(&f, "SessionStart", OTHER).0).await;
+    assert_eq!(task(&f).await.session_id.as_deref(), Some(OTHER));
 }
 
 #[tokio::test]
