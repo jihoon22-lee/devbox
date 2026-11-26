@@ -35,6 +35,9 @@ Each item is a lesson of the 1.0.0 acceptance.
 - **One launcher for the owned executable.** See "Starting the owned app" under the rules.
 - **PowerShell helpers are pure ASCII.** `validate.py` fails on a non-ASCII byte in a `.ps1` without a UTF-8 BOM.
 - **The app's own update, and foreign files.** The new `update` flow and the cases UP1, UP2 and A7 (§7).
+- **Polling follows the window (A8, #678).** In `fresh` right after A2, A8 hides, shows, minimizes and restores the owned
+  main window and checks that the app's display polls stop and come back with it. See "The owned window (A8)" under the
+  rules and the status rules in §4. Not yet run live.
 
 This harness accepts the 1.0.0-rc.2 candidate on this PC. It is built from the reviewed S6-6b harness and follows
 `.superpowers/sdd/10-s7-s8-release/s7-14-harness-changes.md` and `s7-14-matrix.md`. Only the controller runs it, and
@@ -186,6 +189,46 @@ only after an independent review of these files.
     inherited) and are waited for with a bound.
   - `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (the debug port) and `DEVBOX_UPDATE_FIXTURE` are set only in the launching
     helper's own environment block and restored right after the start; never a user or machine variable.
+- **The owned window (A8, 1.0.1).**
+  - A8 drives one long-lived `native-lifecycle.ps1 -Action window-agent`: one command on stdin, one JSON line back with
+    the command's number `n` (a late answer is never taken for the next command). Each stdin read has a real bound (a
+    StreamReader on the raw stdin; `Console.In` reads synchronously on .NET Framework), and every other wait is bounded:
+    the case takes at most 90 s of its own plus at most 120 s waiting for an idle user. Phases: V0 as A2 left it, 12 s;
+    H1 WM_CLOSE, 2 s settle, 12 s; S1 a second start of the owned executable, 8 s; M1 SC_MINIMIZE, 2 s settle, 12 s; R1
+    SC_RESTORE, 8 s.
+  - The app is A2's record only: the exact PID, executable path and start time, on the pinned owned executable. The
+    window is that PID's one visible, not minimized, unowned top-level `Tauri Window` titled `devbox` with a caption.
+    Before each post the agent checks again that the app is the same process and the handle is still its window of that
+    class; otherwise it posts nothing and A8 fails (`window-gone`). WM_CLOSE goes only while the app has its tray window
+    (`tray_icon_app`): the product then hides to the tray instead of quitting.
+  - **User-idle gate.** S1 takes the foreground (when Windows refuses it, the app's own focus call presses Alt with
+    `SendInput`: the product's input, not the harness's), and M1 and R1 move the focus. So before H1, S1, M1, R1 and each
+    repair the driver waits until the session had no keyboard or mouse input for 30 s (`GetLastInputInfo`, read-only),
+    at most 120 s in all, and the agent checks again right before it acts. Otherwise A8 stops there, NOT_RUN
+    `user-active`; `gates` keeps every check and the last input times. The app's own Alt at S1 counts as input, so M1
+    usually waits up to 30 s.
+  - WM_CLOSE and WM_SYSCOMMAND with SC_MINIMIZE (0xF020) or SC_RESTORE (0xF120) are the only window messages a helper
+    posts: fixed lines of `native-window.ps1`, called only from the agent's Post-Command after both checks, to that
+    handle only. `validate.py` fails on any other `PostMessage` line, file or call site (`scan_window_posts`) and on a
+    user32 import outside its read-only list (`scan_user32`).
+  - The second start goes through the launcher (`Invoke-OwnedHandover`: the same handle list, a 5 s wait on the creation
+    handle, no debug port, no update fixture). The running app's single-instance handler shows and focuses its window, and
+    the second process ends. It is recorded (`purpose: second-launch`) either way. A8 never stops it; teardown's exact
+    stop does.
+  - The signals are WSL `/proc` reads only. The `docker` children of the daemon that A2's instance proof holds (its PID,
+    unit InvocationID and binary) are read every 20 ms, because a `docker ps` lived 30–40 ms on this PC. The read and
+    written bytes of the accept bridges (`devbox bridge` on that binary with `DEVBOX_INSTANCE=accept`) are read every
+    100 ms; a bridge found later (a reconnect) counts from that read.
+  - How the window is left (`windowLeft`):
+    - all phases done: shown and restored;
+    - stopped by the agent, a refused or ineffective command or the time bound: set back by the product's own paths (the
+      second start for a hidden window, SC_RESTORE for a minimized one), each behind the gate and its bound, else left
+      hidden or minimized;
+    - `user-active`: as the last completed phase left it (shown before H1, hidden after H1, minimized after M1), since
+      the repair needs the same gate;
+    - `window-gone` or `second-instance`: nothing more is sent; the second app is recorded and teardown stops it.
+  - The rows after A8 do not need a shown window: W1, A4 and N1-ACCEPT do not use it, CS3, CS10 and C1 stop and relaunch
+    the app, and teardown stops the exact records.
 - **PowerShell helper encoding (1.0.1).** Windows PowerShell 5.1 reads a `.ps1` without a BOM in the ANSI code page
   (CP949 on the acceptance PC), so a non-ASCII character silently becomes other characters. Every helper `.ps1` is pure
   ASCII; `validate.py` (`scan_ps1_encoding`) allows only pure ASCII or a UTF-8 BOM with valid UTF-8.
@@ -193,7 +236,8 @@ only after an independent review of these files.
   - download, dispatch or select a workflow run, or write through `gh`;
   - install or run the prod installer;
   - change or bypass the PowerShell execution policy;
-  - send input to a window;
+  - send keys or mouse input to a window, or post a window message other than A8's three to the owned main window (and
+    those only after 30 s without user input);
   - run `wsl --shutdown`;
   - touch Docker, the firewall or any network setting.
 
@@ -216,9 +260,11 @@ only after an independent review of these files.
 | `w1_windows.py` | W1 Windows exec rows: control files, the W1-F console watcher, the W1-H console sampler, the exact holder stop. |
 | `a4_windows_service.py` | A4 Windows service readiness. |
 | `g1_live_member.py`, `g2_probe_timing.py` | G1 and G2 interop gates. The driver runs them in the `fresh` flow. |
+| `a8_window.py` | A8: the `/proc` sampler (the daemon's `docker` children, the accept bridge bytes), the window agent's commands, the decision. |
 | `native-observe.ps1` | Read-only: preflight, prod fingerprint, identity, residue, `console-windows`, `console-watch`. |
-| `native-lifecycle.ps1` | Install from the owned stage, upgrade, launch, stop, uninstall with the 30 s registration poll; `update-begin`, `update-observe`, `update-adopt` and `-Foreign` for the update flow. |
-| `process-launch.ps1` | Handle-list launcher (start, and start-and-wait for the self-check). |
+| `native-lifecycle.ps1` | Install from the owned stage, upgrade, launch, stop, uninstall with the 30 s registration poll; `update-begin`, `update-observe`, `update-adopt` and `-Foreign` for the update flow; `window-agent` for A8. |
+| `native-window.ps1` | A8's window type: read-only user32 calls and the three fixed posts. |
+| `process-launch.ps1` | Handle-list launcher (start, start-and-wait for the self-check, and A8's second start, which it never stops). |
 | `native-cdp.ps1` | The one client of the owned app's WebView2 debug port: five update commands, bounded waits. |
 | `update_fixture.py` | The accept update fixture as the product reads it, and the update shape. Pure. |
 | `update_flow.py` | The `update` flow: the app's commands in the screen's order, the runner watch, the connection gap, UP1 and UP2. |
@@ -463,7 +509,11 @@ env $ENVV PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/verify-resources.py --loc
 
 **`--cases`** picks a subset in the flow's order. The subset is bound, so it needs its own approved binding.
 - `fresh --cases G1,G2` exercises only the interop gates.
-- In `fresh`, every installed case needs A1 and A2, and A6, A7 and M4 need A1.
+- In `fresh`, every installed case needs A1 and A2 (A8 too), and A6, A7 and M4 need A1.
+
+**A8 and the PC's user (1.0.1).** A8 takes the foreground once (S1: the second start shows the accept window) and
+minimizes and restores the accept window. It waits for 30 s without keyboard or mouse input before each change and skips
+the rest otherwise (NOT_RUN `user-active`, after at most 120 s of waiting). Leave the PC alone while A8 runs.
 - In `update`, UP2 needs UP1.
 
 **Rows already passed.** Rows that passed with `surface: "wsl-artifact"` are not repeated on `installed-native`
@@ -515,6 +565,7 @@ Each run writes to `$S7/runs/<sha8>-<hex8>/` (mode 0700):
 | `cases/<ID>-error.json` | The error that ended a case as FAIL: type, bounded message, exit code and redacted stderr. |
 | `cases/<ID>-stop.json` | A stop pattern that ended a block: the pattern's name, the lines that matched it (`matches`: at most 5, each with 2 lines above and below; `matchCount`) and the last 15 captured lines. All of it is redacted and cut to 400 characters a line. The case row keeps the same as `stop`. |
 | `console-windows-samples.json` | W1-F (a): the watcher's achieved interval, skipped samples, the first sample's windows and every console window that appeared later. |
+| `cases/A8.json` | A8: each phase's window and action time, the commands with the window state before and after, the idle gates (`gates`: each check and the last input times), every 100 ms sample (`samples.columns`), the child reads (`childReads`), the `docker` children (first and last seen, arguments), the bridges (`late`: found after the first sample), `mode`, `failKinds`, `notRunKind`, `bridgeShares`, `agentLate` and `final` (the state left as `left`, any repair). |
 | `fixture-cleanup.json`, `cleanup-product-steps.json` | The owned cleanup: units, the fixture root, the parents removed or kept. |
 | `ownership-owned-*.json` | The owned-resource manifest. |
 | `product-scripts.json`, `mcp-closed.json` | The bound product scripts used, and the closed MCP processes. |
@@ -532,6 +583,19 @@ The driver prints `{status, evidenceDirectory, cases}` at the end.
   250 ms from before the first W1 run to the end of W1-F. Any console window that appears after the first sample
   fails (a), whoever owns it, the user's own windows included. (a) is NOT_RUN when the largest gap is over 500 ms, a
   sample is skipped or cut, or the watcher ends early.
+- A8 passes when V0 has at least 2 `docker` children, S1 and R1 have their first within 3 s of the action and at least
+  2 in the phase, and H1 and M1 have none after the settle, with bridge bytes per second at most 25 % of V0's. The
+  action is the moment the agent posted SC_RESTORE, or the moment the second start ended (it hands over first), both on
+  the agent's stopwatch.
+  - A shown phase without polls fails as `visible-without-polling` (frozen data). A hidden phase with polls fails as
+    `hidden-with-polling` (#678 not fixed). A window or app that went fails as `window-gone`, a second app that kept
+    running as `second-instance`. A V0 that did not poll is no reference for the hidden phases' bridge bytes.
+  - A shown phase whose children fell short is NOT_RUN instead when the reads may have missed them: `sampling-miss`
+    when its bridge bytes show the polls, `sampling-gap` when at most one child is short and the child reads left more
+    than 30 ms in the 3 s after the action.
+  - With no `docker` child at all, the bridge bytes decide alone and the reason says so. With neither signal, a gap of
+    more than 0.5 s between samples or 0.2 s between child reads, or a changed daemon, A8 is NOT_RUN; so is a command
+    whose effect did not show, and `user-active`. The row's `notRunKind` names which.
 
 ## 5. If a run is interrupted
 

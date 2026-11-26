@@ -364,6 +364,13 @@ class NativeOps:
         import w1_windows
         return w1_windows.drvfs(self.s.load()['nativePreflight']['installPath'])
 
+    def window_agent(self, seconds):
+        """A8: the long-lived owned window agent (native-lifecycle.ps1 -Action window-agent): one command per stdin line, one
+        JSON line back."""
+        from common import LineProcess
+        params = {'Action': 'window-agent', 'Ownership': self.s.windows(self.s.ownership), 'WaitSeconds': seconds}
+        return LineProcess(native_command(self.s.windows, 'native-lifecycle.ps1', params), limit=64)
+
     def console_windows(self, nonce, marker):
         return self.s.native('native-observe.ps1', Action='console-windows', Nonce=nonce, ProbeMarker=marker)
 
@@ -865,6 +872,9 @@ class Session:
                          measurement={'firstDataPainted': first, 'condition': 'cold app process, WSL running, accept daemon first start after setup'})
         self.sc2 = ('1.0.0', first)  # S8-5 (Ruling 146): the fresh wave's candidate is 1.0.0, not rc.2
         win = NativeOps(self)
+        # 1.0.1 (#678): A8 needs the window as A2 left it (shown, first data painted) and leaves it so for the rows after it.
+        import a8_window
+        self.run_case('A8', lambda: a8_window.run(self, win, wsl_owned.unit_state))
         w1 = w1_windows.W1(self.rpc, self.load, self.case_result, self.evidence, win, self.answers, self.probe_marker, self.commit_p_win)
         # W1.run's execution order, so an error lands on the row that was running.
         self.guarded(('W1-D', 'W1-AB', 'W1-G', 'W1-E', 'W1-F', 'W1-H'), w1.run)
