@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """S7-14 static/pure validation (changes §13). Never stages, installs, launches or creates WSL/Windows resources.
 
-Checks: the forbidden strings, the tool-config path scan, RPC/tmux/MCP allowlist consistency, WSL purity,
-the scratch path, the pure fixture plans for both modes, the .ps1 encoding and launch rules (1.0.1), and (only
+Checks: the forbidden strings (and A8's three fixed window posts, their pinned call sites and the user32 allowlist,
+1.0.1), the tool-config path scan, RPC/tmux/MCP
+allowlist consistency, WSL purity, the scratch path, the pure fixture plans for both modes, the .ps1 encoding and launch
+rules (1.0.1), and (only
 with --powershell-parse, which needs interop) the Windows PowerShell parser over every .ps1. Without that flag
 the parse is NOT_RUN.
 Exits 0 with no source binding (UNBOUND); prints one JSON report.
@@ -28,8 +30,38 @@ FORBIDDEN = ['DevboxAccept-s4', 'devbox-s4-accept', '.s4-accept-owner', 'v1/s4-e
              'Set-ExecutionPolicy', '-ExecutionPolicy', 'SetForegroundWindow', 'AllowSetForegroundWindow', 'AttachThreadInput', 'netsh',
              'New-NetFirewallRule', 'docker ', 'wsl.exe --shutdown', 'wsl --shutdown', "[Environment]::SetEnvironmentVariable('", 'setx ',
              'gh run download', 'gh workflow run',
-             'SendInput', 'keybd_event', 'mouse_event', 'PostMessage', 'SendMessage', 'gh pr ', 'gh release', 'mcp add', 'git push',
-             'git config --global', 'systemctl --user disable', 'systemctl --user kill', 'apt ', 'winget', 'npm install', 'pip install']
+             'SendInput', 'keybd_event', 'mouse_event', 'SendMessage', 'PostThreadMessage', 'SendNotifyMessage', 'gh pr ', 'gh release',
+             'CloseMainWindow', 'ShowWindow', 'SetWindowPos', 'SetActiveWindow', 'BringWindowToTop', 'SendKeys', 'AppActivate',
+             'BroadcastSystemMessage',
+             'mcp add', 'git push', 'git config --global', 'systemctl --user disable', 'systemctl --user kill', 'apt ', 'winget', 'npm install',
+             'pip install']
+# A8 (1.0.1): the one exception to "no window messages". PostMessage may appear only in native-window.ps1, only as these
+# lines, each once: the import and three methods with fixed messages (WM_CLOSE, and WM_SYSCOMMAND with SC_MINIMIZE or
+# SC_RESTORE). The same file's window agent calls them only for the owned app's main window.
+WINDOW_POST_FILE = 'native-window.ps1'
+WINDOW_POST_LINES = (
+    '[DllImport("user32.dll",SetLastError=true)] static extern bool PostMessage(IntPtr window,uint message,IntPtr wParam,IntPtr lParam);',
+    'public static int Close(long handle) { return Posted(PostMessage(new IntPtr(handle),0x0010,IntPtr.Zero,IntPtr.Zero)); }',
+    'public static int Minimize(long handle) { return Posted(PostMessage(new IntPtr(handle),0x0112,new IntPtr(0xF020),IntPtr.Zero)); }',
+    'public static int Restore(long handle) { return Posted(PostMessage(new IntPtr(handle),0x0112,new IntPtr(0xF120),IntPtr.Zero)); }',
+)
+# The three methods are called only by the window agent's Post-Command, as these lines, each once, after the owned-window
+# check and the user-idle check; the type is named in that file only.
+WINDOW_CALL_LINES = (
+    "if ($name -eq 'close') { $code=[S7OwnedWindow]::Close($hwnd); $want={ param($s) -not $s.visible } }",
+    "elseif ($name -eq 'minimize') { $code=[S7OwnedWindow]::Minimize($hwnd); $want={ param($s) $s.visible -and $s.iconic } }",
+    "elseif ($name -eq 'restore') { $code=[S7OwnedWindow]::Restore($hwnd); $want={ param($s) $s.visible -and -not $s.iconic } }",
+)
+WINDOW_CALL_GUARDS = ('if ($why) { $row.gone=$true; $row.why=$why; return $row }', 'if (User-Active $row) { return $row }')
+WINDOW_CALL = re.compile(r'\[S7OwnedWindow\]::(Close|Minimize|Restore)\b')
+# The user32 functions a helper may import: read-only window reads, the time of the last user input, and PostMessage.
+USER32_ALLOWED = {'EnumWindows', 'IsWindow', 'IsWindowVisible', 'IsIconic', 'GetWindowThreadProcessId', 'GetClassName', 'GetWindowText',
+                  'GetWindowLong', 'GetWindow', 'GetLastInputInfo', 'PostMessage'}
+USER32_ENTRY_POINTS = {'GetWindowLongW'}
+USER32_IMPORT = re.compile(r'\[DllImport\("user32(?:\.dll)?"([^\]]*)\)\]\s*(?:(?:public|private|internal)\s+)?static\s+extern\s+[\w\[\]]+\s+(\w+)\s*\(', re.I)
+# Any import of user32, however it is spelt ("user32", "USER32.DLL", a line break before the name): each must be one
+# USER32_IMPORT reads.
+USER32_ANY = re.compile(r'DllImport\s*\(\s*@?"user32(?:\.dll)?"', re.I)
 SCRATCH = '/tmp/devbox-s7-acceptance-'
 TOOL_PATHS = ('.claude.json', '.codex/config.toml', '~/.claude', '.config/opencode', '~/.pi', '.bashrc')
 # Path parts that name the same tool configs when joined with a home directory.
@@ -43,8 +75,8 @@ RPC_METHOD = re.compile(r'[a-z_]+\.[a-z_]+')
 PURE_WSL = ('wsl_daemon.py', 'agents_live.py', 'daemon_rows.py')
 NATIVE_NAMES = {'ps_command', 'PS', 'native', 'run_probe', 'stop_exact', 'identity_states', 'LineProcess', 'native_class_source',
                 'interop_probe', 'IDENTITY_TYPE', 'STOP_TYPE', 'NativeOps', 'windows_flow', 'native_teardown', 'native_absent',
-                'native_command', 'console_watch', 'console_windows'}
-NATIVE_MODULES = {'a4_windows_service', 'w1_windows', 'g1_live_member', 'g2_probe_timing', 'update_flow'}
+                'native_command', 'console_watch', 'console_windows', 'window_agent'}
+NATIVE_MODULES = {'a4_windows_service', 'w1_windows', 'g1_live_member', 'g2_probe_timing', 'update_flow', 'a8_window'}
 UTF8_BOM = b'\xef\xbb\xbf'
 NATIVE_TEXT = re.compile(r'(?i)\.ps1\b|powershell\.exe|/mnt/c/Windows')
 # The driver's WSL-only paths (changes §13): reachable from these Session methods, with `if native_flow:`
@@ -84,6 +116,52 @@ def scan_forbidden(sources):
         if name.endswith('.py'):
             for line, words in joined_lists(ast.parse(text)):
                 findings += ['%s:%d: %s (list form)' % (name, line, n) for n in FORBIDDEN if n in words]
+    return findings
+
+
+def scan_window_posts(sources):
+    """A8 (1.0.1): PostMessage only in WINDOW_POST_FILE, exactly as WINDOW_POST_LINES (stripped), each once."""
+    findings = []
+    for name, text in sources.items():
+        rows = [line.strip() for line in text.splitlines() if 'PostMessage' in line]
+        if name != WINDOW_POST_FILE:
+            findings += ['%s: PostMessage outside %s' % (name, WINDOW_POST_FILE) for _ in rows]
+        elif sorted(rows) != sorted(WINDOW_POST_LINES):
+            findings.append('%s: PostMessage other than the three fixed posts (WM_CLOSE, SC_MINIMIZE, SC_RESTORE)' % name)
+    if WINDOW_POST_FILE in sources and not any('PostMessage' in line for line in sources[WINDOW_POST_FILE].splitlines()):
+        findings.append('%s: the three fixed posts are missing' % WINDOW_POST_FILE)
+    for name, text in sources.items():
+        calls = [line.strip() for line in text.splitlines() if WINDOW_CALL.search(line)]
+        if name != WINDOW_POST_FILE:
+            findings += ['%s: an owned-window post is called outside %s' % (name, WINDOW_POST_FILE) for _ in calls]
+            if 'S7OwnedWindow' in text:
+                findings.append('%s: S7OwnedWindow outside %s' % (name, WINDOW_POST_FILE))
+        elif sorted(calls) != sorted(WINDOW_CALL_LINES):
+            findings.append('%s: the owned-window posts are called other than in the three pinned lines' % name)
+    if WINDOW_POST_FILE in sources:
+        text = sources[WINDOW_POST_FILE]
+        begin, end = text.find('function Post-Command'), text.find('function Launch-Again')
+        body = text[begin:end] if 0 <= begin < end else ''
+        if not all(line in body for line in WINDOW_CALL_LINES):
+            findings.append('%s: the owned-window posts are not all in Post-Command' % WINDOW_POST_FILE)
+        else:
+            first = min(body.index(line) for line in WINDOW_CALL_LINES)
+            findings += ['%s: Post-Command can post before %s' % (WINDOW_POST_FILE, guard) for guard in WINDOW_CALL_GUARDS
+                         if guard not in body or body.index(guard) > first]
+    return findings
+
+
+def scan_user32(sources):
+    """Every user32 import of a helper is one of USER32_ALLOWED, with no EntryPoint but USER32_ENTRY_POINTS, and the scan
+    reads every one of them."""
+    findings = []
+    for name, text in sources.items():
+        imports = USER32_IMPORT.findall(text)
+        findings += ['%s: user32 %s is not allowed' % (name, function) for _, function in imports if function not in USER32_ALLOWED]
+        findings += ['%s: user32 EntryPoint %s is not allowed' % (name, entry) for attributes, _ in imports
+                     for entry in re.findall(r'EntryPoint\s*=\s*"([^"]*)"', attributes) if entry not in USER32_ENTRY_POINTS]
+        if len(USER32_ANY.findall(text)) != len(imports) or text.lower().count('user32.dll') > len(imports):
+            findings.append('%s: a user32 import this scan cannot read' % name)
     return findings
 
 
@@ -338,7 +416,7 @@ def main(argv=None):
     wsl_owned = load_wsl_owned()
     import agents_live
     import mcp_stdio
-    findings = (scan_forbidden(sources) + scan_gh(sources) + scan_tool_paths(sources)
+    findings = (scan_forbidden(sources) + scan_window_posts(sources) + scan_user32(sources) + scan_gh(sources) + scan_tool_paths(sources)
                 + scan_allowlists(sources, wsl_owned.READ_ONLY | wsl_owned.OWNED_MUTATIONS) + scan_wsl_modules(sources)
                 + scan_ps1_encoding() + scan_ps1_launch(sources))
     driver_findings, wsl_methods = scan_driver_wsl_paths(sources['driver.py'])
@@ -357,6 +435,8 @@ def main(argv=None):
               'lockFile': 'present' if lock.is_file() else 'absent (created by verify-resources.py --lock windows-acceptance)',
               'forbidden': 'none', 'toolConfigPaths': 'trust_probe only', 'allowlists': 'consistent', 'wslPurity': 'PASS',
               'ps1Encoding': 'ASCII or UTF-8 BOM', 'ps1Launch': 'no Start-Process with redirection',
+              'windowPosts': WINDOW_POST_FILE + ': WM_CLOSE, SC_MINIMIZE and SC_RESTORE only, called from its own Post-Command',
+              'user32': 'read-only window reads, GetLastInputInfo and the three posts',
               'driverWslMethods': wsl_methods, 'scratch': 'none', 'fixture': check_fixture(), 'helperSha256': helper_hashes(BASE),
               'sourceBinding': 'UNBOUND' if not BINDING_FILE.exists() else {side: (config.get(side) or {}).get('sha') for side in ('candidate', 'baseline')}}
     if args.powershell_parse:

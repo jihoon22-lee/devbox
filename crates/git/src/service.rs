@@ -16,10 +16,17 @@ struct OperationEntry {
     view: GitOperation,
     cancel: Option<oneshot::Sender<()>>,
 }
+/// Checkouts watched at once; one more replaces the least recently used.
+const WATCH_CAP: usize = 128;
+struct Watch {
+    dir: PathBuf,
+    event: GitChanged,
+    watcher: crate::watch::GitWatcher,
+}
 pub struct GitService {
     locks: Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>>,
     operations: Mutex<BTreeMap<String, OperationEntry>>,
-    watchers: Mutex<BTreeMap<String, (PathBuf, crate::watch::GitWatcher)>>,
+    watchers: Mutex<BTreeMap<String, Watch>>,
     changed: ChangedSink,
     operation_changed: OperationSink,
 }
@@ -53,6 +60,11 @@ impl GitService {
             worktree_id: target.worktree_id.clone(),
         });
     }
+    /// Watches the checkout of `target` for this call: a live watcher is marked used, a stopped
+    /// or missing one is started. A watcher that stops by itself (`watch`) or is replaced at the
+    /// cap reports one last `git.changed`, so no client waits for reports that will not come. One
+    /// replaced for the same target (its folder changed) reports nothing: the new watcher reports
+    /// for that target, and this call reads it after the new watcher's first stamp.
     pub async fn observe(&self, dir: &Path, target: &SourceTarget) -> Result<(), SourceGitError> {
         let key = format!(
             "{}:{}",
@@ -60,23 +72,40 @@ impl GitService {
             target.worktree_id.as_deref().unwrap_or("")
         );
         let mut watches = self.watchers.lock().await;
-        if watches.get(&key).is_some_and(|(path, _)| path == dir) {
+        if watches
+            .get(&key)
+            .is_some_and(|watch| watch.dir == dir && watch.watcher.touch())
+        {
             return Ok(());
         }
-        if watches.len() >= 128 {
-            return Err(SourceGitError::SourceLimitExceeded);
+        let event = GitChanged {
+            project_id: target.project_id.clone(),
+            worktree_id: target.worktree_id.clone(),
+        };
+        let (sink, report) = (self.changed.clone(), event.clone());
+        let watcher = crate::watch::watch(dir, move || sink(report.clone()))
+            .await
+            .map_err(remote::failure)?;
+        watches.remove(&key);
+        watches.retain(|_, watch| !watch.watcher.stopped());
+        if watches.len() >= WATCH_CAP {
+            let oldest = watches
+                .iter()
+                .min_by_key(|(_, watch)| watch.watcher.last_used())
+                .map(|(key, _)| key.clone());
+            if let Some(replaced) = oldest.and_then(|key| watches.remove(&key)) {
+                (self.changed)(replaced.event);
+            }
         }
-        let sink = self.changed.clone();
-        let target = target.clone();
-        let watcher = crate::watch::watch(dir, move || {
-            sink(GitChanged {
-                project_id: target.project_id.clone(),
-                worktree_id: target.worktree_id.clone(),
-            })
-        })
-        .await
-        .map_err(remote::failure)?;
-        watches.insert(key, (dir.into(), watcher));
+        let dir = dir.into();
+        watches.insert(
+            key,
+            Watch {
+                dir,
+                event,
+                watcher,
+            },
+        );
         Ok(())
     }
     pub async fn begin(

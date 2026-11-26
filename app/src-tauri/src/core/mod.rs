@@ -58,6 +58,8 @@ pub mod update;
 
 #[cfg(any(windows, test))]
 pub mod popout;
+#[cfg(any(windows, test))]
+pub mod presence;
 
 #[cfg(any(windows, test))]
 pub mod native_activity;

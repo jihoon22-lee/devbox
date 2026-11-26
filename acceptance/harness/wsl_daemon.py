@@ -97,7 +97,9 @@ def read_artifact(artifact):
 
 
 def install_binary(m, phase, phase_scripts, run=subprocess.run, home=HOME):
-    """`sh -c <install> sh <sha256>` with the artifact on stdin (platform/deploy.rs:12-22, no wsl.exe)."""
+    """`sh -c <install> sh <sha256>` as the app's install runs it (app/src-tauri/src/platform/deploy.rs:14-27, no wsl.exe). The
+    app writes the binary only after the script asks with `send` (core/deploy.rs:513-528, offer); here it is on stdin from
+    the start, and a script that answers `kept` exits without reading it."""
     require_lock()
     artifact = m['linuxArtifacts'][phase]
     data = read_artifact(artifact)

@@ -58,9 +58,145 @@ impl FirstData {
             .then(|| now.saturating_duration_since(self.started))
     }
 }
+/// The steps of a start, in the order the supervisor finishes them. Each is logged with the time
+/// since process start (the clock of `first-data-painted`), so a step's own cost is the
+/// difference from the line before it. [다시 시도] and [다시 설정] run the steps again, and each
+/// bridge reconnect logs `bridge` again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartPhase {
+    /// Supervision began: Tauri, the tray and the main window exist.
+    Supervise,
+    /// The distro list from the registry and the saved choice.
+    Distro,
+    /// `wsl.exe` 1: PID 1 is systemd.
+    Systemd,
+    /// `wsl.exe` 2: the user manager answered.
+    UserManager,
+    /// The bundled Linux binary was read from the install folder.
+    BundleRead,
+    /// Its SHA-256 was computed on Windows.
+    BundleHash,
+    /// `wsl.exe` 3: the installed binary already had that SHA-256, so nothing was sent.
+    InstallKept,
+    /// `wsl.exe` 3: the binary was sent and published.
+    InstallSent,
+    /// `wsl.exe` 4: `setup --json`.
+    Setup,
+    /// `wsl.exe` 5: the startup doctor.
+    Doctor,
+    /// `wsl.exe` 6: the bridge answered.
+    Bridge,
+}
+impl StartPhase {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Supervise => "supervise",
+            Self::Distro => "distro",
+            Self::Systemd => "systemd",
+            Self::UserManager => "user-manager",
+            Self::BundleRead => "bundle-read",
+            Self::BundleHash => "bundle-hash",
+            Self::InstallKept => "install-kept",
+            Self::InstallSent => "install-sent",
+            Self::Setup => "setup",
+            Self::Doctor => "doctor",
+            Self::Bridge => "bridge",
+        }
+    }
+}
+/// One log line per finished step: identifiers and numbers only.
+pub fn start_phase_line(run: u32, phase: StartPhase, elapsed: Duration) -> String {
+    format!(
+        "start-phase run={run} phase={} elapsed_ms={}",
+        phase.name(),
+        elapsed.as_millis()
+    )
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_start_phase_line_carries_ids_and_numbers_only() {
+        assert_eq!(
+            start_phase_line(4242, StartPhase::InstallKept, Duration::from_millis(1830)),
+            "start-phase run=4242 phase=install-kept elapsed_ms=1830"
+        );
+        let phases = [
+            StartPhase::Supervise,
+            StartPhase::Distro,
+            StartPhase::Systemd,
+            StartPhase::UserManager,
+            StartPhase::BundleRead,
+            StartPhase::BundleHash,
+            StartPhase::InstallKept,
+            StartPhase::InstallSent,
+            StartPhase::Setup,
+            StartPhase::Doctor,
+            StartPhase::Bridge,
+        ];
+        let mut names = std::collections::HashSet::new();
+        for phase in phases {
+            let name = phase.name();
+            assert!(
+                name.bytes().all(|b| b.is_ascii_lowercase() || b == b'-'),
+                "{name}"
+            );
+            assert!(names.insert(name), "{name}");
+            // The acceptance harness reads `first-data-painted` lines by their own prefix.
+            assert!(!start_phase_line(1, phase, Duration::ZERO).starts_with("first-data-painted"));
+        }
+    }
+    #[test]
+    fn the_start_logs_its_phases_in_the_order_it_runs_them() {
+        // The call sites are Windows-only code: the MSVC check compiles them, and this pins their
+        // order. Whitespace is dropped so that formatting cannot hide or fake a match.
+        let flat = |source: &str| source.split_whitespace().collect::<String>();
+        let ordered = |source: &str, marks: &[&str]| {
+            let mut from = 0;
+            for mark in marks {
+                let at = source[from..]
+                    .find(mark)
+                    .unwrap_or_else(|| panic!("{mark} is missing or out of order"));
+                from += at + mark.len();
+            }
+        };
+        ordered(
+            &flat(include_str!("../platform/supervisor.rs")),
+            &[
+                "start_phase(StartPhase::Supervise);",
+                "wsl::distros()",
+                "start_phase(StartPhase::Distro);",
+                "wsl::systemd(&distro,cancel.clone()).await",
+                "deploy::bundled_binary(app)?;",
+                "start_phase(StartPhase::BundleRead);",
+                "deploy::apply(&distro,INSTANCE,bytes,trigger,",
+                "Some(Event::Ready)=>{",
+                "start_phase(StartPhase::Bridge);",
+            ],
+        );
+        ordered(
+            &flat(include_str!("../platform/wsl.rs")),
+            &[
+                r#""cat","/proc/1/comm""#,
+                "start_phase(StartPhase::Systemd);",
+                r#""--property=Version","#,
+                "start_phase(StartPhase::UserManager);",
+            ],
+        );
+        ordered(
+            &flat(include_str!("../platform/deploy.rs")),
+            &[
+                "letsha=digest(&bytes);",
+                "start_phase(StartPhase::BundleHash);",
+                "offer(cmd,bytes,Duration::from_secs(120),cancel).await?",
+                "start_phase(transfer.phase());",
+                ".args(setup_args(trigger));",
+                "start_phase(StartPhase::Setup);",
+                ".args(STARTUP_DOCTOR_ARGS);",
+                "start_phase(StartPhase::Doctor);",
+            ],
+        );
+    }
     #[test]
     fn palette_trace_is_acknowledged_once_and_unknown_ids_carry_no_elapsed_time() {
         let start = Instant::now();

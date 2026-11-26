@@ -242,7 +242,7 @@ Windows 11                                        WSL2 (배포판 하나, system
 
 ### 4.1 기동과 수명
 
-- **바이너리 배치:** Windows 앱이 `wsl.exe -d <distro> --exec /bin/sh -c 'cat > <tmp> && chmod 755 <tmp> && <sha256 확인> && mv -f <tmp> <home>/.local/share/devbox/bin/devbox-<버전>'`에 내장 바이너리를 표준 입력으로 보낸다(`\\wsl.localhost` 쓰기는 9p 경유라 실행 비트·중단 처리를 보장하지 못해 쓰지 않는다, PL-11). 그다음 새 바이너리로 `devbox setup`을 실행한다.
+- **바이너리 배치:** Windows 앱이 내장 바이너리의 SHA-256을 인자로 설치 스크립트를 `wsl.exe -d <distro> --exec /bin/sh -c …`로 실행한다. 스크립트는 폴더·소유 표식·잠금·링크를 먼저 확인하고, 링크된 파일이나 `devbox-<sha256>`이 이미 그 SHA-256이면 `kept`를 내고 표준 입력을 읽지 않는다. 아니면 `send`를 내고, 앱은 그때만 바이너리를 표준 입력으로 보낸다. 받은 파일은 SHA-256을 확인해 `devbox-<sha256>`로 두고 `devbox` 링크를 바꾼다(`\\wsl.localhost` 쓰기는 9p 경유라 실행 비트·중단 처리를 보장하지 못해 쓰지 않는다, PL-11). 그다음 새 바이너리로 `devbox setup`을 실행한다.
 - `devbox setup [--instance <i>]`이 다음을 한다.
   1. `devbox` 심볼릭 링크를 새 버전으로 교체한다.
   2. **사용자 환경 잡기:** `bash -lc 'env -0'`으로 로그인 셸 환경(특히 `PATH`의 `~/.local/bin`·`~/.cargo/bin`·nvm 경로)을 잡아 `~/.config/devbox/<i>/env`(EnvironmentFile 형식)에 쓴다. systemd user manager의 기본 PATH에는 이 경로들이 없어서, 그대로면 실행·tmux에서 `pnpm`·`cargo`·`claude`·`codex`를 못 찾는다(PL-위험1, 실측). 사용자가 셸 설정을 바꾸면 앱 진단의 [환경 다시 잡기]로 갱신한다.
@@ -446,7 +446,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
   - R6: 재연결 순서는 `Welcome` → 구독 재등록 응답 대기 → 활성 쿼리 전부 다시 조회다.
   - R7: 데몬은 커밋 뒤에만 이벤트를 낸다.
   - R8: 관찰 시각(`observedMs`·`lastSyncedMs` 등)만 바뀐 상태는 rev를 올리지 않고 `*.changed`도 내지 않는다. 관찰 시각은 상태 표시용 별도 필드로만 보낸다(CV-F07).
-- 폴링은 기본적으로 쓰지 않는다. 이벤트 원천이 없는 관찰 대상(포트·프로세스·WSL 자원)만, 화면이 보일 때 2–5초 간격으로 조회한다.
+- 폴링은 기본적으로 쓰지 않는다. 이벤트 원천이 없는 관찰 대상(포트·프로세스·WSL 자원)만, 화면이 보일 때 2–5초 간격으로 조회한다. 창을 트레이로 닫거나 최소화한 동안은 보이지 않는 것으로 보고, 다시 보이면 곧바로 한 번 조회한다.
 
 ### 5.6 dev-gateway
 
@@ -517,7 +517,7 @@ topic!(pub AgentsChanged = "agents.changed", AgentChanged);
 | systemd 꺼짐 | `/etc/wsl.conf`에 `[boot] systemd=true`를 넣고 `wsl --shutdown`하라는 안내와 실행 중인 WSL 프로그램이 모두 종료된다는 경고 | 사용자가 직접 수정한 뒤 [다시 시도]. 설계의 [자동으로 켜기]는 구현되지 않음(설계 차이) |
 | tmux 없음·3.2 미만 | 별도 연결 화면 상태 없음. doctor 점검(설정 → 앱 진단)이 결과를 보여 준다 | 설계의 [터미널에서 설치]는 구현되지 않음(설계 차이) |
 | linger·setup 실패 | "WSL 쪽 설치에 실패했습니다". 원인(실패한 단계·원문·최근 데몬 로그)은 [자세히] 아래에 있다 | [다시 시도][자세히]. [로그 열기][진단] 버튼은 없다(설계 차이). 데몬 상태·로그 위치·점검은 설정 → 앱 진단에서 본다 |
-| WSL 쪽 배치·setup 중(연결 시작마다 실행. 데몬 서비스는 바뀐 것이 있을 때만 재시작) | 진행 표시. 바뀐 것은 unit·환경 파일·`tmux.conf`, 서비스가 실행 중이 아님, 실행 중인 데몬이 지금 배치한 실행 파일이 아님이다. 바뀐 것이 없으면 재시작 단계는 "건너뜀(변경 없음)"이다(S7-O O1a). 배포판 선택도 다시 시작하지 않는다 | — ([다시 시도]·[다시 설정]은 늘 다시 시작한다. §4.6) |
+| WSL 쪽 배치·setup 중(연결 시작마다 실행. 설치된 실행 파일의 SHA-256이 같으면 보내지 않는다. 데몬 서비스는 바뀐 것이 있을 때만 재시작) | 진행 표시. 바뀐 것은 unit·환경 파일·`tmux.conf`, 서비스가 실행 중이 아님, 실행 중인 데몬이 지금 배치한 실행 파일이 아님이다. 바뀐 것이 없으면 재시작 단계는 "건너뜀(변경 없음)"이다(S7-O O1a). 배포판 선택도 다시 시작하지 않는다 | — ([다시 시도]·[다시 설정]은 늘 다시 시작한다. §4.6) |
 | 데몬 끊김 | 상단 배너 "WSL 쪽 devbox에 다시 연결하고 있습니다 · 마지막 갱신 hh:mm"(첫 연결에서는 5회 실패 전까지 배너가 없다). 터미널 위에는 "다시 연결 중 · 입력 전송 안 됨"을 덮어 표시. 연결 시도가 Welcome 없이 끝나는 일(5초 기한 초과, Welcome 전에 닫힘)이 5회 쌓이면(약 29초로 계산했고 실제 Windows에서는 재지 않았다) Windows 앱의 배너가 "WSL 쪽 devbox가 응답하지 않습니다. [다시 시도]를 누르면 WSL 쪽 devbox를 다시 시작합니다."로 바뀐다 | [다시 시도](`gate_retry`, 데몬 서비스를 강제로 다시 시작). [WSL 재시작][진단] 버튼은 구현되지 않음(설계 차이). 진단은 설정 → 앱 진단이고, 데몬이 응답하지 않아도 그 [다시 설정]은 보인다 |
 | 업데이트 설치 중 | 설정 정보·상태 표시줄의 설치 준비 상태 | [설치 준비 취소]. 설치·재실행 실패는 다음 실행 때 원인 안내, 상태 불명은 자동 재시도 없이 설치 프로그램 종료 확인 안내 |
 | 비밀 키 불일치 | §6.3 | [복구 문자열 입력][비밀 다시 입력] |
@@ -778,7 +778,7 @@ Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.d
 | `core` | 인스턴스·경로·설정(toml)·DB(writer·마이그레이션·백업)·로그·원자적 쓰기·`systemd-run`·`systemctl` 헬퍼 | — | — |
 | `secrets` | 데이터 키(DPAPI blob via interop)·AEAD·비밀 CRUD·복구 문자열 | `secrets.list/set/delete/export_key/import_key` | — |
 | `projects` | 프로젝트·worktree 목록, 탐색, clone, `.devbox/devbox.toml` 읽기·감시, 시작 구성 | `projects.list/add/clone/remove/launch` | `projects.changed` |
-| `git` | git CLI(porcelain v2): 상태·diff·hunk·commit·branch·stash·log·blame·remote·충돌·worktree·rebase·정리·gh PR | `git.status/diff/stage/commit/...` | `git.changed`(inotify로 `.git` 감시) |
+| `git` | git CLI(porcelain v2): 상태·diff·hunk·commit·branch·stash·log·blame·remote·충돌·worktree·rebase·정리·gh PR | `git.status/diff/stage/commit/...` | `git.changed`(조회한 checkout의 Git 폴더를 500ms마다 확인. 5분 동안 쓰지 않은 감시는 마지막 `git.changed`를 내고 멈춘다. 128개를 넘으면 가장 오래 쓰지 않은 감시를 바꾼다) |
 | `terminal` | tmux 서버·세션 관리, PTY attach 스트림, 스크롤백 선채움, 격자용 읽기 전용 attach, 프로필, OSC 7 | `terminal.list/create/attach/resize/close` | `terminal.changed`, 스트림 |
 | `agents` | 에이전트 작업 상태 기계(§9.2), 준비·hook·재개·기록 고정·기준 반영·정리, 자원·토큰, 도구 프로필·템플릿·포트 | `agents.create/list/send/resume/rebase/merge/pr/discard/cleanup` | `agents.changed`, `agents.attention` |
 | `runtime` | 작업·서비스·예약 정의(DB + toml 병합), `systemd-run` 실행, 실행 래퍼 보고, cron(DST), 놓친 예약, Windows 대상 동기화·실행, Docker 컨테이너 | `runtime.list/start/stop/restart/logs/containers` | `runtime.changed`, 로그 스트림 |

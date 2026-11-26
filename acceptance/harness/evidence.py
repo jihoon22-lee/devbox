@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import time
 
 BASE = Path(__file__).resolve().parent
 REPO = 'jihoon22-lee/devbox'
@@ -35,8 +36,9 @@ FLOWS = {
                   'H4', 'K1X-SEND', 'H1X-TRUST', 'H2X-TRUST', 'H1', 'H1X-SHELL', 'H1X-HELP', 'P1', 'H2', 'H2X-RESUME', 'H2X-RESUME1S',
                   'H2X-FEEDBACK', 'H2X-SCREENS', 'H2X-SHELLMARK', 'P1X', 'SN2', 'CL1', 'CL2', 'CL3', 'C1', 'K1X-TMUXUP', 'M4'],
     'wsl-upgrade': ['U1', 'U1X', 'CS5'],
-    'fresh': ['G1', 'G2', 'A1', 'A2', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'A4', 'N1-ACCEPT', 'CS3', 'CS10', 'C1', 'A6',
-              'A7', 'R-SC2', 'M4'],
+    # 1.0.1 (#678): A8 runs right after A2, on the window as A2 left it, and leaves it so.
+    'fresh': ['G1', 'G2', 'A1', 'A2', 'A8', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'A4', 'N1-ACCEPT', 'CS3', 'CS10', 'C1',
+              'A6', 'A7', 'R-SC2', 'M4'],
     'upgrade': ['U1', 'U1X', 'CS5', 'R-SC2'],
     # 1.0.1 (D5): the app's own update from the baseline install to the candidate installer (UP1), the foreign files
     # across it (UP2) and across the uninstall (A7).
@@ -51,7 +53,7 @@ UPDATE_SHAPES = ('same-version', 'next-version')
 CASES = list(dict.fromkeys(c for flow in FLOWS.values() for c in flow))
 # Case prerequisites inside one flow (changes §8.0). In the fresh flow every installed case needs the
 # install (A1) and the launch (A2); the WSL flows start their daemon before any case.
-_INSTALLED = {'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'A4', 'N1-ACCEPT', 'CS3', 'CS10', 'C1', 'R-SC2'}
+_INSTALLED = {'A8', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'A4', 'N1-ACCEPT', 'CS3', 'CS10', 'C1', 'R-SC2'}
 NEEDS = {
     'fresh': {'A2': {'A1'}, 'A6': {'A1'}, 'A7': {'A1'}, 'M4': {'A1'}, **{case: {'A1', 'A2'} for case in _INSTALLED}},
     'upgrade': {},
@@ -61,7 +63,8 @@ NEEDS = {
     'wsl-upgrade': {},
 }
 # Cases that PASS only on the installed Windows app (changes §2, evidence.py:58-69).
-REQUIRES_NATIVE = {'A1', 'A2', 'A4', 'A6', 'A7', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'CS10', 'N1-ACCEPT', 'R-SC2', 'UP1', 'UP2'}
+REQUIRES_NATIVE = {'A1', 'A2', 'A4', 'A6', 'A7', 'A8', 'W1-AB', 'W1-G', 'W1-F', 'W1-E', 'W1-H', 'W1-D', 'CS10', 'N1-ACCEPT', 'R-SC2', 'UP1',
+                   'UP2'}
 # The user answers a PASS needs (matrix Q1, Q2, Q5); the gate is `trust_answer`.
 TRUST_GATED = {'H1': ('Q1',), 'H1X-SHELL': ('Q1',), 'H1X-HELP': ('Q1',), 'P1': ('Q1',), 'H2': ('Q2',), 'H2X-RESUME': ('Q2',),
                'H2X-RESUME1S': ('Q2',), 'H2X-FEEDBACK': ('Q2',), 'H2X-SCREENS': ('Q2',), 'H2X-SHELLMARK': ('Q2',), 'P1X': ('Q2',),
@@ -372,10 +375,29 @@ def verify_review(base, review_file, binding):
 
 
 def parse_sc2(stderr_text):
-    """Raw S6-4b SC2 lines from the owned app stderr. Values are recorded, not judged here."""
+    """Raw S6-4b SC2 lines from the owned app stderr. Values are recorded, not judged here. 1.0.1: the `start-phase` lines,
+    one per finished start step on the clock of first-data-painted (app/src-tauri/src/core/paint_trace.rs start_phase_line),
+    in log order; a start-phase line of another form is left out and counted."""
     first = [dict(run=m[0], elapsed_ms=int(m[1]), visible=m[2]) for m in re.findall(r'^first-data-painted run=(\S+) elapsed_ms=(\d+) visible=(\w+)\s*$', stderr_text, re.M)]
     palette = [dict(run=m[0], trace=int(m[1]), outcome=m[2], deferred=m[3], elapsed_ms=int(m[4]))
                for m in re.findall(r'^palette-painted run=(\S+) trace=(\d+) outcome=(\S+) deferred=(\w+) elapsed_ms=(\d+)\s*$', stderr_text, re.M)]
     ignored = re.findall(r'^palette-painted .* ignored\s*$', stderr_text, re.M)
     dropped = re.findall(r'^palette-trace-dropped.*$', stderr_text, re.M)
-    return {'firstDataPainted': first, 'palettePainted': palette, 'paletteIgnored': len(ignored), 'paletteDropped': len(dropped)}
+    lines = re.findall(r'^start-phase\b.*$', stderr_text, re.M)
+    shaped = [re.fullmatch(r'start-phase run=(\S+) phase=(\S+) elapsed_ms=(\d+)\s*', line) for line in lines]
+    phases = [dict(run=m[1], phase=m[2], elapsed_ms=int(m[3])) for m in shaped if m]
+    return {'firstDataPainted': first, 'startPhases': phases, 'startPhasesIgnored': len(lines) - len(phases), 'palettePainted': palette,
+            'paletteIgnored': len(ignored), 'paletteDropped': len(dropped)}
+
+
+def wait_sc2(stderr_path, seconds=60, clock=time):
+    """parse_sc2 of an owned launch's stderr log (its first MiB), read once a second until it holds a first-data-painted line
+    or `seconds` have passed. `waitedSeconds` says how long; an empty firstDataPainted, that the bound ended the wait."""
+    started = clock.monotonic()
+    while True:
+        text = stderr_path.read_text(errors='replace')[:1024 * 1024] if stderr_path.exists() else ''
+        sc2 = parse_sc2(text)
+        waited = clock.monotonic() - started
+        if sc2['firstDataPainted'] or waited >= seconds:
+            return {**sc2, 'waitedSeconds': round(waited, 1)}
+        clock.sleep(1)

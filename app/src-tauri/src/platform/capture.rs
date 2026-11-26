@@ -1,5 +1,5 @@
 //! A preloaded hidden window; showing capture never focuses the main application.
-use crate::core::connection::IpcError;
+use crate::core::{connection::IpcError, presence::Signal};
 use std::{
     sync::{
         Mutex,
@@ -82,7 +82,9 @@ fn only_capture(window: &WebviewWindow) -> Result<(), IpcError> {
 #[tauri::command]
 pub fn capture_hide(window: WebviewWindow) -> Result<(), IpcError> {
     only_capture(&window)?;
-    window.hide().map_err(|e| IpcError::new(e.to_string()))
+    window.hide().map_err(|e| IpcError::new(e.to_string()))?;
+    super::presence::report(window.app_handle(), LABEL, Signal::Hidden);
+    Ok(())
 }
 #[tauri::command]
 pub fn capture_ready(window: WebviewWindow, app: AppHandle) -> Result<(), IpcError> {

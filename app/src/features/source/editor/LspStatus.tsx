@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Language, ServerState, ServersResult } from "../../../rpc/gen/rpc";
 import { useRpcSession } from "../../../rpc/RpcProvider";
+import { usePageVisible } from "../../../shell/visibility";
 import s from "../source.module.css";
 
 const TerminalView = lazy(() =>
@@ -21,8 +22,16 @@ export function LspStatus({ projectId, language }: { projectId: string; language
   const [busy, setBusy] = useState(false);
   const [terminal, setTerminal] = useState<string>();
   const [refresh, setRefresh] = useState(0);
+  const visible = usePageVisible();
+  const wasHidden = useRef(false);
   useEffect(() => {
-    setData(undefined);
+    // A hidden window stops asking and keeps what it showed; shown again, it asks at once.
+    if (!visible) {
+      wasHidden.current = true;
+      return;
+    }
+    if (!wasHidden.current) setData(undefined);
+    wasHidden.current = false;
     if (!client || state !== "ready") return;
     let live = true,
       requested = refresh;
@@ -41,7 +50,7 @@ export function LspStatus({ projectId, language }: { projectId: string; language
       live = false;
       clearInterval(timer);
     };
-  }, [client, state, projectId, refresh]);
+  }, [client, state, projectId, refresh, visible]);
   const item = data?.items.find((entry) => entry.language === language);
   const action = async (install: boolean) => {
     if (!item || busy) return;

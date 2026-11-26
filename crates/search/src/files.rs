@@ -1,6 +1,6 @@
-//! File-name search: each project's `git ls-files -z` (cached 30 s, fsmonitor
-//! off, time and size bounded) plus the indexed vault paths, ranked by a fuzzy
-//! score that favours substrings and word starts.
+//! File-name search: each project's `git ls-files -z` (cached 30 s and dropped
+//! then, fsmonitor off, time and size bounded) plus the indexed vault paths,
+//! ranked by a fuzzy score that favours substrings and word starts.
 use crate::model::SearchHit;
 use crate::snippet::{MAX_RANGES, find_all};
 use grep_regex::RegexMatcher;
@@ -177,13 +177,13 @@ fn excluded(name: &str, exclude: &ignore::overrides::Override) -> bool {
 
 pub(crate) struct FileNames {
     pub git: GitConfig,
-    cache: Mutex<HashMap<PathBuf, (Instant, Listing)>>,
+    cache: Arc<Mutex<HashMap<PathBuf, (Instant, Listing)>>>,
 }
 impl FileNames {
     pub fn new(git: GitConfig) -> Self {
         Self {
             git,
-            cache: Mutex::default(),
+            cache: Arc::default(),
         }
     }
     /// Visible, non-excluded names below `root` (cached for `ttl`). Outside a Git
@@ -231,9 +231,22 @@ impl FileNames {
                 truncated: true,
             },
         };
-        let mut cache = self.cache.lock().expect("file name cache");
-        cache.retain(|_, (at, _)| at.elapsed() < self.git.ttl);
-        cache.insert(root.to_path_buf(), (Instant::now(), listing.clone()));
+        let at = Instant::now();
+        self.cache
+            .lock()
+            .expect("file name cache")
+            .insert(root.to_path_buf(), (at, listing.clone()));
+        // A listing older than `ttl` is never served again, so it is dropped then instead of
+        // staying in memory until the next search (which may never come).
+        let (cache, root, ttl) = (self.cache.clone(), root.to_path_buf(), self.git.ttl);
+        tokio::spawn(async move {
+            tokio::time::sleep(ttl).await;
+            let mut cache = cache.lock().expect("file name cache");
+            // A newer listing of the same root has its own timer.
+            if cache.get(&root).is_some_and(|(newer, _)| *newer == at) {
+                cache.remove(&root);
+            }
+        });
         listing
     }
 }

@@ -248,6 +248,8 @@ class DaemonRows:
             parts['c'] = problems == [] and sha256(data) == row['originalSha256'] and row['steps'][-1]['daemon'].get('ActiveState') == 'active'
             row['parts'] = parts
             row['launchOnlyStartupProblems'] = next((s['startupProblems'] for s in row['steps'] if s['step'] == 'setup-launch'), None)
+            if self.win:  # 1.0.1: the relaunch's SC2 lines, start phases included, read after the last step (recorded only)
+                row['relaunch'] = self.win.sc2(row['steps'][0]['result']['launch'], self.clock)
             failed = [k for k, v in parts.items() if not v]
             if failed:
                 self.finish('C1', 'FAIL', row, 'Failed parts: ' + ','.join(failed))

@@ -51,7 +51,8 @@ class UpdateFailed(RuntimeError):
 # --- the connection gap, read inside WSL ----------------------------------------------------------------
 def accept_bridges(proc=Path('/proc'), uid=None):
     """{(pid, start time)} of this user's accept bridge processes: argv [<...>/devbox, 'bridge'] with DEVBOX_INSTANCE=accept
-    in its environment (app/src-tauri/src/platform/supervisor.rs:159-169 and core/deploy.rs:430-433). Read-only."""
+    in its environment (app/src-tauri/src/platform/supervisor.rs:163-173, bridge_once, and core/deploy.rs:440-443,
+    exec_script_for). Read-only."""
     uid = os.getuid() if uid is None else uid
     found = set()
     for entry in proc.iterdir():

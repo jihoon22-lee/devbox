@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { AgentTask, Methods, NotificationReason, ToolProfile } from "../../rpc/gen/rpc";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { useNativeRuntime } from "../../shell/nativeRuntime";
+import { pageVisible } from "../../shell/visibility";
 import { useActivityHealth } from "../activity/useActivityStatus";
 import { useAgentData } from "../agents/AgentData";
 import { STATE_LABEL, toolLabel } from "../agents/model";
@@ -84,7 +85,7 @@ export function AttentionBridge({
             body,
             visible:
               !!task &&
-              document.visibilityState === "visible" &&
+              pageVisible() &&
               current.pathname === "/agents" &&
               current.search.id === event.id &&
               current.search.view === "list",

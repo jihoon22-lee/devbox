@@ -304,7 +304,8 @@ while read -r text; do :; done
     (client, project, id, idle)
 }
 /// The `worktreeId` of every `git.changed` for `project` from now until one matches `until`, and
-/// for a second after it, so another watcher that saw the same change has time to report it too.
+/// for two seconds after it, so another watcher that saw the same change has time to report it too
+/// (two watchers poll up to 500 ms apart and each waits 300 ms of quiet).
 async fn changed_targets(
     events: &mut devbox_cli::client::Subscription,
     project: &str,
@@ -327,7 +328,7 @@ async fn changed_targets(
             continue;
         }
         if settle.is_none() && until(changed.worktree_id.as_deref()) {
-            settle = Some(tokio::time::Instant::now() + Duration::from_secs(1));
+            settle = Some(tokio::time::Instant::now() + Duration::from_secs(2));
         }
         seen.push(changed.worktree_id);
     }

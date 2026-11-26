@@ -1,7 +1,9 @@
 use crate::core::{
+    paint_trace::StartPhase,
     process::{self, ShellError},
     wsl::{Distro, decode_output},
 };
+use crate::platform::paint_trace::start_phase;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 pub fn command(distro: &str) -> tokio::process::Command {
@@ -38,6 +40,7 @@ pub async fn systemd(distro: &str, cancel: CancellationToken) -> Result<(), Shel
     if decode_output(&out.stdout).trim() != "systemd" {
         return Err(ShellError::SystemdOff);
     }
+    start_phase(StartPhase::Systemd);
     let mut c = command(distro);
     c.args([
         "--exec",
@@ -48,5 +51,6 @@ pub async fn systemd(distro: &str, cancel: CancellationToken) -> Result<(), Shel
         "--value",
     ]);
     process::run(c, vec![], Duration::from_secs(15), cancel).await?;
+    start_phase(StartPhase::UserManager);
     Ok(())
 }

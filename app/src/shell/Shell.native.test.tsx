@@ -84,10 +84,12 @@ test("main Shell consumes cold intent after mounting and second-instance activat
   expect(window.location.pathname).toBe("/agents");
   expect(window.location.search).toContain("view=list");
   expect(window.location.search).toContain("gateway=");
-  // One navigation subscription for the window plus the status bar's single updater subscription (devbox://update).
+  // One navigation subscription for the window, the status bar's single updater subscription
+  // (devbox://update) and the one question whether this window is on screen (devbox://window-shown).
   await waitFor(() => expect(listeners.count("devbox://update")).toBe(1));
+  await waitFor(() => expect(listeners.count("devbox://window-shown")).toBe(1));
   expect(listeners.count("devbox://navigate")).toBe(1);
-  expect(listeners.names().sort()).toEqual(["devbox://navigate", "devbox://update"]);
+  expect(listeners.names().sort()).toEqual(["devbox://navigate", "devbox://update", "devbox://window-shown"]);
   const subscriptions = wire.sent.filter((message) => message.topic === "agents.attention");
   fireEvent.click(screen.getByRole("button", { name: "격자" }));
   await waitFor(() => expect(window.location.search).toContain("view=grid"));
@@ -103,13 +105,18 @@ test("popout identity does not subscribe to navigation or invoke native counts o
   window.history.replaceState({}, "", "/agents?renderer=dom");
   const listeners = trackListeners();
   const { wire, view } = await setup();
-  // Any window that renders the status bar follows the all-window updater broadcast; nothing else is subscribed.
-  await waitFor(() => expect(listeners.count("devbox://update")).toBe(1));
-  expect(listeners.names()).toEqual(["devbox://update"]);
-  expect(mocks.listen.mock.calls.every(([name]) => name === "devbox://update")).toBe(true);
-  // The only native call is the read-only updater snapshot; no navigation or count commands.
+  // Any window that renders the status bar follows the all-window updater broadcast and its own
+  // on-screen state; nothing else is subscribed.
+  const allowed = ["devbox://update", "devbox://window-shown"];
+  await waitFor(() => expect(listeners.names().sort()).toEqual(allowed));
+  expect(mocks.listen.mock.calls.every(([name]) => allowed.includes(name))).toBe(true);
+  // The only native calls are two read-only questions: the updater snapshot and whether this
+  // window is on screen. No navigation or count commands.
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("update_status"));
-  expect(mocks.invoke.mock.calls.map(([name]) => name)).toEqual(["update_status"]);
+  await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("window_shown"));
+  expect([...new Set(mocks.invoke.mock.calls.map(([name]) => name))].sort()).toEqual(["update_status", "window_shown"]);
+  // The updater snapshot is still read once; only the on-screen question may be asked again (on focus).
+  expect(mocks.invoke.mock.calls.filter(([name]) => name === "update_status")).toHaveLength(1);
   expect(wire.sent.filter((message) => message.topic === "agents.attention")).toHaveLength(0);
   view.unmount();
   expect(listeners.names()).toEqual([]);

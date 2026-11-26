@@ -1,24 +1,40 @@
 //! SC2 acceptance log lines. Both intervals use this process's monotonic `Instant` only, and each
 //! includes the renderer's acknowledgement IPC latency, so the logged value is a conservative upper bound.
 //! `run` is the app process ID, binding shortcut and cold-start samples to one process run.
+//! `start-phase` lines break the cold start into its steps on the same clock.
 use crate::core::{
     connection::IpcError,
-    paint_trace::{FirstData, PaletteTraces, TraceEnd},
+    paint_trace::{FirstData, PaletteTraces, StartPhase, TraceEnd, start_phase_line},
 };
 use serde::Deserialize;
-use std::{sync::Mutex, time::Instant};
+use std::{
+    sync::{Mutex, OnceLock},
+    time::Instant,
+};
 use tauri::{AppHandle, Manager, State, WebviewWindow};
 
 pub struct PaintTrace {
     palette: Mutex<PaletteTraces>,
     first_data: Mutex<FirstData>,
 }
+/// The process start that `first-data-painted` measures from; start phases share it.
+static STARTED: OnceLock<Instant> = OnceLock::new();
 impl PaintTrace {
     pub fn new(started: Instant) -> Self {
+        let _ = STARTED.set(started);
         Self {
             palette: Mutex::default(),
             first_data: Mutex::new(FirstData::new(started)),
         }
+    }
+}
+/// One `start-phase` line for a finished step of the start sequence.
+pub fn start_phase(phase: StartPhase) {
+    if let Some(started) = STARTED.get() {
+        eprintln!(
+            "{}",
+            start_phase_line(std::process::id(), phase, started.elapsed())
+        );
     }
 }
 pub fn palette_trace(app: &AppHandle, received: Instant) -> u64 {

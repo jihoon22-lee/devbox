@@ -36,15 +36,20 @@ public static class S7OwnedProcessLauncher {
   return handle;
  }
  public static int Start(string executable,string arguments,string stdout,string stderr) {
-  return checked((int)Launch(executable,arguments,stdout,stderr,-1)[0]);
+  return checked((int)Launch(executable,arguments,stdout,stderr,-1,false)[0]);
  }
  // Start, then wait at most `wait` ms on the creation handle: {pid, creation FILETIME, exit code}. A process that has
  // not ended by then is terminated through that same handle (no PID lookup): the code is -2, or -1 if it still runs.
  public static long[] Run(string executable,string arguments,string stdout,string stderr,int wait) {
   if(wait<0)throw new ArgumentOutOfRangeException("wait");
-  return Launch(executable,arguments,stdout,stderr,wait);
+  return Launch(executable,arguments,stdout,stderr,wait,true);
  }
- static long[] Launch(string executable,string arguments,string stdout,string stderr,int wait) {
+ // A8 (1.0.1): the same wait, but a process that has not ended by then is left running (code -1), never stopped here.
+ public static long[] Handover(string executable,string arguments,string stdout,string stderr,int wait) {
+  if(wait<0)throw new ArgumentOutOfRangeException("wait");
+  return Launch(executable,arguments,stdout,stderr,wait,false);
+ }
+ static long[] Launch(string executable,string arguments,string stdout,string stderr,int wait,bool stopLate) {
   IntPtr input=IntPtr.Zero,output=IntPtr.Zero,error=IntPtr.Zero,attributes=IntPtr.Zero,handles=IntPtr.Zero;
   bool initialized=false;var info=new PROCESS_INFORMATION();
   try {
@@ -71,7 +76,7 @@ public static class S7OwnedProcessLauncher {
     creation=((long)c.High<<32)|c.Low;
     uint state=WaitForSingleObject(info.process,(uint)wait);
     if(state==0) { uint exit; if(!GetExitCodeProcess(info.process,out exit))throw new Win32Exception(Marshal.GetLastWin32Error()); code=exit; }
-    else if(state==0x102) { code=(TerminateProcess(info.process,1)&&WaitForSingleObject(info.process,10000)==0)?-2:-1; }
+    else if(state==0x102) { code=(stopLate&&TerminateProcess(info.process,1)&&WaitForSingleObject(info.process,10000)==0)?-2:-1; }
     else throw new Win32Exception(Marshal.GetLastWin32Error());
    }
    return new long[]{info.pid,creation,code};
@@ -95,4 +100,11 @@ function Start-OwnedLoggedProcess([string]$Executable,[string]$StandardOutput,[s
 function Invoke-OwnedLoggedProcess([string]$Executable,[string]$StandardOutput,[string]$StandardError,[string]$Arguments='',[int]$WaitMilliseconds=60000) {
   $row=[S7OwnedProcessLauncher]::Run($Executable,$Arguments,$StandardOutput,$StandardError,$WaitMilliseconds)
   return @{pid=[int]$row[0];startedUtc=[DateTime]::FromFileTimeUtc($row[1]).ToString('o');exited=($row[2] -ge 0);exitCode=$row[2];stoppedOnTimeout=($row[2] -eq -2)}
+}
+# A8 (1.0.1): a second start of the owned executable, which the running app answers and then ends: the same handle list
+# and bounded wait on the creation handle as the self-check, but a process still running after the wait is left to the
+# caller (exited false), never stopped here.
+function Invoke-OwnedHandover([string]$Executable,[string]$StandardOutput,[string]$StandardError,[string]$Arguments='',[int]$WaitMilliseconds=5000) {
+  $row=[S7OwnedProcessLauncher]::Handover($Executable,$Arguments,$StandardOutput,$StandardError,$WaitMilliseconds)
+  return @{pid=[int]$row[0];startedUtc=[DateTime]::FromFileTimeUtc($row[1]).ToString('o');exited=($row[2] -ge 0);exitCode=$row[2]}
 }

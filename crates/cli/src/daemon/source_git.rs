@@ -139,7 +139,7 @@ pub(super) fn register(router: Router<Services>) -> Router<Services> {
         })
         .register::<GitStatus, _, _>(|s, _, p| async move {
             // A task folder's status is polled by its agent detail, which needs no `git.changed`;
-            // watching it would keep a watcher per opened task until the daemon stops.
+            // watching it would add a watcher per opened task (each kept for the idle time).
             let dir = if p.target.worktree_id.is_some() {
                 resolve(&s, &p.target).await?
             } else {

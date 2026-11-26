@@ -264,3 +264,40 @@ async fn ls_files_timeout_kills_the_whole_process_group() {
     }
     assert!(!alive(), "the git helper's child survived");
 }
+
+#[tokio::test]
+async fn file_name_listing_is_dropped_when_its_ttl_passes_and_listed_again_on_use() {
+    let t = tempfile::tempdir().expect("fixture");
+    let count = t.path().join("count");
+    let names = FileNames::new(GitConfig {
+        program: script(
+            &t.path().join("git"),
+            &format!("echo x >> '{}'\nprintf 'a.txt\\0'", count.display()),
+        ),
+        ttl: Duration::from_millis(300),
+        ..GitConfig::default()
+    });
+    let started = Instant::now();
+    let listing = names.list(t.path(), &[], &[]).await;
+    // The cache holds the only other reference to the names.
+    let cached = std::sync::Arc::downgrade(&listing.names);
+    drop(listing);
+    assert!(cached.upgrade().is_some(), "cached for the ttl");
+    while cached.upgrade().is_some() {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the listing outlived its ttl without a search"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        started.elapsed() >= Duration::from_millis(300),
+        "dropped early"
+    );
+    let again = names.list(t.path(), &[], &[]).await;
+    let calls = std::fs::read_to_string(&count).expect("call count");
+    assert_eq!(
+        (calls.lines().count(), again.names.as_slice()),
+        (2, ["a.txt".to_string()].as_slice())
+    );
+}
