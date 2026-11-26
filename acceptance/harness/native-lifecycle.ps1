@@ -1,6 +1,6 @@
 param(
   [ValidateSet('install','upgrade','launch','stop-owned','assert-stopped','uninstall','installed-identity','remove-owned-registry',
-    'update-begin','update-observe','update-adopt','window-agent')][string]$Action,
+    'update-begin','update-observe','update-adopt')][string]$Action,
   [string]$Ownership, [string]$Stage, [string]$Distro, [string]$LinuxSha256, [int]$CdpPort=0, [string]$HelperRoot,
   [string]$UpdateFixture, [string]$Foreign, [int]$WaitSeconds=0
 )
@@ -9,8 +9,7 @@ param(
 # two-artifact upgrade action, installs[] and the 30 s registration poll at uninstall.
 # No global environment/settings/policy changes; only owned accept paths recorded before mutation.
 # 1.0.1: pure ASCII (D4: Windows PowerShell 5.1 reads a script without a BOM in the ANSI code page); the self-check
-# runs through the handle-list launcher (D3); update-begin/-observe/-adopt and -Foreign serve the update flow (D5);
-# window-agent serves A8 (the owned main window's close, show, minimize and restore).
+# runs through the handle-list launcher (D3); update-begin/-observe/-adopt and -Foreign serve the update flow (D5).
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=New-Object Text.UTF8Encoding
 $m=Get-Content -LiteralPath $Ownership -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -408,174 +407,6 @@ if ($Action -eq 'launch') {
   $p.PriorityClass='BelowNormal'
   $p.ProcessorAffinity=[IntPtr]15
   $record | ConvertTo-Json
-  exit
-}
-if ($Action -eq 'window-agent') {
-  # A8 (1.0.1, issue #678): one long-lived helper. It finds the owned app (the one running launch record: exact PID,
-  # executable and start time) and that app's one visible main window, then reads one command per stdin line and answers
-  # each with one JSON line: close (WM_CLOSE), minimize and restore (WM_SYSCOMMAND), launch (a plain second start of the
-  # owned executable, which the running app answers by showing its main window), idle, state and end. Every answer carries
-  # `n`, the number of the command it answers, and `ms` on this helper's stopwatch. Right before every message or start it
-  # checks the owned process again, that the handle is still its window, and that the session had no keyboard or mouse
-  # input for 30 s; a refused command sends nothing. It never stops a process: a second start that keeps running is
-  # recorded, so teardown's exact stop ends it.
-  if ($WaitSeconds -lt 30 -or $WaitSeconds -gt 240) {throw 'WaitSeconds out of range'}
-  if (-not $HelperRoot -or -not (Test-Path -LiteralPath (Join-Path $HelperRoot 'native-window.ps1'))) {throw 'Reviewed helper root required'}
-  $clock=[Diagnostics.Stopwatch]::StartNew()
-  $n=0
-  function Say($row) {
-    $row.ms=[Math]::Round($clock.Elapsed.TotalMilliseconds,1)
-    $row.n=$n
-    [Console]::Out.WriteLine(($row | ConvertTo-Json -Depth 6 -Compress))
-    [Console]::Out.Flush()
-  }
-  $apps=@($native.processes | Where-Object { $_.stdout -and -not $_.purpose -and [string]::Equals([string]$_.executable,$exe,[StringComparison]::OrdinalIgnoreCase) -and (Same $_) })
-  if ($apps.Count -ne 1) { Say @{event='ready';ok=$false;reason=('Exactly one running owned app launch is required; found '+$apps.Count)}; exit }
-  $app=$apps[0]
-  $appPid=[uint32]$app.pid
-  . ([ScriptBlock]::Create([IO.File]::ReadAllText((Join-Path $HelperRoot 'native-window.ps1'))))
-  . (Load-Launcher)
-  function Windows-Now {
-    return @([S7OwnedWindow]::Of($appPid) | ForEach-Object {
-      $f=$_.Split([char[]]'|',8)
-      @{hwnd=[long]$f[0];visible=($f[1] -eq '1');iconic=($f[2] -eq '1');style=[int]$f[3];exStyle=[int]$f[4];owned=($f[5] -eq '1');class=$f[6];title=$f[7]}
-    })
-  }
-  # The main window: class Tauri Window, title devbox (tauri.conf.json), a caption, not owned, not a tool window. The
-  # capture window is a borderless tool-like popup and starts hidden. The tray icon's hidden window is tray_icon_app.
-  $windows=@(Windows-Now)
-  $tray=@($windows | Where-Object { $_.class -ceq 'tray_icon_app' }).Count
-  $main=@($windows | Where-Object { $_.class -ceq 'Tauri Window' -and $_.title -ceq 'devbox' -and $_.visible -and -not $_.iconic -and -not $_.owned -and
-    (($_.style -band 0x00C00000) -eq 0x00C00000) -and -not ($_.exStyle -band 0x00000080) })
-  $ready=@{event='ready';ok=$false;pid=[long]$app.pid;executable=[string]$app.executable;startedUtc=[string]$app.startedUtc;trayWindows=$tray;
-    windows=@($windows | ForEach-Object { @{hwnd=$_.hwnd;class=$_.class;title=$_.title;visible=$_.visible;iconic=$_.iconic} })}
-  if ($main.Count -ne 1) {
-    $ready.reason=('Exactly one visible, restored main window of the owned app (Tauri Window, devbox, with a caption) is required; found '+$main.Count)
-    Say $ready
-    exit
-  }
-  $hwnd=[long]$main[0].hwnd
-  function Window-State {
-    $f=[S7OwnedWindow]::State($hwnd).Split([char[]]'|',4)
-    return @{pid=[long]$f[0];visible=($f[1] -eq '1');iconic=($f[2] -eq '1');class=$f[3]}
-  }
-  # Why the handle may not be acted on (else $null): the owned process must still be the exact recorded one, and the
-  # handle still a Tauri Window of that process.
-  function Not-Owned($state) {
-    if (-not (Same $app)) { return 'the owned app process (exact PID, executable and start time) is gone' }
-    if ($state.pid -eq 0) { return 'the handle is no longer a window' }
-    if ($state.pid -ne [long]$app.pid) { return 'the handle belongs to another process' }
-    if ($state.class -cne 'Tauri Window') { return 'the handle is another window' }
-    return $null
-  }
-  # The second start may take the foreground (the app's own focus call presses Alt when Windows refuses it), and minimize
-  # and restore move the focus: a window changes only after 30 s without user input. The driver waits for that first;
-  # this is the same check right before the action. An unreadable input time refuses the action.
-  $idleNeedMs=30000
-  function User-Active($row) {
-    $row.idleMs=[S7OwnedWindow]::IdleMilliseconds()
-    if ($row.idleMs -lt 0) { $row.refused='The time of the last user input cannot be read'; return $true }
-    if ($row.idleMs -lt $idleNeedMs) { $row.userActive=$true; return $true }
-    return $false
-  }
-  function Acted { return [Math]::Round($clock.Elapsed.TotalMilliseconds,1) }
-  function Wait-State($want, [int]$boundMs) {
-    $from=$clock.Elapsed.TotalMilliseconds
-    while ($true) {
-      $state=Window-State
-      if (& $want $state) { return @{state=$state;reachedMs=[Math]::Round($clock.Elapsed.TotalMilliseconds-$from,1)} }
-      if ($clock.Elapsed.TotalMilliseconds-$from -ge $boundMs) { return @{state=$state;reachedMs=$null} }
-      Start-Sleep -Milliseconds 50
-    }
-  }
-  function Post-Command($name) {
-    $row=@{event=$name;posted=$false}
-    if ($name -eq 'close') {
-      # The product hides its main window on close only while its tray exists (lib.rs CloseRequested, tray.rs available);
-      # without it the close quits the app.
-      $row.trayWindows=@(Windows-Now | Where-Object { $_.class -ceq 'tray_icon_app' }).Count
-      if ($row.trayWindows -lt 1) { $row.refused='The owned app has no tray window, so a close would quit it'; return $row }
-    }
-    $row.before=Window-State
-    $why=Not-Owned $row.before
-    if ($why) { $row.gone=$true; $row.why=$why; return $row }
-    if (User-Active $row) { return $row }
-    if ($name -eq 'close') { $code=[S7OwnedWindow]::Close($hwnd); $want={ param($s) -not $s.visible } }
-    elseif ($name -eq 'minimize') { $code=[S7OwnedWindow]::Minimize($hwnd); $want={ param($s) $s.visible -and $s.iconic } }
-    elseif ($name -eq 'restore') { $code=[S7OwnedWindow]::Restore($hwnd); $want={ param($s) $s.visible -and -not $s.iconic } }
-    else { $row.refused='Not a window command'; return $row }
-    $row.actedMs=(Acted)
-    $row.postError=$code
-    $row.posted=($code -eq 0)
-    if (-not $row.posted) { return $row }
-    $seen=Wait-State $want 1500
-    $row.after=$seen.state
-    $row.reachedMs=$seen.reachedMs
-    return $row
-  }
-  function Launch-Again {
-    $row=@{event='launch';started=$false}
-    $row.before=Window-State
-    $why=Not-Owned $row.before
-    if ($why) { $row.gone=$true; $row.why=$why; return $row }
-    try { $null=Check-Exe $native } catch { $row.refused='The owned executable failed its check: '+$_.Exception.Message; return $row }
-    if (User-Active $row) { return $row }
-    $logToken=[Guid]::NewGuid().ToString('N')
-    $out=Join-Path (Split-Path $Ownership) ('native-'+$logToken+'.stdout.log')
-    $err=Join-Path (Split-Path $Ownership) ('native-'+$logToken+'.stderr.log')
-    $old=$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
-    $oldFixture=$env:DEVBOX_UPDATE_FIXTURE
-    try {
-      # A plain start, as a user's: no debug port and no update fixture in this helper's own environment block.
-      $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$null
-      $env:DEVBOX_UPDATE_FIXTURE=$null
-      $second=Invoke-OwnedHandover -Executable $exe -StandardOutput $out -StandardError $err -WaitMilliseconds 5000
-      # The handover: the second process has ended (it hands over before it ends), or the 5 s bound passed.
-      $row.actedMs=(Acted)
-    } finally {$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$old;$env:DEVBOX_UPDATE_FIXTURE=$oldFixture}
-    # Recorded whether or not it ended, so that a second app that kept running is stopped exactly by teardown.
-    $record=@{pid=$second.pid;executable=$exe;startedUtc=$second.startedUtc;stdout=$out;stderr=$err;purpose='second-launch';
-      launchedUtc=[DateTime]::UtcNow.ToString('o');exited=$second.exited;exitCode=$second.exitCode}
-    $native.processes=@($native.processes)+$record
-    Save-Native $native
-    $row.started=$true
-    $row.second=$record
-    $seen=Wait-State { param($s) $s.visible -and -not $s.iconic } 2000
-    $row.after=$seen.state
-    $row.reachedMs=$seen.reachedMs
-    # Input during the start (for example the app's own Alt when it takes the foreground) shows here.
-    $row.idleAfterMs=[S7OwnedWindow]::IdleMilliseconds()
-    return $row
-  }
-  $ready.ok=$true
-  $ready.hwnd=$hwnd
-  $ready.title=[string]$main[0].title
-  $ready.class=[string]$main[0].class
-  $ready.style=$main[0].style
-  $ready.state=(Window-State)
-  Say $ready
-  # One line at a time, each read bounded by the time left: a StreamReader on the raw stdin stream reads on the thread
-  # pool (console-watch reads the same stream asynchronously), so Wait($left) does expire. Console.In's ReadLineAsync
-  # would not: on .NET Framework it reads synchronously. A closed stdin ends the read (null) and the agent.
-  $stdin=New-Object IO.StreamReader([Console]::OpenStandardInput())
-  while ($true) {
-    $left=[int]($WaitSeconds*1000-$clock.Elapsed.TotalMilliseconds)
-    if ($left -le 0) { Say @{event='expired';state=(Window-State)}; break }
-    $read=$stdin.ReadLineAsync()
-    if (-not $read.Wait($left)) { Say @{event='expired';state=(Window-State)}; break }
-    $line=$read.Result
-    if ($null -eq $line) { break }
-    $n++
-    $name=$line.Trim()
-    try {
-      if ($name -eq 'end') { Say @{event='end';state=(Window-State)}; break }
-      elseif ($name -eq 'idle') { Say @{event='idle';idleMs=[S7OwnedWindow]::IdleMilliseconds()} }
-      elseif ($name -eq 'state') { $state=Window-State; Say @{event='state';state=$state;why=(Not-Owned $state)} }
-      elseif ($name -eq 'launch') { Say (Launch-Again) }
-      elseif ($name -eq 'close' -or $name -eq 'minimize' -or $name -eq 'restore') { Say (Post-Command $name) }
-      else { Say @{event='unknown';refused='Unknown command'}; break }
-    } catch { Say @{event=$name;error=$_.Exception.Message} }
-  }
   exit
 }
 if ($Action -eq 'uninstall') {

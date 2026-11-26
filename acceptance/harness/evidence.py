@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import time
 
 BASE = Path(__file__).resolve().parent
 REPO = 'jihoon22-lee/devbox'
@@ -374,10 +375,29 @@ def verify_review(base, review_file, binding):
 
 
 def parse_sc2(stderr_text):
-    """Raw S6-4b SC2 lines from the owned app stderr. Values are recorded, not judged here."""
+    """Raw S6-4b SC2 lines from the owned app stderr. Values are recorded, not judged here. 1.0.1: the `start-phase` lines,
+    one per finished start step on the clock of first-data-painted (app/src-tauri/src/core/paint_trace.rs start_phase_line),
+    in log order; a start-phase line of another form is left out and counted."""
     first = [dict(run=m[0], elapsed_ms=int(m[1]), visible=m[2]) for m in re.findall(r'^first-data-painted run=(\S+) elapsed_ms=(\d+) visible=(\w+)\s*$', stderr_text, re.M)]
     palette = [dict(run=m[0], trace=int(m[1]), outcome=m[2], deferred=m[3], elapsed_ms=int(m[4]))
                for m in re.findall(r'^palette-painted run=(\S+) trace=(\d+) outcome=(\S+) deferred=(\w+) elapsed_ms=(\d+)\s*$', stderr_text, re.M)]
     ignored = re.findall(r'^palette-painted .* ignored\s*$', stderr_text, re.M)
     dropped = re.findall(r'^palette-trace-dropped.*$', stderr_text, re.M)
-    return {'firstDataPainted': first, 'palettePainted': palette, 'paletteIgnored': len(ignored), 'paletteDropped': len(dropped)}
+    lines = re.findall(r'^start-phase\b.*$', stderr_text, re.M)
+    shaped = [re.fullmatch(r'start-phase run=(\S+) phase=(\S+) elapsed_ms=(\d+)\s*', line) for line in lines]
+    phases = [dict(run=m[1], phase=m[2], elapsed_ms=int(m[3])) for m in shaped if m]
+    return {'firstDataPainted': first, 'startPhases': phases, 'startPhasesIgnored': len(lines) - len(phases), 'palettePainted': palette,
+            'paletteIgnored': len(ignored), 'paletteDropped': len(dropped)}
+
+
+def wait_sc2(stderr_path, seconds=60, clock=time):
+    """parse_sc2 of an owned launch's stderr log (its first MiB), read once a second until it holds a first-data-painted line
+    or `seconds` have passed. `waitedSeconds` says how long; an empty firstDataPainted, that the bound ended the wait."""
+    started = clock.monotonic()
+    while True:
+        text = stderr_path.read_text(errors='replace')[:1024 * 1024] if stderr_path.exists() else ''
+        sc2 = parse_sc2(text)
+        waited = clock.monotonic() - started
+        if sc2['firstDataPainted'] or waited >= seconds:
+            return {**sc2, 'waitedSeconds': round(waited, 1)}
+        clock.sleep(1)

@@ -45,7 +45,7 @@ import foreign_files
 from coordinator import Coordinator
 import evidence as ev
 from evidence import (BRANCHES, FLOWS, NEEDS, REPO, UPGRADE_FLOWS, WINDOWS_FLOWS, WSL_FLOWS, Unavailable, approval_binding,
-                      artifact_digest, initial, parse_answers, parse_sc2, record, verify_artifact_dir, verify_review, verify_run)
+                      artifact_digest, initial, parse_answers, record, verify_artifact_dir, verify_review, verify_run, wait_sc2)
 from fixture import BINDING_FILE, MARKER, delegate_windows, inspect_accept_absent, stage, verify_source
 from teardown import cleanup_stage, compare_prod, finalize
 import agents_live
@@ -333,7 +333,7 @@ def native_command(windows, script, params):
     execution policy is never set, overridden or bypassed by flag."""
     quote = lambda value: "'" + str(value).replace("'", "''") + "'"
     parts = ['& ([ScriptBlock]::Create([IO.File]::ReadAllText(' + quote(windows(BASE / script)) + ')))']
-    for key, value in {**params, **({'HelperRoot': windows(BASE)} if script == 'native-lifecycle.ps1' else {})}.items():
+    for key, value in {**params, **({'HelperRoot': windows(BASE)} if script in ('native-lifecycle.ps1', 'native-window.ps1') else {})}.items():
         if not re.fullmatch('[A-Za-z0-9]+', key):
             raise ValueError('Invalid helper parameter name')
         parts.append('-' + key + ' ' + quote(value))
@@ -353,6 +353,14 @@ class NativeOps:
         self.s.launched = True
         return self.s.native('native-lifecycle.ps1', Action='launch', Ownership=self.s.windows(self.s.ownership))
 
+    def sc2(self, record, clock=time):
+        """C1 (1.0.1): the SC2 lines of one launch record's stderr log, start phases included (evidence.wait_sc2). Recorded
+        only, so a failed read is kept as its error."""
+        try:
+            return wait_sc2(Path(command(['wslpath', '-u', record['stderr']]).stdout.strip()), clock=clock)
+        except Exception as error:
+            return {'error': redact_text(str(error), 400)}
+
     def settings_drvfs(self):
         import w1_windows
         return w1_windows.drvfs(self.s.load()['nativePreflight']['appLocalData']) / 'settings.json'
@@ -365,11 +373,10 @@ class NativeOps:
         return w1_windows.drvfs(self.s.load()['nativePreflight']['installPath'])
 
     def window_agent(self, seconds):
-        """A8: the long-lived owned window agent (native-lifecycle.ps1 -Action window-agent): one command per stdin line, one
-        JSON line back."""
+        """A8: the long-lived owned window agent (native-window.ps1): one command per stdin line, one JSON line back."""
         from common import LineProcess
-        params = {'Action': 'window-agent', 'Ownership': self.s.windows(self.s.ownership), 'WaitSeconds': seconds}
-        return LineProcess(native_command(self.s.windows, 'native-lifecycle.ps1', params), limit=64)
+        params = {'Ownership': self.s.windows(self.s.ownership), 'WaitSeconds': seconds}
+        return LineProcess(native_command(self.s.windows, 'native-window.ps1', params), limit=64)
 
     def console_windows(self, nonce, marker):
         return self.s.native('native-observe.ps1', Action='console-windows', Nonce=nonce, ProbeMarker=marker)
@@ -828,15 +835,7 @@ class Session:
         # Sealing right after the launch missed the unit files written 3 s later (run 70b1b4f6-e228bf7f).
         proof = self.instance(side)
         self.seal_after_launch(reseal)
-        sc2 = {'firstDataPainted': []}
-        stderr_path = Path(launch_row['stderrWsl'])
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            text = stderr_path.read_text(errors='replace')[:1024 * 1024] if stderr_path.exists() else ''
-            sc2 = parse_sc2(text)
-            if sc2['firstDataPainted']:
-                break
-            time.sleep(1)
+        sc2 = wait_sc2(Path(launch_row['stderrWsl']))
         dump(self.evidence / ('sc2-' + side + '.json'), sc2)
         return proof, sc2
 
@@ -869,7 +868,8 @@ class Session:
         first = sc2['firstDataPainted']
         self.case_result('A2', 'PASS' if first else 'FAIL', ['native-launch-candidate.json', 'instance-proof-candidate.json', 'sc2-candidate.json'],
                          None if first else 'No first-data-painted line within 60 s of an owned launch', surface='installed-native',
-                         measurement={'firstDataPainted': first, 'condition': 'cold app process, WSL running, accept daemon first start after setup'})
+                         measurement={'firstDataPainted': first, 'startPhases': sc2['startPhases'],
+                                      'condition': 'cold app process, WSL running, accept daemon first start after setup'})
         self.sc2 = ('1.0.0', first)  # S8-5 (Ruling 146): the fresh wave's candidate is 1.0.0, not rc.2
         win = NativeOps(self)
         # 1.0.1 (#678): A8 needs the window as A2 left it (shown, first data painted) and leaves it so for the rows after it.

@@ -30,6 +30,7 @@ from unittest.mock import patch
 import urllib.parse
 
 import a4_windows_service
+import a8_decision
 import a8_window
 import agents_live
 import common
@@ -1911,7 +1912,7 @@ def completed(args=(), out='', code=0, err=''):
 class FixC1(unittest.TestCase):
     """Item 4: the product omits an empty startupProblems (crates/protocol/src/system.rs:29-31)."""
 
-    def rows(self, info_fails_after_restore=False):
+    def rows(self, info_fails_after_restore=False, win=None):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -1933,7 +1934,7 @@ class FixC1(unittest.TestCase):
             if info_fails_after_restore and state['restored']:
                 raise RpcError('internal')
             return {'instance': 'accept', **({'startupProblems': state['problems']} if state['problems'] else {})}
-        rows = daemon_rows.DaemonRows(rpc, lambda: m, lambda *a, **k: None, root, 'wsl-fresh', daemon=Fake(setup=setup), clock=FakeClock())
+        rows = daemon_rows.DaemonRows(rpc, lambda: m, lambda *a, **k: None, root, 'wsl-fresh', daemon=Fake(setup=setup), clock=FakeClock(), win=win)
         ids = {'MainPID': '7', 'InvocationID': 'i', 'ActiveState': 'active'}
         with patch.object(daemon_rows, 'require_lock', NO_LOCK), patch.object(daemon_rows, 'unit_ids', lambda: ids):
             rows.c1()
@@ -1951,6 +1952,75 @@ class FixC1(unittest.TestCase):
         self.assertIs(row['parts']['c'], False)
         self.assertIsNone(row['steps'][-1]['startupProblems'])
         self.assertTrue(row['steps'][-1]['infoError'])
+
+    def test_the_relaunch_keeps_its_first_data_and_start_phases(self):
+        """1.0.1: once its last step is done, C1 reads the relaunch's own stderr log through the real parser and keeps the
+        first-data-painted and start-phase lines in `relaunch`. Recorded only: a log it cannot read is kept as the error."""
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, str(tmp))
+        log = tmp / 'native-relaunch.stderr.log'
+        log.write_text('start-phase run=4243 phase=supervise elapsed_ms=80\nstart-phase run=4243 phase=install-kept elapsed_ms=1830\n'
+                       'start-phase run=4243 phase=bridge elapsed_ms=2950\nfirst-data-painted run=4243 elapsed_ms=3400 visible=true\n'
+                       'start-phase run=4243 phase=bridge elapsed_ms=9100\n')  # the daemon restart of setup-redeploy: a reconnect
+        calls = []
+
+        def native(script, timeout=200, **params):
+            calls.append((script, params['Action']))
+            return {'pid': 4243, 'stderr': 'C:\\owned\\native-relaunch.stderr.log'} if params['Action'] == 'launch' else {'stopped': True}
+        win = driver.NativeOps(Fake(launched=False, ownership=tmp / 'ownership.json', windows=lambda path: 'C:\\owned\\' + Path(path).name, native=native))
+        wslpath = lambda argv, **kwargs: Fake(stdout=str(log) + '\n') if argv[:2] == ['wslpath', '-u'] else self.fail(argv)
+        with patch.object(driver, 'command', wslpath):
+            row, _ = self.rows(win=win)
+        self.assertEqual(calls, [('native-lifecycle.ps1', 'stop-owned'), ('native-lifecycle.ps1', 'launch')])
+        self.assertEqual((row['status'], row['steps'][0]['step'], row['steps'][0]['result']['launch']['pid']), ('PASS', 'app-relaunch', 4243))
+        self.assertEqual(row['relaunch']['firstDataPainted'], [{'run': '4243', 'elapsed_ms': 3400, 'visible': 'true'}])
+        self.assertEqual([(p['run'], p['phase'], p['elapsed_ms']) for p in row['relaunch']['startPhases']],
+                         [('4243', 'supervise', 80), ('4243', 'install-kept', 1830), ('4243', 'bridge', 2950), ('4243', 'bridge', 9100)])
+        self.assertEqual((row['relaunch']['startPhasesIgnored'], row['relaunch']['waitedSeconds']), (0, 0.0))
+
+        def unreadable(argv, **kwargs):
+            raise common.CommandFailed(argv, 1, 'wslpath: no such path')
+        with patch.object(driver, 'command', unreadable):
+            row, _ = self.rows(win=win)
+        self.assertEqual((row['status'], sorted(row['relaunch'])), ('PASS', ['error']))
+
+
+class StartPhases(unittest.TestCase):
+    """1.0.1: the app's `start-phase run=<id> phase=<name> elapsed_ms=<n>` lines (app/src-tauri/src/core/paint_trace.rs,
+    start_phase_line) next to first-data-painted, in A2's record."""
+
+    def test_parse_keeps_each_start_phase_in_log_order_and_ignores_another_form(self):
+        text = ('start-phase run=4242 phase=supervise elapsed_ms=120\n'
+                'start-phase run=4242 phase=install-kept elapsed_ms=1830\r\n'
+                'start-phase run=4242 phase=install-sent elapsed_ms=\n'  # no number
+                'start-phase run=4242 phase=setup elapsed_ms=2400 extra\n'  # another field
+                'start-phase run=4242 elapsed_ms=2500\n'  # no phase
+                ' start-phase run=4242 phase=doctor elapsed_ms=2700\n'  # not a line of its own
+                'first-data-painted run=4242 elapsed_ms=6500 visible=true\n'
+                'start-phase run=4242 phase=bridge elapsed_ms=9100\n')
+        sc2 = evidence.parse_sc2(text)
+        self.assertEqual(sc2['startPhases'], [{'run': '4242', 'phase': 'supervise', 'elapsed_ms': 120},
+                                              {'run': '4242', 'phase': 'install-kept', 'elapsed_ms': 1830},
+                                              {'run': '4242', 'phase': 'bridge', 'elapsed_ms': 9100}])
+        self.assertEqual(sc2['startPhasesIgnored'], 3)
+        # first-data-painted is read as before, with the same run form, and a start-phase line is never one.
+        self.assertEqual(sc2['firstDataPainted'], [{'run': '4242', 'elapsed_ms': 6500, 'visible': 'true'}])
+        self.assertEqual(evidence.parse_sc2('start-phase run=1 phase=bridge elapsed_ms=5\n')['firstDataPainted'], [])
+        # Every name the product logs, in its run order.
+        names = ('supervise', 'distro', 'systemd', 'user-manager', 'bundle-read', 'bundle-hash', 'install-kept', 'install-sent', 'setup',
+                 'doctor', 'bridge')
+        lines = ''.join('start-phase run=4242 phase=%s elapsed_ms=%d\n' % (name, 100 * k) for k, name in enumerate(names))
+        self.assertEqual([p['phase'] for p in evidence.parse_sc2(lines)['startPhases']], list(names))
+        self.assertIn("measurement={'firstDataPainted': first, 'startPhases': sc2['startPhases'],", inspect.getsource(driver.Session.fresh_flow))
+
+    def test_the_wait_ends_at_first_data_or_at_its_bound(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log, clock = Path(tmp) / 'stderr.log', FakeClock()
+            sc2 = evidence.wait_sc2(log, clock=clock)  # no log at all: the bound ends the wait, and the row shows it
+            self.assertEqual((sc2['firstDataPainted'], sc2['startPhases'], sc2['waitedSeconds']), ([], [], 60.0))
+            log.write_text('start-phase run=7 phase=distro elapsed_ms=300\nfirst-data-painted run=7 elapsed_ms=2100 visible=false\n')
+            sc2 = evidence.wait_sc2(log, clock=clock)
+            self.assertEqual((len(sc2['firstDataPainted']), len(sc2['startPhases']), sc2['waitedSeconds']), (1, 1, 0.0))
 
 
 class FixTrustContext(unittest.TestCase):
@@ -4009,7 +4079,7 @@ class FixS85Round1(unittest.TestCase):
         """A stub Session (no source-order shortcut): the launch, the phase, the instance proof, then the seal or reseal."""
         with tempfile.TemporaryDirectory() as tmp:
             stderr = Path(tmp) / 'stderr.log'
-            stderr.write_text('first-data-painted run=x elapsed_ms=6500 visible=true\n')
+            stderr.write_text('start-phase run=x phase=bridge elapsed_ms=6100\nfirst-data-painted run=x elapsed_ms=6500 visible=true\n')
             for reseal in (False, True):
                 order = []
                 stub = Fake(ownership=Path(tmp) / 'ownership.json', evidence=Path(tmp), launched=False, load=lambda: {},
@@ -4023,6 +4093,8 @@ class FixS85Round1(unittest.TestCase):
                     proof, sc2 = driver.Session.launch_and_prove(stub, 'candidate', reseal=reseal)
                 self.assertEqual(order, ['launch', 'phase', 'instance', 'reseal' if reseal else 'seal'])
                 self.assertEqual((proof, len(sc2['firstDataPainted']), stub.launched), ({'status': 'PASS'}, 1, True))
+                self.assertEqual(json.loads((Path(tmp) / 'sc2-candidate.json').read_text())['startPhases'],
+                                 [{'run': 'x', 'phase': 'bridge', 'elapsed_ms': 6100}])
 
     def ab_g(self, extra_a=(), extra_b=()):
         """W1.ab_g on a scripted product. The shared control dir already holds another run's files (zzzz), deny marker included."""
@@ -4725,9 +4797,14 @@ class V101Scripts(unittest.TestCase):
         launcher = (BASE / 'process-launch.ps1').read_text()
         self.assertNotIn('-RedirectStandard', lifecycle)
         self.assertEqual(lifecycle.count("Invoke-OwnedLoggedProcess -Executable $exe -Arguments '--self-check --channel accept'"), 2)
-        self.assertEqual(lifecycle.count('. (Load-Launcher)'), 4)  # install, upgrade, launch, window-agent (A8's second start)
+        window = (BASE / 'native-window.ps1').read_text()
+        self.assertEqual(lifecycle.count('. (Load-Launcher)'), 3)  # install, upgrade, launch
+        self.assertEqual(window.count('. (Load-Launcher)'), 1)  # A8's second start
         self.assertIn('Start-OwnedLoggedProcess -Executable $exe -StandardOutput $stdout -StandardError $stderr', lifecycle)
-        self.assertEqual(lifecycle.count('Invoke-OwnedHandover -Executable $exe -StandardOutput $out -StandardError $err -WaitMilliseconds 5000'), 1)
+        handover = 'Invoke-OwnedHandover -Executable $exe -StandardOutput $out -StandardError $err -WaitMilliseconds 5000'
+        self.assertEqual((lifecycle.count(handover), window.count(handover)), (0, 1))
+        self.assertNotIn('-RedirectStandard', window)
+        self.assertEqual([line for line in window.splitlines() if 'Start-Process' in line.split('#', 1)[0]], [])
         # The only other starts are the installers and the uninstaller: ShellExecute, no redirection, a bounded wait.
         starts = [line.strip() for line in lifecycle.splitlines() if 'Start-Process' in line.split('#', 1)[0]]
         self.assertEqual(len(starts), 3)
@@ -5647,7 +5724,7 @@ class A8Proc:
 
 
 def a8_phase(name, children=3, first=0.4, rate=1000.0, step=0.1, bridges=1, per=None, reads=0.02, early=0.02):
-    kind, command, seconds = {p[0]: p[1:] for p in a8_window.PLAN}[name]
+    kind, command, seconds = {p[0]: p[1:] for p in a8_decision.PLAN}[name]
     shown = command and kind == 'visible'
     return {'phase': name, 'kind': kind, 'seconds': seconds, 'children': children, 'childTimes': [], 'childArgs': [],
             'firstChildSeconds': first if shown else None, 'bridgeBytes': rate * seconds, 'bridgeRate': rate,
@@ -5669,7 +5746,7 @@ def a8_ctx(**phases):
             good.pop(name)
         else:
             good[name] = value
-    return {'a2': 'PASS', 'ready': None, 'steps': [{'phase': p[0], 'problem': None} for p in a8_window.PLAN], 'phases': good, 'dockerSeen': True,
+    return {'a2': 'PASS', 'ready': None, 'steps': [{'phase': p[0], 'problem': None} for p in a8_decision.PLAN], 'phases': good, 'dockerSeen': True,
             'dockerPath': '/usr/bin/docker', 'daemonChanged': None}
 
 
@@ -5851,10 +5928,10 @@ class A8Window(unittest.TestCase):
         stub = Fake(windows=lambda p: 'C:\\h\\' + Path(p).name, ownership=Path('/run/ownership-owned-x.json'))
         with patch.object(common, 'LineProcess', Started):
             driver.NativeOps(stub).window_agent(a8_window.AGENT_SECONDS)
-        for part in ("native-lifecycle.ps1')", "-Action 'window-agent'", "-Ownership 'C:\\h\\ownership-owned-x.json'", "-WaitSeconds '210'",
-                     "-HelperRoot 'C:\\h\\harness'"):
+        for part in ("native-window.ps1')", "-Ownership 'C:\\h\\ownership-owned-x.json'", "-WaitSeconds '210'", "-HelperRoot 'C:\\h\\harness'"):
             self.assertIn(part, seen['script'])
-        self.assertNotIn('ExecutionPolicy', seen['script'])
+        for part in ('ExecutionPolicy', '-Action', 'native-lifecycle.ps1'):
+            self.assertNotIn(part, seen['script'])
         self.assertEqual(seen['limit'], 64)
 
     def test_proc_parsing(self):
@@ -6004,21 +6081,21 @@ class A8Window(unittest.TestCase):
 
     def test_max_step_covers_the_window_edges(self):
         times = [0.0, 0.1, 0.2, 0.9, 1.0, 1.1]
-        self.assertEqual(a8_window.max_step(times, 0.05, 1.05), 0.7)
-        self.assertEqual(a8_window.max_step([0.0, 0.1], 5.0, 6.0), 1.0)  # no sample inside
-        self.assertEqual(a8_window.max_step([1.5], 1.0, 2.0), 0.5)  # the window's own edges count
+        self.assertEqual(a8_decision.max_step(times, 0.05, 1.05), 0.7)
+        self.assertEqual(a8_decision.max_step([0.0, 0.1], 5.0, 6.0), 1.0)  # no sample inside
+        self.assertEqual(a8_decision.max_step([1.5], 1.0, 2.0), 0.5)  # the window's own edges count
 
     def test_ready_must_be_a2s_app_and_its_shown_main_window(self):
-        self.assertIsNone(a8_window.ready_problem(a8_ready(), A8_LAUNCH))
+        self.assertIsNone(a8_decision.ready_problem(a8_ready(), A8_LAUNCH))
         for change, words in (({'ok': False, 'reason': 'found 0'}, 'no owned main window: found 0'), ({'pid': 32}, 'not A2'),
                               ({'startedUtc': 'other'}, 'not A2'), ({'executable': 'C:\\Devbox\\Devbox.exe'}, 'another executable'),
                               ({'title': 'Devbox'}, 'no main window'), ({'class': 'Chrome_WidgetWin_1'}, 'no main window'), ({'hwnd': 0}, 'no main window'),
                               ({'state': {'pid': 31, 'visible': False, 'iconic': False}}, 'visible and restored'),
                               ({'state': {'pid': 31, 'visible': True, 'iconic': True}}, 'visible and restored'),
                               ({'trayWindows': 0}, 'WM_CLOSE would quit it'), ({'event': 'expired'}, 'did not answer ready')):
-            self.assertIn(words, a8_window.ready_problem(a8_ready(**change), A8_LAUNCH), change)
-        self.assertIn('did not answer', a8_window.ready_problem(None, A8_LAUNCH))
-        self.assertIn('another executable', a8_window.ready_problem(a8_ready(), dict(A8_LAUNCH, executable=None)))
+            self.assertIn(words, a8_decision.ready_problem(a8_ready(**change), A8_LAUNCH), change)
+        self.assertIn('did not answer', a8_decision.ready_problem(None, A8_LAUNCH))
+        self.assertIn('another executable', a8_decision.ready_problem(a8_ready(), dict(A8_LAUNCH, executable=None)))
 
     def test_each_command_needs_its_effect_on_the_same_window(self):
         ready = a8_ready()
@@ -6043,10 +6120,10 @@ class A8Window(unittest.TestCase):
                  ('launch', {'event': 'launch', 'refused': 'The owned executable failed its check: changed'}, 'refused'),
                  ('launch', {'event': 'launch', 'started': False}, 'agent'))
         for command, reply, kind in cases:
-            problem = a8_window.step_problem(command, reply, ready)
+            problem = a8_decision.step_problem(command, reply, ready)
             self.assertEqual(problem and problem['kind'], kind, (command, reply))
-        self.assertIn('did not hide after WM_CLOSE', a8_window.step_problem(*cases[1][:2], ready)['why'])
-        self.assertIn('teardown stops it', a8_window.step_problem('launch', cases[14][1], ready)['why'])
+        self.assertIn('did not hide after WM_CLOSE', a8_decision.step_problem(*cases[1][:2], ready)['why'])
+        self.assertIn('teardown stops it', a8_decision.step_problem('launch', cases[14][1], ready)['why'])
 
     def test_the_agent_sends_only_its_commands_and_takes_only_their_answers(self):
         clock = FakeClock()
@@ -6075,17 +6152,17 @@ class A8Window(unittest.TestCase):
         self.assertEqual(agent.ask('restore', 5)[1]['event'], 'expired')
 
     def test_decision_passes_on_every_signal_path(self):
-        self.assertEqual(a8_window.decide(a8_ctx())[:2], ('PASS', None))
-        status, reason, details = a8_window.decide(a8_ctx())
+        self.assertEqual(a8_decision.decide(a8_ctx())[:2], ('PASS', None))
+        status, reason, details = a8_decision.decide(a8_ctx())
         self.assertEqual((details['mode'], details['failKinds'], details['bridgeShares']['H1']), ('docker', [], 0.04))
         # The bridge did not work: the hidden phases are decided from the children only, and the reason says so.
         quiet = a8_ctx(V0=a8_phase('V0', 4, rate=0.0, bridges=0))
-        self.assertEqual(a8_window.decide(quiet)[0], 'PASS')
-        self.assertIn('decided from the `docker` children only', a8_window.decide(quiet)[1])
+        self.assertEqual(a8_decision.decide(quiet)[0], 'PASS')
+        self.assertIn('decided from the `docker` children only', a8_decision.decide(quiet)[1])
         # No docker child at any time: the bridge bytes decide, and the reason says so.
         bridge = a8_ctx(**{name: a8_phase(name, 0, first=None, rate=40.0 if name in ('H1', 'M1') else 1000.0) for name in ('V0', 'H1', 'S1', 'M1', 'R1')})
         bridge.update(dockerSeen=False, dockerPath=None)
-        status, reason, details = a8_window.decide(bridge)
+        status, reason, details = a8_decision.decide(bridge)
         self.assertEqual((status, details['mode']), ('PASS', 'bridge'))
         self.assertIn('Decided from the bridge bytes only', reason)
         self.assertIn('on the daemon PATH: none', reason)
@@ -6094,94 +6171,94 @@ class A8Window(unittest.TestCase):
         # A visible phase without polls is the frozen-data failure, named by phase.
         for name, phase in (('V0', a8_frozen('V0', 1)), ('S1', a8_frozen('S1', 3, first=4.2)), ('R1', a8_frozen('R1', 1, first=0.3)),
                             ('S1', a8_frozen('S1', 0))):
-            status, reason, details = a8_window.decide(a8_ctx(**{name: phase}))
-            self.assertEqual((status, details['failKinds'], details['notRunKind']), ('FAIL', [a8_window.FROZEN], None), name)
+            status, reason, details = a8_decision.decide(a8_ctx(**{name: phase}))
+            self.assertEqual((status, details['failKinds'], details['notRunKind']), ('FAIL', [a8_decision.FROZEN], None), name)
             self.assertIn('Visible window did not poll in %s (frozen data)' % name, reason)
             self.assertNotIn('#678', reason)
-        self.assertIn('first `docker` child 4.2 s after the second start (needs <= 3 s)', a8_window.decide(a8_ctx(S1=a8_frozen('S1', 3, first=4.2)))[1])
-        self.assertIn('no `docker` child after the second start', a8_window.decide(a8_ctx(S1=a8_frozen('S1', 0)))[1])
-        self.assertIn('reaped children worth 7 minor faults', a8_window.decide(a8_ctx(V0=a8_frozen('V0', 1)))[1])
+        self.assertIn('first `docker` child 4.2 s after the second start (needs <= 3 s)', a8_decision.decide(a8_ctx(S1=a8_frozen('S1', 3, first=4.2)))[1])
+        self.assertIn('no `docker` child after the second start', a8_decision.decide(a8_ctx(S1=a8_frozen('S1', 0)))[1])
+        self.assertIn('reaped children worth 7 minor faults', a8_decision.decide(a8_ctx(V0=a8_frozen('V0', 1)))[1])
         # A hidden phase with polls is #678 not fixed: by a child after the settle, or by the bridge bytes alone.
         for name, phase, words in (('H1', a8_phase('H1', 1, rate=40.0), '1 `docker` children after the 2 s settle (needs 0)'),
                                    ('M1', a8_phase('M1', 0, rate=600.0), 'bridge 600 B/s, 60% of V0 (needs <= 25%)')):
-            status, reason, details = a8_window.decide(a8_ctx(**{name: phase}))
-            self.assertEqual((status, details['failKinds']), ('FAIL', [a8_window.LEAK]), name)
+            status, reason, details = a8_decision.decide(a8_ctx(**{name: phase}))
+            self.assertEqual((status, details['failKinds']), ('FAIL', [a8_decision.LEAK]), name)
             self.assertIn('Hidden window still polled in %s (#678 not fixed): %s' % (name, words), reason)
-        both = a8_window.decide(a8_ctx(H1=a8_phase('H1', 2, rate=40.0), R1=a8_frozen('R1', 0)))
-        self.assertEqual((both[0], both[2]['failKinds']), ('FAIL', [a8_window.LEAK, a8_window.FROZEN]))
+        both = a8_decision.decide(a8_ctx(H1=a8_phase('H1', 2, rate=40.0), R1=a8_frozen('R1', 0)))
+        self.assertEqual((both[0], both[2]['failKinds']), ('FAIL', [a8_decision.LEAK, a8_decision.FROZEN]))
         # A V0 that never polled, with docker working elsewhere, is not "docker missing"; and its quiet bridge is no reference
         # for the hidden phases, which are judged by their children only.
-        frozen = a8_window.decide(a8_ctx(V0=a8_frozen('V0', 0)))
+        frozen = a8_decision.decide(a8_ctx(V0=a8_frozen('V0', 0)))
         self.assertEqual((frozen[0], frozen[2]['mode'], frozen[2]['failKinds'], frozen[2]['bridgeShares'].get('H1')),
-                         ('FAIL', 'docker', [a8_window.FROZEN], None))
+                         ('FAIL', 'docker', [a8_decision.FROZEN], None))
         self.assertIn("V0's bridge bytes are then no reference for the hidden phases", frozen[1])
         # Bridge-only: a shown phase that stays as quiet as a hidden one did not poll.
         bridge = a8_ctx(**{name: a8_phase(name, 0, first=None, rate=40.0 if name in ('H1', 'M1', 'R1') else 1000.0) for name in ('V0', 'H1', 'S1', 'M1', 'R1')})
         bridge.update(dockerSeen=False)
-        status, reason, details = a8_window.decide(bridge)
-        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_window.FROZEN]))
+        status, reason, details = a8_decision.decide(bridge)
+        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_decision.FROZEN]))
         self.assertIn('Visible window did not poll in R1', reason)
         late = dict(bridge, phases=dict(bridge['phases'], R1=a8_phase('R1', 0, first=None, per=[0, 0, 0, 0, 0, 0, 4000, 4000])))
-        self.assertIn('no second above 25% of V0 within 3 s of SC_RESTORE', a8_window.decide(late)[1])
+        self.assertIn('no second above 25% of V0 within 3 s of SC_RESTORE', a8_decision.decide(late)[1])
 
     def test_decision_tells_a_sampling_miss_from_frozen_data(self):
         # Too few children, but the bridge carried the polls: the child reads missed them (NOT_RUN sampling-miss), not FAIL.
         for name, phase in (('S1', a8_phase('S1', 1, first=3.4)), ('R1', a8_phase('R1', 0, first=None)), ('V0', a8_phase('V0', 1))):
-            status, reason, details = a8_window.decide(a8_ctx(**{name: phase}))
+            status, reason, details = a8_decision.decide(a8_ctx(**{name: phase}))
             self.assertEqual((status, details['notRunKind'], details['failKinds']), ('NOT_RUN', 'sampling-miss', []), name)
             self.assertTrue(reason.startswith('sampling-miss in %s: ' % name), reason)
         self.assertIn('but its bridge carried the polls (1000 B/s, 100% of V0, from second 0 after the second start)',
-                      a8_window.decide(a8_ctx(S1=a8_phase('S1', 1, first=3.4)))[1])
-        self.assertIn('but every hidden phase moved at most 25% of its bridge bytes', a8_window.decide(a8_ctx(V0=a8_phase('V0', 1)))[1])
+                      a8_decision.decide(a8_ctx(S1=a8_phase('S1', 1, first=3.4)))[1])
+        self.assertIn('but every hidden phase moved at most 25% of its bridge bytes', a8_decision.decide(a8_ctx(V0=a8_phase('V0', 1)))[1])
         # A V0 without a single child is not excused by its bytes (A2's start-up loads): FAIL, frozen.
-        status, _, details = a8_window.decide(a8_ctx(V0=a8_phase('V0', 0)))
-        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_window.FROZEN]))
+        status, _, details = a8_decision.decide(a8_ctx(V0=a8_phase('V0', 0)))
+        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_decision.FROZEN]))
         # A bridge that comes up late, or stays as quiet as a hidden phase, does not excuse the shortfall.
         for phase in (a8_phase('R1', 1, first=None, per=[40, 40, 40, 4000, 4000, 4000, 4000, 4000]), a8_frozen('R1', 1)):
-            self.assertEqual(a8_window.decide(a8_ctx(R1=phase))[2]['failKinds'], [a8_window.FROZEN])
+            self.assertEqual(a8_decision.decide(a8_ctx(R1=phase))[2]['failKinds'], [a8_decision.FROZEN])
         # The first child late, with the reads leaving more than 30 ms in the 3 s after the action: NOT_RUN sampling-gap.
-        status, reason, details = a8_window.decide(a8_ctx(R1=a8_frozen('R1', 2, first=3.2, early=0.045)))
+        status, reason, details = a8_decision.decide(a8_ctx(R1=a8_frozen('R1', 2, first=3.2, early=0.045)))
         self.assertEqual((status, details['notRunKind']), ('NOT_RUN', 'sampling-gap'))
         self.assertIn('the child reads left 0.045 s without a read within 3 s of SC_RESTORE (more than 0.03 s)', reason)
-        self.assertEqual(a8_window.decide(a8_ctx(R1=a8_frozen('R1', 1, early=0.045)))[2]['notRunKind'], 'sampling-gap')  # one child short
+        self.assertEqual(a8_decision.decide(a8_ctx(R1=a8_frozen('R1', 1, early=0.045)))[2]['notRunKind'], 'sampling-gap')  # one child short
         # No gap over 30 ms, or two children short: FAIL.
-        self.assertEqual(a8_window.decide(a8_ctx(R1=a8_frozen('R1', 2, first=3.2, early=0.03)))[0], 'FAIL')
-        self.assertEqual(a8_window.decide(a8_ctx(R1=a8_frozen('R1', 0, early=0.2)))[0], 'FAIL')
+        self.assertEqual(a8_decision.decide(a8_ctx(R1=a8_frozen('R1', 2, first=3.2, early=0.03)))[0], 'FAIL')
+        self.assertEqual(a8_decision.decide(a8_ctx(R1=a8_frozen('R1', 0, early=0.2)))[0], 'FAIL')
         # A FAIL elsewhere stays a FAIL, and says what was not judged.
-        status, reason, details = a8_window.decide(a8_ctx(H1=a8_phase('H1', 1, rate=40.0), S1=a8_phase('S1', 1, first=3.4)))
-        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_window.LEAK]))
+        status, reason, details = a8_decision.decide(a8_ctx(H1=a8_phase('H1', 1, rate=40.0), S1=a8_phase('S1', 1, first=3.4)))
+        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_decision.LEAK]))
         self.assertIn('; sampling-miss in S1: ', reason)
 
     def test_decision_not_run_and_fail_without_a_judgment(self):
-        self.assertEqual(a8_window.decide(dict(a8_ctx(), a2='FAIL'))[:2], ('NOT_RUN', 'A8 needs A2 (the owned launch that painted first data); A2 is FAIL'))
-        self.assertEqual(a8_window.decide(dict(a8_ctx(), ready='the main window is not visible'))[:2], ('NOT_RUN', 'Precondition: the main window is not visible'))
+        self.assertEqual(a8_decision.decide(dict(a8_ctx(), a2='FAIL'))[:2], ('NOT_RUN', 'A8 needs A2 (the owned launch that painted first data); A2 is FAIL'))
+        self.assertEqual(a8_decision.decide(dict(a8_ctx(), ready='the main window is not visible'))[:2], ('NOT_RUN', 'Precondition: the main window is not visible'))
         neither = a8_ctx(V0=a8_phase('V0', 0, rate=0.0, bridges=0))
         neither.update(dockerSeen=False, dockerPath=None)
-        status, reason, _ = a8_window.decide(neither)
+        status, reason, _ = a8_decision.decide(neither)
         self.assertEqual(status, 'NOT_RUN')
         self.assertIn('Neither signal worked', reason)
         changed = dict(a8_ctx(), daemonChanged=31.5)
-        self.assertEqual(a8_window.decide(changed)[0], 'NOT_RUN')
-        self.assertIn('The accept daemon changed during A8 (31.5 s', a8_window.decide(changed)[1])
+        self.assertEqual(a8_decision.decide(changed)[0], 'NOT_RUN')
+        self.assertIn('The accept daemon changed during A8 (31.5 s', a8_decision.decide(changed)[1])
         gap = a8_ctx(H1=a8_phase('H1', 0, rate=40.0, step=0.8))
-        self.assertEqual(a8_window.decide(gap)[0], 'NOT_RUN')
-        self.assertIn('0.8 s without a sample in H1', a8_window.decide(gap)[1])
+        self.assertEqual(a8_decision.decide(gap)[0], 'NOT_RUN')
+        self.assertIn('0.8 s without a sample in H1', a8_decision.decide(gap)[1])
         # A gap in the child reads could hide a whole `docker` child: no judgment, though the phase looks fine or frozen.
         for phase in (a8_phase('M1', 0, rate=40.0, reads=0.3), a8_phase('R1', 0, first=None, reads=0.3)):
-            status, reason, _ = a8_window.decide(a8_ctx(**{phase['phase']: phase}))
+            status, reason, _ = a8_decision.decide(a8_ctx(**{phase['phase']: phase}))
             self.assertEqual(status, 'NOT_RUN')
             self.assertIn('The WSL child reads left 0.3 s without a read in %s (more than 0.2 s)' % phase['phase'], reason)
-        self.assertEqual(a8_window.decide(a8_ctx(M1=a8_phase('M1', 0, rate=40.0, reads=0.2)))[0], 'PASS')
+        self.assertEqual(a8_decision.decide(a8_ctx(M1=a8_phase('M1', 0, rate=40.0, reads=0.2)))[0], 'PASS')
 
         def stopped(phase, kind, why, left=None, **phases):
             ctx = dict(a8_ctx(**phases), left=left)
-            names = [p[0] for p in a8_window.PLAN]
+            names = [p[0] for p in a8_decision.PLAN]
             for later in names[names.index(phase):]:
                 ctx['phases'].pop(later, None)
             for step in ctx['steps']:
                 if step['phase'] == phase:
                     step['problem'] = {'kind': kind, 'why': why}
-            return a8_window.decide(ctx)
+            return a8_decision.decide(ctx)
         status, reason, details = stopped('H1', 'gone', 'the handle is no longer a window')
         self.assertEqual((status, details['failKinds']), ('FAIL', ['window-gone']))
         self.assertIn('The owned main window went at H1 (the handle is no longer a window): the product quit or closed it', reason)
@@ -6202,11 +6279,11 @@ class A8Window(unittest.TestCase):
         self.assertNotIn('left', stopped('H1', 'userActive', 'x', left='shown')[1])
         for ctx, kind in ((dict(a8_ctx(), a2='FAIL'), 'needs-a2'), (dict(a8_ctx(), ready='x'), 'precondition'), (changed, 'daemon-changed'),
                           (gap, 'sampler-gap'), (neither, 'no-signal')):
-            self.assertEqual(a8_window.decide(ctx)[2]['notRunKind'], kind)
-        self.assertIsNone(a8_window.decide(a8_ctx())[2]['notRunKind'])
+            self.assertEqual(a8_decision.decide(ctx)[2]['notRunKind'], kind)
+        self.assertIsNone(a8_decision.decide(a8_ctx())[2]['notRunKind'])
         # A phase that was observed and failed stays a FAIL when a later command stopped the case.
         status, reason, details = stopped('S1', 'agent', 'no answer', H1=a8_phase('H1', 2, rate=40.0))
-        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_window.LEAK]))
+        self.assertEqual((status, details['failKinds']), ('FAIL', [a8_decision.LEAK]))
         self.assertIn('the case stopped at S1: no answer', reason)
 
     def a8_run(self, product='fixed', a2='PASS', drop=(), gone=None, ready=None, late=0.0, inputs=(), alt=False, race=0):
@@ -6255,13 +6332,13 @@ class A8Window(unittest.TestCase):
         self.assertEqual([(g['phase'], g['passed'], len(g['checks'])) for g in row['gates']], [('H1', True, 1), ('S1', True, 1), ('M1', True, 1), ('R1', True, 1)])
         steps = {s['phase']: s for s in row['steps']}
         self.assertEqual(steps['V0']['observe'][1] - steps['V0']['observe'][0], 12.0)
-        self.assertAlmostEqual(steps['H1']['observe'][0], steps['H1']['answered'] + a8_window.SETTLE, places=3)
+        self.assertAlmostEqual(steps['H1']['observe'][0], steps['H1']['answered'] + a8_decision.SETTLE, places=3)
         # A shown phase starts at its action on the agent's stopwatch: the post, or the end of the second start.
         for name in ('S1', 'R1'):
             self.assertAlmostEqual(steps[name]['observe'][0], steps[name]['acted'], places=3)
             self.assertAlmostEqual(steps[name]['acted'], steps[name]['answered'] - 0.1, places=3)
             self.assertLess(steps[name]['sent'], steps[name]['acted'])
-        self.assertAlmostEqual(steps['M1']['observe'][0], steps['M1']['answered'] + a8_window.SETTLE, places=3)
+        self.assertAlmostEqual(steps['M1']['observe'][0], steps['M1']['answered'] + a8_decision.SETTLE, places=3)
         self.assertLessEqual(steps['R1']['observe'][1], a8_window.CASE_SECONDS)
         phases = row['phases']
         self.assertGreaterEqual(phases['V0']['children'], 2)
@@ -6281,11 +6358,11 @@ class A8Window(unittest.TestCase):
 
     def test_run_tells_a_leak_from_a_frozen_window(self):
         status, results, _, _, _, _ = self.a8_run('leaky')
-        self.assertEqual((status, results[0]['failKinds']), ('FAIL', [a8_window.LEAK]))
+        self.assertEqual((status, results[0]['failKinds']), ('FAIL', [a8_decision.LEAK]))
         self.assertIn('Hidden window still polled in H1 (#678 not fixed)', results[0]['reason'])
         self.assertIn('Hidden window still polled in M1', results[0]['reason'])
         status, results, _, _, _, _ = self.a8_run('frozen')
-        self.assertEqual((status, results[0]['failKinds']), ('FAIL', [a8_window.FROZEN]))
+        self.assertEqual((status, results[0]['failKinds']), ('FAIL', [a8_decision.FROZEN]))
         self.assertIn('Visible window did not poll in S1 (frozen data)', results[0]['reason'])
         self.assertIn('Visible window did not poll in R1', results[0]['reason'])
 
@@ -6300,9 +6377,9 @@ class A8Window(unittest.TestCase):
         self.assertAlmostEqual(h1['lastInputs'][0], 12.0, places=2)  # the check's time less its idle time: the input at 12 s
         self.assertAlmostEqual(h1['lastInputs'][-1], 40.0, places=2)
         self.assertGreater(h1['waited'], 55)
-        self.assertLessEqual(max(b - a for (a, _), (b, _) in zip(h1['checks'], h1['checks'][1:])), a8_window.IDLE_CHECK_SECONDS + 0.2)
+        self.assertLessEqual(max(b - a for (a, _), (b, _) in zip(h1['checks'], h1['checks'][1:])), a8_decision.IDLE_CHECK_SECONDS + 0.2)
         self.assertGreater(row['idleWaitedSeconds'], 55)
-        self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_window.IDLE_WAIT_SECONDS)
+        self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_decision.IDLE_WAIT_SECONDS)
         # The app's own Alt when the second start takes the foreground resets the idle time: M1 waits for it too.
         status, results, process, row, _, _ = self.a8_run(alt=True)
         self.assertEqual(status, 'PASS')
@@ -6326,9 +6403,9 @@ class A8Window(unittest.TestCase):
         self.assertEqual((status, results[0]['notRunKind'], results[0]['windowLeft']), ('NOT_RUN', 'user-active', 'shown'))
         self.assertTrue(results[0]['reason'].startswith('user-active before H1 (WM_CLOSE): keyboard or mouse input in the session'), results[0]['reason'])
         self.assertEqual(self.actions(process), ['state', 'end'])
-        self.assertLessEqual(row['idleWaitedSeconds'], a8_window.IDLE_WAIT_SECONDS)
-        self.assertGreater(row['idleWaitedSeconds'], a8_window.IDLE_WAIT_SECONDS - a8_window.TIMEOUTS['idle'] - 0.5)
-        self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_window.IDLE_WAIT_SECONDS)
+        self.assertLessEqual(row['idleWaitedSeconds'], a8_decision.IDLE_WAIT_SECONDS)
+        self.assertGreater(row['idleWaitedSeconds'], a8_decision.IDLE_WAIT_SECONDS - a8_decision.TIMEOUTS['idle'] - 0.5)
+        self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_decision.IDLE_WAIT_SECONDS)
         # Active from H1 on: the window stays hidden, as H1 left it, since the repair's second start needs the gate as well.
         status, results, process, row, _, elapsed = self.a8_run(inputs=[1015.0 + k for k in range(0, 400, 3)])
         self.assertEqual((status, results[0]['notRunKind'], results[0]['windowLeft']), ('NOT_RUN', 'user-active', 'hidden'))
@@ -6337,7 +6414,7 @@ class A8Window(unittest.TestCase):
         self.assertEqual(self.actions(process), ['close', 'state', 'end'])
         self.assertTrue(row['final']['skipped'].startswith('launch: no time was left of the 120 s'))
         self.assertEqual(results[0]['finalWindow'], {'pid': 31, 'visible': False, 'iconic': False, 'class': 'Tauri Window'})
-        self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_window.IDLE_WAIT_SECONDS)
+        self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_decision.IDLE_WAIT_SECONDS)
         # Active from M1 on: left minimized.
         status, results, process, row, _, _ = self.a8_run(inputs=[1045.0 + k for k in range(0, 400, 3)])
         self.assertEqual((results[0]['notRunKind'], results[0]['windowLeft'], self.actions(process)), ('user-active', 'minimized', ['close', 'launch', 'minimize', 'state', 'end']))
@@ -6382,11 +6459,11 @@ class A8Window(unittest.TestCase):
     def test_the_bounds_keep_the_case_within_its_time(self):
         # The worst case of every wait: the ready answer, each phase with its command's bound, the state read, the end and
         # the agent's exit with a kill; and the idle waits, at most IDLE_WAIT_SECONDS in all.
-        budget = a8_window.TIMEOUTS['ready'] + a8_window.PLAN[0][3]
-        for name, kind, command, seconds in a8_window.PLAN[1:]:
-            budget += a8_window.TIMEOUTS[command] + (a8_window.SETTLE if kind == 'hidden' else 0) + seconds
-        self.assertEqual(a8_window.END_RESERVE, a8_window.TIMEOUTS['end'] + a8_window.CLOSE_SECONDS + a8_window.KILL_SECONDS)
-        self.assertGreater(budget + a8_window.TIMEOUTS['state'] + a8_window.END_RESERVE, a8_window.CASE_SECONDS)  # so the deadline checks matter
+        budget = a8_decision.TIMEOUTS['ready'] + a8_decision.PLAN[0][3]
+        for name, kind, command, seconds in a8_decision.PLAN[1:]:
+            budget += a8_decision.TIMEOUTS[command] + (a8_decision.SETTLE if kind == 'hidden' else 0) + seconds
+        self.assertEqual(a8_window.END_RESERVE, a8_decision.TIMEOUTS['end'] + a8_window.CLOSE_SECONDS + a8_window.KILL_SECONDS)
+        self.assertGreater(budget + a8_decision.TIMEOUTS['state'] + a8_window.END_RESERVE, a8_window.CASE_SECONDS)  # so the deadline checks matter
         self.assertEqual(a8_window.AGENT_SECONDS, 210)  # the agent outlives every driver wait
         self.assertEqual(inspect.signature(common.LineProcess.close).parameters['timeout'].default, 20)
         self.assertIn('self.child.wait(timeout=5)', inspect.getsource(common.LineProcess.close))  # KILL_SECONDS
@@ -6401,12 +6478,14 @@ class A8Window(unittest.TestCase):
         for begin in (1000.0, 1015.0, 1030.0, 1045.0, 1060.0):
             for late in (0.0, 15.0):
                 elapsed = self.a8_run(inputs=[begin + k for k in range(0, 400, 3)], late=late)[5]
-                self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_window.IDLE_WAIT_SECONDS, (begin, late))
+                self.assertLessEqual(elapsed, a8_window.CASE_SECONDS + a8_decision.IDLE_WAIT_SECONDS, (begin, late))
 
     def test_window_agent_checks_before_every_post_and_never_stops_a_process(self):
-        block = NativeScripts.block(NativeScripts('test_uninstall_poll_before_throw'), 'window-agent')
+        text = (BASE / 'native-window.ps1').read_text()
+        block = text[text.index('# A8 (1.0.1, issue #678): one long-lived helper.'):]  # the agent, after the checks and the type
+        code = '\n'.join(line.split('#', 1)[0] for line in text.splitlines())
         for verb in ('Stop-Process', '.Kill(', 'Start-Process', 'Remove-Item', 'Set-ItemProperty', 'New-ItemProperty', 'SendMessage', 'SendInput'):
-            self.assertNotIn(verb, block)
+            self.assertNotIn(verb, code)
         self.assertIn("if ($WaitSeconds -lt 30 -or $WaitSeconds -gt 240) {throw 'WaitSeconds out of range'}", block)
         self.assertLessEqual(a8_window.AGENT_SECONDS, 240)
         # Every answer carries the number of the command it answers and the agent's stopwatch.
@@ -6415,7 +6494,7 @@ class A8Window(unittest.TestCase):
             self.assertIn(part, say)
         self.assertLess(block.index('$n=0'), block.index('function Say($row)'))
         # The user-idle check: the same 30 s as the driver's, read-only, and an unreadable time refuses.
-        self.assertIn('$idleNeedMs=%d' % (a8_window.IDLE_SECONDS * 1000), block)
+        self.assertIn('$idleNeedMs=%d' % (a8_decision.IDLE_SECONDS * 1000), block)
         idle = block[block.index('function User-Active'):block.index('function Acted')]
         for part in ('[S7OwnedWindow]::IdleMilliseconds()', '$row.idleMs -lt 0', '$row.refused=', '$row.idleMs -lt $idleNeedMs', '$row.userActive=$true'):
             self.assertIn(part, idle)
@@ -6446,7 +6525,7 @@ class A8Window(unittest.TestCase):
         self.assertEqual(order, sorted(order))
         self.assertIn('} finally {$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=$old;$env:DEVBOX_UPDATE_FIXTURE=$oldFixture}', launch)
         # A real bound on each stdin read: a StreamReader over the raw stream, never Console.In (synchronous on .NET Framework).
-        self.assertNotIn('[Console]::In', block)
+        self.assertNotIn('[Console]::In', text)
         loop = block[block.index('$stdin=New-Object IO.StreamReader([Console]::OpenStandardInput())'):]
         for part in ('$read=$stdin.ReadLineAsync()', '$read.Wait($left)', "if ($null -eq $line) { break }",
                      "Say @{event='unknown';refused='Unknown command'}; break", "elseif ($name -eq 'idle') { Say @{event='idle';idleMs=[S7OwnedWindow]::IdleMilliseconds()} }"):
@@ -6455,10 +6534,35 @@ class A8Window(unittest.TestCase):
         self.assertLess(loop.index('$n++'), loop.index("if ($name -eq 'end')"))
         self.assertEqual(set(re.findall(r"\$name -eq '([a-z]+)'", loop)), set(a8_window.COMMANDS))
 
+    def test_window_agent_keeps_the_lifecycle_checks_line_for_line(self):
+        """The agent left native-lifecycle.ps1 with the checks it needs, byte for byte: the ownership checks through Check-Exe,
+        Same, Load-Launcher and the installed executable's check, before the type and the agent; its parameters keep their types."""
+        lifecycle = (BASE / 'native-lifecycle.ps1').read_text()
+        window = (BASE / 'native-window.ps1').read_text()
+        end = lambda text, head: text.index('\n}\n', text.index(head)) + 3
+        parts = [lifecycle[lifecycle.index("$ErrorActionPreference='Stop'"):lifecycle.index('# Tauri NSIS writes')],
+                 lifecycle[lifecycle.index('function Same($record) {'):end(lifecycle, 'function Same($record) {')],
+                 lifecycle[lifecycle.index('# D3: the one launcher'):end(lifecycle, 'function Load-Launcher {')],
+                 '$native=Get-Content -LiteralPath $nativeFile -Raw -Encoding UTF8 | ConvertFrom-Json\n$exe=Check-Exe $native\n']
+        for part in parts:
+            self.assertEqual((lifecycle.count(part), window.count(part)), (1, 1), part[:60])
+        order = [window.index(part) for part in parts] + [window.index("Add-Type -TypeDefinition @'"), window.index('$clock=[Diagnostics.Stopwatch]::StartNew()')]
+        self.assertEqual(order, sorted(order))
+        self.assertTrue(window.startswith('param(\n  [string]$Ownership, [string]$HelperRoot, [int]$WaitSeconds=0\n)\n'))
+        for param in ('[string]$Ownership', '[string]$HelperRoot', '[int]$WaitSeconds=0'):
+            self.assertIn(param, lifecycle[:lifecycle.index('\n)\n')])
+        self.assertNotIn('window-agent', lifecycle)
+        self.assertNotIn('S7OwnedWindow', lifecycle)
+        # CONVENTIONS: a file this change made or grew stays within 600 lines.
+        for name in ('a8_window.py', 'a8_decision.py', 'native-window.ps1', 'native-lifecycle.ps1'):
+            self.assertLessEqual(len((BASE / name).read_text().splitlines()), 600, name)
+
     def test_window_type_and_launcher(self):
         text = (BASE / 'native-window.ps1').read_text()
         self.assertEqual(sorted(line.strip() for line in text.splitlines() if 'PostMessage' in line), sorted(validate.WINDOW_POST_LINES))
-        self.assertEqual(set(re.findall(r'0x[0-9A-Fa-f]+', text)), {'0x0010', '0x0112', '0xF020', '0xF120'})
+        window_type = text[text.index("Add-Type -TypeDefinition @'"):text.index("\n'@\n")]
+        self.assertEqual(set(re.findall(r'0x[0-9A-Fa-f]+', window_type)), {'0x0010', '0x0112', '0xF020', '0xF120'})
+        self.assertEqual(set(re.findall(r'0x[0-9A-Fa-f]+', text.replace(window_type, ''))), {'0x00C00000', '0x00000080'})  # the agent's style bits
         for name in ('SendMessage', 'SendInput', 'SetForegroundWindow', 'keybd_event', 'mouse_event', 'PostThreadMessage', 'SendNotifyMessage', 'ShowWindow'):
             self.assertNotIn(name, text)
         self.assertIn('public static long IdleMilliseconds() {', text)
@@ -6466,14 +6570,16 @@ class A8Window(unittest.TestCase):
         sources = validate.helpers()
         self.assertEqual((validate.scan_window_posts(sources), validate.scan_user32(sources), validate.scan_forbidden(sources)), ([], [], []))
         lifecycle = sources['native-lifecycle.ps1']
-        moved = lifecycle.replace('    if (User-Active $row) { return $row }\n    if ($name -eq \'close\')', "    if ($name -eq 'close')", 1)
-        self.assertNotEqual(moved, lifecycle)
+        moved = text.replace("  if (User-Active $row) { return $row }\n  if ($name -eq 'close')", "  if ($name -eq 'close')", 1)
+        self.assertNotEqual(moved, text)
         for name, change in (('native-window.ps1', text.replace('0xF020', '0xF060')), ('native-window.ps1', '# nothing\n'),
                              ('native-observe.ps1', sources['native-observe.ps1'] + '\n# PostMessage\n'), ('a8_window.py', '# PostMessage\n'),
-                             # the posts are called from Post-Command only, each once, after both guards; the type is named in two files
+                             # the posts are called from Post-Command only, each once, after both guards; the type is named in this file only
                              ('native-observe.ps1', sources['native-observe.ps1'] + '\n$c=[S7OwnedWindow]::Restore($hwnd)\n'),
                              ('native-lifecycle.ps1', lifecycle + '\n$c=[S7OwnedWindow]::Close($hwnd)\n'),
-                             ('native-lifecycle.ps1', moved),
+                             ('native-lifecycle.ps1', lifecycle + '\n# S7OwnedWindow\n'),
+                             ('native-window.ps1', text + '\n$c=[S7OwnedWindow]::Close($hwnd)\n'),
+                             ('native-window.ps1', moved),
                              ('a8_window.py', '# S7OwnedWindow\n')):
             self.assertTrue(validate.scan_window_posts(dict(sources, **{name: change})), name)
         # Only the allowed user32 imports, under their own names (an EntryPoint may not rename another function).

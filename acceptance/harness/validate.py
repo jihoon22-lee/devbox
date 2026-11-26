@@ -37,7 +37,7 @@ FORBIDDEN = ['DevboxAccept-s4', 'devbox-s4-accept', '.s4-accept-owner', 'v1/s4-e
              'pip install']
 # A8 (1.0.1): the one exception to "no window messages". PostMessage may appear only in native-window.ps1, only as these
 # lines, each once: the import and three methods with fixed messages (WM_CLOSE, and WM_SYSCOMMAND with SC_MINIMIZE or
-# SC_RESTORE). native-lifecycle.ps1 -Action window-agent calls them only for the owned app's main window.
+# SC_RESTORE). The same file's window agent calls them only for the owned app's main window.
 WINDOW_POST_FILE = 'native-window.ps1'
 WINDOW_POST_LINES = (
     '[DllImport("user32.dll",SetLastError=true)] static extern bool PostMessage(IntPtr window,uint message,IntPtr wParam,IntPtr lParam);',
@@ -46,8 +46,7 @@ WINDOW_POST_LINES = (
     'public static int Restore(long handle) { return Posted(PostMessage(new IntPtr(handle),0x0112,new IntPtr(0xF120),IntPtr.Zero)); }',
 )
 # The three methods are called only by the window agent's Post-Command, as these lines, each once, after the owned-window
-# check and the user-idle check; the type is named only in those two files.
-WINDOW_CALL_FILE = 'native-lifecycle.ps1'
+# check and the user-idle check; the type is named in that file only.
 WINDOW_CALL_LINES = (
     "if ($name -eq 'close') { $code=[S7OwnedWindow]::Close($hwnd); $want={ param($s) -not $s.visible } }",
     "elseif ($name -eq 'minimize') { $code=[S7OwnedWindow]::Minimize($hwnd); $want={ param($s) $s.visible -and $s.iconic } }",
@@ -133,21 +132,21 @@ def scan_window_posts(sources):
         findings.append('%s: the three fixed posts are missing' % WINDOW_POST_FILE)
     for name, text in sources.items():
         calls = [line.strip() for line in text.splitlines() if WINDOW_CALL.search(line)]
-        if name != WINDOW_CALL_FILE:
-            findings += ['%s: an owned-window post is called outside %s' % (name, WINDOW_CALL_FILE) for _ in calls]
+        if name != WINDOW_POST_FILE:
+            findings += ['%s: an owned-window post is called outside %s' % (name, WINDOW_POST_FILE) for _ in calls]
+            if 'S7OwnedWindow' in text:
+                findings.append('%s: S7OwnedWindow outside %s' % (name, WINDOW_POST_FILE))
         elif sorted(calls) != sorted(WINDOW_CALL_LINES):
             findings.append('%s: the owned-window posts are called other than in the three pinned lines' % name)
-        if 'S7OwnedWindow' in text and name not in (WINDOW_POST_FILE, WINDOW_CALL_FILE):
-            findings.append('%s: S7OwnedWindow outside %s and %s' % (name, WINDOW_POST_FILE, WINDOW_CALL_FILE))
-    if WINDOW_CALL_FILE in sources:
-        text = sources[WINDOW_CALL_FILE]
+    if WINDOW_POST_FILE in sources:
+        text = sources[WINDOW_POST_FILE]
         begin, end = text.find('function Post-Command'), text.find('function Launch-Again')
         body = text[begin:end] if 0 <= begin < end else ''
         if not all(line in body for line in WINDOW_CALL_LINES):
-            findings.append('%s: the owned-window posts are not all in Post-Command' % WINDOW_CALL_FILE)
+            findings.append('%s: the owned-window posts are not all in Post-Command' % WINDOW_POST_FILE)
         else:
             first = min(body.index(line) for line in WINDOW_CALL_LINES)
-            findings += ['%s: Post-Command can post before %s' % (WINDOW_CALL_FILE, guard) for guard in WINDOW_CALL_GUARDS
+            findings += ['%s: Post-Command can post before %s' % (WINDOW_POST_FILE, guard) for guard in WINDOW_CALL_GUARDS
                          if guard not in body or body.index(guard) > first]
     return findings
 
@@ -436,7 +435,7 @@ def main(argv=None):
               'lockFile': 'present' if lock.is_file() else 'absent (created by verify-resources.py --lock windows-acceptance)',
               'forbidden': 'none', 'toolConfigPaths': 'trust_probe only', 'allowlists': 'consistent', 'wslPurity': 'PASS',
               'ps1Encoding': 'ASCII or UTF-8 BOM', 'ps1Launch': 'no Start-Process with redirection',
-              'windowPosts': WINDOW_POST_FILE + ': WM_CLOSE, SC_MINIMIZE and SC_RESTORE only, called from ' + WINDOW_CALL_FILE + ' Post-Command',
+              'windowPosts': WINDOW_POST_FILE + ': WM_CLOSE, SC_MINIMIZE and SC_RESTORE only, called from its own Post-Command',
               'user32': 'read-only window reads, GetLastInputInfo and the three posts',
               'driverWslMethods': wsl_methods, 'scratch': 'none', 'fixture': check_fixture(), 'helperSha256': helper_hashes(BASE),
               'sourceBinding': 'UNBOUND' if not BINDING_FILE.exists() else {side: (config.get(side) or {}).get('sha') for side in ('candidate', 'baseline')}}

@@ -38,6 +38,9 @@ Each item is a lesson of the 1.0.0 acceptance.
 - **Polling follows the window (A8, #678).** In `fresh` right after A2, A8 hides, shows, minimizes and restores the owned
   main window and checks that the app's display polls stop and come back with it. See "The owned window (A8)" under the
   rules and the status rules in §4. Not yet run live.
+- **Start phases.** The app logs `start-phase run=<id> phase=<name> elapsed_ms=<n>` for each step of its start, on the
+  clock of first-data-painted. A2 keeps them as `startPhases` in `sc2-candidate.json` and its measurement; C1 keeps
+  those of its relaunch in `relaunch`. A start-phase line of another form is left out and counted (`startPhasesIgnored`).
 
 This harness accepts the 1.0.0-rc.2 candidate on this PC. It is built from the reviewed S6-6b harness and follows
 `.superpowers/sdd/10-s7-s8-release/s7-14-harness-changes.md` and `s7-14-matrix.md`. Only the controller runs it, and
@@ -190,7 +193,7 @@ only after an independent review of these files.
   - `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (the debug port) and `DEVBOX_UPDATE_FIXTURE` are set only in the launching
     helper's own environment block and restored right after the start; never a user or machine variable.
 - **The owned window (A8, 1.0.1).**
-  - A8 drives one long-lived `native-lifecycle.ps1 -Action window-agent`: one command on stdin, one JSON line back with
+  - A8 drives one long-lived window agent, `native-window.ps1`: one command on stdin, one JSON line back with
     the command's number `n` (a late answer is never taken for the next command). Each stdin read has a real bound (a
     StreamReader on the raw stdin; `Console.In` reads synchronously on .NET Framework), and every other wait is bounded:
     the case takes at most 90 s of its own plus at most 120 s waiting for an idle user. Phases: V0 as A2 left it, 12 s;
@@ -260,10 +263,11 @@ only after an independent review of these files.
 | `w1_windows.py` | W1 Windows exec rows: control files, the W1-F console watcher, the W1-H console sampler, the exact holder stop. |
 | `a4_windows_service.py` | A4 Windows service readiness. |
 | `g1_live_member.py`, `g2_probe_timing.py` | G1 and G2 interop gates. The driver runs them in the `fresh` flow. |
-| `a8_window.py` | A8: the `/proc` sampler (the daemon's `docker` children, the accept bridge bytes), the window agent's commands, the decision. |
+| `a8_window.py` | A8: the `/proc` sampler (the daemon's `docker` children, the accept bridge bytes), the window agent's commands, the run. |
+| `a8_decision.py` | A8's phases, thresholds and decision. Pure. |
 | `native-observe.ps1` | Read-only: preflight, prod fingerprint, identity, residue, `console-windows`, `console-watch`. |
-| `native-lifecycle.ps1` | Install from the owned stage, upgrade, launch, stop, uninstall with the 30 s registration poll; `update-begin`, `update-observe`, `update-adopt` and `-Foreign` for the update flow; `window-agent` for A8. |
-| `native-window.ps1` | A8's window type: read-only user32 calls and the three fixed posts. |
+| `native-lifecycle.ps1` | Install from the owned stage, upgrade, launch, stop, uninstall with the 30 s registration poll; `update-begin`, `update-observe`, `update-adopt` and `-Foreign` for the update flow. |
+| `native-window.ps1` | A8's window agent: `native-lifecycle.ps1`'s ownership checks (line for line), the window type (read-only user32 calls and the three fixed posts), and the commands. |
 | `process-launch.ps1` | Handle-list launcher (start, start-and-wait for the self-check, and A8's second start, which it never stops). |
 | `native-cdp.ps1` | The one client of the owned app's WebView2 debug port: five update commands, bounded waits. |
 | `update_fixture.py` | The accept update fixture as the product reads it, and the update shape. Pure. |
@@ -524,7 +528,8 @@ the rest otherwise (NOT_RUN `user-active`, after at most 120 s of waiting). Leav
 - the config file bytes are unchanged;
 - the state is normal after the restore.
 
-A plain app relaunch is recorded only.
+A plain app relaunch is recorded only. Once the last step is done, C1 reads that launch's stderr log (waiting at most
+60 s for its first-data-painted line) and keeps its first-data-painted and `start-phase` lines in `relaunch`.
 
 ## 3. W1 (라): a controller step, not a harness case
 
