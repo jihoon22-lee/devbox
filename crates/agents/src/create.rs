@@ -77,6 +77,9 @@ impl AgentsService {
         })?;
         // A missing CLI ends the start here, before any task, branch or worktree exists.
         let tool = tool?;
+        crate::antigravity_service::work_folder_check(&profile, p.worktree)?;
+        crate::first_instruction::admit(&profile, &p.prompt)?;
+        crate::prompt_arg::admit(&profile, &p.prompt)?;
         if snapshot.project_id() != p.project_id || snapshot.canonical_path() != project.path {
             return Err(AgentsError::UnsafeWorktree.into());
         }
@@ -107,6 +110,8 @@ impl AgentsService {
             .collect();
         let now = now_ms();
         let id = format!("a{}", uuid::Uuid::new_v4().simple());
+        // Before the task is written: a start of the watcher tried again meanwhile must know it.
+        self.note_created(&id);
         // pi starts the session devbox names, so the task has it before anything is launched.
         let session_id = (profile.hooks == crate::profile::Hooks::Pi)
             .then(|| uuid::Uuid::new_v4().hyphenated().to_string());
@@ -158,10 +163,17 @@ impl AgentsService {
                     } else {
                         (None, None)
                     };
+                    if let Err(e) =
+                        crate::antigravity_service::hooks_folder_free(&profile, worktree.as_deref())
+                    {
+                        return Ok(Err(e));
+                    }
                     let port = match allocate_port(&existing) {
                         Ok(v) => v,
                         Err(e) => return Ok(Err(e)),
                     };
+                    let first_instruction =
+                        crate::first_instruction::queued(&profile, &p.prompt, now);
                     let task = AgentTask {
                         id,
                         project_id: project.id,
@@ -195,6 +207,7 @@ impl AgentsService {
                         // The launch below starts now; pi says when it reads its input.
                         starting_since_ms: (profile.hooks == crate::profile::Hooks::Pi)
                             .then_some(now),
+                        first_instruction,
                     };
                     if let Err(error) = crate::limits::serialized(&task, crate::limits::TASK_BYTES)
                     {
@@ -206,11 +219,17 @@ impl AgentsService {
                     store::put(tx, &task)?;
                     let mut binding = Binding::new(now);
                     binding.launch_id = Some(uuid::Uuid::new_v4().simple().to_string());
+                    // agy gets no prompt argument: its first launch waits at its prompt for an
+                    // instruction, like a resumed session's (`Binding::resumed_session`).
+                    binding.resumed_session = profile.hooks == crate::profile::Hooks::Antigravity;
                     store::put_binding(tx, &task.id, &binding)?;
                     Ok(Ok((task, profile)))
                 },
                 move |(task, profile), rev| {
                     let _tracked_reservation = committed_reservation;
+                    if task.first_instruction.is_some() {
+                        tracing::info!(agent = %task.id, outcome = "queued", "first instruction");
+                    }
                     changed(&hub, task, rev, false);
                     let task = task.clone();
                     let profile = profile.clone();

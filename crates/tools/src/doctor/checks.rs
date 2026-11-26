@@ -105,7 +105,7 @@ pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
     ));
     let path = p.daemon_path();
     for tool in [
-        "git", "claude", "codex", "opencode", "pi", "gh", "node", "pnpm",
+        "git", "claude", "codex", "opencode", "pi", "agy", "gh", "node", "pnpm",
     ] {
         if let Some(agent) = AgentTool::ALL.into_iter().find(|a| a.binary() == tool) {
             if scope == Scope::Full {

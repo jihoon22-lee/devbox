@@ -2,6 +2,8 @@ use super::*;
 use crate::tracker::{Binding, Resources};
 use devbox_protocol::Fail;
 
+#[path = "antigravity_cleanup_tests.rs"]
+mod antigravity_cleanup_tests;
 #[path = "cleanup_left_tests.rs"]
 mod cleanup_left_tests;
 #[path = "close_review_tests.rs"]

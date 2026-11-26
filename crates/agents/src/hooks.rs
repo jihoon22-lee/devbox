@@ -13,6 +13,7 @@ pub enum HookSource {
     Exit,
     Opencode,
     Pi,
+    Antigravity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -26,6 +27,7 @@ impl std::str::FromStr for HookSource {
             "codex" => Ok(Self::Codex),
             "opencode" => Ok(Self::Opencode),
             "pi" => Ok(Self::Pi),
+            "antigravity" => Ok(Self::Antigravity),
             "setup" => Ok(Self::Setup),
             "exit" => Ok(Self::Exit),
             _ => Err(InvalidHookSource),
@@ -92,6 +94,7 @@ pub fn parse(source: HookSource, payload: &str, code: Option<i32>) -> Vec<AgentE
             code: code.unwrap_or(-1),
         }],
         HookSource::Codex => vec![],
+        HookSource::Antigravity => crate::antigravity::events(payload),
         HookSource::Opencode | HookSource::Pi => {
             crate::plugin_event::parse_plugin_event(source, payload)
         }

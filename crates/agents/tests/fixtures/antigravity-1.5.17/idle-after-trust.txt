@@ -1,0 +1,55 @@
+# 실제 녹화. Antigravity CLI(agy) 1.5.17, 2026-11-25, 소유 임시 git 저장소와 전용 tmux socket. 구현 확인 캡처 d5-V-02-after-trust-accept-3s.txt.
+# 신뢰 화면에서 Enter로 신뢰한 직후, 첫 지시 전의 빈 입력창.
+# 정리: 소유 fixture 경로는 /owned/project/fixture-task로 가렸다. 배너 둘째 줄의 계정·요금제는 fixture-account (fixture-plan)으로 바꿨고, 사용자 상태 줄(🕒로 시작)에서는 토큰·사용량 한도·메모리·디스크 칸을 지우고 대화 표시(🆔)는 #00000000으로 바꿨다(그 줄은 짧아졌다). 계정 상태를 알리는 두 줄짜리 알림(⚠ 줄과 그 아래 ⎿ 줄)이 있던 화면은 그 두 줄의 글만 바꿨다.
+# 그 밖의 줄, 줄 수와 빈 줄은 capture 그대로다(tmux capture-pane -p, 200x50). 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+      ▄▀▀▄        Antigravity CLI 1.5.17
+     ▀▀▀▀▀▀       fixture-account (fixture-plan)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     /owned/project/fixture-task
+  ▄▀▀      ▀▀▄
+
+
+ ┃ Gemini 4 Carbon now available!
+ ┃ Both Carbon and Argon are now included as part of the entire Gemini entitlement, so you can use them for much longer.
+ ┃ esc to dismiss
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+🕒 22:12:53 │ 🤖 Gemini 3.8 Flash │ ⚡ High │ ● idle │ 🛡️ Auto │ 📁 /owned/project/fixture-task │ 🌿 master
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

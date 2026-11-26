@@ -1,4 +1,4 @@
-//! The environment check's look at the four agent CLIs.
+//! The environment check's look at the five agent CLIs.
 use super::{OsProbe, runner};
 use devbox_agents::command_path::{self, CommandSource, InteractiveShell, LookupCache, ShellProbe};
 use devbox_tools::doctor::{AgentCommand, AgentTool, ProbeIssue, Probed};
@@ -24,7 +24,7 @@ impl OsProbe {
     }
 }
 
-/// Looks the four agent CLIs up afresh and asks each one found for its version. The shell's fresh
+/// Looks the five agent CLIs up afresh and asks each one found for its version. The shell's fresh
 /// answers replace the ones in `cache`, so the next task start uses a CLI installed since; a
 /// lookup the shell did not answer leaves the cached one as it was.
 pub(super) fn look_up(

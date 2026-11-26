@@ -320,7 +320,8 @@ pub(crate) fn tokens_for(
     binding: Option<&Binding>,
 ) -> AgentUsage {
     let (path, session) = match hooks {
-        Hooks::None | Hooks::Opencode | Hooks::Pi => return empty(false),
+        // Read by their own modules (`metrics::read_usage`).
+        Hooks::None | Hooks::Opencode | Hooks::Pi | Hooks::Antigravity => return empty(false),
         Hooks::Claude => {
             let Some(id) = task.session_id.as_deref().filter(|id| {
                 !id.is_empty()
@@ -367,7 +368,7 @@ pub(crate) fn tokens_for(
     match hooks {
         Hooks::Claude => claude_read(BufReader::new(file), session, &task.workdir),
         Hooks::Codex => codex_read(BufReader::new(file), session, &task.workdir),
-        Hooks::None | Hooks::Opencode | Hooks::Pi => empty(false),
+        Hooks::None | Hooks::Opencode | Hooks::Pi | Hooks::Antigravity => empty(false),
     }
 }
 #[cfg(test)]

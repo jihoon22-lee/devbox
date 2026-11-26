@@ -108,7 +108,7 @@ fn the_startup_doctor_asks_no_shell_and_starts_no_agent_cli() {
     executable(&tools.join("tmux"), "printf '%s\\n' 'tmux 3.6'");
     // The interactive shell and the agent CLIs only record that they were started.
     let started = home.join("started");
-    for tool in ["bash", "claude", "codex", "opencode", "pi"] {
+    for tool in ["bash", "claude", "codex", "opencode", "pi", "agy"] {
         executable(
             &tools.join(tool),
             &format!("echo {tool} >> '{}'", started.display()),
@@ -148,6 +148,7 @@ fn the_startup_doctor_asks_no_shell_and_starts_no_agent_cli() {
         "tool.codex",
         "tool.opencode",
         "tool.pi",
+        "tool.agy",
         "auth.claude",
         "auth.codex",
     ];
@@ -176,7 +177,7 @@ fn the_startup_doctor_asks_no_shell_and_starts_no_agent_cli() {
     assert_eq!(
         seen,
         [
-            "bash", "bash", "bash", "bash", "claude", "codex", "opencode", "pi"
+            "agy", "bash", "bash", "bash", "bash", "bash", "claude", "codex", "opencode", "pi"
         ]
     );
     // Agent rows never fail, so leaving them out cannot change whether a launch goes on.

@@ -159,6 +159,7 @@ mod tests {
             tokens_truncated: false,
             activity_seq: 0,
             starting_since_ms: None,
+            first_instruction: None,
         }
     }
     #[test]

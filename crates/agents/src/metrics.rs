@@ -178,6 +178,13 @@ impl AgentsService {
             .await
             .internal("read bounded pi tokens");
         }
+        if hooks == crate::profile::Hooks::Antigravity {
+            return tokio::task::spawn_blocking(move || {
+                crate::usage_antigravity::usage(&home, &task, binding.as_ref())
+            })
+            .await
+            .internal("read bounded Antigravity tokens");
+        }
         tokio::task::spawn_blocking(move || {
             crate::usage::tokens_for(&home, &task, hooks, binding.as_ref())
         })

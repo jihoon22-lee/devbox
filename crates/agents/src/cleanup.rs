@@ -376,6 +376,8 @@ impl AgentsService {
                 )
                 .await
                 .map_err(git_failure)?;
+                // The work folder is gone already; what devbox put beside it goes too.
+                self.remove_agy_hooks(&current);
                 self.record_cleaned(&task.id).await?;
                 continue;
             }
@@ -454,6 +456,7 @@ impl AgentsService {
             devbox_git::mutate::worktree_remove(Path::new(&project.path), &path, false)
                 .await
                 .map_err(git_failure)?;
+            self.remove_agy_hooks(&task);
             if selected_branches.contains(&branch) {
                 devbox_git::mutate::delete_branch_at(
                     Path::new(&project.path),

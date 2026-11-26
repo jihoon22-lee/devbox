@@ -38,12 +38,18 @@ closedMergeOid: string | null, cleanupError: string | null,
  * When the current launch started, until its tool says it reads its input. Only pi says so,
  * through devbox's extension, so other tools never have it.
  */
-startingSinceMs: number | null, };
+startingSinceMs: number | null, 
+/**
+ * The delivery of the task's prompt as its first instruction, for a tool that takes no
+ * prompt argument (Antigravity). Tasks of the other tools, and ones started without a
+ * prompt, have none.
+ */
+firstInstruction?: FirstInstruction, };
 export type AgentTest = { runId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
-export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.control_characters" } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.teardown_failed", "detail": { index: number, exit_code: number | null, } } | { "code": "agents.worktree_has_submodules", "detail": { path: string, } } | { "code": "agents.delivery_unknown" } | { "code": "agents.awaiting_input" } | { "code": "agents.tool_starting" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } } | { "code": "agents.tool_missing", "detail": { command: string, } };
+export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.control_characters" } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.teardown_failed", "detail": { index: number, exit_code: number | null, } } | { "code": "agents.worktree_has_submodules", "detail": { path: string, } } | { "code": "agents.delivery_unknown" } | { "code": "agents.awaiting_input" } | { "code": "agents.tool_starting" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } } | { "code": "agents.tool_missing", "detail": { command: string, } } | { "code": "agents.work_folder_required", "detail": { tool: string, } } | { "code": "agents.hooks_folder_exists", "detail": { path: string, } } | { "code": "agents.first_instruction_command", "detail": { tool: string, } } | { "code": "agents.prompt_option", "detail": { tool: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
 export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.redaction_failed", "detail": { reason: string, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.response_export_failed", "detail": { reason: string, } } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
 export type AppMs = { app: string, ms: number, };
@@ -260,6 +266,16 @@ export type FileTreeCursor = { after: string, rev: string, };
 export type FileTreeQuery = { projectId: string, dir: string, showHidden: boolean, cursor: FileTreeCursor | null, };
 export type FilesError = { "code": "files.invalid_input" } | { "code": "files.out_of_scope" } | { "code": "files.not_found" } | { "code": "files.exists" } | { "code": "files.state_changed" } | { "code": "files.not_empty" } | { "code": "files.limit_exceeded" } | { "code": "files.editor_unavailable" };
 export type FilesystemInfo = { totalBytes: number, availableBytes: number, usedBytes: number, };
+export type FirstInstruction = { delivery: InstructionDelivery, 
+/**
+ * When `delivery` last changed.
+ */
+atMs: number, 
+/**
+ * Why it was not sent, where the task's own record does not show it.
+ */
+reason?: FirstInstructionReason, };
+export type FirstInstructionReason = "unobserved";
 export type FollowUp = { atMs: number, text: string, instructionId?: string, delivery?: InstructionDelivery, };
 export type GetAgent = { id: string, };
 export type GetAgentPatch = { id: string, path: string, };
@@ -322,8 +338,8 @@ export type HistoryPage = { items: Array<HistorySummary>, next: string | null, }
 export type HistoryQuery = { before: string | null, limit: number, origin: RequestOrigin | null, };
 export type HistoryResponse = { status: number, reason: string, httpVersion: string, headers: Array<Pair>, redirects: Array<Redirect>, elapsedMs: number, sizeBytes: number, binary: boolean, };
 export type HistorySummary = { id: string, sentAtMs: number, method: string, url: string, status: number | null, elapsedMs: number, sizeBytes: number, outcome: HistoryOutcome, runId: string | null, origin: RequestOrigin | null, };
-export type HookSource = "claude" | "codex" | "setup" | "exit" | "opencode" | "pi";
-export type Hooks = "claude" | "codex" | "opencode" | "pi" | "none";
+export type HookSource = "claude" | "codex" | "setup" | "exit" | "opencode" | "pi" | "antigravity";
+export type Hooks = "claude" | "codex" | "opencode" | "pi" | "antigravity" | "none";
 export type HourMs = { 
 /**
  * Local hour `0..=23`.
@@ -362,7 +378,7 @@ date: string | null, };
 export type InstallLsp = { projectId: string, language: Language, expectedCommand: string, };
 export type InstallPlan = { "kind": "wsl", command: string, title: string, shellCommand: string, } | { "kind": "windows", package: WindowsPackage, } | { "kind": "manual", text: string, } | { "kind": "none" };
 export type Installed = { terminalId: string, };
-export type InstructionDelivery = "pending" | "delivered" | "unknown";
+export type InstructionDelivery = "pending" | "delivered" | "unknown" | "queued" | "notSent";
 export type InvalidRule = { field: RuleField, 
 /**
  * Zero-based position in the submitted list. `TooMany` reports the first
@@ -495,7 +511,7 @@ export type ProjectSummary = { id: string, branch?: string, dirty: boolean | nul
 export type ProjectSummaryIssue = { message: string, };
 export type ProjectSummaryList = { items: Array<ProjectSummary>, };
 export type ProjectsChanged = { rev: string, };
-export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_tool_missing", "detail": { command: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
+export type ProjectsError = { "code": "projects.path_invalid", "detail": { path: string, } } | { "code": "projects.not_directory", "detail": { path: string, } } | { "code": "projects.already_exists", "detail": { path: string, } } | { "code": "projects.not_found", "detail": { id: string, } } | { "code": "projects.in_use", "detail": { id: string, } } | { "code": "projects.configuration_invalid", "detail": { message: string, } } | { "code": "projects.launch_profile_not_found", "detail": { id: string, } } | { "code": "projects.launch_tool_missing", "detail": { command: string, } } | { "code": "projects.launch_work_folder_required", "detail": { tool: string, } } | { "code": "projects.launch_failed", "detail": { terminals: number, agents: number, services: number, run_ids: Array<string>, message: string, } } | { "code": "projects.clone_invalid_url" } | { "code": "projects.clone_target_exists", "detail": { path: string, } } | { "code": "projects.clone_failed", "detail": { path: string, message: string, } } | { "code": "projects.unsafe_prompt_path", "detail": { path: string, } } | { "code": "projects.prompt_limit_exceeded", "detail": { max_files: number, max_bytes: number, } } | { "code": "projects.prompt_invalid_encoding", "detail": { name: string, } } | { "code": "projects.trust_required", "detail": { id: string, } } | { "code": "projects.trust_preview_stale", "detail": { id: string, } } | { "code": "projects.trust_context_invalid" };
 export type PromptList = { items: Array<ProjectPrompt>, };
 export type PublicKeyStatus = { locked: boolean, keyMismatch: boolean, };
 export type RangeActivity = { rev: string, days: Array<DayTotal>, apps: Array<AppMs>, projects: Array<ProjectMs>, };
@@ -752,7 +768,12 @@ export type TextEdit = { fromUtf16: number, toUtf16: number, text: string, };
 export type TitleMs = { app: string, title: string, ms: number, };
 export type TlsOptions = { verify: boolean, caPath: string | null, clientCertPath: string | null, clientKeyPath: string | null, };
 export type Tokens = { input: number, output: number, cacheRead: number, cacheWrite: number, };
-export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, };
+export type ToolProfile = { id: string, label: string, command: string, hooks: Hooks, waitingPatterns: Array<string>, 
+/**
+ * How a `hooks = "none"` profile gets the task's prompt as an argument (see `prompt_arg`).
+ * Without it the prompt is not passed.
+ */
+promptArg: string | null, };
 export type ToolsDiagnosticsInfo = { logDir: string, };
 export type ToolsEmpty = Record<symbol, never>;
 export type ToolsError = { "code": "tools.invalid_input" } | { "code": "tools.support_failed" } | { "code": "tools.support_too_large" };
@@ -1251,7 +1272,9 @@ export const RPC_ERROR_CODES = [
   "agents.control_characters",
   "agents.delivery_unknown",
   "agents.discard_snapshot_unavailable",
+  "agents.first_instruction_command",
   "agents.gh_missing",
+  "agents.hooks_folder_exists",
   "agents.input_too_large",
   "agents.invalid_input",
   "agents.list_changed",
@@ -1262,6 +1285,7 @@ export const RPC_ERROR_CODES = [
   "agents.profile_not_found",
   "agents.project_not_found",
   "agents.project_trust_required",
+  "agents.prompt_option",
   "agents.resume_unavailable",
   "agents.review_unavailable",
   "agents.session_metadata",
@@ -1277,6 +1301,7 @@ export const RPC_ERROR_CODES = [
   "agents.tool_starting",
   "agents.unmerged_commits",
   "agents.unsafe_worktree",
+  "agents.work_folder_required",
   "agents.worktree_add_partial",
   "agents.worktree_dirty",
   "agents.worktree_has_submodules",
@@ -1403,6 +1428,7 @@ export const RPC_ERROR_CODES = [
   "projects.launch_failed",
   "projects.launch_profile_not_found",
   "projects.launch_tool_missing",
+  "projects.launch_work_folder_required",
   "projects.not_directory",
   "projects.not_found",
   "projects.path_invalid",

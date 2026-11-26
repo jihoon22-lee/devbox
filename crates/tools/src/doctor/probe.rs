@@ -47,15 +47,24 @@ pub enum AgentTool {
     Codex,
     Opencode,
     Pi,
+    /// The Antigravity CLI, `agy`.
+    Antigravity,
 }
 impl AgentTool {
-    pub const ALL: [Self; 4] = [Self::Claude, Self::Codex, Self::Opencode, Self::Pi];
+    pub const ALL: [Self; 5] = [
+        Self::Claude,
+        Self::Codex,
+        Self::Opencode,
+        Self::Pi,
+        Self::Antigravity,
+    ];
     pub fn binary(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Opencode => "opencode",
             Self::Pi => "pi",
+            Self::Antigravity => "agy",
         }
     }
     /// The lowest version devbox has verified its connection with, where one matters.
@@ -65,6 +74,7 @@ impl AgentTool {
             Self::Codex => None,
             Self::Opencode => Some("1.19.3"),
             Self::Pi => Some("1.3.0"),
+            Self::Antigravity => Some("1.5.17"),
         }
     }
 }

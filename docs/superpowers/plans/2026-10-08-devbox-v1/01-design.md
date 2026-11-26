@@ -98,8 +98,8 @@
 | 에이전트 | 작업 생성: 제목·도구 프로필·기준 브랜치 선택 → worktree(또는 "worktree 없이 현재 체크아웃에서") → 준비(`[agent] copy`·`setup`) → tmux 세션 → 도구 실행 + 초기 지시문 | 유지·강화 | `agent_hub` |
 | 에이전트 | 목록: 긴급순(입력 대기 → 실패 → 검토 대기 → 실행 중 → 준비 중 → 닫힘). 행마다 hook 메시지 한 줄, 경과 시간, CPU·메모리, 토큰 합계, 변경 파일 수, 기준 대비 뒤처짐 | 강화 | `agent_resources`, `agent_usage` |
 | 에이전트 | 격자 보기: 여러 에이전트 터미널을 읽기 전용으로 동시에(분리 창 가능) | 신규 | |
-| 에이전트 | 상태 감지: 기본 도구 4종(Claude Code·Codex·opencode·pi). 연결은 작업 실행마다 주입하고 사용자 설정은 건드리지 않음. Claude Code hooks(`--settings`)·Codex `notify`(`-c`, 턴 완료 후보)와 rollout 기록·opencode 플러그인(`OPENCODE_CONFIG_CONTENT`, 권한 요청·질문)·pi 확장(`-e`, 준비 알림·폴더 신뢰 질문) → `devbox agent event` → 데몬. 승인·입력 대기 화면은 `hooks` 계열마다 늘 붙는 기본 패턴(`family_patterns.rs`)과 프로필의 `waitingPatterns`로 tmux 화면에서 알아봄. `DEVBOX_AGENT_ID`가 없으면 hook·플러그인·확장은 아무것도 하지 않음 | 신규 | 화면 긁기 대신 공식 hook(PL-5). 4종 연결은 S7-5·S7-7·S7-8 |
-| 에이전트 | 세션 ID 기록과 재개(`claude --resume <id>`, `codex resume <id>`, `opencode -s <id>`, `pi --session-id <id>`). id를 모르면 pi는 지시문 없이 새 세션을 열고 나머지는 처음 지시문으로 새로 시작. 지시문·이어서 지시 이력·토큰 합계·커밋 목록을 종료 시 DB에 고정 | 신규 | Claude transcript는 30일 뒤 삭제됨 |
+| 에이전트 | 상태 감지: 기본 도구 5종(Claude Code·Codex·opencode·pi·Antigravity). 연결은 작업 실행마다 주입하고 사용자 설정은 건드리지 않음. Claude Code hooks(`--settings`)·Codex `notify`(`-c`, 턴 완료 후보)와 rollout 기록·opencode 플러그인(`OPENCODE_CONFIG_CONTENT`, 권한 요청·질문)·pi 확장(`-e`, 준비 알림·폴더 신뢰 질문)·Antigravity hook 폴더(작업 폴더 옆 `<작업 폴더>.agy-hooks`의 `.agents/hooks.json`을 `agy --add-dir`로 작업 공간에 더함, `SessionStart`·`PreInvocation`·`Stop`만 등록, 작업 폴더가 있어야 하고 작업 폴더와 함께 지움(작업 표시 파일과 `.agents/hooks.json` 말고 다른 것이 들어 있으면 지우지 않고 남김), 폴더 신뢰 질문에는 답하지 않음) → `devbox agent event` → 데몬. 승인·입력 대기 화면은 `hooks` 계열마다 늘 붙는 기본 패턴(`family_patterns.rs`)과 프로필의 `waitingPatterns`로 tmux 화면에서 알아봄. `DEVBOX_AGENT_ID`가 없으면 hook·플러그인·확장은 아무것도 하지 않음 | 신규 | 화면 긁기 대신 공식 hook(PL-5). 4종 연결은 S7-5·S7-7·S7-8, Antigravity는 1.0.0 뒤(#672) |
+| 에이전트 | 세션 ID 기록과 재개(`claude --resume <id>`, `codex resume <id>`, `opencode -s <id>`, `pi --session-id <id>`, `agy --conversation <id>`). id를 모르면 pi·Antigravity는 지시문 없이 새 세션을 열고 나머지는 처음 지시문으로 새로 시작. Antigravity는 지시문을 인자로 넘기지 않고, 빈 입력창이 보이면(대기 화면 없이 2초 넘게 그대로, 이번 시작의 hook(내용과 상관없이)이나 화면의 턴·이미 받은 지시가 보이기 전. 데몬이 시작할 때 기다리던 것(이 데몬 프로세스가 만든 작업 제외)은 처음 읽은 화면이 신뢰 질문·로그인 선택일 때만 계속 기다림) 처음 지시로 한 번 앞의 빈 줄과 끝의 공백·줄바꿈을 빼고(첫 줄 들여쓰기는 남기고, 끝이 `\`이면 빈칸 하나를 붙여) Enter 없이 붙여 넣고, 화면을 다시 읽어 입력창 첫 줄이 그 지시문 첫 줄의 앞부분(16글자 이상)이나 agy가 큰 붙여 넣기 대신 보이는 자리표시(`[Pasted text #<번호> +<줄 수> lines]`·`[Pasted text #<번호> <글자 수> chars]`, 붙여 넣은 글과 수가 같을 때) 하나로 시작할 때만 Enter를 누름(아니면 전달 확인 안 됨, 다시 보내지 않음, 작업은 붙여 넣기 전처럼 지시를 기다림. agy가 입력창에서 쉬고 있으면 다음 지시 대기가 되고, 알림은 마지막으로 읽은 입력창에 그 지시가 보였는지로 고름. 사용자가 입력창에 써 둔 글이 있는 동안은 보내지 않고 작업이 실행 중으로 보이는 것이 알려진 한계. 지시 기록에 기다림·보내는 중·전달됨·전달 확인 안 됨·보내지 않음, 재개는 보내지 않음, `!`·`/`로 시작하는 지시문과 제어 문자가 있는 지시문으로는 작업을 만들지 않음). 재개한 뒤 첫 hook의 대화 id가 작업의 것과 다르면 그 대화로 바꾸지 않고 실패(`session_mismatch`)로 표시하고, 그 밖에 같은 시작에서 다른 대화 id의 `SessionStart`가 오면 작업의 세션 id와 기록 파일을 그 대화로 바꾸고(실제 agy의 `/new`는 hook을 보내지 않고, 그 뒤 첫 지시의 `SessionStart`로 새 대화를 알림), 다른 대화 id의 다른 hook은 무시함. 지시문·이어서 지시 이력·토큰 합계·커밋 목록을 종료 시 DB에 고정 | 신규 | Claude transcript는 30일 뒤 삭제됨 |
 | 에이전트 | 검토: 변경(파일별 '봤음', 줄 인용으로 지시) · 커밋 · 실행(테스트) 탭 → 병합(merge·squash·rebase) · PR(gh) · 폐기 · 이어서 지시 | 강화 | Source 검토 흐름 |
 | 에이전트 | 기준 반영(rebase)과 뒤처짐 표시. 충돌 시 충돌 화면 또는 에이전트에게 해결 지시 | 신규 | |
 | 에이전트 | 정리: 병합·폐기 뒤 tmux 세션·worktree·로컬 브랜치 정리(기본 켬, teardown 명령 실행), 연결 없는 worktree·병합된 브랜치 정리 목록 | 유지 | `CleanupPanel` |
@@ -159,7 +159,7 @@
 | API 응답을 노트에 붙이기 | 단순화 | 초안 보관함·전달 기록은 폐기 |
 | 웹훅·모의 서버: 리스너(포트·LAN 허용), 실시간 수신 기록, 응답 규칙(경로·메서드·순서 응답), fixture 저장·재전송, chunked·100-continue·바이너리 | 유지 | `webhook-core` |
 | 변환 도구 21종(JSON 4, 인코딩 7, 시간 1, 텍스트 3, 보안 3, 정규식 1, 차이 1, JWT 1) + 자동 감지·도구 제안 + 최근 사용 도구. 명령 팔레트에서 클립보드 값으로 실행, 편집기·로그·터미널 선택을 변환 도구로 보내기 | 유지 | `api-studio-tools.json`, transforms, `selection_send` |
-| 개발 환경 점검: WSL·systemd·linger(권장)·WSL 유휴 종료 설정(`instanceIdleTimeout`·`vmIdleTimeout`)·tmux 버전·inotify 한도·잡아 둔 사용자 환경(PATH)·git·node·rust·docker·gh 버전과 gh 인증 상태·에이전트 CLI 4종(claude·codex·opencode·pi)의 경로·출처(대화형 셸·로그인 셸)·버전(devbox가 확인한 가장 낮은 버전보다 낮으면 경고)·claude·codex 인증 파일 존재·hook은 작업마다 연결함(전역 설정은 읽지 않음). 관련 도구 설치(Windows: winget, WSL: 터미널 세션에서 명령 실행) | 유지 | `installation-tools` |
+| 개발 환경 점검: WSL·systemd·linger(권장)·WSL 유휴 종료 설정(`instanceIdleTimeout`·`vmIdleTimeout`)·tmux 버전·inotify 한도·잡아 둔 사용자 환경(PATH)·git·node·rust·docker·gh 버전과 gh 인증 상태·에이전트 CLI 5종(claude·codex·opencode·pi·agy)의 경로·출처(대화형 셸·로그인 셸)·버전(devbox가 확인한 가장 낮은 버전보다 낮으면 경고)·claude·codex 인증 파일 존재·hook은 작업마다 연결함(전역 설정은 읽지 않음). 관련 도구 설치(Windows: winget, WSL: 터미널 세션에서 명령 실행) | 유지 | `installation-tools` |
 
 ### 2.5 공통
 
@@ -843,10 +843,10 @@ Windows 작업(`target = "windows"`)의 사본 위치는 config.md에 `<root>\.d
 | 상태 | 뜻 | 들어오는 조건 |
 |---|---|---|
 | `preparing` | worktree 생성·copy·setup 실행 중 | 생성 직후 |
-| `running` | 도구가 일하는 중 | 준비 완료 후 도구 시작, 지시 전송, hook `UserPromptSubmit`·도구 사용 |
+| `running` | 도구가 일하는 중 | 준비 완료 후 도구 시작, 지시 전송(Antigravity의 처음 지시는 빈 입력창에서 devbox가 보냄), hook `UserPromptSubmit`·도구 사용, Antigravity hook `PreInvocation` |
 | `waiting` | 사용자 입력 필요(권한 요청·질문) | Claude hook `PermissionRequest` 즉시, `Notification` 권한/입력 알림 fallback, (보조) 일정 시간 출력 없음 + 프롬프트 패턴 |
-| `idle` | 턴 종료, 다음 지시를 기다림 | Claude hook `Stop`, Codex `notify`(agent-turn-complete) |
-| `failed` | 준비 실패, 도구 비정상 종료 | setup 실패, scope 종료 코드 ≠ 0 |
+| `idle` | 턴 종료, 다음 지시를 기다림 | Claude hook `Stop`, Codex `notify`(agent-turn-complete), Antigravity hook `Stop`, 지시 없이 시작한 launch(재개한 Claude·Codex·Antigravity, 지시문 없이 만든 Antigravity 작업)가 빈 입력창에 있을 때 |
+| `failed` | 준비 실패, 도구 비정상 종료, 도구가 작업의 대화가 아닌 대화를 엶 | setup 실패, scope 종료 코드 ≠ 0, 재개한 Antigravity의 첫 hook 대화 id가 작업의 것과 다름(`session_mismatch`, 도구는 계속 돈다) |
 | `review` | 사용자가 "검토 시작"을 눌렀거나 도구가 정상 종료 | 사용자 동작, scope 종료 코드 = 0 |
 | `closed` | 병합·PR 생성 후 닫기·폐기 | 사용자 동작 |
 
@@ -1020,7 +1020,7 @@ CV·AR이 확정한 v0.9.0 결함을 새 구조에서 어떻게 막는지 적는
 | R2 | systemd user manager 동작 차이 | WSL이 로그인 세션으로 user manager를 띄움(실측), linger는 보험. 합격 기준: `wsl --shutdown` 뒤 앱이 다시 띄우고 데몬이 정상 복귀 | socket activation은 S0a 완료, shutdown 복귀·걸린 시간은 S6 공개 직전 사용자 확인(그전 미실행) |
 | R3 | `wsl.exe` stdio 브리지의 지연·처리량·바이너리 안전성 | `cat` echo 실측은 목표의 수십 배(p50 0.16ms, 77–93 MiB/s, 바이너리 일치). S0a에서는 실제 bridge + 데몬 경로로 한 번만 확인. 미달이면 WSL localhost TCP + 토큰으로 전환 | S0a |
 | R4 | Tauri Windows 빌드가 Windows에서만 가능 | 화면은 브라우저 + dev-gateway로 개발. 껍데기 변경은 드묾 | S0b |
-| R5 | 에이전트 CLI(Claude Code·Codex·opencode·pi)의 hook·인자·로그 형식 변경 | 도구별 연결을 `crates/agents/src/hooks.rs`(Claude 설정·Codex notify)·`plugin_event.rs`와 `crates/agents/assets/`(opencode 플러그인·pi 확장)에, 화면 감지(입력 대기)를 `crates/agents/src/family_patterns.rs`에 모은다. 그 기본 패턴은 프로필의 `hooks` 계열마다 `id`와 상관없이 늘 붙고(Codex의 화면 가운데 확인 상자와 화면을 덮는 보기는 읽은 화면 전체에서 찾는다), `profile.rs`의 `waitingPatterns`는 거기에 더해진다. 계약은 `crates/agents/tests/fixtures/`의 fixture로 시험한다. 실제 녹화(Codex 0.164.0 폴더 신뢰 화면, pi 1.3.0 화면, opencode 1.19.3 이벤트·export)와 도구의 공개 소스·설치본 문자열에서 만든 fixture(Codex 0.164–0.166 화면, Claude 폴더 신뢰·셸 모드, opencode 셸 모드)를 머리말에 구분해 적고, 소스·문자열 기반은 S7-14에서 실제 화면으로 확인한다. 환경 점검이 devbox가 확인한 가장 낮은 버전보다 낮은 CLI를 경고한다 | S0a·S1·S7 |
+| R5 | 에이전트 CLI(Claude Code·Codex·opencode·pi·Antigravity)의 hook·인자·로그 형식 변경 | 도구별 연결을 `crates/agents/src/hooks.rs`(Claude 설정·Codex notify)·`plugin_event.rs`와 `crates/agents/assets/`(opencode 플러그인·pi 확장)·`antigravity.rs`(Antigravity hook 폴더·payload·빈 입력창)에, 화면 감지(입력 대기)를 `crates/agents/src/family_patterns.rs`에 모은다. 그 기본 패턴은 프로필의 `hooks` 계열마다 `id`와 상관없이 늘 붙고(Codex의 화면 가운데 확인 상자와 화면을 덮는 보기는 읽은 화면 전체에서 찾는다), `profile.rs`의 `waitingPatterns`는 거기에 더해진다. 계약은 `crates/agents/tests/fixtures/`의 fixture로 시험한다. 실제 녹화(Codex 0.164.0 폴더 신뢰 화면, pi 1.3.0 화면, opencode 1.19.3 이벤트·export, Antigravity 1.5.17 화면·hook payload·기록 파일)와 도구의 공개 소스·설치본 문자열에서 만든 fixture(Codex 0.164–0.166 화면, Claude 폴더 신뢰·셸 모드, opencode 셸 모드)를 머리말에 구분해 적고, 소스·문자열 기반은 S7-14에서 실제 화면으로 확인한다. 환경 점검이 devbox가 확인한 가장 낮은 버전보다 낮은 CLI를 경고한다 | S0a·S1·S7 |
 | R6 | 재구축이 기능 동등에 이르기 전에 멈춤 | 사용 빈도 순서. 각 S 끝의 빌드가 단독으로 쓸 만해야 함. **전환점:** S2 뒤 에이전트·실행·터미널의 선택적 조기 사용을 안내하되 기다리지 않음. 기능 완성 뒤 실사용이 기본 | 매 S |
 | R7 | WSL 안 LSP 메모리 | 지연 시작, 세션 0개부터 15분 유휴 종료, 메모리 표시 | S4 |
 | R8 | 다시 비대해짐 | SC8 예산 점검, "구조 먼저" 규칙 | 매 S |

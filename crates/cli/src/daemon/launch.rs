@@ -46,8 +46,8 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
     }
     let config = snapshot.launch().clone();
     // Preflight before the first terminal or agent is created: the project folder, every
-    // terminal command and title, every agent profile and prompt, then each agent's CLI, the
-    // agents' base branch and the services.
+    // terminal command and title, every agent profile and prompt, the work folder an agent's
+    // tool family needs, then each agent's CLI, the agents' base branch and the services.
     if !tokio::fs::metadata(&project.path)
         .await
         .is_ok_and(|m| m.is_dir())
@@ -75,6 +75,17 @@ pub async fn launch(s: Arc<Services>, params: LaunchProject) -> Result<LaunchRes
         }
         devbox_agents::validate_input(agent.prompt.as_deref().unwrap_or_default())
             .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
+        s.agents
+            .admits_prompt(&agent.tool, agent.prompt.as_deref().unwrap_or_default())
+            .map_err(|error| launch_failure(error, &result, &format!("agent {}", index + 1)))?;
+    }
+    // An agent whose tool family keeps its connection beside the work folder needs one.
+    for agent in &config.agents {
+        if let Err(devbox_agents::AgentsError::WorkFolderRequired { tool }) =
+            s.agents.work_folder_required(&agent.tool, agent.worktree)
+        {
+            return Err(ProjectsError::LaunchWorkFolderRequired { tool }.into());
+        }
     }
     // Each agent's CLI, looked up the way its start looks. The start reuses the shell's answer;
     // without one it asks the shell again.

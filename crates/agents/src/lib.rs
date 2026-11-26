@@ -88,11 +88,15 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.topic::<AgentsAttentionTopic>();
 }
 
+mod antigravity;
+mod antigravity_service;
 mod approvals;
 mod artifacts;
 mod create;
 mod events;
+mod first_instruction;
 mod prepare;
+mod prompt_arg;
 mod ready;
 mod tool_lifecycle;
 
@@ -106,6 +110,7 @@ mod queries;
 mod resume;
 
 mod usage;
+mod usage_antigravity;
 mod usage_plugins;
 
 mod bounded;

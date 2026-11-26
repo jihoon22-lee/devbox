@@ -71,7 +71,10 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
   const qc = useQueryClient();
   const inFlight = useRef(false);
   const validTitle = title.trim().length > 0 && [...title.trim()].length <= 120 && !/[\x00-\x1f\x7f]/.test(title);
-  const branch = useBranchName(title, worktree);
+  // devbox keeps Antigravity's connection beside the work folder, so its tasks always have one.
+  const needsFolder = profile?.hooks === "antigravity";
+  const useFolder = worktree || needsFolder;
+  const branch = useBranchName(title, useFolder);
   const ready =
     session.state === "ready" &&
     !!project &&
@@ -88,7 +91,7 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
       title: title.trim(),
       profile: profile.id,
       baseBranch: baseBranch.trim() || null,
-      worktree,
+      worktree: useFolder,
       prompt,
       ...(branch.send === undefined ? {} : { branch: branch.send }),
     };
@@ -223,10 +226,16 @@ function NewTaskForm({ open, onOpenChange, onCreated }: Props) {
             />
           </div>
           <label className={s.check}>
-            <input type="checkbox" checked={worktree} onChange={(event) => setWorktree(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={useFolder}
+              disabled={needsFolder}
+              onChange={(event) => setWorktree(event.target.checked)}
+            />
             작업 폴더 만들기
           </label>
-          {worktree ? <BranchNameField branch={branch} /> : <p>현재 체크아웃에서 실행</p>}
+          {needsFolder && <p className={s.muted}>{profile.label} 작업에는 작업 폴더가 필요합니다.</p>}
+          {useFolder ? <BranchNameField branch={branch} /> : <p>현재 체크아웃에서 실행</p>}
           <TemplateButtons
             templates={templates}
             disabled={!project || create.isPending}

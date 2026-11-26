@@ -57,7 +57,11 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
     }
     let exit_changed = ended && !t.tool_exited;
     t.tool_exited |= ended;
+    // A first instruction still queued for a tool that ended, or a task that closes, never goes.
+    let unsent = (ended || matches!(event, AgentEvent::Closed { .. }))
+        && crate::first_instruction::cancel(t, now);
     let mut updated = exit_changed
+        || unsent
         || matches!(
             event,
             AgentEvent::PromptSubmitted | AgentEvent::UserInstructed
@@ -89,6 +93,10 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
         }
         AgentEvent::OutputWaiting if t.state == AgentState::Waiting => {
             Some("입력을 기다립니다".into())
+        }
+        // The notice says what happened; the other failures show their reason's code.
+        AgentEvent::SessionMismatch if t.state == AgentState::Failed => {
+            Some("도구가 이 작업의 대화가 아닌 다른 대화를 열었습니다".into())
         }
         _ => None,
     };

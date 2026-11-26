@@ -6,7 +6,8 @@
 //! 표시와 화면을 덮는 보기는 0.164.0~0.166.0 공개 소스가 그리는 화면(소스 기반, 실제 화면 아님),
 //! 폴더 신뢰 화면은 0.164.0 실제 녹화와 0.166.0 소스, hook 검토 화면은 0.164.0 실행 파일 문자열(실제 화면
 //! 아님)이다. Claude 폴더 신뢰 대화와 셸 모드 footer는 설치본 2.1.308의 코드에서, opencode 셸 모드 힌트는
-//! 설치본 1.19.3의 코드에서 읽은 문자열 기반이다. 다른 UI 유형·버전은 실제 fixture로 보강한다.
+//! 설치본 1.19.3의 코드에서 읽은 문자열 기반이다. Antigravity 화면은 모두 agy 1.5.17 실제 녹화다. 다른 UI
+//! 유형·버전은 실제 fixture로 보강한다.
 use crate::profile::Hooks;
 
 /// The waiting patterns of one family, before they are compiled.
@@ -38,6 +39,10 @@ pub(crate) fn family_patterns(hooks: Hooks) -> FamilyPatterns {
         },
         Hooks::Opencode => FamilyPatterns {
             tail: OPENCODE,
+            screen: Vec::new(),
+        },
+        Hooks::Antigravity => FamilyPatterns {
+            tail: ANTIGRAVITY,
             screen: Vec::new(),
         },
         Hooks::None => FamilyPatterns::default(),
@@ -162,6 +167,39 @@ const OPENCODE: &[&str] = &[
     // shell mode its hint row reads "esc exit shell mode", which the TUI draws nowhere else. Where
     // that row sits is not known, so only the words are matched.
     r"\besc exit shell mode\b",
+];
+
+/// Antigravity (`agy`). Its hooks report a turn's start and end only, so every prompt is matched on
+/// screen. agy draws all of them at the bottom, above the status rows, and removes them once they
+/// are answered. At the trust and approval screens a paste is dropped and Enter picks the first
+/// choice, "Yes". Evidence: crates/agents/tests/fixtures/antigravity-1.5.17/ (real captures of
+/// agy 1.5.17; see the README there). The user's own status line takes the last rows, one in
+/// these captures: each pattern still matches with two status rows, and all but the queued prompt's
+/// with three. The first three read a prompt agy draws in the prompt box's place, so they match
+/// only where no rule row of a prompt box follows: the same words above an idle prompt box are an
+/// answer that quotes them, not a prompt.
+const ANTIGRAVITY: &[&str] = &[
+    // Folder trust (trust.txt, trust-default-statusline.txt): either choice row, with or without
+    // the cursor.
+    r"(?m)^[> ] (?:Yes, I trust this folder|No, exit)[ \t]*(?:\n[^─\n][^\n]*)*\z",
+    // Tool approval (approval.txt, approval-six-options.txt): a numbered choice that starts with
+    // "Yes," or "No,". With six choices the title and the question are above the rows read.
+    // Recorded for shell commands only.
+    r"(?m)^[> ] [1-9]\. (?:Yes|No), [^\n]*(?:\n[^─\n][^\n]*)*\z",
+    // Any list or menu that takes the arrow keys and Enter: the two above, the slash-command
+    // list, the model and hooks pickers and the sign-in choice (selection-*.txt, slash-menu.txt,
+    // login.txt).
+    r"(?m)↑/↓ Navigate\b[^\n]*(?:\n[^─\n][^\n]*)*\z",
+    // Shell mode (shell-mode.txt, shell-mode-draft.txt): the prompt box's first row starts with
+    // `!`, and Enter would run the draft and a send pasted after it as a shell command. The box
+    // is a rule, the draft's rows (two blanks before each further one) and a rule.
+    r"(?m)^─{20,}\n!(?:[ \t][^\n]*)?\n(?:  [^\n]*\n)*─{20,}$",
+    // A draft that starts with `/` (slash-draft.txt): Enter would run it as a command with the
+    // send as its argument, or refuse it. While agy offers commands for it, the list above shows.
+    r"(?m)^─{20,}\n> /[^\n]*\n(?:  [^\n]*\n)*─{20,}$",
+    // A prompt queued behind the running turn (queued.txt). What a second send does then is not
+    // recorded, so it waits until the queued one has gone in.
+    r"(?m)^▸ [^\n]* \(alt\+m to send immediately\)[ \t]*$",
 ];
 
 /// The dialogs Codex opens with `SelectionViewParams::confirmation()`, by title and choices.

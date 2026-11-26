@@ -1,0 +1,55 @@
+# 실제 녹화. Antigravity CLI(agy) 1.5.17, 2026-11-25, 소유 임시 git 저장소와 전용 tmux socket. spike 캡처 q3-03-paste-during-turn-after-enter.txt.
+# 턴이 도는 동안 보낸 글이 입력창 위에 대기 중인 화면.
+# 정리: 소유 fixture 경로는 /owned/project/fixture-task로 가렸다. 배너 둘째 줄의 계정·요금제는 fixture-account (fixture-plan)으로 바꿨고, 사용자 상태 줄(🕒로 시작)에서는 토큰·사용량 한도·메모리·디스크 칸을 지우고 대화 표시(🆔)는 #00000000으로 바꿨다(그 줄은 짧아졌다). 계정 상태를 알리는 두 줄짜리 알림(⚠ 줄과 그 아래 ⎿ 줄)이 있던 화면은 그 두 줄의 글만 바꿨다.
+# 그 밖의 줄, 줄 수와 빈 줄은 capture 그대로다(tmux capture-pane -p, 200x50). 아래 --- 줄 뒤가 pane 내용이다.
+---
+
+      ▄▀▀▄        Antigravity CLI 1.5.17
+     ▀▀▀▀▀▀       fixture-account (fixture-plan)
+    ▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+   ▄▀▀    ▀▀▄     /owned/project/fixture-task
+  ▄▀▀      ▀▀▄
+
+> /hooks
+  ⎿  Exited /hooks command
+
+────────────────────────────────────────────────────────────
+> Reply with OK and stop.
+  This is line two of the same pasted prompt.
+  Line three: also say how many lines this prompt had.
+
+⚠ Notice (redacted)
+  ⎿  Redacted notice text.
+
+▸ Thought for 3s, 200 tokens
+
+  OK. The prompt had 3 lines.
+
+────────────────────────────────────────────────────────────
+> Run the shell command `echo devbox-spike` and then reply with OK.
+⣽  Generating...
+└ Tip: Use /cs to search in your codebase.
+▸ Reply with OK and stop. (alt+m to send immediately)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+🕒 21:39:12 │ 🤖 Gemini 3.8 Flash │ ⚡ High │ ● working │ 🛡️ Auto │ 🆔 #00000000 │ 📁 /owned/project/fixture-task │ 🌿 main
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

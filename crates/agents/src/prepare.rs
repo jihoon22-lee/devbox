@@ -125,7 +125,7 @@ impl AgentsService {
                 "ts",
                 crate::plugin_event::PI_EXTENSION.to_owned(),
             ),
-            Hooks::Codex | Hooks::None => return Ok(None),
+            Hooks::Codex | Hooks::Antigravity | Hooks::None => return Ok(None),
         };
         let _hook_files = self.hook_files.lock().await;
         let dir = self.paths.data_dir.join("agent-hooks");
@@ -222,7 +222,7 @@ impl AgentsService {
             .map_err(|e| internal("agent prompt", e))?;
         let phase = self.phase_path(task, launch_id);
         private_file(&phase, "starting\n", false).map_err(|e| internal("agent phase", e))?;
-        let hook_file = self.hook_file(profile.hooks).await?;
+        let hook_file = self.connection(task, profile, true).await?;
         let plan = crate::start::StartPlan {
             devbox: self.devbox_bin.clone(),
             instance: self.paths.instance.as_str().into(),
@@ -237,6 +237,7 @@ impl AgentsService {
             hooks: profile.hooks,
             hook_file,
             prompt_file: Some(prompt.to_string_lossy().into_owned()),
+            prompt_arg: crate::prompt_arg::for_launch(profile, &task.prompt),
             resume_session: None,
             session_id: task.session_id.clone(),
             use_scope: self.use_scope,
@@ -420,6 +421,7 @@ impl AgentsService {
             .await
             .map_err(|e| internal("record agent resources", e))?;
         if !path_exists && branch_exists == Some(false) && registered == Some(false) {
+            self.remove_agy_hooks(task);
             self.update(&task.id, move |t| {
                 t.branch = None;
                 t.worktree_path = None;
@@ -498,6 +500,7 @@ impl AgentsService {
                         return Ok(Err(()));
                     }
                     let previous = task.state;
+                    let queued = crate::first_instruction::is_queued(&task);
                     let event = if task.state == crate::state::AgentState::Preparing {
                         AgentEvent::SetupFailed { code: -1 }
                     } else {
@@ -522,9 +525,12 @@ impl AgentsService {
                         return Ok(Err(()));
                     }
                     crate::store::put(tx, &task)?;
-                    Ok(Ok((task, previous)))
+                    Ok(Ok((task, previous, queued)))
                 },
-                move |(task, previous), rev| changed(&hub, task, rev, task.state != *previous),
+                move |(task, previous, queued), rev| {
+                    crate::first_instruction::log_ended(*queued, task);
+                    changed(&hub, task, rev, task.state != *previous)
+                },
             )
             .await
             .map_err(|e| internal("record preparation failure", e))?;

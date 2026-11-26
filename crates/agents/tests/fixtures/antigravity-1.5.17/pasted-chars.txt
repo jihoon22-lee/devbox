@@ -1,0 +1,70 @@
+# 실제 녹화. Antigravity CLI(agy) 1.5.17, 2026-11-26, 소유 임시 git 저장소와 전용 tmux socket. 실제 데몬 확인의 붙여 넣기 시험 캡처 probe-c1500.txt.
+# 앞 턴이 끝난 agy 입력창에 devbox와 같은 방법(load-buffer, paste-buffer -p -d, Enter 없음)으로 1500자짜리 한 줄("probe words "를 되풀이해 1499자로 자르고 끝에 x를 붙인 글)을 붙여 넣은 화면. agy는 입력창에 [Pasted text #10 1500 chars]로만 보인다. 위쪽 줄들은 앞 턴의 45줄짜리 지시와 그 답이다(그 지시의 첫 네 줄과 그 위의 가로선은 읽은 줄 위로 올라가 없다).
+# 정리: 소유 fixture 경로는 /owned/project/fixture-task로, 브랜치 이름은 agent/fixture-task로 가렸다. 사용자 상태 줄(🕒로 시작)에서는 토큰 칸을 지우고 대화 표시(🆔)는 #00000000으로 바꿨다(그 줄은 짧아졌다). 계정 상태를 알리는 두 줄짜리 알림(⚠ 줄과 그 아래 ⎿ 줄)은 그 두 줄의 글만 바꿨다.
+# 그 밖의 줄, 줄 수와 빈 줄, 입력창 줄 끝의 빈칸은 capture 그대로다(tmux capture-pane -p -J -S -15, 200x50이라 화면 위 15줄이 더 있다). 아래 --- 줄 뒤가 pane 내용이다.
+---
+  line 05 of 45
+  line 06 of 45
+  line 07 of 45
+  line 08 of 45
+  line 09 of 45
+  line 10 of 45
+  line 11 of 45
+  line 12 of 45
+  line 13 of 45
+  line 14 of 45
+  line 15 of 45
+  line 16 of 45
+  line 17 of 45
+  line 18 of 45
+  line 19 of 45
+  line 20 of 45
+  line 21 of 45
+  line 22 of 45
+  line 23 of 45
+  line 24 of 45
+  line 25 of 45
+  line 26 of 45
+  line 27 of 45
+  line 28 of 45
+  line 29 of 45
+  line 30 of 45
+  line 31 of 45
+  line 32 of 45
+  line 33 of 45
+  line 34 of 45
+  line 35 of 45
+  line 36 of 45
+  line 37 of 45
+  line 38 of 45
+  line 39 of 45
+  line 40 of 45
+  line 41 of 45
+  line 42 of 45
+  line 43 of 45
+  line 44 of 45
+  line 45 of 45 (last line)
+
+⚠ Notice (redacted)
+  ⎿  Redacted notice text.
+
+  OK
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> [Pasted text #10 1500 chars]                                                                                                                                                                    
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+🕒 09:14:37 │ 🤖 Gemini 3.8 Flash │ ⚡ High │ ● idle │ 🛡️ Auto │ 🆔 #00000000 │ 📁 /owned/project/fixture-task │ 🌿 agent/fixture-task
+
+
+
+
+
+
+
+
+
+
+
+
+
+

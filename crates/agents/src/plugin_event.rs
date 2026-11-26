@@ -57,7 +57,11 @@ pub fn parse_plugin_event(source: HookSource, payload: &str) -> Vec<AgentEvent> 
     let tool = match source {
         HookSource::Opencode => "opencode",
         HookSource::Pi => "pi",
-        HookSource::Claude | HookSource::Codex | HookSource::Setup | HookSource::Exit => {
+        HookSource::Claude
+        | HookSource::Codex
+        | HookSource::Antigravity
+        | HookSource::Setup
+        | HookSource::Exit => {
             return vec![];
         }
     };

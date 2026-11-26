@@ -375,6 +375,14 @@ impl Tmux {
         ])
         .await
     }
+    /// Presses Enter in the pane of session `name`, as [`Self::paste_with_delivery`] does after
+    /// its paste when asked to.
+    pub async fn press_enter(&self, name: &str) -> Result<(), TmuxError> {
+        let target = Self::target(name)?;
+        self.run(&["send-keys", "-t", &target, "Enter"])
+            .await
+            .map(|_| ())
+    }
     pub async fn paste(&self, name: &str, text: &str, enter: bool) -> Result<(), TmuxError> {
         self.paste_with_delivery(name, text, enter)
             .await

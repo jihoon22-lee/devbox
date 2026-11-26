@@ -540,6 +540,7 @@ impl AgentsService {
             devbox_git::mutate::worktree_remove(repo, &wt, true)
                 .await
                 .map_err(git_failure)?;
+            self.remove_agy_hooks(&task);
             devbox_git::mutate::delete_branch_at(repo, &branch, &p.expect.head_oid)
                 .await
                 .map_err(git_failure)?;

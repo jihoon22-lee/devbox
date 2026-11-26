@@ -26,8 +26,9 @@ export function nextWaiting(groups: ReturnType<typeof groupByUrgency>, current?:
 export function attentionCount(tasks: AgentTask[]) {
   return tasks.filter((t) => t.state === "waiting" || t.state === "idle" || t.state === "failed").length;
 }
-/** A task of a profile devbox connects to that reported no session in its first 90 seconds, or a
- * pi launch that has not said in its first 90 seconds that it is ready. */
+/** A task of a profile devbox connects to that reported no session in its first 90 seconds (for
+ * Antigravity, in the 90 seconds after its first instruction was delivered), or a pi launch that
+ * has not said in its first 90 seconds that it is ready. */
 export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: number) {
   const hooks = new Map(profiles.map((p) => [p.id, p.hooks]));
   // Only Claude reports a session before a prompt; the others report it with the first one.
@@ -36,10 +37,16 @@ export function hookMissing(tasks: AgentTask[], profiles: ToolProfile[], nowMs: 
     return kind === "claude" || (kind !== undefined && kind !== "none" && t.prompt.trim() !== "");
   };
   // pi has its session from the start, and says on every launch, prompt or not, that it is ready.
-  const silent = (t: AgentTask) =>
-    hooks.get(t.profile) === "pi"
-      ? t.startingSinceMs !== null && nowMs - t.startingSinceMs > 90_000
-      : reports(t) && !t.sessionId && nowMs - t.createdMs > 90_000;
+  // Antigravity gets no prompt argument: its first prompt is the one devbox sends once it shows its input box,
+  // or without one the first instruction sent to the task.
+  const instructed = (t: AgentTask) =>
+    t.firstInstruction?.delivery === "delivered" ? t.firstInstruction.atMs : t.followUps[0]?.atMs;
+  const silent = (t: AgentTask) => {
+    const kind = hooks.get(t.profile);
+    if (kind === "pi") return t.startingSinceMs !== null && nowMs - t.startingSinceMs > 90_000;
+    const since = kind === "antigravity" ? instructed(t) : reports(t) ? t.createdMs : undefined;
+    return since !== undefined && !t.sessionId && nowMs - since > 90_000;
+  };
   return tasks.some((t) => t.state === "running" && silent(t));
 }
 export function fillTemplate(body: string, vars: { title: string; branch: string; project: string }) {
@@ -114,5 +121,7 @@ export function failureLabel(reason: string | null) {
   if (reason?.startsWith("killed:")) return "외부에서 종료됨(메모리 부족이나 다른 도구가 끝냈을 수 있습니다)";
   if (reason?.startsWith("exit:")) return `도구가 오류로 끝났습니다(종료 코드 ${reason.slice(5)})`;
   if (reason?.startsWith("setup:")) return "준비 명령이 실패했습니다";
+  if (reason === "session_mismatch")
+    return "도구가 이 작업의 대화가 아닌 다른 대화를 열었습니다. 이 작업은 처음 대화만 따르므로, 이어 가려면 [같은 지시로 새 작업]으로 다시 시작하세요.";
   return "에이전트 작업이 실패했습니다";
 }

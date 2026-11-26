@@ -519,6 +519,7 @@ fn the_version_check_puts_the_cli_folder_where_the_start_script_does() {
             hooks: crate::profile::Hooks::None,
             hook_file: None,
             prompt_file: None,
+            prompt_arg: None,
             resume_session: None,
             session_id: None,
             use_scope: true,
