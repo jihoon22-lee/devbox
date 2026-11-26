@@ -111,18 +111,30 @@ async fn containers_missing_cli_is_unavailable_not_empty() {
     assert!(result.items.is_empty());
 }
 
+/// A child shell writes the fake CLI. A write handle opened in this test process is copied into
+/// any child another test forks while it is open, and stays open until that child starts its
+/// program; running the script meanwhile fails with ETXTBSY ("Text file busy"), which `execute`
+/// reports as `Unavailable`. CI saw that `Unavailable` once (the errno is not logged in tests).
 fn fake(dir: &std::path::Path, body: &str) -> DockerContainers {
-    use std::os::unix::fs::PermissionsExt;
     let path = dir.join("docker");
-    std::fs::write(
-        &path,
-        format!(
+    let written = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            "umask 077; printf '%s' \"$2\" > \"$1\" && /bin/chmod 700 \"$1\"",
+            "sh",
+        ])
+        .arg(&path)
+        .arg(format!(
             "#!/bin/sh\ncd -- \"${{0%/*}}\" || exit 91\nprintf '%s\\n' \"$@\" > args\n{body}\n"
-        ),
-    )
-    .expect("fixture result");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+        ))
+        .output()
         .expect("fixture result");
+    assert!(
+        written.status.success(),
+        "fixture result: {:?} {}",
+        written.status,
+        String::from_utf8_lossy(&written.stderr)
+    );
     DockerContainers::new(path)
 }
 fn request(action: ContainerAction) -> ContainerActionParams {
