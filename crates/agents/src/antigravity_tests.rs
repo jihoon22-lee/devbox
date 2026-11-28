@@ -93,19 +93,18 @@ fn hooks_json_registers_exactly_three_events_with_the_report_command() {
 #[cfg(unix)]
 #[test]
 fn the_hook_command_reaches_devbox_as_one_word_whatever_its_path_holds() {
-    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    use crate::test_executable::write_executable;
+    use std::{fs, process::Command};
     let root = tempfile::tempdir().expect("owned folder");
     // A devbox whose path a shell would split, expand or end a quote on.
     let dir = root.path().join("it's a \"dev box\" $HOME `id`");
     fs::create_dir(&dir).expect("owned folder");
     let devbox = dir.join("dev box");
     let receipt = root.path().join("argv");
-    fs::write(
+    write_executable(
         &devbox,
         "#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > \"$DEVBOX_HOOK_RECEIPT\"\necho '{}'\n",
-    )
-    .expect("owned devbox");
-    fs::set_permissions(&devbox, fs::Permissions::from_mode(0o700)).expect("mode");
+    );
     let devbox = devbox.to_str().expect("UTF-8");
     let hooks: serde_json::Value = serde_json::from_str(&hooks_json(devbox)).expect("JSON");
     for event in ["SessionStart", "PreInvocation", "Stop"] {

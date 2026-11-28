@@ -154,3 +154,7 @@ mod windows_copy_lifecycle_tests;
 mod windows_copy_store_tests;
 #[cfg(test)]
 mod windows_copy_test_support;
+
+#[cfg(test)]
+#[path = "../../test-support/executable.rs"]
+mod test_executable;

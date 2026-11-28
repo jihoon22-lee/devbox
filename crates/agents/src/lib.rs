@@ -126,3 +126,7 @@ mod send;
 mod watch;
 
 mod run_worktree;
+
+#[cfg(all(test, unix))]
+#[path = "../../test-support/executable.rs"]
+mod test_executable;

@@ -97,15 +97,16 @@ fn paths_and_ids_are_quoted_and_the_profiles_own_arguments_stay() {
 #[cfg(unix)]
 #[test]
 fn the_tool_gets_exactly_the_folder_and_conversation_arguments() {
-    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    use crate::test_executable::write_executable;
+    use std::{fs, process::Command};
     let root = tempfile::tempdir().expect("owned argv fixtures");
     let tool = root.path().join("agy");
-    fs::write(&tool, "#!/usr/bin/env python3\nimport json,os,sys\njson.dump({'argv':sys.argv[1:],'cwd':os.getcwd(),'agent':os.environ.get('DEVBOX_AGENT_ID'),'launch':os.environ.get('DEVBOX_AGENT_LAUNCH')},open(os.environ['DEVBOX_ARGV_RECEIPT'],'w'))\n").expect("owned argv receiver");
+    write_executable(
+        &tool,
+        "#!/usr/bin/env python3\nimport json,os,sys\njson.dump({'argv':sys.argv[1:],'cwd':os.getcwd(),'agent':os.environ.get('DEVBOX_AGENT_ID'),'launch':os.environ.get('DEVBOX_AGENT_LAUNCH')},open(os.environ['DEVBOX_ARGV_RECEIPT'],'w'))\n",
+    );
     let devbox = root.path().join("devbox");
-    fs::write(&devbox, "#!/bin/sh\nexit 0\n").expect("fake hook");
-    for file in [&tool, &devbox] {
-        fs::set_permissions(file, fs::Permissions::from_mode(0o700)).expect("mode");
-    }
+    write_executable(&devbox, "#!/bin/sh\nexit 0\n");
     let workdir = root.path().join("it's a fix");
     fs::create_dir(&workdir).expect("owned work folder");
     let hooks = crate::antigravity::hooks_dir(workdir.to_str().expect("UTF-8"));

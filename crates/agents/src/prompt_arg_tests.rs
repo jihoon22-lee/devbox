@@ -237,15 +237,16 @@ fn the_start_script_appends_the_prompt_after_the_command_in_each_form() {
 #[cfg(unix)]
 #[test]
 fn the_prompt_reaches_the_tool_as_one_argument_whatever_it_holds() {
-    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    use crate::test_executable::write_executable;
+    use std::{fs, process::Command};
     let root = tempfile::tempdir().expect("owned argv fixtures");
     let tool = root.path().join("tool");
-    fs::write(&tool, "#!/usr/bin/env python3\nimport json,os,sys\njson.dump(sys.argv[1:],open(os.environ['DEVBOX_ARGV_RECEIPT'],'w'))\n").expect("owned argv receiver");
+    write_executable(
+        &tool,
+        "#!/usr/bin/env python3\nimport json,os,sys\njson.dump(sys.argv[1:],open(os.environ['DEVBOX_ARGV_RECEIPT'],'w'))\n",
+    );
     let devbox = root.path().join("devbox");
-    fs::write(&devbox, "#!/bin/sh\nexit 0\n").expect("fake hook");
-    for file in [&tool, &devbox] {
-        fs::set_permissions(file, fs::Permissions::from_mode(0o700)).expect("mode");
-    }
+    write_executable(&devbox, "#!/bin/sh\nexit 0\n");
     let prompt_file = root.path().join("it's a prompt.md");
     let receipt = root.path().join("argv.json");
     let prompts = [
