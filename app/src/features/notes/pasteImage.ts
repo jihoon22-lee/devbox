@@ -2,7 +2,7 @@ import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { RpcError } from "../../rpc/client";
 import type { Attached, AttachImage } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 
 /** The daemon's attachment limit (`notes.attach`); larger images are refused before any call. */
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -47,7 +47,9 @@ export async function pasteImage(view: EditorView, file: Blob & { name?: string 
     attached = await deps.attach({ notePath: deps.notePath, name, data });
   } catch (error) {
     deps.onError(
-      error instanceof RpcError ? messageFor(error.code, error.detail).title : "이미지를 첨부하지 못했습니다.",
+      error instanceof RpcError
+        ? messageText(error.code, error.detail, error.diagnosticId)
+        : "이미지를 첨부하지 못했습니다.",
     );
     return;
   }

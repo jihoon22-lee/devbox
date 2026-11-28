@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { RpcError } from "../../rpc/client";
 import type { FileEntry, Project } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpc } from "../../rpc/RpcProvider";
 import { Button, Dialog, useToasts } from "../../ui";
 import { chooseDocumentClose } from "../documents/closePrompt";
@@ -82,7 +82,7 @@ function ProjectSource({ project }: { project: Project }) {
       tone: "danger",
       title:
         error instanceof RpcError
-          ? messageFor(error.code, error.detail).title
+          ? messageText(error.code, error.detail, error.diagnosticId)
           : error instanceof Error
             ? error.message
             : "파일 작업을 마치지 못했습니다. 경로와 앱 설치를 확인하세요.",

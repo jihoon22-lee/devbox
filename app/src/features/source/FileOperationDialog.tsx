@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { DocKey } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcMutation, useRpcQuery } from "../../rpc/query";
 import { Banner, Button, ConfirmDialog, Dialog } from "../../ui";
 import { useDocuments } from "../documents/store";
@@ -19,6 +19,7 @@ export function FileOperationDialog({ operation, onClose }: { operation: FileOpe
 function DeleteDialog({ docKey, onClose }: { docKey: DocKey; onClose(): void }) {
   const query = useRpcQuery("files.stat", { key: docKey }, { refetchOnWindowFocus: false });
   const remove = useRpcMutation("files.delete");
+  const error = query.error ?? remove.error;
   const cache = useQueryClient();
   return (
     <ConfirmDialog
@@ -43,9 +44,9 @@ function DeleteDialog({ docKey, onClose }: { docKey: DocKey; onClose(): void }) 
       }}
     >
       {query.data && <p>확인한 크기: {query.data.rev.size.toLocaleString("ko")} 바이트</p>}
-      {(query.error || remove.error) && (
+      {error && (
         <Banner tone="danger">
-          {messageFor((query.error ?? remove.error)!.code, (query.error ?? remove.error)!.detail).title}
+          {messageText(error.code, error.detail, error.diagnosticId)}
           <Button
             onClick={() => {
               remove.reset();
@@ -115,7 +116,7 @@ function NameDialog({ operation, onClose }: { operation: FileOperation; onClose(
           <input aria-label="파일 경로" value={name} onChange={(e) => setName(e.currentTarget.value)} disabled={busy} />
         </label>
       </form>
-      {error && <Banner tone="danger">{messageFor(error.code, error.detail).title}</Banner>}
+      {error && <Banner tone="danger">{messageText(error.code, error.detail, error.diagnosticId)}</Banner>}
     </Dialog>
   );
 }
