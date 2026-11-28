@@ -270,18 +270,35 @@ class DaemonRows:
     # --- CS3 --------------------------------------------------------------------------------------
     def cs3(self):
         require_lock()
-        row = {'steps': []}
-        before = unit_ids()
+        def same_active_unit(a, b):
+            return (not a.get('error') and not b.get('error')
+                    and a.get('ActiveState') == b.get('ActiveState') == 'active'
+                    and re.fullmatch(r'[1-9][0-9]*', a.get('MainPID') or '') is not None
+                    and a['MainPID'] == b.get('MainPID')
+                    and re.fullmatch(r'[0-9a-f]{32}', a.get('InvocationID') or '') is not None
+                    and a['InvocationID'] != '0' * 32 and a['InvocationID'] == b.get('InvocationID'))
+
+        row = {'steps': [], 'before': unit_ids()}
+        before_setup = row['before']
         if self.win:
             row['relaunch'] = {'stop': self.win.stop_owned(), 'launch': self.win.launch()}
-            self.info()
+            launch = row['relaunch']['launch']
+            row['nativeStartup'] = self.win.sc2(launch, self.clock)
+            pid = str(launch['pid'])
+            ready = any(paint['run'] == pid for paint in row['nativeStartup'].get('firstDataPainted', []))
             row['afterRelaunch'] = unit_ids()
+            if not ready or not same_active_unit(row['before'], row['afterRelaunch']):
+                self.finish('CS3', 'FAIL', row, 'Native relaunch did not prove completed startup with the same daemon')
+                return
+            # Windows and this helper capture different login environments. Establish the helper's
+            # environment once before testing whether an identical setup skips the restart.
+            row['setupBaseline'] = self.daemon.setup('launch')
+            before_setup = unit_ids()
         report = self.daemon.setup('launch')
         after = unit_ids()
-        row.update(before=before, after=after, setup=report)
-        same = lambda a, b: (a['MainPID'], a['InvocationID']) == (b['MainPID'], b['InvocationID']) and a['MainPID'] not in (None, '0')
+        row.update(beforeSetup=before_setup, after=after, setup=report)
         restart = next((s for s in report.get('steps') or [] if s['id'] == 'restart'), None)
-        parts = {'a': same(before, after) and (not self.win or same(before, row['afterRelaunch'])),
+        parts = {'a': same_active_unit(before_setup, after),
                  'b': bool(restart) and restart['ok'] is True and restart['message'] == SKIPPED}
         row['parts'] = parts
         if not all(parts.values()):
