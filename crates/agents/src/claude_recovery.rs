@@ -300,10 +300,11 @@ mod tests {
     use super::*;
     #[test]
     fn custom_root_is_used_only_if_absolute() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create a temporary custom Claude config root");
         let home = dir.path().join("home");
         let config = dir.path().join("custom");
-        let root = config_projects(&home, Some(config.clone())).unwrap();
+        let root = config_projects(&home, Some(config.clone()))
+            .expect("absolute override resolves to a projects directory");
         assert_eq!(root, config.join("projects"));
         assert!(config_projects(&home, Some("relative".into())).is_none());
         assert!(!checked_name(
@@ -319,16 +320,19 @@ mod tests {
     }
     #[test]
     fn a_moved_record_or_incomplete_lookup_never_marks_a_conversation_missing() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("create a temporary Claude transcript tree");
         let root = dir.path().join("projects");
         let path = root.join("original/id.jsonl");
         assert!(transcript_absent(&root, Some(&path), "id"));
         assert!(!transcript_absent(&root, Some(&path), "different"));
-        std::fs::create_dir_all(root.join("moved")).unwrap();
-        std::fs::write(root.join("moved/id.jsonl"), b"opaque").unwrap();
+        std::fs::create_dir_all(root.join("moved"))
+            .expect("create the relocated transcript directory");
+        std::fs::write(root.join("moved/id.jsonl"), b"opaque")
+            .expect("write the relocated transcript");
         assert!(!transcript_absent(&root, Some(&path), "id"));
-        std::fs::remove_file(root.join("moved/id.jsonl")).unwrap();
-        std::os::unix::fs::symlink(&root, root.join("link")).unwrap();
+        std::fs::remove_file(root.join("moved/id.jsonl")).expect("remove the relocated transcript");
+        std::os::unix::fs::symlink(&root, root.join("link"))
+            .expect("create the symlink that makes the transcript scan incomplete");
         assert!(!transcript_absent(&root, Some(&path), "id"));
     }
 }
