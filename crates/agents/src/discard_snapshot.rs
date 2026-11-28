@@ -363,20 +363,25 @@ pub(crate) struct DiscardSnapshot {
     index: Vec<u8>,
     fingerprint: String,
     stamp: String,
-    /// What [`submodules`] said, part of the fingerprint: the confirmation warns of it.
+    /// Whether the submodule check blocked discard, part of the confirmed fingerprint.
     submodules: bool,
 }
 /// Whether the discard's forced removal would also take initialized submodules, and with them
 /// their store under `.git/worktrees/<name>/modules`, unpushed commits included. Without an answer
-/// (a Git failure, or an index past the check's cap) it may: the confirmation then warns all the
-/// same, and the discard stays allowed.
+/// (a Git failure, or an index past the check's cap), keep the store.
 async fn submodules(dir: &Path) -> bool {
     devbox_git::mutate::has_submodules(dir)
         .await
         .unwrap_or_else(|error| {
-            tracing::warn!(%error, "submodule check failed; the discard warns of submodules");
+            tracing::warn!(%error, "discard submodule check failed");
             true
         })
+}
+pub(crate) async fn require_discardable_submodules(dir: &Path) -> Result<()> {
+    if submodules(dir).await {
+        return Err(unavailable("submodule_safety"));
+    }
+    Ok(())
 }
 fn unavailable(reason: &str) -> Fail<AgentsError> {
     AgentsError::DiscardSnapshotUnavailable {
@@ -512,6 +517,9 @@ impl AgentsService {
         let Some(snapshot) = hashed? else {
             return Err(changed(dir, head, base).await);
         };
+        if snapshot.submodules {
+            return Err(unavailable("submodule_safety"));
+        }
         if &snapshot.fingerprint != expected {
             return Err(changed(dir, head, base).await);
         }

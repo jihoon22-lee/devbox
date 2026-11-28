@@ -27,14 +27,16 @@ fn the_submodule_code_never_covers_a_folder_cleanup_must_not_take() {
     );
 }
 
-/// A discard removes the work folder with force, which also takes an initialized submodule's store
-/// and any commits in it not pushed. Its confirmation says so, and says so as well when the check
-/// has no answer; the discard still goes.
+/// Even with a valid fingerprint, discard must never force-remove a submodule's repository.
 #[test]
-fn a_discard_warns_of_submodules_and_still_goes() {
+fn discard_keeps_submodule_stores() {
     cases(
-        "teardown_submodule_tests::a_discard_warns_of_submodules_and_still_goes",
-        &["discard-submodule", "discard-submodule-unknown"],
+        "teardown_submodule_tests::discard_keeps_submodule_stores",
+        &[
+            "discard-submodule",
+            "discard-submodule-unknown",
+            "discard-submodule-teardown",
+        ],
         case,
     );
 }
@@ -290,19 +292,28 @@ async fn case(mode: String) {
             assert_eq!(f.svc.get(&task.id).await.expect("task").cleanup_error, None);
             untouched(&f, &wt, &sub, &unpushed, "unpushed\n").await;
         }
-        "discard-submodule" | "discard-submodule-unknown" => {
-            if mode == "discard-submodule" {
-                let check = f.svc.discard_check(&task.id).await.expect("check");
-                assert!(!check.has_submodules, "nothing to warn of yet");
-                add_submodule(&f, &wt).await;
-            }
+        "discard-submodule" | "discard-submodule-unknown" | "discard-submodule-teardown" => {
+            let added = if mode == "discard-submodule" {
+                Some(add_submodule(&f, &wt).await)
+            } else {
+                None
+            };
+            let during_teardown = mode == "discard-submodule-teardown";
+            let commands = if during_teardown {
+                vec![r#"mkdir -p "$(git rev-parse --git-path modules)/lib""#]
+            } else {
+                vec![]
+            };
+            let ran = approve_teardown(&f, &task, &wt, &commands).await;
             let check = f
                 .svc
                 .discard_check(&task.id)
                 .await
                 .expect("discard confirmation");
-            assert!(check.has_submodules, "{check:?}");
-            f.svc
+            assert_eq!(check.has_submodules, !during_teardown);
+            let before = f.svc.db.rev();
+            let result = f
+                .svc
                 .discard(DiscardAgent {
                     id: task.id.clone(),
                     expect: ReviewExpect {
@@ -312,10 +323,24 @@ async fn case(mode: String) {
                         discard_fingerprint: check.fingerprint,
                     },
                 })
-                .await
-                .expect("the discard still goes");
-            assert!(!wt.exists());
-            assert!(!has_branch(&f).await);
+                .await;
+            assert!(
+                matches!(result, Err(Fail::Domain(AgentsError::DiscardSnapshotUnavailable { ref reason })) if reason == "submodule_safety"),
+                "{result:?}"
+            );
+            assert_eq!(ran.exists(), during_teardown);
+            if !during_teardown {
+                assert_eq!(f.svc.db.rev(), before, "refused before stopping the task");
+            }
+            assert_ne!(
+                f.svc.get(&task.id).await.expect("task").state,
+                AgentState::Closed
+            );
+            assert!(wt.is_dir() && has_branch(&f).await);
+            assert!(receipt("remove").is_empty());
+            if let Some((sub, commit)) = added {
+                untouched(&f, &wt, &sub, &commit, "unpushed\n").await;
+            }
         }
         other => panic!("unknown mode {other}"),
     }
