@@ -18,7 +18,7 @@ import time
 import uuid
 from pathlib import Path
 
-from common import (BASE, evidence_root, harness_hashes, LineProcess, assigned_receipt, cgroup_evidence, dump, identity_states,
+from common import (BASE, evidence_root, harness_hashes, LineProcess, assigned_receipt, cgroup_evidence, dump, identity_gone, identity_states,
                     native_class_source, probe_script, ps_command, require_lock, run_probe, stop_exact)
 
 CHILD = r'''$ErrorActionPreference='Stop'
@@ -153,6 +153,11 @@ def proved_startup_cleanup(lines):
     return False
 
 
+def all_owned_released(step):
+    return (step['observation']['rawState'] in ('notFound', 'empty')
+            and all(identity_gone(step['identities'].get(label)) for label in ('root', 'child')))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--worktree', required=True)
@@ -251,7 +256,7 @@ def main():
                                'after the root exits the product reports notFound for a live descendant (I1 stays release-gating)')
             if name_vanished and child_alive_p3 and raw(p3, 'observation') == 'notFound' else 'NOT_CONFIRMED (see steps)',
         }
-        final_ok = raw(p4, 'observation') in ('notFound', 'empty') and all(v != 'alive' for v in p4['identities'].values())
+        final_ok = all_owned_released(p4)
         result['verdicts'] = {
             'control': 'PASS' if control else 'FAIL',
             'identityMismatchBranch': {'status': branch, 'reason': branch_reason},
@@ -279,15 +284,16 @@ def main():
                 result['cleanup'].append({'action': 'release-event', 'status': 'FAIL', 'error': str(error)[:400]})
         for label, pid, creation in identities:
             try:
-                states = identity_states([(label, pid, creation)])
-                if states.get(label) == 'alive':
+                state = identity_states([(label, pid, creation)]).get(label)
+                if state == 'alive':
                     time.sleep(3)
-                    states = identity_states([(label, pid, creation)])
-                if states.get(label) == 'alive':
+                    state = identity_states([(label, pid, creation)]).get(label)
+                if state == 'alive':
                     stopped = stop_exact(label, pid, creation)
                     result['cleanup'].append({'action': 'exact-stop', 'label': label, 'status': 'PASS' if stopped['result'] in ('stopped', 'absent') or stopped['result'].startswith('already-exited') else 'FAIL', 'result': stopped})
                 else:
-                    result['cleanup'].append({'action': 'verify-gone', 'label': label, 'status': 'PASS', 'state': states.get(label)})
+                    result['cleanup'].append({'action': 'verify-gone', 'label': label,
+                                              'status': 'PASS' if identity_gone(state) else 'FAIL', 'state': state})
             except Exception as error:
                 result['cleanup'].append({'action': 'verify-gone', 'label': label, 'status': 'FAIL', 'error': str(error)[:400]})
         result['retainedResources'] = [row['label'] for row in result['cleanup'] if row.get('status') == 'FAIL' and 'label' in row]

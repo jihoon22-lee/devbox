@@ -77,3 +77,42 @@ class ProbeJobHandles(unittest.TestCase):
                 result = json.loads(next(runs.glob('g1-*/g1.json')).read_bytes())
                 self.assertEqual(result['status'], 'FAIL')
                 self.assertEqual(result['retainedResources'], [] if outcome == 'exited' else ['child'])
+
+    def test_final_observation_requires_positive_root_and_child_exit_evidence(self):
+        def released(states):
+            return g1_live_member.all_owned_released({'observation': {'rawState': 'notFound'}, 'identities': states})
+
+        self.assertTrue(released({'root': 'reused', 'child': 'exited:0'}))
+        self.assertTrue(released({'root': 'exited:4294967295', 'child': 'absent'}))
+        for state in ('alive', 'unavailable:5', 'exited:', 'exited:bad', 'exited:259', 'exited:4294967296'):
+            with self.subTest(state=state):
+                self.assertFalse(released({'root': 'absent', 'child': state}))
+        self.assertFalse(released({'root': 'absent'}))
+        self.assertFalse(released({}))
+
+    def test_unavailable_or_missing_identity_is_retained_in_both_cleanup_paths(self):
+        started = dict(phase='started', pid=101, creationTime='10', childPid=102, childCreationTime='11',
+                       sid='S-1-5-1', sessionId=1, port=50000)
+        for module, case in ((g1_live_member, 'g1'), (g2_probe_timing, 'g2')):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp, ExitStack() as ctx:
+                directory = Path(tmp)
+                runs = directory / 'runs'
+                runs.mkdir()
+                root = Mock(lines=[], stderr=[])
+                root.read_json.return_value = started
+                root.close.return_value = 0
+                overrides = {'evidence_root': directory, 'require_lock': 1, 'probe_script': ('mock', {}),
+                             'native_class_source': '', 'LineProcess': root, 'identity_states': {'root': 'unavailable:5'}}
+                if module is g1_live_member:
+                    overrides['ps_command'] = {}
+                for key, value in overrides.items():
+                    ctx.enter_context(patch.object(module, key, return_value=value))
+                ctx.enter_context(patch.object(module, 'run_probe', side_effect=RuntimeError('owned probe fixture')))
+                stop = ctx.enter_context(patch.object(module, 'stop_exact'))
+                ctx.enter_context(patch('sys.argv', [case, '--worktree', tmp, '--source-sha', 'a' * 40, '--out', str(runs)]))
+                with redirect_stdout(StringIO()):
+                    self.assertEqual(module.main(), 1)
+                evidence = json.loads(next(runs.glob(f'{case}-*/{case}.json')).read_bytes())
+                self.assertEqual(evidence['retainedResources'], ['root', 'child'] if case == 'g1' else ['root'])
+                self.assertTrue(all(row['status'] == 'FAIL' for row in evidence['cleanup']))
+                stop.assert_not_called()

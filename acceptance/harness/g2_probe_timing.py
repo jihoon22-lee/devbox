@@ -13,7 +13,7 @@ import time
 import uuid
 from pathlib import Path
 
-from common import (BASE, evidence_root, harness_hashes, BUDGET_SECONDS, LineProcess, assigned_receipt, cgroup_evidence, dump, identity_states,
+from common import (BASE, evidence_root, harness_hashes, BUDGET_SECONDS, LineProcess, assigned_receipt, cgroup_evidence, dump, identity_gone, identity_states,
                     native_class_source, probe_script, require_lock, run_probe, stop_exact)
 
 ROOT = r'''
@@ -105,7 +105,8 @@ def main():
                     stopped = stop_exact(*identity)
                     result['cleanup'].append({'action': 'exact-stop', 'status': 'PASS' if stopped['result'] in ('stopped', 'absent') else 'FAIL', 'result': stopped})
                 else:
-                    result['cleanup'].append({'action': 'verify-gone', 'status': 'PASS', 'state': state})
+                    result['cleanup'].append({'action': 'verify-gone', 'status': 'PASS' if identity_gone(state) else 'FAIL',
+                                              'state': state})
             except Exception as error:
                 result['cleanup'].append({'action': 'verify-gone', 'status': 'FAIL', 'error': str(error)[:400]})
         if any(row['status'] == 'FAIL' for row in result['cleanup']):
