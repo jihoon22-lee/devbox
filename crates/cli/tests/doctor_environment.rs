@@ -44,11 +44,11 @@ impl Fixture {
         fs::write(self.env_file(), format!("PATH=\"{}\"\n", saved.display()))
             .expect("owned saved environment");
     }
-    fn doctor(&self, args: &[&str]) -> String {
+    fn command(&self) -> Command {
         let home = self.home.path();
-        let output = Command::new(env!("CARGO_BIN_EXE_devbox"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_devbox"));
+        command
             .arg("doctor")
-            .args(args)
             .env_clear()
             .env("HOME", home)
             .env("USER", "owned-doctor-fixture")
@@ -56,7 +56,13 @@ impl Fixture {
             .env("DEVBOX_INSTANCE", "accept")
             .env("CLAUDE_CONFIG_DIR", home.join("claude"))
             .env("CODEX_HOME", home.join("codex"))
-            .env("GH_CONFIG_DIR", home.join("gh"))
+            .env("GH_CONFIG_DIR", home.join("gh"));
+        command
+    }
+    fn doctor(&self, args: &[&str]) -> String {
+        let output = self
+            .command()
+            .args(args)
             .output()
             .expect("run owned CLI fixture");
         String::from_utf8(output.stdout).expect("UTF-8 doctor output")
@@ -209,4 +215,63 @@ fn a_linked_saved_environment_is_not_followed_and_the_doctor_says_why() {
     assert!(first.contains("일반 파일이 아닙니다"), "{first}");
     assert!(first.contains("devbox setup"), "{first}");
     assert!(!first.contains("권한"), "{first}");
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn terminating_startup_doctor_also_terminates_its_probe() {
+    use std::{
+        io::{ErrorKind, Read},
+        os::unix::{net::UnixListener, process::ExitStatusExt},
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+
+    let fixture = Fixture::new();
+    let listener =
+        UnixListener::bind(fixture.home.path().join("ready.sock")).expect("owned socket");
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking fixture listener");
+    // The probe's open socket identifies its lifetime without looking up a possibly reused PID.
+    // The fixture also exits on EOF, even when the behavior under test regresses.
+    executable(
+        &fixture.home.path().join("caller/powershell.exe"),
+        r#"exec /usr/bin/python3 -c 'import os, socket; s=socket.socket(socket.AF_UNIX); s.connect(os.path.join(os.environ["HOME"],"ready.sock")); s.recv(1)'"#,
+    );
+    let mut doctor = fixture
+        .command()
+        .arg("--startup")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("start fixture doctor");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut connection = loop {
+        match listener.accept() {
+            Ok((connection, _)) => break connection,
+            Err(e) if e.kind() == ErrorKind::WouldBlock && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => {
+                let _ = doctor.kill();
+                let _ = doctor.wait();
+                panic!("owned probe did not connect: {e}");
+            }
+        }
+    };
+    doctor.kill().expect("terminate doctor during the probe");
+    assert_eq!(
+        doctor.wait().expect("reap doctor").signal(),
+        Some(libc::SIGKILL)
+    );
+    connection
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("limit probe disconnect wait");
+    assert_eq!(
+        connection
+            .read(&mut [0])
+            .expect("probe must exit with its doctor"),
+        0
+    );
 }
