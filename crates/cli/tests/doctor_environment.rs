@@ -230,7 +230,9 @@ fn terminating_startup_doctor_also_terminates_its_probe() {
     let fixture = Fixture::new();
     let listener =
         UnixListener::bind(fixture.home.path().join("ready.sock")).expect("owned socket");
-    listener.set_nonblocking(true).unwrap();
+    listener
+        .set_nonblocking(true)
+        .expect("nonblocking fixture listener");
     // The probe's open socket identifies its lifetime without looking up a possibly reused PID.
     // The fixture also exits on EOF, even when the behavior under test regresses.
     executable(
@@ -243,7 +245,7 @@ fn terminating_startup_doctor_also_terminates_its_probe() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .unwrap();
+        .expect("start fixture doctor");
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut connection = loop {
         match listener.accept() {
@@ -265,7 +267,7 @@ fn terminating_startup_doctor_also_terminates_its_probe() {
     );
     connection
         .set_read_timeout(Some(Duration::from_secs(1)))
-        .unwrap();
+        .expect("limit probe disconnect wait");
     assert_eq!(
         connection
             .read(&mut [0])
