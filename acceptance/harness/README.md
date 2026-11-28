@@ -19,7 +19,7 @@ common-dir of one PC.
 - **Before a run:** the run copy is synced from the repository (copy the code from here, then confirm with `diff -r`
   that it is the same). A helper that changed since the last approval changes `helperSha256`, which the independent
   reviewer approves again together with the binding (§2.3).
-- **Not wired into CI.** `test_s7_harness.py` runs by hand (`python3 -B -m unittest test_s7_harness`), as §1 says.
+- **Not wired into CI.** Run the harness tests by hand (`python3 -B -m unittest discover`), as §1 says.
 - The text below still says rc.2 in places and uses that run's paths; it is kept as written.
 
 ### Changes for 1.0.1 (the code here differs from the imported run copy)
@@ -335,7 +335,7 @@ WINLOCAL=/mnt/c/Users/<windows user>/AppData/Local # see `ls /mnt/c/Users`; no W
 5. **Run the unit tests and the static checks.** Run these after any harness change.
 
    ```sh
-   (cd $H && python3 -B -m unittest test_s7_harness -v)
+   (cd $H && python3 -B -m unittest discover -v)
    python3 -B $H/validate.py --worktree $W --source-sha "$CAND" --write-manifest
    ```
 

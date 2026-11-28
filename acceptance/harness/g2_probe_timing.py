@@ -17,14 +17,20 @@ from common import (BASE, evidence_root, harness_hashes, BUDGET_SECONDS, LinePro
                     native_class_source, probe_script, require_lock, run_probe, stop_exact)
 
 ROOT = r'''
-$job=[DevboxObservation]::AssociateFresh('JOB')
-$listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
+$job=[IntPtr]::Zero
+$listener=$null
 try {
+  $job=[DevboxObservation]::CreateFresh('JOB')
+  [DevboxObservation]::AssociateFresh($job)
+  $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
   $listener.Start()
   [Console]::Out.WriteLine((@{pid=$PID;creationTime=[DevboxObservation]::CreationTime();sid=[DevboxObservation]::Sid();sessionId=[DevboxObservation]::Session();port=$listener.LocalEndpoint.Port} | ConvertTo-Json -Compress))
   [Console]::Out.Flush()
   $read=[Console]::In.ReadLineAsync(); [void]$read.Wait(600000)
-} finally { $listener.Stop(); [void][DevboxObservation]::CloseHandle($job) }
+} finally {
+  if($job -ne [IntPtr]::Zero) { [void][DevboxObservation]::CloseHandle($job) }
+  if($null -ne $listener) { $listener.Stop() }
+}
 '''
 
 
