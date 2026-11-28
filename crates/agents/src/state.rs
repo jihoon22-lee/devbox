@@ -19,6 +19,7 @@ pub enum CloseHow {
     Merged,
     PullRequest,
     Discarded,
+    Archived,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +46,9 @@ pub enum AgentEvent {
     SessionLost,
     /// The tool runs another conversation than the task's (see `antigravity_service`).
     SessionMismatch,
+    ClaudeConversationMissing {
+        failed: bool,
+    },
     UserInstructed,
     UserReview,
     Closed {
@@ -72,6 +76,8 @@ pub fn next(s: AgentState, e: &AgentEvent) -> Option<AgentState> {
         E::Exited { .. } if live || s == S::Preparing => S::Failed,
         E::SessionLost if live || s == S::Preparing => S::Failed,
         E::SessionMismatch if live => S::Failed,
+        E::ClaudeConversationMissing { failed: true } => S::Failed,
+        E::ClaudeConversationMissing { failed: false } => S::Review,
         E::UserInstructed if matches!(s, S::Idle | S::Waiting | S::Failed | S::Review) => {
             S::Running
         }
@@ -101,6 +107,7 @@ pub fn fail_reason(e: &AgentEvent) -> Option<String> {
         AgentEvent::Exited { code } if *code != 0 => Some(format!("exit:{code}")),
         AgentEvent::SetupFailed { code } => Some(format!("setup:{code}")),
         AgentEvent::SessionLost => Some("session_lost".into()),
+        AgentEvent::ClaudeConversationMissing { .. } => Some(crate::claude_recovery::REASON.into()),
         AgentEvent::SessionMismatch => Some("session_mismatch".into()),
         _ => None,
     }

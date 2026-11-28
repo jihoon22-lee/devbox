@@ -122,6 +122,10 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     action:
       "제어 문자는 터미널에서 키 입력으로 처리됩니다. 탭·줄바꿈 말고 다른 제어 문자(터미널 출력의 색 코드 등)를 지운 뒤 다시 보내세요.",
   },
+  "agents.claude_conversation_unavailable": {
+    title: "이 작업에서 재개할 Claude Code 대화 기록을 찾지 못했습니다.",
+    action: "[새 대화로 시작]이나 [목록에서 정리]를 선택하세요.",
+  },
   "agents.resume_unavailable": {
     title: "에이전트를 이어서 실행할 수 없습니다.",
     action: "이전 도구 실행을 확인할 수 없습니다. 새 작업을 만들어 주세요.",

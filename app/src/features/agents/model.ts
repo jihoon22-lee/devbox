@@ -117,6 +117,7 @@ export function toolLabel(profiles: ToolProfile[] | undefined, profile: string) 
   return profiles?.find((p) => p.id === profile)?.label ?? profile;
 }
 export function failureLabel(reason: string | null) {
+  if (reason === "claude_conversation_missing") return "이 작업에서 재개할 Claude Code 대화 기록을 찾지 못했습니다.";
   if (reason === "session_lost") return "WSL이 멈춰 세션이 끊겼습니다";
   if (reason?.startsWith("killed:")) return "외부에서 종료됨(메모리 부족이나 다른 도구가 끝냈을 수 있습니다)";
   if (reason?.startsWith("exit:")) return `도구가 오류로 끝났습니다(종료 코드 ${reason.slice(5)})`;

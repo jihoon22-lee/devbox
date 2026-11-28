@@ -38,6 +38,29 @@ async function setup(inline = false, trustRequired = false) {
   }
   return wire;
 }
+test("missing conversation starts a fresh chat on this task only after the user's choice", async () => {
+  const wire = new ProjectWire();
+  const item = { ...task("a1", "review"), reason: "claude_conversation_missing", toolExited: true };
+  const opened = vi.fn();
+  render(
+    <TooltipProvider>
+      <RpcProvider client={wire.client}>
+        <AgentActions task={item} sessionAlive onResume={opened} />
+      </RpcProvider>
+    </TooltipProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  expect(screen.queryByRole("button", { name: "재개" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "새 대화로 시작" }));
+  await waitFor(() => expect(wire.requests("agents.recover_conversation")).toHaveLength(1));
+  expect(wire.request("agents.recover_conversation").params).toEqual({
+    id: "a1",
+    updatedMs: item.updatedMs,
+    action: "startNew",
+  });
+  await act(async () => wire.reply("agents.recover_conversation", task("a1", "running")));
+  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
+});
 test("discard freezes displayed head/count and cancel receives focus", async () => {
   const wire = await setup();
   await userEvent.click(screen.getByRole("button", { name: "더 보기" }));

@@ -151,6 +151,19 @@ pub struct ListAgents {
 pub struct GetAgent {
     pub id: String,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum ConversationAction {
+    StartNew,
+    Archive,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RecoverConversation {
+    pub id: String,
+    pub updated_ms: i64,
+    pub action: ConversationAction,
+}
 #[derive(Debug, Serialize, Deserialize, TS)]
 pub struct AgentsList {
     pub rev: String,
@@ -385,6 +398,7 @@ domain_error! {
         DeliveryUnknown = "agents.delivery_unknown",
         AwaitingInput = "agents.awaiting_input",
         ToolStarting = "agents.tool_starting",
+        ClaudeConversationUnavailable = "agents.claude_conversation_unavailable",
         ResumeUnavailable = "agents.resume_unavailable",
         ReviewUnavailable = "agents.review_unavailable",
         DiscardSnapshotUnavailable { reason: String } = "agents.discard_snapshot_unavailable",
