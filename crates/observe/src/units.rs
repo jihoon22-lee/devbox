@@ -292,6 +292,7 @@ pub(crate) fn parse_show(
 pub(crate) fn unavailable(reason: UnitsUnavailableReason) -> UnitsResult {
     UnitsResult {
         available: false,
+        projects_unavailable: false,
         reason: Some(reason),
         items: vec![],
         truncated: false,
@@ -367,6 +368,7 @@ pub(crate) async fn snapshot(
     let (names, truncated) = parse_list(&listed).ok_or(ObserveError::SourceUnavailable)?;
     let mut result = UnitsResult {
         available: true,
+        projects_unavailable: false,
         reason: None,
         items: vec![],
         truncated,

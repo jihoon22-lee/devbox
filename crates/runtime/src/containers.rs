@@ -117,6 +117,7 @@ fn valid_id(id: &str) -> bool {
 fn unavailable(reason: ContainerUnavailableReason) -> ContainersResult {
     ContainersResult {
         available: false,
+        projects_unavailable: false,
         reason: Some(reason),
         items: vec![],
     }
@@ -169,6 +170,7 @@ pub(crate) fn parse_ps(bytes: &[u8], roots: &[ProjectRoot]) -> R<ContainersResul
     }
     Ok(ContainersResult {
         available: true,
+        projects_unavailable: false,
         reason: None,
         items,
     })

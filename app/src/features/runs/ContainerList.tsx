@@ -1,4 +1,4 @@
-import type { ContainerInfo } from "../../rpc/gen/rpc";
+import type { ContainerInfo, ContainersResult } from "../../rpc/gen/rpc";
 import { Button, StatusDot } from "../../ui";
 import { DataTable } from "../../ui/DataTable";
 import type { RunSelection } from "./RunList";
@@ -12,21 +12,25 @@ type RowProps = {
 };
 /** Only the current project's containers are listed open; the rest stay reachable in a folded group. */
 export function ContainerList({
-  containers,
+  result,
   projectId,
   ...row
-}: { containers: ContainerInfo[]; projectId: string } & RowProps) {
-  const mine = containers.filter((container) => container.projectId === projectId);
-  const others = containers.filter((container) => container.projectId !== projectId);
+}: { result?: ContainersResult; projectId: string } & RowProps) {
+  if (!result?.available) return null;
+  const primary = result.projectsUnavailable
+    ? result.items
+    : result.items.filter((item) => item.projectId === projectId);
+  const others = result.projectsUnavailable ? [] : result.items.filter((item) => item.projectId !== projectId);
   return (
     <section aria-label="컨테이너">
       <h3>
-        컨테이너 <small>{mine.length}</small>
+        컨테이너 <small>{primary.length}</small>
       </h3>
-      {mine.length === 0 ? (
+      {result.projectsUnavailable && <p>프로젝트 목록을 읽지 못해 컨테이너를 모두 함께 표시합니다.</p>}
+      {primary.length === 0 ? (
         <p className={s.muted}>{others.length ? "현재 프로젝트의 컨테이너 없음" : "컨테이너 없음"}</p>
       ) : (
-        <ContainerTable label="컨테이너 목록" rows={mine} {...row} />
+        <ContainerTable label="컨테이너 목록" rows={primary} {...row} />
       )}
       {others.length > 0 && (
         <details className={s.otherContainers}>

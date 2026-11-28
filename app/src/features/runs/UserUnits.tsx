@@ -51,7 +51,8 @@ export function UserUnits({ result, projectId }: { result: UnitsResult; projectI
         )}
       </Banner>
     );
-  const mine = (unit: UserUnitInfo) => projectId !== undefined && unit.projectId === projectId;
+  const groupByProject = projectId !== undefined && !result.projectsUnavailable;
+  const mine = (unit: UserUnitInfo) => groupByProject && unit.projectId === projectId;
   // The current project's units first; the listing's order is kept inside each group.
   const ordered = [...result.items].sort((a, b) => Number(mine(b)) - Number(mine(a)));
   return (
@@ -61,6 +62,7 @@ export function UserUnits({ result, projectId }: { result: UnitsResult; projectI
         관리자가 불러온 것(실행 중이거나 실패한 것, 켜 둔 것, 타이머처럼 다른 unit이 시작하는 것)만 나오고, 켜 두지도
         시작하지도 않은 unit 파일은 나오지 않습니다. 시작·중지·수정은 터미널에서 <code>systemctl --user</code>로 합니다.
       </p>
+      {result.projectsUnavailable && <p>프로젝트 목록을 읽지 못해 서비스와 타이머의 소속을 표시할 수 없습니다.</p>}
       {result.truncated && <p>서비스와 타이머가 많아 일부만 표시합니다.</p>}
       {ordered.length === 0 ? (
         <p>
@@ -69,7 +71,7 @@ export function UserUnits({ result, projectId }: { result: UnitsResult; projectI
         </p>
       ) : (
         <>
-          {projectId !== undefined && (
+          {groupByProject && (
             <p>작업 폴더가 현재 프로젝트 안인 서비스와 그 서비스를 시작하는 타이머를 먼저 표시합니다.</p>
           )}
           <table>

@@ -105,17 +105,8 @@ impl ProcessSampler {
         }
         self.previous = next;
         self.sampled_ms = Some(now);
-        let prioritized = |p: &ProcessInfo| {
-            selected.is_some_and(|id| {
-                p.project_id.as_deref() == Some(id)
-                    || projects.iter().any(|root| {
-                        root.id == id
-                            && p.cwd
-                                .as_deref()
-                                .is_some_and(|cwd| Path::new(cwd).starts_with(&root.path))
-                    })
-            })
-        };
+        let prioritized =
+            |p: &ProcessInfo| selected.is_some() && p.project_id.as_deref() == selected;
         result.sort_by(|a, b| {
             prioritized(b)
                 .cmp(&prioritized(a))

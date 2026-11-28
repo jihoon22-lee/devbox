@@ -24,11 +24,13 @@ async fn project_roots(s: &Services) -> R<Vec<ProjectRoot>> {
 }
 /// Roots for a listing that projects only group: a failed read costs the grouping, not the
 /// listing, and is logged by its cause.
-async fn roots_or_none(s: &Services, message: &'static str) -> Vec<ProjectRoot> {
-    read_roots(s).await.unwrap_or_else(|error| {
-        tracing::warn!(cause = %cause(&error), "{message}");
-        vec![]
-    })
+async fn roots_or_none(s: &Services, message: &'static str) -> Option<Vec<ProjectRoot>> {
+    read_roots(s)
+        .await
+        .inspect_err(|error| {
+            tracing::warn!(cause = %cause(error), "{message}");
+        })
+        .ok()
 }
 /// What a degraded listing logs about a failed projects read: the error's code. The text of
 /// an internal error is free-form and may hold a path, so it is named only by its kind.
@@ -62,14 +64,25 @@ pub(super) async fn containers(
 ) -> Result<devbox_runtime::ContainersResult, Fail<devbox_runtime::ContainerError>> {
     // Attribution only groups the list: without projects the containers are still listed.
     let projects = roots_or_none(&s, "containers listed without projects").await;
-    s.containers.list(&projects, cancel).await
+    let mut result = s
+        .containers
+        .list(projects.as_deref().unwrap_or_default(), cancel)
+        .await?;
+    result.projects_unavailable = projects.is_none();
+    Ok(result)
 }
 /// The user's own systemd user units. Like containers, they are listed without attribution
 /// when the projects cannot be read.
 pub(super) async fn units(s: Arc<Services>) -> R<devbox_observe::UnitsResult> {
     let projects = roots_or_none(&s, "user units listed without projects").await;
     let unit_dir = s.paths.xdg_config_home.join("systemd/user");
-    s.observe.units(projects, unit_dir).await
+    let unavailable = projects.is_none();
+    let mut result = s
+        .observe
+        .units(projects.unwrap_or_default(), unit_dir)
+        .await?;
+    result.projects_unavailable = unavailable;
+    Ok(result)
 }
 pub(super) async fn ports(s: Arc<Services>) -> R<Vec<PortInfo>> {
     let (projects, runs) = context(&s).await?;
@@ -182,6 +195,10 @@ esac
         assert_eq!(listed.items.len(), 1, "only the user's own unit file");
         assert_eq!(listed.items[0].name, "app-web.service");
         assert_eq!(
+            serde_json::to_value(&listed).expect("serialize listing")["projectsUnavailable"],
+            false
+        );
+        assert_eq!(
             listed.items[0].project_id.as_deref(),
             Some(project.id.as_str())
         );
@@ -194,6 +211,10 @@ esac
         let listed = super::units(services.clone()).await.expect("listing");
         assert_eq!(listed.items.len(), 1);
         assert_eq!(listed.items[0].project_id, None);
+        assert_eq!(
+            serde_json::to_value(&listed).expect("serialize listing")["projectsUnavailable"],
+            true
+        );
         // No systemctl: a typed reason, not an error.
         Arc::get_mut(&mut services).expect("owned fixture").observe = Arc::new(
             devbox_observe::ObserveService::default().with_systemctl(temp.path().join("missing")),
@@ -224,6 +245,10 @@ esac
         let list = || super::containers(services.clone(), Default::default());
         let listed = list().await.expect("listing with projects");
         assert_eq!(
+            serde_json::to_value(&listed).expect("serialize listing")["projectsUnavailable"],
+            false
+        );
+        assert_eq!(
             listed.items[0].project_id.as_deref(),
             Some(project.id.as_str())
         );
@@ -240,10 +265,22 @@ esac
                 .await
                 .is_err()
         );
+        assert!(matches!(
+            super::ports(services.clone()).await,
+            Err(devbox_protocol::Fail::Internal(_))
+        ));
+        assert!(matches!(
+            super::processes(services.clone(), Default::default()).await,
+            Err(devbox_protocol::Fail::Internal(_))
+        ));
         let listed = list().await.expect("the listing survives the failed read");
         assert!(listed.available && listed.reason.is_none());
         assert_eq!(listed.items.len(), 1);
         assert_eq!(listed.items[0].name, "app-web-1");
         assert_eq!(listed.items[0].project_id, None);
+        assert_eq!(
+            serde_json::to_value(&listed).expect("serialize listing")["projectsUnavailable"],
+            true
+        );
     }
 }

@@ -331,6 +331,7 @@ fn untrusted_text_is_bounded_and_control_characters_do_not_pass() {
 fn units_wire_shape_leaves_out_what_is_not_known() {
     let result = UnitsResult {
         available: true,
+        projects_unavailable: false,
         reason: None,
         items: shown(SHOW),
         truncated: false,
@@ -356,7 +357,7 @@ fn units_wire_shape_leaves_out_what_is_not_known() {
         .expect("fixture value");
     assert_eq!(
         unavailable,
-        serde_json::json!({"available": false, "reason": "managerUnavailable", "items": [], "truncated": false})
+        serde_json::json!({"available": false, "projectsUnavailable": false, "reason": "managerUnavailable", "items": [], "truncated": false})
     );
 }
 

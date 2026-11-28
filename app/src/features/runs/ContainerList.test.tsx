@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ContainerInfo } from "../../rpc/gen/rpc";
 import { RpcProvider } from "../../rpc/RpcProvider";
+import { ContainerList } from "./ContainerList";
 import { ProjectRuns } from "./RunsPage";
 import { RunWire } from "./test-wire";
 
@@ -14,9 +15,10 @@ const container = (name: string, id: string, projectId?: string): ContainerInfo 
   ports: "",
   ...(projectId ? { projectId } : {}),
 });
-function show(containers: ContainerInfo[]) {
+function show(containers: ContainerInfo[], projectsUnavailable = false) {
   const wire = new RunWire();
   wire.containers = containers;
+  wire.projectsUnavailable = projectsUnavailable;
   render(
     <RpcProvider client={wire.client}>
       <ProjectRuns projectId="p" />
@@ -93,4 +95,29 @@ test("a project that owns every container shows no folded group", async () => {
   const section = await screen.findByRole("region", { name: "컨테이너" });
   expect(await within(section).findByRole("button", { name: "app-web-1 로그" })).toBeVisible();
   expect(within(section).queryByText(/다른 컨테이너/)).not.toBeInTheDocument();
+});
+
+test("a failed project lookup keeps every container visible without claiming the current project has none", async () => {
+  show([container("tool-1", "c")], true);
+  expect(await screen.findByText(/프로젝트 목록을 읽지 못해/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "tool-1 로그" })).toBeVisible();
+  expect(screen.queryByText("현재 프로젝트의 컨테이너 없음")).not.toBeInTheDocument();
+  expect(screen.queryByText(/다른 컨테이너/)).not.toBeInTheDocument();
+});
+
+test("an expanded group of other containers stays open across a refreshed listing", async () => {
+  const rows = (items: ContainerInfo[]) => (
+    <ContainerList
+      result={{ available: true, items, projectsUnavailable: false }}
+      projectId="p"
+      busy={false}
+      onSelect={() => {}}
+      onAction={() => {}}
+    />
+  );
+  const initial = container("other-db", "a", "q");
+  const { rerender } = render(rows([initial]));
+  await userEvent.click(screen.getByText("다른 컨테이너 1개", { selector: "summary" }));
+  rerender(rows([initial, container("new-db", "b", "q")]));
+  expect(screen.getByRole("button", { name: "new-db 로그" })).toBeVisible();
 });

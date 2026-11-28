@@ -46,6 +46,7 @@ export class RunWire extends ProjectWire {
   historyFails = false;
   trust: DefinitionList["trust"] = "not_required";
   suggestions: Suggestion[] = [];
+  projectsUnavailable = false;
   containers: ContainerInfo[] = [
     {
       id: "a".repeat(64),
@@ -79,7 +80,7 @@ export class RunWire extends ProjectWire {
         result = { rev: this.rev, items: this.history };
         break;
       case "runtime.containers":
-        result = { available: true, items: this.containers };
+        result = { available: true, items: this.containers, projectsUnavailable: this.projectsUnavailable };
         break;
       case "runtime.schedules":
         result = { items: [] };

@@ -17,6 +17,9 @@ pub enum ContainerUnavailableReason {
 #[serde(rename_all = "camelCase")]
 pub struct ContainersResult {
     pub available: bool,
+    /// The project list could not be read. Items can still be listed without attribution.
+    #[serde(default)]
+    pub projects_unavailable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reason: Option<ContainerUnavailableReason>,

@@ -46,6 +46,9 @@ pub struct UserUnitInfo {
 #[serde(rename_all = "camelCase")]
 pub struct UnitsResult {
     pub available: bool,
+    /// The project list could not be read. Items can still be listed without attribution.
+    #[serde(default)]
+    pub projects_unavailable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reason: Option<UnitsUnavailableReason>,

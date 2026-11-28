@@ -1,4 +1,11 @@
-import type { ContainerInfo, Definition, Run, ScheduleStatus, TrustPreviewStatus } from "../../rpc/gen/rpc";
+import type {
+  ContainerInfo,
+  ContainersResult,
+  Definition,
+  Run,
+  ScheduleStatus,
+  TrustPreviewStatus,
+} from "../../rpc/gen/rpc";
 import { Button, StatusDot } from "../../ui";
 import { DataTable } from "../../ui/DataTable";
 import { ContainerList } from "./ContainerList";
@@ -38,7 +45,7 @@ export function RunList({
   projectId: string;
   definitions: Definition[];
   runs: Run[];
-  containers: ContainerInfo[];
+  containers?: ContainersResult;
   schedules: ScheduleStatus[];
   trust: TrustPreviewStatus;
   selected?: RunSelection;
@@ -165,7 +172,7 @@ export function RunList({
         );
       })}
       <ContainerList
-        containers={containers}
+        result={containers}
         projectId={projectId}
         selected={selected}
         busy={busy}

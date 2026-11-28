@@ -194,7 +194,7 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                 projectId={projectId}
                 definitions={list.data?.defs ?? []}
                 runs={list.data?.runs ?? []}
-                containers={containers.data?.items ?? []}
+                containers={containers.data}
                 schedules={schedules.data?.items ?? []}
                 trust={list.data?.trust ?? "not_required"}
                 selected={selection}

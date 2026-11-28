@@ -174,19 +174,23 @@ fn selected_project_keeps_unit_owned_processes_even_inside_another_project() {
         fs::write(path.join("stat"), stat(pid, 100, 1234)).expect("process stat");
         std::os::unix::fs::symlink(
             match pid {
+                68 => "/project/web",
+                69 => "/project/nested/task",
                 70 => "/agent-worktrees/task",
-                71 => "/other-project/sub",
+                71 => "/project/nested/sub",
                 _ => "/absolute-cwd",
             },
             path.join("cwd"),
         )
         .expect("process cwd");
-        if pid >= 70 {
-            fs::write(
-                path.join("cgroup"),
-                "0::/user.slice/devbox-run-selected.service\n",
-            )
-            .expect("owned run unit");
+        let run_unit = match pid {
+            68 => Some("devbox-run-other.service"),
+            70 | 71 => Some("devbox-run-selected.service"),
+            _ => None,
+        };
+        if let Some(unit) = run_unit {
+            fs::write(path.join("cgroup"), format!("0::/user.slice/{unit}\n"))
+                .expect("owned run unit");
         }
     }
     let proc = ProcFs::fixture(temp.path().into(), Arc::new(|| 0), 100, 4096);
@@ -200,14 +204,21 @@ fn selected_project_keeps_unit_owned_processes_even_inside_another_project() {
                 },
                 ProjectRoot {
                     id: "other".into(),
-                    path: "/other-project".into(),
+                    path: "/project/nested".into(),
                 },
             ],
-            &[UnitRun {
-                unit: "devbox-run-selected.service".into(),
-                run_id: "run".into(),
-                project_id: "selected".into(),
-            }],
+            &[
+                UnitRun {
+                    unit: "devbox-run-selected.service".into(),
+                    run_id: "selected-run".into(),
+                    project_id: "selected".into(),
+                },
+                UnitRun {
+                    unit: "devbox-run-other.service".into(),
+                    run_id: "other-run".into(),
+                    project_id: "other".into(),
+                },
+            ],
             Some("selected"),
         )
         .expect("process snapshot");

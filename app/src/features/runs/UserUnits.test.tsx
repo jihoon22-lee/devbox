@@ -11,7 +11,12 @@ const unit = (name: string, extra: Partial<UserUnitInfo> = {}): UserUnitInfo => 
   kind: name.endsWith(".timer") ? "timer" : "service",
   ...extra,
 });
-const listed = (items: UserUnitInfo[], truncated = false): UnitsResult => ({ available: true, items, truncated });
+const listed = (items: UserUnitInfo[], truncated = false): UnitsResult => ({
+  available: true,
+  items,
+  truncated,
+  projectsUnavailable: false,
+});
 const shownNames = () =>
   screen
     .getAllByRole("row")
@@ -139,8 +144,15 @@ test.each([
     "systemd 사용자 관리자에 연결하지 못해 사용자 서비스를 볼 수 없습니다. 터미널에서 systemctl --user status가 되는지 확인하세요.",
   ],
 ] as const)("an unavailable list (%s) says the cause and the next step", (reason, text) => {
-  render(<UserUnits result={{ available: false, reason, items: [], truncated: false }} />);
+  render(<UserUnits result={{ available: false, reason, items: [], truncated: false, projectsUnavailable: false }} />);
   expect(screen.getByRole("status")).toHaveTextContent(text);
   expect(screen.queryByRole("table")).not.toBeInTheDocument();
   expect(screen.queryAllByRole("button")).toHaveLength(0);
+});
+
+test("a failed project lookup shows the units and explains why they cannot be grouped", () => {
+  render(<UserUnits result={{ ...listed([unit("app-web.service")]), projectsUnavailable: true }} projectId="p" />);
+  expect(screen.getByText(/프로젝트 목록을 읽지 못해/)).toBeVisible();
+  expect(shownNames()).toEqual(["app-web.service"]);
+  expect(screen.queryByText(/먼저 표시합니다/)).not.toBeInTheDocument();
 });

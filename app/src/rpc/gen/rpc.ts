@@ -144,7 +144,11 @@ export type ContainerInfo = { id: string, name: string, image: string, state: st
 projectId?: string, };
 export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
-export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
+export type ContainersResult = { available: boolean, 
+/**
+ * The project list could not be read. Items can still be listed without attribution.
+ */
+projectsUnavailable: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
 export type CookieInfo = { name: string, value: string, domain: string, path: string, secure: boolean, httpOnly: boolean, expiresMs: number | null, };
 export type CookieJarRef = { jar: string, };
 export type CookieList = { cookies: Array<CookieInfo>, };
@@ -794,7 +798,11 @@ export type TrustPreview = { status: TrustPreviewStatus, projectId: string, proj
 export type TrustPreviewParams = { id: string, operation: TrustOperation, agentId: string | null, worktrees: Array<string>, worktree: boolean | null, };
 export type TrustPreviewStatus = "not_required" | "approval_required" | "approved";
 export type UndefineRun = { projectId: string, id: string, };
-export type UnitsResult = { available: boolean, reason?: UnitsUnavailableReason, items: Array<UserUnitInfo>, 
+export type UnitsResult = { available: boolean, 
+/**
+ * The project list could not be read. Items can still be listed without attribution.
+ */
+projectsUnavailable: boolean, reason?: UnitsUnavailableReason, items: Array<UserUnitInfo>, 
 /**
  * More units were loaded than one query shows.
  */
