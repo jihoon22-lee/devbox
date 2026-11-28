@@ -527,6 +527,8 @@ impl AgentsService {
             }
             .into());
         }
+        // An approved teardown may have initialized a submodule without moving HEAD or the base.
+        crate::discard_snapshot::require_discardable_submodules(&wt).await?;
         // Freeze the confirmed outcome before cleanup can remove its Git resources.
         self.close_record(
             &task.id,
@@ -537,6 +539,7 @@ impl AgentsService {
         )
         .await?;
         let cleanup: Result<()> = async {
+            crate::discard_snapshot::require_discardable_submodules(&wt).await?;
             devbox_git::mutate::worktree_remove(repo, &wt, true)
                 .await
                 .map_err(git_failure)?;
