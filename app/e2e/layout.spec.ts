@@ -207,3 +207,31 @@ test("status-bar-keeps-the-daemon-version-whole-at-640-css-px", async ({ page, s
     });
   }
 });
+
+test("실행 화면을 바꿔도 첫 버튼의 위치와 콘텐츠 모서리 여백이 유지된다", async ({ page, stack }) => {
+  await page.goto(at("/runs", stack.gatewayUrl));
+  await expect(page.getByText("데몬 연결됨")).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "실행 관찰 화면" });
+  const first = nav.getByRole("button", { name: "실행 목록" });
+  await expect(first).toBeVisible();
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  const start = await box(first);
+  const main = await box(page.getByRole("main"));
+  expect(start.x).toBeGreaterThan(main.x);
+  expect(start.y).toBeGreaterThan(main.y);
+
+  const projectId = await stack.gammaProjectId();
+  for (const selected of [false, true]) {
+    if (selected) {
+      await page.goto(at(`/runs?projectId=${projectId}`, stack.gatewayUrl));
+      await expect(page.getByRole("button", { name: "프로젝트 전환" })).toHaveText(/gamma/);
+    }
+    for (const name of ["포트 목록", "실행 목록"]) {
+      await nav.getByRole("button", { name }).click();
+      await expect(nav.getByRole("button", { name })).toHaveAttribute("aria-current", "page");
+      const current = await box(first);
+      expect(current.x).toBeCloseTo(start.x, 0);
+      expect(current.y).toBeCloseTo(start.y, 0);
+    }
+  }
+});

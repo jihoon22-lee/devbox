@@ -68,20 +68,29 @@ pub async fn has_submodules(dir: &Path) -> Result<bool, GitError> {
         ],
     )
     .await?;
-    if std::fs::metadata(modules.trim_end_matches('\n')).is_ok_and(|meta| meta.is_dir()) {
-        return Ok(true);
+    match std::fs::metadata(modules.trim_end_matches('\n')) {
+        Ok(meta) if meta.is_dir() => return Ok(true),
+        Ok(_) => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(_) => return Err(GitError::Internal),
     }
     // `<mode> <object> <stage>\t<path>` per entry.
     let index = git_bytes(dir, &["ls-files", "--stage", "-z"], INDEX_BYTES).await?;
-    Ok(index
+    for entry in index
         .split(|byte| *byte == 0)
-        .filter_map(|entry| {
-            let tab = entry.iter().position(|byte| *byte == b'\t')?;
-            entry
-                .starts_with(b"160000 ")
-                .then(|| listed(&entry[tab + 1..]))
-        })
-        .any(|gitlink| std::fs::symlink_metadata(dir.join(gitlink).join(".git")).is_ok()))
+        .filter(|e| e.starts_with(b"160000 "))
+    {
+        let tab = entry
+            .iter()
+            .position(|byte| *byte == b'\t')
+            .ok_or(GitError::InvalidOutput)?;
+        match std::fs::symlink_metadata(dir.join(listed(&entry[tab + 1..])).join(".git")) {
+            Ok(_) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(_) => return Err(GitError::Internal),
+        }
+    }
+    Ok(false)
 }
 
 /// A path as the index lists it, byte for byte: names need not be UTF-8.

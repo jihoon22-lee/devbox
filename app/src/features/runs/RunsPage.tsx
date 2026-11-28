@@ -35,19 +35,23 @@ export function RunsPage() {
     if (search.projectId) useCurrentProject.getState().set(search.projectId);
     setAppliedNavigation(navigationKey);
   }, [search.projectId, navigationKey]);
-  if (search.view)
-    return <SystemOverview key={`${search.view}:${projectId}`} view={search.view} projectId={projectId} />;
-  return projectId ? (
-    <ProjectRuns
-      key={`${projectId}:${navigationKey}`}
-      projectId={projectId}
-      target={search.projectId === projectId ? search : undefined}
-    />
-  ) : (
-    <>
-      <ObservationNavigation />
-      <NoProjectState body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
-    </>
+  return (
+    <div className={s.page}>
+      <ObservationNavigation view={search.view} />
+      <div className={s.view}>
+        {search.view ? (
+          <SystemOverview key={`${search.view}:${projectId}`} view={search.view} projectId={projectId} />
+        ) : projectId ? (
+          <ProjectRuns
+            key={`${projectId}:${navigationKey}`}
+            projectId={projectId}
+            target={search.projectId === projectId ? search : undefined}
+          />
+        ) : (
+          <NoProjectState body="실행은 현재 프로젝트의 작업·서비스·예약을 보여 줍니다." />
+        )}
+      </div>
+    </div>
   );
 }
 function targetSelection(target?: RunsSearch): RunSelection | undefined {
@@ -118,7 +122,6 @@ export function ProjectRuns({ projectId, target }: { projectId: string; target?:
                 ]}
               />
             </header>
-            <ObservationNavigation />
             {list.isError && (
               <Banner
                 tone="danger"

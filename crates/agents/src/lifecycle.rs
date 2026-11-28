@@ -204,6 +204,7 @@ impl AgentsService {
             if known.is_some_and(|known| known.0.get(&task.id) != Some(&task)) {
                 continue;
             }
+            self.reconcile_claude_conversation(&task).await?;
             if self.recover_tool_exit(&task.id).await? {
                 continue;
             }

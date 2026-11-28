@@ -178,7 +178,10 @@ impl AgentsService {
             .read(move |tx| {
                 Ok(store::list(tx, i64::MIN)?
                     .into_iter()
-                    .filter(|t| t.project_id == project_id)
+                    .filter(|t| {
+                        t.project_id == project_id
+                            && t.closed_how != Some(crate::state::CloseHow::Archived)
+                    })
                     .collect())
             })
             .await

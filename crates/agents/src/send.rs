@@ -161,6 +161,7 @@ impl AgentsService {
                         return Ok(Err(AgentsError::NotFound { id }));
                     };
                     if task.tool_exited
+                        || task.reason.as_deref() == Some("session_mismatch")
                         || task.terminal_id != terminal
                         || matches!(task.state, AgentState::Closed | AgentState::Preparing)
                     {
