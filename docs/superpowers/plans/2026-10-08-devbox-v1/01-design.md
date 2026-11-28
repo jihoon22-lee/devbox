@@ -942,7 +942,7 @@ CV·AR이 확정한 v0.9.0 결함을 새 구조에서 어떻게 막는지 적는
   - WSL에서 `pnpm dev`: Vite(1450, strictPort) + `devbox daemon --instance dev` + dev-gateway(1451).
   - Windows 껍데기를 확인할 때만 `scripts/win-dev.ps1`(UNC 경로에서 `pnpm tauri dev`, 인스턴스 `dev`)을 쓴다.
   - 직접 써 보기(dogfood) 설치 파일은 기본으로 CI(`windows.yml`) 산출물을 `scripts/dogfood.sh`로 받는다. Windows 쪽 Rust·MSVC·pnpm을 설치했다면 `scripts/win-build.ps1`로 로컬에서 만들 수도 있다.
-- **설치 채널(S2 Task 15c):** `prod`(실사용, 릴리스 자산)와 `accept`(에이전트의 설치본 수용 검증 전용) 두 가지다. 채널은 빌드할 때 정한다. `windows.yml`은 PR·수동 실행에서 두 채널의 NSIS를 함께 만들고(`devbox-setup`·`devbox-setup-accept` 산출물), 태그 릴리스에는 prod만 올린다. `accept` 채널은 prod와 Windows identifier·설치/데이터 폴더·프로토콜·자동 시작·단일 인스턴스 키가 다르고, WSL 쪽도 인스턴스 `accept`와 채널 전용 바이너리 경로·unit 템플릿을 써서 prod의 `~/.local/share/devbox/bin/devbox`·`devbox@.service`를 바꾸지 않는다. 전역 단축키는 OS 전역이라 prod가 실행 중이면 `accept`의 등록이 실패할 수 있다. 이때 단축키 항목만 미실행으로 기록한다.
+- **설치 채널(S2 Task 15c):** `prod`(실사용, 릴리스 자산)와 `accept`(에이전트의 설치본 수용 검증 전용) 두 가지다. 채널은 빌드할 때 정한다. `windows.yml`은 PR에서 Windows 컴파일·시험을 하고 수동 실행에서 두 채널의 NSIS를 함께 만들고(`devbox-setup`·`devbox-setup-accept` 산출물), 태그 릴리스에는 prod만 올린다. `accept` 채널은 prod와 Windows identifier·설치/데이터 폴더·프로토콜·자동 시작·단일 인스턴스 키가 다르고, WSL 쪽도 인스턴스 `accept`와 채널 전용 바이너리 경로·unit 템플릿을 써서 prod의 `~/.local/share/devbox/bin/devbox`·`devbox@.service`를 바꾸지 않는다. 전역 단축키는 OS 전역이라 prod가 실행 중이면 `accept`의 등록이 실패할 수 있다. 이때 단축키 항목만 미실행으로 기록한다.
 
 ## 11. 검증과 개발 방식
 

@@ -359,3 +359,26 @@ async fn has_submodules_agrees_with_what_git_refuses_to_remove() {
         assert_eq!(dir.exists(), refused, "{dir:?}");
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unreadable_submodule_store_cannot_be_treated_as_absent() {
+    let root = tempfile::tempdir().expect("owned fixture");
+    let main = repo(root.path(), "main");
+    std::os::unix::fs::symlink("modules", main.join(".git/modules")).expect("owned loop");
+    assert!(git::mutate::has_submodules(&main).await.is_err());
+    std::fs::remove_file(main.join(".git/modules")).expect("remove owned loop");
+    sh(&main, &["commit", "--allow-empty", "-qm", "base"]);
+    let head = sh(&main, &["rev-parse", "HEAD"]);
+    sh(
+        &main,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{},lib", head.trim()),
+        ],
+    );
+    std::os::unix::fs::symlink("lib", main.join("lib")).expect("owned gitlink loop");
+    assert!(git::mutate::has_submodules(&main).await.is_err());
+}
