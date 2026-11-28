@@ -515,6 +515,17 @@ public static class S7Identity {
 '''
 
 
+def identity_gone(state):
+    """The exact owned PID/creation pair is known to have exited or no longer exists."""
+    if state in ('absent', 'reused'):
+        return True
+    match = re.fullmatch(r'exited:([0-9]{1,10})', state) if isinstance(state, str) else None
+    if not match:
+        return False
+    code = int(match[1])
+    return code <= 0xffffffff and code != 259  # STILL_ACTIVE
+
+
 def identity_states(pairs, timeout=40):
     """pairs: list of (label, pid, creation). Returns {label: alive|exited:N|absent|reused|unavailable:*}."""
     calls = ';'.join("$o['%s']=[S7Identity]::State([uint32]%d,'%s')" % (label, int(pid), str(int(creation))) for label, pid, creation in pairs)
