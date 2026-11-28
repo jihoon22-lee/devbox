@@ -145,6 +145,8 @@ try {
             if (!($global:DevboxTestcalls -contains 'cargo test -p devbox-win --locked') -or !($global:DevboxTestcalls -contains 'cargo clippy -p devbox-win --all-targets --locked -- -D warnings')) { throw 'Windows notifications crate verification missing' }
         }
     }
+    Package-Case 'PR verifies Windows code without packaging' { & $copy -Mode verify; Counts 1 1 5 0 0 }
+    Package-Case 'PR fails when native tests fail' { $global:DevboxTestfailure = 'cargo'; Reject { & $copy -Mode verify } -Package; Counts 1 1 1 0 0 }
     Package-Case 'ordered prod accept prepares once' {
         & $copy -Verify -Channel @('prod', 'accept')
         Counts 1 1 5 2 2
