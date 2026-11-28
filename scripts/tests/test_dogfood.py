@@ -21,7 +21,7 @@ class Dogfood(unittest.TestCase):
             existing.mkdir()
             (existing / 'keep').write_text('user')
             receipt = dict(source_sha=SHA, run_id='42', repository=DOGFOOD.REPO, workflow='.github/workflows/windows.yml', version='1.0.0-dev', channel='prod', installers={'Devbox-setup.exe': hashlib.sha256(b'fixture').hexdigest()})
-            detail = dict(id=42, head_sha=SHA, head_branch='fixture', path=receipt['workflow'], head_repository={'full_name': DOGFOOD.REPO}, repository={'full_name': DOGFOOD.REPO}, event='pull_request', status='completed', conclusion='success', html_url='fixture-run')
+            detail = dict(id=42, head_sha=SHA, head_branch='fixture', path=receipt['workflow'], head_repository={'full_name': DOGFOOD.REPO}, repository={'full_name': DOGFOOD.REPO}, event='workflow_dispatch', status='completed', conclusion='success', html_url='fixture-run')
             calls, override = [], {}
             def command(*args):
                 calls.append(args)
@@ -32,7 +32,7 @@ class Dogfood(unittest.TestCase):
                         return json.dumps({'object': {'sha': override.get('remote_sha', SHA)}})
                     if args[2].endswith('/actions/runs'):
                         self.assertTrue({'--paginate', '--slurp', 'head_sha=' + SHA, 'branch=fixture'} <= set(args))
-                        return json.dumps([{'workflow_runs': [dict(detail, path='other.yml'), dict(detail, id=1, event='push' if receipt['channel'] == 'accept' else 'schedule')]}, {'workflow_runs': [detail]}])
+                        return json.dumps([{'workflow_runs': [dict(detail, id=1, event='pull_request'), dict(detail, path='other.yml'), dict(detail, id=1, event='push' if receipt['channel'] == 'accept' else 'schedule')]}, {'workflow_runs': [detail]}])
                     self.assertEqual(args[2], f'repos/{DOGFOOD.REPO}/actions/runs/42')
                     return json.dumps(dict(detail, **override.get('detail', {})))
                 if args[:3] == ('gh', 'run', 'watch'):
@@ -52,7 +52,7 @@ class Dogfood(unittest.TestCase):
                     receipt['channel'] = channel
                     with patch.object(DOGFOOD.sys, 'argv', ['dogfood.py', 'fixture'] + (['--channel', channel] if channel == 'accept' else [])):
                         DOGFOOD.main()
-                        for override in [dict(remote_sha='invalid'), dict(watch=True), dict(detail={'event': 'push' if channel == 'accept' else 'schedule'})] + [dict(detail={key: value}) for key, value in [('head_sha', 'b' * 40), ('head_branch', 'other'), ('path', 'other.yml'), ('head_repository', {'full_name': 'other'}), ('repository', {'full_name': 'other'}), ('event', 'schedule'), ('status', 'queued'), ('conclusion', 'failure')]]:
+                        for override in [dict(remote_sha='invalid'), dict(watch=True), dict(detail={'event': 'pull_request'}), dict(detail={'event': 'push' if channel == 'accept' else 'schedule'})] + [dict(detail={key: value}) for key, value in [('head_sha', 'b' * 40), ('head_branch', 'other'), ('path', 'other.yml'), ('head_repository', {'full_name': 'other'}), ('repository', {'full_name': 'other'}), ('event', 'schedule'), ('status', 'queued'), ('conclusion', 'failure')]]:
                             calls.clear()
                             with self.assertRaises((ValueError, subprocess.CalledProcessError)):
                                 DOGFOOD.main()

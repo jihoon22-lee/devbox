@@ -79,9 +79,9 @@ test("discard freezes displayed head/count and cancel receives focus", async () 
     expect: { headOid: "h1", unmergedCommits: 3, discardFingerprint: "snapshot1" },
   });
 });
-const SUBMODULES = "하위 모듈이 있습니다. 하위 모듈 안의 push하지 않은 커밋도 함께 사라집니다.";
+const SUBMODULES = "하위 모듈";
 test.each([true, false])(
-  "a discard's confirmation warns of submodules only when the folder has them (%s)",
+  "discard can only be confirmed when the submodule check is clear (%s)",
   async (hasSubmodules) => {
     const wire = await setup();
     await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
@@ -97,9 +97,13 @@ test.each([true, false])(
       }),
     );
     const confirm = await screen.findByRole("button", { name: "작업 폴더와 브랜치 삭제" });
-    // The forced removal takes the submodules' store too; the discard stays allowed.
     expect(document.body.textContent?.includes(SUBMODULES)).toBe(hasSubmodules);
-    expect(confirm).toBeEnabled();
+    if (hasSubmodules) {
+      expect(confirm).toBeDisabled();
+      expect(wire.requests("agents.discard")).toHaveLength(0);
+    } else {
+      expect(confirm).toBeEnabled();
+    }
   },
 );
 test("a discard stopped by its failed teardown says to fix the command and discard again, never the cleanup list", async () => {

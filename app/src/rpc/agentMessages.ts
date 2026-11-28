@@ -14,6 +14,10 @@ import {
   workFolderRequired,
 } from "./messageDetail";
 
+export const submoduleDiscardMessage = {
+  title: "하위 모듈의 저장소를 보호하기 위해 작업을 폐기할 수 없습니다.",
+  action: "작업 폴더에서 하위 모듈 상태를 확인하고 변경 사항과 로컬 커밋을 백업하세요.",
+};
 type Domain = "agents" | "projects" | "terminal";
 /**
  * What a closed task's cleanup notice says to do (see `cleanupMessages.ts`). The code's own action
@@ -134,10 +138,13 @@ export const AGENT_MESSAGES: Messages<Domain> = {
     title: "고정된 검토 객체를 찾을 수 없습니다.",
     action: "저장된 작업과 커밋 기록은 유지됩니다. Git 객체 보관 상태를 확인해 주세요.",
   },
-  "agents.discard_snapshot_unavailable": {
-    title: "삭제할 파일의 상태를 확인하지 못했습니다.",
-    action: "파일을 읽을 수 있는지와 크기를 확인한 뒤 다시 검토하세요.",
-  },
+  "agents.discard_snapshot_unavailable": (d) =>
+    field(d, "reason") === "submodule_safety"
+      ? submoduleDiscardMessage
+      : {
+          title: "삭제할 파일의 상태를 확인하지 못했습니다.",
+          action: "파일을 읽을 수 있는지와 크기를 확인한 뒤 다시 검토하세요.",
+        },
   "agents.list_changed": { title: "목록을 읽는 동안 작업이 바뀌었습니다.", action: "목록을 다시 확인해 주세요." },
   "agents.project_trust_required": {
     title: "프로젝트 명령 실행 승인이 필요합니다.",
