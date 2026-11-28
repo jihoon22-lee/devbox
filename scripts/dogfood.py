@@ -49,17 +49,17 @@ def main():
     if len(sha) != 40 or any(c not in '0123456789abcdef' for c in sha):
         raise ValueError('Invalid remote SHA')
 
+    package_events = ('workflow_dispatch', 'push') if args.channel == 'prod' else ('workflow_dispatch',)
     def find_run():
-        # Repository runs work before the workflow file exists on the default branch.
         pages = gh_json('api', f'repos/{REPO}/actions/runs', '--method', 'GET', '--paginate', '--slurp',
                         '-f', f'head_sha={sha}', '-f', f'branch={branch}', '-f', 'per_page=100')
         return next((run['id'] for page in pages for run in page['workflow_runs']
                      if run['path'] == '.github/workflows/windows.yml' and run['head_sha'] == sha
-                     and run['head_branch'] == branch and run['event'] in ('pull_request', 'workflow_dispatch', 'push') and (args.channel == 'prod' or run['event'] != 'push')), None)
+                     and run['head_branch'] == branch and run['event'] in package_events), None)
 
     run = find_run()
     if run is None:
-        # A new workflow on a PR should already have a PR run. Dispatch is possible only after it exists on default branch.
+        # Dispatch requires the workflow to exist on the default branch.
         gh_json('api', f'repos/{REPO}/contents/.github/workflows/windows.yml')
         print('No matching run; dispatching windows.yml for remote SHA ' + sha, flush=True)
         command('gh', 'workflow', 'run', 'windows.yml', '--repo', REPO, '--ref', branch)
@@ -74,7 +74,7 @@ def main():
     detail = gh_json('api', f'repos/{REPO}/actions/runs/{run}')
     if (detail['head_sha'] != sha or detail['head_branch'] != branch or detail['path'] != '.github/workflows/windows.yml'
             or detail['head_repository']['full_name'] != REPO or detail['repository']['full_name'] != REPO
-            or detail['event'] not in ('pull_request', 'workflow_dispatch', 'push') or (args.channel == 'accept' and detail['event'] == 'push') or detail['status'] != 'completed' or detail['conclusion'] != 'success'):
+            or detail['event'] not in package_events or detail['status'] != 'completed' or detail['conclusion'] != 'success'):
         raise ValueError('Windows run provenance/status mismatch')
     # Shell namespace resolves redirected/localized Downloads; USERNAME is not a profile path.
     powershell = shutil.which('powershell.exe') or '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'

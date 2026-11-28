@@ -34,8 +34,8 @@ WSL에서 다음 명령으로 받아 Windows에서 직접 확인한다. 원격�
 bash scripts/dogfood.sh <push한 브랜치> [--channel accept]
 ```
 
-GitHub CLI 인증이 필요하다. 그 브랜치의 정확한 원격 SHA에 대한 `windows.yml` 실행(PR·수동 실행, prod는 push 실행도)을 먼저 찾고,
-없으면 기본 브랜치에 워크플로가 있는지 확인한 뒤 수동 실행한다. accept 설치본은 PR·수동 실행에서만 만든다. 실패한 실행은 다운로드하지 않는다.
+GitHub CLI 인증이 필요하다. 그 브랜치의 정확한 원격 SHA에 대한 `windows.yml` 실행(수동 실행, prod는 push 실행도)을 먼저 찾고,
+없으면 기본 브랜치에 워크플로가 있는지 확인한 뒤 수동 실행한다. PR은 Windows 컴파일·시험을 하고, accept 설치본은 수동 실행에서 만든다. 실패한 실행은 다운로드하지 않는다.
 실제 Windows Downloads 위치에 SHA·run ID·고유 접미사가 있는 새 폴더를 만들며 기존 자료는 보존한다.
 설치 파일의 SHA256과 `receipt.json`의 원본 SHA·run ID·저장소·워크플로·채널을 검사하고 경로를 출력한다. 설치는 자동 실행하지 않는다.
 Windows 쪽 Rust·MSVC·pnpm 없이 이 NSIS 설치 파일을 사용할 수 있다. public RC나 Release는 만들지 않는다.
