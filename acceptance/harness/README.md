@@ -575,6 +575,11 @@ Each run writes to `$S7/runs/<sha8>-<hex8>/` (mode 0700):
 | `ownership-owned-*.json` | The owned-resource manifest. |
 | `product-scripts.json`, `mcp-closed.json` | The bound product scripts used, and the closed MCP processes. |
 
+After a Windows flow, `teardown-wsl-worktree-orphans.json` checks for live processes of the current WSL user
+whose parent is PID 1, whose kernel start tick is newer than the run's start tick, and whose cwd has the exact
+device and inode of the acceptance checkout. A match fails teardown and records only its PID and start tick.
+The scan sends no signals. The controller can review the retained process.
+
 The driver prints `{status, evidenceDirectory, cases}` at the end.
 
 **Status rules:**

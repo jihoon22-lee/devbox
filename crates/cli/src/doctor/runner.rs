@@ -138,6 +138,29 @@ impl Drop for OwnedGroup {
         );
     }
 }
+// A Windows executable starts as a Linux WSL interop relay. If doctor itself is killed,
+// its group guard cannot run. Tie the direct child to its spawning parent as well.
+#[cfg(target_os = "linux")]
+#[allow(unsafe_code)]
+fn bind_probe_lifetime(command: &mut tokio::process::Command) {
+    use nix::{
+        sys::{prctl::set_pdeathsig, signal::Signal},
+        unistd::{getpid, getppid},
+    };
+
+    let parent = getpid();
+    // SAFETY: the pre-exec hook only makes prctl/getppid syscalls and returns an errno.
+    unsafe {
+        command.pre_exec(move || {
+            set_pdeathsig(Signal::SIGKILL)?;
+            if getppid() != parent {
+                // Parent died between fork and prctl, before the kernel could notify us.
+                return Err(std::io::Error::from_raw_os_error(libc::ESRCH));
+            }
+            Ok(())
+        });
+    }
+}
 pub(super) async fn command(program: &str, args: &[&str], capture: bool) -> Probed<Output> {
     let mut command = tokio::process::Command::new(program);
     // A `PATH` set here is also where the program's name is looked up. The daemon's checks have
@@ -169,6 +192,8 @@ pub(super) async fn command(program: &str, args: &[&str], capture: bool) -> Prob
             format!("/run/user/{}", devbox_core::OsEnv.uid()),
         );
     }
+    #[cfg(target_os = "linux")]
+    bind_probe_lifetime(&mut command);
     let mut child = command.spawn().map_err(io_issue)?;
     let _group = OwnedGroup(
         child

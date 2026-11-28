@@ -47,7 +47,7 @@ import evidence as ev
 from evidence import (BRANCHES, FLOWS, NEEDS, REPO, UPGRADE_FLOWS, WINDOWS_FLOWS, WSL_FLOWS, Unavailable, approval_binding,
                       artifact_digest, initial, parse_answers, record, verify_artifact_dir, verify_review, verify_run, wait_sc2)
 from fixture import BINDING_FILE, MARKER, delegate_windows, inspect_accept_absent, stage, verify_source
-from teardown import cleanup_stage, compare_prod, finalize
+from teardown import cleanup_stage, compare_prod, finalize, worktree_orphans
 import agents_live
 import daemon_rows
 import mcp_stdio
@@ -397,6 +397,8 @@ class NativeOps:
 class Session:
     def __init__(self, args, ctx, owner, root):
         self.args, self.ctx, self.root = args, ctx, Path(root)
+        self.worktree_stat = os.stat(args.worktree)
+        self.start_tick = time.clock_gettime_ns(time.CLOCK_BOOTTIME) * os.sysconf('SC_CLK_TCK') // 1_000_000_000
         self.flow_name, self.cases = args.flow, args.cases
         self.answers, self.binding, self.sides = ctx['answers'], ctx['binding'], ctx['sides']
         runs = self.root / 'runs'
@@ -1011,6 +1013,7 @@ class Session:
             operations['absent_after'] = lambda: self.absent_after(native_flow)
         windows_resources = []
         if native_flow:
+            operations['worktree_orphans'] = lambda: worktree_orphans(self.worktree_stat, self.start_tick)
             windows_resources = self.native_teardown(operations, m)
         context = {'ownership': str(self.ownership) if self.ownership else None, 'launched': self.launched and bool(self.ownership),
                    'installed': self.installed and bool(self.ownership), 'staged': self.stage_dir is not None,
