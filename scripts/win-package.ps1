@@ -1,7 +1,8 @@
 # Called from an owned sync tree, or a disposable hosted runner checkout.
-param([ValidateSet('dev', 'build')][string]$Mode = 'build', [switch]$Verify, [ValidateSet('prod', 'accept', 'dev')][string[]]$Channel = @($(if ($Mode -eq 'dev') { 'dev' } else { 'prod' })))
+param([ValidateSet('dev', 'build', 'verify')][string]$Mode = 'build', [switch]$Verify, [ValidateSet('prod', 'accept', 'dev')][string[]]$Channel = @($(if ($Mode -eq 'dev') { 'dev' } else { 'prod' })))
 $ErrorActionPreference = 'Stop'
-if (!$Channel.Count -or @($Channel | Sort-Object -Unique).Count -ne $Channel.Count -or ($Mode -eq 'dev' -and $Channel.Count -ne 1)) { throw 'Channels must be nonempty, unique, and single for dev mode' }
+if ($Mode -eq 'verify') { $Verify = $true }
+if (!$Channel.Count -or @($Channel | Sort-Object -Unique).Count -ne $Channel.Count -or ($Mode -ne 'build' -and $Channel.Count -ne 1)) { throw 'Channels must be nonempty, unique, and single for dev or verify mode' }
 $Channel = @($Channel | ForEach-Object { $_.ToLowerInvariant() })
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 if ($env:GITHUB_ACTIONS -ne 'true') {
@@ -56,6 +57,7 @@ try {
             Run cargo @('clippy', '-p', 'devbox-win', '--all-targets', '--locked', '--', '-D', 'warnings')
             Run cargo @('test', '--manifest-path', 'app/src-tauri/Cargo.toml', '--locked', '--lib')
         }
+        if ($Mode -eq 'verify') { continue }
         Run pnpm (@('--filter', 'app', 'tauri', $Mode) + $configArgs + @('--', '--locked'))
         if ($Mode -eq 'build') {
             $release = Join-Path $env:CARGO_TARGET_DIR 'release'
