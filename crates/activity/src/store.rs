@@ -78,6 +78,19 @@ impl SessionSink for DbSink {
     }
 }
 
+/// Total recorded time inside the selected day. Daily notes need no app names or window titles.
+pub async fn total_ms(db: &Db, from_ms: i64, to_ms: i64) -> Result<i64, CoreError> {
+    db.read(move |tx| {
+        tx.query_row(
+            "SELECT coalesce(sum(min(end_ms, ?2) - max(start_ms, ?1)), 0) FROM activity_sessions
+             WHERE start_ms < ?2 AND end_ms > ?1 AND end_ms > start_ms",
+            [from_ms, to_ms],
+            |row| row.get(0),
+        )
+    })
+    .await
+}
+
 /// Sessions overlapping `[from_ms, to_ms)`, oldest first.
 pub async fn overlapping(db: &Db, from_ms: i64, to_ms: i64) -> Result<Vec<Session>, CoreError> {
     db.read(move |tx| {

@@ -39,6 +39,9 @@ struct Fake {
     hours: Mutex<Option<u32>>,
 }
 impl SummarySources for Fake {
+    async fn activity_ms(&self, _: &Day) -> R<i64> {
+        Ok(0)
+    }
     async fn closed_tasks(&self, hours: u32) -> R<Vec<ClosedTask>> {
         *self.hours.lock().expect("hours") = Some(hours);
         Ok(self.tasks.clone())
@@ -176,6 +179,37 @@ async fn failed_runs_and_schedules_of_the_day_are_listed_once() {
     for absent in ["old", "예약 nightly\n", "weekly"] {
         assert!(!out.contains(absent), "{absent}: {out}");
     }
+}
+
+#[tokio::test]
+async fn summary_includes_only_activity_duration_inside_the_selected_day() {
+    use devbox_activity::{Session, SessionSink, store::DbSink};
+    let home = tempfile::tempdir().expect("owned home");
+    let s = crate::daemon::build_services_for_test(home.path());
+    let d = day("2026-10-19");
+    let rows = [
+        (d.start_ms - 20_000, d.start_ms + 60_000),
+        (d.end_ms - HOUR_MS, d.end_ms + 20_000),
+        (d.end_ms, d.end_ms + HOUR_MS),
+    ];
+    let sessions = rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, (start_ms, end_ms))| Session {
+            id: i.to_string(),
+            app: "private-app".into(),
+            title: "private-title".into(),
+            project_id: None,
+            start_ms,
+            end_ms,
+        })
+        .collect();
+    DbSink(s.db.clone())
+        .insert(sessions)
+        .await
+        .expect("seed activity");
+    let out = compose(&Live { s }, &d, d.end_ms).await.expect("summary");
+    assert_eq!(out, "### 오늘 한 일\n- 활동 시간: 1시간 1분\n");
 }
 
 #[tokio::test]

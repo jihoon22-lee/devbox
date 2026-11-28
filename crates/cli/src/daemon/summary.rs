@@ -1,7 +1,6 @@
 //! `notes.insert_summary`: "오늘 한 일" for one local calendar day
 //! `[00:00, next 00:00)`: the user's commits in registered projects, agent tasks
-//! closed that day and failed runs/schedules. Only commit subjects, task titles,
-//! PR links and run/schedule IDs are read; activity totals join in S3 Task 8.
+//! closed that day, failed runs/schedules and total recorded activity time.
 use super::state::Services;
 use chrono::{DateTime, NaiveDate, TimeZone};
 use devbox_agents::state::CloseHow;
@@ -101,6 +100,7 @@ pub(super) struct Failure {
 
 /// Where the summary reads from (tests inject fakes).
 pub(super) trait SummarySources: Sync {
+    fn activity_ms(&self, day: &Day) -> impl Future<Output = R<i64>> + Send;
     /// Tasks closed within the last `hours` (open tasks are left out).
     fn closed_tasks(&self, hours: u32) -> impl Future<Output = R<Vec<ClosedTask>>> + Send;
     fn commits(&self, day: &Day) -> impl Future<Output = R<Commits>> + Send;
@@ -188,6 +188,16 @@ pub(super) async fn compose(src: &impl SummarySources, day: &Day, now_ms: i64) -
         .map(|f| f.project.as_str())
         .collect();
     let mut out = String::new();
+    let activity = src.activity_ms(day).await?;
+    if activity > 0 {
+        let minutes = (activity + 30_000) / 60_000;
+        let duration = match minutes {
+            0 => "1분 미만".into(),
+            1..=59 => format!("{minutes}분"),
+            _ => format!("{}시간 {}분", minutes / 60, minutes % 60),
+        };
+        out.push_str(&format!("- 활동 시간: {duration}\n"));
+    }
     let commit_lines = commits
         .items
         .iter()
@@ -290,6 +300,11 @@ impl Live {
     }
 }
 impl SummarySources for Live {
+    async fn activity_ms(&self, day: &Day) -> R<i64> {
+        devbox_activity::store::total_ms(&self.s.db, day.start_ms, day.end_ms)
+            .await
+            .map_err(|_| Fail::Internal("read daily activity duration".into()))
+    }
     async fn closed_tasks(&self, hours: u32) -> R<Vec<ClosedTask>> {
         let tasks = self.s.agents.all_tasks(Some(hours)).await;
         let tasks = tasks.map_err(|_| Fail::Internal("read agent tasks".into()))?;
