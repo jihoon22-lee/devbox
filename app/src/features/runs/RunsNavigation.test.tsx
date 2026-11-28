@@ -113,6 +113,22 @@ test("cold native run target selects its exact task when preflight produced no r
   await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("acknowledge_navigation", { sequence: 2 }));
 });
 
+test.each([undefined, "p"])("실행 화면 왕복 시 목적지 순서와 현재 위치가 유지된다 (project=%s)", async (id) => {
+  useCurrentProject.getState().set(id);
+  const router = setup(new RunWire());
+  await act(async () => router.navigate({ to: "/runs", search: {} }));
+  const labels = ["실행 목록", "포트 목록", "프로세스 목록", "사용자 서비스", "WSL 리소스"] as const;
+  const nav = within(await screen.findByRole("navigation", { name: "실행 관찰 화면" }));
+  expect(nav.getAllByRole("button").map((item) => item.textContent)).toEqual(labels);
+  expect(nav.getByRole("button", { current: "page" })).toHaveTextContent("실행 목록");
+  for (const label of [...labels.slice(1), labels[0]]) {
+    await userEvent.click(nav.getByRole("button", { name: label }));
+    await waitFor(() => expect(nav.getByRole("button", { current: "page" })).toHaveTextContent(label));
+    expect(nav.getAllByRole("button").map((item) => item.textContent)).toEqual(labels);
+  }
+  expect(router.state.location.search.view).toBeUndefined();
+});
+
 test("run navigation exposes process observation using the selected project", async () => {
   const wire = new RunWire();
   useCurrentProject.getState().set("p");

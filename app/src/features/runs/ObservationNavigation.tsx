@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "../../ui";
+import s from "./RunsPage.module.css";
 export type ObservationView = "system" | "ports" | "processes" | "units";
 export const observationLabels = {
   system: "WSL 리소스",
@@ -10,8 +11,10 @@ export const observationLabels = {
 export function ObservationNavigation({ view }: { view?: ObservationView }) {
   const navigate = useNavigate();
   return (
-    <nav aria-label="실행 관찰 화면">
-      {view && <Button onClick={() => void navigate({ to: "/runs", search: {} })}>실행 목록</Button>}
+    <nav className={s.navigation} aria-label="실행 관찰 화면">
+      <Button aria-current={view ? undefined : "page"} onClick={() => void navigate({ to: "/runs", search: {} })}>
+        실행 목록
+      </Button>
       {(["ports", "processes", "units", "system"] as const).map((target) => (
         <Button
           key={target}

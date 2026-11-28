@@ -3,11 +3,9 @@ import { RpcProvider } from "../../rpc/RpcProvider";
 import { ProjectWire } from "../projects/test-wire";
 import { SystemOverview } from "./SystemOverview";
 
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 const gib = 1024 ** 3;
 
-test("system overview shows actual resource values, no ports request, and return navigation", async () => {
+test("system overview shows actual resource values without requesting ports", async () => {
   const wire = new ProjectWire();
   render(
     <RpcProvider client={wire.client}>
@@ -30,8 +28,6 @@ test("system overview shows actual resource values, no ports request, and return
   expect(await screen.findByText("6.1/20GB")).toBeInTheDocument();
   expect(screen.getByText("1.25%")).toBeInTheDocument();
   expect(wire.requests("observe.ports")).toHaveLength(0);
-  fireEvent.click(screen.getByRole("button", { name: "실행 목록" }));
-  expect(navigate).toHaveBeenCalledWith({ to: "/runs", search: {} });
 });
 
 test("ports overview lists owners and retries failures without querying system metrics", async () => {
@@ -103,7 +99,6 @@ test("user units overview polls only its own read-only query and retries a failu
     </RpcProvider>,
   );
   expect(screen.getByRole("heading", { name: "사용자 서비스" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "사용자 서비스" })).toHaveAttribute("aria-current", "page");
   await waitFor(() => expect(wire.requests("observe.units")).toHaveLength(1));
   expect(wire.request("observe.units").params).toEqual({});
   await act(async () => wire.fail("observe.units"));
@@ -140,14 +135,7 @@ test("user units overview polls only its own read-only query and retries a failu
   expect(rows[2]).toHaveTextContent("app-backup.timer");
   for (const method of ["observe.system", "observe.ports", "observe.processes"])
     expect(wire.requests(method)).toHaveLength(0);
-  // Navigation and nothing else: no button acts on a unit.
-  expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-    "실행 목록",
-    "포트 목록",
-    "프로세스 목록",
-    "사용자 서비스",
-    "WSL 리소스",
-  ]);
+  expect(screen.queryByRole("button")).toBeNull(); // No action starts or stops a user unit.
 });
 
 test("a user manager that does not answer in time is named as the cause, with the next step", async () => {

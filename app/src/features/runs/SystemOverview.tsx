@@ -1,7 +1,7 @@
 import { useRpcQuery } from "../../rpc/query";
 import { usePageVisible } from "../../shell/visibility";
 import { Button, ErrorState } from "../../ui";
-import { ObservationNavigation, type ObservationView, observationLabels } from "./ObservationNavigation";
+import { type ObservationView, observationLabels } from "./ObservationNavigation";
 import { PortsTable, ProcessesTable } from "./ObservationTables";
 import { useProcessTermination } from "./ProcessTermination";
 import { gigabytes, memoryLabel, useSystemMetrics } from "./systemMetrics";
@@ -36,7 +36,6 @@ export function SystemOverview({ view, projectId }: { view: ObservationView; pro
   const managerSilent = view === "units" && units.error?.code === "observe.source_unavailable";
   return (
     <section style={{ padding: "var(--space-4)", overflow: "auto" }} aria-label={observationLabels[view]}>
-      <ObservationNavigation view={view} />
       <h2>{observationLabels[view]}</h2>
       {actions.feedback}
       {view === "processes" && (
