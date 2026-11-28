@@ -47,15 +47,13 @@ fn executable(path: &std::path::Path) -> bool {
     // this read-only syscall. AT_EACCESS checks effective credentials and ACLs.
     unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::X_OK, libc::AT_EACCESS) == 0 }
 }
-/// `startup` is the app's check after each setup: see [`Scope::Startup`]. Any other run is made
-/// by hand and looks tools up in the instance's saved environment ([`environment::select`]).
-pub async fn run(json: bool, startup: bool) -> anyhow::Result<()> {
+/// Both startup scopes use the caller's environment. A full, hand-run check uses the saved one.
+pub async fn run(json: bool, scope: Scope) -> anyhow::Result<()> {
     let paths = crate::paths()?;
     let env_file = paths.instance_config_dir.join("env");
     let hook_binary = paths.bin_dir.join("devbox");
-    let scope = if startup { Scope::Startup } else { Scope::Full };
     let (used, checks) = tokio::task::spawn_blocking(move || {
-        let lookup = environment::select(&env_file, startup);
+        let lookup = environment::select(&env_file, scope != Scope::Full);
         let used = environment::Used::of(&lookup, &env_file);
         let probe = OsProbe::new(env_file, hook_binary).looking_in(lookup);
         (used, checks_for(&probe, scope))
@@ -92,7 +90,7 @@ pub async fn run(json: bool, startup: bool) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod scope_tests {
-    /// Only the app's start-up call (`devbox doctor --startup`) leaves the agent CLI rows out.
+    /// Startup scopes leave the agent CLI rows out.
     /// 환경 점검, 에이전트 settings and support bundles read these two routes, which keep them.
     #[test]
     fn the_rpc_doctor_and_the_support_bundle_keep_the_agent_rows() {

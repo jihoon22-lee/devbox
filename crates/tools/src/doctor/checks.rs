@@ -34,11 +34,10 @@ fn boolean(
 pub enum Scope {
     /// Every row: the environment check (`system.doctor`), support bundles and `devbox doctor`.
     Full,
-    /// The app's check after each setup (`devbox doctor --startup`). It leaves out the rows that
-    /// look up an agent CLI (`tool.<agent>`, `auth.<agent>`): no interactive shell runs and no
-    /// CLI is asked for its version. Those rows are never `Fail`, so a launch goes on or stops
-    /// exactly as with every row.
+    /// The diagnostic CLI's `--startup` report, without interactive agent CLI lookups.
     Startup,
+    /// Only checks that can stop the app after setup, in the same order and environment.
+    Launch,
 }
 pub fn checks(p: &dyn Probe) -> Vec<Check> {
     checks_for(p, Scope::Full)
@@ -59,15 +58,17 @@ pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
         "WSL에서 systemd가 꺼져 있습니다",
         "/etc/wsl.conf에 [boot] systemd=true를 넣고 wsl --shutdown",
     )];
-    out.push(boolean(
-        "linger",
-        p.linger()
-            .map(|text| text.lines().any(|line| line.trim() == "Linger=yes")),
-        Status::Warn,
-        "linger가 켜져 있습니다(사용자 관리자 유지용 보험이며 WSL 종료를 막지는 않습니다)",
-        "linger가 꺼져 있습니다(권장, WSL 종료 방지 기능은 아닙니다)",
-        "loginctl enable-linger <user>",
-    ));
+    if scope != Scope::Launch {
+        out.push(boolean(
+            "linger",
+            p.linger()
+                .map(|text| text.lines().any(|line| line.trim() == "Linger=yes")),
+            Status::Warn,
+            "linger가 켜져 있습니다(사용자 관리자 유지용 보험이며 WSL 종료를 막지는 않습니다)",
+            "linger가 꺼져 있습니다(권장, WSL 종료 방지 기능은 아닙니다)",
+            "loginctl enable-linger <user>",
+        ));
+    }
     out.push(boolean(
         "tool.tmux",
         p.tmux_version()
@@ -77,24 +78,28 @@ pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
         "tmux 3.2 이상이 필요합니다",
         "sudo apt install tmux 또는 최신 tmux 설치",
     ));
-    out.push(match p.inotify_instances() {
-        Ok(text) => {
-            let inotify = text.trim().parse::<u32>().unwrap_or(0);
-            check(
+    if scope != Scope::Launch {
+        out.push(match p.inotify_instances() {
+            Ok(text) => {
+                let inotify = text.trim().parse::<u32>().unwrap_or(0);
+                check(
+                    "inotify",
+                    if inotify >= 512 {
+                        Status::Ok
+                    } else {
+                        Status::Warn
+                    },
+                    format!("max_user_instances={inotify}"),
+                    (inotify < 512).then_some("fs.inotify.max_user_instances를 1024로 설정"),
+                )
+            }
+            Err(issue) => super::extended::unknown(
                 "inotify",
-                if inotify >= 512 {
-                    Status::Ok
-                } else {
-                    Status::Warn
-                },
-                format!("max_user_instances={inotify}"),
-                (inotify < 512).then_some("fs.inotify.max_user_instances를 1024로 설정"),
-            )
-        }
-        Err(issue) => {
-            super::extended::unknown("inotify", issue, "inotify 설정을 읽을 수 있는지 확인하세요")
-        }
-    });
+                issue,
+                "inotify 설정을 읽을 수 있는지 확인하세요",
+            ),
+        });
+    }
     out.push(boolean(
         "env",
         p.env_path_valid(),
@@ -104,9 +109,14 @@ pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
         "devbox setup",
     ));
     let path = p.daemon_path();
-    for tool in [
-        "git", "claude", "codex", "opencode", "pi", "agy", "gh", "node", "pnpm",
-    ] {
+    let tools: &[&str] = if scope == Scope::Launch {
+        &["git"]
+    } else {
+        &[
+            "git", "claude", "codex", "opencode", "pi", "agy", "gh", "node", "pnpm",
+        ]
+    };
+    for &tool in tools {
         if let Some(agent) = AgentTool::ALL.into_iter().find(|a| a.binary() == tool) {
             if scope == Scope::Full {
                 out.push(super::agent_tools::tool_check(
@@ -141,6 +151,8 @@ pub fn checks_for(p: &dyn Probe, scope: Scope) -> Vec<Check> {
         "상태 알림 실행 파일을 실행할 수 없습니다",
         "devbox 실행 파일 배치를 확인하세요",
     ));
-    out.extend(super::extended::checks(p, scope));
+    if scope != Scope::Launch {
+        out.extend(super::extended::checks(p, scope));
+    }
     out
 }

@@ -44,9 +44,9 @@ impl Fixture {
         fs::write(self.env_file(), format!("PATH=\"{}\"\n", saved.display()))
             .expect("owned saved environment");
     }
-    fn doctor(&self, args: &[&str]) -> String {
+    fn invoke(&self, args: &[&str]) -> std::process::Output {
         let home = self.home.path();
-        let output = Command::new(env!("CARGO_BIN_EXE_devbox"))
+        Command::new(env!("CARGO_BIN_EXE_devbox"))
             .arg("doctor")
             .args(args)
             .env_clear()
@@ -58,8 +58,10 @@ impl Fixture {
             .env("CODEX_HOME", home.join("codex"))
             .env("GH_CONFIG_DIR", home.join("gh"))
             .output()
-            .expect("run owned CLI fixture");
-        String::from_utf8(output.stdout).expect("UTF-8 doctor output")
+            .expect("run owned CLI fixture")
+    }
+    fn doctor(&self, args: &[&str]) -> String {
+        String::from_utf8(self.invoke(args).stdout).expect("UTF-8 doctor output")
     }
     fn json(&self, args: &[&str]) -> serde_json::Value {
         let mut all = vec!["--json"];
@@ -209,4 +211,56 @@ fn a_linked_saved_environment_is_not_followed_and_the_doctor_says_why() {
     assert!(first.contains("일반 파일이 아닙니다"), "{first}");
     assert!(first.contains("devbox setup"), "{first}");
     assert!(!first.contains("권한"), "{first}");
+}
+
+#[test]
+fn the_launch_check_preserves_failed_rows_without_starting_optional_tools() {
+    let fixture = Fixture::new();
+    let home = fixture.home.path();
+    let caller = home.join("caller");
+    let marker = home.join("optional-started");
+    for program in [
+        "loginctl",
+        "powershell.exe",
+        "cargo",
+        "rustc",
+        "docker",
+        "gh",
+    ] {
+        executable(
+            &caller.join(program),
+            &format!("echo {program} >> '{}'\nexit 1", marker.display()),
+        );
+    }
+    executable(&caller.join("systemctl"), "exit 1");
+    fs::remove_file(home.join(".local/share/devbox-accept/bin/devbox"))
+        .expect("missing hook fixture");
+    let all = fixture.json(&["--startup"]);
+    assert!(
+        marker.is_file(),
+        "ordinary startup diagnostics ran optional tools"
+    );
+    fs::remove_file(&marker).expect("clear owned marker");
+
+    let result = fixture.invoke(&["--json", "--launch-check"]);
+    assert_eq!(result.status.code(), Some(1));
+    let gate: serde_json::Value = serde_json::from_slice(&result.stdout).expect("launch report");
+    let expected: Vec<_> = ["systemd", "tool.tmux", "env", "tool.git", "hook.binary"]
+        .iter()
+        .map(|id| row(&all, id).clone())
+        .collect();
+    let failures: Vec<_> = all["checks"]
+        .as_array()
+        .expect("diagnostic checks")
+        .iter()
+        .filter(|check| check["status"] == "fail")
+        .cloned()
+        .collect();
+    assert_eq!(expected, failures, "all failed checks must reach the app");
+    assert_eq!(gate["checks"], serde_json::json!(expected));
+    assert_eq!(gate["environment"], all["environment"]);
+    assert!(
+        !marker.exists(),
+        "the app launch check ran an optional command"
+    );
 }

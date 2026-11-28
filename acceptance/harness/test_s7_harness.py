@@ -41,6 +41,7 @@ import fixture
 import foreign_files
 import mcp_stdio
 import teardown
+from test_launch_doctor import LaunchDoctor
 import update_fixture
 import update_flow
 import validate
@@ -575,7 +576,8 @@ class WslDaemon(unittest.TestCase):
         show = lambda sha, name: common.git(WORKTREE, 'show', sha + ':' + name).decode()
         shas = {'candidate': candidate_sha(), 'baseline': BASELINE_SHA}
         sources = {side: show(sha, wsl_daemon.DEPLOY_CORE) + '\n' + show(sha, wsl_daemon.DEPLOY_PLATFORM) for side, sha in shas.items()}
-        rows = [(side, argv) for (side, _), argv in wsl_daemon.SETUP_ARGV.items()] + list(wsl_daemon.DOCTOR_ARGV.items())
+        rows = [(side, argv) for (side, _), argv in wsl_daemon.SETUP_ARGV.items()]
+        rows += [(side, wsl_daemon.scripts(WORKTREE, sha)['doctorArgv']) for side, sha in shas.items()]
         self.assertEqual(len(rows), 5)
         for side, argv in rows:
             self.assertTrue(wsl_daemon.argv_in_source(argv, sources[side]), (side, argv))
@@ -654,7 +656,7 @@ class WslDaemon(unittest.TestCase):
         report = {'checks': [{'id': 'tool.claude', 'status': 'warn', 'message': 'x' * 500}, {'id': 'os.wslconfig', 'status': 'ok', 'message': 'secret'}]}
         run = lambda argv, env=None, capture_output=True, timeout=None: subprocess.CompletedProcess(argv, 0, json.dumps(report).encode(), b'')
         with patch.object(wsl_daemon, 'require_lock', NO_LOCK):
-            row = wsl_daemon.startup_doctor({}, 'baseline', {'exec': 'E'}, run=run)
+            row = wsl_daemon.startup_doctor({}, 'baseline', {'exec': 'E', 'doctorArgv': ['doctor', '--json']}, run=run)
         self.assertEqual(row['argv'], ['doctor', '--json'])
         self.assertEqual(row['checks'], [{'id': 'tool.claude', 'status': 'warn', 'message': 'x' * 200}, {'id': 'os.wslconfig', 'status': 'ok'}])
 

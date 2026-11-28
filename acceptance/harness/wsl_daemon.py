@@ -26,7 +26,6 @@ STORAGE = 'devbox-accept'  # AppChannel::Accept storage_name (crates/protocol/sr
 SETUP_ARGV = {('candidate', 'launch'): ['setup', '--json'],
               ('candidate', 'redeploy'): ['setup', '--json', '--restart'],
               ('baseline', 'launch'): ['setup', '--json']}
-DOCTOR_ARGV = {'candidate': ['doctor', '--json', '--startup'], 'baseline': ['doctor', '--json']}
 # platform/deploy.rs: install 120 s, setup 90 s, doctor 30 s.
 TIMEOUTS = {'install': 120, 'setup': 90, 'doctor': 30}
 INSTALL_REFUSALS = range(61, 67)  # the install script's own exits (61-66)
@@ -80,7 +79,24 @@ def scripts(worktree, sha, expected_sha256=None):
         raise ValueError('deploy.rs differs from the bound source for ' + sha)
     out = compose(extract(source))
     out['sha256'] = {k: hashlib.sha256(v.encode()).hexdigest() for k, v in out.items()}
+    platform = git(worktree, 'show', sha + ':' + DEPLOY_PLATFORM)
+    out['doctorArgv'] = doctor_argv(source.decode(), platform.decode())
     return out
+
+
+def doctor_argv(core, platform):
+    """Choose only known invocations from the exact app revision being measured."""
+    if re.search(r'\.args\s*\(\s*STARTUP_DOCTOR_ARGS\s*\)', platform):
+        definition = re.search(r'(?m)^\s*(?:pub\s+)?const\s+STARTUP_DOCTOR_ARGS\s*:[^=]+='
+                               r'\s*\[\s*"doctor"\s*,\s*"--json"\s*,\s*"(--launch-check|--startup)"\s*,?\s*\]\s*;', core)
+        if definition:
+            return ['doctor', '--json', definition[1]]
+    else:
+        # rc.1 invoked the doctor inline in the wsl.exe argument array.
+        direct = re.search(r'\bdoctor\.args\(\s*(\[[^\]]+\])\s*\)', platform)
+        if direct and argv_in_source(['doctor', '--json'], direct[1]):
+            return ['doctor', '--json']
+    raise ValueError('Unsupported startup doctor invocation in bound deploy sources')
 
 
 def argv_in_source(argv, text):
@@ -277,9 +293,9 @@ def popen_run(argv, env, timeout, sampler):
 
 
 def startup_doctor(m, phase, phase_scripts, run=subprocess.run, sampler=None, journal=lambda: []):
-    """The phase's startup doctor (`doctor --json --startup`; rc.1 `doctor --json`). tool.* rows keep a short message."""
+    """The startup doctor the phase's bound app source invokes. tool.* rows keep a short message."""
     require_lock()
-    argv = DOCTOR_ARGV[phase]
+    argv = phase_scripts['doctorArgv']
     if sampler is not None:
         run = lambda full, env, capture_output, timeout: popen_run(full, env, timeout, sampler)
     stdout, row = _run(phase_scripts, argv, TIMEOUTS['doctor'], run)

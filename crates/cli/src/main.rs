@@ -50,9 +50,12 @@ enum Cmd {
     Doctor {
         #[arg(long)]
         json: bool,
-        /// 앱이 설정 뒤 하는 점검: 에이전트 CLI 조회(대화형 셸·버전 확인) 항목을 뺀다.
+        /// 실행한 환경에서 에이전트 CLI 조회(대화형 셸·버전 확인)를 빼고 점검한다.
         #[arg(long)]
         startup: bool,
+        /// The app only consumes failed checks after setup. Keep the full --startup report for callers.
+        #[arg(long, hide = true, conflicts_with = "startup")]
+        launch_check: bool,
     },
     /// 에이전트 도구의 상태를 알린다.
     Agent {
@@ -196,7 +199,21 @@ fn main() -> anyhow::Result<()> {
             } => devbox_cli::gateway::run(port, origin, token).await,
             Cmd::Setup { json, restart } => devbox_cli::setup::run(json, restart).await,
             Cmd::Uninstall { json } => devbox_cli::setup::uninstall::run(json).await,
-            Cmd::Doctor { json, startup } => devbox_cli::doctor::run(json, startup).await,
+            Cmd::Doctor {
+                json,
+                startup,
+                launch_check,
+            } => {
+                use devbox_cli::doctor::Scope;
+                let scope = if launch_check {
+                    Scope::Launch
+                } else if startup {
+                    Scope::Startup
+                } else {
+                    Scope::Full
+                };
+                devbox_cli::doctor::run(json, scope).await
+            }
             Cmd::Agent {
                 cmd:
                     AgentCmd::Event {

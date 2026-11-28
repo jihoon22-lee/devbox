@@ -73,10 +73,9 @@ mod tests {
         }
     }
     #[test]
-    fn the_app_start_doctor_skips_the_agent_cli_lookups() {
-        // After every setup the app acts only on failed rows, and agent rows never fail. The
-        // environment check (`system.doctor`) keeps them.
-        assert_eq!(STARTUP_DOCTOR_ARGS, ["doctor", "--json", "--startup"]);
+    fn the_app_start_doctor_only_runs_checks_that_can_fail() {
+        // Only failed rows are displayed by the app after setup.
+        assert_eq!(STARTUP_DOCTOR_ARGS, ["doctor", "--json", "--launch-check"]);
         let deploy = include_str!("../platform/deploy.rs")
             .split_whitespace()
             .collect::<String>();
@@ -421,10 +420,9 @@ impl SetupTrigger {
         matches!(self, Self::Retry | Self::Redeploy)
     }
 }
-/// The check after every setup. The app acts only on its failed rows, which agent rows never
-/// are, so it leaves out the agent CLI lookups: up to four interactive shells and `--version`
-/// runs on every start. The environment check (`system.doctor`) keeps them.
-pub const STARTUP_DOCTOR_ARGS: [&str; 3] = ["doctor", "--json", "--startup"];
+/// The app shows only failed checks after setup. Optional probes remain available through
+/// `devbox doctor`, `devbox doctor --startup` and the settings page's `system.doctor`.
+pub const STARTUP_DOCTOR_ARGS: [&str; 3] = ["doctor", "--json", "--launch-check"];
 /// `devbox setup` arguments for a run started by `trigger`.
 pub fn setup_args(trigger: SetupTrigger) -> &'static [&'static str] {
     if trigger.forces_restart() {
