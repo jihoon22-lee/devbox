@@ -7,6 +7,7 @@ import { Button } from "../../ui";
 import { AGENT_KEYS } from "./AgentData";
 import { AgentStateMark } from "./AgentStateMark";
 import s from "./Agents.module.css";
+import { ConversationRecovery } from "./ConversationRecovery";
 import { type AgentTask, attentionNote, failureLabel } from "./model";
 import { TokenMetrics } from "./TokenMetrics";
 
@@ -63,7 +64,10 @@ export function AgentRow({
   const error = resume.error && messageFor(resume.error.code, resume.error.detail);
   // What the task waits on (unless that only restates the state), or why it failed. It sits next to the state
   // name, never in its place, on one line; the title keeps the whole text for when the line cuts it short.
-  const note = task.state === "failed" ? failureLabel(task.reason) : attentionNote(task);
+  const note =
+    task.state === "failed" || task.reason === "claude_conversation_missing"
+      ? failureLabel(task.reason)
+      : attentionNote(task);
   return (
     <div className={s.row} data-selected={selected || undefined} data-state={task.state}>
       <button
@@ -99,10 +103,14 @@ export function AgentRow({
           <TokenMetrics tokens={task.tokens} truncated={task.tokensTruncated} />
         </span>
       </button>
-      {canResume && (
-        <Button size="sm" disabled={resume.isPending} onClick={() => void doResume()}>
-          {resume.isPending ? "재개 중…" : "재개"}
-        </Button>
+      {task.reason === "claude_conversation_missing" ? (
+        <ConversationRecovery task={task} />
+      ) : (
+        canResume && (
+          <Button size="sm" disabled={resume.isPending} onClick={() => void doResume()}>
+            {resume.isPending ? "재개 중…" : "재개"}
+          </Button>
+        )
       )}
       {error && (
         <p role="alert">

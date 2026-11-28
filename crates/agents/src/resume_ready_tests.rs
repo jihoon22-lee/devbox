@@ -278,25 +278,19 @@ fn claude_session_start_after_a_prompt_keeps_running() {
 }
 
 #[test]
-fn claude_resume_without_session_id_never_marks_ready() {
+fn claude_resume_without_session_id_requires_an_explicit_recovery_choice() {
     with_fake_tmux(
-        "claude_resume_without_session_id_never_marks_ready",
+        "claude_resume_without_session_id_requires_an_explicit_recovery_choice",
         || async {
             let f = Ended::new("claude", None).await;
-            f.svc.resume("a").await.expect("resume");
-            // Without a session Claude starts again with the task's instruction: a real turn.
-            let script = f.script().await;
-            assert!(
-                script.contains(" -- \"$(cat ") && !script.contains("--resume"),
-                "{script}"
-            );
-            assert!(!f.binding().await.resumed_session);
-            let mut attention = f.svc.hub.subscribe(crate::AgentsAttentionTopic::NAME);
-            f.claude(session_start("resume")).await;
-            let task = f.task().await;
-            assert_eq!((task.state, task.attention), (AgentState::Running, None));
-            assert_eq!(notices(&mut attention), 0);
-            f.close().await;
+            let error = f
+                .svc
+                .resume("a")
+                .await
+                .expect_err("no conversation to resume");
+            assert!(format!("{error:?}").contains("ClaudeConversationUnavailable"));
+            assert!(f.task().await.tool_exited);
+            assert!(f.task().await.terminal_id.is_none());
         },
     );
 }
@@ -534,6 +528,7 @@ fn with_fake_tmux<F: std::future::Future<Output = ()>>(test: &str, body: impl Fn
             &format!("resume::ready_tests::{test}"),
             "--nocapture",
         ])
+        .env_remove("CLAUDE_CONFIG_DIR")
         .env(LIVE, root.path().join("live"))
         .env("PATH", &path)
         .output()
@@ -555,3 +550,6 @@ mod first_instruction;
 mod idle_pane;
 #[path = "resume_prompt_arg_tests.rs"]
 mod prompt_arg;
+
+#[path = "claude_recovery_tests.rs"]
+mod conversation;

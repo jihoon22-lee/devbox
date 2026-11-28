@@ -49,7 +49,10 @@ pub(crate) struct Binding {
     /// The transcript file agy's hooks named for the task's conversation (see `usage_antigravity`).
     #[serde(default)]
     pub transcript: Option<PathBuf>,
-    /// The launch resumed agy's conversation and none of its hooks has named a conversation yet:
+    /// Exact transcript path reported by Claude SessionStart for this task and session.
+    #[serde(default)]
+    pub claude_transcript: Option<PathBuf>,
+    /// The launch resumed Claude or agy and none of its hooks has confirmed the conversation yet:
     /// the first must name the task's (see `antigravity_service`).
     #[serde(default)]
     pub unconfirmed_session: bool,
@@ -67,6 +70,7 @@ impl Binding {
             rollout: None,
             turn_started_ms: None,
             transcript: None,
+            claude_transcript: None,
             unconfirmed_session: false,
         }
     }

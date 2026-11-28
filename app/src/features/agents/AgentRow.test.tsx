@@ -148,6 +148,34 @@ test("selected row uses actual resource/token fields and hides unavailable metri
   expect(screen.queryByText(/CPU/)).toBeNull();
 });
 
+test("a missing Claude conversation offers explicit recovery choices", async () => {
+  const wire = new ProjectWire();
+  const item = { ...task("ended", "failed"), reason: "claude_conversation_missing", toolExited: true };
+  render(
+    <RpcProvider client={wire.client}>
+      <AgentRow
+        task={item}
+        selected={false}
+        projectName="project"
+        toolName="Claude Code"
+        now={1000}
+        onSelect={() => {}}
+      />
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.client.state).toBe("ready"));
+  expect(screen.queryByRole("button", { name: "재개" })).toBeNull();
+  expect(screen.getByRole("button", { name: "새 대화로 시작" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "목록에서 정리" }));
+  await waitFor(() => expect(wire.requests("agents.recover_conversation")).toHaveLength(1));
+  expect(wire.request("agents.recover_conversation").params).toEqual({
+    id: item.id,
+    updatedMs: item.updatedMs,
+    action: "archive",
+  });
+  expect(wire.requests("agents.discard")).toHaveLength(0);
+});
+
 test("external kill displays explicit resume, typed failure then confirmed retry", async () => {
   const wire = new ProjectWire();
   render(

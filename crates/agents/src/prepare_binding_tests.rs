@@ -189,19 +189,23 @@ else: print('loaded')
             .env("DEVBOX_PREP_PID", owned.0.id().to_string())
             .output()
             .expect("owned child");
-        let exited = owned.0.try_wait().expect("owned status").is_some();
-        let _ = owned.0.kill();
-        let _ = owned.0.wait();
         assert!(
             output.status.success(),
             "mode={mode}\n{}\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(
-            exited,
-            *mode == "bind" || *mode == "create",
-            "scope process lifetime mode={mode}"
-        );
+        let should_exit = matches!(*mode, "bind" | "create");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let exited = loop {
+            if owned.0.try_wait().expect("owned status").is_some() {
+                break true;
+            }
+            if !should_exit || std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        assert_eq!(exited, should_exit, "scope process lifetime mode={mode}");
     }
 }

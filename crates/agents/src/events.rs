@@ -47,7 +47,10 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
     }
     let ended = matches!(
         event,
-        AgentEvent::Exited { .. } | AgentEvent::SetupFailed { .. } | AgentEvent::SessionLost
+        AgentEvent::Exited { .. }
+            | AgentEvent::SetupFailed { .. }
+            | AgentEvent::SessionLost
+            | AgentEvent::ClaudeConversationMissing { .. }
     );
     if t.tool_exited
         && !ended
@@ -82,7 +85,16 @@ pub(crate) fn apply_event(t: &mut AgentTask, event: &AgentEvent, now: i64) -> bo
         t.reason = state::fail_reason(event);
         updated = true;
     }
+    if matches!(event, AgentEvent::ClaudeConversationMissing { .. })
+        && t.reason.as_deref() != Some(crate::claude_recovery::REASON)
+    {
+        t.reason = Some(crate::claude_recovery::REASON.into());
+        updated = true;
+    }
     let message = match event {
+        AgentEvent::ClaudeConversationMissing { .. } => {
+            Some(crate::claude_recovery::MESSAGE.into())
+        }
         AgentEvent::NeedsInput { message } if t.state == AgentState::Waiting => {
             Some(crate::limits::attention_message(message))
         }

@@ -6,6 +6,7 @@ import { useRpcSession } from "../../../rpc/RpcProvider";
 import { Banner, Button, ConfirmDialog, Dialog, Menu, Tooltip } from "../../../ui";
 import { useProjectTrust } from "../../projects/useProjectTrust";
 import { MergePanel } from "../../source/merge/MergePanel";
+import { ConversationRecovery } from "../ConversationRecovery";
 import type { AgentTask } from "../model";
 import s from "./Detail.module.css";
 import { useAgentRefresh, useAgentResult } from "./data";
@@ -14,6 +15,7 @@ import { type EditIntent, ReviewDialogs } from "./ReviewDialogs";
 import { UncommittedNotice } from "./UncommittedNotice";
 import { useReviewAction } from "./useReviewAction";
 import { useWorkspaceItems } from "./workspaceActions";
+
 export function AgentActions({
   task,
   sessionAlive,
@@ -135,7 +137,9 @@ export function AgentActions({
     <>
       {respond && <Banner tone="warn">터미널에서 선택하거나 응답해 주세요.</Banner>}
       <div className={s.actions}>
-        {respond ? (
+        {task.reason === "claude_conversation_missing" ? (
+          <ConversationRecovery task={task} disabled={blocked} onStart={onResume} />
+        ) : respond ? (
           <Button variant="primary" disabled={blocked} onClick={onShowTerminal}>
             터미널에서 응답
           </Button>

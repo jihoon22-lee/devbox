@@ -185,6 +185,9 @@ pub fn router(s: Arc<Services>) -> Router<Services> {
         .register::<devbox_agents::AgentsResume, _, _>(|s, _, p| async move {
             s.agents.resume(&p.id).await
         })
+        .register::<devbox_agents::AgentsRecoverConversation, _, _>(|s, _, p| async move {
+            s.agents.recover_conversation(p).await
+        })
         .register::<devbox_agents::AgentsReview, _, _>(|s, _, p| async move {
             s.agents.review(&p.id).await
         })

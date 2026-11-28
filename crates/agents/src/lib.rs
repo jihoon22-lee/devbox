@@ -40,6 +40,7 @@ method!(pub AgentsProfiles = "agents.profiles", query, devbox_protocol::system::
 method!(pub AgentsEvent = "agents.event", mutation, AgentEventParams => devbox_protocol::Done, AgentsError);
 method!(pub AgentsSend = "agents.send", mutation, SendToAgent => AgentTask, AgentsError);
 method!(pub AgentsResume = "agents.resume", mutation, GetAgent => AgentTask, AgentsError);
+method!(pub AgentsRecoverConversation = "agents.recover_conversation", mutation, RecoverConversation => AgentTask, AgentsError);
 method!(pub AgentsReview = "agents.review", mutation, GetAgent => AgentTask, AgentsError);
 method!(pub AgentsRebase = "agents.rebase", mutation, GetAgent => AgentRebase, AgentsError);
 method!(pub AgentsRebaseAbort = "agents.rebase_abort", mutation, GetAgent => AgentTask, AgentsError);
@@ -67,6 +68,7 @@ pub fn export<X: Exporter>(e: &mut X) {
     e.method::<AgentsEvent>();
     e.method::<AgentsSend>();
     e.method::<AgentsResume>();
+    e.method::<AgentsRecoverConversation>();
     e.method::<AgentsReview>();
     e.method::<AgentsRebase>();
     e.method::<AgentsRebaseAbort>();
@@ -92,6 +94,7 @@ mod antigravity;
 mod antigravity_service;
 mod approvals;
 mod artifacts;
+mod claude_recovery;
 mod create;
 mod events;
 mod first_instruction;
