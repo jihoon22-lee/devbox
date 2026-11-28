@@ -36,8 +36,8 @@ impl From<&settings::Settings> for AppPreferences {
 #[tauri::command]
 pub fn app_preferences(app: AppHandle, window: WebviewWindow) -> Result<AppPreferences, IpcError> {
     main_only(&window)?;
-    let settings =
-        settings::load(&settings_path(&app)?).map_err(|error| IpcError::new(error.to_string()))?;
+    let settings = settings::load_with_guidance(&settings_path(&app)?)
+        .map_err(|error| IpcError::new(error.to_string()))?;
     let mut preferences = AppPreferences::from(&settings);
     preferences.autostart = app
         .autolaunch()

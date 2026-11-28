@@ -136,6 +136,21 @@ test("a refused retry says so and can be tried again", async () => {
   expect(retry()).toBeEnabled();
 });
 
+test("a refused retry from before Welcome is forgotten while subscriptions recover", async () => {
+  const { bridge, client } = connect();
+  client.subscribe("projects.changed", vi.fn(), vi.fn());
+  silent(bridge, 5);
+  mocks.invoke.mockRejectedValue(new Error("unavailable"));
+  await act(async () => fireEvent.click(retry()!));
+  expect(screen.getByRole("status")).toHaveTextContent("다시 시도하지 못했습니다");
+  act(() => bridge.welcome());
+  act(() => bridge.emit("closed"));
+  act(() => bridge.emit("open"));
+  silent(bridge, 5);
+  expect(retry()).toBeEnabled();
+  expect(screen.getByRole("status")).not.toHaveTextContent("다시 시도하지 못했습니다");
+});
+
 test("outside the Windows app there is no native retry to offer", () => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   const { bridge } = connect();

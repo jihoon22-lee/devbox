@@ -1,3 +1,4 @@
+pub mod startup;
 use global_hotkey::hotkey::{HotKey, Modifiers};
 use serde::Serialize;
 use std::io;
@@ -247,6 +248,61 @@ mod tests {
             Ok(())
         }
     }
+    #[test]
+    fn repaired_settings_refresh_the_tray_and_bind_once_even_on_another_retry() {
+        use crate::core::settings::GlobalShortcuts;
+        let mut bindings = startup::Bindings::default();
+        let mut backend = Mock::default();
+        assert!(bindings.initialize(&mut backend, Err(io::Error::other("broken settings"))));
+        assert!(bindings.status.palette_error.is_some());
+        assert!(backend.registered.is_empty());
+        let repaired = GlobalShortcuts {
+            palette: Some("Alt+Ctrl+F1".into()),
+            capture: Some("Ctrl+Alt+F2".into()),
+            bottom_terminal: Some("Control+Alt+F1".into()),
+        };
+        assert!(bindings.initialize(&mut backend, Ok(repaired.clone())));
+        assert!(bindings.status.palette_error.is_none());
+        assert!(bindings.status.capture_error.is_none());
+        assert!(bindings.status.bottom_terminal_error.is_some());
+        assert!(!bindings.initialize(&mut backend, Ok(repaired)));
+        assert_eq!(backend.registered, ["Ctrl+Alt+F1", "Ctrl+Alt+F2"]);
+        assert_eq!(
+            bindings.owners.action(
+                "Ctrl+Alt+F1".parse::<HotKey>().unwrap().id,
+                &bindings.registered
+            ),
+            Some(ShortcutAction::Palette)
+        );
+    }
+
+    #[test]
+    fn recovery_from_a_removed_file_uses_defaults_and_keeps_real_registration_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, "bad").unwrap();
+        let mut bindings = startup::Bindings::default();
+        let mut backend = Mock {
+            reject: Some(default_capture(cfg!(debug_assertions)).into()),
+            ..Default::default()
+        };
+        let load = || crate::core::settings::load(&path).map(|s| s.global_shortcuts);
+        assert!(bindings.initialize(&mut backend, load()));
+        std::fs::remove_file(&path).unwrap();
+        assert!(bindings.initialize(&mut backend, load()));
+        assert!(bindings.status.palette_error.is_none());
+        assert_eq!(
+            bindings.status.capture_error.as_deref(),
+            Some("다른 프로그램이 쓰는 중")
+        );
+        assert_eq!(
+            backend.registered,
+            [default_palette(cfg!(debug_assertions))]
+        );
+        assert!(!bindings.initialize(&mut backend, load()));
+        assert_eq!(backend.registered.len(), 1);
+    }
+
     #[test]
     fn conflicts_and_persistence_failure_keep_the_working_binding() {
         let old: Vec<String> = vec!["Ctrl+Alt+Space".into()];

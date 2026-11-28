@@ -3,7 +3,7 @@ use crate::core::{
     intents::AppIntent,
     settings,
     shortcuts::{
-        self, Registration, ShortcutAction, ShortcutOwners, ShortcutStatus, parse_accelerator,
+        self, Registration, ShortcutAction, ShortcutStatus, parse_accelerator, startup::Bindings,
     },
 };
 use std::{io, sync::Mutex, time::Instant};
@@ -12,12 +12,6 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 #[derive(Default)]
 pub struct Shortcuts(Mutex<Bindings>);
-#[derive(Default)]
-struct Bindings {
-    status: ShortcutStatus,
-    registered: Vec<String>,
-    owners: ShortcutOwners,
-}
 struct Backend<'a>(&'a AppHandle);
 impl Registration for Backend<'_> {
     fn register(&mut self, key: &str) -> io::Result<()> {
@@ -66,69 +60,26 @@ pub fn pressed(
     super::intents::dispatch(app, intent);
 }
 pub fn initialize(app: &AppHandle) {
+    let settings = super::preferences::settings_path(app)
+        .map_err(|error| io::Error::other(error.message))
+        .and_then(|path| settings::load_with_guidance(&path))
+        .map(|settings| settings.global_shortcuts);
+    apply_initial(app, settings);
+}
+// Global shortcut registration runs on the event loop. Acquire the bindings lock there too,
+// so a simultaneous shortcut press cannot block the thread needed for registration.
+pub fn settings_loaded(app: &AppHandle, settings: settings::GlobalShortcuts) {
+    let handle = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || apply_initial(&handle, Ok(settings))) {
+        eprintln!("Cannot apply recovered shortcut settings: {error}");
+    }
+}
+fn apply_initial(app: &AppHandle, settings: io::Result<settings::GlobalShortcuts>) {
     let state = app.state::<Shortcuts>();
     let mut bindings = state.0.lock().unwrap_or_else(|error| error.into_inner());
-    let settings = super::preferences::settings_path(app)
-        .and_then(|path| settings::load(&path).map_err(|error| IpcError::new(error.to_string())));
-    let settings = match settings {
-        Ok(settings) => settings,
-        Err(error) => {
-            bindings.status.palette_error =
-                Some(format!("설정을 읽지 못했습니다: {}", error.message));
-            super::tray::set_shortcut_status(app, &bindings.status);
-            return;
-        }
-    };
-    bindings.status.palette = settings
-        .global_shortcuts
-        .palette
-        .unwrap_or_else(|| shortcuts::default_palette(cfg!(debug_assertions)).into());
-    bindings.status.bottom_terminal = settings.global_shortcuts.bottom_terminal;
-    bindings.status.capture = settings
-        .global_shortcuts
-        .capture
-        .unwrap_or_else(|| shortcuts::default_capture(cfg!(debug_assertions)).into());
-    let mut backend = Backend(app);
-    let mut register = |key: &str| -> io::Result<String> {
-        let canonical = parse_accelerator(key)?;
-        backend.register(&canonical)?;
-        Ok(canonical)
-    };
-    match register(&bindings.status.palette) {
-        Ok(key) => {
-            bindings.status.palette = key.clone();
-            bindings.owners.record(key.clone(), ShortcutAction::Palette);
-            bindings.registered.push(key);
-        }
-        Err(error) => bindings.status.palette_error = Some(error.to_string()),
+    if bindings.initialize(&mut Backend(app), settings) {
+        super::tray::set_shortcut_status(app, &bindings.status);
     }
-    if let Some(key) = bindings.status.bottom_terminal.clone() {
-        let result = if bindings
-            .registered
-            .contains(&parse_accelerator(&key).unwrap_or_default())
-        {
-            Err(io::Error::other("팔레트와 터미널의 전역 단축키가 같습니다"))
-        } else {
-            register(&key)
-        };
-        match result {
-            Ok(key) => {
-                bindings.status.bottom_terminal = Some(key.clone());
-                bindings
-                    .owners
-                    .record(key.clone(), ShortcutAction::BottomTerminal);
-                bindings.registered.push(key);
-            }
-            Err(error) => bindings.status.bottom_terminal_error = Some(error.to_string()),
-        }
-    }
-    let Bindings {
-        status,
-        registered,
-        owners,
-    } = &mut *bindings;
-    shortcuts::register_capture(&mut Backend(app), registered, status, owners);
-    super::tray::set_shortcut_status(app, &bindings.status);
 }
 #[tauri::command]
 pub fn shortcut_status(
@@ -201,6 +152,8 @@ pub fn configure_shortcuts(
     );
     let mut backend = Backend(&app);
     let result = settings::with_settings(&path, |settings| {
+        // A preferences command may arrive before the supervisor's recovery callback.
+        bindings.initialize(&mut backend, Ok(settings.global_shortcuts.clone()));
         let Bindings {
             registered, owners, ..
         } = &mut *bindings;

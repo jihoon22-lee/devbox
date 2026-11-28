@@ -62,6 +62,7 @@ pub async fn run(
             return;
         }
     };
+    super::shortcuts::settings_loaded(app, saved.global_shortcuts);
     let chosen = forced.or_else(|| selection::pick(&list, saved.distro.as_deref()));
     let Some(distro) = chosen else {
         conn.gate(app, generation, "chooseDistro", None, Some(list));
