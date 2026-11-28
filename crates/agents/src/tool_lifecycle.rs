@@ -23,7 +23,10 @@ impl AgentsService {
             return Ok(false);
         }
         let event = match self.tool_phase(&task).await? {
-            Some(Phase::Ended(event)) => event,
+            Some(Phase::Ended(event)) => {
+                self.classify_claude_exit(&task, &self.launch_binding(id).await?, event)
+                    .await
+            }
             Some(Phase::Tool) if task.state == AgentState::Preparing => {
                 let sessions = self
                     .terminal

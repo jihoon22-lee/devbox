@@ -28,7 +28,7 @@ impl AgentsService {
             let mut page = AgentsList { rev: current_rev(tx)?.to_string(), items: vec![], next_after_id: None };
             let encode = |value: &AgentTask| serde_json::to_vec(value).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)));
             let mut used = serde_json::to_vec(&page).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?.len();
-            let mut query = tx.prepare("SELECT body FROM agents_tasks WHERE (state != 'closed' OR closed_ms >= ?1) AND id > ?2 ORDER BY id")?;
+            let mut query = tx.prepare("SELECT body FROM agents_tasks WHERE (state != 'closed' OR closed_ms >= ?1) AND (state != 'closed' OR json_extract(body, '$.closedHow') IS NOT 'archived') AND id > ?2 ORDER BY id")?;
             let tasks = query.query_map(rusqlite::params![cutoff, p.after_id.unwrap_or_default()], store::decode)?;
             for task in tasks {
                 let task = task?;

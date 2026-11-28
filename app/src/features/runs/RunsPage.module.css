@@ -5,6 +5,27 @@
   min-height: 0;
   min-width: 0;
 }
+.navigation {
+  display: flex;
+  flex-wrap: wrap;
+  flex: none;
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+.navigation button[aria-current="page"] {
+  background: var(--selection);
+  border-color: var(--accent);
+}
+@media (forced-colors: active) {
+  .navigation button[aria-current="page"] {
+    border-color: Highlight;
+  }
+}
+.view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 .list {
   display: flex;
   flex-direction: column;

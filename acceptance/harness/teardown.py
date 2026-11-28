@@ -5,6 +5,7 @@ flows tear down only the WSL side (`sides`); the C5 accept-absent proof runs aft
 """
 import copy
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -74,6 +75,36 @@ def prod_live(before, after):
     return {'prodProcessChanged': 'prodProcessChanged' in kinds, 'prodProtocolChanged': 'prodProtocolChanged' in kinds, 'differenceKinds': kinds,
             'prodProcesses': {'known': known, 'before': old, 'after': new, 'gone': gone, 'started': started},
             'prodProtocolCommand': {'known': command_known, 'before': before.get('protocolCommand'), 'after': after.get('protocolCommand')}}
+
+
+ORPHAN_SCAN_LIMIT = 65536
+
+
+def worktree_orphans(worktree_stat, start_tick, proc=Path('/proc')):
+    """Read-only evidence for WSL processes left behind by the native app's wsl.exe."""
+    uid = os.getuid()
+    retained = []
+    deadline = time.monotonic() + 10
+    with os.scandir(proc) as entries:
+        for index, entry in enumerate(entries):
+            if index >= ORPHAN_SCAN_LIMIT or time.monotonic() >= deadline:
+                raise RuntimeError('WSL worktree orphan scan exceeded its limit')
+            if not entry.name.isdecimal():
+                continue
+            directory = Path(entry.path)
+            try:
+                if entry.stat().st_uid != uid:
+                    continue
+                # /proc stat field 2 is parenthesized and may itself contain spaces or ')'.
+                fields = (directory / 'stat').read_bytes().rsplit(b')', 1)[1].split()
+                started = int(fields[19])
+                if fields[1] != b'1' or fields[0] == b'Z' or started <= start_tick:
+                    continue
+                if os.path.samestat(worktree_stat, (directory / 'cwd').stat()):
+                    retained.append(f'WSL PID {entry.name} (start tick {started})')
+            except (FileNotFoundError, ProcessLookupError):
+                continue  # A process can exit between any two of the reads.
+    return {'status': 'FAIL' if retained else 'PASS', 'retainedResources': sorted(retained)}
 
 
 def stage_owner_matches(marker, token, sha):
@@ -215,6 +246,8 @@ def finalize(outcome, context, before, operations, save):
             skip('stage', 'Installer stage was not created')
             outcome['stageCleanup'] = {'status': 'NOT_RUN', 'removed': False, 'reason': 'Installer stage was not created'}
         # C5 (changes §5): after every cleanup step, a fresh accept-absent proof (native when interop was usable, and WSL).
+        if 'worktree_orphans' in operations:
+            attempt('wsl-worktree-orphans', 'worktree_orphans')
         if 'absent_after' in operations:
             ok, value = attempt('accept-absent-after', 'absent_after')
             outcome['acceptAbsentAfter'] = value if ok else {'status': 'FAIL'}

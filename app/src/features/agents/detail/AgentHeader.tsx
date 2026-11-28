@@ -65,12 +65,20 @@ export function AgentHeader({
         {behind !== undefined && <span>뒤처짐 {behind}</span>}
       </div>
       {usage.error && <p role="status">토큰 기록을 다시 확인하지 못했습니다.</p>}
+      {task.state === "review" && task.reason === "claude_conversation_missing" && <p>{failureLabel(task.reason)}</p>}
       {task.state === "failed" && <p role="alert">{failureLabel(task.reason)}</p>}
-      {note && <p>{note}</p>}
+      {note && task.reason !== "claude_conversation_missing" && <p>{note}</p>}
       {task.state === "closed" && (
         <p>
-          닫힘 · {task.closedHow === "merged" ? "병합됨" : task.closedHow === "pullRequest" ? "PR" : "폐기"} ·{" "}
-          {new Date(task.closedMs ?? task.updatedMs).toLocaleString("ko")}
+          닫힘 ·{" "}
+          {task.closedHow === "merged"
+            ? "병합됨"
+            : task.closedHow === "pullRequest"
+              ? "PR"
+              : task.closedHow === "archived"
+                ? "목록에서 정리"
+                : "폐기"}{" "}
+          · {new Date(task.closedMs ?? task.updatedMs).toLocaleString("ko")}
           {task.prUrl && (
             <Button size="sm" onClick={() => openAgentPr(task.prUrl!)}>
               PR 열기

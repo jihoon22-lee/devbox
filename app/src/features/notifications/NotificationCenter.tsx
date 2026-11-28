@@ -4,6 +4,8 @@ import { Bell, X } from "lucide-react";
 import { useState } from "react";
 import { useVisibleClock } from "../../shell/visibility";
 import { Button } from "../../ui/Button";
+import { useAgentSummary } from "../agents/AgentData";
+import { failureLabel } from "../agents/model";
 import { runNavigationState } from "../runs/search";
 import s from "./NotificationCenter.module.css";
 import { safeTarget, useNotifications } from "./store";
@@ -22,6 +24,8 @@ export function NotificationCenter() {
   const { items, unread, markRead, markAllRead, clear } = useNotifications();
   const navigate = useNavigate();
   const now = useVisibleClock();
+  const tasks = useAgentSummary()?.tasks;
+  const missing = new Set(tasks?.filter((t) => t.reason === "claude_conversation_missing").map((t) => t.id));
   return (
     <D.Root open={open} onOpenChange={setOpen} modal={false}>
       <D.Trigger asChild>
@@ -77,6 +81,9 @@ export function NotificationCenter() {
                   {item.title}
                 </strong>
                 {item.body && <span>{item.body}</span>}
+                {item.kind === "agent" && item.id && missing.has(item.id) && /(?:^| — )exit:1$/.test(item.body) && (
+                  <span>현재 작업 · {failureLabel("claude_conversation_missing")}</span>
+                )}
                 <time dateTime={new Date(item.atMs).toISOString()}>{relativeTime(item.atMs, now)}</time>
               </button>
             ))}

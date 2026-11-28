@@ -140,6 +140,7 @@ fn how(how: Option<CloseHow>) -> &'static str {
         Some(CloseHow::Merged) => "병합됨",
         Some(CloseHow::PullRequest) => "PR",
         Some(CloseHow::Discarded) => "폐기",
+        Some(CloseHow::Archived) => "목록에서 정리",
         None => "닫힘",
     }
 }

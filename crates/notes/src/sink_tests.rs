@@ -323,35 +323,33 @@ async fn bounded_commit_history_lag_rescans_and_keeps_saves_during_that_scan_pen
     n.restart_with(sink.clone(), false);
     n.svc.start().await?; // All hashes unchanged: sink is not called yet.
     let held = n.svc.s.update.lock().await;
-    tokio::time::timeout(Duration::from_secs(10), async {
-        editor_save(&n, "evicted.md", 1, "---\ntitle: EvictedSave\n---\nnew").await?;
-        for seq in 1..=devbox_documents::COMMIT_HISTORY as u64 + 1 {
-            editor_save(&n, "churn.md", seq, &format!("churn {seq}")).await?;
-        }
-        Ok::<_, Box<dyn std::error::Error>>(())
-    })
-    .await??;
+    // Each save must finish while indexing is paused. Evicting the first save takes hundreds
+    // of durable writes; their combined time measures disk throughput, not an index deadlock.
+    let save = async |path: &str, seq: u64, text: &str| -> T {
+        tokio::time::timeout(Duration::from_secs(4), editor_save(&n, path, seq, text))
+            .await
+            .map_err(|_| format!("save {seq} of {path} blocked while indexing was paused"))?
+    };
+    save("evicted.md", 1, "---\ntitle: EvictedSave\n---\nnew").await?;
+    for seq in 1..=devbox_documents::COMMIT_HISTORY as u64 + 1 {
+        save("churn.md", seq, &format!("churn {seq}")).await?;
+    }
     assert!(
         n.docs.committed_since(0).paths.is_none(),
         "the first saved path is no longer in bounded history"
     );
     drop(held);
-    tokio::time::timeout(Duration::from_secs(4), sink.reached.notified()).await?;
+    tokio::time::timeout(Duration::from_secs(4), sink.reached.notified())
+        .await
+        .map_err(|_| "lag rescan did not reach the paused sink")?;
     let snapshot = n.docs.commit_revision();
     // The lag rescan read EvictedSave already; this later commit must not be marked applied by it.
-    tokio::time::timeout(
-        Duration::from_secs(4),
-        editor_save(
-            &n,
-            "evicted.md",
-            2,
-            "---\ntitle: AfterLagSnapshot\n---\nlatest",
-        ),
-    )
-    .await??;
+    save("evicted.md", 2, "---\ntitle: AfterLagSnapshot\n---\nlatest").await?;
     assert!(n.docs.commit_revision() > snapshot);
     sink.release.notify_one();
-    wait_title(&n, "evicted.md", "AfterLagSnapshot").await?;
+    wait_title(&n, "evicted.md", "AfterLagSnapshot")
+        .await
+        .map_err(|e| format!("index did not apply the save after the lag snapshot: {e}"))?;
     let seen = sink.seen.take();
     assert!(
         seen.contains(&indexed(

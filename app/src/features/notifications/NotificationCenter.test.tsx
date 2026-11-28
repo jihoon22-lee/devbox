@@ -1,7 +1,11 @@
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { RpcProvider } from "../../rpc/RpcProvider";
 import { buildRouter } from "../../shell/router";
+import { AgentDataProvider } from "../agents/AgentData";
+import { task } from "../agents/test-fixtures";
+import { ProjectWire } from "../projects/test-wire";
 import { NotificationCenter, relativeTime } from "./NotificationCenter";
 import { useNotifications } from "./store";
 
@@ -76,4 +80,30 @@ test("안 읽은 알림에만 '읽지 않음' 표시가 있다", async () => {
   expect(screen.getByRole("button", { name: /안읽음/ })).toHaveAccessibleName(/^읽지 않음/);
   expect(screen.getByRole("button", { name: /^읽음/ })).not.toHaveAccessibleName(/읽지 않음/);
   expect(screen.getAllByRole("img", { name: "읽지 않음" })).toHaveLength(1);
+});
+
+test("an existing generic exit notice shows the current diagnosis for the same task", async () => {
+  const wire = new ProjectWire();
+  const router = buildRouter(
+    { frame: () => <NotificationCenter />, pages: {}, settings: () => null, popouts: [] },
+    createMemoryHistory({ initialEntries: ["/notes"] }),
+  );
+  useNotifications
+    .getState()
+    .push({ key: "agent:a", id: "a", kind: "agent", title: "작업 A · 실패", body: "Claude Code — exit:1" });
+  render(
+    <RpcProvider client={wire.client}>
+      <AgentDataProvider>
+        <RouterProvider router={router} />
+      </AgentDataProvider>
+    </RpcProvider>,
+  );
+  await waitFor(() => expect(wire.requests("agents.list")).toHaveLength(1));
+  await act(async () =>
+    wire.reply("agents.list", { rev: "1", items: [{ ...task("a", "failed"), reason: "claude_conversation_missing" }] }),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "알림 1개" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent(
+    "현재 작업 · 이 작업에서 재개할 Claude Code 대화 기록을 찾지 못했습니다.",
+  );
 });

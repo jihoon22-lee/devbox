@@ -50,7 +50,14 @@ async fn dpapi_cancel_timeout_and_output_limit_reap_owned_interop_children() {
         let t = tempfile::tempdir().expect("owned fake");
         let pid = t.path().join("pid");
         let body = format!(
-            "import os,sys,time\nopen({:?},'w').write(str(os.getpid()))\n{}\ntime.sleep(30)",
+            r#"import os, sys, time
+from pathlib import Path
+pid = Path({:?})
+pending = pid.with_suffix('.tmp')
+pending.write_text(str(os.getpid()), encoding='ascii')
+pending.replace(pid)
+{}
+time.sleep(30)"#,
             pid.display().to_string(),
             if overflow {
                 "sys.stdout.buffer.write(b'x'*70000);sys.stdout.buffer.flush()"
@@ -67,7 +74,10 @@ async fn dpapi_cancel_timeout_and_output_limit_reap_owned_interop_children() {
         })
         .await
         .expect("child started");
-        let id = std::fs::read_to_string(pid).expect("child pid");
+        let id = std::fs::read_to_string(pid)
+            .expect("read published child pid")
+            .parse::<std::num::NonZeroU32>()
+            .expect("positive child pid");
         if overflow {
             assert!(matches!(
                 task.await.expect("join"),

@@ -9,25 +9,39 @@ use std::{path::Path, sync::Arc};
 impl AgentsService {
     /// Track the launch independently of the RPC waiter so cancellation cannot orphan tmux.
     pub async fn resume(self: &Arc<Self>, id: &str) -> Result<AgentTask> {
+        self.launch_after_exit(id, None).await
+    }
+    pub(crate) async fn launch_after_exit(
+        self: &Arc<Self>,
+        id: &str,
+        recovery: Option<RecoverConversation>,
+    ) -> Result<AgentTask> {
         let service = self.clone();
         let id = id.to_owned();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.background.spawn(async move {
-            let result = service.resume_owned(&id).await;
+            let result = service.resume_owned(&id, recovery).await;
             let _ = tx.send(result);
         });
         rx.await.internal("resume task completion")?
     }
-    async fn resume_owned(&self, id: &str) -> Result<AgentTask> {
+    async fn resume_owned(
+        &self,
+        id: &str,
+        recovery: Option<RecoverConversation>,
+    ) -> Result<AgentTask> {
         // A task's profile is fixed when it is created, so its CLI is looked up before the shared
         // action lock: a slow shell must not hold up other tasks. The result is checked below,
         // in its usual place, so a task that changed meanwhile fails as it did before.
+        let archive = recovery
+            .as_ref()
+            .is_some_and(|r| r.action == ConversationAction::Archive);
         let looked_up = match self.get(id).await {
-            Ok(task) => match crate::profile::resolve(&self.profiles, &task.profile) {
+            Ok(task) if !archive => match crate::profile::resolve(&self.profiles, &task.profile) {
                 Some(profile) => Some(self.resolve_tool(&profile).await),
                 None => None,
             },
-            Err(_) => None,
+            _ => None,
         };
         let _guard = self.actions.lock().await;
         let task = self.get(id).await?;
@@ -56,6 +70,26 @@ impl AgentsService {
                 state: "session-present".into(),
             }
             .into());
+        }
+        if let Some(request) = &recovery {
+            if task.updated_ms != request.updated_ms
+                || !task.tool_exited
+                || task.reason.as_deref() != Some(crate::claude_recovery::REASON)
+                || !self.claude(&task)
+            {
+                return Err(AgentsError::ResumeUnavailable.into());
+            }
+            if archive {
+                return self.archive_conversation(&task).await;
+            }
+        } else if self.claude(&task)
+            && (task.session_id.is_none()
+                || task.reason.as_deref() == Some(crate::claude_recovery::REASON))
+        {
+            if task.reason.as_deref() != Some(crate::claude_recovery::REASON) {
+                self.mark_conversation_missing(id, true).await?;
+            }
+            return Err(AgentsError::ClaudeConversationUnavailable.into());
         }
         let project = self
             .projects
@@ -96,7 +130,9 @@ impl AgentsService {
             // The task could not be read before the lock: look now.
             None => self.resolve_tool(&profile).await?,
         };
-        let session_id = if profile.hooks == crate::profile::Hooks::Codex {
+        let session_id = if recovery.is_some() {
+            None
+        } else if profile.hooks == crate::profile::Hooks::Codex {
             Some(self.resume_thread(&task).await?)
         } else {
             task.session_id.clone()
@@ -139,7 +175,7 @@ impl AgentsService {
             hook_file: settings,
             // pi gets the task's prompt only on its first launch. A resume names the session
             // devbox knows, or starts pi fresh without one: pi may have run the prompt already.
-            prompt_file: (profile.hooks != crate::profile::Hooks::Pi)
+            prompt_file: (recovery.is_none() && profile.hooks != crate::profile::Hooks::Pi)
                 .then(|| prompt.to_string_lossy().into_owned()),
             // A `promptArg` profile gets the prompt only on its first launch: the tool may have run
             // it already, and a resume runs the command again without it.
@@ -168,14 +204,18 @@ impl AgentsService {
         // the user gives one, so the launch begins waiting for it (see `Binding::resumed_session`).
         // agy gets no prompt argument at all, so it waits with or without a conversation to continue.
         let resumed_session = match profile.hooks {
-            crate::profile::Hooks::Claude | crate::profile::Hooks::Codex => session_id.is_some(),
+            crate::profile::Hooks::Claude => session_id.is_some() || recovery.is_some(),
+            crate::profile::Hooks::Codex => session_id.is_some(),
             crate::profile::Hooks::Antigravity => true,
             _ => false,
         };
         // agy opens a new conversation without a word when it does not know the id it is given,
         // so the launch's first hook must name this one (`antigravity_service`).
-        let unconfirmed_session =
-            session_id.is_some() && profile.hooks == crate::profile::Hooks::Antigravity;
+        let unconfirmed_session = session_id.is_some()
+            && matches!(
+                profile.hooks,
+                crate::profile::Hooks::Antigravity | crate::profile::Hooks::Claude
+            );
         let initial_session = session_id.clone();
         let hub = self.hub.clone();
         let approvals = self.approvals.clone();
@@ -197,6 +237,9 @@ impl AgentsService {
                     let queued = crate::first_instruction::cancel(&mut current, launch);
                     binding.turn_id = None;
                     binding.turn_started_ms = None;
+                    if recovery.is_some() {
+                        binding.claude_transcript = None;
+                    }
                     current.session_id = initial_session;
                     current.terminal_id = None;
                     current.state = AgentState::Running;
@@ -244,7 +287,7 @@ impl AgentsService {
                 self.terminal.close_internal(&new_terminal).await.map_err(|cleanup| {
                     devbox_protocol::Fail::Internal(format!("resume creation failed; retained launch {rollback_generation} terminal {new_terminal} after cleanup failure: {error:?}; {cleanup:?}"))
                 })?;
-                self.rollback_resume(id, &rollback_generation, previous_binding)
+                self.rollback_resume(id, &rollback_generation, previous_binding, &task)
                     .await?;
                 return Err(devbox_protocol::Fail::Internal(format!(
                     "resume terminal: {error:?}"
@@ -267,7 +310,7 @@ impl AgentsService {
                         "remove unrecorded resumed session {new_terminal} failed; retained launch {rollback_generation}: {e:?}"
                     ))
                 })?;
-            self.rollback_resume(id, &rollback_generation, previous_binding)
+            self.rollback_resume(id, &rollback_generation, previous_binding, &task)
                 .await?;
             return Err(error);
         }
@@ -279,9 +322,13 @@ impl AgentsService {
         id: &str,
         generation: &str,
         mut previous: crate::tracker::Binding,
+        previous_task: &AgentTask,
     ) -> Result<()> {
         let id = id.to_owned();
         let generation = generation.to_owned();
+        let old_session = previous_task.session_id.clone();
+        let recovery = (previous_task.reason.as_deref() == Some(crate::claude_recovery::REASON))
+            .then(|| (previous_task.state, previous_task.attention.clone()));
         let hub = self.hub.clone();
         let _ = self
             .db
@@ -301,9 +348,16 @@ impl AgentsService {
                     previous.resources = binding.resources;
                     previous.owned_rebase = binding.owned_rebase;
                     let old_state = current.state;
-                    current.state = AgentState::Failed;
-                    current.reason = Some("resume_failed".into());
-                    current.attention = None;
+                    if let Some((state, attention)) = recovery {
+                        current.state = state;
+                        current.attention = attention;
+                        current.reason = Some(crate::claude_recovery::REASON.into());
+                    } else {
+                        current.state = AgentState::Failed;
+                        current.reason = Some("resume_failed".into());
+                        current.attention = None;
+                    }
+                    current.session_id = old_session;
                     current.tool_exited = true;
                     current.terminal_id = None;
                     current.activity_seq = current.activity_seq.wrapping_add(1);

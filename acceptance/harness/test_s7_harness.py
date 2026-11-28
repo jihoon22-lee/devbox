@@ -41,7 +41,6 @@ import fixture
 import foreign_files
 import mcp_stdio
 import teardown
-from test_launch_doctor import LaunchDoctor
 import update_fixture
 import update_flow
 import validate

@@ -42,7 +42,7 @@ pub fn render_start_script(p: &StartPlan) -> String {
         s.push_str(&format!("export {key}={}\n", sh_quote(value)));
     }
     let phase = sh_quote(&p.phase_file);
-    s.push_str("hold_terminal() { echo '[devbox] 작업이 끝났습니다. 재개 버튼으로 다시 시작하세요.'; while IFS= read -r discarded; do :; done; exit 0; }\n");
+    s.push_str("hold_terminal() { echo '[devbox] 작업이 끝났습니다. 에이전트 화면에서 다음 동작을 선택하세요.'; while IFS= read -r discarded; do :; done; exit 0; }\n");
     s.push_str(&format!(
         "cd {} || {{ printf 'setup:1\\n' > {phase}; {dv} agent event --from setup --code 1; hold_terminal; }}\n",
         sh_quote(&p.workdir)

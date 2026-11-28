@@ -49,7 +49,7 @@ export type AgentTest = { runId: string, };
 export type AgentUsage = { tokens: Tokens | null, truncated: boolean, };
 export type AgentsAttention = { id: string, state: AgentState, message: string, };
 export type AgentsChanged = { rev: string, id: string, };
-export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.control_characters" } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.teardown_failed", "detail": { index: number, exit_code: number | null, } } | { "code": "agents.worktree_has_submodules", "detail": { path: string, } } | { "code": "agents.delivery_unknown" } | { "code": "agents.awaiting_input" } | { "code": "agents.tool_starting" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } } | { "code": "agents.tool_missing", "detail": { command: string, } } | { "code": "agents.work_folder_required", "detail": { tool: string, } } | { "code": "agents.hooks_folder_exists", "detail": { path: string, } } | { "code": "agents.first_instruction_command", "detail": { tool: string, } } | { "code": "agents.prompt_option", "detail": { tool: string, } };
+export type AgentsError = { "code": "agents.title_invalid" } | { "code": "agents.slug_exhausted" } | { "code": "agents.not_found", "detail": { id: string, } } | { "code": "agents.project_not_found", "detail": { id: string, } } | { "code": "agents.profile_not_found", "detail": { id: string, } } | { "code": "agents.bad_state", "detail": { state: string, } } | { "code": "agents.worktree_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_dirty", "detail": { files: Array<string>, } } | { "code": "agents.base_not_checked_out", "detail": { branch: string, } } | { "code": "agents.conflict", "detail": { files: Array<string>, } } | { "code": "agents.unmerged_commits", "detail": { count: number, } } | { "code": "agents.gh_missing" } | { "code": "agents.not_repo" } | { "code": "agents.state_changed", "detail": { head: string, base: string, unmerged: number, } } | { "code": "agents.operation_in_progress" } | { "code": "agents.unsafe_worktree" } | { "code": "agents.branch_exists", "detail": { branch: string, } } | { "code": "agents.worktree_add_partial", "detail": { branch: string, path: string, path_exists: boolean, branch_exists: boolean | null, worktree_registered: boolean | null, } } | { "code": "agents.invalid_input" } | { "code": "agents.session_missing" } | { "code": "agents.session_metadata", "detail": { diagnostic: Diagnostic, } } | { "code": "agents.input_too_large", "detail": { limit_bytes: number, } } | { "code": "agents.control_characters" } | { "code": "agents.pr_title_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.squash_message_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_too_long", "detail": { limit_bytes: number, } } | { "code": "agents.teardown_command_invalid" } | { "code": "agents.teardown_failed", "detail": { index: number, exit_code: number | null, } } | { "code": "agents.worktree_has_submodules", "detail": { path: string, } } | { "code": "agents.delivery_unknown" } | { "code": "agents.awaiting_input" } | { "code": "agents.tool_starting" } | { "code": "agents.claude_conversation_unavailable" } | { "code": "agents.resume_unavailable" } | { "code": "agents.review_unavailable" } | { "code": "agents.discard_snapshot_unavailable", "detail": { reason: string, } } | { "code": "agents.list_changed" } | { "code": "agents.project_trust_required", "detail": { id: string, } } | { "code": "agents.tool_missing", "detail": { command: string, } } | { "code": "agents.work_folder_required", "detail": { tool: string, } } | { "code": "agents.hooks_folder_exists", "detail": { path: string, } } | { "code": "agents.first_instruction_command", "detail": { tool: string, } } | { "code": "agents.prompt_option", "detail": { tool: string, } };
 export type AgentsList = { rev: string, items: Array<AgentTask>, nextAfterId?: string, };
 export type ApiError = { "code": "api.invalid_header", "detail": { index: number, field: string, reason: string, } } | { "code": "api.invalid_cookie", "detail": { index: number, reason: string, } } | { "code": "api.invalid_url", "detail": { reason: string, } } | { "code": "api.invalid_method" } | { "code": "api.invalid_body", "detail": { reason: string, } } | { "code": "api.invalid_input", "detail": { field: string, reason: string, } } | { "code": "api.variable_missing", "detail": { names: Array<string>, } } | { "code": "api.secret_missing", "detail": { names: Array<string>, } } | { "code": "secrets_locked" } | { "code": "secrets.key_mismatch" } | { "code": "api.file_missing", "detail": { part: number, } } | { "code": "api.too_large", "detail": { limit: number, } } | { "code": "api.redaction_failed", "detail": { reason: string, } } | { "code": "api.tls_invalid", "detail": { reason: string, } } | { "code": "api.oauth_failed", "detail": { stage: string, } } | { "code": "api.network", "detail": { kind: string, } } | { "code": "api.stream_unsupported" } | { "code": "api.stream_rejected", "detail": { status: number, reason: string, } } | { "code": "api.too_many_streams", "detail": { limit: number, } } | { "code": "api.history_not_found" } | { "code": "api.response_export_failed", "detail": { reason: string, } } | { "code": "api.collection_path_invalid" } | { "code": "api.collection_conflict", "detail": { digest: string | null, } } | { "code": "api.collection_too_large", "detail": { limit: number, } } | { "code": "api.collection_not_found" } | { "code": "api.storage_sensitive_body" } | { "code": "api.project_not_found" } | { "code": "api.grpc", "detail": { reason: string, } } | { "code": "api.review_required" } | { "code": "api.mcp", "detail": { reason: string, } };
 export type AppMs = { app: string, ms: number, };
@@ -105,7 +105,7 @@ offBase?: Array<string>,
  */
 submodules?: Array<string>, };
 export type CloneProject = { url: string, dir: string | null, };
-export type CloseHow = "merged" | "pullRequest" | "discarded";
+export type CloseHow = "merged" | "pullRequest" | "discarded" | "archived";
 export type CloseSession = { id: string, };
 export type CollectionExpect = { "kind": "digest", digest: string, } | { "kind": "absent" };
 export type CollectionFile = { path: string, size: number, digest: string | null, 
@@ -145,6 +145,7 @@ projectId?: string, };
 export type ContainerUnavailableReason = "cliMissing" | "daemonUnavailable";
 export type ContainersQuery = Record<symbol, never>;
 export type ContainersResult = { available: boolean, reason?: ContainerUnavailableReason, items: Array<ContainerInfo>, };
+export type ConversationAction = "startNew" | "archive";
 export type CookieInfo = { name: string, value: string, domain: string, path: string, secure: boolean, httpOnly: boolean, expiresMs: number | null, };
 export type CookieJarRef = { jar: string, };
 export type CookieList = { cookies: Array<CookieInfo>, };
@@ -530,6 +531,7 @@ export type ReadOnly = { reason: ReadOnlyReason, };
 export type ReadOnlyReason = "binary" | "encoding" | "too_large" | "leased_elsewhere";
 export type RealtimeEvent = { "type": "open", protocol: string | null, } | { "type": "message", direction: Direction, kind: MessageKind, data: string | null, dataBase64: string | null, atMs: number, } | { "type": "sseEvent", id: string | null, event: string | null, data: string, retryMs: number | null, atMs: number, } | { "type": "reconnecting", attempt: number, lastEventId: string | null, } | { "type": "dropped", count: number, } | { "type": "closed", code: number | null, reason: string | null, } | { "type": "failed", error: WireError, };
 export type RebaseResult = "done" | "conflict";
+export type RecoverConversation = { id: string, updatedMs: number, action: ConversationAction, };
 export type Recovery = { recovery: string, };
 export type Redirect = { status: number, location: string, };
 export type RefreshEnvResult = { restarting: boolean, };
@@ -882,6 +884,7 @@ export interface Methods {
   "agents.rebase": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentRebase; error: AgentsError };
   "agents.rebase_abort": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
   "agents.rebase_status": { kind: "query"; confirm: "none"; params: GetAgent; result: AgentRebaseStatus; error: AgentsError };
+  "agents.recover_conversation": { kind: "mutation"; confirm: "none"; params: RecoverConversation; result: AgentTask; error: AgentsError };
   "agents.resources": { kind: "query"; confirm: "none"; params: PingParams; result: AgentResources; error: AgentsError };
   "agents.resume": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
   "agents.review": { kind: "mutation"; confirm: "none"; params: GetAgent; result: AgentTask; error: AgentsError };
@@ -1095,6 +1098,7 @@ export const METHOD_INFO = {
   "agents.rebase": { kind: "mutation", confirm: "none" },
   "agents.rebase_abort": { kind: "mutation", confirm: "none" },
   "agents.rebase_status": { kind: "query", confirm: "none" },
+  "agents.recover_conversation": { kind: "mutation", confirm: "none" },
   "agents.resources": { kind: "query", confirm: "none" },
   "agents.resume": { kind: "mutation", confirm: "none" },
   "agents.review": { kind: "mutation", confirm: "none" },
@@ -1268,6 +1272,7 @@ export const RPC_ERROR_CODES = [
   "agents.base_dirty",
   "agents.base_not_checked_out",
   "agents.branch_exists",
+  "agents.claude_conversation_unavailable",
   "agents.conflict",
   "agents.control_characters",
   "agents.delivery_unknown",

@@ -18,12 +18,16 @@ import time
 import uuid
 from pathlib import Path
 
-from common import (BASE, evidence_root, harness_hashes, LineProcess, assigned_receipt, cgroup_evidence, dump, identity_states,
+from common import (BASE, evidence_root, harness_hashes, LineProcess, assigned_receipt, cgroup_evidence, dump, identity_gone, identity_states,
                     native_class_source, probe_script, ps_command, require_lock, run_probe, stop_exact)
 
 CHILD = r'''$ErrorActionPreference='Stop'
-$e=New-Object System.Threading.EventWaitHandle($false,[System.Threading.EventResetMode]::ManualReset,'EVENT')
-try { [void]$e.WaitOne(180000) } finally { $e.Dispose() }
+$release=[System.Threading.EventWaitHandle]::OpenExisting('EVENT')
+try {
+  $ready=[System.Threading.EventWaitHandle]::OpenExisting('EVENT.ready')
+  try { [void]$ready.Set() } finally { $ready.Dispose() }
+  [void]$release.WaitOne(180000)
+} finally { $release.Dispose() }
 '''
 
 HELPER = r'''
@@ -74,6 +78,8 @@ public static class S7G1 {
       if(nul!=IntPtr.Zero) CloseHandle(nul);
     }
   }
+  [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
+  public static bool WaitForExit(IntPtr process,uint milliseconds) { return WaitForSingleObject(process,milliseconds)==0; }
   public static void Release(IntPtr process) { if(process!=IntPtr.Zero) CloseHandle(process); }
 }
 '@
@@ -81,19 +87,24 @@ public static class S7G1 {
 
 ROOT = r'''
 function Say($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
-$job=[DevboxObservation]::AssociateFresh('JOB')
-$listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
+$job=[IntPtr]::Zero
+$listener=$null
 $child=[IntPtr]::Zero
+$release=$null; $ready=$null; $preserveChild=$false
 try {
+  $job=[DevboxObservation]::CreateFresh('JOB')
+  [DevboxObservation]::AssociateFresh($job)
+  $listener=[System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback,0)
   $listener.Start()
+  # The child opens the release event before acknowledging ready. A release sent before it opens is remembered.
+  $fresh=$false
+  $release=[System.Threading.EventWaitHandle]::new($false, 'ManualReset', 'EVENT', [ref]$fresh)
+  if(!$fresh) { throw 'owned release event already exists' }
+  $ready=[System.Threading.EventWaitHandle]::new($false, 'ManualReset', 'EVENT.ready', [ref]$fresh)
+  if(!$fresh) { throw 'owned ready event already exists' }
   $childPid=[uint32]0
   $child=[S7G1]::StartIsolated('C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe','-NoProfile -NonInteractive -EncodedCommand CHILD',[ref]$childPid)
-  $deadline=[DateTime]::UtcNow.AddSeconds(30); $ready=$null
-  while(-not [System.Threading.EventWaitHandle]::TryOpenExisting('EVENT',[ref]$ready)) {
-    if([DateTime]::UtcNow -gt $deadline) { throw 'owned child not ready' }
-    Start-Sleep -Milliseconds 100
-  }
-  $ready.Dispose()
+  if(!$ready.WaitOne(30000)) { throw 'owned child not ready' }
   Say @{phase='started';pid=$PID;creationTime=[DevboxObservation]::CreationTime();sid=[DevboxObservation]::Sid();sessionId=[DevboxObservation]::Session();
         port=$listener.LocalEndpoint.Port;childPid=$childPid;childCreationTime=[S7G1]::Creation($child);
         childInJob=[S7G1]::InJob($child,$job);openJobErrorBeforeClose=[S7G1]::OpenJobError('JOB');childStdHandles='NUL-only handle list'}
@@ -101,18 +112,50 @@ try {
     $read=[Console]::In.ReadLineAsync()
     if(-not $read.Wait(120000)) { Say @{phase='self-deadline'}; break }
     $line=$read.Result
-    if($null -eq $line -or $line -eq 'exit') { break }
+    if($null -eq $line) { break }
+    if($line -eq 'exit') { $preserveChild=$true; break }
     if($line -eq 'close') {
       [void][DevboxObservation]::CloseHandle($job); $job=[IntPtr]::Zero
       Say @{phase='closed';openJobErrorAfterClose=[S7G1]::OpenJobError('JOB')}
     }
   }
 } finally {
-  if($job -ne [IntPtr]::Zero) { [void][DevboxObservation]::CloseHandle($job) }
-  $listener.Stop()
-  [S7G1]::Release($child)  # Only this handle; the child keeps running until its release event.
+  try {
+    # Only the controller's explicit P3 exit, after it records both identities, leaves the child alive.
+    if(!$preserveChild) {
+      $outcome='never-started'
+      if($child -ne [IntPtr]::Zero) {
+        [void]$release.Set()
+        $outcome=if([S7G1]::WaitForExit($child,10000)) { 'exited' } else { 'unknown' }
+      }
+      Say @{phase='startup-cleanup';child=$outcome}
+    }
+  } finally {
+    if($job -ne [IntPtr]::Zero) { [void][DevboxObservation]::CloseHandle($job) }
+    [S7G1]::Release($child)
+    if($ready) { $ready.Dispose() }
+    if($release) { $release.Dispose() }
+    if($null -ne $listener) { $listener.Stop() }
+  }
 }
 '''
+
+
+def proved_startup_cleanup(lines):
+    """Without a published child identity, only the root can prove it never spawned or waited for that child."""
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get('phase') == 'startup-cleanup' and row.get('child') in ('never-started', 'exited'):
+            return True
+    return False
+
+
+def all_owned_released(step):
+    return (step['observation']['rawState'] in ('notFound', 'empty')
+            and all(identity_gone(step['identities'].get(label)) for label in ('root', 'child')))
 
 
 def main():
@@ -213,7 +256,7 @@ def main():
                                'after the root exits the product reports notFound for a live descendant (I1 stays release-gating)')
             if name_vanished and child_alive_p3 and raw(p3, 'observation') == 'notFound' else 'NOT_CONFIRMED (see steps)',
         }
-        final_ok = raw(p4, 'observation') in ('notFound', 'empty') and all(v != 'alive' for v in p4['identities'].values())
+        final_ok = all_owned_released(p4)
         result['verdicts'] = {
             'control': 'PASS' if control else 'FAIL',
             'identityMismatchBranch': {'status': branch, 'reason': branch_reason},
@@ -230,21 +273,27 @@ def main():
             result['rootExitCode'] = root.close(20)
             result['rootStderr'] = root.stderr[-20:]
             result['rootStdout'] = root.lines[-10:]
-        try:
-            ps_command("try{$e=[System.Threading.EventWaitHandle]::OpenExisting('%s');[void]$e.Set();$e.Dispose();@{set=$true}|ConvertTo-Json -Compress}catch{@{set=$false}|ConvertTo-Json -Compress}" % event, timeout=30)
-        except Exception as error:
-            result['cleanup'].append({'action': 'release-event', 'status': 'FAIL', 'error': str(error)[:400]})
+            if not identities:
+                result['cleanup'].append({'action': 'unannounced-child', 'label': 'child',
+                                          'status': 'PASS' if proved_startup_cleanup(root.lines) else 'FAIL'})
+        # The root owns cleanup until it publishes the identities and proves it created the event.
+        if identities:
+            try:
+                ps_command("try{$e=[System.Threading.EventWaitHandle]::OpenExisting('%s');[void]$e.Set();$e.Dispose();@{set=$true}|ConvertTo-Json -Compress}catch{@{set=$false}|ConvertTo-Json -Compress}" % event, timeout=30)
+            except Exception as error:
+                result['cleanup'].append({'action': 'release-event', 'status': 'FAIL', 'error': str(error)[:400]})
         for label, pid, creation in identities:
             try:
-                states = identity_states([(label, pid, creation)])
-                if states.get(label) == 'alive':
+                state = identity_states([(label, pid, creation)]).get(label)
+                if state == 'alive':
                     time.sleep(3)
-                    states = identity_states([(label, pid, creation)])
-                if states.get(label) == 'alive':
+                    state = identity_states([(label, pid, creation)]).get(label)
+                if state == 'alive':
                     stopped = stop_exact(label, pid, creation)
                     result['cleanup'].append({'action': 'exact-stop', 'label': label, 'status': 'PASS' if stopped['result'] in ('stopped', 'absent') or stopped['result'].startswith('already-exited') else 'FAIL', 'result': stopped})
                 else:
-                    result['cleanup'].append({'action': 'verify-gone', 'label': label, 'status': 'PASS', 'state': states.get(label)})
+                    result['cleanup'].append({'action': 'verify-gone', 'label': label,
+                                              'status': 'PASS' if identity_gone(state) else 'FAIL', 'state': state})
             except Exception as error:
                 result['cleanup'].append({'action': 'verify-gone', 'label': label, 'status': 'FAIL', 'error': str(error)[:400]})
         result['retainedResources'] = [row['label'] for row in result['cleanup'] if row.get('status') == 'FAIL' and 'label' in row]

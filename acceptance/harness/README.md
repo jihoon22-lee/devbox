@@ -19,7 +19,7 @@ common-dir of one PC.
 - **Before a run:** the run copy is synced from the repository (copy the code from here, then confirm with `diff -r`
   that it is the same). A helper that changed since the last approval changes `helperSha256`, which the independent
   reviewer approves again together with the binding (§2.3).
-- **Not wired into CI.** `test_s7_harness.py` runs by hand (`python3 -B -m unittest test_s7_harness`), as §1 says.
+- **Not wired into CI.** Run the harness tests by hand (`python3 -B -m unittest discover`), as §1 says.
 - The text below still says rc.2 in places and uses that run's paths; it is kept as written.
 
 ### Changes for 1.0.1 (the code here differs from the imported run copy)
@@ -232,6 +232,7 @@ only after an independent review of these files.
     - `window-gone` or `second-instance`: nothing more is sent; the second app is recorded and teardown stops it.
   - The rows after A8 do not need a shown window: W1, A4 and N1-ACCEPT do not use it, CS3, CS10 and C1 stop and relaunch
     the app, and teardown stops the exact records.
+- **CS3 on Windows.** Wait for the relaunched app's PID to report its first data paint before comparing the active daemon's MainPID and InvocationID. Then run the harness's fixed-environment setup once to establish its baseline. The next identical setup must keep that daemon and report a skipped restart. Both setup reports are saved in the case evidence.
 - **PowerShell helper encoding (1.0.1).** Windows PowerShell 5.1 reads a `.ps1` without a BOM in the ANSI code page
   (CP949 on the acceptance PC), so a non-ASCII character silently becomes other characters. Every helper `.ps1` is pure
   ASCII; `validate.py` (`scan_ps1_encoding`) allows only pure ASCII or a UTF-8 BOM with valid UTF-8.
@@ -335,7 +336,7 @@ WINLOCAL=/mnt/c/Users/<windows user>/AppData/Local # see `ls /mnt/c/Users`; no W
 5. **Run the unit tests and the static checks.** Run these after any harness change.
 
    ```sh
-   (cd $H && python3 -B -m unittest test_s7_harness -v)
+   (cd $H && python3 -B -m unittest discover -v)
    python3 -B $H/validate.py --worktree $W --source-sha "$CAND" --write-manifest
    ```
 
@@ -574,6 +575,11 @@ Each run writes to `$S7/runs/<sha8>-<hex8>/` (mode 0700):
 | `fixture-cleanup.json`, `cleanup-product-steps.json` | The owned cleanup: units, the fixture root, the parents removed or kept. |
 | `ownership-owned-*.json` | The owned-resource manifest. |
 | `product-scripts.json`, `mcp-closed.json` | The bound product scripts used, and the closed MCP processes. |
+
+After a Windows flow, `teardown-wsl-worktree-orphans.json` checks for live processes of the current WSL user
+whose parent is PID 1, whose kernel start tick is newer than the run's start tick, and whose cwd has the exact
+device and inode of the acceptance checkout. A match fails teardown and records only its PID and start tick.
+The scan sends no signals. The controller can review the retained process.
 
 The driver prints `{status, evidenceDirectory, cases}` at the end.
 

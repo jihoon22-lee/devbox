@@ -47,6 +47,8 @@ export function AgentDetail({
   const sessionAlive =
     !!task?.terminalId && sessions.items.some((session) => session.id === task.terminalId && session.alive);
   if (!task) return detail.error ? <QueryError query={detail} /> : <EmptyState title="에이전트 작업을 불러오는 중…" />;
+  if (task.closedHow === "archived")
+    return <EmptyState title="목록에서 정리한 작업입니다" body="작업 파일과 Git 브랜치를 보존했습니다." />;
   const instruct = () => setFocus((previous) => (previous ?? 0) + 1);
   const showTerminal = () => {
     setTab("terminal");
@@ -109,7 +111,13 @@ export function AgentDetail({
           ) : (
             <EmptyState
               title="연결된 터미널이 없습니다"
-              body={task.state === "closed" ? "닫힌 작업의 기록을 확인하세요." : "재개하면 터미널을 다시 엽니다."}
+              body={
+                task.state === "closed"
+                  ? "닫힌 작업의 기록을 확인하세요."
+                  : task.reason === "claude_conversation_missing"
+                    ? "[새 대화로 시작]을 선택하면 이 폴더에서 Claude Code를 엽니다."
+                    : "재개하면 터미널을 다시 엽니다."
+              }
             />
           ))}
         {tab === "changes" && <ChangesTab agentId={id} closed={task.state === "closed"} onQuote={instruct} />}

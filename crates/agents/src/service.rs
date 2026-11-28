@@ -190,6 +190,8 @@ impl AgentsService {
                         }
                     }
                     let stored = binding.clone();
+                    let was_recovering =
+                        task.reason.as_deref() == Some(crate::claude_recovery::REASON);
                     let previous_state = task.state;
                     if !f(&mut task, binding.as_mut()) {
                         return Ok(Err(None));
@@ -201,18 +203,26 @@ impl AgentsService {
                         approvals.forget(&task.id);
                     }
                     store::put(tx, &task)?;
-                    Ok(Ok((task, previous_state, queued)))
+                    let entered_recovery = task.reason.as_deref()
+                        == Some(crate::claude_recovery::REASON)
+                        && !was_recovering;
+                    Ok(Ok((task, previous_state, queued, entered_recovery)))
                 },
-                move |(task, previous, queued), rev| {
+                move |(task, previous, queued, entered_recovery), rev| {
                     let why = first_instruction::why(task, hook);
                     first_instruction::log_cancelled(*queued, task, why);
-                    changed(&hub, task, rev, !announce_later && task.state != *previous)
+                    changed(
+                        &hub,
+                        task,
+                        rev,
+                        !announce_later && (task.state != *previous || *entered_recovery),
+                    )
                 },
             )
             .await
             .internal("update agent")?;
         match result {
-            Ok(((task, previous, _), rev)) => {
+            Ok(((task, previous, _, _), rev)) => {
                 let turned_idle = task.state == AgentState::Idle && previous != AgentState::Idle;
                 if announce_later && task.state != previous && task.state == AgentState::Waiting {
                     self.announce_later(task);
@@ -296,7 +306,7 @@ impl AgentsService {
         let approval = launch
             .as_ref()
             .and_then(|_| crate::hooks::approval(&p.payload));
-        let events = if p.source == crate::hooks::HookSource::Codex {
+        let mut events = if p.source == crate::hooks::HookSource::Codex {
             let Some(candidate) = crate::hooks::parse_codex_candidate(&p.payload) else {
                 return Ok(Done {
                     rev: self.db.rev().to_string(),
@@ -320,6 +330,16 @@ impl AgentsService {
                 .await;
         } else {
             crate::hooks::parse(p.source, &p.payload, p.code)
+        };
+        if let (Some(b), [event @ AgentEvent::Exited { .. }]) =
+            (binding.as_ref(), events.as_mut_slice())
+        {
+            *event = self.classify_claude_exit(&task, b, event.clone()).await;
+        }
+        let named = if launch.is_some() {
+            crate::claude_recovery::transcript(&self.paths.home, &task, &p.payload)
+        } else {
+            None
         };
         for event in &events {
             if let AgentEvent::SessionStarted { session_id } = event {
@@ -368,8 +388,9 @@ impl AgentsService {
         };
         // A launch that resumed Claude's session begins at Claude's prompt with no turn (see
         // `Binding::resumed_session`). Claude says it is there by starting the resumed session.
-        let resumed = launch.is_some()
-            && crate::hooks::claude_session_source(&p.payload).as_deref() == Some("resume");
+        let start_source = launch
+            .as_ref()
+            .and_then(|_| crate::hooks::claude_session_source(&p.payload));
         let approvals = self.approvals.clone();
         let update = self.update_bound(&p.agent_id, bound, trust, move |t, binding| {
             if let Some(exports) = exports {
@@ -380,15 +401,20 @@ impl AgentsService {
                 // The launch's first prompt ends its wait for one. Before it, the resumed session's
                 // start ends the wait as a finished turn does, once: Claude waits for the next
                 // instruction.
+                let mut path_changed = false;
                 if let Some(binding) = binding {
-                    if events.contains(&AgentEvent::PromptSubmitted) {
-                        binding.resumed_session = false;
-                    } else if resumed && binding.awaits_first_instruction(t) {
-                        binding.resumed_session = false;
-                        events.push(AgentEvent::TurnComplete { message: None });
+                    match crate::claude_recovery::session_start(
+                        t,
+                        binding,
+                        &mut events,
+                        start_source.as_deref(),
+                        named,
+                    ) {
+                        Ok(changed) => path_changed = changed,
+                        Err(()) => return apply_event(t, &AgentEvent::SessionMismatch, now_ms()),
                     }
                 }
-                return approvals.apply(t, launch, approval, events);
+                return approvals.apply(t, launch, approval, events) || path_changed;
             }
             let mut changed = false;
             for event in events {
