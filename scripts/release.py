@@ -35,7 +35,7 @@ def preflight():
         command('git', 'merge-base', '--is-ancestor', sha, 'refs/remotes/origin/main')
     except subprocess.CalledProcessError:
         raise ValueError('Tag commit is not on origin/main') from None
-    notes = re.split(r'^-----BEGIN [A-Z ]*SIGNATURE-----$', annotation.partition('\n\n')[2], maxsplit=1, flags=re.M)[0]
+    notes = re.split(r'^-----BEGIN (?:[A-Z ]*SIGNATURE|SIGNED MESSAGE)-----$', annotation.partition('\n\n')[2], maxsplit=1, flags=re.M)[0]
     require(notes.strip(), 'Annotated tag message is empty')
     return tag, sha, notes, remote
 

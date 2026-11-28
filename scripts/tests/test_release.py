@@ -87,7 +87,8 @@ class Release(unittest.TestCase):
                 return json.dumps(state['release'])
             with patch.dict(os.environ, environment, clear=True), patch.object(sys, 'path', [str(ROOT / 'scripts'), *sys.path]), patch.object(sys, 'argv', ['release.py'] + ([] if preflight else [str(directory)])), patch.object(subprocess, 'check_output', side_effect=fake), patch.object(subprocess, 'Popen', side_effect=AssertionError('Unmocked process')):
                 if failure:
-                    with self.assertRaises((ValueError, subprocess.CalledProcessError, KeyError)):
+                    rejected = self.assertRaisesRegex(ValueError, failure) if isinstance(failure, str) else self.assertRaises((ValueError, subprocess.CalledProcessError, KeyError))
+                    with rejected:
                         runpy.run_path(str(ROOT / 'scripts/release.py'), run_name='__main__')
                 else:
                     runpy.run_path(str(ROOT / 'scripts/release.py'), run_name='__main__')
@@ -100,8 +101,8 @@ class Release(unittest.TestCase):
         for options in [dict(writes=['POST', 'POST', 'PATCH']), dict(existing='draft', writes=['PATCH']), dict(existing='public'), dict(preflight=True)]:
             with self.subTest(options=options):
                 self.scenario(**options)
-        for kind in ['PGP', 'SSH']:  # A signed tag publishes only its message.
-            self.scenario(lambda s, r, e, d: s.update(notes=NOTES + f'-----BEGIN {kind} SIGNATURE-----\nfixture\n-----END {kind} SIGNATURE-----\n'), writes=['POST', 'POST', 'PATCH'])
+        for kind in ['PGP SIGNATURE', 'SSH SIGNATURE', 'SIGNED MESSAGE']:  # A signed tag publishes only its message.
+            self.scenario(lambda s, r, e, d: s.update(notes=NOTES + f'-----BEGIN {kind}-----\nfixture\n-----END {kind}-----\n'), writes=['POST', 'POST', 'PATCH'])
 
     def test_release_candidate_publishes_as_prerelease(self):
         for options in [dict(writes=['POST', 'POST', 'PATCH']), dict(existing='draft', writes=['PATCH']), dict(existing='public'), dict(preflight=True)]:
@@ -127,6 +128,7 @@ class Release(unittest.TestCase):
             self.scenario(lambda s, r, e, d: Path(name).write_text(Path(name).read_text().replace('1.2.3', '1.2.4')), failure=True)
 
     def test_receipt_rejections(self):
+        self.scenario(lambda s, r, e, d: r.update(version='1.2.3'), version='1.2.3-rc.1', failure='^Expected singleton versioned prod installer$')
         for key, value in [('source_sha', 'c' * 40), ('run_id', '43'), ('repository', 'other'), ('workflow', 'other.yml'), ('channel', 'accept'), ('version', '1.2.4'), ('installers', {}), ('installers', {'Devbox-setup.exe': '0' * 64})]:
             self.scenario(lambda s, r, e, d: r.update({key: value}), failure=True)
         self.scenario(lambda s, r, e, d: (d / 'second.exe').write_bytes(b'fixture'), failure=True)
