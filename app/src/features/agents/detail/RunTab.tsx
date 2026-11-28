@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import { RpcError } from "../../../rpc/client";
-import { messageFor } from "../../../rpc/messages";
+import { messageText } from "../../../rpc/messages";
 import { useRpcMutation, useRpcQuery, useTopicInvalidation } from "../../../rpc/query";
 import { useRpcSession } from "../../../rpc/RpcProvider";
 import { openFileLocation } from "../../../shell/fileLocation";
@@ -84,8 +84,7 @@ export function RunTab({ task }: { task: AgentTask }) {
       if (controller.signal.aborted) return;
       if (error instanceof RpcError) {
         if (error.code === "agents.delivery_unknown") setSent(id);
-        const message = messageFor(error.code, error.detail);
-        setFeedback(`${message.title} ${message.action}`);
+        setFeedback(messageText(error.code, error.detail, error.diagnosticId));
       } else setFeedback(error instanceof Error ? error.message : "실패 로그를 보내지 못했습니다.");
     } finally {
       if (sending.current === controller) {
@@ -111,12 +110,7 @@ export function RunTab({ task }: { task: AgentTask }) {
       {trust.dialog}
       {trust.notice && <p role="alert">{trust.notice}</p>}
       <QueryError query={config} />
-      {test.error && (
-        <p role="alert">
-          {messageFor(test.error.code, test.error.detail).title} {messageFor(test.error.code, test.error.detail).action}
-          {test.error.diagnosticId && ` · 진단 ${test.error.diagnosticId}`}
-        </p>
-      )}
+      {test.error && <p role="alert">{messageText(test.error.code, test.error.detail, test.error.diagnosticId)}</p>}
       {id ? (
         <>
           <p>

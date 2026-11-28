@@ -1,4 +1,4 @@
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcQuery, useTopicInvalidation } from "../../rpc/query";
 import { Button } from "../../ui";
 import { ActivityBars } from "./ActivityBars";
@@ -10,7 +10,7 @@ export function ActivityDay({ date }: { date: string }) {
   if (query.error)
     return (
       <p role="alert">
-        {messageFor(query.error.code, query.error.detail).title}{" "}
+        {messageText(query.error.code, query.error.detail, query.error.diagnosticId)}{" "}
         <Button onClick={() => void query.refetch()}>다시 시도</Button>
       </p>
     );

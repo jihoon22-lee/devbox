@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SearchQuery } from "../../../rpc/gen/rpc";
-import { messageFor } from "../../../rpc/messages";
+import { messageText } from "../../../rpc/messages";
 import { Dialog } from "../../../ui";
 import { keyId } from "../../documents/offlineJournal";
 import { useSearchStream } from "../../search/useSearchStream";
@@ -63,7 +63,9 @@ export function QuickOpen({ projectId, onClose }: { projectId: string; onClose()
         }}
       />
       {result.refreshing && <p role="status">파일 찾는 중…</p>}
-      {result.error && <p role="alert">{messageFor(result.error.code, result.error.detail).title}</p>}
+      {result.error && (
+        <p role="alert">{messageText(result.error.code, result.error.detail, result.error.diagnosticId)}</p>
+      )}
       <ul id="source-quick-files" className={s.results} role="listbox" aria-label="파일 검색 결과">
         {files.map((file, index) => (
           <li key={keyId(file)}>

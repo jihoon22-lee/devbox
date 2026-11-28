@@ -3,7 +3,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { RpcError } from "../../rpc/client";
 import type { FileEntry, FileTreeCursor } from "../../rpc/gen/rpc";
-import { messageFor } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Button } from "../../ui";
 import s from "./source.module.css";
@@ -42,7 +42,7 @@ function Folder({ dir, ...props }: Props & { dir: string }) {
       {query.error && (
         <p role="alert">
           {query.error instanceof RpcError
-            ? messageFor(query.error.code, query.error.detail).title
+            ? messageText(query.error.code, query.error.detail, query.error.diagnosticId)
             : "파일을 읽지 못했습니다."}
           <Button size="sm" onClick={() => void query.refetch()}>
             새로고침

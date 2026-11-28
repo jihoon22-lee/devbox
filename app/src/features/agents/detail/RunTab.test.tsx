@@ -79,6 +79,15 @@ test("closing an agent during log read prevents send and removes actions", async
   expect(screen.queryByRole("button", { name: "에이전트에게 실패 로그 보내기" })).toBeNull();
   expect(screen.queryByRole("button", { name: "테스트 다시 실행" })).toBeNull();
 });
+test("a cancelled log request shows the cancellation without an empty next action", async () => {
+  const { wire } = await setup();
+  fireEvent.click(screen.getByRole("button", { name: "에이전트에게 실패 로그 보내기" }));
+  await waitFor(() => expect(wire.requests("logs.search")).toHaveLength(1));
+  await act(async () =>
+    wire.deliver({ type: "response", id: wire.request("logs.search").id, error: { code: "cancelled" } }),
+  );
+  expect(await screen.findByRole("status")).toHaveTextContent(/^요청이 취소되었습니다\.$/);
+});
 test("failed send shows feedback; rerun returns a new runtime ID after a trust check", async () => {
   const { wire } = await setup();
   fireEvent.click(screen.getByRole("button", { name: "에이전트에게 실패 로그 보내기" }));

@@ -1,5 +1,5 @@
 import type { DocKey } from "../../rpc/gen/rpc";
-import { messageFor, messageText } from "../../rpc/messages";
+import { messageText } from "../../rpc/messages";
 import { useRpcSession } from "../../rpc/RpcProvider";
 import { Banner, Button } from "../../ui";
 import { keyId } from "../documents/offlineJournal";
@@ -43,7 +43,7 @@ export function ReadOnlyBar({ docKey }: { docKey: DocKey }) {
 export function OpenError({ docKey }: { docKey: DocKey }) {
   const doc = useDocuments((st) => Object.values(st.docs).find((d) => keyId(d.key) === keyId(docKey)));
   if (!doc || doc.state !== "Loading" || !doc.error) return null;
-  const message = messageFor(doc.error);
+  const message = messageText(doc.error);
   const retry = () => {
     const docs = useDocuments.getState();
     docs.close(docKey);
@@ -58,7 +58,7 @@ export function OpenError({ docKey }: { docKey: DocKey }) {
         </Button>
       }
     >
-      {message.title}
+      {message}
     </Banner>
   );
 }
