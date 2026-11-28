@@ -43,7 +43,7 @@ pub fn with_settings<T>(
 ) -> std::io::Result<T> {
     static LOCK: Mutex<()> = Mutex::new(());
     let _guard = LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    f(&mut load(path)?)
+    f(&mut load_with_guidance(path)?)
 }
 pub fn update(path: &Path, f: impl FnOnce(&mut Settings)) -> std::io::Result<()> {
     with_settings(path, |settings| {
@@ -57,6 +57,9 @@ pub fn load(path: &Path) -> std::io::Result<Settings> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Settings::default()),
         Err(e) => Err(e),
     }
+}
+pub fn load_with_guidance(path: &Path) -> std::io::Result<Settings> {
+    load(path).map_err(|error| std::io::Error::new(error.kind(), unreadable(path, &error)))
 }
 /// What the app says when its own settings file does not load. Deleting or renaming the file
 /// starts the app on defaults; the app never moves or deletes it for the user.
@@ -97,7 +100,9 @@ mod tests {
         assert!(!saved.autostart);
         assert_eq!(saved.distro.as_deref(), Some("Ubuntu"));
         std::fs::write(&path, b"malformed").unwrap();
-        assert!(update(&path, |settings| settings.distro = None).is_err());
+        let error = update(&path, |_| panic!("invalid settings must not be changed")).unwrap_err();
+        assert!(error.to_string().contains(&path.display().to_string()));
+        assert!(error.to_string().contains("이름을 바꾸면"));
         assert_eq!(std::fs::read(&path).unwrap(), b"malformed");
     }
     #[test]
